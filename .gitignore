@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+*.db
+*.sqlite
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
+venv/
+.venv/
+backend/google_token.json
+backend/google_credentials.json
+"Job export (1).xlsx"
