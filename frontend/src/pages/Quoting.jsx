@@ -303,7 +303,7 @@ export default function Quoting() {
 
       {/* Quote edit panel */}
       {panel === 'quote' && (
-        <div className="w-[500px] bg-white border-l border-gray-200 flex flex-col shrink-0">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[500px] sm:border-l sm:border-gray-200 sm:shrink-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
             <div>
               <h2 className="font-semibold text-gray-900">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
@@ -443,7 +443,7 @@ export default function Quoting() {
 
       {/* Send quote panel */}
       {panel === 'send' && selected && (
-        <div className="w-[460px] bg-white border-l border-gray-200 flex flex-col shrink-0">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[460px] sm:border-l sm:border-gray-200 sm:shrink-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
             <div>
               <h2 className="font-semibold text-gray-900">Send Quote</h2>

@@ -42,9 +42,9 @@ export default function Comms() {
   const smsMessages = messages.filter(m => m.channel === 'sms')
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col sm:flex-row h-full">
       {/* Compose */}
-      <div className="w-96 bg-white border-r border-gray-200 flex flex-col shrink-0 p-6">
+      <div className="bg-white border-b sm:border-b-0 sm:border-r border-gray-200 flex flex-col shrink-0 p-4 sm:p-6 sm:w-96">
         <h2 className="font-semibold text-gray-900 mb-4">Send Message</h2>
 
         <div className="flex gap-2 mb-4">
@@ -114,7 +114,7 @@ export default function Comms() {
       </div>
 
       {/* Message log */}
-      <div className="flex-1 p-6 flex flex-col min-w-0">
+      <div className="flex-1 p-4 sm:p-6 flex flex-col min-w-0">
         <h2 className="font-semibold text-gray-900 mb-4">Message Log</h2>
         <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
           {smsMessages.map(m => (

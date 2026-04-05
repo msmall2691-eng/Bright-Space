@@ -180,7 +180,7 @@ export default function Properties() {
       </div>
 
       {showForm && (
-        <div className="w-96 bg-white border-l border-gray-200 flex flex-col shrink-0">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-gray-200 sm:shrink-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <h2 className="font-semibold text-gray-900">{selected ? 'Edit Property' : 'Add Property'}</h2>
             <button onClick={() => setShowForm(false)} className="text-gray-500 hover:text-gray-600"><X className="w-5 h-5" /></button>
