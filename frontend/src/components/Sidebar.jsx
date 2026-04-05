@@ -42,12 +42,7 @@ export default function Sidebar({ open, onClose }) {
         />
       )}
 
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0
-        transform transition-transform duration-200 ease-in-out
-        ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:static lg:translate-x-0 lg:w-52
-      `}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 lg:w-52 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/[0.06] flex items-center justify-between">
           <div>
