@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useCallback } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import Dashboard from './pages/Dashboard'
@@ -16,11 +17,17 @@ import Recurring from './pages/Recurring'
 import Settings from './pages/Settings'
 
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const location = useLocation()
+
+  // Close sidebar on navigation (mobile)
+  const closeSidebar = useCallback(() => setSidebarOpen(false), [])
+
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Header />
+      <Sidebar open={sidebarOpen} onClose={closeSidebar} />
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+        <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

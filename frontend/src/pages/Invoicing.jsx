@@ -183,7 +183,7 @@ export default function Invoicing() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Page header */}
-        <div className="flex items-center justify-between px-8 pt-7 pb-5">
+        <div className="flex items-center justify-between px-4 sm:px-8 pt-7 pb-5">
           <div>
             <h1 className="text-[15px] font-semibold text-gray-900 tracking-tight">Invoices</h1>
             <p className="text-xs text-gray-500 mt-0.5">{invoices.length} total</p>
@@ -195,7 +195,7 @@ export default function Invoicing() {
         </div>
 
         {/* Metrics bar */}
-        <div className="flex items-center gap-0 mx-8 mb-6 rounded-xl border border-white/[0.06] overflow-hidden bg-white">
+        <div className="grid grid-cols-2 sm:grid-cols-4 mx-4 sm:mx-8 mb-6 rounded-xl border border-white/[0.06] overflow-hidden bg-white">
           {[
             { label: 'Paid',        value: `$${totalRevenue.toFixed(2)}`, accent: 'text-emerald-400' },
             { label: 'Outstanding', value: `$${outstanding.toFixed(2)}`,  accent: 'text-amber-400'   },
@@ -211,7 +211,7 @@ export default function Invoicing() {
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-3 px-8 mb-4">
+        <div className="flex flex-wrap items-center gap-3 px-4 sm:px-8 mb-4">
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -219,7 +219,7 @@ export default function Invoicing() {
               className="bg-white border border-white/[0.06] text-sm text-gray-900 placeholder-gray-600 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-white/20 w-44 transition-colors" />
           </div>
 
-          <div className="flex items-center gap-1 bg-white border border-white/[0.06] rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-white border border-white/[0.06] rounded-lg p-1 overflow-x-auto">
             {['', 'draft', 'sent', 'paid', 'overdue'].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
@@ -231,9 +231,9 @@ export default function Invoicing() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-8 pb-6">
+        <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-8 pb-6">
           {/* Column headers */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-3 mb-2">
+          <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-3 mb-2">
             {['Client', 'Amount', 'Due', 'Status', ''].map(h => (
               <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">{h}</div>
             ))}
@@ -255,7 +255,7 @@ export default function Invoicing() {
 
               return (
                 <div key={inv.id}
-                  className={`group grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3.5 cursor-pointer
+                  className={`group flex flex-wrap sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center px-4 py-3.5 cursor-pointer
                     hover:bg-white/[0.03] transition-colors
                     ${idx < filtered.length - 1 ? 'border-b border-white/[0.04]' : ''}
                     ${selected?.id === inv.id ? 'bg-white/[0.04]' : ''}`}
@@ -324,7 +324,7 @@ export default function Invoicing() {
 
       {/* ── Side panel — Edit ───────────────────────────────────── */}
       {panel === 'edit' && (
-        <div className="w-[420px] shrink-0 border-l border-white/[0.06] bg-white flex flex-col">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[420px] sm:shrink-0 sm:border-l sm:border-white/[0.06]">
 
           {/* Panel header */}
           <div className="flex items-start justify-between px-6 py-5 border-b border-white/[0.06]">
@@ -473,7 +473,7 @@ export default function Invoicing() {
 
       {/* ── Side panel — Send ───────────────────────────────────── */}
       {panel === 'send' && selected && (
-        <div className="w-[380px] shrink-0 border-l border-white/[0.06] bg-white flex flex-col">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[380px] sm:shrink-0 sm:border-l sm:border-white/[0.06]">
 
           <div className="flex items-start justify-between px-6 py-5 border-b border-white/[0.06]">
             <div>

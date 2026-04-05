@@ -1,7 +1,8 @@
-import { NavLink } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
-  Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings
+  Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X
 } from 'lucide-react'
 
 const nav = [
@@ -23,50 +24,80 @@ const nav = [
   { to: '/settings',    icon: Settings,        label: 'Fields',      desc: 'Custom fields' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }) {
+  const location = useLocation()
+
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    onClose()
+  }, [location.pathname])
+
   return (
-    <aside className="w-52 bg-gray-950 flex flex-col shrink-0">
-      {/* Logo */}
-      <div className="px-5 py-5 border-b border-white/[0.06]">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
-          <span className="text-[15px] font-semibold text-white tracking-tight">BrightBase</span>
-        </div>
-        <p className="text-[10px] text-white/30 mt-1.5 ml-9">The Maine Cleaning Co.</p>
-      </div>
+    <>
+      {/* Mobile overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
 
-      {/* Nav */}
-      <nav className="flex-1 py-2 overflow-y-auto scrollbar-thin">
-        {nav.map((item, i) =>
-          item.divider ? (
-            <div key={i} className="px-5 pt-5 pb-1.5">
-              <span className="text-[9px] font-semibold text-white/25 tracking-[0.15em] uppercase">{item.label}</span>
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0
+        transform transition-transform duration-200 ease-in-out
+        ${open ? 'translate-x-0' : '-translate-x-full'}
+        lg:static lg:translate-x-0 lg:w-52
+      `}>
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-white/[0.06] flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center">
+                <Zap className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-[15px] font-semibold text-white tracking-tight">BrightBase</span>
             </div>
-          ) : (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 mx-2 rounded-lg transition-all text-sm ${
-                  isActive
-                    ? 'bg-white/10 text-white'
-                    : 'text-white/40 hover:text-white/80 hover:bg-white/[0.05]'
-                }`
-              }
-            >
-              <item.icon className="w-4 h-4 shrink-0" />
-              <span className="font-medium">{item.label}</span>
-            </NavLink>
-          )
-        )}
-      </nav>
+            <p className="text-[10px] text-white/30 mt-1.5 ml-9">The Maine Cleaning Co.</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="lg:hidden p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-white/[0.06]">
-        <p className="text-[10px] text-white/20">BrightBase v1.0</p>
-      </div>
-    </aside>
+        {/* Nav */}
+        <nav className="flex-1 py-2 overflow-y-auto scrollbar-thin">
+          {nav.map((item, i) =>
+            item.divider ? (
+              <div key={i} className="px-5 pt-5 pb-1.5">
+                <span className="text-[9px] font-semibold text-white/25 tracking-[0.15em] uppercase">{item.label}</span>
+              </div>
+            ) : (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2 mx-2 rounded-lg transition-all text-sm ${
+                    isActive
+                      ? 'bg-white/10 text-white'
+                      : 'text-white/40 hover:text-white/80 hover:bg-white/[0.05]'
+                  }`
+                }
+              >
+                <item.icon className="w-4 h-4 shrink-0" />
+                <span className="font-medium">{item.label}</span>
+              </NavLink>
+            )
+          )}
+        </nav>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-white/[0.06]">
+          <p className="text-[10px] text-white/20">BrightBase v1.0</p>
+        </div>
+      </aside>
+    </>
   )
 }

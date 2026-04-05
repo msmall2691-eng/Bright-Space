@@ -134,7 +134,7 @@ export default function Settings() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Page header */}
-        <div className="flex items-center justify-between px-8 pt-7 pb-5">
+        <div className="flex items-center justify-between px-4 sm:px-8 pt-7 pb-5">
           <div>
             <h1 className="text-[15px] font-semibold text-gray-900 tracking-tight">Custom Fields</h1>
             <p className="text-xs text-gray-400 mt-0.5">Define extra fields that appear on your records</p>
@@ -146,7 +146,7 @@ export default function Settings() {
         </div>
 
         {/* Entity tabs */}
-        <div className="flex items-center gap-1 px-8 mb-6">
+        <div className="flex items-center gap-1 px-4 sm:px-8 mb-6">
           {ENTITY_TABS.map(tab => (
             <button key={tab.key} onClick={() => { setEntityTab(tab.key); setPanel(null) }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
@@ -157,7 +157,7 @@ export default function Settings() {
         </div>
 
         {/* Field list */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-8 pb-6">
+        <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-8 pb-6">
 
           {/* Table */}
           <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
@@ -221,7 +221,7 @@ export default function Settings() {
 
       {/* Side panel */}
       {panel !== null && (
-        <div className="w-[360px] shrink-0 border-l border-gray-200 bg-white flex flex-col">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[360px] sm:shrink-0 sm:border-l sm:border-gray-200">
           <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900">
               {panel === 'new' ? 'New field' : 'Edit field'}

@@ -90,9 +90,9 @@ export default function Clients() {
   return (
     <div className="flex h-full">
       {/* List */}
-      <div className="flex-1 flex flex-col p-6 min-w-0">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="relative flex-1 max-w-sm">
+      <div className="flex-1 flex flex-col p-4 sm:p-6 min-w-0">
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <div className="relative flex-1 min-w-[180px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
               className="w-full bg-white border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-gray-400" />
@@ -111,10 +111,10 @@ export default function Clients() {
             title="Import clients from Excel (.xlsx)"
             className="flex items-center gap-2 bg-gray-200 hover:bg-gray-600 disabled:opacity-50 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            <Upload className="w-4 h-4" /> {importing ? 'Importing…' : 'Import'}
+            <Upload className="w-4 h-4" /> <span className="hidden sm:inline">{importing ? 'Importing…' : 'Import'}</span>
           </button>
           <button onClick={openNew} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <Plus className="w-4 h-4" /> New Client
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">New Client</span>
           </button>
         </div>
 
@@ -162,7 +162,7 @@ export default function Clients() {
 
       {/* Form panel */}
       {showForm && (
-        <div className="w-96 bg-white border-l border-gray-200 flex flex-col shrink-0">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-gray-200 sm:shrink-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <h2 className="font-semibold text-gray-900">{selected ? 'Edit Client' : 'New Client'}</h2>
             <button onClick={() => setShowForm(false)} className="text-gray-500 hover:text-gray-600">

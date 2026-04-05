@@ -164,7 +164,7 @@ export default function ClientProfile() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 shrink-0">
         <button onClick={() => navigate('/clients')}
           className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-600 mb-3 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Clients
@@ -225,7 +225,7 @@ export default function ClientProfile() {
         </div>
 
         {/* Stats row */}
-        <div className="flex gap-6 mt-4 pt-4 border-t border-gray-200">
+        <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-gray-200">
           {[
             { label: 'Total Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-400' },
             { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-yellow-400' : 'text-gray-400' },
@@ -242,7 +242,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Quick actions */}
-      <div className="flex items-center gap-2 px-6 py-3 bg-white/50 border-b border-gray-200 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 bg-white/50 border-b border-gray-200 shrink-0">
         <span className="text-xs text-gray-500 mr-1">Quick:</span>
         <button onClick={() => navigate(`/quoting`)}
           className="flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors">
@@ -275,7 +275,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin">
 
         {/* Activity feed */}
         {tab === 'activity' && (

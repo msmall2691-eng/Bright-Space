@@ -103,12 +103,12 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-6 space-y-6 overflow-y-auto h-full scrollbar-thin">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto h-full scrollbar-thin">
 
       {/* Greeting */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </h2>
           <p className="text-sm text-gray-400 mt-0.5">
