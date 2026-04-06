@@ -208,7 +208,11 @@ class LeadIntake(Base):
     message = Column(Text)
     preferred_date = Column(String)
     source = Column(String, default="website")
-    status = Column(String, default="new")  # new/reviewed/quoted/converted/scheduled
+    status = Column(String, default="new")  # new/reviewed/quoted/converted/archived
+    priority = Column(String, default="normal")  # low/normal/high/urgent
+    assigned_to = Column(String, nullable=True)
+    internal_notes = Column(Text, nullable=True)
+    followed_up_at = Column(DateTime, nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

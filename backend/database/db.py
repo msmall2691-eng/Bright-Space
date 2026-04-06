@@ -63,6 +63,11 @@ def _run_migrations():
         "ALTER TABLE lead_intakes ADD COLUMN estimate_min REAL",
         "ALTER TABLE lead_intakes ADD COLUMN estimate_max REAL",
         "ALTER TABLE lead_intakes ADD COLUMN property_name TEXT",
+        # Request pipeline enhancements
+        "ALTER TABLE lead_intakes ADD COLUMN priority TEXT DEFAULT 'normal'",
+        "ALTER TABLE lead_intakes ADD COLUMN assigned_to TEXT",
+        "ALTER TABLE lead_intakes ADD COLUMN internal_notes TEXT",
+        "ALTER TABLE lead_intakes ADD COLUMN followed_up_at TIMESTAMP",
     ]
     with engine.connect() as conn:
         for sql in migrations:

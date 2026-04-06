@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 
 from database.db import get_db
 from database.models import LeadIntake, Client
@@ -29,6 +31,10 @@ class IntakeSubmit(BaseModel):
 class IntakeUpdate(BaseModel):
     status: Optional[str] = None
     client_id: Optional[int] = None
+    priority: Optional[str] = None
+    assigned_to: Optional[str] = None
+    internal_notes: Optional[str] = None
+    followed_up_at: Optional[str] = None  # ISO datetime string
 
 
 def intake_to_dict(i: LeadIntake) -> dict:
@@ -57,6 +63,10 @@ def intake_to_dict(i: LeadIntake) -> dict:
         "preferred_date": i.preferred_date,
         "source": i.source,
         "status": i.status,
+        "priority": getattr(i, "priority", "normal"),
+        "assigned_to": getattr(i, "assigned_to", None),
+        "internal_notes": getattr(i, "internal_notes", None),
+        "followed_up_at": getattr(i, "followed_up_at", None).isoformat() if getattr(i, "followed_up_at", None) else None,
         "client_id": i.client_id,
         "created_at": i.created_at.isoformat() if i.created_at else None,
     }
@@ -118,16 +128,57 @@ def get_intakes(status: Optional[str] = None, db: Session = Depends(get_db)):
     return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).all()]
 
 
+@router.get("/stats")
+def get_intake_stats(db: Session = Depends(get_db)):
+    """Quick counts for the requests dashboard."""
+    total = db.query(func.count(LeadIntake.id)).scalar()
+    new = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "new").scalar()
+    reviewed = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "reviewed").scalar()
+    quoted = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "quoted").scalar()
+    converted = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "converted").scalar()
+    archived = db.query(func.count(LeadIntake.id)).filter(LeadIntake.status == "archived").scalar()
+    urgent = db.query(func.count(LeadIntake.id)).filter(
+        LeadIntake.priority == "urgent",
+        LeadIntake.status.in_(["new", "reviewed"])
+    ).scalar()
+    return {
+        "total": total,
+        "new": new,
+        "reviewed": reviewed,
+        "quoted": quoted,
+        "converted": converted,
+        "archived": archived,
+        "urgent": urgent,
+    }
+
+
 @router.patch("/{intake_id}")
 def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db)):
     intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
-    for field, value in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    # Convert followed_up_at string to datetime
+    if "followed_up_at" in updates and updates["followed_up_at"]:
+        try:
+            updates["followed_up_at"] = datetime.fromisoformat(updates["followed_up_at"])
+        except (ValueError, TypeError):
+            updates["followed_up_at"] = datetime.utcnow()
+    for field, value in updates.items():
         setattr(intake, field, value)
     db.commit()
     db.refresh(intake)
     return intake_to_dict(intake)
+
+
+@router.delete("/{intake_id}")
+def delete_intake(intake_id: int, db: Session = Depends(get_db)):
+    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+    if not intake:
+        raise HTTPException(status_code=404, detail="Intake not found")
+    db.delete(intake)
+    db.commit()
+    return {"success": True}
 
 
 # ---------------------------------------------------------------------------
