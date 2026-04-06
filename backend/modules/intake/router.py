@@ -121,10 +121,12 @@ def submit_intake(data: IntakeSubmit, db: Session = Depends(get_db)):
 
 
 @router.get("")
-def get_intakes(status: Optional[str] = None, db: Session = Depends(get_db)):
+def get_intakes(status: Optional[str] = None, source: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(LeadIntake)
     if status:
         q = q.filter(LeadIntake.status == status)
+    if source:
+        q = q.filter(LeadIntake.source == source)
     return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).all()]
 
 
@@ -187,90 +189,3 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 class WebhookPayload(BaseModel):
-    # Contact
-    name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
-    zip: Optional[str] = None
-    # Service details (website InstantEstimate format)
-    serviceType: Optional[str] = None   # standard/deep/str/vacation-rental/commercial/move-in-out
-    frequency: Optional[str] = None
-    sqft: Optional[int] = None
-    bathrooms: Optional[float] = None
-    petHair: Optional[str] = None
-    condition: Optional[str] = None
-    estimateMin: Optional[float] = None
-    estimateMax: Optional[float] = None
-    notes: Optional[str] = None
-    source: Optional[str] = "website"
-    # CRM-forward format (maineclean.co sends these when CRM_WEBHOOK_URL is set)
-    service: Optional[str] = None       # maps to serviceType
-    squareFeet: Optional[int] = None    # maps to sqft
-    message: Optional[str] = None       # maps to notes
-    propertyType: Optional[str] = None  # residential/commercial/vacation-rental
-    # Allow any extra fields
-    class Config:
-        extra = "allow"
-
-
-SERVICE_TYPE_MAP = {
-    "standard": "residential",
-    "deep": "residential",
-    "move-in-out": "residential",
-    "str": "str",
-    "vacation-rental": "str",
-    "commercial": "commercial",
-    # CRM propertyType values
-    "residential": "residential",
-}
-
-
-@router.post("/webhook", status_code=201)
-def webhook_intake(data: WebhookPayload, db: Session = Depends(get_db)):
-    """
-    Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
-    Set CRM_WEBHOOK_URL to https://<your-brightbase>/api/intake/webhook
-    """
-    if not data.name and not data.email and not data.phone:
-        return {"success": False, "error": "No contact info provided"}
-
-    # Normalize: accept both InstantEstimate and CRM-forward field names
-    service_key = data.serviceType or data.service or data.propertyType or ""
-    sqft = data.sqft or data.squareFeet
-    notes_text = data.notes or data.message or ""
-
-    service_type = SERVICE_TYPE_MAP.get(service_key, "residential")
-
-    # Build a message summary from the estimate details
-    parts = []
-    if service_key:
-        parts.append(f"Service: {service_key}")
-    if data.frequency:
-        parts.append(f"Frequency: {data.frequency}")
-    if sqft:
-        parts.append(f"Sq ft: {sqft}")
-    if data.bathrooms:
-        parts.append(f"Bathrooms: {data.bathrooms}")
-    if data.petHair and data.petHair != "none":
-        parts.append(f"Pet hair: {data.petHair}")
-    if data.condition:
-        parts.append(f"Condition: {data.condition}")
-    if data.estimateMin and data.estimateMax:
-        parts.append(f"Estimate: ${data.estimateMin:.0f}–${data.estimateMax:.0f}")
-    if notes_text:
-        parts.append(f"Notes: {notes_text}")
-    message = " | ".join(parts) if parts else notes_text
-
-    normalized = IntakeSubmit(
-        name=data.name or "Unknown",
-        email=data.email,
-        phone=data.phone,
-        address=data.address,
-        zip_code=data.zip,
-        service_type=service_type,
-        square_footage=sqft,
-        message=message,
-        source=data.source or "website",
-    )
-    return submit_intake(normalized, db)

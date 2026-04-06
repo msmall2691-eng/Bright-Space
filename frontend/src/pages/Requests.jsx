@@ -442,6 +442,92 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
 }
 
 
+// ── Add Request Modal ───────────────────────────────────────────────────────
+function AddRequestModal({ onClose, onSaved }) {
+  const [form, setForm] = useState({ name: '', phone: '', email: '', message: '', source: 'manual', service_type: 'residential' })
+  const [saving, setSaving] = useState(false)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const submit = async () => {
+    if (!form.name.trim()) return
+    setSaving(true)
+    try {
+      await fetch('/api/intake/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      onSaved()
+    } catch { }
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Add Request</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4 text-gray-400" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Name *</label>
+            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Client name"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Phone</label>
+              <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="207-555-0123"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Email</label>
+              <input value={form.email} onChange={e => set('email', e.target.value)} placeholder="email@example.com"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Source</label>
+              <select value={form.source} onChange={e => set('source', e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
+                <option value="manual">Manual</option>
+                <option value="phone">Phone call</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+                <option value="referral">Referral</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Service</label>
+              <select value={form.service_type} onChange={e => set('service_type', e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+                <option value="str">STR / Vacation</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Notes</label>
+            <textarea value={form.message} onChange={e => set('message', e.target.value)} rows={3} placeholder="Details about the request..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+          </div>
+        </div>
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
+          <button onClick={submit} disabled={saving || !form.name.trim()}
+            className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">
+            {saving ? 'Saving...' : 'Add Request'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function Requests() {
   const navigate = useNavigate()
@@ -455,7 +541,9 @@ export default function Requests() {
   const [filterService, setFilterService] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedId, setExpandedId] = useState(null)
+  const [filterSource, setFilterSource] = useState('all')
   const [sortBy, setSortBy] = useState('newest')   // 'newest' | 'oldest' | 'priority'
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -527,6 +615,11 @@ export default function Requests() {
       items = items.filter(i => i.service_type === filterService)
     }
 
+    // Source filter
+    if (filterSource !== 'all') {
+      items = items.filter(i => i.source === filterSource)
+    }
+
     // Search
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -548,7 +641,7 @@ export default function Requests() {
     // 'newest' is default from API
 
     return items
-  }, [intakes, filterStatus, filterService, searchQuery, sortBy])
+  }, [intakes, filterStatus, filterService, filterSource, searchQuery, sortBy])
 
   const grouped = PIPELINE_STAGES.reduce((acc, stage) => {
     acc[stage.key] = intakes.filter(i => i.status === stage.key)
@@ -593,6 +686,10 @@ export default function Requests() {
                 Board
               </button>
             </div>
+            <button onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+              <Plus className="w-3.5 h-3.5" /> Add Request
+            </button>
             <button onClick={loadData}
               className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
               <RefreshCw className="w-4 h-4" />
@@ -627,6 +724,18 @@ export default function Requests() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Source filter */}
+            <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
+              <option value="all">All sources</option>
+              <option value="website">Website</option>
+              <option value="sms">SMS</option>
+              <option value="email">Email</option>
+              <option value="phone">Phone</option>
+              <option value="manual">Manual</option>
+              <option value="referral">Referral</option>
+            </select>
+
             {/* Service filter */}
             <select value={filterService} onChange={e => setFilterService(e.target.value)}
               className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
@@ -734,6 +843,12 @@ export default function Requests() {
       )}
 
       {toast && <Toast msg={toast} />}
+      {showAddModal && (
+        <AddRequestModal
+          onClose={() => setShowAddModal(false)}
+          onSaved={() => { setShowAddModal(false); loadData(); showToast('Request added') }}
+        />
+      )}
     </div>
   )
 }

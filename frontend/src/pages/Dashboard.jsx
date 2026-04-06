@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
 import { get } from "../api"
-
+import {
   Calendar, DollarSign, Users, FileText, Clock,
-  AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw
+  AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
+  Globe, Inbox, Phone, Mail, MessageSquare
 } from 'lucide-react'
 
 function StatCard({ icon: Icon, label, value, sub, color = 'text-gray-900', iconBg = 'bg-gray-100' }) {
@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [clients, setClients] = useState([])
   const [invoices, setInvoices] = useState([])
   const [recurringCount, setRecurringCount] = useState(0)
+  const [newRequests, setNewRequests] = useState([])
   const [loading, setLoading] = useState(true)
 
   const today = new Date().toISOString().slice(0, 10)
@@ -47,12 +48,13 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules] = await Promise.all([
+        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew] = await Promise.all([
           get(`/api/jobs?date=${today}`),
           get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
           get('/api/clients'),
           get('/api/invoices'),
           get('/api/recurring'),
+          get('/api/intake?status=new'),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         const week = Array.isArray(jobsWeek) ? jobsWeek : []
@@ -61,6 +63,7 @@ export default function Dashboard() {
         setClients(Array.isArray(clientsAll) ? clientsAll : [])
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
         setRecurringCount(Array.isArray(schedules) ? schedules.filter(s => s.active).length : 0)
+        setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
       } catch {}
       setLoading(false)
     }
@@ -170,8 +173,57 @@ export default function Dashboard() {
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Today's schedule — spans 2 cols */}
+        {/* Left column — spans 2 cols */}
         <div className="lg:col-span-2 space-y-4">
+
+          {/* New Requests widget */}
+          {newRequests.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-amber-800 flex items-center gap-2">
+                  <Inbox className="w-4 h-4 text-amber-500" /> New Requests
+                  <span className="bg-amber-200 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                    {newRequests.length}
+                  </span>
+                </h3>
+                <button onClick={() => navigate('/requests')}
+                  className="text-xs text-amber-700 hover:text-amber-900 flex items-center gap-1 font-medium">
+                  View all <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="space-y-2">
+                {newRequests.map(req => {
+                  const sourceIcon = { website: Globe, sms: MessageSquare, email: Mail, phone: Phone, manual: Plus }
+                  const SrcIcon = sourceIcon[req.source] || Globe
+                  return (
+                    <div key={req.id} onClick={() => navigate('/requests')}
+                      className="flex items-center gap-3 bg-white hover:bg-amber-50/50 border border-amber-100 rounded-lg p-3 cursor-pointer transition-colors">
+                      <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
+                        <SrcIcon className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 truncate">{req.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 capitalize shrink-0">
+                            {req.service_type}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                          {req.phone && <span>{req.phone}</span>}
+                          {req.email && <span className="truncate">{req.email}</span>}
+                          <span className="capitalize">via {req.source}</span>
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-400 shrink-0">
+                        {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="bg-white border border-gray-200 rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -368,3 +420,4 @@ export default function Dashboard() {
     </div>
   )
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
