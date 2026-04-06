@@ -12,7 +12,8 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 
-BRIGHTBASE_ROOT = Path("C:/BrightBase").resolve()
+# Resolve root relative to this file: tools.py → agents/ → backend/ → BrightBase/
+BRIGHTBASE_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── Tool schemas ───────────────────────────────────────────────────────────────
 
@@ -272,10 +273,12 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
 
             # Google Calendar auth
             token_path = BRIGHTBASE_ROOT / "backend" / "google_token.json"
-            if token_path.exists():
-                ok.append("Google Calendar token file exists")
+            has_token_file = token_path.exists()
+            has_token_env  = bool(os.getenv("GOOGLE_TOKEN_B64"))
+            if has_token_file or has_token_env:
+                ok.append("Google Calendar credentials present")
             else:
-                issues.append("CRITICAL: google_token.json missing — run auth_google.py")
+                issues.append("CRITICAL: No Google Calendar credentials — set GOOGLE_TOKEN_B64 env var or run auth_google.py")
 
             # Env vars
             gcal_id = os.getenv("GCAL_RESIDENTIAL_ID", "")
@@ -467,13 +470,21 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
                 if b.lower() in command.lower():
                     return {"error": f"Command blocked for safety: contains '{b}'"}
             backend_dir = BRIGHTBASE_ROOT / "backend"
-            venv_python = BRIGHTBASE_ROOT / "backend" / "venv" / "Scripts" / "python.exe"
-            # Use venv python for python commands
+            # Find python: prefer venv (Windows or Linux), fall back to system python
+            venv_py_win   = backend_dir / "venv" / "Scripts" / "python.exe"
+            venv_py_linux = backend_dir / "venv" / "bin" / "python"
+            if venv_py_win.exists():
+                py_bin = str(venv_py_win)
+                pip_bin = str(backend_dir / "venv" / "Scripts" / "pip.exe")
+            elif venv_py_linux.exists():
+                py_bin = str(venv_py_linux)
+                pip_bin = str(backend_dir / "venv" / "bin" / "pip")
+            else:
+                py_bin, pip_bin = "python", "pip"
             if command.startswith("python "):
-                command = command.replace("python ", str(venv_python) + " ", 1)
+                command = command.replace("python ", py_bin + " ", 1)
             elif command.startswith("pip "):
-                pip_path = BRIGHTBASE_ROOT / "backend" / "venv" / "Scripts" / "pip.exe"
-                command = command.replace("pip ", str(pip_path) + " ", 1)
+                command = command.replace("pip ", pip_bin + " ", 1)
             try:
                 result = subprocess.run(
                     command, shell=True, capture_output=True, text=True,
