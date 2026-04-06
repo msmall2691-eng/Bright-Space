@@ -24,6 +24,7 @@ from modules.properties.router import router as properties_router
 from modules.recurring.router import router as recurring_router
 from modules.reminders.router import router as reminders_router
 from modules.intake.router import router as intake_router
+from modules.booking.router import router as booking_router
 from modules.fields.router import router as fields_router
 
 load_dotenv()
@@ -52,6 +53,7 @@ app.include_router(properties_router, prefix="/api/properties", tags=["propertie
 app.include_router(recurring_router, prefix="/api/recurring", tags=["recurring"])
 app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"])
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
+app.include_router(booking_router, prefix="/api/booking", tags=["booking"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 
 # Per-connection conversation histories: {connection_key: [messages]}

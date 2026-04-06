@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
-  Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X
+  Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Globe
 } from 'lucide-react'
 
 const nav = [
@@ -10,6 +10,7 @@ const nav = [
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace',   desc: 'Agent hub' },
   { divider: true, label: 'CLIENTS' },
   { to: '/clients',     icon: Users,           label: 'Clients',     desc: 'CRM' },
+  { to: '/pipeline',    icon: Globe,           label: 'Pipeline',    desc: 'Website leads' },
   { to: '/quoting',     icon: FileText,        label: 'Quoting',     desc: 'Quotes' },
   { to: '/invoicing',   icon: Receipt,         label: 'Invoicing',   desc: 'Billing' },
   { to: '/comms',       icon: MessageSquare,   label: 'Comms',       desc: 'SMS / Email' },

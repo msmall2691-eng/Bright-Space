@@ -35,6 +35,16 @@ def _run_migrations():
         "ALTER TABLE clients ADD COLUMN billing_city TEXT",
         "ALTER TABLE clients ADD COLUMN billing_state TEXT",
         "ALTER TABLE clients ADD COLUMN billing_zip TEXT",
+        # Website booking pipeline fields on lead_intakes
+        "ALTER TABLE lead_intakes ADD COLUMN bathrooms INTEGER",
+        "ALTER TABLE lead_intakes ADD COLUMN guests INTEGER",
+        "ALTER TABLE lead_intakes ADD COLUMN frequency TEXT",
+        "ALTER TABLE lead_intakes ADD COLUMN requested_date TEXT",
+        "ALTER TABLE lead_intakes ADD COLUMN check_in TEXT",
+        "ALTER TABLE lead_intakes ADD COLUMN check_out TEXT",
+        "ALTER TABLE lead_intakes ADD COLUMN estimate_min REAL",
+        "ALTER TABLE lead_intakes ADD COLUMN estimate_max REAL",
+        "ALTER TABLE lead_intakes ADD COLUMN property_name TEXT",
     ]
     with engine.connect() as conn:
         for sql in migrations:
