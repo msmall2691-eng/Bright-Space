@@ -5,7 +5,12 @@ Runs these tasks on a recurring basis:
   1. iCal sync — every 15 min — pulls Airbnb/VRBO feeds, auto-creates turnover jobs
   2. Recurring job generation — daily at 2 AM — keeps the rolling job pipeline full
   3. Daily SMS reminders — daily at 9 AM — texts clients about tomorrow's jobs
-  4. GCal push — every 30 min — pushes unsynced jobs to Google Calendar
+
+Google Calendar is event-driven (not polled):
+  - Job create → immediate GCal push
+  - Job update → immediate GCal update
+  - Job delete → immediate GCal delete
+  - BrightBase DB is the single source of truth
 
 Also exposes status tracking so the frontend can display last-run times and results.
 """
@@ -37,7 +42,6 @@ def get_status() -> dict:
             "ical_sync": _run_history.get("ical_sync", {"last_run": None, "status": "never_run"}),
             "recurring_generation": _run_history.get("recurring_generation", {"last_run": None, "status": "never_run"}),
             "daily_reminders": _run_history.get("daily_reminders", {"last_run": None, "status": "never_run"}),
-            "gcal_push": _run_history.get("gcal_push", {"last_run": None, "status": "never_run"}),
         },
     }
 
@@ -178,58 +182,6 @@ def task_daily_reminders():
         db.close()
 
 
-# ── Task: GCal Push ──────────────────────────────────────────────────────────
-
-def task_gcal_push():
-    """Push unsynced upcoming jobs to Google Calendar."""
-    from datetime import date
-    from integrations.google_calendar import create_event
-
-    db = SessionLocal()
-    try:
-        today = date.today().isoformat()
-        jobs = db.query(Job).filter(
-            Job.scheduled_date >= today,
-            Job.status == "scheduled",
-            Job.calendar_invite_sent == False,
-        ).all()
-
-        pushed = 0
-        errors = []
-
-        for job in jobs:
-            client = db.query(Client).filter(Client.id == job.client_id).first()
-            if not client:
-                continue
-            try:
-                job_dict = {
-                    "id": job.id, "title": job.title,
-                    "job_type": job.job_type or "residential",
-                    "scheduled_date": job.scheduled_date,
-                    "start_time": job.start_time,
-                    "end_time": job.end_time,
-                    "address": job.address, "notes": job.notes,
-                }
-                client_dict = {"name": client.name, "email": getattr(client, "email", None)}
-                event_id = create_event(job_dict, client_dict)
-                if event_id:
-                    job.calendar_invite_sent = True
-                    job.gcal_event_id = event_id
-                    pushed += 1
-            except Exception as e:
-                errors.append({"job_id": job.id, "error": str(e)})
-
-        db.commit()
-        summary = {"jobs_pushed": pushed, "total_pending": len(jobs), "errors": errors}
-        _record("gcal_push", summary)
-        log.info(f"[scheduler] GCal push: {pushed}/{len(jobs)} jobs pushed")
-    except Exception as e:
-        _record("gcal_push", {}, str(e))
-        log.error(f"[scheduler] GCal push failed: {e}")
-    finally:
-        db.close()
-
-
 # ── Scheduler Lifecycle ──────────────────────────────────────────────────────
 
 def start_scheduler():
@@ -269,17 +221,8 @@ def start_scheduler():
         replace_existing=True,
     )
 
-    # GCal push — every 30 minutes
-    _scheduler.add_job(
-        task_gcal_push,
-        trigger=IntervalTrigger(minutes=30),
-        id="gcal_push",
-        name="Google Calendar Push",
-        replace_existing=True,
-    )
-
     _scheduler.start()
-    log.info("[scheduler] Background scheduler started with 4 automated tasks")
+    log.info("[scheduler] Background scheduler started with 3 automated tasks")
 
 
 def stop_scheduler():
@@ -297,7 +240,6 @@ def run_task_now(task_name: str) -> dict:
         "ical_sync": task_ical_sync,
         "recurring_generation": task_recurring_generation,
         "daily_reminders": task_daily_reminders,
-        "gcal_push": task_gcal_push,
     }
     if task_name not in tasks:
         return {"error": f"Unknown task: {task_name}. Available: {list(tasks.keys())}"}

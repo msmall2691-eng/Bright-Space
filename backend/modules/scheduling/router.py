@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timezone
 
 from database.db import get_db
 from database.models import Job, Client
@@ -161,10 +160,29 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     updates = data.model_dump(exclude_none=True)
+    # Track if scheduling-relevant fields changed (need GCal update)
+    gcal_fields = {"title", "scheduled_date", "start_time", "end_time", "address", "notes"}
+    needs_gcal_update = any(f in updates for f in gcal_fields)
+
     for field, value in updates.items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
+
+    # Auto-update Google Calendar event if schedule changed
+    if needs_gcal_update and job.gcal_event_id:
+        try:
+            from integrations.google_calendar import update_event
+            client = db.query(Client).filter(Client.id == job.client_id).first()
+            client_dict = {"name": client.name if client else "", "email": getattr(client, "email", None)}
+            job_dict = {
+                "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+                "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+                "end_time": job.end_time, "address": job.address, "notes": job.notes,
+            }
+            update_event(job.gcal_event_id, job_dict, client_dict)
+        except Exception as e:
+            logger.warning(f"GCal update failed for job {job.id}: {e}")
 
     # Check conflicts after update
     result = job_to_dict(job)
@@ -188,89 +206,14 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    # Auto-delete from Google Calendar
+    if job.gcal_event_id:
+        try:
+            from integrations.google_calendar import delete_event
+            delete_event(job.gcal_event_id, job.job_type or "residential")
+        except Exception as e:
+            logger.warning(f"GCal delete failed for job {job.id}: {e}")
     db.delete(job)
     db.commit()
 
 
-@router.post("/sync-gcal")
-def sync_from_gcal(db: Session = Depends(get_db)):
-    """
-    Pull recent changes from Google Calendar and update matching BrightBase jobs.
-    Matches by gcal_event_id. Updates title, date, start/end time, and address if changed.
-    """
-    try:
-        from integrations.google_calendar import _get_service, _calendar_id
-        import os
-    except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"GCal not configured: {e}")
-
-    # Fetch jobs that have a GCal event ID
-    jobs = db.query(Job).filter(Job.gcal_event_id.isnot(None)).all()
-    if not jobs:
-        return {"synced": 0, "message": "No jobs with GCal event IDs found"}
-
-    try:
-        service = _get_service()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-    updated = 0
-    errors = []
-
-    # Group jobs by calendar ID to minimise API calls
-    cal_jobs: dict = {}
-    for job in jobs:
-        cal_id = _calendar_id(job.job_type or "residential")
-        cal_jobs.setdefault(cal_id, []).append(job)
-
-    for cal_id, cal_job_list in cal_jobs.items():
-        for job in cal_job_list:
-            try:
-                event = service.events().get(calendarId=cal_id, eventId=job.gcal_event_id).execute()
-            except Exception as e:
-                # Event may have been deleted in GCal
-                if "404" in str(e) or "410" in str(e):
-                    job.gcal_event_id = None  # unlink deleted event
-                else:
-                    errors.append({"job_id": job.id, "error": str(e)})
-                continue
-
-            changed = False
-
-            # Sync title
-            gcal_title = event.get("summary", "").strip()
-            if gcal_title and gcal_title != job.title:
-                job.title = gcal_title
-                changed = True
-
-            # Sync date + times
-            start = event.get("start", {})
-            end   = event.get("end", {})
-            if "dateTime" in start:
-                dt = datetime.fromisoformat(start["dateTime"].replace("Z", "+00:00"))
-                new_date = dt.strftime("%Y-%m-%d")
-                new_time = dt.strftime("%H:%M")
-                if new_date != job.scheduled_date:
-                    job.scheduled_date = new_date
-                    changed = True
-                if new_time != job.start_time:
-                    job.start_time = new_time
-                    changed = True
-            if "dateTime" in end:
-                dt = datetime.fromisoformat(end["dateTime"].replace("Z", "+00:00"))
-                new_time = dt.strftime("%H:%M")
-                if new_time != job.end_time:
-                    job.end_time = new_time
-                    changed = True
-
-            # Sync location → address
-            gcal_location = event.get("location", "").strip()
-            if gcal_location and gcal_location != (job.address or ""):
-                job.address = gcal_location
-                changed = True
-
-            if changed:
-                updated += 1
-
-    db.commit()
-    return {"synced": updated, "errors": errors, "message": f"Synced {updated} job(s) from Google Calendar"}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, CheckCircle, XCircle, Clock, Zap, Calendar, MessageSquare, Home, Activity } from 'lucide-react'
+import { RefreshCw, CheckCircle, XCircle, Clock, Zap, MessageSquare, Home, Activity } from 'lucide-react'
 
 const TASK_CONFIG = {
   ical_sync: {
@@ -22,13 +22,6 @@ const TASK_CONFIG = {
     icon: MessageSquare,
     schedule: 'Daily at 9 AM',
     color: 'green',
-  },
-  gcal_push: {
-    label: 'Google Cal Push',
-    description: 'Sync unsynced jobs to GCal',
-    icon: Calendar,
-    schedule: 'Every 30 min',
-    color: 'indigo',
   },
 }
 
@@ -110,7 +103,7 @@ export default function SchedulerPanel() {
       </div>
 
       {/* Task cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4">
         {Object.entries(TASK_CONFIG).map(([key, config]) => {
           const taskStatus = status?.tasks?.[key] || {}
           const colors = COLOR_MAP[config.color]

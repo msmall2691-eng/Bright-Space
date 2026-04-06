@@ -38,7 +38,6 @@ export default function Scheduling() {
   const [actionLoading, setActionLoading] = useState({})
   const [toast, setToast] = useState(null)
   const [pushing, setPushing] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [view, setView] = useState('list')  // 'calendar' | 'list' | 'gcal'
   const [calRefresh, setCalRefresh] = useState(0)
   const [recurringPanel, setRecurringPanel] = useState(false)
@@ -137,20 +136,6 @@ export default function Scheduling() {
       showToast(String(e.message), false)
     }
     setLoading(jobId, 'sms', false)
-  }
-
-  const syncFromGcal = async () => {
-    setSyncing(true)
-    try {
-      const r = await fetch('/api/jobs/sync-gcal', { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Sync failed')
-      showToast(data.message || `Synced ${data.synced} job(s) from Google Calendar`)
-      load()
-    } catch (e) {
-      showToast(String(e.message), false)
-    }
-    setSyncing(false)
   }
 
   const pushAll = async () => {
@@ -449,13 +434,6 @@ export default function Scheduling() {
               {pushing ? 'Pushing...' : `Push ${unpushed} to Google Cal`}
             </button>
           )}
-          <button onClick={syncFromGcal} disabled={syncing}
-            title="Pull changes made in Google Calendar back into BrightBase"
-            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing...' : 'Sync from GCal'}
-          </button>
-
           {/* View toggle */}
           <div className="flex bg-gray-100 rounded-lg p-0.5 border border-gray-200">
             <button onClick={() => setView('calendar')}

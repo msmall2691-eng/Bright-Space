@@ -142,6 +142,23 @@ def sync_property(db: Session, prop: Property) -> dict:
             event.job_id = job.id
             created_jobs += 1
 
+            # Auto-push turnover job to Google Calendar
+            try:
+                from integrations.google_calendar import create_event
+                client_obj = db.query(Client).filter_by(id=prop.client_id).first()
+                job_dict = {
+                    "id": job.id, "title": job.title, "job_type": "str_turnover",
+                    "scheduled_date": checkout, "start_time": start_time,
+                    "end_time": end_time, "address": prop.address, "notes": job.notes,
+                }
+                client_dict = {"name": client_obj.name if client_obj else "", "email": getattr(client_obj, "email", None)}
+                gcal_id = create_event(job_dict, client_dict)
+                if gcal_id:
+                    job.calendar_invite_sent = True
+                    job.gcal_event_id = gcal_id
+            except Exception as e:
+                log.warning(f"GCal push failed for iCal turnover job {job.id}: {e}")
+
     # Update sync timestamp
     prop.ical_last_synced_at = datetime.utcnow()
     db.commit()
