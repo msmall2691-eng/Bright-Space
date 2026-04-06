@@ -14,6 +14,7 @@ import Payroll from './pages/Payroll'
 import Comms from './pages/Comms'
 import Properties from './pages/Properties'
 import Recurring from './pages/Recurring'
+import Pipeline from './pages/Pipeline'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/workspace" element={<Workspace />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/clients/:id" element={<ClientProfile />} />
+          <Route path="/pipeline" element={<Pipeline />} />
           <Route path="/quoting" element={<Quoting />} />
           <Route path="/scheduling" element={<Scheduling />} />
           <Route path="/invoicing" element={<Invoicing />} />

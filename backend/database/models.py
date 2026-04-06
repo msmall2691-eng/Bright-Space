@@ -195,11 +195,20 @@ class LeadIntake(Base):
     zip_code = Column(String)
     service_type = Column(String, default="residential")  # residential/commercial/str
     bedrooms = Column(Integer, nullable=True)
+    bathrooms = Column(Integer, nullable=True)
     square_footage = Column(Integer, nullable=True)
+    guests = Column(Integer, nullable=True)
+    frequency = Column(String, nullable=True)
+    requested_date = Column(String, nullable=True)
+    check_in = Column(String, nullable=True)
+    check_out = Column(String, nullable=True)
+    estimate_min = Column(Float, nullable=True)
+    estimate_max = Column(Float, nullable=True)
+    property_name = Column(String, nullable=True)
     message = Column(Text)
     preferred_date = Column(String)
     source = Column(String, default="website")
-    status = Column(String, default="new")  # new/reviewed/quoted/converted
+    status = Column(String, default="new")  # new/reviewed/quoted/converted/scheduled
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
