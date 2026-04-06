@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, Calendar, CheckCircle, MapPin, Home, AlertCircle } from 'lucide-react'
+import { get } from "../api"
+
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -24,18 +26,17 @@ export default function Recurring() {
   const [clientProperties, setClientProperties] = useState([])
 
   const load = () =>
-    fetch('/api/recurring').then(r => r.json()).then(setSchedules).catch(() => {})
+    get('/api/recurring').then(setSchedules).catch(err => console.error("[Recurring]", err))
 
   useEffect(() => {
     load()
-    fetch('/api/clients?status=active').then(r => r.json()).then(setClients).catch(() => {})
+    get('/api/clients?status=active').then(setClients).catch(err => console.error("[Recurring]", err))
   }, [])
 
   // Load properties when client changes
   useEffect(() => {
     if (!form.client_id) { setClientProperties([]); return }
-    fetch(`/api/properties?client_id=${form.client_id}`)
-      .then(r => r.json())
+    get(`/api/properties?client_id=${form.client_id}`)
       .then(props => {
         setClientProperties(Array.isArray(props) ? props : [])
         // If only one property, auto-select it

@@ -3,6 +3,8 @@ import { CustomFieldsForm } from '../components/CustomFields'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, X, MapPin, Calendar, MessageSquare, Download, RefreshCw, CheckCircle, LayoutList, ExternalLink, Home, Repeat2, ChevronDown } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
+import { del, get } from "../api"
+
 
 const TYPE_CONFIG = {
   residential:  { label: 'Residential', color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-400' },
@@ -62,16 +64,15 @@ export default function Scheduling() {
 
     if (typeFilter) params.set('job_type', typeFilter)
     if (statusFilter) params.set('status', statusFilter)
-    fetch(`/api/jobs?${params}`)
-      .then(r => r.json()).then(setJobs).catch(() => {})
+    get(`/api/jobs?${params}`).then(setJobs).catch(err => console.error("[Scheduling]", err))
   }
 
   useEffect(() => { load() }, [dateFilter, typeFilter, statusFilter, quickFilter])
 
   useEffect(() => {
-    fetch('/api/clients').then(r => r.json()).then(data => {
+    get('/api/clients').then(data => {
       setClients(Array.isArray(data) ? data : [])
-    }).catch(() => {})
+    }).catch(err => console.error("[Scheduling]", err))
   }, [])
 
   // Pre-open form if ?client_id= in URL
@@ -87,8 +88,7 @@ export default function Scheduling() {
   // Load properties when client changes in form
   useEffect(() => {
     if (!form.client_id) { setClientProperties([]); return }
-    fetch(`/api/properties?client_id=${form.client_id}`)
-      .then(r => r.json())
+    get(`/api/properties?client_id=${form.client_id}`)
       .then(d => setClientProperties(Array.isArray(d) ? d : []))
       .catch(() => setClientProperties([]))
   }, [form.client_id])
@@ -169,7 +169,7 @@ export default function Scheduling() {
 
   const deleteJob = async (id) => {
     if (!confirm('Delete this job? This cannot be undone.')) return
-    await fetch(`/api/jobs/${id}`, { method: 'DELETE' })
+    await del(`/api/jobs/${id}`)
     setShowForm(false)
     load()
     showToast('Job deleted')

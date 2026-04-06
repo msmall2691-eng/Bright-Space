@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
+import { del, get } from "../api"
+
 
 const STATUS_COLORS = {
   lead:     'bg-amber-50 text-amber-700 border-amber-200',
@@ -26,8 +28,7 @@ export default function Clients() {
   const fileInputRef = useRef(null)
 
   const load = () =>
-    fetch(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`)
-      .then(r => r.json()).then(setClients).catch(() => {})
+    get(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`).then(setClients).catch(err => console.error("[Clients]", err))
 
   useEffect(() => { load() }, [statusFilter])
 
@@ -82,7 +83,7 @@ export default function Clients() {
 
   const deleteClient = async (id) => {
     if (!confirm('Delete this client?')) return
-    await fetch(`/api/clients/${id}`, { method: 'DELETE' })
+    await del(`/api/clients/${id}`)
     await load()
     setShowForm(false)
   }

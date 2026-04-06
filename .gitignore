@@ -16,3 +16,13 @@ venv/
 backend/google_token.json
 backend/google_credentials.json
 "Job export (1).xlsx"
+.env.*
+!.env.example
+*.pem
+*.key
+*.xlsx
+backend/*.json
+!backend/package.json
+fix_fetch.py
+fix_fetch2.py
+BrightBase_Production_Audit.docx

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Send, AlertCircle, CheckCircle, Users } from 'lucide-react'
+import { get } from "../api"
+
 
 export default function Dispatch() {
   const [jobs, setJobs] = useState([])
@@ -9,10 +11,8 @@ export default function Dispatch() {
   const [result, setResult] = useState(null)
 
   useEffect(() => {
-    fetch('/api/jobs?status=scheduled')
-      .then(r => r.json()).then(setJobs).catch(() => {})
-    fetch('/api/dispatch/employees')
-      .then(r => r.json())
+    get('/api/jobs?status=scheduled').then(setJobs).catch(err => console.error("[Dispatch]", err))
+    get('/api/dispatch/employees')
       .then(data => setEmployees(Array.isArray(data) ? data : []))
       .catch(() => setEmpError('Could not load Connecteam employees — check your API key'))
   }, [])

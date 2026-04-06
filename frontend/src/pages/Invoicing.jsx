@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText } from 'lucide-react'
+import { del, get } from "../api"
+
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUS = {
@@ -73,13 +75,12 @@ export default function Invoicing() {
   }, [])
 
   const load = useCallback(() =>
-    fetch(`/api/invoices${statusFilter ? `?status=${statusFilter}` : ''}`)
-      .then(r => r.json()).then(setInvoices).catch(() => {}),
+    get(`/api/invoices${statusFilter ? `?status=${statusFilter}` : ''}`).then(setInvoices).catch(err => console.error("[Invoicing]", err)),
     [statusFilter]
   )
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { fetch('/api/clients').then(r => r.json()).then(setClients).catch(() => {}) }, [])
+  useEffect(() => { get('/api/clients').then(setClients).catch(err => console.error("[Invoicing]", err)) }, [])
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
   const clientOf   = (id) => clients.find(c => c.id === id)
@@ -124,7 +125,7 @@ export default function Invoicing() {
   const deleteInvoice = async () => {
     if (!selected) return; setDeleting(true)
     try {
-      const r = await fetch(`/api/invoices/${selected.id}`, { method: 'DELETE' })
+      const r = await del(`/api/invoices/${selected.id}`)
       if (!r.ok) throw new Error()
       await load(); setPanel(null); toast('Invoice deleted')
     } catch { toast('Failed to delete invoice', 'error') }

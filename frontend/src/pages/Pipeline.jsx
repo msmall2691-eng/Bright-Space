@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+import { get } from "../api"
+
   Globe, ArrowRight, FileText, Calendar, CheckCircle, Clock, Eye,
   Phone, Mail, MapPin, Home, Users, ChevronDown, ChevronUp, Plus,
   RefreshCw, X, Bed, Bath, Ruler, CalendarDays
@@ -222,8 +224,8 @@ export default function Pipeline() {
   const loadData = async () => {
     try {
       const [intakeRes, quoteRes] = await Promise.all([
-        fetch('/api/intake').then(r => r.json()),
-        fetch('/api/quotes').then(r => r.json()),
+        get('/api/intake'),
+        get('/api/quotes'),
       ])
       setIntakes(Array.isArray(intakeRes) ? intakeRes : [])
       setQuotes(Array.isArray(quoteRes) ? quoteRes : [])

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
+import { del, get } from "../api"
+
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
   CheckCircle, Clock, AlertCircle, Send, ChevronRight, Home, RefreshCw
@@ -77,13 +79,13 @@ export default function ClientProfile() {
 
   const load = async () => {
     const [c, j, q, inv, msgs, props, scheds] = await Promise.all([
-      fetch(`/api/clients/${id}`).then(r => r.json()),
-      fetch(`/api/jobs?client_id=${id}`).then(r => r.json()),
-      fetch(`/api/quotes?client_id=${id}`).then(r => r.json()),
-      fetch(`/api/invoices?client_id=${id}`).then(r => r.json()),
-      fetch(`/api/comms/messages?client_id=${id}`).then(r => r.json()),
-      fetch(`/api/properties?client_id=${id}`).then(r => r.json()),
-      fetch(`/api/recurring?client_id=${id}`).then(r => r.json()),
+      get(`/api/clients/${id}`),
+      get(`/api/jobs?client_id=${id}`),
+      get(`/api/quotes?client_id=${id}`),
+      get(`/api/invoices?client_id=${id}`),
+      get(`/api/comms/messages?client_id=${id}`),
+      get(`/api/properties?client_id=${id}`),
+      get(`/api/recurring?client_id=${id}`),
     ])
     setClient(c)
     setForm(c)
@@ -107,7 +109,7 @@ export default function ClientProfile() {
 
   const deleteProp = async (propId) => {
     if (!confirm('Remove this property?')) return
-    await fetch(`/api/properties/${propId}`, { method: 'DELETE' })
+    await del(`/api/properties/${propId}`)
     await load()
   }
 

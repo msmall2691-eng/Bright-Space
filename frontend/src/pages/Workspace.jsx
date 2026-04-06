@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, RotateCcw, ChevronDown } from 'lucide-react'
+import { get } from "../api"
+
 
 const AGENTS_FALLBACK = [
   { id: 'nova',   name: 'Nova',   emoji: '⚡', role: 'Business Strategist', color: '#f59e0b', description: 'Growth strategy, new ideas, and system design' },
@@ -86,10 +88,9 @@ export default function Workspace() {
   const inputRef = useRef(null)
 
   useEffect(() => {
-    fetch('/api/agents')
-      .then(r => r.json())
+    get('/api/agents')
       .then(data => { if (data?.length) setAgents(data) })
-      .catch(() => {})
+      .catch(err => console.error("[Workspace]", err))
   }, [])
 
   const connect = useCallback((agent) => {

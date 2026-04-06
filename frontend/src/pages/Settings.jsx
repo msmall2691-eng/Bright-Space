@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2 } from 'lucide-react'
+import { del, get } from "../api"
+
 
 const ENTITY_TABS = [
   { key: 'client',  label: 'Clients',  desc: 'Fields shown on every client record' },
@@ -60,8 +62,7 @@ export default function Settings() {
   }, [])
 
   const load = useCallback(() =>
-    fetch(`/api/fields?entity_type=${entityTab}`)
-      .then(r => r.json()).then(setFields).catch(() => {}),
+    get(`/api/fields?entity_type=${entityTab}`).then(setFields).catch(err => console.error("[Settings]", err)),
     [entityTab]
   )
 
@@ -115,7 +116,7 @@ export default function Settings() {
 
   const deleteField = async (id) => {
     try {
-      const r = await fetch(`/api/fields/${id}`, { method: 'DELETE' })
+      const r = await del(`/api/fields/${id}`)
       if (!r.ok) throw new Error()
       await load()
       if (panel === id) closePanel()

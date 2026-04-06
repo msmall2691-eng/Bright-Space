@@ -1,11 +1,29 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from database.models import Base
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./brightbase.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Railway sometimes provides postgres:// but SQLAlchemy requires postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Only use check_same_thread for SQLite (it's SQLite-specific)
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -49,10 +67,13 @@ def _run_migrations():
     with engine.connect() as conn:
         for sql in migrations:
             try:
-                conn.execute(__import__('sqlalchemy').text(sql))
+                conn.execute(text(sql))
                 conn.commit()
             except Exception:
-                pass  # column already exists
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
 
 def get_db():

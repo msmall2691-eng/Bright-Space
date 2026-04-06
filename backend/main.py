@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 
 from agents.tools import get_tools_for_agent, execute_tool
 
+from auth import APIKeyMiddleware
 from database.db import init_db
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
@@ -31,7 +32,11 @@ load_dotenv()
 
 app = FastAPI(title="BrightBase API", version="1.0.0")
 
-_default_origins = "http://localhost:5173,http://localhost:3000,https://www.maineclean.co,https://maineclean.co"
+_default_origins = (
+    "http://localhost:5173,http://localhost:3000,"
+    "https://www.maineclean.co,https://maineclean.co,"
+    "https://brightbase-production.up.railway.app"
+)
 _allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
 
 app.add_middleware(
@@ -39,8 +44,12 @@ app.add_middleware(
     allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-API-Key"],
 )
+
+# API key authentication — must be added AFTER CORS middleware
+# (Starlette processes middleware in reverse order, so CORS runs first)
+app.add_middleware(APIKeyMiddleware)
 
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
 app.include_router(quoting_router, prefix="/api/quotes", tags=["quotes"])

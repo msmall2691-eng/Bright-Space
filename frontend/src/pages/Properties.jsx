@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link } from 'lucide-react'
+import { get } from "../api"
+
 
 const EMPTY = {
   client_id: '', name: '', address: '', city: '', state: '',
@@ -17,11 +19,11 @@ export default function Properties() {
   const [syncResult, setSyncResult] = useState(null)
 
   const load = () =>
-    fetch('/api/properties').then(r => r.json()).then(setProperties).catch(() => {})
+    get('/api/properties').then(setProperties).catch(err => console.error("[Properties]", err))
 
   useEffect(() => {
     load()
-    fetch('/api/clients?status=active').then(r => r.json()).then(setClients).catch(() => {})
+    get('/api/clients?status=active').then(setClients).catch(err => console.error("[Properties]", err))
   }, [])
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`

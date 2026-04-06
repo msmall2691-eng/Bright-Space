@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar, Home, Users, Briefcase } from 'lucide-react'
+import { get } from "../api"
+
 
 const TYPE_CONFIG = {
   residential:  { label: 'Residential', dot: 'bg-blue-400',   pill: 'bg-blue-500/30 text-blue-300 border-blue-500/40' },
@@ -43,15 +45,13 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
   const rangeEnd   = isoDate(year, month, lastDay.getDate())
 
   useEffect(() => {
-    fetch(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
-      .then(r => r.json())
+    get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
       .then(d => setJobs(Array.isArray(d) ? d : []))
-      .catch(() => {})
+      .catch(err => console.error("[CalendarView]", err))
 
-    fetch(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
-      .then(r => r.json())
+    get(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
       .then(d => setIcalEvents(Array.isArray(d) ? d : []))
-      .catch(() => {})
+      .catch(err => console.error("[CalendarView]", err))
   }, [year, month, refreshKey])
 
   // Build day → jobs map

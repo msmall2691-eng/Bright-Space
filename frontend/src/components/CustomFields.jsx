@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { get } from "../api"
+
 
 const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1.5'
 const inp = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-gray-400 transition-colors'
@@ -10,8 +12,7 @@ export function CustomFieldsForm({ entityType, values = {}, onChange }) {
   const [fields, setFields] = useState([])
 
   useEffect(() => {
-    fetch(`/api/fields?entity_type=${entityType}`)
-      .then(r => r.json()).then(setFields).catch(() => {})
+    get(`/api/fields?entity_type=${entityType}`).then(setFields).catch(err => console.error("[CustomFields]", err))
   }, [entityType])
 
   if (fields.length === 0) return null
@@ -47,8 +48,7 @@ export function CustomFieldsDisplay({ entityType, values = {} }) {
   const [fields, setFields] = useState([])
 
   useEffect(() => {
-    fetch(`/api/fields?entity_type=${entityType}`)
-      .then(r => r.json()).then(setFields).catch(() => {})
+    get(`/api/fields?entity_type=${entityType}`).then(setFields).catch(err => console.error("[CustomFields]", err))
   }, [entityType])
 
   const populated = fields.filter(f => values[f.key] !== undefined && values[f.key] !== '' && values[f.key] !== null)

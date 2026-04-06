@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown } from 'lucide-react'
+import { get } from "../api"
+
 
 const QUOTE_STATUS_COLORS = {
   draft:    'bg-gray-100 text-gray-600 border-gray-200',
@@ -49,13 +51,13 @@ export default function Quoting() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
-  const loadQuotes = () => fetch('/api/quotes').then(r => r.json()).then(d => setQuotes(Array.isArray(d) ? d : [])).catch(() => {})
-  const loadIntakes = () => fetch('/api/intake').then(r => r.json()).then(d => setIntakes(Array.isArray(d) ? d : [])).catch(() => {})
+  const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
 
   useEffect(() => {
     loadQuotes()
     loadIntakes()
-    fetch('/api/clients').then(r => r.json()).then(d => setClients(Array.isArray(d) ? d : [])).catch(() => {})
+    get('/api/clients').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   }, [])
 
   const clientFor = (id) => clients.find(c => c.id === id)

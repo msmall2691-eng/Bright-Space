@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+import { get } from "../api"
+
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw
 } from 'lucide-react'
@@ -46,11 +48,11 @@ export default function Dashboard() {
     const load = async () => {
       try {
         const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules] = await Promise.all([
-          fetch(`/api/jobs?date=${today}`).then(r => r.json()),
-          fetch(`/api/jobs?date_from=${today}&date_to=${weekEnd}`).then(r => r.json()),
-          fetch('/api/clients').then(r => r.json()),
-          fetch('/api/invoices').then(r => r.json()),
-          fetch('/api/recurring').then(r => r.json()),
+          get(`/api/jobs?date=${today}`),
+          get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
+          get('/api/clients'),
+          get('/api/invoices'),
+          get('/api/recurring'),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         const week = Array.isArray(jobsWeek) ? jobsWeek : []

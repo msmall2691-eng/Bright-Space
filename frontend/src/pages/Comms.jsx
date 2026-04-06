@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Send, MessageSquare, Mail, Phone } from 'lucide-react'
+import { get } from "../api"
+
 
 export default function Comms() {
   const [messages, setMessages] = useState([])
@@ -10,8 +12,8 @@ export default function Comms() {
   const [result, setResult] = useState(null)
 
   useEffect(() => {
-    fetch('/api/comms/messages').then(r => r.json()).then(setMessages).catch(() => {})
-    fetch('/api/clients').then(r => r.json()).then(setClients).catch(() => {})
+    get('/api/comms/messages').then(setMessages).catch(err => console.error("[Comms]", err))
+    get('/api/clients').then(setClients).catch(err => console.error("[Comms]", err))
   }, [])
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || null
