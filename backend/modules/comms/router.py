@@ -1,7 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+import logging
 from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from database.db import get_db
 from database.models import Message, Client
@@ -84,8 +89,12 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     to_number = form.get("To", "")
     body = form.get("Body", "")
 
+    logger.info("Inbound SMS from=%s to=%s body=%s", from_number, to_number, body[:80])
+
     # Try to match to a client by phone number
     client = db.query(Client).filter(Client.phone == from_number).first()
+    if not client:
+        logger.warning("No client matched for phone number: %s", from_number)
 
     msg = Message(
         client_id=client.id if client else None,
@@ -99,5 +108,8 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     db.add(msg)
     db.commit()
 
-    # Return TwiML empty response
-    return {"status": "received"}
+    # Return valid TwiML empty response so Twilio knows we handled it
+    return Response(
+        content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        media_type="application/xml",
+    )
