@@ -173,10 +173,10 @@ export default function Workspace() {
   const messages = conversations[activeAgent.id] || []
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full">
       {/* Agent picker */}
-      <div className="w-52 bg-white border-r border-gray-200 flex flex-col p-3 gap-2 overflow-y-auto shrink-0">
-        <p className="text-xs text-gray-500 font-medium px-1 pb-1">YOUR AGENTS</p>
+      <div className="md:w-52 bg-white md:border-r border-b md:border-b-0 border-gray-200 flex md:flex-col flex-row p-3 gap-2 overflow-x-auto md:overflow-y-auto shrink-0">
+        <p className="text-xs text-gray-500 font-medium px-1 pb-1 hidden md:block">YOUR AGENTS</p>
         {agents.map(agent => (
           <AgentCard
             key={agent.id}
