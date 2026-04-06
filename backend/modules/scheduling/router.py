@@ -90,8 +90,34 @@ def get_jobs(
     return [job_to_dict(j) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
 
 
+@router.post("/check-conflicts")
+def check_job_conflicts(data: JobCreate, db: Session = Depends(get_db)):
+    """Check for scheduling conflicts before creating a job."""
+    from modules.scheduling.conflicts import check_conflicts
+    conflicts = check_conflicts(
+        db,
+        scheduled_date=data.scheduled_date,
+        start_time=data.start_time,
+        end_time=data.end_time,
+        cleaner_ids=data.cleaner_ids,
+        property_id=data.property_id,
+    )
+    return {"conflicts": conflicts, "has_conflicts": len(conflicts) > 0}
+
+
 @router.post("", status_code=201)
 def create_job(data: JobCreate, db: Session = Depends(get_db)):
+    # Check for conflicts and attach warnings
+    from modules.scheduling.conflicts import check_conflicts
+    conflicts = check_conflicts(
+        db,
+        scheduled_date=data.scheduled_date,
+        start_time=data.start_time,
+        end_time=data.end_time,
+        cleaner_ids=data.cleaner_ids,
+        property_id=data.property_id,
+    )
+
     job = Job(**data.model_dump())
     db.add(job)
     db.commit()
@@ -114,7 +140,10 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
             db.refresh(job)
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
-    return job_to_dict(job)
+    result = job_to_dict(job)
+    if conflicts:
+        result["conflicts"] = conflicts
+    return result
 
 
 @router.get("/{job_id}")
@@ -130,11 +159,28 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    for field, value in data.model_dump(exclude_none=True).items():
+
+    updates = data.model_dump(exclude_none=True)
+    for field, value in updates.items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
-    return job_to_dict(job)
+
+    # Check conflicts after update
+    result = job_to_dict(job)
+    from modules.scheduling.conflicts import check_conflicts
+    conflicts = check_conflicts(
+        db,
+        scheduled_date=job.scheduled_date,
+        start_time=job.start_time,
+        end_time=job.end_time,
+        cleaner_ids=job.cleaner_ids,
+        property_id=job.property_id,
+        exclude_job_id=job.id,
+    )
+    if conflicts:
+        result["conflicts"] = conflicts
+    return result
 
 
 @router.delete("/{job_id}", status_code=204)

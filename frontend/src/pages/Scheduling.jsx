@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, X, MapPin, Calendar, MessageSquare, Download, RefreshCw, CheckCircle, LayoutList, ExternalLink, Home, Repeat2, ChevronDown } from 'lucide-react'
+import { Plus, X, MapPin, Calendar, MessageSquare, Download, RefreshCw, CheckCircle, LayoutList, ExternalLink, Home, Repeat2, ChevronDown, AlertTriangle, Activity } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
+import SchedulerPanel from '../components/SchedulerPanel'
+import ConflictWarning from '../components/ConflictWarning'
 
 const TYPE_CONFIG = {
   residential:  { label: 'Residential', color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-400' },
@@ -42,6 +44,8 @@ export default function Scheduling() {
   const [recurringPanel, setRecurringPanel] = useState(false)
   const [recurringForm, setRecurringForm] = useState({})
   const [savingRecurring, setSavingRecurring] = useState(false)
+  const [conflicts, setConflicts] = useState([])
+  const [showScheduler, setShowScheduler] = useState(false)
 
   const load = () => {
     const params = new URLSearchParams()
@@ -278,6 +282,34 @@ export default function Scheduling() {
     setSavingRecurring(false)
   }
 
+  // Check conflicts when relevant form fields change
+  useEffect(() => {
+    if (!form.scheduled_date || !form.start_time || !form.end_time || !form.client_id) {
+      setConflicts([])
+      return
+    }
+    const timer = setTimeout(() => {
+      const body = {
+        client_id: parseInt(form.client_id),
+        title: form.title || 'Check',
+        scheduled_date: form.scheduled_date,
+        start_time: form.start_time,
+        end_time: form.end_time,
+        cleaner_ids: form.cleaner_ids || [],
+        property_id: form.property_id ? parseInt(form.property_id) : null,
+      }
+      fetch('/api/jobs/check-conflicts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+        .then(r => r.json())
+        .then(d => setConflicts(d.conflicts || []))
+        .catch(() => setConflicts([]))
+    }, 400) // debounce 400ms
+    return () => clearTimeout(timer)
+  }, [form.scheduled_date, form.start_time, form.end_time, form.cleaner_ids, form.property_id])
+
   const selectProperty = (prop) => {
     const fullAddress = [prop.address, prop.city, prop.state].filter(Boolean).join(', ')
     const client = clients.find(c => c.id === parseInt(form.client_id))
@@ -332,6 +364,13 @@ export default function Scheduling() {
           }`}>
             {toast.ok ? <CheckCircle className="w-4 h-4 shrink-0" /> : <X className="w-4 h-4 shrink-0" />}
             {toast.msg}
+          </div>
+        )}
+
+        {/* Scheduler panel (collapsible) */}
+        {showScheduler && (
+          <div className="mb-4">
+            <SchedulerPanel />
           </div>
         )}
 
@@ -432,6 +471,14 @@ export default function Scheduling() {
               <ExternalLink className="w-3.5 h-3.5" /> Google Cal
             </button>
           </div>
+
+          <button onClick={() => setShowScheduler(s => !s)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors border ${
+              showScheduler ? 'bg-gray-900 text-white border-gray-900' : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-600'
+            }`}>
+            <Activity className="w-3.5 h-3.5" />
+            Automation
+          </button>
 
           <button onClick={openNew}
             className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -681,6 +728,9 @@ export default function Scheduling() {
                   className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
             </div>
+
+            {/* Conflict warnings */}
+            <ConflictWarning conflicts={conflicts} />
 
             {/* Status (edit only) */}
             {selected && (

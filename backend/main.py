@@ -25,6 +25,7 @@ from modules.recurring.router import router as recurring_router
 from modules.reminders.router import router as reminders_router
 from modules.intake.router import router as intake_router
 from modules.fields.router import router as fields_router
+from modules.scheduling.scheduler_router import router as scheduler_router
 
 load_dotenv()
 
@@ -53,6 +54,7 @@ app.include_router(recurring_router, prefix="/api/recurring", tags=["recurring"]
 app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"])
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
+app.include_router(scheduler_router, prefix="/api/scheduler", tags=["scheduler"])
 
 # Per-connection conversation histories: {connection_key: [messages]}
 agent_histories: dict[str, list] = {}
@@ -69,7 +71,16 @@ def load_agent_config(agent_name: str) -> dict:
 @app.on_event("startup")
 async def startup():
     init_db()
-    print("BrightBase backend started")
+    # Start background scheduler for automated tasks
+    from scheduler import start_scheduler
+    start_scheduler()
+    print("BrightBase backend started (scheduler active)")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    from scheduler import stop_scheduler
+    stop_scheduler()
 
 
 @app.get("/api/health")

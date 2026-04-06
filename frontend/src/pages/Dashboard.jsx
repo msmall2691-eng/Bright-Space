@@ -4,6 +4,7 @@ import {
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw
 } from 'lucide-react'
+import SchedulerPanel from '../components/SchedulerPanel'
 
 function StatCard({ icon: Icon, label, value, sub, color = 'text-gray-900', iconBg = 'bg-gray-100' }) {
   return (
@@ -164,6 +165,9 @@ export default function Dashboard() {
           iconBg="bg-purple-50"
         />
       </div>
+
+      {/* Automation scheduler */}
+      <SchedulerPanel />
 
       {/* Main content grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
