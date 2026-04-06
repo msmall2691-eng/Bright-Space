@@ -109,7 +109,7 @@ export default function Clients() {
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
             title="Import clients from Excel (.xlsx)"
-            className="flex items-center gap-2 bg-gray-200 hover:bg-gray-600 disabled:opacity-50 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-gray-200"
           >
             <Upload className="w-4 h-4" /> <span className="hidden sm:inline">{importing ? 'Importing…' : 'Import'}</span>
           </button>
@@ -138,7 +138,7 @@ export default function Clients() {
         <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
           {filtered.map(c => (
             <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-              className="flex items-center gap-4 bg-white border border-gray-200 hover:border-gray-200 rounded-xl p-4 cursor-pointer transition-colors">
+              className="flex items-center gap-4 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm rounded-xl p-4 cursor-pointer transition-all">
               <div className="w-10 h-10 rounded-full bg-sky-50 flex items-center justify-center shrink-0">
                 <span className="text-sky-400 font-semibold text-sm">{c.name[0]?.toUpperCase()}</span>
               </div>

@@ -244,7 +244,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
                     <div
                       key={j.id}
                       onClick={() => onJobClick?.(j)}
-                      className="bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg p-3 cursor-pointer transition-colors"
+                      className="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg p-3 cursor-pointer transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">

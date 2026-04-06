@@ -37,7 +37,7 @@ export default function Scheduling() {
   const [toast, setToast] = useState(null)
   const [pushing, setPushing] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [view, setView] = useState('gcal')  // 'calendar' | 'list' | 'gcal'
+  const [view, setView] = useState('list')  // 'calendar' | 'list' | 'gcal'
   const [calRefresh, setCalRefresh] = useState(0)
   const [recurringPanel, setRecurringPanel] = useState(false)
   const [recurringForm, setRecurringForm] = useState({})
@@ -281,13 +281,22 @@ export default function Scheduling() {
   const selectProperty = (prop) => {
     const fullAddress = [prop.address, prop.city, prop.state].filter(Boolean).join(', ')
     const client = clients.find(c => c.id === parseInt(form.client_id))
-    const jobType = prop.property_type === 'commercial' ? 'commercial' : 'residential'
+    const jobType = prop.property_type === 'commercial' ? 'commercial'
+                  : prop.property_type === 'str'        ? 'str_turnover'
+                  : 'residential'
+    const defaultTitle = () => {
+      if (!client) return ''
+      const first = client.name.split(' ')[0]
+      if (jobType === 'str_turnover') return `${prop.name || first} Turnover`
+      if (jobType === 'commercial')  return `${first}'s Office Clean`
+      return `${first}'s Home Clean`
+    }
     setForm(f => ({
       ...f,
       property_id: prop.id,
       address: fullAddress,
       job_type: jobType,
-      title: f.title || (client ? `${client.name.split(' ')[0]}'s ${jobType === 'commercial' ? 'Office' : 'Home'} Clean` : f.title),
+      title: f.title || defaultTitle(),
       end_time: f.start_time ? addHours(f.start_time, prop.default_duration_hours || 3) : f.end_time,
     }))
   }
@@ -338,7 +347,7 @@ export default function Scheduling() {
                 { id: 'all', label: 'All' },
               ].map(f => (
                 <button key={f.id} onClick={() => { setQuickFilter(f.id); setDateFilter('') }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${quickFilter === f.id && !dateFilter ? 'bg-gray-200 text-gray-900' : 'text-gray-400 hover:text-gray-200'}`}>
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${quickFilter === f.id && !dateFilter ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
                   {f.label}
                 </button>
               ))}
@@ -377,7 +386,7 @@ export default function Scheduling() {
               href="https://calendar.google.com/calendar/r"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors border border-gray-200"
             >
               <ExternalLink className="w-3.5 h-3.5" /> Open in Google Calendar
             </a>
@@ -411,15 +420,15 @@ export default function Scheduling() {
           {/* View toggle */}
           <div className="flex bg-gray-100 rounded-lg p-0.5 border border-gray-200">
             <button onClick={() => setView('calendar')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'calendar' ? 'bg-gray-200 text-gray-900' : 'text-gray-400 hover:text-gray-200'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'calendar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
               <Calendar className="w-3.5 h-3.5" /> Calendar
             </button>
             <button onClick={() => setView('list')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'list' ? 'bg-gray-200 text-gray-900' : 'text-gray-400 hover:text-gray-200'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
               <LayoutList className="w-3.5 h-3.5" /> List
             </button>
             <button onClick={() => setView('gcal')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'gcal' ? 'bg-gray-200 text-gray-900' : 'text-gray-400 hover:text-gray-200'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'gcal' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
               <ExternalLink className="w-3.5 h-3.5" /> Google Cal
             </button>
           </div>
@@ -475,20 +484,21 @@ export default function Scheduling() {
                   const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
                   return (
                     <div key={j.id}
-                      className="bg-white border border-gray-200 hover:border-gray-200 rounded-xl transition-colors">
-                      <div className="flex items-center gap-4 p-4">
-                        {/* Time */}
-                        <div className="text-center w-16 shrink-0">
-                          <div className="text-sm font-semibold text-gray-900">{j.start_time}</div>
-                          <div className="text-xs text-gray-500">{j.end_time}</div>
-                        </div>
-
-                        {/* Type indicator */}
-                        <div className={`w-1 h-10 rounded-full shrink-0 ${tc.dot}`} />
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEdit(j)}>
-                          <div className="font-medium text-gray-900 truncate">{j.title}</div>
+                      className="bg-white border border-gray-200 hover:border-gray-300 rounded-xl transition-colors">
+                      {/* Main row — clickable to edit */}
+                      <div className="flex items-start gap-3 p-4 cursor-pointer" onClick={() => openEdit(j)}>
+                        <div className={`w-1 self-stretch rounded-full shrink-0 mt-0.5 ${tc.dot}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-gray-900">{j.start_time}</span>
+                            {j.end_time && <span className="text-xs text-gray-400">– {j.end_time}</span>}
+                            <span className={`text-xs px-2 py-0.5 rounded-full border ${tc.color}`}>{tc.label}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[j.status]}`}>
+                              {j.status.replace('_', ' ')}
+                            </span>
+                            {j.dispatched && <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">Dispatched</span>}
+                          </div>
+                          <div className="font-medium text-gray-900 mt-1 truncate">{j.title}</div>
                           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                             <span className="text-xs text-gray-400">{clientName(j.client_id)}</span>
                             {j.address && (
@@ -498,71 +508,52 @@ export default function Scheduling() {
                             )}
                           </div>
                         </div>
+                      </div>
 
-                        {/* Badges */}
-                        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                          <span className={`text-xs px-2 py-0.5 rounded-full border ${tc.color}`}>{tc.label}</span>
-                          {j.dispatched && <span className="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full">Dispatched</span>}
-                          <span className={`text-xs px-2.5 py-1 rounded-full border capitalize ${STATUS_COLORS[j.status]}`}>
-                            {j.status.replace('_', ' ')}
-                          </span>
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-1 shrink-0 ml-1">
-                          {/* Google Calendar */}
-                          <button
-                            onClick={() => pushToGcal(j.id)}
-                            disabled={isLoading(j.id, 'gcal')}
-                            title={j.calendar_invite_sent ? 'Resync to Google Calendar' : 'Add to Google Calendar'}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              j.calendar_invite_sent
-                                ? 'text-indigo-400 bg-indigo-500/20 hover:bg-indigo-500/30'
-                                : 'text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/20'
-                            }`}>
-                            {isLoading(j.id, 'gcal')
-                              ? <RefreshCw className="w-4 h-4 animate-spin" />
-                              : <Calendar className="w-4 h-4" />}
+                      {/* Action row */}
+                      <div className="flex items-center gap-1.5 px-4 pb-3 border-t border-gray-100 pt-2.5">
+                        {j.status === 'scheduled' && (
+                          <button onClick={() => updateStatus(j.id, 'in_progress')}
+                            className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded-lg transition-colors font-medium">
+                            Start
                           </button>
-
-                          {/* SMS Reminder */}
-                          <button
-                            onClick={() => sendReminder(j.id)}
-                            disabled={isLoading(j.id, 'sms')}
-                            title={j.sms_reminder_sent ? 'Reminder already sent' : 'Send SMS reminder to client'}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              j.sms_reminder_sent
-                                ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30'
-                                : 'text-gray-500 hover:text-green-400 hover:bg-green-500/20'
-                            }`}>
-                            {isLoading(j.id, 'sms')
-                              ? <RefreshCw className="w-4 h-4 animate-spin" />
-                              : <MessageSquare className="w-4 h-4" />}
+                        )}
+                        {(j.status === 'scheduled' || j.status === 'in_progress') && (
+                          <button onClick={() => updateStatus(j.id, 'completed')}
+                            className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-lg transition-colors font-medium">
+                            Done
                           </button>
-
-                          {/* Download .ics */}
-                          <a
-                            href={`/api/reminders/jobs/${j.id}/invite.ics`}
-                            download={`cleaning-${j.id}.ics`}
-                            title="Download .ics calendar invite"
-                            className="p-1.5 rounded-lg text-gray-500 hover:text-sky-400 hover:bg-sky-500/20 transition-colors">
-                            <Download className="w-4 h-4" />
-                          </a>
-
-                          {/* Status quick actions */}
-                          {j.status === 'scheduled' && (
-                            <button onClick={() => updateStatus(j.id, 'in_progress')}
-                              className="text-xs px-2 py-1 bg-amber-50 text-yellow-400 hover:bg-yellow-600/30 rounded-lg transition-colors ml-1">
-                              Start
-                            </button>
-                          )}
-                          {(j.status === 'scheduled' || j.status === 'in_progress') && (
-                            <button onClick={() => updateStatus(j.id, 'completed')}
-                              className="text-xs px-2 py-1 bg-green-50 text-green-400 hover:bg-green-600/30 rounded-lg transition-colors ml-1">
-                              Done
-                            </button>
-                          )}
-                        </div>
+                        )}
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => pushToGcal(j.id)}
+                          disabled={isLoading(j.id, 'gcal')}
+                          title={j.calendar_invite_sent ? 'Resync to Google Calendar' : 'Add to Google Calendar'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            j.calendar_invite_sent
+                              ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                              : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
+                          }`}>
+                          {isLoading(j.id, 'gcal') ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
+                        </button>
+                        <button
+                          onClick={() => sendReminder(j.id)}
+                          disabled={isLoading(j.id, 'sms')}
+                          title={j.sms_reminder_sent ? 'Reminder already sent' : 'Send SMS reminder'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            j.sms_reminder_sent
+                              ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                              : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
+                          }`}>
+                          {isLoading(j.id, 'sms') ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                        </button>
+                        <a
+                          href={`/api/reminders/jobs/${j.id}/invite.ics`}
+                          download={`cleaning-${j.id}.ics`}
+                          title="Download .ics calendar invite"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-sky-600 hover:bg-sky-50 transition-colors">
+                          <Download className="w-4 h-4" />
+                        </a>
                       </div>
                     </div>
                   )
@@ -571,7 +562,7 @@ export default function Scheduling() {
             </div>
           ))}
 
-          {jobs.length === 0 && (
+          {filteredJobs.length === 0 && (
             <div className="text-center py-16 text-gray-500">
               <Calendar className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <div>No jobs found</div>
@@ -607,7 +598,7 @@ export default function Scheduling() {
             </div>
 
             {/* Property picker */}
-            {form.client_id && !selected && (
+            {form.client_id && (
               <div>
                 <label className="block text-xs text-gray-400 mb-1.5">Property</label>
                 {clientProperties.length === 0 ? (
@@ -744,7 +735,7 @@ export default function Scheduling() {
                           <div className="flex gap-1.5">
                             {['weekly','biweekly','monthly'].map(f => (
                               <button key={f} onClick={() => setRecurringForm(rf => ({ ...rf, frequency: f }))}
-                                className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${recurringForm.frequency === f ? 'bg-sky-600 text-gray-900' : 'bg-gray-200 text-gray-400 hover:bg-gray-600'}`}>
+                                className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${recurringForm.frequency === f ? 'bg-sky-600 text-gray-900' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}>
                                 {f}
                               </button>
                             ))}
@@ -758,7 +749,7 @@ export default function Scheduling() {
                             <div className="grid grid-cols-7 gap-1">
                               {['M','T','W','T','F','S','S'].map((d, i) => (
                                 <button key={i} onClick={() => setRecurringForm(rf => ({ ...rf, day_of_week: i }))}
-                                  className={`py-1.5 rounded text-xs font-medium transition-colors ${parseInt(recurringForm.day_of_week) === i ? 'bg-sky-600 text-gray-900' : 'bg-gray-200 text-gray-400 hover:bg-gray-600'}`}>
+                                  className={`py-1.5 rounded text-xs font-medium transition-colors ${parseInt(recurringForm.day_of_week) === i ? 'bg-sky-600 text-gray-900' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}>
                                   {d}
                                 </button>
                               ))}

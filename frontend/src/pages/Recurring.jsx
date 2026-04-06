@@ -53,7 +53,9 @@ export default function Recurring() {
       ...f,
       property_id: prop.id,
       address: [prop.address, prop.city, prop.state].filter(Boolean).join(', '),
-      job_type: prop.property_type === 'commercial' ? 'commercial' : 'residential',
+      job_type: prop.property_type === 'commercial' ? 'commercial'
+              : prop.property_type === 'str'        ? 'str_turnover'
+              : 'residential',
     }))
   }
 
@@ -234,7 +236,7 @@ export default function Recurring() {
                         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors border ${
                           parseInt(form.property_id) === p.id
                             ? 'bg-sky-50 border-sky-500/50 text-sky-300'
-                            : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-750 hover:border-gray-300'
+                            : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200 hover:border-gray-300'
                         }`}>
                         <Home className="w-3.5 h-3.5 shrink-0 opacity-60" />
                         <div className="min-w-0">
@@ -267,10 +269,10 @@ export default function Recurring() {
             <div>
               <label className="block text-xs text-gray-400 mb-1">Service Type</label>
               <div className="flex gap-2">
-                {['residential', 'commercial'].map(t => (
-                  <button key={t} onClick={() => setForm(f => ({ ...f, job_type: t }))}
-                    className={`flex-1 py-2 rounded-lg text-sm capitalize transition-colors ${form.job_type === t ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
-                    {t}
+                {[['residential','Residential'],['commercial','Commercial'],['str_turnover','STR']].map(([val, label]) => (
+                  <button key={val} onClick={() => setForm(f => ({ ...f, job_type: val }))}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.job_type === val ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    {label}
                   </button>
                 ))}
               </div>
@@ -425,7 +427,7 @@ function ScheduleCard({ s, clientName, generating, onEdit, onGenerate, onToggle 
             Generate
           </button>
           <button onClick={onEdit}
-            className="text-xs text-gray-400 hover:text-gray-200 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors">
+            className="text-xs text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors">
             Edit
           </button>
           <button onClick={onToggle}

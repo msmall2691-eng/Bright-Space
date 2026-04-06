@@ -223,7 +223,7 @@ export default function Invoicing() {
             {['', 'draft', 'sent', 'paid', 'overdue'].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
-                  ${statusFilter === s ? 'bg-white/10 text-gray-900' : 'text-gray-500 hover:text-gray-600'}`}>
+                  ${statusFilter === s ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                 {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}

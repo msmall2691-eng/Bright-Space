@@ -158,7 +158,7 @@ export default function Properties() {
                     </button>
                   )}
                   <button onClick={() => openEdit(p)}
-                    className="text-xs text-gray-400 hover:text-gray-200 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+                    className="text-xs text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors">
                     Edit
                   </button>
                 </div>

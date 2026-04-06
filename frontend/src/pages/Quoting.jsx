@@ -226,7 +226,7 @@ export default function Quoting() {
                   <div className="flex flex-col gap-1.5 shrink-0">
                     {intake.status === 'new' && (
                       <button onClick={() => markIntakeReviewed(intake.id)}
-                        className="text-xs px-3 py-1.5 bg-gray-200 hover:bg-gray-600 text-gray-600 rounded-lg transition-colors">
+                        className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors border border-gray-200">
                         Mark Reviewed
                       </button>
                     )}
@@ -254,7 +254,7 @@ export default function Quoting() {
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
             {quotes.length === 0 && <div className="text-center py-16 text-gray-500 text-sm">No quotes yet</div>}
             {quotes.map(q => (
-              <div key={q.id} className="bg-white border border-gray-200 hover:border-gray-200 rounded-xl p-4 transition-colors">
+              <div key={q.id} className="bg-white border border-gray-200 hover:border-gray-300 rounded-xl p-4 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
                     <div className="flex flex-wrap items-center gap-2">
