@@ -66,7 +66,7 @@ def build_quote_email(quote: dict, client_name: str, company_phone: str = "") ->
             <div style="font-weight:600;color:#111;">{item.get('name','')}</div>
             {f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{item["description"]}</div>' if item.get('description') else ''}
           </td>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;">{qty:.0f if qty == int(qty) else qty}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;">{qty:.0f}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#4b5563;">${price:.2f}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;color:#111;">${line_total:.2f}</td>
         </tr>"""
@@ -201,7 +201,7 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
             <div style="font-weight:600;color:#111;">{item.get('name','')}</div>
             {f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{item["description"]}</div>' if item.get('description') else ''}
           </td>
-          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;">{qty:.0f if qty == int(qty) else qty}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;">{qty:.0f}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#4b5563;">${price:.2f}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;color:#111;">${line_total:.2f}</td>
         </tr>"""
