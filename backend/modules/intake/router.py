@@ -142,7 +142,7 @@ class WebhookPayload(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zip: Optional[str] = None
-    # Service details (website format)
+    # Service details (website InstantEstimate format)
     serviceType: Optional[str] = None   # standard/deep/str/vacation-rental/commercial/move-in-out
     frequency: Optional[str] = None
     sqft: Optional[int] = None
@@ -153,6 +153,11 @@ class WebhookPayload(BaseModel):
     estimateMax: Optional[float] = None
     notes: Optional[str] = None
     source: Optional[str] = "website"
+    # CRM-forward format (maineclean.co sends these when CRM_WEBHOOK_URL is set)
+    service: Optional[str] = None       # maps to serviceType
+    squareFeet: Optional[int] = None    # maps to sqft
+    message: Optional[str] = None       # maps to notes
+    propertyType: Optional[str] = None  # residential/commercial/vacation-rental
     # Allow any extra fields
     class Config:
         extra = "allow"
@@ -165,28 +170,35 @@ SERVICE_TYPE_MAP = {
     "str": "str",
     "vacation-rental": "str",
     "commercial": "commercial",
+    # CRM propertyType values
+    "residential": "residential",
 }
 
 
 @router.post("/webhook", status_code=201)
 def webhook_intake(data: WebhookPayload, db: Session = Depends(get_db)):
     """
-    Accepts the maineclean.co InstantEstimate payload.
+    Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
     Set CRM_WEBHOOK_URL to https://<your-brightbase>/api/intake/webhook
     """
     if not data.name and not data.email and not data.phone:
         return {"success": False, "error": "No contact info provided"}
 
-    service_type = SERVICE_TYPE_MAP.get(data.serviceType or "", "residential")
+    # Normalize: accept both InstantEstimate and CRM-forward field names
+    service_key = data.serviceType or data.service or data.propertyType or ""
+    sqft = data.sqft or data.squareFeet
+    notes_text = data.notes or data.message or ""
+
+    service_type = SERVICE_TYPE_MAP.get(service_key, "residential")
 
     # Build a message summary from the estimate details
     parts = []
-    if data.serviceType:
-        parts.append(f"Service: {data.serviceType}")
+    if service_key:
+        parts.append(f"Service: {service_key}")
     if data.frequency:
         parts.append(f"Frequency: {data.frequency}")
-    if data.sqft:
-        parts.append(f"Sq ft: {data.sqft}")
+    if sqft:
+        parts.append(f"Sq ft: {sqft}")
     if data.bathrooms:
         parts.append(f"Bathrooms: {data.bathrooms}")
     if data.petHair and data.petHair != "none":
@@ -195,9 +207,9 @@ def webhook_intake(data: WebhookPayload, db: Session = Depends(get_db)):
         parts.append(f"Condition: {data.condition}")
     if data.estimateMin and data.estimateMax:
         parts.append(f"Estimate: ${data.estimateMin:.0f}–${data.estimateMax:.0f}")
-    if data.notes:
-        parts.append(f"Notes: {data.notes}")
-    message = " | ".join(parts) if parts else data.notes or ""
+    if notes_text:
+        parts.append(f"Notes: {notes_text}")
+    message = " | ".join(parts) if parts else notes_text
 
     normalized = IntakeSubmit(
         name=data.name or "Unknown",
@@ -206,7 +218,7 @@ def webhook_intake(data: WebhookPayload, db: Session = Depends(get_db)):
         address=data.address,
         zip_code=data.zip,
         service_type=service_type,
-        square_footage=data.sqft,
+        square_footage=sqft,
         message=message,
         source=data.source or "website",
     )
