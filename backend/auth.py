@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Paths that never require an API key
 _PUBLIC_PREFIXES = (
     "/api/health",
+    "/api/config",
     "/api/intake/submit",
     "/api/comms/twilio/webhook",
     "/api/booking",

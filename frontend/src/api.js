@@ -2,10 +2,30 @@
  * Centralized API client for BrightBase.
  *
  * All fetch calls should use these helpers instead of raw fetch().
- * The API key is injected automatically from environment or localStorage.
+ * The API key is injected automatically from environment, localStorage,
+ * or fetched from the /api/config endpoint at startup.
  */
 
-const API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || "";
+let API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || "";
+
+// In production, fetch the API key from the backend config endpoint
+const _configReady = (API_KEY
+  ? Promise.resolve()
+  : fetch("/api/config")
+      .then(r => r.json())
+      .then(data => {
+        if (data.api_key) {
+          API_KEY = data.api_key;
+          localStorage.setItem("brightbase_api_key", data.api_key);
+        }
+      })
+      .catch(() => { /* config endpoint not available — dev mode */ })
+);
+
+/** Wait for API key to be ready before making requests */
+async function ensureReady() {
+  await _configReady;
+}
 
 function headers(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
@@ -15,11 +35,13 @@ function headers(extra = {}) {
 
 /**
  * Wrapper around fetch that:
+ *  - Waits for API key to be available
  *  - Adds API key header automatically
  *  - Throws on non-OK responses with useful error messages
  *  - Returns parsed JSON
  */
 export async function api(url, options = {}) {
+  await ensureReady();
   const res = await fetch(url, {
     ...options,
     headers: headers(options.headers),
@@ -47,7 +69,7 @@ export const get = (url) => api(url);
 
 /** POST helper */
 export const post = (url, body) =>
-  api(url, { method: "POST", body: JSON.stringify(body) });
+  api(url, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });
 
 /** PUT helper */
 export const put = (url, body) =>
@@ -65,6 +87,7 @@ export const del = (url) => api(url, { method: "DELETE" });
  * Does NOT set Content-Type — browser sets multipart boundary automatically.
  */
 export async function upload(url, formData) {
+  await ensureReady();
   const h = {};
   if (API_KEY) h["X-API-Key"] = API_KEY;
 

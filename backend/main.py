@@ -88,6 +88,12 @@ async def health():
     return {"status": "ok", "service": "BrightBase"}
 
 
+@app.get("/api/config")
+async def get_config():
+    """Public endpoint that provides the API key to the SPA frontend."""
+    return {"api_key": os.getenv("BRIGHTBASE_API_KEY", "")}
+
+
 @app.get("/api/agents")
 async def list_agents():
     agents_dir = Path(__file__).parent / "agents"
