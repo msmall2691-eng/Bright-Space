@@ -119,7 +119,7 @@ def _match_by_address(event: dict, db: Session) -> dict | None:
         return None
 
     # Check properties first (more specific — an address ties to a specific property)
-    properties = db.query(Property).filter(Property.active == True).all()
+    properties = db.query(Property).filter(Property.active == True).order_by(Property.id).all()
     for prop in properties:
         prop_addr = prop.address or ""
         if prop.city:
@@ -131,8 +131,8 @@ def _match_by_address(event: dict, db: Session) -> dict | None:
             if client:
                 return {"client": client, "property_id": prop.id, "method": "address_property"}
 
-    # Then check client addresses
-    clients = db.query(Client).filter(Client.address.isnot(None), Client.address != "").all()
+    # Then check client addresses (ordered by ID for deterministic matching)
+    clients = db.query(Client).filter(Client.address.isnot(None), Client.address != "").order_by(Client.id).all()
     for client in clients:
         client_addr = client.address or ""
         if client.city:
