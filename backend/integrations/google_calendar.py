@@ -175,6 +175,9 @@ def invite_client_to_event(event_id: str, job_type: str, client_email: str, clie
 
     This is the "I'm ready — send it to the client" action.
     """
+    if not client_email or not client_email.strip():
+        print("[GCal] Cannot invite: no client email provided")
+        return False
     try:
         service = _get_service()
         cal_id = _calendar_id(job_type)
@@ -183,9 +186,10 @@ def invite_client_to_event(event_id: str, job_type: str, client_email: str, clie
         # Add client to attendees (avoid duplicates)
         attendees = event.get("attendees", [])
         already_invited = any(a.get("email", "").lower() == client_email.lower() for a in attendees)
-        if not already_invited:
-            attendees.append({"email": client_email, "displayName": client_name})
-            event["attendees"] = attendees
+        if already_invited:
+            return True  # Already invited, no need to send again
+        attendees.append({"email": client_email, "displayName": client_name})
+        event["attendees"] = attendees
         service.events().update(
             calendarId=cal_id,
             eventId=event_id,

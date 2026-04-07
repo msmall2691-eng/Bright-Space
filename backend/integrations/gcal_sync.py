@@ -21,6 +21,12 @@ from database.models import Job, Client, Property
 
 log = logging.getLogger(__name__)
 
+
+def _s(val) -> str:
+    """Safely convert a value to a stripped string. Handles None from GCal API."""
+    return str(val).strip() if val else ""
+
+
 # Keys used in extendedProperties.private for BrightBase-created events
 EP_CLIENT_ID = "brightbase_client_id"
 EP_PROPERTY_ID = "brightbase_property_id"
@@ -58,8 +64,9 @@ def _addresses_match(addr1: str, addr2: str) -> bool:
     # Exact match after normalization
     if n1 == n2:
         return True
-    # Check if one contains the other (handles "123 Main St" vs "123 Main St, Portland, ME 04101")
-    if n1 in n2 or n2 in n1:
+    # Check if one starts with the other (handles "123 Main St" vs "123 Main St, Portland, ME 04101")
+    # Using startswith avoids false positives like "123" matching "1123"
+    if n1.startswith(n2) or n2.startswith(n1):
         return True
     return False
 
@@ -69,11 +76,19 @@ def _match_by_extended_properties(event: dict, db: Session) -> dict | None:
     ext = event.get("extendedProperties", {}).get("private", {})
     client_id = ext.get(EP_CLIENT_ID)
     if client_id:
-        client = db.query(Client).filter(Client.id == int(client_id)).first()
+        try:
+            client = db.query(Client).filter(Client.id == int(client_id)).first()
+        except (ValueError, TypeError):
+            return None
         if client:
+            prop_id = None
+            try:
+                prop_id = int(ext[EP_PROPERTY_ID]) if ext.get(EP_PROPERTY_ID) else None
+            except (ValueError, TypeError):
+                pass
             return {
                 "client": client,
-                "property_id": int(ext[EP_PROPERTY_ID]) if ext.get(EP_PROPERTY_ID) else None,
+                "property_id": prop_id,
                 "method": "extendedProperties",
             }
     return None
@@ -83,7 +98,7 @@ def _match_by_attendee_email(event: dict, db: Session) -> dict | None:
     """Try to match via attendee email — the Copper/HubSpot/Twenty pattern."""
     attendees = event.get("attendees", [])
     for attendee in attendees:
-        email = attendee.get("email", "").strip().lower()
+        email = _s(attendee.get("email")).lower()
         if not email:
             continue
         # Skip the calendar owner (organizer) — we want the client, not ourselves
@@ -99,7 +114,7 @@ def _match_by_attendee_email(event: dict, db: Session) -> dict | None:
 
 def _match_by_address(event: dict, db: Session) -> dict | None:
     """Try to match via location/address — fallback for events with no attendees."""
-    location = event.get("location", "").strip()
+    location = _s(event.get("location"))
     if not location:
         return None
 
@@ -130,8 +145,10 @@ def _match_by_address(event: dict, db: Session) -> dict | None:
     return None
 
 
-def _parse_event_datetime(dt_obj: dict) -> tuple[str, str] | None:
+def _parse_event_datetime(dt_obj: dict | None) -> tuple[str, str] | None:
     """Parse a GCal start/end object into (YYYY-MM-DD, HH:MM)."""
+    if not dt_obj:
+        return None
     if "dateTime" in dt_obj:
         dt = datetime.fromisoformat(dt_obj["dateTime"].replace("Z", "+00:00"))
         return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
@@ -150,7 +167,7 @@ def _infer_job_type(event: dict, match: dict) -> str:
     title = event.get("summary", "").lower()
     if "commercial" in title:
         return "commercial"
-    if "turnover" in title or "str" in title or "airbnb" in title:
+    if "turnover" in title or "str turnover" in title or "airbnb" in title:
         return "str_turnover"
     return "residential"
 
@@ -168,7 +185,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
     Returns a summary of what happened.
     """
     try:
-        from integrations.google_calendar import _get_service, _calendar_id
+        from integrations.google_calendar import _get_service
     except ImportError as e:
         return {"error": f"GCal not configured: {e}"}
 
@@ -243,7 +260,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                     continue
 
                 # Sync title
-                gcal_title = event.get("summary", "").strip()
+                gcal_title = _s(event.get("summary"))
                 if gcal_title and gcal_title != existing_job.title:
                     existing_job.title = gcal_title
                     changed = True
@@ -268,7 +285,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                         changed = True
 
                 # Sync location
-                gcal_location = event.get("location", "").strip()
+                gcal_location = _s(event.get("location"))
                 if gcal_location and gcal_location != (existing_job.address or ""):
                     existing_job.address = gcal_location
                     changed = True
@@ -322,7 +339,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 gcal_event_id=gcal_id,
                 calendar_invite_sent=bool(event.get("attendees")),
                 status="scheduled",
-                notes=event.get("description", ""),
+                notes=_s(event.get("description")),
             )
             db.add(job)
             results["jobs_created"] += 1

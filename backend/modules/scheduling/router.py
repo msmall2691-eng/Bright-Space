@@ -125,9 +125,63 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     return job_to_dict(job)
 
 
+@router.post("/push-to-gcal")
+def push_to_gcal(db: Session = Depends(get_db)):
+    """Push any BrightBase jobs that don't yet have a GCal event."""
+    try:
+        from integrations.google_calendar import create_event
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"GCal not configured: {e}")
+
+    jobs = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.gcal_event_id.is_(None),
+        Job.status.in_(["scheduled", "in_progress"]),
+        Job.scheduled_date >= datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+    ).all()
+
+    if not jobs:
+        return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
+
+    created_count = 0
+    errors = []
+
+    for job in jobs:
+        client = job.client
+        client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None) if client else None}
+        job_dict = {
+            "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+            "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+            "end_time": job.end_time, "address": job.address, "notes": job.notes,
+            "property_id": job.property_id,
+        }
+        try:
+            event_id = create_event(job_dict, client_dict)
+            if event_id:
+                job.gcal_event_id = event_id
+                created_count += 1
+        except Exception as e:
+            errors.append({"job_id": job.id, "error": str(e)})
+
+    db.commit()
+    return {"pushed": created_count, "errors": errors, "message": f"Pushed {created_count} job(s) to Google Calendar"}
+
+
+@router.post("/sync-gcal")
+def sync_from_gcal(db: Session = Depends(get_db)):
+    """
+    Full two-way sync with Google Calendar.
+    Matches events to clients by: extendedProperties → attendee email → address.
+    """
+    from integrations.gcal_sync import sync_calendar
+    result = sync_calendar(db)
+    if result.get("error"):
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
 @router.get("/{job_id}")
 def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_to_dict(job)
@@ -194,11 +248,12 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
         # Job doesn't have a GCal event yet — create one WITH the invite
         try:
             from integrations.google_calendar import create_event
-            client_dict = {"name": client.name, "email": client.email}
+            client_dict = {"id": client.id, "name": client.name, "email": client.email}
             job_dict = {
                 "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
                 "scheduled_date": job.scheduled_date, "start_time": job.start_time,
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
+                "property_id": job.property_id,
             }
             event_id = create_event(job_dict, client_dict, send_invite=True)
             if event_id:
@@ -230,68 +285,3 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"GCal error: {e}")
-
-
-@router.post("/push-to-gcal")
-def push_to_gcal(db: Session = Depends(get_db)):
-    """
-    Push any BrightBase jobs that don't yet have a GCal event.
-    Useful for backfilling jobs created before GCal was connected,
-    or if a GCal push failed during creation.
-    """
-    try:
-        from integrations.google_calendar import create_event
-    except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"GCal not configured: {e}")
-
-    jobs = db.query(Job).options(joinedload(Job.client)).filter(
-        Job.gcal_event_id.is_(None),
-        Job.status.in_(["scheduled", "in_progress"]),
-        Job.scheduled_date >= datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-    ).all()
-
-    if not jobs:
-        return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
-
-    created_count = 0
-    errors = []
-
-    for job in jobs:
-        client = job.client
-        client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None) if client else None}
-        job_dict = {
-            "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
-            "scheduled_date": job.scheduled_date, "start_time": job.start_time,
-            "end_time": job.end_time, "address": job.address, "notes": job.notes,
-            "property_id": job.property_id,
-        }
-        try:
-            event_id = create_event(job_dict, client_dict)
-            if event_id:
-                job.gcal_event_id = event_id
-                created_count += 1
-        except Exception as e:
-            errors.append({"job_id": job.id, "error": str(e)})
-
-    db.commit()
-    return {
-        "pushed": created_count, "errors": errors,
-        "message": f"Pushed {created_count} job(s) to Google Calendar"
-    }
-
-
-@router.post("/sync-gcal")
-def sync_from_gcal(db: Session = Depends(get_db)):
-    """
-    Full two-way sync with Google Calendar.
-
-    1. Scans your business calendars for events
-    2. Matches new events to clients by: extendedProperties → attendee email → address
-    3. Creates Job records for matched events
-    4. Updates existing jobs if rescheduled/renamed in GCal
-    5. Cancels jobs for events deleted/cancelled in GCal
-
-    This is the Copper CRM pattern applied to a cleaning business.
-    """
-    from integrations.gcal_sync import sync_calendar
-    return sync_calendar(db)
