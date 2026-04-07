@@ -174,6 +174,62 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@router.post("/{job_id}/invite-client")
+def invite_client(job_id: int, db: Session = Depends(get_db)):
+    """
+    Send the Google Calendar invite to the client for this job.
+    Use this when you've finalized the schedule and are ready for the client to see it.
+    """
+    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    client = job.client
+    if not client or not client.email:
+        raise HTTPException(status_code=400, detail="Client has no email address — add one before inviting")
+
+    if not job.gcal_event_id:
+        # Job doesn't have a GCal event yet — create one WITH the invite
+        try:
+            from integrations.google_calendar import create_event
+            client_dict = {"name": client.name, "email": client.email}
+            job_dict = {
+                "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+                "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+                "end_time": job.end_time, "address": job.address, "notes": job.notes,
+            }
+            event_id = create_event(job_dict, client_dict, send_invite=True)
+            if event_id:
+                job.gcal_event_id = event_id
+                job.calendar_invite_sent = True
+                db.commit()
+                return {"invited": True, "message": f"Created GCal event and sent invite to {client.email}"}
+            raise HTTPException(status_code=502, detail="Failed to create GCal event")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"GCal error: {e}")
+
+    # Job already has a GCal event — add client as attendee
+    try:
+        from integrations.google_calendar import invite_client_to_event
+        success = invite_client_to_event(
+            job.gcal_event_id,
+            job.job_type or "residential",
+            client.email,
+            client.name,
+        )
+        if success:
+            job.calendar_invite_sent = True
+            db.commit()
+            return {"invited": True, "message": f"Invite sent to {client.email}"}
+        raise HTTPException(status_code=502, detail="Failed to send invite")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GCal error: {e}")
+
+
 @router.post("/push-to-gcal")
 def push_to_gcal(db: Session = Depends(get_db)):
     """

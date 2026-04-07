@@ -67,8 +67,12 @@ def _get_service():
     return build("calendar", "v3", credentials=creds)
 
 
-def _build_event(job: dict, client: dict) -> dict:
-    """Build a Google Calendar event dict from a job and client."""
+def _build_event(job: dict, client: dict, include_attendees: bool = False) -> dict:
+    """Build a Google Calendar event dict from a job and client.
+
+    include_attendees: When False (default), creates the event on YOUR calendar only.
+                       When True, adds the client as an attendee so they get an invite.
+    """
     tz = "America/New_York"
     date = job["scheduled_date"]
     start_dt = f"{date}T{job['start_time']}:00"
@@ -103,26 +107,27 @@ def _build_event(job: dict, client: dict) -> dict:
         },
     }
 
-    # Add client as attendee if they have an email
-    attendees = []
-    if client.get("email"):
-        attendees.append({"email": client["email"], "displayName": client.get("name", "")})
-    if attendees:
-        event["attendees"] = attendees
+    # Only add client as attendee when explicitly requested
+    if include_attendees and client.get("email"):
+        event["attendees"] = [{"email": client["email"], "displayName": client.get("name", "")}]
 
     return event
 
 
-def create_event(job: dict, client: dict) -> str | None:
-    """Create a Google Calendar event. Returns the event ID or None on failure."""
+def create_event(job: dict, client: dict, send_invite: bool = False) -> str | None:
+    """Create a Google Calendar event. Returns the event ID or None on failure.
+
+    send_invite: When False (default), event goes on your calendar silently.
+                 When True, client is added as attendee and gets an invite email.
+    """
     try:
         service = _get_service()
         cal_id = _calendar_id(job.get("job_type", "residential"))
-        event = _build_event(job, client)
+        event = _build_event(job, client, include_attendees=send_invite)
         result = service.events().insert(
             calendarId=cal_id,
             body=event,
-            sendUpdates="all",  # sends invite email to attendees
+            sendUpdates="all" if send_invite else "none",
         ).execute()
         return result.get("id")
     except RuntimeError as e:
@@ -133,21 +138,49 @@ def create_event(job: dict, client: dict) -> str | None:
         return None
 
 
-def update_event(event_id: str, job: dict, client: dict) -> bool:
+def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False) -> bool:
     """Update an existing Google Calendar event."""
     try:
         service = _get_service()
         cal_id = _calendar_id(job.get("job_type", "residential"))
-        event = _build_event(job, client)
+        event = _build_event(job, client, include_attendees=send_invite)
         service.events().update(
             calendarId=cal_id,
             eventId=event_id,
             body=event,
-            sendUpdates="all",
+            sendUpdates="all" if send_invite else "none",
         ).execute()
         return True
     except Exception as e:
         print(f"[GCal] Error updating event: {e}")
+        return False
+
+
+def invite_client_to_event(event_id: str, job_type: str, client_email: str, client_name: str = "") -> bool:
+    """Add a client as attendee to an existing GCal event and send them the invite.
+
+    This is the "I'm ready — send it to the client" action.
+    """
+    try:
+        service = _get_service()
+        cal_id = _calendar_id(job_type)
+        # Fetch current event to preserve existing data
+        event = service.events().get(calendarId=cal_id, eventId=event_id).execute()
+        # Add client to attendees (avoid duplicates)
+        attendees = event.get("attendees", [])
+        already_invited = any(a.get("email", "").lower() == client_email.lower() for a in attendees)
+        if not already_invited:
+            attendees.append({"email": client_email, "displayName": client_name})
+            event["attendees"] = attendees
+        service.events().update(
+            calendarId=cal_id,
+            eventId=event_id,
+            body=event,
+            sendUpdates="all",  # THIS is what sends the invite email
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"[GCal] Error inviting client to event: {e}")
         return False
 
 

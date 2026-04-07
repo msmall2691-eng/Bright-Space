@@ -57,6 +57,7 @@ export default function Scheduling() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
+  const [inviting, setInviting] = useState(false)
 
   // GCal sync
   const [syncing, setSyncing] = useState(false)
@@ -239,6 +240,20 @@ export default function Scheduling() {
     setDeleting(false)
   }
 
+  // Invite client to GCal event — the "I'm ready" button
+  const inviteClient = async (jobId) => {
+    setInviting(true)
+    try {
+      const result = await post(`/api/jobs/${jobId}/invite-client`)
+      // Update the viewing job to reflect invite sent
+      setViewingJob(prev => prev ? { ...prev, calendar_invite_sent: true } : prev)
+      setRefreshKey(k => k + 1)
+    } catch (e) {
+      setSaveError(e.message || 'Failed to send invite')
+    }
+    setInviting(false)
+  }
+
   const statusConfig = (s) => STATUS_OPTIONS.find(o => o.value === s) || STATUS_OPTIONS[0]
 
   return (
@@ -356,8 +371,10 @@ export default function Scheduling() {
                     onEdit={startEditing}
                     onDelete={deleteJob}
                     onStatusChange={updateStatus}
+                    onInviteClient={inviteClient}
                     deleting={deleting}
                     statusUpdating={statusUpdating}
+                    inviting={inviting}
                     saveError={saveError}
                   />
                 ) : (
@@ -397,7 +414,7 @@ export default function Scheduling() {
 
 /* ────────────────────────────── Job View Panel ────────────────────────────── */
 
-function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, deleting, statusUpdating, saveError }) {
+function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, onInviteClient, deleting, statusUpdating, inviting, saveError }) {
   if (!job) return null
   const sc = statusConfig(job.status)
   const typeBadge = TYPE_BADGE[job.job_type] || TYPE_BADGE.residential
@@ -471,9 +488,43 @@ function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, 
         </div>
       )}
 
-      {/* Integrations */}
+      {/* Client invite action */}
+      <div className="border-t border-gray-100 pt-4">
+        {job.calendar_invite_sent ? (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
+            <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-emerald-700">Client invited</p>
+              <p className="text-[10px] text-emerald-600">
+                {client?.email ? `Invite sent to ${client.email}` : 'Invite sent via Google Calendar'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+            <p className="text-xs text-gray-500 mb-2">
+              This job is on <span className="font-medium">your</span> Google Calendar only.
+              {client?.email
+                ? ' When you\'re ready, invite the client so they see it too.'
+                : ' Add an email to the client to send them an invite.'}
+            </p>
+            {client?.email && (
+              <button
+                onClick={() => onInviteClient(job.id)}
+                disabled={inviting}
+                className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                <Send className="w-3 h-3" />
+                {inviting ? 'Sending...' : `Invite ${client.name || 'Client'}`}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Other integrations */}
       <div className="flex flex-wrap gap-2">
-        {job.calendar_invite_sent && (
+        {job.gcal_event_id && (
           <span className="text-[11px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded-lg flex items-center gap-1">
             <Calendar className="w-3 h-3" /> On Google Calendar
           </span>
