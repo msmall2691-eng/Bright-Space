@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
+import BottomNav from './components/BottomNav'
+import AICommandBar from './components/AICommandBar'
 import Dashboard from './pages/Dashboard'
 import Workspace from './pages/Workspace'
 import Clients from './pages/Clients'
@@ -20,16 +22,14 @@ import Settings from './pages/Settings'
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
-
-  // Close sidebar on navigation (mobile)
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
+    <div className="flex h-[100dvh] overflow-hidden bg-[#FCFCFC]">
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto bg-[#FCFCFC] pb-bottomnav lg:pb-0 scroll-smooth-mobile">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -50,6 +50,8 @@ export default function App() {
         </Routes>
         </main>
       </div>
+      <BottomNav />
+      <AICommandBar />
     </div>
   )
 }

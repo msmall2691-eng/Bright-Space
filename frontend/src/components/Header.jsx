@@ -1,54 +1,65 @@
 import { useLocation } from 'react-router-dom'
-import { Menu } from 'lucide-react'
+import { Menu, Search, Command, Zap } from 'lucide-react'
 
-const titles = {
-  '/dashboard':  { label: 'Dashboard',             desc: "Your business at a glance" },
-  '/workspace':  { label: 'Workspace',             desc: 'Chat with your AI agents' },
-  '/clients':    { label: 'Clients',               desc: 'Client management & onboarding' },
-  '/requests':   { label: 'Requests',              desc: 'Incoming leads & pipeline' },
-  '/pipeline':   { label: 'Pipeline',              desc: 'Lead conversion pipeline' },
-  '/quoting':    { label: 'Quoting',               desc: 'Build and send quotes' },
-  '/scheduling': { label: 'Schedule',              desc: 'Jobs and calendar' },
-  '/invoicing':  { label: 'Invoicing',             desc: 'Invoices and payments' },
-  '/dispatch':   { label: 'Dispatch',              desc: 'Push shifts to Connecteam' },
-  '/payroll':    { label: 'Payroll',               desc: 'Timesheets and mileage from Connecteam' },
-  '/comms':      { label: 'Comms',                 desc: 'SMS & email communication' },
-  '/properties': { label: 'STR Properties',        desc: 'Airbnb & VRBO iCal sync' },
-  '/recurring':  { label: 'Recurring Schedules',   desc: 'Weekly, biweekly & monthly cleaning schedules' },
-  '/settings':   { label: 'Settings',              desc: 'Custom fields & configuration' },
+const PAGE_TITLES = {
+  '/dashboard': 'Dashboard',
+  '/workspace': 'Workspace',
+  '/clients': 'Clients',
+  '/requests': 'Requests',
+  '/pipeline': 'Pipeline',
+  '/quoting': 'Quoting',
+  '/scheduling': 'Schedule',
+  '/invoicing': 'Invoicing',
+  '/dispatch': 'Dispatch',
+  '/payroll': 'Payroll',
+  '/comms': 'Comms',
+  '/properties': 'Properties',
+  '/recurring': 'Recurring',
+  '/settings': 'Settings',
 }
 
 export default function Header({ onMenuToggle }) {
-  const { pathname } = useLocation()
-  const base = '/' + pathname.split('/')[1]
-  const info = titles[base] || { label: 'BrightBase', desc: '' }
-
-  // Client profile breadcrumb
-  const isClientProfile = pathname.match(/^\/clients\/\d+/)
+  const location = useLocation()
+  const path = location.pathname
+  const title = PAGE_TITLES[path] || 'BrightBase'
 
   return (
-    <header className="h-[52px] bg-white border-b border-gray-200 flex items-center px-4 sm:px-7 shrink-0">
-      <button
-        onClick={onMenuToggle}
-        className="lg:hidden p-2 -ml-2 mr-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
-      <div className="flex items-center gap-2 min-w-0">
-        <h1 className="text-[13px] font-semibold text-gray-900 shrink-0">
-          {isClientProfile ? 'Clients' : info.label}
-        </h1>
-        {isClientProfile ? (
-          <>
-            <span className="text-gray-300 hidden sm:inline">/</span>
-            <p className="text-[13px] text-gray-400 truncate hidden sm:block">Client Profile</p>
-          </>
-        ) : info.desc && (
-          <>
-            <span className="text-gray-300 hidden sm:inline">/</span>
-            <p className="text-[13px] text-gray-400 truncate hidden sm:block">{info.desc}</p>
-          </>
-        )}
+    <header className="h-12 sm:h-14 flex items-center justify-between px-3 sm:px-6 border-b border-gray-200/60 bg-white shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Mobile: menu button + logo */}
+        <button
+          onClick={onMenuToggle}
+          className="lg:hidden p-2 -ml-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors touch-none"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        {/* Mobile: show logo inline since sidebar is hidden */}
+        <div className="flex items-center gap-2 lg:hidden">
+          <div className="w-5 h-5 rounded-md bg-gray-900 flex items-center justify-center">
+            <Zap className="w-3 h-3 text-white" />
+          </div>
+          <span className="text-sm font-semibold text-gray-900 tracking-tight">{title}</span>
+        </div>
+        {/* Desktop: just the title */}
+        <h1 className="hidden lg:block text-[15px] font-semibold text-gray-900">{title}</h1>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {/* AI search button */}
+        <button
+          onClick={() => {
+            const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
+            window.dispatchEvent(event)
+          }}
+          className="flex items-center gap-2 px-3 py-2 sm:py-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-400 hover:text-gray-500 touch-none"
+        >
+          <Search className="w-3.5 h-3.5" />
+          <span className="text-xs hidden sm:inline">Ask AI</span>
+          <div className="hidden sm:flex items-center gap-0.5 text-[10px] text-gray-300">
+            <Command className="w-2.5 h-2.5" />
+            <span>K</span>
+          </div>
+        </button>
       </div>
     </header>
   )

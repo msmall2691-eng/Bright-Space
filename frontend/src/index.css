@@ -8,22 +8,34 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: contain;
   }
   * {
     @apply border-gray-200;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  button, a, [role="button"], select {
+    min-height: 44px;
+    @apply touch-manipulation;
+  }
+  .touch-sm { min-height: 32px; }
+  .touch-none { min-height: unset; }
+  input, textarea, select {
+    font-size: 16px !important;
+    @apply touch-manipulation;
   }
 }
 
 @layer utilities {
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: #e5e7eb transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 4px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #e5e7eb;
-    border-radius: 2px;
-  }
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: #e5e7eb transparent; }
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #e5e7eb; border-radius: 4px; }
+  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
+  .mb-safe { margin-bottom: max(env(safe-area-inset-bottom), 16px); }
+  .pb-bottomnav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .scroll-smooth-mobile { -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+  .select-none-interactive { -webkit-user-select: none; user-select: none; }
 }
