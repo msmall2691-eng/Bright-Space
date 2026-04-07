@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, X, Calendar, Clock, MapPin, Users, ChevronDown,
   CheckCircle, AlertCircle, Trash2, Edit3, Send, Repeat, RefreshCw
@@ -40,6 +41,8 @@ const EMPTY_FORM = {
 }
 
 export default function Scheduling() {
+  const navigate = useNavigate()
+
   // Panel state: null | 'create' | 'edit' | 'view'
   const [panel, setPanel] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -305,23 +308,39 @@ export default function Scheduling() {
 
       {/* Sync result banner */}
       {syncResult && (
-        <div className={`mx-4 lg:mx-6 mt-2 rounded-lg px-3 py-2 text-xs border ${
+        <div className={`mx-4 lg:mx-6 mt-2 rounded-lg px-4 py-3 text-sm border ${
           syncResult.error
             ? 'bg-red-50 border-red-200 text-red-700'
             : 'bg-emerald-50 border-emerald-200 text-emerald-700'
         }`}>
           <div className="flex items-center gap-2">
             {syncResult.error ? (
-              <><AlertCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.error}</>
+              <><AlertCircle className="w-4 h-4 shrink-0" /><span className="font-medium">Sync failed:</span> {syncResult.error}</>
             ) : (
-              <><CheckCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.message}</>
+              <>
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <div>
+                  <span className="font-medium">Synced {syncResult.events_scanned || 0} event{syncResult.events_scanned !== 1 ? 's' : ''}</span>
+                  {' from '}
+                  {syncResult.calendars_synced || 0} calendar{syncResult.calendars_synced !== 1 ? 's' : ''}
+                  {(syncResult.jobs_created > 0 || syncResult.jobs_updated > 0 || syncResult.jobs_cancelled > 0) && (
+                    <span className="text-xs ml-2 opacity-80">
+                      ({[
+                        syncResult.jobs_created > 0 && `${syncResult.jobs_created} created`,
+                        syncResult.jobs_updated > 0 && `${syncResult.jobs_updated} updated`,
+                        syncResult.jobs_cancelled > 0 && `${syncResult.jobs_cancelled} cancelled`,
+                      ].filter(Boolean).join(', ')})
+                    </span>
+                  )}
+                </div>
+              </>
             )}
             <button onClick={() => setSyncResult(null)} className="ml-auto opacity-60 hover:opacity-100">
-              <X className="w-3 h-3" />
+              <X className="w-4 h-4" />
             </button>
           </div>
           {syncResult.unmatched > 0 && (
-            <p className="mt-1 text-[10px] opacity-75">
+            <p className="mt-1.5 text-xs opacity-75">
               {syncResult.unmatched} event(s) couldn't be matched to a client — add their email as attendee or use a known address in the location field.
             </p>
           )}
@@ -379,6 +398,7 @@ export default function Scheduling() {
                     onDelete={deleteJob}
                     onStatusChange={updateStatus}
                     onInviteClient={inviteClient}
+                    onNavigateToClient={(clientId) => navigate(`/clients/${clientId}`)}
                     deleting={deleting}
                     statusUpdating={statusUpdating}
                     inviting={inviting}
@@ -421,7 +441,7 @@ export default function Scheduling() {
 
 /* ────────────────────────────── Job View Panel ────────────────────────────── */
 
-function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, onInviteClient, deleting, statusUpdating, inviting, saveError }) {
+function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, onInviteClient, onNavigateToClient, deleting, statusUpdating, inviting, saveError }) {
   if (!job) return null
   const sc = statusConfig(job.status)
   const typeBadge = TYPE_BADGE[job.job_type] || TYPE_BADGE.residential
@@ -432,7 +452,7 @@ function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, 
       {/* Title + badges */}
       <div>
         <div className="flex items-start justify-between gap-2 mb-2">
-          <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+          <h3 className="text-base font-semibold text-gray-900 break-words" title={job.title}>{job.title}</h3>
           <div className="flex gap-1.5 shrink-0">
             <button onClick={onEdit} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600" title="Edit">
               <Edit3 className="w-4 h-4" />
@@ -461,7 +481,18 @@ function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, 
       {/* Details grid */}
       <div className="space-y-3">
         {client && (
-          <DetailRow icon={Users} label="Client" value={client.name} />
+          <div className="flex items-start gap-3">
+            <Users className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Client</p>
+              <button
+                onClick={() => onNavigateToClient?.(client.id)}
+                className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium text-left"
+              >
+                {client.name}
+              </button>
+            </div>
+          </div>
         )}
         <DetailRow icon={Calendar} label="Date"
           value={job.scheduled_date ? new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : '—'} />

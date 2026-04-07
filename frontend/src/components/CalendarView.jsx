@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, Calendar, Home, Users, Briefcase } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, Home, Users, Briefcase, RotateCw } from 'lucide-react'
 import { get, patch } from "../api"
 
 
 const TYPE_CONFIG = {
-  residential:  { label: 'Residential', dot: 'bg-blue-400',   pill: 'bg-blue-500/30 text-blue-300 border-blue-500/40' },
-  commercial:   { label: 'Commercial',  dot: 'bg-green-400',  pill: 'bg-green-500/30 text-green-300 border-green-500/40' },
-  str_turnover: { label: 'Turnover',    dot: 'bg-orange-400', pill: 'bg-orange-500/30 text-orange-300 border-orange-500/40' },
+  residential:  { label: 'Residential', dot: 'bg-blue-500',   pill: 'bg-blue-50 text-blue-700 border-blue-200',   pillHover: 'hover:bg-blue-100' },
+  commercial:   { label: 'Commercial',  dot: 'bg-green-500',  pill: 'bg-green-50 text-green-700 border-green-200', pillHover: 'hover:bg-green-100' },
+  str_turnover: { label: 'Turnover',    dot: 'bg-orange-500', pill: 'bg-orange-50 text-orange-700 border-orange-200', pillHover: 'hover:bg-orange-100' },
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -28,6 +28,14 @@ function eachDay(start, end) {
   return days
 }
 
+/** Get cleaner initials from a name string, e.g. "Megan Small" -> "MS" */
+function initials(name) {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return parts[0].slice(0, 2).toUpperCase()
+}
+
 export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
   const now = new Date()
   const [year,  setYear]  = useState(now.getFullYear())
@@ -35,6 +43,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
   const [jobs,       setJobs]       = useState([])
   const [icalEvents, setIcalEvents] = useState([])
   const [selected,   setSelected]   = useState(null)    // YYYY-MM-DD
+  const [employees,  setEmployees]  = useState([])
 
   // Drag-and-drop state
   const [draggingJob, setDraggingJob] = useState(null)
@@ -58,6 +67,13 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
       .catch(err => console.error("[CalendarView]", err))
   }, [year, month, refreshKey])
 
+  // Load employees for cleaner initials
+  useEffect(() => {
+    get('/api/dispatch/employees')
+      .then(data => setEmployees(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
+
   // Build day → jobs map
   const jobsByDay = {}
   jobs.forEach(j => {
@@ -76,6 +92,12 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
       bookingsByDay[d].push(ev)
     })
   })
+
+  /** Get initials for a cleaner ID */
+  const cleanerInitials = (id) => {
+    const e = employees.find(e => e.id === id || e.userId === id)
+    return e ? initials(e.name || e.displayName || '') : ''
+  }
 
   const prev = () => { if (month === 0) { setYear(y => y - 1); setMonth(11) } else setMonth(m => m - 1) }
   const next = () => { if (month === 11) { setYear(y => y + 1); setMonth(0) } else setMonth(m => m + 1) }
@@ -145,40 +167,40 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <button onClick={prev} className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors">
+            <button onClick={prev} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700 transition-colors">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-lg font-bold text-white w-48 text-center">
+            <h2 className="text-lg font-bold text-gray-900 w-48 text-center">
               {MONTHS[month]} {year}
             </h2>
-            <button onClick={next} className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors">
+            <button onClick={next} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700 transition-colors">
               <ChevronRight className="w-5 h-5" />
             </button>
-            <button onClick={goToday} className="text-xs text-sky-400 hover:text-sky-300 px-3 py-1.5 bg-sky-600/10 hover:bg-sky-600/20 rounded-lg transition-colors">
+            <button onClick={goToday} className="text-xs text-blue-600 hover:text-blue-700 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors font-medium">
               Today
             </button>
           </div>
 
           {/* Legend */}
           <div className="flex items-center gap-4 text-xs text-gray-500">
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />Residential</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-400" />Commercial</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-400" />STR Turnover</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-900/60 border border-orange-800" />Guest Stay</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" />Residential</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" />Commercial</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" />STR Turnover</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-100 border border-orange-200" />Guest Stay</span>
           </div>
         </div>
 
         {/* Day headers */}
         <div className="grid grid-cols-7 mb-1">
           {DAYS.map(d => (
-            <div key={d} className="text-center text-xs font-medium text-gray-500 py-1">{d}</div>
+            <div key={d} className="text-center text-xs font-semibold text-gray-500 py-2">{d}</div>
           ))}
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-7 flex-1 gap-px bg-gray-800 rounded-xl overflow-hidden border border-gray-800">
+        <div className="grid grid-cols-7 flex-1 gap-px bg-gray-200 rounded-xl overflow-hidden border border-gray-200">
           {cells.map((date, i) => {
-            if (!date) return <div key={i} className="bg-gray-950/60" />
+            if (!date) return <div key={i} className="bg-gray-50" />
 
             const dayJobs = jobsByDay[date] || []
             const dayBookings = bookingsByDay[date] || []
@@ -197,27 +219,27 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
                 onDragLeave={onDragLeave}
                 onDrop={e => onDrop(e, date)}
                 className={`relative p-1.5 min-h-[80px] cursor-pointer transition-colors ${
-                  isDropTarget ? 'bg-sky-800/60 ring-2 ring-sky-400 ring-inset' :
-                  isSelected ? 'bg-sky-900/40' :
-                  dayBookings.length > 0 ? 'bg-orange-950/30 hover:bg-orange-950/40' :
-                  'bg-gray-900 hover:bg-gray-800/80'
+                  isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
+                  isSelected ? 'bg-blue-50/60' :
+                  dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
+                  'bg-white hover:bg-gray-50'
                 }`}
               >
                 {/* Date number */}
                 <div className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1 ${
-                  isToday ? 'bg-sky-500 text-white' :
-                  isSelected ? 'text-sky-400' :
-                  'text-gray-400'
+                  isToday ? 'bg-blue-500 text-white' :
+                  isSelected ? 'text-blue-600' :
+                  'text-gray-600'
                 }`}>
                   {parseInt(date.slice(8))}
                 </div>
 
                 {/* Guest stay indicator */}
                 {dayBookings.length > 0 && (
-                  <div className="text-[10px] text-orange-400/70 mb-0.5 truncate leading-tight">
-                    {isCheckin && '→ '}
+                  <div className="text-[10px] text-orange-600/70 mb-0.5 truncate leading-tight">
+                    {isCheckin && '> '}
                     {dayBookings[0].property_name || 'Guest'}
-                    {isCheckout && ' ✓'}
+                    {isCheckout && ' (out)'}
                   </div>
                 )}
 
@@ -225,6 +247,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
                 <div className="space-y-0.5">
                   {dayJobs.slice(0, 3).map(j => {
                     const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
+                    const cleanerInits = (j.cleaner_ids || []).map(cleanerInitials).filter(Boolean)
                     return (
                       <div
                         key={j.id}
@@ -232,15 +255,19 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
                         onDragStart={e => onDragStart(e, j)}
                         onDragEnd={onDragEnd}
                         onClick={e => { e.stopPropagation(); onJobClick?.(j) }}
-                        className={`text-[10px] px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing hover:opacity-80 ${tc.pill}`}
-                        title={`${j.title} — drag to reschedule`}
+                        className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${tc.pill} ${tc.pillHover}`}
+                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''} — drag to reschedule`}
                       >
-                        {j.start_time} {j.title}
+                        {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
+                        <span className="truncate">{j.start_time} {j.title}</span>
+                        {cleanerInits.length > 0 && (
+                          <span className="ml-auto shrink-0 text-[9px] font-semibold opacity-60">{cleanerInits.join(',')}</span>
+                        )}
                       </div>
                     )
                   })}
                   {dayJobs.length > 3 && (
-                    <div className="text-[10px] text-gray-500 px-1">+{dayJobs.length - 3} more</div>
+                    <div className="text-[10px] text-gray-400 px-1">+{dayJobs.length - 3} more</div>
                   )}
                 </div>
               </div>
@@ -250,9 +277,9 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
       </div>
 
       {/* Day detail panel */}
-      <div className="w-72 bg-gray-900 border-l border-gray-800 flex flex-col shrink-0">
-        <div className="px-4 py-3 border-b border-gray-800">
-          <div className="text-sm font-semibold text-white">
+      <div className="w-72 bg-gray-50 border-l border-gray-200 flex flex-col shrink-0">
+        <div className="px-4 py-3 border-b border-gray-200">
+          <div className="text-sm font-semibold text-gray-900">
             {selected
               ? new Date(selected + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
               : 'Select a day'}
@@ -269,18 +296,18 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
           {/* Airbnb bookings */}
           {selectedBookings.length > 0 && (
             <div>
-              <p className="text-[10px] text-orange-400 font-medium mb-2 uppercase tracking-wide">Airbnb Bookings</p>
+              <p className="text-[10px] text-orange-600 font-medium mb-2 uppercase tracking-wide">Airbnb Bookings</p>
               <div className="space-y-2">
                 {selectedBookings.map(b => (
-                  <div key={b.id} className="bg-orange-900/20 border border-orange-800/40 rounded-lg p-2.5">
+                  <div key={b.id} className="bg-orange-50 border border-orange-200 rounded-lg p-2.5">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <Home className="w-3 h-3 text-orange-400 shrink-0" />
-                      <span className="text-xs font-medium text-orange-300">{b.property_name}</span>
+                      <Home className="w-3 h-3 text-orange-500 shrink-0" />
+                      <span className="text-xs font-medium text-orange-700">{b.property_name}</span>
                     </div>
-                    <div className="text-[10px] text-orange-400/70">{b.summary || 'Reserved'}</div>
+                    <div className="text-[10px] text-orange-600/70">{b.summary || 'Reserved'}</div>
                     <div className="text-[10px] text-gray-500 mt-1">
                       {b.checkin_date} → {b.checkout_date}
-                      {b.checkout_date === selected && <span className="text-orange-400 ml-1">← checkout today</span>}
+                      {b.checkout_date === selected && <span className="text-orange-600 ml-1 font-medium">checkout today</span>}
                     </div>
                   </div>
                 ))}
@@ -291,27 +318,39 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
           {/* Jobs */}
           {selectedJobs.length > 0 && (
             <div>
-              <p className="text-[10px] text-gray-500 font-medium mb-2 uppercase tracking-wide">Jobs</p>
+              <p className="text-[10px] text-gray-400 font-medium mb-2 uppercase tracking-wide">Jobs</p>
               <div className="space-y-2">
                 {selectedJobs.map(j => {
                   const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
+                  const cleanerInits = (j.cleaner_ids || []).map(cleanerInitials).filter(Boolean)
                   return (
                     <div
                       key={j.id}
                       onClick={() => onJobClick?.(j)}
-                      className="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg p-3 cursor-pointer transition-colors"
+                      className="bg-white hover:bg-gray-50 border border-gray-200 rounded-lg p-3 cursor-pointer transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-white truncate">{j.title}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">{j.start_time} – {j.end_time}</div>
-                          {j.address && <div className="text-xs text-gray-500 truncate mt-0.5">{j.address}</div>}
+                          <div className="text-sm font-medium text-gray-900 truncate flex items-center gap-1">
+                            {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
+                            {j.title}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">{j.start_time} – {j.end_time}</div>
+                          {j.address && <div className="text-xs text-gray-400 truncate mt-0.5">{j.address}</div>}
+                          {cleanerInits.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1">
+                              {cleanerInits.map((ci, idx) => (
+                                <span key={idx} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                                  {ci}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${tc.pill}`}>{tc.label}</span>
                           <div className="flex gap-1">
-                            {j.calendar_invite_sent && <span title="On Google Cal" className="text-[10px] text-indigo-400">📅</span>}
-                            {j.sms_reminder_sent    && <span title="Reminder sent" className="text-[10px] text-green-400">✓</span>}
+                            {j.calendar_invite_sent && <span title="Client invited" className="text-[10px] text-blue-500">Invited</span>}
                           </div>
                         </div>
                       </div>
@@ -323,11 +362,11 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
           )}
 
           {selected && selectedJobs.length === 0 && selectedBookings.length === 0 && (
-            <div className="text-center py-8 text-gray-600 text-sm">Nothing scheduled</div>
+            <div className="text-center py-8 text-gray-400 text-sm">Nothing scheduled</div>
           )}
 
           {!selected && (
-            <div className="text-center py-8 text-gray-600 text-sm">Click a day to see details</div>
+            <div className="text-center py-8 text-gray-400 text-sm">Click a day to see details</div>
           )}
         </div>
       </div>
