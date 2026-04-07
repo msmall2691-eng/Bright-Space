@@ -5,7 +5,7 @@ import { del, get, post, patch } from "../api"
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
-  CheckCircle, Clock, AlertCircle, Send, ChevronRight, Home, RefreshCw
+  CheckCircle, Clock, AlertCircle, Send, ChevronLeft, ChevronRight, Home, RefreshCw
 } from 'lucide-react'
 
 const STATUS_COLORS = {
@@ -300,6 +300,7 @@ export default function ClientProfile() {
       {/* Tabs */}
       <div className="flex border-b border-gray-200 px-6 bg-white/30 shrink-0 overflow-x-auto">
         <Tab label="Activity" icon={Clock} active={tab === 'activity'} count={activity.length} onClick={() => setTab('activity')} />
+        <Tab label="Calendar" icon={Calendar} active={tab === 'calendar'} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Recurring" icon={RefreshCw} active={tab === 'recurring'} count={schedules.filter(s=>s.active).length} onClick={() => setTab('recurring')} />
         <Tab label="Jobs" icon={Calendar} active={tab === 'jobs'} count={jobs.length} onClick={() => setTab('jobs')} />
@@ -380,6 +381,11 @@ export default function ClientProfile() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Calendar — Twenty-style mini calendar + event list */}
+        {tab === 'calendar' && (
+          <ClientCalendarTab jobs={jobs} upcomingJobs={upcomingJobs} pastJobs={pastJobs} navigate={navigate} clientId={id} />
         )}
 
         {/* Properties */}
@@ -819,6 +825,230 @@ export default function ClientProfile() {
           'Draft a follow-up message for this client',
         ]}
       />
+    </div>
+  )
+}
+
+
+/* ─────────── Twenty-style Client Calendar Tab ─────────── */
+
+const MINI_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+const JOB_TYPE_DOT = {
+  residential:  'bg-blue-500',
+  commercial:   'bg-green-500',
+  str_turnover: 'bg-orange-500',
+}
+
+const JOB_TYPE_LABEL = {
+  residential:  'Residential',
+  commercial:   'Commercial',
+  str_turnover: 'STR Turnover',
+}
+
+const STATUS_PILL = {
+  scheduled:   'bg-blue-50 text-blue-700 border-blue-200',
+  in_progress: 'bg-amber-50 text-amber-700 border-amber-200',
+  completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
+  cancelled:   'bg-gray-100 text-gray-500 border-gray-200',
+}
+
+function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId }) {
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
+  const [selectedDate, setSelectedDate] = useState(null)
+
+  const todayStr = now.toISOString().slice(0, 10)
+
+  // Build map of date → jobs for this client
+  const jobsByDate = {}
+  jobs.forEach(j => {
+    if (!j.scheduled_date) return
+    if (!jobsByDate[j.scheduled_date]) jobsByDate[j.scheduled_date] = []
+    jobsByDate[j.scheduled_date].push(j)
+  })
+
+  // Calendar grid math
+  const firstDay = new Date(year, month, 1)
+  const lastDay  = new Date(year, month + 1, 0)
+  const startDow = firstDay.getDay()
+  const totalDays = lastDay.getDate()
+
+  const cells = []
+  for (let i = 0; i < startDow; i++) cells.push(null)
+  for (let d = 1; d <= totalDays; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push(iso)
+  }
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const prevMonth = () => { if (month === 0) { setYear(y => y - 1); setMonth(11) } else setMonth(m => m - 1) }
+  const nextMonth = () => { if (month === 11) { setYear(y => y + 1); setMonth(0) } else setMonth(m => m + 1) }
+
+  // Jobs to show in the event list below the calendar
+  const selectedDayJobs = selectedDate ? (jobsByDate[selectedDate] || []) : null
+  const listJobs = selectedDayJobs !== null ? selectedDayJobs : upcomingJobs
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      {/* Mini month calendar */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        {/* Month nav */}
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={prevMonth} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-semibold text-gray-800">{MONTH_NAMES[month]} {year}</span>
+          <button onClick={nextMonth} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Day headers */}
+        <div className="grid grid-cols-7 mb-1">
+          {MINI_DAYS.map(d => (
+            <div key={d} className="text-center text-[10px] font-medium text-gray-400 py-1">{d}</div>
+          ))}
+        </div>
+
+        {/* Day grid */}
+        <div className="grid grid-cols-7 gap-0.5">
+          {cells.map((date, i) => {
+            if (!date) return <div key={i} className="h-9" />
+
+            const dayNum = parseInt(date.slice(8))
+            const isToday = date === todayStr
+            const isSelected = date === selectedDate
+            const dayJobs = jobsByDate[date] || []
+            const hasJobs = dayJobs.length > 0
+
+            return (
+              <button
+                key={date}
+                onClick={() => setSelectedDate(selectedDate === date ? null : date)}
+                className={`h-9 flex flex-col items-center justify-center rounded-lg text-xs transition-all relative ${
+                  isSelected
+                    ? 'bg-gray-900 text-white'
+                    : isToday
+                    ? 'bg-sky-50 text-sky-700 font-semibold'
+                    : hasJobs
+                    ? 'hover:bg-gray-100 text-gray-800 font-medium'
+                    : 'hover:bg-gray-50 text-gray-400'
+                }`}
+              >
+                {dayNum}
+                {/* Job indicator dots */}
+                {hasJobs && (
+                  <div className="flex gap-0.5 mt-0.5">
+                    {dayJobs.slice(0, 3).map((j, idx) => (
+                      <span
+                        key={idx}
+                        className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white/70' : (JOB_TYPE_DOT[j.job_type] || 'bg-blue-500')}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center justify-center gap-4 mt-3 pt-3 border-t border-gray-100">
+          {Object.entries(JOB_TYPE_DOT).map(([type, color]) => (
+            <span key={type} className="flex items-center gap-1 text-[10px] text-gray-400">
+              <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+              {JOB_TYPE_LABEL[type]}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Event list */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            {selectedDate
+              ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+              : 'Upcoming Cleanings'}
+          </h3>
+          {selectedDate && (
+            <button onClick={() => setSelectedDate(null)} className="text-[10px] text-gray-400 hover:text-gray-600">
+              Show all upcoming
+            </button>
+          )}
+        </div>
+
+        {listJobs.length === 0 ? (
+          <div className="text-center py-10 bg-white border border-gray-200 rounded-xl">
+            <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+            <p className="text-sm text-gray-400">
+              {selectedDate ? 'No cleanings on this day' : 'No upcoming cleanings'}
+            </p>
+            <button onClick={() => navigate(`/scheduling?client_id=${clientId}`)}
+              className="mt-3 text-xs text-sky-600 hover:text-sky-700 font-medium">
+              + Schedule a cleaning
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {listJobs.map(j => {
+              const dotColor = JOB_TYPE_DOT[j.job_type] || 'bg-blue-500'
+              const statusPill = STATUS_PILL[j.status] || STATUS_PILL.scheduled
+              const isPast = j.scheduled_date < todayStr
+
+              return (
+                <div key={j.id} className={`bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-gray-300 ${isPast ? 'opacity-60' : ''}`}>
+                  {/* Color bar */}
+                  <div className={`w-1 self-stretch rounded-full shrink-0 ${dotColor}`} />
+
+                  {/* Date block */}
+                  <div className="text-center w-12 shrink-0 pt-0.5">
+                    <div className="text-xs font-bold text-gray-800">
+                      {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                    </div>
+                  </div>
+
+                  {/* Job info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm text-gray-900 truncate">{j.title}</div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {j.start_time} – {j.end_time}
+                      </span>
+                      <span className="text-[10px] text-gray-300">|</span>
+                      <span>{JOB_TYPE_LABEL[j.job_type] || j.job_type}</span>
+                    </div>
+                    {j.address && (
+                      <div className="flex items-center gap-1 mt-1 text-[11px] text-gray-400 truncate">
+                        <MapPin className="w-3 h-3 shrink-0" />{j.address}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status + indicators */}
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${statusPill}`}>
+                      {j.status?.replace('_', ' ')}
+                    </span>
+                    <div className="flex gap-1">
+                      {j.calendar_invite_sent && <span title="On Google Calendar" className="text-[10px] text-indigo-400">G</span>}
+                      {j.dispatched && <span title="Dispatched" className="text-[10px] text-emerald-500">D</span>}
+                      {j.sms_reminder_sent && <span title="SMS sent" className="text-[10px] text-green-400">S</span>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
