@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import AgentWidget from '../components/AgentWidget'
-import { del, get } from "../api"
+import { del, get, post, patch } from "../api"
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
@@ -99,11 +99,12 @@ export default function ClientProfile() {
 
   const saveProp = async () => {
     setSavingProp(true)
-    const method = editingProp ? 'PATCH' : 'POST'
-    const url = editingProp ? `/api/properties/${editingProp.id}` : '/api/properties'
-    const body = editingProp ? propForm : { ...propForm, client_id: parseInt(id) }
-    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (r.ok) { await load(); setShowPropForm(false); setEditingProp(null) }
+    try {
+      const url = editingProp ? `/api/properties/${editingProp.id}` : '/api/properties'
+      const body = editingProp ? propForm : { ...propForm, client_id: parseInt(id) }
+      editingProp ? await patch(url, body) : await post(url, body)
+      await load(); setShowPropForm(false); setEditingProp(null)
+    } catch {}
     setSavingProp(false)
   }
 
@@ -120,27 +121,23 @@ export default function ClientProfile() {
 
   const save = async () => {
     setSaving(true)
-    const payload = { ...form }
-    // derive name from first/last if set
-    const parts = [payload.first_name, payload.last_name].filter(Boolean).join(' ')
-    if (parts) payload.name = parts
-    const r = await fetch(`/api/clients/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (r.ok) { await load(); setEditing(false) }
+    try {
+      const payload = { ...form }
+      // derive name from first/last if set
+      const parts = [payload.first_name, payload.last_name].filter(Boolean).join(' ')
+      if (parts) payload.name = parts
+      await patch(`/api/clients/${id}`, payload)
+      await load(); setEditing(false)
+    } catch {}
     setSaving(false)
   }
 
   const sendSms = async () => {
     if (!smsText.trim() || !client?.phone) return
     setSending(true)
-    await fetch('/api/comms/sms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: client.phone, body: smsText, client_id: parseInt(id) }),
-    })
+    try {
+      await post('/api/comms/sms', { to: client.phone, body: smsText, client_id: parseInt(id) })
+    } catch {}
     setSmsText('')
     await load()
     setSending(false)
@@ -380,7 +377,7 @@ export default function ClientProfile() {
                   <div className="flex gap-2">
                     {[['residential','Residential'],['commercial','Commercial'],['str','STR / Airbnb']].map(([val, label]) => (
                       <button key={val} onClick={() => setPropForm(f => ({ ...f, property_type: val }))}
-                        className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${propForm.property_type === val ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                        className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${propForm.property_type === val ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
                         {label}
                       </button>
                     ))}
@@ -636,7 +633,7 @@ export default function ClientProfile() {
                 <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
                     m.direction === 'outbound'
-                      ? 'bg-sky-600 text-gray-900 rounded-br-sm'
+                      ? 'bg-gray-900 text-white rounded-br-sm'
                       : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                   }`}>
                     <div>{m.body}</div>

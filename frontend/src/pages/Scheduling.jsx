@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Plus, X, MapPin, Calendar, MessageSquare, Download, RefreshCw, CheckCircle, LayoutList, ExternalLink, Home, Repeat2, ChevronDown } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
 import AgentWidget from '../components/AgentWidget'
-import { del, get } from "../api"
+import { del, get, post, patch } from "../api"
 
 
 const TYPE_CONFIG = {
@@ -111,9 +111,7 @@ export default function Scheduling() {
   const pushToGcal = async (jobId) => {
     setLoading(jobId, 'gcal', true)
     try {
-      const r = await fetch(`/api/reminders/jobs/${jobId}/gcal`, { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Failed')
+      const data = await post(`/api/reminders/jobs/${jobId}/gcal`)
       showToast(`Added to Google Calendar${data.client_invited ? ' — client invited!' : ''}`)
       load()
     } catch (e) {
@@ -125,9 +123,7 @@ export default function Scheduling() {
   const sendReminder = async (jobId) => {
     setLoading(jobId, 'sms', true)
     try {
-      const r = await fetch(`/api/reminders/jobs/${jobId}/sms-reminder`, { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Failed')
+      const data = await post(`/api/reminders/jobs/${jobId}/sms-reminder`)
       showToast('SMS reminder sent!')
       load()
     } catch (e) {
@@ -139,9 +135,7 @@ export default function Scheduling() {
   const syncFromGcal = async () => {
     setSyncing(true)
     try {
-      const r = await fetch('/api/jobs/sync-gcal', { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Sync failed')
+      const data = await post('/api/jobs/sync-gcal')
       showToast(data.message || `Synced ${data.synced} job(s) from Google Calendar`)
       load()
     } catch (e) {
@@ -153,8 +147,7 @@ export default function Scheduling() {
   const pushAll = async () => {
     setPushing(true)
     try {
-      const r = await fetch('/api/reminders/push-upcoming-to-gcal', { method: 'POST' })
-      const data = await r.json()
+      const data = await post('/api/reminders/push-upcoming-to-gcal')
       showToast(`${data.pushed} job${data.pushed !== 1 ? 's' : ''} pushed to Google Calendar`)
       load()
     } catch (e) {
@@ -164,7 +157,7 @@ export default function Scheduling() {
   }
 
   const updateStatus = async (id, status) => {
-    await fetch(`/api/jobs/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
+    await patch(`/api/jobs/${id}`, { status })
     load()
   }
 
@@ -179,22 +172,19 @@ export default function Scheduling() {
   const save = async () => {
     setSaving(true)
     try {
-      const method = selected ? 'PATCH' : 'POST'
       const url = selected ? `/api/jobs/${selected.id}` : '/api/jobs'
       const body = {
         ...form,
         client_id: parseInt(form.client_id),
         property_id: form.property_id ? parseInt(form.property_id) : null,
       }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error()
-      const saved = await r.json()
+      const saved = selected ? await patch(url, body) : await post(url, body)
       await load()
       setCalRefresh(n => n + 1)
       setShowForm(false)
       // Auto-push new jobs to Google Calendar in the background
       if (!selected) {
-        fetch(`/api/reminders/jobs/${saved.id}/gcal`, { method: 'POST' })
+        post(`/api/reminders/jobs/${saved.id}/gcal`)
           .then(() => showToast('Job saved & added to Google Calendar'))
           .catch(() => showToast('Job saved (Google Cal push failed)'))
       } else {
@@ -255,19 +245,9 @@ export default function Scheduling() {
         day_of_month: recurringForm.frequency === 'monthly' ? parseInt(recurringForm.day_of_month) : null,
         generate_weeks_ahead: parseInt(recurringForm.generate_weeks_ahead),
       }
-      const r = await fetch('/api/recurring', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) throw new Error()
-      const sched = await r.json()
+      const sched = await post('/api/recurring', body)
       // Link this job to the new schedule
-      await fetch(`/api/jobs/${selected.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recurring_schedule_id: sched.id }),
-      })
+      await patch(`/api/jobs/${selected.id}`, { recurring_schedule_id: sched.id })
       await load()
       setCalRefresh(n => n + 1)
       setRecurringPanel(false)
@@ -329,7 +309,7 @@ export default function Scheduling() {
         {/* Toast */}
         {toast && (
           <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl text-sm shadow-lg border transition-all ${
-            toast.ok ? 'bg-green-900/90 border-green-600 text-green-300' : 'bg-red-900/90 border-red-600 text-red-300'
+            toast.ok ? 'bg-white border-green-200 text-green-700' : 'bg-white border-red-200 text-red-700'
           }`}>
             {toast.ok ? <CheckCircle className="w-4 h-4 shrink-0" /> : <X className="w-4 h-4 shrink-0" />}
             {toast.msg}
@@ -633,7 +613,7 @@ export default function Scheduling() {
                 {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
                   <button key={key} onClick={() => setForm(f => ({ ...f, job_type: key }))}
                     className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${
-                      form.job_type === key ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                      form.job_type === key ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
                     }`}>
                     {cfg.label}
                   </button>
@@ -736,7 +716,7 @@ export default function Scheduling() {
                           <div className="flex gap-1.5">
                             {['weekly','biweekly','monthly'].map(f => (
                               <button key={f} onClick={() => setRecurringForm(rf => ({ ...rf, frequency: f }))}
-                                className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${recurringForm.frequency === f ? 'bg-sky-600 text-gray-900' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}>
+                                className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${recurringForm.frequency === f ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}>
                                 {f}
                               </button>
                             ))}
@@ -750,7 +730,7 @@ export default function Scheduling() {
                             <div className="grid grid-cols-7 gap-1">
                               {['M','T','W','T','F','S','S'].map((d, i) => (
                                 <button key={i} onClick={() => setRecurringForm(rf => ({ ...rf, day_of_week: i }))}
-                                  className={`py-1.5 rounded text-xs font-medium transition-colors ${parseInt(recurringForm.day_of_week) === i ? 'bg-sky-600 text-gray-900' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}>
+                                  className={`py-1.5 rounded text-xs font-medium transition-colors ${parseInt(recurringForm.day_of_week) === i ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}>
                                   {d}
                                 </button>
                               ))}

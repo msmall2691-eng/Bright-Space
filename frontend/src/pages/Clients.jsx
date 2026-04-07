@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import AgentWidget from '../components/AgentWidget'
-import { del, get } from "../api"
+import { del, get, post, patch, upload } from "../api"
 
 
 const STATUS_COLORS = {
@@ -42,13 +42,8 @@ export default function Clients() {
     setSaving(true)
     setSaveError('')
     try {
-      const method = selected ? 'PATCH' : 'POST'
       const url = selected ? `/api/clients/${selected.id}` : '/api/clients'
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}))
-        throw new Error(err.detail || `Server error ${r.status}`)
-      }
+      selected ? await patch(url, form) : await post(url, form)
       await load()
       setShowForm(false)
       setSelected(null)
@@ -70,9 +65,7 @@ export default function Clients() {
     const fd = new FormData()
     fd.append('file', f)
     try {
-      const r = await fetch('/api/clients/import-xlsx', { method: 'POST', body: fd })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Import failed')
+      const data = await upload('/api/clients/import-xlsx', fd)
       setImportResult(data)
       await load()
     } catch (err) {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { get } from "../api"
+import { get, post, patch } from "../api"
 
 
 const QUOTE_STATUS_COLORS = {
@@ -112,11 +112,12 @@ export default function Quoting() {
     if (!form.client_id) return
     setSaving(true)
     try {
-      const method = selected ? 'PATCH' : 'POST'
-      const url = selected ? `/api/quotes/${selected.id}` : '/api/quotes'
       const body = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error()
+      if (selected) {
+        await patch(`/api/quotes/${selected.id}`, body)
+      } else {
+        await post('/api/quotes', body)
+      }
       await loadQuotes(); await loadIntakes()
       setPanel(null)
       showToast(selected ? 'Quote updated' : 'Quote created')
@@ -128,12 +129,7 @@ export default function Quoting() {
     if (!selected) return
     setSending(true)
     try {
-      const r = await fetch(`/api/quotes/${selected.id}/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sendForm)
-      })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Send failed')
+      const data = await post(`/api/quotes/${selected.id}/send`, sendForm)
       const channels = Object.entries(data.results || {})
         .filter(([, v]) => v === 'sent').map(([k]) => k)
       showToast(`Quote sent via ${channels.join(' & ')} ✓`)
@@ -144,21 +140,19 @@ export default function Quoting() {
   }
 
   const updateStatus = async (id, status) => {
-    await fetch(`/api/quotes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
+    await patch(`/api/quotes/${id}`, { status })
     loadQuotes()
   }
 
   const markIntakeReviewed = async (id) => {
-    await fetch(`/api/intake/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'reviewed' }) })
+    await patch(`/api/intake/${id}`, { status: 'reviewed' })
     loadIntakes()
   }
 
   const convertToJob = async (quoteId) => {
     setConverting(quoteId)
     try {
-      const r = await fetch(`/api/quotes/${quoteId}/convert-to-job`, { method: 'POST' })
-      if (!r.ok) throw new Error()
-      const job = await r.json()
+      const job = await post(`/api/quotes/${quoteId}/convert-to-job`)
       showToast('Job created — set the date in Scheduling')
       navigate(`/scheduling`)
     } catch { showToast('Error converting to job') }
@@ -235,7 +229,7 @@ export default function Quoting() {
                     )}
                     {intake.status !== 'converted' && (
                       <button onClick={() => { openQuoteForm(null, intake); setTab('quotes') }}
-                        className="text-xs px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-gray-900 rounded-lg transition-colors flex items-center gap-1">
+                        className="text-xs px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors flex items-center gap-1">
                         <Plus className="w-3 h-3" /> Create Quote
                       </button>
                     )}
@@ -291,7 +285,7 @@ export default function Quoting() {
                     )}
                     {q.status === 'accepted' && (
                       <button onClick={() => convertToJob(q.id)} disabled={converting === q.id}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-200 text-gray-900 rounded-lg transition-colors">
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-200 disabled:text-gray-400 rounded-lg transition-colors">
                         <Calendar className="w-3 h-3" />
                         {converting === q.id ? 'Converting…' : 'Schedule Job'}
                       </button>
@@ -333,7 +327,7 @@ export default function Quoting() {
               <div className="flex gap-2">
                 {SERVICE_TYPES.map(t => (
                   <button key={t} onClick={() => setForm(f => ({ ...f, service_type: t }))}
-                    className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors ${form.service_type === t ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors ${form.service_type === t ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
                     {t === 'str' ? 'STR / Vacation' : t}
                   </button>
                 ))}
@@ -467,7 +461,7 @@ export default function Quoting() {
                   { id: 'both', label: 'Both', icon: Send },
                 ].map(({ id, label, icon: Icon }) => (
                   <button key={id} onClick={() => setSendForm(f => ({ ...f, channel: id }))}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${sendForm.channel === id ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${sendForm.channel === id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
                     <Icon className="w-3.5 h-3.5" />{label}
                   </button>
                 ))}

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { get, post, patch } from "../api"
 import {
-import { get } from "../api"
-
   Globe, ArrowRight, FileText, Calendar, CheckCircle, Clock, Eye,
   Phone, Mail, MapPin, Home, Users, ChevronDown, ChevronUp, Plus,
   RefreshCw, X, Bed, Bath, Ruler, CalendarDays
@@ -237,11 +236,7 @@ export default function Pipeline() {
 
   const advanceStatus = async (intakeId, newStatus) => {
     try {
-      await fetch(`/api/intake/${intakeId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      })
+      await patch(`/api/intake/${intakeId}`, { status: newStatus })
       await loadData()
       showToast(`Moved to ${newStatus}`)
     } catch { showToast('Error updating status') }
@@ -262,8 +257,7 @@ export default function Pipeline() {
 
   const convertToJob = async (quoteId) => {
     try {
-      const r = await fetch(`/api/quotes/${quoteId}/convert-to-job`, { method: 'POST' })
-      if (!r.ok) throw new Error()
+      await post(`/api/quotes/${quoteId}/convert-to-job`)
       showToast('Job created — set the date in Scheduling')
       await loadData()
     } catch { showToast('Error converting to job') }

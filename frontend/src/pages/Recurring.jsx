@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, Calendar, CheckCircle, MapPin, Home, AlertCircle } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { get } from "../api"
+import { get, post, patch } from "../api"
 
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -76,11 +76,7 @@ export default function Recurring() {
         day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
         generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
       }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}))
-        throw new Error(err.detail || `Server error ${r.status}`)
-      }
+      selected ? await patch(url, body) : await post(url, body)
       await load()
       setShowForm(false)
       setSelected(null)
@@ -93,8 +89,7 @@ export default function Recurring() {
   const generateJobs = async (id) => {
     setGenerating(id)
     setGenResult(null)
-    const r = await fetch(`/api/recurring/${id}/generate`, { method: 'POST' })
-    const data = await r.json()
+    const data = await post(`/api/recurring/${id}/generate`)
     setGenResult({ id, ...data })
     setGenerating(null)
     await load()
@@ -103,18 +98,14 @@ export default function Recurring() {
   const generateAll = async () => {
     setGenerating('all')
     setGenResult(null)
-    const r = await fetch('/api/recurring/generate-all', { method: 'POST' })
-    const data = await r.json()
+    const data = await post('/api/recurring/generate-all')
     setGenResult({ id: 'all', ...data })
     setGenerating(null)
     await load()
   }
 
   const toggleActive = async (s) => {
-    await fetch(`/api/recurring/${s.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active: !s.active })
-    })
+    await patch(`/api/recurring/${s.id}`, { active: !s.active })
     load()
   }
 
@@ -273,7 +264,7 @@ export default function Recurring() {
               <div className="flex gap-2">
                 {[['residential','Residential'],['commercial','Commercial'],['str_turnover','STR']].map(([val, label]) => (
                   <button key={val} onClick={() => setForm(f => ({ ...f, job_type: val }))}
-                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.job_type === val ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.job_type === val ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                     {label}
                   </button>
                 ))}
@@ -294,7 +285,7 @@ export default function Recurring() {
               <div className="flex gap-2">
                 {['weekly', 'biweekly', 'monthly'].map(f => (
                   <button key={f} onClick={() => setForm(fm => ({ ...fm, frequency: f }))}
-                    className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${form.frequency === f ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                    className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${form.frequency === f ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
                     {f}
                   </button>
                 ))}

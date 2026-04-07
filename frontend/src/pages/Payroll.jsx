@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Search, Download, Clock, Car } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import { get } from '../api'
 
 export default function Payroll() {
   const [tab, setTab] = useState('timesheets')
@@ -15,9 +16,8 @@ export default function Payroll() {
     setLoading(true); setError(''); setData(null)
     try {
       const endpoint = tab === 'timesheets' ? 'timesheets' : 'mileage'
-      const r = await fetch(`/api/payroll/${endpoint}?start_date=${startDate}&end_date=${endDate}`)
-      if (!r.ok) throw new Error((await r.json()).detail || 'Error')
-      setData(await r.json())
+      const data = await get(`/api/payroll/${endpoint}?start_date=${startDate}&end_date=${endDate}`)
+      setData(data)
     } catch (e) {
       setError(String(e.message || e))
     }

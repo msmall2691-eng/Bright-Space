@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2 } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { del, get } from "../api"
+import { del, get, post, patch } from "../api"
 
 
 const ENTITY_TABS = [
@@ -103,9 +103,7 @@ export default function Settings() {
       }
       const isNew = panel === 'new'
       const url = isNew ? '/api/fields' : `/api/fields/${panel}`
-      const method = isNew ? 'POST' : 'PATCH'
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      if (!r.ok) throw new Error()
+      isNew ? await post(url, payload) : await patch(url, payload)
       await load()
       toast(isNew ? 'Field created' : 'Field updated')
       closePanel()
@@ -117,8 +115,7 @@ export default function Settings() {
 
   const deleteField = async (id) => {
     try {
-      const r = await del(`/api/fields/${id}`)
-      if (!r.ok) throw new Error()
+      await del(`/api/fields/${id}`)
       await load()
       if (panel === id) closePanel()
       toast('Field deleted')

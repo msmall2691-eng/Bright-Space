@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { get } from "../api"
+import { get, post, patch } from "../api"
 
 
 const EMPTY = {
@@ -32,11 +32,9 @@ export default function Properties() {
   const save = async () => {
     setSaving(true)
     try {
-      const method = selected ? 'PATCH' : 'POST'
       const url = selected ? `/api/properties/${selected.id}` : '/api/properties'
       const body = { ...form, client_id: parseInt(form.client_id), default_duration_hours: parseFloat(form.default_duration_hours) }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error()
+      selected ? await patch(url, body) : await post(url, body)
       await load()
       setShowForm(false)
       setSelected(null)
@@ -49,9 +47,8 @@ export default function Properties() {
     setSyncing(id)
     setSyncResult(null)
     try {
-      const r = await fetch(`/api/properties/${id}/sync`, { method: 'POST' })
-      const data = await r.json()
-      setSyncResult({ id, ...data, ok: r.ok })
+      const data = await post(`/api/properties/${id}/sync`)
+      setSyncResult({ id, ...data, ok: true })
       await load()
     } catch (e) {
       setSyncResult({ id, ok: false, error: String(e) })
@@ -63,9 +60,8 @@ export default function Properties() {
     setSyncing('all')
     setSyncResult(null)
     try {
-      const r = await fetch('/api/properties/sync-all', { method: 'POST' })
-      const data = await r.json()
-      setSyncResult({ id: 'all', ...data, ok: r.ok })
+      const data = await post('/api/properties/sync-all')
+      setSyncResult({ id: 'all', ...data, ok: true })
       await load()
     } catch (e) {
       setSyncResult({ id: 'all', ok: false, error: String(e) })

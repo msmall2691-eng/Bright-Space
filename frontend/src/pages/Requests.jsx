@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { get, patch } from '../api'
+import { get, post, patch } from '../api'
 import AgentWidget from '../components/AgentWidget'
 import {
   Inbox, Globe, ArrowRight, FileText, Calendar, CheckCircle, Clock, Eye,
@@ -453,11 +453,7 @@ function AddRequestModal({ onClose, onSaved }) {
     if (!form.name.trim()) return
     setSaving(true)
     try {
-      await fetch('/api/intake/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
+      await post('/api/intake/submit', form)
       onSaved()
     } catch { }
     setSaving(false)
@@ -593,8 +589,7 @@ export default function Requests() {
 
   const convertToJob = async (quoteId) => {
     try {
-      const r = await fetch(`/api/quotes/${quoteId}/convert-to-job`, { method: 'POST' })
-      if (!r.ok) throw new Error()
+      await post(`/api/quotes/${quoteId}/convert-to-job`)
       showToast('Job created — set the date in Scheduling')
       await loadData()
     } catch { showToast('Error converting to job') }

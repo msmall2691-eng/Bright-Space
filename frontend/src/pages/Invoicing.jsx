@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { del, get } from "../api"
+import { del, get, post, patch } from "../api"
 
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -101,33 +101,29 @@ export default function Invoicing() {
   const save = async () => {
     setSaving(true)
     try {
-      const method = selected ? 'PATCH' : 'POST'
       const url    = selected ? `/api/invoices/${selected.id}` : '/api/invoices'
       const body   = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error()
+      selected ? await patch(url, body) : await post(url, body)
       await load(); toast(selected ? 'Invoice updated' : 'Invoice created'); setPanel(null)
     } catch { toast('Failed to save invoice', 'error') }
     setSaving(false)
   }
 
   const markPaid = async (id) => {
-    await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paid_at: new Date().toISOString() }) })
+    await patch(`/api/invoices/${id}`, { paid_at: new Date().toISOString() })
     await load(); toast('Marked as paid')
     if (selected?.id === id) setPanel(null)
   }
 
   const markOverdue = async (id) => {
-    await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'overdue' }) })
+    await patch(`/api/invoices/${id}`, { status: 'overdue' })
     await load(); toast('Marked as overdue')
   }
 
   const deleteInvoice = async () => {
     if (!selected) return; setDeleting(true)
     try {
-      const r = await del(`/api/invoices/${selected.id}`)
-      if (!r.ok) throw new Error()
+      await del(`/api/invoices/${selected.id}`)
       await load(); setPanel(null); toast('Invoice deleted')
     } catch { toast('Failed to delete invoice', 'error') }
     setDeleting(false)
@@ -136,10 +132,7 @@ export default function Invoicing() {
   const sendInvoice = async () => {
     if (!selected) return; setSending(true)
     try {
-      const r = await fetch(`/api/invoices/${selected.id}/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sendForm) })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Send failed')
+      const data = await post(`/api/invoices/${selected.id}/send`, sendForm)
       await load()
       const parts = Object.entries(data.results || {}).map(([ch, res]) => `${ch}: ${res}`).join(', ')
       toast(`Invoice sent — ${parts}`); setPanel(null)

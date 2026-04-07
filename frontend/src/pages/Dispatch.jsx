@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Send, AlertCircle, CheckCircle, Users, Calendar, MapPin, Clock, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import AgentWidget from '../components/AgentWidget'
-import { get, post } from "../api"
+import { get, post } from '../api'
 
 
 export default function Dispatch() {
@@ -33,12 +33,9 @@ export default function Dispatch() {
     setDispatching(jobId)
     setResult(null)
     try {
-      const r = await fetch(`/api/dispatch/jobs/${jobId}/dispatch`, { method: 'POST' })
-      const data = await r.json()
-      setResult({ jobId, ...data, ok: r.ok })
-      if (r.ok) {
-        setJobs(prev => prev.map(j => j.id === jobId ? { ...j, dispatched: true } : j))
-      }
+      const data = await post(`/api/dispatch/jobs/${jobId}/dispatch`)
+      setResult({ jobId, ...data, ok: true })
+      setJobs(prev => prev.map(j => j.id === jobId ? { ...j, dispatched: true } : j))
     } catch (e) {
       setResult({ jobId, ok: false, detail: String(e) })
     }
