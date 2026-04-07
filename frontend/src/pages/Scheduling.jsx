@@ -305,19 +305,26 @@ export default function Scheduling() {
 
       {/* Sync result banner */}
       {syncResult && (
-        <div className={`mx-4 lg:mx-6 mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs border ${
+        <div className={`mx-4 lg:mx-6 mt-2 rounded-lg px-3 py-2 text-xs border ${
           syncResult.error
             ? 'bg-red-50 border-red-200 text-red-700'
             : 'bg-emerald-50 border-emerald-200 text-emerald-700'
         }`}>
-          {syncResult.error ? (
-            <><AlertCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.error}</>
-          ) : (
-            <><CheckCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.message}</>
+          <div className="flex items-center gap-2">
+            {syncResult.error ? (
+              <><AlertCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.error}</>
+            ) : (
+              <><CheckCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.message}</>
+            )}
+            <button onClick={() => setSyncResult(null)} className="ml-auto opacity-60 hover:opacity-100">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          {syncResult.unmatched > 0 && (
+            <p className="mt-1 text-[10px] opacity-75">
+              {syncResult.unmatched} event(s) couldn't be matched to a client — add their email as attendee or use a known address in the location field.
+            </p>
           )}
-          <button onClick={() => setSyncResult(null)} className="ml-auto opacity-60 hover:opacity-100">
-            <X className="w-3 h-3" />
-          </button>
         </div>
       )}
 

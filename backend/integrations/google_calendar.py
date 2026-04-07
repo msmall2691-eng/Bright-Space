@@ -111,6 +111,20 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False) -> di
     if include_attendees and client.get("email"):
         event["attendees"] = [{"email": client["email"], "displayName": client.get("name", "")}]
 
+    # Store BrightBase metadata as extendedProperties so the sync engine
+    # can identify which client/property this event belongs to.
+    # These are invisible in the GCal UI but queryable via API.
+    ext_private = {"brightbase_source": "true"}
+    if job.get("id"):
+        ext_private["brightbase_job_id"] = str(job["id"])
+    if client.get("id"):
+        ext_private["brightbase_client_id"] = str(client["id"])
+    if job.get("property_id"):
+        ext_private["brightbase_property_id"] = str(job["property_id"])
+    if job.get("job_type"):
+        ext_private["brightbase_job_type"] = job["job_type"]
+    event["extendedProperties"] = {"private": ext_private}
+
     return event
 
 

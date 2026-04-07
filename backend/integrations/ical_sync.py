@@ -153,8 +153,10 @@ def sync_property(db: Session, prop: Property) -> dict:
                     "scheduled_date": checkout, "start_time": start_time,
                     "end_time": end_time, "address": prop.address,
                     "notes": f"Guest checkout. Booking: {summary}",
+                    "property_id": prop.id,
                 }
                 client_dict = {
+                    "id": prop.client_id,
                     "name": client_name,
                     "email": getattr(client, "email", None) if client else None,
                 }
