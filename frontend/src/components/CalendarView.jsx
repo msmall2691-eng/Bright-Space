@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Calendar, Home, Users, Briefcase } from 'lucide-react'
-import { get } from "../api"
+import { get, patch } from "../api"
 
 
 const TYPE_CONFIG = {
@@ -35,6 +35,10 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
   const [jobs,       setJobs]       = useState([])
   const [icalEvents, setIcalEvents] = useState([])
   const [selected,   setSelected]   = useState(null)    // YYYY-MM-DD
+
+  // Drag-and-drop state
+  const [draggingJob, setDraggingJob] = useState(null)
+  const [dropTarget, setDropTarget]   = useState(null)
 
   const today = now.toISOString().slice(0, 10)
 
@@ -76,6 +80,48 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
   const prev = () => { if (month === 0) { setYear(y => y - 1); setMonth(11) } else setMonth(m => m - 1) }
   const next = () => { if (month === 11) { setYear(y => y + 1); setMonth(0) } else setMonth(m => m + 1) }
   const goToday = () => { setYear(now.getFullYear()); setMonth(now.getMonth()); setSelected(today) }
+
+  // Drag-and-drop handlers
+  const onDragStart = (e, job) => {
+    setDraggingJob(job)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', JSON.stringify({ jobId: job.id }))
+    // Make drag image slightly transparent
+    if (e.target) e.target.style.opacity = '0.5'
+  }
+  const onDragEnd = (e) => {
+    if (e.target) e.target.style.opacity = '1'
+    setDraggingJob(null)
+    setDropTarget(null)
+  }
+  const onDragOver = (e, date) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dropTarget !== date) setDropTarget(date)
+  }
+  const onDragLeave = () => {
+    setDropTarget(null)
+  }
+  const onDrop = async (e, targetDate) => {
+    e.preventDefault()
+    setDropTarget(null)
+    if (!draggingJob) return
+    if (draggingJob.scheduled_date === targetDate) { setDraggingJob(null); return }
+    // Optimistically update local state
+    const jobId = draggingJob.id
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
+    setDraggingJob(null)
+    // Persist to backend (BrightBase is source of truth — this also syncs to GCal)
+    try {
+      await patch(`/api/jobs/${jobId}`, { scheduled_date: targetDate })
+    } catch (err) {
+      console.error('[CalendarView] Reschedule failed:', err)
+      // Revert on failure by re-fetching
+      get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
+        .then(d => setJobs(Array.isArray(d) ? d : []))
+        .catch(() => {})
+    }
+  }
 
   // Build calendar grid
   const startDow = firstDay.getDay()  // 0=Sun
@@ -141,11 +187,17 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
             const isCheckout = icalEvents.some(e => e.checkout_date === date)
             const isCheckin  = icalEvents.some(e => e.checkin_date  === date)
 
+            const isDropTarget = dropTarget === date
+
             return (
               <div
                 key={date}
                 onClick={() => { setSelected(date); onDayClick?.(date) }}
+                onDragOver={e => onDragOver(e, date)}
+                onDragLeave={onDragLeave}
+                onDrop={e => onDrop(e, date)}
                 className={`relative p-1.5 min-h-[80px] cursor-pointer transition-colors ${
+                  isDropTarget ? 'bg-sky-800/60 ring-2 ring-sky-400 ring-inset' :
                   isSelected ? 'bg-sky-900/40' :
                   dayBookings.length > 0 ? 'bg-orange-950/30 hover:bg-orange-950/40' :
                   'bg-gray-900 hover:bg-gray-800/80'
@@ -176,9 +228,12 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey }) {
                     return (
                       <div
                         key={j.id}
+                        draggable
+                        onDragStart={e => onDragStart(e, j)}
+                        onDragEnd={onDragEnd}
                         onClick={e => { e.stopPropagation(); onJobClick?.(j) }}
-                        className={`text-[10px] px-1.5 py-0.5 rounded border truncate leading-tight cursor-pointer hover:opacity-80 ${tc.pill}`}
-                        title={j.title}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing hover:opacity-80 ${tc.pill}`}
+                        title={`${j.title} — drag to reschedule`}
                       >
                         {j.start_time} {j.title}
                       </div>

@@ -152,6 +152,16 @@ export default function ClientProfile() {
   const outstanding = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.total || 0), 0)
   const completedJobs = jobs.filter(j => j.status === 'completed').length
 
+  // Upcoming and past cleanings
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const upcomingJobs = jobs
+    .filter(j => j.scheduled_date >= todayStr && j.status !== 'cancelled')
+    .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date) || (a.start_time || '').localeCompare(b.start_time || ''))
+  const pastJobs = jobs
+    .filter(j => j.scheduled_date < todayStr || j.status === 'cancelled')
+    .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))
+  const nextJob = upcomingJobs[0] || null
+
   // Build activity feed (all records sorted by date)
   const activity = [
     ...jobs.map(j => ({ type: 'job', date: j.created_at, data: j })),
@@ -226,11 +236,11 @@ export default function ClientProfile() {
         {/* Stats row */}
         <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-gray-200">
           {[
-            { label: 'Total Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-400' },
-            { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-yellow-400' : 'text-gray-400' },
-            { label: 'Jobs Completed', value: completedJobs, color: 'text-gray-900' },
-            { label: 'Total Jobs', value: jobs.length, color: 'text-gray-900' },
-            { label: 'Source', value: client.source || '—', color: 'text-gray-400' },
+            { label: 'Next Cleaning', value: nextJob ? new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'None', color: nextJob ? 'text-sky-600' : 'text-gray-400' },
+            { label: 'Upcoming', value: upcomingJobs.length, color: upcomingJobs.length > 0 ? 'text-sky-600' : 'text-gray-400' },
+            { label: 'Completed', value: completedJobs, color: 'text-gray-900' },
+            { label: 'Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-600' },
+            { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-amber-600' : 'text-gray-400' },
           ].map(s => (
             <div key={s.label}>
               <div className="text-xs text-gray-500">{s.label}</div>
@@ -238,6 +248,32 @@ export default function ClientProfile() {
             </div>
           ))}
         </div>
+
+        {/* Upcoming cleanings banner */}
+        {upcomingJobs.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar className="w-4 h-4 text-sky-500" />
+              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Upcoming Cleanings</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {upcomingJobs.slice(0, 5).map(j => (
+                <div key={j.id} className="flex-shrink-0 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 min-w-[140px]">
+                  <div className="text-xs font-semibold text-sky-700">
+                    {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </div>
+                  <div className="text-[11px] text-sky-600 mt-0.5">{j.start_time} – {j.end_time}</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5 truncate">{j.title}</div>
+                </div>
+              ))}
+              {upcomingJobs.length > 5 && (
+                <button onClick={() => setTab('jobs')} className="flex-shrink-0 flex items-center text-xs text-sky-600 hover:text-sky-700 px-2">
+                  +{upcomingJobs.length - 5} more <ChevronRight className="w-3 h-3 ml-0.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick actions */}
@@ -546,24 +582,62 @@ export default function ClientProfile() {
 
         {/* Jobs */}
         {tab === 'jobs' && (
-          <div className="max-w-2xl space-y-2">
+          <div className="max-w-2xl space-y-5">
             {jobs.length === 0 && <p className="text-gray-500 text-sm text-center py-10">No jobs yet</p>}
-            {jobs.map(j => (
-              <div key={j.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
-                <div className="text-center w-16 shrink-0">
-                  <div className="text-sm font-medium text-gray-900">{j.start_time}</div>
-                  <div className="text-xs text-gray-500">{j.scheduled_date}</div>
+
+            {/* Upcoming */}
+            {upcomingJobs.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar className="w-4 h-4 text-sky-500" />
+                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Upcoming ({upcomingJobs.length})</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900">{j.title}</div>
-                  {j.address && <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
-                </div>
-                <div className="flex items-center gap-2">
-                  {j.dispatched && <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">Dispatched</span>}
-                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
+                <div className="space-y-2">
+                  {upcomingJobs.map(j => (
+                    <div key={j.id} className="bg-white border border-sky-200 rounded-xl p-4 flex items-center gap-4">
+                      <div className="text-center w-16 shrink-0">
+                        <div className="text-sm font-semibold text-sky-700">
+                          {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="text-xs text-sky-500">{j.start_time}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900">{j.title}</div>
+                        {j.address && <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {j.dispatched && <span className="text-xs bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">Dispatched</span>}
+                        <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
+
+            {/* Past */}
+            {pastJobs.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Past ({pastJobs.length})</p>
+                <div className="space-y-2">
+                  {pastJobs.map(j => (
+                    <div key={j.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+                      <div className="text-center w-16 shrink-0">
+                        <div className="text-sm font-medium text-gray-600">
+                          {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="text-xs text-gray-400">{j.start_time}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-600">{j.title}</div>
+                        {j.address && <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
+                      </div>
+                      <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
