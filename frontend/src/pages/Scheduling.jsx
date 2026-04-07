@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Plus, X, Calendar, Clock, MapPin, Users, ChevronDown,
-  CheckCircle, AlertCircle, Trash2, Edit3, Send, Repeat
+  CheckCircle, AlertCircle, Trash2, Edit3, Send, Repeat, RefreshCw
 } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
 import AgentWidget from '../components/AgentWidget'
@@ -58,6 +58,10 @@ export default function Scheduling() {
   const [deleting, setDeleting] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
 
+  // GCal sync
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
+
   // Mobile: toggle between calendar and list view
   const [mobileView, setMobileView] = useState('calendar')
   // Jobs for list view on mobile
@@ -87,6 +91,22 @@ export default function Scheduling() {
       .then(props => setClientProperties(Array.isArray(props) ? props : []))
       .catch(() => setClientProperties([]))
   }, [form.client_id])
+
+  // Sync from Google Calendar (GCal is source of truth)
+  const syncFromGCal = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const result = await post('/api/jobs/sync-gcal')
+      setSyncResult(result)
+      setRefreshKey(k => k + 1)
+    } catch (e) {
+      setSyncResult({ error: e.message || 'Sync failed' })
+    }
+    setSyncing(false)
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => setSyncResult(null), 5000)
+  }
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || ''
   const empName = (id) => {
@@ -251,12 +271,40 @@ export default function Scheduling() {
 
       {/* Desktop header */}
       <div className="hidden lg:flex items-center justify-between px-6 py-3 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900">Schedule</h2>
-        <button onClick={() => handleDayClick(new Date().toISOString().slice(0, 10))}
-          className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          <Plus className="w-4 h-4" /> New Job
-        </button>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-gray-900">Schedule</h2>
+          <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Synced with Google Calendar</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={syncFromGCal} disabled={syncing}
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg text-xs text-gray-600 transition-colors">
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync GCal'}
+          </button>
+          <button onClick={() => handleDayClick(new Date().toISOString().slice(0, 10))}
+            className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Plus className="w-4 h-4" /> New Job
+          </button>
+        </div>
       </div>
+
+      {/* Sync result banner */}
+      {syncResult && (
+        <div className={`mx-4 lg:mx-6 mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs border ${
+          syncResult.error
+            ? 'bg-red-50 border-red-200 text-red-700'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+        }`}>
+          {syncResult.error ? (
+            <><AlertCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.error}</>
+          ) : (
+            <><CheckCircle className="w-3.5 h-3.5 shrink-0" />{syncResult.message}</>
+          )}
+          <button onClick={() => setSyncResult(null)} className="ml-auto opacity-60 hover:opacity-100">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 relative">
         {/* Calendar view (desktop always, mobile toggled) */}

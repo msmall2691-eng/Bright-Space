@@ -177,25 +177,25 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
 @router.post("/push-to-gcal")
 def push_to_gcal(db: Session = Depends(get_db)):
     """
-    Push BrightBase jobs TO Google Calendar. BrightBase is the source of truth.
-    - Jobs without a GCal event get created on GCal.
-    - Jobs with a GCal event get updated on GCal.
+    Push any BrightBase jobs that don't yet have a GCal event.
+    Useful for backfilling jobs created before GCal was connected,
+    or if a GCal push failed during creation.
     """
     try:
-        from integrations.google_calendar import create_event, update_event
+        from integrations.google_calendar import create_event
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"GCal not configured: {e}")
 
     jobs = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.gcal_event_id.is_(None),
         Job.status.in_(["scheduled", "in_progress"]),
         Job.scheduled_date >= datetime.now(timezone.utc).strftime("%Y-%m-%d"),
     ).all()
 
     if not jobs:
-        return {"pushed": 0, "created": 0, "updated": 0, "message": "No upcoming jobs to push"}
+        return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
 
     created_count = 0
-    updated_count = 0
     errors = []
 
     for job in jobs:
@@ -207,32 +207,29 @@ def push_to_gcal(db: Session = Depends(get_db)):
             "end_time": job.end_time, "address": job.address, "notes": job.notes,
         }
         try:
-            if job.gcal_event_id:
-                update_event(job.gcal_event_id, job_dict, client_dict)
-                updated_count += 1
-            else:
-                event_id = create_event(job_dict, client_dict)
-                if event_id:
-                    job.calendar_invite_sent = True
-                    job.gcal_event_id = event_id
-                    created_count += 1
+            event_id = create_event(job_dict, client_dict)
+            if event_id:
+                job.calendar_invite_sent = True
+                job.gcal_event_id = event_id
+                created_count += 1
         except Exception as e:
             errors.append({"job_id": job.id, "error": str(e)})
 
     db.commit()
-    total = created_count + updated_count
     return {
-        "pushed": total, "created": created_count, "updated": updated_count,
-        "errors": errors, "message": f"Pushed {total} job(s) to Google Calendar"
+        "pushed": created_count, "errors": errors,
+        "message": f"Pushed {created_count} job(s) to Google Calendar"
     }
 
 
 @router.post("/sync-gcal")
 def sync_from_gcal(db: Session = Depends(get_db)):
     """
-    DEPRECATED: Use push-to-gcal instead. BrightBase is the source of truth.
-    This endpoint is kept for backwards compatibility but now only detects
-    GCal events that were deleted externally (unlinks them).
+    Pull changes FROM Google Calendar and update BrightBase jobs.
+    GCal is the source of truth for scheduling — if you reschedule
+    an event in GCal, this endpoint picks up the change.
+
+    Also detects events deleted in GCal and unlinks them.
     """
     try:
         from integrations.google_calendar import _get_service, _calendar_id
@@ -248,9 +245,11 @@ def sync_from_gcal(db: Session = Depends(get_db)):
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+    updated = 0
     unlinked = 0
     errors = []
 
+    # Group jobs by calendar ID to minimise API calls
     cal_jobs: dict = {}
     for job in jobs:
         cal_id = _calendar_id(job.job_type or "residential")
@@ -259,17 +258,65 @@ def sync_from_gcal(db: Session = Depends(get_db)):
     for cal_id, cal_job_list in cal_jobs.items():
         for job in cal_job_list:
             try:
-                service.events().get(calendarId=cal_id, eventId=job.gcal_event_id).execute()
+                event = service.events().get(calendarId=cal_id, eventId=job.gcal_event_id).execute()
             except Exception as e:
+                # Event was deleted in GCal
                 if "404" in str(e) or "410" in str(e):
                     job.gcal_event_id = None
                     job.calendar_invite_sent = False
                     unlinked += 1
                 else:
                     errors.append({"job_id": job.id, "error": str(e)})
+                continue
+
+            # If event was cancelled in GCal, mark job cancelled
+            if event.get("status") == "cancelled":
+                if job.status != "cancelled":
+                    job.status = "cancelled"
+                    job.gcal_event_id = None
+                    job.calendar_invite_sent = False
+                    unlinked += 1
+                continue
+
+            changed = False
+
+            # Sync title from GCal
+            gcal_title = event.get("summary", "").strip()
+            if gcal_title and gcal_title != job.title:
+                job.title = gcal_title
+                changed = True
+
+            # Sync date + times from GCal
+            start = event.get("start", {})
+            end = event.get("end", {})
+            if "dateTime" in start:
+                dt = datetime.fromisoformat(start["dateTime"].replace("Z", "+00:00"))
+                new_date = dt.strftime("%Y-%m-%d")
+                new_time = dt.strftime("%H:%M")
+                if new_date != job.scheduled_date:
+                    job.scheduled_date = new_date
+                    changed = True
+                if new_time != job.start_time:
+                    job.start_time = new_time
+                    changed = True
+            if "dateTime" in end:
+                dt = datetime.fromisoformat(end["dateTime"].replace("Z", "+00:00"))
+                new_time = dt.strftime("%H:%M")
+                if new_time != job.end_time:
+                    job.end_time = new_time
+                    changed = True
+
+            # Sync location from GCal
+            gcal_location = event.get("location", "").strip()
+            if gcal_location and gcal_location != (job.address or ""):
+                job.address = gcal_location
+                changed = True
+
+            if changed:
+                updated += 1
 
     db.commit()
     return {
-        "unlinked": unlinked, "errors": errors,
-        "message": f"Checked GCal links — unlinked {unlinked} deleted event(s). BrightBase is the source of truth."
+        "synced": updated, "unlinked": unlinked, "errors": errors,
+        "message": f"Synced {updated} job(s) from Google Calendar, unlinked {unlinked} deleted event(s)"
     }

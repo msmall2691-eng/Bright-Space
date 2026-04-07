@@ -6,6 +6,8 @@ Flow:
   2. Parse VEVENT blocks — each reservation is one or more events
   3. For each event: upsert ICalEvent row (property_id + uid unique constraint handles dedup)
   4. For events that don't have a Job yet and checkout is in the future: create a Job
+  5. Push new turnover jobs to Google Calendar (GCal is source of truth for scheduling)
+     — property owner gets the event as an invite in their calendar
 """
 
 import httpx
@@ -120,7 +122,7 @@ def sync_property(db: Session, prop: Property) -> dict:
             start_time = "10:00"
             end_time = _make_end_time(start_time, prop.default_duration_hours)
 
-            # Get client name for title
+            # Get client (property owner) for GCal invite
             client = db.query(Client).filter_by(id=prop.client_id).first()
             client_name = client.name if client else "Client"
 
@@ -141,6 +143,28 @@ def sync_property(db: Session, prop: Property) -> dict:
 
             event.job_id = job.id
             created_jobs += 1
+
+            # Push to Google Calendar — GCal is the source of truth.
+            # The property owner gets this as a calendar invite.
+            try:
+                from integrations.google_calendar import create_event
+                job_dict = {
+                    "id": job.id, "title": job.title, "job_type": "str_turnover",
+                    "scheduled_date": checkout, "start_time": start_time,
+                    "end_time": end_time, "address": prop.address,
+                    "notes": f"Guest checkout. Booking: {summary}",
+                }
+                client_dict = {
+                    "name": client_name,
+                    "email": getattr(client, "email", None) if client else None,
+                }
+                gcal_event_id = create_event(job_dict, client_dict)
+                if gcal_event_id:
+                    job.gcal_event_id = gcal_event_id
+                    job.calendar_invite_sent = True
+                    log.info(f"Pushed turnover to GCal: {prop.name} on {checkout} (event={gcal_event_id})")
+            except Exception as e:
+                log.warning(f"Failed to push turnover to GCal for {prop.name} on {checkout}: {e}")
 
     # Update sync timestamp
     prop.ical_last_synced_at = datetime.utcnow()
