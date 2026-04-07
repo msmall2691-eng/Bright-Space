@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, Calendar, CheckCircle, MapPin, Home, AlertCircle } from 'lucide-react'
+import AgentWidget from '../components/AgentWidget'
 import { get } from "../api"
 
 
@@ -376,6 +377,15 @@ export default function Recurring() {
           </div>
         </div>
       )}
+
+      <AgentWidget
+        pageContext="recurring"
+        prompts={[
+          'Which clients don\'t have recurring schedules?',
+          'Generate all recurring jobs for the next month',
+          'Show me my recurring revenue breakdown',
+        ]}
+      />
     </div>
   )
 }

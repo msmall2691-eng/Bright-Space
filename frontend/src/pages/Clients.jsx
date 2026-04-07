@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
+import AgentWidget from '../components/AgentWidget'
 import { del, get } from "../api"
 
 
@@ -160,6 +161,15 @@ export default function Clients() {
           )}
         </div>
       </div>
+
+      <AgentWidget
+        pageContext="clients"
+        prompts={[
+          'Which clients should I follow up with?',
+          'Show me all leads that need attention',
+          'What is my client retention rate?',
+        ]}
+      />
 
       {/* Form panel */}
       {showForm && (

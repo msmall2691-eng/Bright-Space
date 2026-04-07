@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Search, Download, Clock, Car } from 'lucide-react'
+import AgentWidget from '../components/AgentWidget'
 
 export default function Payroll() {
   const [tab, setTab] = useState('timesheets')
@@ -35,13 +36,15 @@ export default function Payroll() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-5">
         {[
           { id: 'timesheets', icon: Clock, label: 'Timesheets' },
           { id: 'mileage',    icon: Car,   label: 'Mileage' },
         ].map(t => (
           <button key={t.id} onClick={() => { setTab(t.id); setData(null) }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t.id ? 'bg-sky-600 text-gray-900' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
             <t.icon className="w-4 h-4" />{t.label}
           </button>
         ))}
@@ -101,6 +104,15 @@ export default function Payroll() {
           </div>
         </>
       )}
+
+      <AgentWidget
+        pageContext="payroll"
+        prompts={[
+          'Summarize payroll for this pay period',
+          'Which employees logged the most hours?',
+          'What is the total mileage reimbursement?',
+        ]}
+      />
     </div>
   )
 }

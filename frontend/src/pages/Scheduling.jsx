@@ -3,6 +3,7 @@ import { CustomFieldsForm } from '../components/CustomFields'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, X, MapPin, Calendar, MessageSquare, Download, RefreshCw, CheckCircle, LayoutList, ExternalLink, Home, Repeat2, ChevronDown } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
+import AgentWidget from '../components/AgentWidget'
 import { del, get } from "../api"
 
 
@@ -821,6 +822,15 @@ export default function Scheduling() {
           </div>
         </div>
       )}
+
+      <AgentWidget
+        pageContext="scheduling"
+        prompts={[
+          'What jobs are coming up this week?',
+          'Show me today\'s full schedule',
+          'Which jobs need to be pushed to Google Calendar?',
+        ]}
+      />
     </div>
   )
 }

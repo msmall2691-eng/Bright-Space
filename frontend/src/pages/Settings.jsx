@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2 } from 'lucide-react'
+import AgentWidget from '../components/AgentWidget'
 import { del, get } from "../api"
 
 
@@ -303,6 +304,15 @@ export default function Settings() {
       )}
 
       <Toast toasts={toasts} />
+
+      <AgentWidget
+        pageContext="settings"
+        prompts={[
+          'What custom fields should I add for clients?',
+          'Help me set up fields for job tracking',
+          'Check the system health',
+        ]}
+      />
     </div>
   )
 }

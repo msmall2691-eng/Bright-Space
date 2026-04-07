@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown } from 'lucide-react'
+import AgentWidget from '../components/AgentWidget'
 import { get } from "../api"
 
 
@@ -556,6 +557,15 @@ export default function Quoting() {
       )}
 
       {toast && <Toast msg={toast} />}
+
+      <AgentWidget
+        pageContext="quoting"
+        prompts={[
+          'What should I charge for a deep clean?',
+          'Help me price a recurring residential quote',
+          'Which leads are ready for a quote?',
+        ]}
+      />
     </div>
   )
 }

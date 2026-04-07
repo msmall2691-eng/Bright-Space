@@ -7,7 +7,7 @@ import {
 
 const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard',   desc: 'Overview' },
-  { to: '/workspace',   icon: Sparkles,        label: 'Workspace',   desc: 'Agent hub' },
+  { to: '/workspace',   icon: Sparkles,        label: 'Workspace',   desc: 'Agent hub', highlight: true },
   { divider: true, label: 'CLIENTS' },
   { to: '/clients',     icon: Users,           label: 'Clients',     desc: 'CRM' },
   { to: '/requests',    icon: Inbox,           label: 'Requests',    desc: 'Incoming leads' },
@@ -43,12 +43,12 @@ export default function Sidebar({ open, onClose }) {
         />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 lg:w-52 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 lg:w-56 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/[0.06] flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center">
+              <div className="w-7 h-7 bg-gradient-to-br from-sky-500/20 to-purple-500/20 rounded-lg flex items-center justify-center">
                 <Zap className="w-4 h-4 text-white" />
               </div>
               <span className="text-[15px] font-semibold text-white tracking-tight">BrightBase</span>
@@ -78,12 +78,17 @@ export default function Sidebar({ open, onClose }) {
                   `flex items-center gap-3 px-3 py-2 mx-2 rounded-lg transition-all text-sm ${
                     isActive
                       ? 'bg-white/10 text-white'
-                      : 'text-white/40 hover:text-white/80 hover:bg-white/[0.05]'
+                      : item.highlight
+                        ? 'text-white/50 hover:text-white/90 hover:bg-white/[0.06]'
+                        : 'text-white/40 hover:text-white/80 hover:bg-white/[0.05]'
                   }`
                 }
               >
                 <item.icon className="w-4 h-4 shrink-0" />
                 <span className="font-medium">{item.label}</span>
+                {item.highlight && (
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                )}
               </NavLink>
             )
           )}
@@ -91,7 +96,12 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-white/[0.06]">
-          <p className="text-[10px] text-white/20">BrightBase v1.0</p>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 bg-white/10 rounded-md flex items-center justify-center">
+              <Sparkles className="w-3 h-3 text-white/40" />
+            </div>
+            <p className="text-[10px] text-white/20">BrightBase v1.0 — AI-powered</p>
+          </div>
         </div>
       </aside>
     </>

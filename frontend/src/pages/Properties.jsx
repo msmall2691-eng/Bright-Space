@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link } from 'lucide-react'
+import AgentWidget from '../components/AgentWidget'
 import { get } from "../api"
 
 
@@ -180,6 +181,15 @@ export default function Properties() {
           )}
         </div>
       </div>
+
+      <AgentWidget
+        pageContext="properties"
+        prompts={[
+          'Which properties need an iCal sync?',
+          'Show upcoming turnovers this week',
+          'Help me set up a new Airbnb property',
+        ]}
+      />
 
       {showForm && (
         <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-gray-200 sm:shrink-0">

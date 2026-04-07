@@ -66,7 +66,7 @@ function Message({ msg }) {
       <div
         className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
           isUser
-            ? 'bg-sky-600 text-gray-900 rounded-br-sm'
+            ? 'bg-gray-900 text-white rounded-br-sm'
             : 'bg-gray-100 text-gray-800 rounded-bl-sm'
         }`}
       >
@@ -220,43 +220,40 @@ export default function Workspace() {
               <h3 className="text-lg font-semibold text-gray-900 mb-1">Chat with {activeAgent.name}</h3>
               <p className="text-sm text-gray-400 max-w-sm">{activeAgent.description}</p>
               <div className="mt-6 grid grid-cols-1 gap-2 w-full max-w-md">
-                {activeAgent.id === 'nova' && [
-                  'Give me a snapshot of the business right now',
-                  'How can I grow my client base?',
-                  'What should I charge for recurring cleans?',
-                ].map(q => (
+                {({
+                  nova: [
+                    'Give me a snapshot of the business right now',
+                    'How can I grow my client base?',
+                    'What should I charge for recurring cleans?',
+                  ],
+                  mia: [
+                    "What jobs are coming up this week?",
+                    "Which clients don't have recurring schedules yet?",
+                    "Show me today's schedule",
+                  ],
+                  scout: [
+                    'Which leads are highest priority right now?',
+                    'Help me draft a quote for a new client',
+                    'What is my lead-to-client conversion rate?',
+                  ],
+                  finn: [
+                    'How much revenue did I make this month?',
+                    'Which invoices are overdue?',
+                    'Show me my profitability breakdown',
+                  ],
+                  pixel: [
+                    'Check system health and fix any issues you find',
+                    'Read the scheduling page and improve the job editing UX',
+                    'Look at the invoicing module and build out the UI',
+                  ],
+                  deploy: [
+                    'What do I need to do to deploy BrightBase?',
+                    'Check the codebase and tell me what needs to change for production',
+                    'Walk me through deploying to Railway step by step',
+                  ],
+                }[activeAgent.id] || []).map(q => (
                   <button key={q} onClick={() => { setInput(q); inputRef.current?.focus() }}
-                    className="text-left text-sm text-gray-400 bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-                    {q}
-                  </button>
-                ))}
-                {activeAgent.id === 'mia' && [
-                  "What jobs are coming up this week?",
-                  "Which clients don't have recurring schedules yet?",
-                  "Show me today's schedule",
-                ].map(q => (
-                  <button key={q} onClick={() => { setInput(q); inputRef.current?.focus() }}
-                    className="text-left text-sm text-gray-400 bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-                    {q}
-                  </button>
-                ))}
-                {activeAgent.id === 'deploy' && [
-                  'What do I need to do to deploy BrightBase?',
-                  'Check the codebase and tell me what needs to change for production',
-                  'Walk me through deploying to Railway and Vercel step by step',
-                ].map(q => (
-                  <button key={q} onClick={() => { setInput(q); inputRef.current?.focus() }}
-                    className="text-left text-sm text-gray-400 bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
-                    {q}
-                  </button>
-                ))}
-                {activeAgent.id === 'pixel' && [
-                  'Check system health and fix any issues you find',
-                  'Read the scheduling page and improve the job editing UX',
-                  'Look at the invoicing module and build out the UI',
-                ].map(q => (
-                  <button key={q} onClick={() => { setInput(q); inputRef.current?.focus() }}
-                    className="text-left text-sm text-gray-400 bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+                    className="text-left text-sm text-gray-500 bg-gray-50 hover:bg-gray-100 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
                     {q}
                   </button>
                 ))}

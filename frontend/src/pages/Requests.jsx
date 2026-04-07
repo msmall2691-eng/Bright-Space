@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get, patch } from '../api'
+import AgentWidget from '../components/AgentWidget'
 import {
   Inbox, Globe, ArrowRight, FileText, Calendar, CheckCircle, Clock, Eye,
   Phone, Mail, MapPin, Home, Users, ChevronDown, ChevronUp, Plus,
@@ -849,6 +850,15 @@ export default function Requests() {
           onSaved={() => { setShowAddModal(false); loadData(); showToast('Request added') }}
         />
       )}
+
+      <AgentWidget
+        pageContext="requests"
+        prompts={[
+          'How many new leads came in this week?',
+          'Which requests are highest priority?',
+          'Help me convert this lead to a client',
+        ]}
+      />
     </div>
   )
 }

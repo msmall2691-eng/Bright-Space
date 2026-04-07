@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText } from 'lucide-react'
+import AgentWidget from '../components/AgentWidget'
 import { del, get } from "../api"
 
 
@@ -29,7 +30,7 @@ function avatar(name = '') {
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
 // ── Shared input styles ───────────────────────────────────────────────────────
-const inp = 'w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-600 focus:outline-none focus:border-white/25 transition-colors'
+const inp = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-gray-400 transition-colors'
 const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1.5'
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -38,14 +39,14 @@ function Toast({ toasts }) {
     <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none">
       {toasts.map(t => (
         <div key={t.id}
-          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl border pointer-events-auto
+          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium shadow-lg border pointer-events-auto
             ${t.type === 'success'
-              ? 'bg-[#18261f] border-emerald-800/60 text-emerald-300'
+              ? 'bg-white border-emerald-200 text-emerald-700'
               : t.type === 'error'
-              ? 'bg-[#261818] border-red-800/60 text-red-300'
-              : 'bg-[#1c1c1c] border-white/10 text-gray-200'}`}>
+              ? 'bg-white border-red-200 text-red-700'
+              : 'bg-white border-gray-200 text-gray-700'}`}>
           <span className={`w-1.5 h-1.5 rounded-full shrink-0
-            ${t.type === 'success' ? 'bg-emerald-400' : t.type === 'error' ? 'bg-red-400' : 'bg-gray-400'}`} />
+            ${t.type === 'success' ? 'bg-emerald-500' : t.type === 'error' ? 'bg-red-500' : 'bg-gray-400'}`} />
           {t.message}
         </div>
       ))}
@@ -190,13 +191,13 @@ export default function Invoicing() {
             <p className="text-xs text-gray-500 mt-0.5">{invoices.length} total</p>
           </div>
           <button onClick={openNew}
-            className="flex items-center gap-2 bg-white text-gray-950 hover:bg-gray-100 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors">
+            className="flex items-center gap-2 bg-gray-900 text-white hover:bg-gray-800 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors">
             <Plus className="w-3.5 h-3.5" /> New invoice
           </button>
         </div>
 
         {/* Metrics bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 mx-4 sm:mx-8 mb-6 rounded-xl border border-white/[0.06] overflow-hidden bg-white">
+        <div className="grid grid-cols-2 sm:grid-cols-4 mx-4 sm:mx-8 mb-6 rounded-xl border border-gray-200 overflow-hidden bg-white">
           {[
             { label: 'Paid',        value: `$${totalRevenue.toFixed(2)}`, accent: 'text-emerald-400' },
             { label: 'Outstanding', value: `$${outstanding.toFixed(2)}`,  accent: 'text-amber-400'   },
@@ -204,7 +205,7 @@ export default function Invoicing() {
             { label: 'Overdue',     value: overdueCount,                  accent: overdueCount > 0 ? 'text-red-400' : 'text-gray-600' },
           ].map((m, idx, arr) => (
             <div key={m.label}
-              className={`flex-1 px-5 py-4 ${idx < arr.length - 1 ? 'border-r border-white/[0.06]' : ''}`}>
+              className={`flex-1 px-5 py-4 ${idx < arr.length - 1 ? 'border-r border-gray-200' : ''}`}>
               <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1">{m.label}</div>
               <div className={`text-lg font-semibold ${m.accent}`}>{m.value}</div>
             </div>
@@ -217,10 +218,10 @@ export default function Invoicing() {
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search…"
-              className="bg-white border border-white/[0.06] text-sm text-gray-900 placeholder-gray-600 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-white/20 w-44 transition-colors" />
+              className="bg-white border border-gray-200 text-sm text-gray-900 placeholder-gray-600 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-gray-300 w-44 transition-colors" />
           </div>
 
-          <div className="flex items-center gap-1 bg-white border border-white/[0.06] rounded-lg p-1 overflow-x-auto">
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
             {['', 'draft', 'sent', 'paid', 'overdue'].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
@@ -240,10 +241,10 @@ export default function Invoicing() {
             ))}
           </div>
 
-          <div className="rounded-xl border border-white/[0.06] overflow-hidden bg-white">
+          <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-10 h-10 rounded-xl bg-white/[0.04] flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-xl bg-gray-50/50 flex items-center justify-center mb-3">
                   <FileText className="w-5 h-5 text-gray-600" />
                 </div>
                 <p className="text-sm text-gray-500">{search ? 'No matching invoices' : 'No invoices yet'}</p>
@@ -257,9 +258,9 @@ export default function Invoicing() {
               return (
                 <div key={inv.id}
                   className={`group flex flex-wrap sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center px-4 py-3.5 cursor-pointer
-                    hover:bg-white/[0.03] transition-colors
-                    ${idx < filtered.length - 1 ? 'border-b border-white/[0.04]' : ''}
-                    ${selected?.id === inv.id ? 'bg-white/[0.04]' : ''}`}
+                    hover:bg-gray-50/80 transition-colors
+                    ${idx < filtered.length - 1 ? 'border-b border-gray-100' : ''}
+                    ${selected?.id === inv.id ? 'bg-gray-50/50' : ''}`}
                   onClick={() => openEdit(inv)}>
 
                   {/* Client */}
@@ -298,7 +299,7 @@ export default function Invoicing() {
                     onClick={e => e.stopPropagation()}>
                     {inv.status !== 'paid' && (
                       <button onClick={() => openSend(inv)}
-                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-white/[0.06] text-gray-600 hover:bg-white/10 transition-colors">
+                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
                         <Send className="w-3 h-3" /> Send
                       </button>
                     )}
@@ -325,13 +326,13 @@ export default function Invoicing() {
 
       {/* ── Side panel — Edit ───────────────────────────────────── */}
       {panel === 'edit' && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[420px] sm:shrink-0 sm:border-l sm:border-white/[0.06]">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[420px] sm:shrink-0 sm:border-l sm:border-gray-200">
 
           {/* Panel header */}
-          <div className="flex items-start justify-between px-6 py-5 border-b border-white/[0.06]">
+          <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200">
             <div>
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-white/[0.06] flex items-center justify-center">
+                <div className="w-6 h-6 rounded-md bg-gray-50 flex items-center justify-center">
                   <FileText className="w-3.5 h-3.5 text-gray-400" />
                 </div>
                 <span className="text-sm font-semibold text-gray-900">
@@ -343,12 +344,12 @@ export default function Invoicing() {
             <div className="flex items-center gap-1.5">
               {selected && selected.status !== 'paid' && (
                 <button onClick={() => openSend(selected)}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-white/[0.06] text-gray-600 hover:bg-white/10 transition-colors">
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
                   <Send className="w-3 h-3" /> Send
                 </button>
               )}
               <button onClick={closePanel}
-                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-600 hover:bg-white/[0.06] transition-colors">
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-600 hover:bg-gray-50 transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -378,7 +379,7 @@ export default function Invoicing() {
               </div>
               <div className="space-y-2">
                 {form.items.map((item, i) => (
-                  <div key={i} className="rounded-lg border border-white/[0.06] bg-gray-50 p-3 space-y-2">
+                  <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                     <div className="flex gap-2 items-center">
                       <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                         placeholder="Description"
@@ -388,17 +389,17 @@ export default function Invoicing() {
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    <div className="flex gap-2 items-center border-t border-white/[0.04] pt-2">
+                    <div className="flex gap-2 items-center border-t border-gray-100 pt-2">
                       <div className="flex items-center gap-1">
                         <span className="text-[10px] text-gray-600 w-6">Qty</span>
                         <input type="number" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
-                          className="w-14 bg-transparent text-xs text-gray-600 focus:outline-none text-center border border-white/[0.06] rounded px-1 py-0.5" />
+                          className="w-14 bg-transparent text-xs text-gray-600 focus:outline-none text-center border border-gray-200 rounded px-1 py-0.5" />
                       </div>
                       <span className="text-gray-700">×</span>
                       <div className="flex items-center gap-1 flex-1">
                         <span className="text-[10px] text-gray-600">$</span>
                         <input type="number" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
-                          className="flex-1 bg-transparent text-xs text-gray-600 focus:outline-none border border-white/[0.06] rounded px-2 py-0.5" />
+                          className="flex-1 bg-transparent text-xs text-gray-600 focus:outline-none border border-gray-200 rounded px-2 py-0.5" />
                       </div>
                       <span className="text-xs font-medium text-gray-900 w-16 text-right">
                         ${((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
@@ -439,12 +440,12 @@ export default function Invoicing() {
             />
 
             {/* Totals */}
-            <div className="rounded-xl border border-white/[0.06] bg-gray-50 overflow-hidden">
-              <div className="flex justify-between px-4 py-2.5 border-b border-white/[0.04]">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+              <div className="flex justify-between px-4 py-2.5 border-b border-gray-100">
                 <span className="text-xs text-gray-500">Subtotal</span>
                 <span className="text-xs text-gray-400">${sub(form.items).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between px-4 py-2.5 border-b border-white/[0.04]">
+              <div className="flex justify-between px-4 py-2.5 border-b border-gray-100">
                 <span className="text-xs text-gray-500">Tax ({form.tax_rate || 0}%)</span>
                 <span className="text-xs text-gray-400">${(sub(form.items) * (parseFloat(form.tax_rate) || 0) / 100).toFixed(2)}</span>
               </div>
@@ -456,9 +457,9 @@ export default function Invoicing() {
           </div>
 
           {/* Panel footer */}
-          <div className="p-5 border-t border-white/[0.06] space-y-2">
+          <div className="p-5 border-t border-gray-200 space-y-2">
             <button onClick={save} disabled={saving || !form.client_id}
-              className="w-full bg-white text-gray-950 hover:bg-gray-100 disabled:bg-white/10 disabled:text-gray-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+              className="w-full bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
               {saving ? 'Saving…' : (selected ? 'Update invoice' : 'Create invoice')}
             </button>
             {selected && (
@@ -474,12 +475,12 @@ export default function Invoicing() {
 
       {/* ── Side panel — Send ───────────────────────────────────── */}
       {panel === 'send' && selected && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[380px] sm:shrink-0 sm:border-l sm:border-white/[0.06]">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[380px] sm:shrink-0 sm:border-l sm:border-gray-200">
 
-          <div className="flex items-start justify-between px-6 py-5 border-b border-white/[0.06]">
+          <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200">
             <div>
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-white/[0.06] flex items-center justify-center">
+                <div className="w-6 h-6 rounded-md bg-gray-50 flex items-center justify-center">
                   <Send className="w-3 h-3 text-gray-400" />
                 </div>
                 <span className="text-sm font-semibold text-gray-900">Send invoice</span>
@@ -489,7 +490,7 @@ export default function Invoicing() {
               </p>
             </div>
             <button onClick={closePanel}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-600 hover:bg-white/[0.06] transition-colors">
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-600 hover:bg-gray-50 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -508,8 +509,8 @@ export default function Invoicing() {
                   <button key={opt.val} onClick={() => setSendForm(f => ({ ...f, channel: opt.val }))}
                     className={`flex flex-col items-center gap-2 py-3.5 rounded-xl border text-xs font-medium transition-colors
                       ${sendForm.channel === opt.val
-                        ? 'bg-white/[0.08] border-white/20 text-gray-900'
-                        : 'bg-gray-50 border-white/[0.06] text-gray-500 hover:border-white/10 hover:text-gray-400'}`}>
+                        ? 'bg-gray-100 border-gray-300 text-gray-900'
+                        : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-400'}`}>
                     <opt.icon className="w-4 h-4" />
                     {opt.label}
                   </button>
@@ -545,7 +546,7 @@ export default function Invoicing() {
             )}
 
             {/* Preview card */}
-            <div className="rounded-xl border border-white/[0.06] bg-gray-50 p-4">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-600 mb-3">Invoice</div>
               <div className="flex items-center justify-between">
                 <div>
@@ -560,9 +561,9 @@ export default function Invoicing() {
             </div>
           </div>
 
-          <div className="p-5 border-t border-white/[0.06]">
+          <div className="p-5 border-t border-gray-200">
             <button onClick={sendInvoice} disabled={sending}
-              className="w-full flex items-center justify-center gap-2 bg-white text-gray-950 hover:bg-gray-100 disabled:bg-white/10 disabled:text-gray-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+              className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
               <Send className="w-3.5 h-3.5" />
               {sending ? 'Sending…' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
             </button>
@@ -571,6 +572,15 @@ export default function Invoicing() {
       )}
 
       <Toast toasts={toasts} />
+
+      <AgentWidget
+        pageContext="invoicing"
+        prompts={[
+          'Which invoices are overdue?',
+          'How much revenue did I make this month?',
+          'Draft a payment reminder for overdue clients',
+        ]}
+      />
     </div>
   )
 }

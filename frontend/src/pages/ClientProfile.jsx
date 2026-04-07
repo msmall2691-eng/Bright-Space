@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
+import AgentWidget from '../components/AgentWidget'
 import { del, get } from "../api"
-
+import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
   CheckCircle, Clock, AlertCircle, Send, ChevronRight, Home, RefreshCw
@@ -739,6 +739,15 @@ export default function ClientProfile() {
         )}
 
       </div>
+
+      <AgentWidget
+        pageContext="clients"
+        prompts={[
+          `Tell me about this client's history`,
+          'What services should I upsell to this client?',
+          'Draft a follow-up message for this client',
+        ]}
+      />
     </div>
   )
 }
