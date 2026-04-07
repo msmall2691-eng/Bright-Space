@@ -3,7 +3,7 @@ import { CustomFieldsForm } from '../components/CustomFields'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, X, MapPin, Calendar, MessageSquare, Download, RefreshCw, CheckCircle, LayoutList, ExternalLink, Home, Repeat2, ChevronDown } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
-import { del, get } from "../api"
+import { api, del, get, post, patch } from "../api"
 
 
 const TYPE_CONFIG = {
@@ -85,11 +85,25 @@ export default function Scheduling() {
     }
   }, [])
 
-  // Load properties when client changes in form
+  // Load properties when client changes in form — auto-select if only one
   useEffect(() => {
     if (!form.client_id) { setClientProperties([]); return }
     get(`/api/properties?client_id=${form.client_id}`)
-      .then(d => setClientProperties(Array.isArray(d) ? d : []))
+      .then(d => {
+        const props = Array.isArray(d) ? d : []
+        setClientProperties(props)
+        // Auto-select & auto-fill if client has exactly one property
+        if (props.length === 1 && !form.property_id) {
+          selectProperty(props[0])
+        } else if (props.length === 0) {
+          // No properties — auto-fill address from client record
+          const client = clients.find(c => c.id === parseInt(form.client_id))
+          if (client && !form.address) {
+            const addr = [client.address, client.city, client.state].filter(Boolean).join(', ')
+            if (addr) setForm(f => ({ ...f, address: addr }))
+          }
+        }
+      })
       .catch(() => setClientProperties([]))
   }, [form.client_id])
 
@@ -110,9 +124,7 @@ export default function Scheduling() {
   const pushToGcal = async (jobId) => {
     setLoading(jobId, 'gcal', true)
     try {
-      const r = await fetch(`/api/reminders/jobs/${jobId}/gcal`, { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Failed')
+      const data = await post(`/api/reminders/jobs/${jobId}/gcal`)
       showToast(`Added to Google Calendar${data.client_invited ? ' — client invited!' : ''}`)
       load()
     } catch (e) {
@@ -124,9 +136,7 @@ export default function Scheduling() {
   const sendReminder = async (jobId) => {
     setLoading(jobId, 'sms', true)
     try {
-      const r = await fetch(`/api/reminders/jobs/${jobId}/sms-reminder`, { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Failed')
+      const data = await post(`/api/reminders/jobs/${jobId}/sms-reminder`)
       showToast('SMS reminder sent!')
       load()
     } catch (e) {
@@ -138,9 +148,7 @@ export default function Scheduling() {
   const syncFromGcal = async () => {
     setSyncing(true)
     try {
-      const r = await fetch('/api/jobs/sync-gcal', { method: 'POST' })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data.detail || 'Sync failed')
+      const data = await post('/api/jobs/sync-gcal')
       showToast(data.message || `Synced ${data.synced} job(s) from Google Calendar`)
       load()
     } catch (e) {
@@ -152,8 +160,7 @@ export default function Scheduling() {
   const pushAll = async () => {
     setPushing(true)
     try {
-      const r = await fetch('/api/reminders/push-upcoming-to-gcal', { method: 'POST' })
-      const data = await r.json()
+      const data = await post('/api/reminders/push-upcoming-to-gcal')
       showToast(`${data.pushed} job${data.pushed !== 1 ? 's' : ''} pushed to Google Calendar`)
       load()
     } catch (e) {
@@ -163,7 +170,7 @@ export default function Scheduling() {
   }
 
   const updateStatus = async (id, status) => {
-    await fetch(`/api/jobs/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
+    await patch(`/api/jobs/${id}`, { status })
     load()
   }
 
@@ -178,22 +185,19 @@ export default function Scheduling() {
   const save = async () => {
     setSaving(true)
     try {
-      const method = selected ? 'PATCH' : 'POST'
       const url = selected ? `/api/jobs/${selected.id}` : '/api/jobs'
       const body = {
         ...form,
         client_id: parseInt(form.client_id),
         property_id: form.property_id ? parseInt(form.property_id) : null,
       }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error()
-      const saved = await r.json()
+      const saved = selected ? await patch(url, body) : await post(url, body)
       await load()
       setCalRefresh(n => n + 1)
       setShowForm(false)
       // Auto-push new jobs to Google Calendar in the background
       if (!selected) {
-        fetch(`/api/reminders/jobs/${saved.id}/gcal`, { method: 'POST' })
+        post(`/api/reminders/jobs/${saved.id}/gcal`)
           .then(() => showToast('Job saved & added to Google Calendar'))
           .catch(() => showToast('Job saved (Google Cal push failed)'))
       } else {
@@ -254,19 +258,9 @@ export default function Scheduling() {
         day_of_month: recurringForm.frequency === 'monthly' ? parseInt(recurringForm.day_of_month) : null,
         generate_weeks_ahead: parseInt(recurringForm.generate_weeks_ahead),
       }
-      const r = await fetch('/api/recurring', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) throw new Error()
-      const sched = await r.json()
+      const sched = await post('/api/recurring', body)
       // Link this job to the new schedule
-      await fetch(`/api/jobs/${selected.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recurring_schedule_id: sched.id }),
-      })
+      await patch(`/api/jobs/${selected.id}`, { recurring_schedule_id: sched.id })
       await load()
       setCalRefresh(n => n + 1)
       setRecurringPanel(false)

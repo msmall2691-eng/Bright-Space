@@ -17,6 +17,7 @@ from database.models import Job, Client
 from integrations.ics_generator import generate_job_ics
 from integrations.twilio_client import send_sms
 from integrations.google_calendar import create_event, update_event
+from modules.comms.router import normalize_phone
 
 router = APIRouter()
 
@@ -74,7 +75,7 @@ def send_job_reminder(job_id: int, db: Session = Depends(get_db)):
         f"Reply STOP to unsubscribe."
     )
     try:
-        result = send_sms(to=client.phone, body=msg)
+        result = send_sms(to=normalize_phone(client.phone), body=msg)
         job.sms_reminder_sent = True
         db.commit()
         return {"sent": True, "to": client.phone, "sid": result.get("sid")}
@@ -108,7 +109,7 @@ def send_daily_reminders(db: Session = Depends(get_db)):
                 f"Address: {job.address or 'your property'}. "
                 f"Reply STOP to unsubscribe."
             )
-            send_sms(to=client.phone, body=msg)
+            send_sms(to=normalize_phone(client.phone), body=msg)
             job.sms_reminder_sent = True
             sent.append({"job_id": job.id, "client": client.name, "phone": client.phone})
         except Exception as e:

@@ -30,7 +30,7 @@ export default function Sidebar({ open, onClose }) {
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
-    onClose()
+    if (open) onClose()
   }, [location.pathname])
 
   return (
@@ -43,7 +43,7 @@ export default function Sidebar({ open, onClose }) {
         />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 lg:w-52 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-950 flex flex-col shrink-0 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 lg:w-52 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/[0.06] flex items-center justify-between">
           <div>
@@ -64,7 +64,7 @@ export default function Sidebar({ open, onClose }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-2 overflow-y-auto scrollbar-thin">
+        <nav className="flex-1 py-2 overflow-y-auto scrollbar-thin -webkit-overflow-scrolling-touch">
           {nav.map((item, i) =>
             item.divider ? (
               <div key={i} className="px-5 pt-5 pb-1.5">
@@ -74,6 +74,7 @@ export default function Sidebar({ open, onClose }) {
               <NavLink
                 key={item.to}
                 to={item.to}
+                onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 mx-2 rounded-lg transition-all text-sm ${
                     isActive

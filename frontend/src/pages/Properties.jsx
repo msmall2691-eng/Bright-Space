@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link } from 'lucide-react'
-import { get } from "../api"
+import { get, post, patch as patchApi } from "../api"
 
 
 const EMPTY = {
@@ -23,7 +23,7 @@ export default function Properties() {
 
   useEffect(() => {
     load()
-    get('/api/clients?status=active').then(setClients).catch(err => console.error("[Properties]", err))
+    get('/api/clients').then(data => setClients(Array.isArray(data) ? data : [])).catch(err => console.error("[Properties]", err))
   }, [])
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
@@ -31,16 +31,16 @@ export default function Properties() {
   const save = async () => {
     setSaving(true)
     try {
-      const method = selected ? 'PATCH' : 'POST'
       const url = selected ? `/api/properties/${selected.id}` : '/api/properties'
       const body = { ...form, client_id: parseInt(form.client_id), default_duration_hours: parseFloat(form.default_duration_hours) }
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!r.ok) throw new Error()
+      selected ? await patchApi(url, body) : await post(url, body)
       await load()
       setShowForm(false)
       setSelected(null)
       setForm(EMPTY)
-    } catch {}
+    } catch (e) {
+      console.error("[Properties] Save failed:", e)
+    }
     setSaving(false)
   }
 
@@ -48,9 +48,8 @@ export default function Properties() {
     setSyncing(id)
     setSyncResult(null)
     try {
-      const r = await fetch(`/api/properties/${id}/sync`, { method: 'POST' })
-      const data = await r.json()
-      setSyncResult({ id, ...data, ok: r.ok })
+      const data = await post(`/api/properties/${id}/sync`)
+      setSyncResult({ id, ...data, ok: true })
       await load()
     } catch (e) {
       setSyncResult({ id, ok: false, error: String(e) })
@@ -62,9 +61,8 @@ export default function Properties() {
     setSyncing('all')
     setSyncResult(null)
     try {
-      const r = await fetch('/api/properties/sync-all', { method: 'POST' })
-      const data = await r.json()
-      setSyncResult({ id: 'all', ...data, ok: r.ok })
+      const data = await post('/api/properties/sync-all')
+      setSyncResult({ id: 'all', ...data, ok: true })
       await load()
     } catch (e) {
       setSyncResult({ id: 'all', ok: false, error: String(e) })
@@ -190,7 +188,19 @@ export default function Properties() {
           <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Client *</label>
-              <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
+              <select value={form.client_id} onChange={e => {
+                const cid = e.target.value
+                const client = clients.find(c => c.id === parseInt(cid))
+                setForm(f => ({
+                  ...f,
+                  client_id: cid,
+                  // Auto-fill address from client if adding a new property and fields are empty
+                  address: f.address || client?.address || '',
+                  city: f.city || client?.city || '',
+                  state: f.state || client?.state || '',
+                  zip_code: f.zip_code || client?.zip_code || '',
+                }))
+              }}
                 className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
                 <option value="">Select client...</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}

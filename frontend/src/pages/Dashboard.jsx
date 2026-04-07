@@ -41,21 +41,27 @@ export default function Dashboard() {
   const [recurringCount, setRecurringCount] = useState(0)
   const [newRequests, setNewRequests] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   const today = new Date().toISOString().slice(0, 10)
   const weekEnd = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)
 
   useEffect(() => {
     const load = async () => {
+      setError(null)
+      const safe = (promise) => promise.catch(() => null)
       try {
         const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew] = await Promise.all([
-          get(`/api/jobs?date=${today}`),
-          get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
-          get('/api/clients'),
-          get('/api/invoices'),
-          get('/api/recurring'),
-          get('/api/intake?status=new'),
+          safe(get(`/api/jobs?date=${today}`)),
+          safe(get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`)),
+          safe(get('/api/clients')),
+          safe(get('/api/invoices')),
+          safe(get('/api/recurring')),
+          safe(get('/api/intake?status=new')),
         ])
+        if (!jobsToday && !jobsWeek && !clientsAll) {
+          setError('Failed to load dashboard data. Check your connection and try again.')
+        }
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         const week = Array.isArray(jobsWeek) ? jobsWeek : []
         setWeekJobs(week)
@@ -64,7 +70,9 @@ export default function Dashboard() {
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
         setRecurringCount(Array.isArray(schedules) ? schedules.filter(s => s.active).length : 0)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
-      } catch {}
+      } catch (e) {
+        setError('Failed to load dashboard data. Check your connection and try again.')
+      }
       setLoading(false)
     }
     load()
@@ -108,7 +116,17 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto h-full scrollbar-thin">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 min-h-full scrollbar-thin">
+
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+          <button onClick={() => { setLoading(true); setError(null); window.location.reload() }}
+            className="ml-auto text-xs text-red-600 hover:text-red-800 font-medium">Retry</button>
+        </div>
+      )}
 
       {/* Greeting */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

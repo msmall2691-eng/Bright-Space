@@ -194,7 +194,8 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
         if data.custom_message:
             sms_body = data.custom_message + "\n\n" + sms_body
         try:
-            send_sms(to=to_phone, body=sms_body)
+            from modules.comms.router import normalize_phone
+            send_sms(to=normalize_phone(to_phone), body=sms_body)
             results["sms"] = "sent"
             msg = Message(client_id=inv.client_id, channel="sms", direction="outbound",
                           from_addr=company_phone, to_addr=to_phone, body=sms_body, status="sent")

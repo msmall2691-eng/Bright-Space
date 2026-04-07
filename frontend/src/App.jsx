@@ -28,7 +28,7 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-white">
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-        <Header onMenuToggle={() => setSidebarOpen(true)} />
+        <Header onMenuToggle={() => setSidebarOpen(s => !s)} />
         <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
