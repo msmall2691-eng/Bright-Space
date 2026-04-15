@@ -15,7 +15,10 @@ from google.oauth2.credentials import Credentials
 
 load_dotenv()
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 BASE = Path(__file__).parent
 CREDS_FILE = BASE / os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
 TOKEN_FILE  = BASE / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")

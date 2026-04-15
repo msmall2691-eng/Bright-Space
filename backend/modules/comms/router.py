@@ -702,3 +702,24 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
         content="<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
         media_type="text/xml",
     )
+
+
+@router.post("/sync-gmail")
+def sync_gmail(db: Session = Depends(get_db)):
+    """Manually trigger a Gmail inbox sync."""
+    try:
+        from integrations.gmail_sync import sync_gmail_inbox
+
+        stats = sync_gmail_inbox(db)
+        if stats.get("error"):
+            return {"status": "error", "message": stats["error"]}
+
+        return {
+            "status": "success",
+            "emails_checked": stats["emails_checked"],
+            "new_emails": stats["new_emails"],
+            "leads_created": stats["leads_created"],
+            "messages_stored": stats["messages_stored"],
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

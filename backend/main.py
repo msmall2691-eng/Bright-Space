@@ -1,6 +1,7 @@
 import json
 import os
 import yaml
+import logging
 from pathlib import Path
 
 import anthropic
@@ -9,11 +10,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from agents.tools import get_tools_for_agent, execute_tool
 
 from auth import APIKeyMiddleware
-from database.db import init_db
+from database.db import init_db, get_db
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
 from modules.scheduling.router import router as scheduling_router
@@ -77,10 +79,56 @@ def load_agent_config(agent_name: str) -> dict:
         return yaml.safe_load(f)
 
 
+logger = logging.getLogger(__name__)
+
+
+def _gmail_sync_job():
+    """Background task to sync Gmail inbox every 15 minutes."""
+    try:
+        from integrations.gmail_sync import sync_gmail_inbox
+        from sqlalchemy.orm import Session
+        from database.db import engine
+
+        with Session(engine) as db:
+            stats = sync_gmail_inbox(db)
+            if stats.get("error"):
+                logger.error(f"Gmail sync failed: {stats['error']}")
+            else:
+                logger.info(
+                    f"Gmail sync: {stats['new_emails']} new emails, "
+                    f"{stats['leads_created']} leads created"
+                )
+    except Exception as e:
+        logger.error(f"Gmail sync job failed: {e}")
+
+
+scheduler = None
+
+
 @app.on_event("startup")
 async def startup():
+    global scheduler
     init_db()
     print("BrightBase backend started")
+
+    # Start Gmail sync scheduler (every 15 minutes)
+    gmail_sync_enabled = os.getenv("GMAIL_SYNC_ENABLED", "true").lower() == "true"
+    if gmail_sync_enabled:
+        try:
+            scheduler = BackgroundScheduler()
+            scheduler.add_job(_gmail_sync_job, "interval", minutes=15, id="gmail_sync")
+            scheduler.start()
+            print("✓ Gmail sync scheduler started (every 15 minutes)")
+        except Exception as e:
+            print(f"⚠ Failed to start Gmail sync scheduler: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    global scheduler
+    if scheduler:
+        scheduler.shutdown()
+        print("Gmail sync scheduler stopped")
 
 
 @app.get("/api/health")
