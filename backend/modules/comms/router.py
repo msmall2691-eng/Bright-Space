@@ -106,6 +106,41 @@ def _normalize_contact(s: Optional[str]) -> Optional[str]:
     return s.lower()
 
 
+def _digits_only(phone: Optional[str]) -> Optional[str]:
+    """Extract just digits from any phone format for fuzzy matching.
+    '(207) 433-4929' → '2074334929'
+    '+12074334929'   → '12074334929'
+    """
+    if not phone:
+        return None
+    return re.sub(r"[^\d]", "", phone)
+
+
+def _match_client_by_phone(db: Session, phone: str) -> Optional["Client"]:
+    """Try to find a Client matching this phone number, handling format mismatches.
+    1. Exact match first (fastest).
+    2. Digits-only match on last 10 digits (handles +1, parens, dashes, spaces).
+    """
+    # 1. Exact match
+    client = db.query(Client).filter(Client.phone == phone).first()
+    if client:
+        return client
+    # 2. Strip to digits and compare last 10 (US numbers)
+    incoming_digits = _digits_only(phone)
+    if not incoming_digits:
+        return None
+    incoming_tail = incoming_digits[-10:] if len(incoming_digits) >= 10 else incoming_digits
+    candidates = db.query(Client).filter(Client.phone.isnot(None), Client.phone != "").all()
+    for c in candidates:
+        c_digits = _digits_only(c.phone)
+        if not c_digits:
+            continue
+        c_tail = c_digits[-10:] if len(c_digits) >= 10 else c_digits
+        if c_tail == incoming_tail:
+            return c
+    return None
+
+
 def _sla_state(conv: Conversation) -> str:
     """Return one of: none | met | on_track | at_risk | breached."""
     if not conv.sla_deadline:
@@ -619,12 +654,18 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
                 media_type="text/xml",
             )
 
-    # Match to a client by phone number
-    client = db.query(Client).filter(Client.phone == from_number).first()
-    if not client:
+    # Match to a client by phone number (fuzzy — handles format mismatches)
+    client = _match_client_by_phone(db, from_number)
+    if client:
+        logger.info(f"[twilio] Matched inbound {from_number} → client #{client.id} ({client.name})")
+        # Update phone to E.164 format if stored differently
+        if client.phone != from_number:
+            logger.info(f"[twilio] Updating client phone: {client.phone!r} → {from_number!r}")
+            client.phone = from_number
+    else:
         logger.info(f"[twilio] New contact from {from_number} — creating lead intake")
         client = Client(
-            name=f"SMS {from_number}",
+            name=from_number,
             phone=from_number,
             status="lead",
             source="sms",
