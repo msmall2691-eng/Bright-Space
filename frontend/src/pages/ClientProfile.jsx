@@ -9,9 +9,9 @@ import {
 } from 'lucide-react'
 
 const STATUS_COLORS = {
-  lead:     'bg-amber-50 text-amber-700 border-amber-200',
-  active:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  inactive: 'bg-gray-100 text-gray-600 border-gray-200',
+  lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
+  active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
+  inactive: 'bg-zinc-100 text-zinc-400 border-zinc-200',
 }
 
 const JOB_COLORS = {
@@ -22,14 +22,14 @@ const JOB_COLORS = {
 }
 
 const INVOICE_COLORS = {
-  draft:   'bg-gray-500/20 text-gray-400',
+  draft:   'bg-zinc-500/20 text-zinc-400',
   sent:    'bg-blue-500/20 text-blue-400',
   paid:    'bg-green-500/20 text-green-400',
   overdue: 'bg-red-500/20 text-red-400',
 }
 
 const QUOTE_COLORS = {
-  draft:    'bg-gray-500/20 text-gray-400',
+  draft:    'bg-zinc-500/20 text-zinc-400',
   sent:     'bg-blue-500/20 text-blue-400',
   accepted: 'bg-green-500/20 text-green-400',
   declined: 'bg-red-500/20 text-red-400',
@@ -40,13 +40,13 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
     <button onClick={onClick}
       className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
         active
-          ? 'border-sky-500 text-sky-400'
-          : 'border-transparent text-gray-500 hover:text-gray-600'
+          ? 'border-blue-500 text-blue-500'
+          : 'border-transparent text-zinc-500 hover:text-zinc-500'
       }`}>
       <Icon className="w-4 h-4" />
       {label}
       {count > 0 && (
-        <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-sky-500/20 text-sky-400' : 'bg-gray-200 text-gray-400'}`}>
+        <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-blue-500/15 text-blue-500' : 'bg-zinc-200 text-zinc-400'}`}>
           {count}
         </span>
       )}
@@ -144,7 +144,7 @@ export default function ClientProfile() {
   }
 
   if (!client) return (
-    <div className="flex items-center justify-center h-full text-gray-500 text-sm">Loading...</div>
+    <div className="flex items-center justify-center h-full text-zinc-500 text-sm">Loading...</div>
   )
 
   // Revenue from this client
@@ -173,35 +173,35 @@ export default function ClientProfile() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 shrink-0">
+      <div className="bg-white border-b border-zinc-200 px-4 sm:px-6 py-4 shrink-0">
         <button onClick={() => navigate('/clients')}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-600 mb-3 transition-colors">
+          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-500 mb-3 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Clients
         </button>
 
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center shrink-0">
-              <span className="text-sky-400 font-bold text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
+            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
+              <span className="text-blue-500 font-bold text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
             </div>
             <div>
               {editing ? (
                 <div className="flex gap-2">
                   <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
                     placeholder="First"
-                    className="text-xl font-bold bg-gray-100 border border-gray-300 rounded-lg px-3 py-1 text-gray-900 focus:outline-none focus:border-sky-500 w-32" />
+                    className="text-xl font-bold bg-zinc-100 border border-zinc-300 rounded-lg px-3 py-1 text-zinc-900 focus:outline-none focus:border-blue-500 w-32" />
                   <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
                     placeholder="Last"
-                    className="text-xl font-bold bg-gray-100 border border-gray-300 rounded-lg px-3 py-1 text-gray-900 focus:outline-none focus:border-sky-500 w-32" />
+                    className="text-xl font-bold bg-zinc-100 border border-zinc-300 rounded-lg px-3 py-1 text-zinc-900 focus:outline-none focus:border-blue-500 w-32" />
                 </div>
               ) : (
-                <h1 className="text-xl font-bold text-gray-900">{client.name}</h1>
+                <h1 className="text-xl font-bold text-zinc-900">{client.name}</h1>
               )}
               <div className="flex items-center gap-3 mt-1 flex-wrap">
-                {client.phone && <span className="flex items-center gap-1 text-sm text-gray-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
-                {client.email && <span className="flex items-center gap-1 text-sm text-gray-400"><Mail className="w-3.5 h-3.5" />{client.email}</span>}
+                {client.phone && <span className="flex items-center gap-1 text-sm text-zinc-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
+                {client.email && <span className="flex items-center gap-1 text-sm text-zinc-400"><Mail className="w-3.5 h-3.5" />{client.email}</span>}
                 {(client.city || client.address) && (
-                  <span className="flex items-center gap-1 text-sm text-gray-400">
+                  <span className="flex items-center gap-1 text-sm text-zinc-400">
                     <MapPin className="w-3.5 h-3.5" />{client.city || client.address}
                   </span>
                 )}
@@ -216,17 +216,17 @@ export default function ClientProfile() {
             {editing ? (
               <>
                 <button onClick={save} disabled={saving}
-                  className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg text-sm transition-colors">
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm transition-colors">
                   <Save className="w-3.5 h-3.5" />{saving ? 'Saving...' : 'Save'}
                 </button>
                 <button onClick={() => { setEditing(false); setForm(client) }}
-                  className="p-1.5 text-gray-500 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                  className="p-1.5 text-zinc-500 hover:text-zinc-500 rounded-lg hover:bg-zinc-100">
                   <X className="w-4 h-4" />
                 </button>
               </>
             ) : (
               <button onClick={() => setEditing(true)}
-                className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-1.5 rounded-lg text-sm transition-colors">
+                className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors">
                 <Edit2 className="w-3.5 h-3.5" /> Edit
               </button>
             )}
@@ -234,16 +234,16 @@ export default function ClientProfile() {
         </div>
 
         {/* Stats row */}
-        <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-gray-200">
+        <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-zinc-200">
           {[
-            { label: 'Next Cleaning', value: nextJob ? new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'None', color: nextJob ? 'text-sky-600' : 'text-gray-400' },
-            { label: 'Upcoming', value: upcomingJobs.length, color: upcomingJobs.length > 0 ? 'text-sky-600' : 'text-gray-400' },
-            { label: 'Completed', value: completedJobs, color: 'text-gray-900' },
+            { label: 'Next Cleaning', value: nextJob ? new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'None', color: nextJob ? 'text-blue-600' : 'text-zinc-400' },
+            { label: 'Upcoming', value: upcomingJobs.length, color: upcomingJobs.length > 0 ? 'text-blue-600' : 'text-zinc-400' },
+            { label: 'Completed', value: completedJobs, color: 'text-zinc-900' },
             { label: 'Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-600' },
-            { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-amber-600' : 'text-gray-400' },
+            { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-amber-600' : 'text-zinc-400' },
           ].map(s => (
             <div key={s.label}>
-              <div className="text-xs text-gray-500">{s.label}</div>
+              <div className="text-xs text-zinc-500">{s.label}</div>
               <div className={`text-sm font-semibold mt-0.5 ${s.color}`}>{s.value}</div>
             </div>
           ))}
@@ -251,23 +251,23 @@ export default function ClientProfile() {
 
         {/* Upcoming cleanings banner */}
         {upcomingJobs.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="mt-4 pt-4 border-t border-zinc-200">
             <div className="flex items-center gap-2 mb-2">
-              <Calendar className="w-4 h-4 text-sky-500" />
-              <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Upcoming Cleanings</span>
+              <Calendar className="w-4 h-4 text-blue-500" />
+              <span className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Upcoming Cleanings</span>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {upcomingJobs.slice(0, 5).map(j => (
-                <div key={j.id} className="flex-shrink-0 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 min-w-[140px]">
-                  <div className="text-xs font-semibold text-sky-700">
+                <div key={j.id} className="flex-shrink-0 bg-blue-500/10 border border-blue-400/30 rounded-lg px-3 py-2 min-w-[140px]">
+                  <div className="text-xs font-semibold text-blue-600">
                     {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   </div>
-                  <div className="text-[11px] text-sky-600 mt-0.5">{j.start_time} – {j.end_time}</div>
-                  <div className="text-[10px] text-gray-500 mt-0.5 truncate">{j.title}</div>
+                  <div className="text-[11px] text-blue-600 mt-0.5">{j.start_time} – {j.end_time}</div>
+                  <div className="text-[10px] text-zinc-500 mt-0.5 truncate">{j.title}</div>
                 </div>
               ))}
               {upcomingJobs.length > 5 && (
-                <button onClick={() => setTab('jobs')} className="flex-shrink-0 flex items-center text-xs text-sky-600 hover:text-sky-700 px-2">
+                <button onClick={() => setTab('jobs')} className="flex-shrink-0 flex items-center text-xs text-blue-600 hover:text-blue-600 px-2">
                   +{upcomingJobs.length - 5} more <ChevronRight className="w-3 h-3 ml-0.5" />
                 </button>
               )}
@@ -277,28 +277,28 @@ export default function ClientProfile() {
       </div>
 
       {/* Quick actions */}
-      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 bg-white/50 border-b border-gray-200 shrink-0">
-        <span className="text-xs text-gray-500 mr-1">Quick:</span>
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 bg-white/50 border-b border-zinc-200 shrink-0">
+        <span className="text-xs text-zinc-500 mr-1">Quick:</span>
         <button onClick={() => navigate(`/quoting`)}
-          className="flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+          className="flex items-center gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
           <FileText className="w-3.5 h-3.5 text-blue-400" /> New Quote
         </button>
         <button onClick={() => navigate(`/scheduling?client_id=${id}`)}
-          className="flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors">
-          <Calendar className="w-3.5 h-3.5 text-sky-400" /> Schedule Job
+          className="flex items-center gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
+          <Calendar className="w-3.5 h-3.5 text-blue-500" /> Schedule Job
         </button>
         <button onClick={() => navigate(`/invoicing`)}
-          className="flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+          className="flex items-center gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
           <Receipt className="w-3.5 h-3.5 text-green-400" /> New Invoice
         </button>
         <button onClick={() => setTab('messages')}
-          className="flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+          className="flex items-center gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
           <MessageSquare className="w-3.5 h-3.5 text-purple-400" /> Send SMS
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 px-6 bg-white/30 shrink-0 overflow-x-auto">
+      <div className="flex border-b border-zinc-200 px-6 bg-white/30 shrink-0 overflow-x-auto">
         <Tab label="Activity" icon={Clock} active={tab === 'activity'} count={activity.length} onClick={() => setTab('activity')} />
         <Tab label="Calendar" icon={Calendar} active={tab === 'calendar'} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
@@ -316,49 +316,49 @@ export default function ClientProfile() {
         {/* Activity feed */}
         {tab === 'activity' && (
           <div className="max-w-2xl space-y-3">
-            {activity.length === 0 && <p className="text-gray-500 text-sm text-center py-10">No activity yet</p>}
+            {activity.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No activity yet</p>}
             {activity.map((item, i) => (
               <div key={i} className="flex gap-4">
                 <div className="flex flex-col items-center">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    item.type === 'job'     ? 'bg-sky-50' :
+                    item.type === 'job'     ? 'bg-blue-500/10' :
                     item.type === 'quote'   ? 'bg-blue-600/20' :
                     item.type === 'invoice' ? 'bg-green-50' :
                                               'bg-purple-50'
                   }`}>
-                    {item.type === 'job'     && <Calendar className="w-3.5 h-3.5 text-sky-400" />}
+                    {item.type === 'job'     && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
                     {item.type === 'quote'   && <FileText className="w-3.5 h-3.5 text-blue-400" />}
                     {item.type === 'invoice' && <Receipt className="w-3.5 h-3.5 text-green-400" />}
                     {item.type === 'message' && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
                   </div>
-                  {i < activity.length - 1 && <div className="w-px flex-1 bg-gray-100 mt-1" />}
+                  {i < activity.length - 1 && <div className="w-px flex-1 bg-zinc-100 mt-1" />}
                 </div>
                 <div className="flex-1 pb-4 min-w-0">
-                  <div className="bg-white border border-gray-200 rounded-xl p-3">
+                  <div className="bg-white border border-zinc-200 rounded-xl p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         {item.type === 'job' && (
                           <>
-                            <div className="text-sm font-medium text-gray-900">{item.data.title}</div>
-                            <div className="text-xs text-gray-400 mt-0.5">{item.data.scheduled_date} · {item.data.start_time}–{item.data.end_time}</div>
+                            <div className="text-sm font-medium text-zinc-900">{item.data.title}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.scheduled_date} · {item.data.start_time}–{item.data.end_time}</div>
                           </>
                         )}
                         {item.type === 'quote' && (
                           <>
-                            <div className="text-sm font-medium text-gray-900">Quote — ${item.data.total?.toFixed(2)}</div>
-                            <div className="text-xs text-gray-400 mt-0.5">{item.data.items?.length || 0} items</div>
+                            <div className="text-sm font-medium text-zinc-900">Quote — ${item.data.total?.toFixed(2)}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.items?.length || 0} items</div>
                           </>
                         )}
                         {item.type === 'invoice' && (
                           <>
-                            <div className="text-sm font-medium text-gray-900">{item.data.invoice_number} — ${item.data.total?.toFixed(2)}</div>
-                            <div className="text-xs text-gray-400 mt-0.5">Due {item.data.due_date || 'N/A'}</div>
+                            <div className="text-sm font-medium text-zinc-900">{item.data.invoice_number} — ${item.data.total?.toFixed(2)}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">Due {item.data.due_date || 'N/A'}</div>
                           </>
                         )}
                         {item.type === 'message' && (
                           <>
-                            <div className="text-sm text-gray-600">{item.data.body}</div>
-                            <div className="text-xs text-gray-500 mt-0.5">{item.data.direction} · {item.data.channel}</div>
+                            <div className="text-sm text-zinc-500">{item.data.body}</div>
+                            <div className="text-xs text-zinc-500 mt-0.5">{item.data.direction} · {item.data.channel}</div>
                           </>
                         )}
                       </div>
@@ -371,7 +371,7 @@ export default function ClientProfile() {
                         }`}>
                           {item.type === 'message' ? item.data.direction : item.data.status?.replace('_', ' ')}
                         </span>
-                        <span className="text-xs text-gray-600">
+                        <span className="text-xs text-zinc-500">
                           {new Date(item.date).toLocaleDateString()}
                         </span>
                       </div>
@@ -392,34 +392,34 @@ export default function ClientProfile() {
         {tab === 'properties' && (
           <div className="max-w-2xl">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-400">{properties.length} propert{properties.length !== 1 ? 'ies' : 'y'}</p>
+              <p className="text-sm text-zinc-400">{properties.length} propert{properties.length !== 1 ? 'ies' : 'y'}</p>
               <button onClick={openNewProp}
-                className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
                 <Plus className="w-3.5 h-3.5" /> Add Property
               </button>
             </div>
 
             {/* Property form */}
             {showPropForm && (
-              <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4 space-y-3">
+              <div className="bg-white border border-zinc-200 rounded-xl p-5 mb-4 space-y-3">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-900">{editingProp ? 'Edit Property' : 'New Property'}</span>
-                  <button onClick={() => setShowPropForm(false)} className="text-gray-500 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                  <span className="text-sm font-medium text-zinc-900">{editingProp ? 'Edit Property' : 'New Property'}</span>
+                  <button onClick={() => setShowPropForm(false)} className="text-zinc-500 hover:text-zinc-500"><X className="w-4 h-4" /></button>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Property Name *</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Property Name *</label>
                   <input value={propForm.name || ''} onChange={e => setPropForm(f => ({ ...f, name: e.target.value }))}
                     placeholder="e.g. Main Home, Lake House"
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Type</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Type</label>
                   <div className="flex gap-2">
                     {[['residential','Residential'],['commercial','Commercial'],['str','STR / Airbnb']].map(([val, label]) => (
                       <button key={val} onClick={() => setPropForm(f => ({ ...f, property_type: val }))}
-                        className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${propForm.property_type === val ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                        className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${propForm.property_type === val ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'}`}>
                         {label}
                       </button>
                     ))}
@@ -427,49 +427,49 @@ export default function ClientProfile() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Address</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Address</label>
                   <input value={propForm.address || ''} onChange={e => setPropForm(f => ({ ...f, address: e.target.value }))}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
                 </div>
 
                 <div className="flex gap-3">
                   <div className="flex-1">
-                    <label className="block text-xs text-gray-400 mb-1">City</label>
+                    <label className="block text-xs text-zinc-400 mb-1">City</label>
                     <input value={propForm.city || ''} onChange={e => setPropForm(f => ({ ...f, city: e.target.value }))}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                   </div>
                   <div className="w-16">
-                    <label className="block text-xs text-gray-400 mb-1">State</label>
+                    <label className="block text-xs text-zinc-400 mb-1">State</label>
                     <input value={propForm.state || ''} onChange={e => setPropForm(f => ({ ...f, state: e.target.value }))}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                   </div>
                   <div className="w-24">
-                    <label className="block text-xs text-gray-400 mb-1">ZIP</label>
+                    <label className="block text-xs text-zinc-400 mb-1">ZIP</label>
                     <input value={propForm.zip_code || ''} onChange={e => setPropForm(f => ({ ...f, zip_code: e.target.value }))}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                   </div>
                 </div>
 
                 <div className="w-40">
-                  <label className="block text-xs text-gray-400 mb-1">Default Duration (hrs)</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Default Duration (hrs)</label>
                   <input type="number" step="0.5" min="0.5" value={propForm.default_duration_hours || 3}
                     onChange={e => setPropForm(f => ({ ...f, default_duration_hours: parseFloat(e.target.value) }))}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
                 </div>
 
                 {propForm.property_type === 'str' && (
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Airbnb iCal URL</label>
+                    <label className="block text-xs text-zinc-400 mb-1">Airbnb iCal URL</label>
                     <input value={propForm.ical_url || ''} onChange={e => setPropForm(f => ({ ...f, ical_url: e.target.value }))}
                       placeholder="https://www.airbnb.com/calendar/ical/..."
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Notes</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Notes</label>
                   <textarea value={propForm.notes || ''} onChange={e => setPropForm(f => ({ ...f, notes: e.target.value }))} rows={2}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
                 </div>
 
                 <div className="flex gap-2 pt-1">
@@ -480,7 +480,7 @@ export default function ClientProfile() {
                     </button>
                   )}
                   <button onClick={saveProp} disabled={savingProp || !propForm.name}
-                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                     {savingProp ? 'Saving...' : 'Save Property'}
                   </button>
                 </div>
@@ -489,7 +489,7 @@ export default function ClientProfile() {
 
             <div className="space-y-2">
               {properties.length === 0 && !showPropForm && (
-                <p className="text-gray-500 text-sm text-center py-10">No properties yet</p>
+                <p className="text-zinc-500 text-sm text-center py-10">No properties yet</p>
               )}
               {properties.map(p => {
                 const typeColors = {
@@ -500,17 +500,17 @@ export default function ClientProfile() {
                 const typeLabel = { residential: 'Residential', commercial: 'Commercial', str: 'STR' }
                 return (
                   <div key={p.id}
-                    className="bg-white border border-gray-200 hover:border-gray-200 rounded-xl p-4 cursor-pointer transition-colors"
+                    className="bg-white border border-zinc-200 hover:border-zinc-200 rounded-xl p-4 cursor-pointer transition-colors"
                     onClick={() => openEditProp(p)}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-                          <Home className="w-4 h-4 text-gray-400" />
+                        <div className="w-9 h-9 rounded-lg bg-zinc-100 flex items-center justify-center shrink-0 mt-0.5">
+                          <Home className="w-4 h-4 text-zinc-400" />
                         </div>
                         <div className="min-w-0">
-                          <div className="font-medium text-gray-900 text-sm">{p.name}</div>
+                          <div className="font-medium text-zinc-900 text-sm">{p.name}</div>
                           {p.address && (
-                            <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                            <div className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
                               <MapPin className="w-3 h-3 shrink-0" />
                               {[p.address, p.city, p.state].filter(Boolean).join(', ')}
                               {p.zip_code ? ` ${p.zip_code}` : ''}
@@ -520,12 +520,12 @@ export default function ClientProfile() {
                             <span className={`text-[10px] px-2 py-0.5 rounded-full border ${typeColors[p.property_type] || typeColors.residential}`}>
                               {typeLabel[p.property_type] || p.property_type}
                             </span>
-                            <span className="text-[10px] text-gray-500">{p.default_duration_hours}h default</span>
+                            <span className="text-[10px] text-zinc-500">{p.default_duration_hours}h default</span>
                             {p.ical_url && <span className="text-[10px] text-orange-400">iCal linked</span>}
                           </div>
                         </div>
                       </div>
-                      <Edit2 className="w-3.5 h-3.5 text-gray-600 shrink-0 mt-1" />
+                      <Edit2 className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-1" />
                     </div>
                   </div>
                 )
@@ -538,17 +538,17 @@ export default function ClientProfile() {
         {tab === 'recurring' && (
           <div className="max-w-2xl">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-400">{schedules.length} schedule{schedules.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-zinc-400">{schedules.length} schedule{schedules.length !== 1 ? 's' : ''}</p>
               <a href="/recurring"
-                className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg transition-colors">
+                className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
                 <Plus className="w-3.5 h-3.5" /> Add Schedule
               </a>
             </div>
             {schedules.length === 0 && (
               <div className="text-center py-10">
-                <RefreshCw className="w-8 h-8 mx-auto mb-2 text-gray-700" />
-                <p className="text-gray-500 text-sm mb-3">No recurring schedules</p>
-                <a href="/recurring" className="text-xs text-sky-400 hover:text-sky-300">Set one up on the Recurring page</a>
+                <RefreshCw className="w-8 h-8 mx-auto mb-2 text-zinc-600" />
+                <p className="text-zinc-500 text-sm mb-3">No recurring schedules</p>
+                <a href="/recurring" className="text-xs text-blue-500 hover:text-sky-300">Set one up on the Recurring page</a>
               </div>
             )}
             <div className="space-y-2">
@@ -560,22 +560,22 @@ export default function ClientProfile() {
                   commercial:  'text-green-400 bg-green-500/10 border-green-500/20',
                 }
                 return (
-                  <div key={s.id} className={`bg-white border rounded-xl p-4 ${s.active ? 'border-gray-200' : 'border-gray-200 opacity-60'}`}>
+                  <div key={s.id} className={`bg-white border rounded-xl p-4 ${s.active ? 'border-zinc-200' : 'border-zinc-200 opacity-60'}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-sm font-medium text-gray-900">{s.title}</span>
+                          <span className="text-sm font-medium text-zinc-900">{s.title}</span>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize ${typeColors[s.job_type] || typeColors.residential}`}>
                             {s.job_type}
                           </span>
-                          {!s.active && <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Paused</span>}
+                          {!s.active && <span className="text-[10px] text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">Paused</span>}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-zinc-500">
                           {FREQ[s.frequency]} · {s.frequency !== 'monthly' ? `${DAYS_S[s.day_of_week]}s` : `day ${s.day_of_month}`} · {s.start_time}–{s.end_time}
                         </div>
-                        {s.address && <div className="text-[10px] text-gray-600 mt-0.5 flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{s.address}</div>}
+                        {s.address && <div className="text-[10px] text-zinc-500 mt-0.5 flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{s.address}</div>}
                       </div>
-                      <a href="/recurring" className="text-xs text-gray-500 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
+                      <a href="/recurring" className="text-xs text-zinc-500 hover:text-zinc-500 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
                         Edit
                       </a>
                     </div>
@@ -589,27 +589,27 @@ export default function ClientProfile() {
         {/* Jobs */}
         {tab === 'jobs' && (
           <div className="max-w-2xl space-y-5">
-            {jobs.length === 0 && <p className="text-gray-500 text-sm text-center py-10">No jobs yet</p>}
+            {jobs.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No jobs yet</p>}
 
             {/* Upcoming */}
             {upcomingJobs.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <Calendar className="w-4 h-4 text-sky-500" />
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Upcoming ({upcomingJobs.length})</span>
+                  <Calendar className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Upcoming ({upcomingJobs.length})</span>
                 </div>
                 <div className="space-y-2">
                   {upcomingJobs.map(j => (
-                    <div key={j.id} className="bg-white border border-sky-200 rounded-xl p-4 flex items-center gap-4">
+                    <div key={j.id} className="bg-white border border-blue-400/30 rounded-xl p-4 flex items-center gap-4">
                       <div className="text-center w-16 shrink-0">
-                        <div className="text-sm font-semibold text-sky-700">
+                        <div className="text-sm font-semibold text-blue-600">
                           {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </div>
-                        <div className="text-xs text-sky-500">{j.start_time}</div>
+                        <div className="text-xs text-blue-500">{j.start_time}</div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900">{j.title}</div>
-                        {j.address && <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
+                        <div className="font-medium text-zinc-900">{j.title}</div>
+                        {j.address && <div className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
                       </div>
                       <div className="flex items-center gap-2">
                         {j.dispatched && <span className="text-xs bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">Dispatched</span>}
@@ -624,19 +624,19 @@ export default function ClientProfile() {
             {/* Past */}
             {pastJobs.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Past ({pastJobs.length})</p>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Past ({pastJobs.length})</p>
                 <div className="space-y-2">
                   {pastJobs.map(j => (
-                    <div key={j.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+                    <div key={j.id} className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
                       <div className="text-center w-16 shrink-0">
-                        <div className="text-sm font-medium text-gray-600">
+                        <div className="text-sm font-medium text-zinc-500">
                           {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </div>
-                        <div className="text-xs text-gray-400">{j.start_time}</div>
+                        <div className="text-xs text-zinc-400">{j.start_time}</div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-600">{j.title}</div>
-                        {j.address && <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
+                        <div className="font-medium text-zinc-500">{j.title}</div>
+                        {j.address && <div className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
                       </div>
                       <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
                     </div>
@@ -650,12 +650,12 @@ export default function ClientProfile() {
         {/* Quotes */}
         {tab === 'quotes' && (
           <div className="max-w-2xl space-y-2">
-            {quotes.length === 0 && <p className="text-gray-500 text-sm text-center py-10">No quotes yet</p>}
+            {quotes.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No quotes yet</p>}
             {quotes.map(q => (
-              <div key={q.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+              <div key={q.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900">${q.total?.toFixed(2)}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
+                  <div className="font-medium text-zinc-900">${q.total?.toFixed(2)}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status]}`}>{q.status}</span>
               </div>
@@ -666,12 +666,12 @@ export default function ClientProfile() {
         {/* Invoices */}
         {tab === 'invoices' && (
           <div className="max-w-2xl space-y-2">
-            {invoices.length === 0 && <p className="text-gray-500 text-sm text-center py-10">No invoices yet</p>}
+            {invoices.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No invoices yet</p>}
             {invoices.map(inv => (
-              <div key={inv.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+              <div key={inv.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900">{inv.invoice_number}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">Due {inv.due_date || 'N/A'} · ${inv.total?.toFixed(2)}</div>
+                  <div className="font-medium text-zinc-900">{inv.invoice_number}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">Due {inv.due_date || 'N/A'} · ${inv.total?.toFixed(2)}</div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${INVOICE_COLORS[inv.status]}`}>{inv.status}</span>
               </div>
@@ -684,18 +684,18 @@ export default function ClientProfile() {
           <div className="max-w-2xl">
             {/* SMS compose */}
             {client.phone && (
-              <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+              <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <MessageSquare className="w-4 h-4 text-purple-400" />
-                  <span className="text-sm font-medium text-gray-900">Send SMS to {client.phone}</span>
+                  <span className="text-sm font-medium text-zinc-900">Send SMS to {client.phone}</span>
                 </div>
                 <div className="flex gap-2">
                   <input value={smsText} onChange={e => setSmsText(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && sendSms()}
                     placeholder="Type a message..."
-                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
                   <button onClick={sendSms} disabled={sending || !smsText.trim()}
-                    className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-200 px-4 py-2 rounded-lg text-sm transition-colors">
+                    className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-4 py-2 rounded-lg text-sm transition-colors">
                     <Send className="w-3.5 h-3.5" />{sending ? '...' : 'Send'}
                   </button>
                 </div>
@@ -708,16 +708,16 @@ export default function ClientProfile() {
             )}
 
             <div className="space-y-2">
-              {messages.length === 0 && <p className="text-gray-500 text-sm text-center py-8">No messages yet</p>}
+              {messages.length === 0 && <p className="text-zinc-500 text-sm text-center py-8">No messages yet</p>}
               {messages.map(m => (
                 <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
                     m.direction === 'outbound'
-                      ? 'bg-gray-900 text-white rounded-br-sm'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                      ? 'bg-blue-600 text-white rounded-br-sm'
+                      : 'bg-zinc-100 text-gray-800 rounded-bl-sm'
                   }`}>
                     <div>{m.body}</div>
-                    <div className={`text-xs mt-1 ${m.direction === 'outbound' ? 'text-sky-200' : 'text-gray-500'}`}>
+                    <div className={`text-xs mt-1 ${m.direction === 'outbound' ? 'text-sky-200' : 'text-zinc-500'}`}>
                       {new Date(m.created_at).toLocaleString()}
                     </div>
                   </div>
@@ -732,18 +732,18 @@ export default function ClientProfile() {
           <div className="max-w-lg space-y-5">
 
             {/* Contact info */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">Contact</div>
+            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Contact</div>
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">First Name</label>
+                  <label className="block text-xs text-zinc-500 mb-1">First Name</label>
                   <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-gray-400" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Last Name</label>
+                  <label className="block text-xs text-zinc-500 mb-1">Last Name</label>
                   <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-gray-400" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
                 </div>
               </div>
               {[
@@ -752,30 +752,30 @@ export default function ClientProfile() {
                 { label: 'Lead Source', key: 'source' },
               ].map(({ label, key }) => (
                 <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-gray-500 w-24 shrink-0">{label}</span>
+                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-gray-400" />
+                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
                 </div>
               ))}
               <div className="flex items-center gap-4">
-                <span className="text-xs text-gray-500 w-24 shrink-0">Status</span>
+                <span className="text-xs text-zinc-500 w-24 shrink-0">Status</span>
                 <select value={form.status || 'lead'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+                  className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
                   <option value="lead">Lead</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
               <div className="flex items-start gap-4">
-                <span className="text-xs text-gray-500 w-24 shrink-0 pt-2">Notes</span>
+                <span className="text-xs text-zinc-500 w-24 shrink-0 pt-2">Notes</span>
                 <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                  className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-gray-400 resize-none" />
+                  className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-gray-400 resize-none" />
               </div>
             </div>
 
             {/* Service address */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">Service Address</div>
+            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Service Address</div>
               {[
                 { label: 'Street', key: 'address' },
                 { label: 'City', key: 'city' },
@@ -783,17 +783,17 @@ export default function ClientProfile() {
                 { label: 'ZIP', key: 'zip_code' },
               ].map(({ label, key }) => (
                 <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-gray-500 w-24 shrink-0">{label}</span>
+                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-gray-400" />
+                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
                 </div>
               ))}
             </div>
 
             {/* Billing address */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">Billing Address</div>
-              <p className="text-xs text-gray-400 -mt-2">Leave blank to use service address on invoices</p>
+            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Billing Address</div>
+              <p className="text-xs text-zinc-400 -mt-2">Leave blank to use service address on invoices</p>
               {[
                 { label: 'Street', key: 'billing_address' },
                 { label: 'City', key: 'billing_city' },
@@ -801,15 +801,15 @@ export default function ClientProfile() {
                 { label: 'ZIP', key: 'billing_zip' },
               ].map(({ label, key }) => (
                 <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-gray-500 w-24 shrink-0">{label}</span>
+                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-gray-400" />
+                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
                 </div>
               ))}
             </div>
 
             <button onClick={save} disabled={saving}
-              className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors">
               <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
@@ -851,7 +851,7 @@ const STATUS_PILL = {
   scheduled:   'bg-blue-50 text-blue-700 border-blue-200',
   in_progress: 'bg-amber-50 text-amber-700 border-amber-200',
   completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  cancelled:   'bg-gray-100 text-gray-500 border-gray-200',
+  cancelled:   'bg-zinc-100 text-zinc-500 border-zinc-200',
 }
 
 function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId }) {
@@ -894,14 +894,14 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
   return (
     <div className="max-w-2xl space-y-5">
       {/* Mini month calendar */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
+      <div className="bg-white border border-zinc-200 rounded-xl p-5">
         {/* Month nav */}
         <div className="flex items-center justify-between mb-3">
-          <button onClick={prevMonth} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+          <button onClick={prevMonth} className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-500">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="text-sm font-semibold text-gray-800">{MONTH_NAMES[month]} {year}</span>
-          <button onClick={nextMonth} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+          <button onClick={nextMonth} className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-zinc-500">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -909,7 +909,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
         {/* Day headers */}
         <div className="grid grid-cols-7 mb-1">
           {MINI_DAYS.map(d => (
-            <div key={d} className="text-center text-[10px] font-medium text-gray-400 py-1">{d}</div>
+            <div key={d} className="text-center text-[10px] font-medium text-zinc-400 py-1">{d}</div>
           ))}
         </div>
 
@@ -930,12 +930,12 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
                 onClick={() => setSelectedDate(selectedDate === date ? null : date)}
                 className={`h-9 flex flex-col items-center justify-center rounded-lg text-xs transition-all relative ${
                   isSelected
-                    ? 'bg-gray-900 text-white'
+                    ? 'bg-blue-600 text-white'
                     : isToday
-                    ? 'bg-sky-50 text-sky-700 font-semibold'
+                    ? 'bg-blue-500/10 text-blue-600 font-semibold'
                     : hasJobs
-                    ? 'hover:bg-gray-100 text-gray-800 font-medium'
-                    : 'hover:bg-gray-50 text-gray-400'
+                    ? 'hover:bg-zinc-100 text-gray-800 font-medium'
+                    : 'hover:bg-zinc-50 text-zinc-400'
                 }`}
               >
                 {dayNum}
@@ -958,7 +958,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
         {/* Legend */}
         <div className="flex items-center justify-center gap-4 mt-3 pt-3 border-t border-gray-100">
           {Object.entries(JOB_TYPE_DOT).map(([type, color]) => (
-            <span key={type} className="flex items-center gap-1 text-[10px] text-gray-400">
+            <span key={type} className="flex items-center gap-1 text-[10px] text-zinc-400">
               <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
               {JOB_TYPE_LABEL[type]}
             </span>
@@ -969,26 +969,26 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
       {/* Event list */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
             {selectedDate
               ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
               : 'Upcoming Cleanings'}
           </h3>
           {selectedDate && (
-            <button onClick={() => setSelectedDate(null)} className="text-[10px] text-gray-400 hover:text-gray-600">
+            <button onClick={() => setSelectedDate(null)} className="text-[10px] text-zinc-400 hover:text-zinc-500">
               Show all upcoming
             </button>
           )}
         </div>
 
         {listJobs.length === 0 ? (
-          <div className="text-center py-10 bg-white border border-gray-200 rounded-xl">
+          <div className="text-center py-10 bg-white border border-zinc-200 rounded-xl">
             <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-zinc-400">
               {selectedDate ? 'No cleanings on this day' : 'No upcoming cleanings'}
             </p>
             <button onClick={() => navigate(`/scheduling?client_id=${clientId}`)}
-              className="mt-3 text-xs text-sky-600 hover:text-sky-700 font-medium">
+              className="mt-3 text-xs text-blue-600 hover:text-blue-600 font-medium">
               + Schedule a cleaning
             </button>
           </div>
@@ -1000,7 +1000,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
               const isPast = j.scheduled_date < todayStr
 
               return (
-                <div key={j.id} className={`bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-gray-300 ${isPast ? 'opacity-60' : ''}`}>
+                <div key={j.id} className={`bg-white border border-zinc-200 rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-zinc-300 ${isPast ? 'opacity-60' : ''}`}>
                   {/* Color bar */}
                   <div className={`w-1 self-stretch rounded-full shrink-0 ${dotColor}`} />
 
@@ -1009,15 +1009,15 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
                     <div className="text-xs font-bold text-gray-800">
                       {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </div>
-                    <div className="text-[10px] text-gray-400">
+                    <div className="text-[10px] text-zinc-400">
                       {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
                     </div>
                   </div>
 
                   {/* Job info */}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm text-gray-900 truncate">{j.title}</div>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                    <div className="font-medium text-sm text-zinc-900 truncate">{j.title}</div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {j.start_time} – {j.end_time}
@@ -1026,7 +1026,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
                       <span>{JOB_TYPE_LABEL[j.job_type] || j.job_type}</span>
                     </div>
                     {j.address && (
-                      <div className="flex items-center gap-1 mt-1 text-[11px] text-gray-400 truncate">
+                      <div className="flex items-center gap-1 mt-1 text-[11px] text-zinc-400 truncate">
                         <MapPin className="w-3 h-3 shrink-0" />{j.address}
                       </div>
                     )}

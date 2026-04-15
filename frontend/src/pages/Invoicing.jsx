@@ -7,7 +7,7 @@ import { del, get, post, patch } from "../api"
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUS = {
-  draft:   { dot: 'bg-gray-400',    text: 'text-gray-400',    label: 'Draft'   },
+  draft:   { dot: 'bg-gray-400',    text: 'text-zinc-400',    label: 'Draft'   },
   sent:    { dot: 'bg-blue-400',    text: 'text-blue-400',    label: 'Sent'    },
   paid:    { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Paid'    },
   overdue: { dot: 'bg-red-400',     text: 'text-red-400',     label: 'Overdue' },
@@ -16,7 +16,7 @@ const STATUS = {
 // ── Client avatar ─────────────────────────────────────────────────────────────
 const AVATAR_COLORS = [
   'bg-violet-500/20 text-violet-300',
-  'bg-sky-500/20 text-sky-300',
+  'bg-sky-500/20 text-blue-400',
   'bg-emerald-500/20 text-emerald-300',
   'bg-orange-500/20 text-orange-300',
   'bg-pink-500/20 text-pink-300',
@@ -30,8 +30,8 @@ function avatar(name = '') {
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
 // ── Shared input styles ───────────────────────────────────────────────────────
-const inp = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-gray-400 transition-colors'
-const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1.5'
+const inp = 'w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 transition-colors'
+const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-1.5'
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ toasts }) {
@@ -44,7 +44,7 @@ function Toast({ toasts }) {
               ? 'bg-white border-emerald-200 text-emerald-700'
               : t.type === 'error'
               ? 'bg-white border-red-200 text-red-700'
-              : 'bg-white border-gray-200 text-gray-700'}`}>
+              : 'bg-white border-zinc-200 text-zinc-600'}`}>
           <span className={`w-1.5 h-1.5 rounded-full shrink-0
             ${t.type === 'success' ? 'bg-emerald-500' : t.type === 'error' ? 'bg-red-500' : 'bg-gray-400'}`} />
           {t.message}
@@ -172,7 +172,7 @@ export default function Invoicing() {
   const overdueCount = invoices.filter(i => i.status === 'overdue').length
 
   return (
-    <div className="flex h-full bg-gray-50">
+    <div className="flex h-full bg-zinc-50">
 
       {/* ── Main column ─────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -180,26 +180,26 @@ export default function Invoicing() {
         {/* Page header */}
         <div className="flex items-center justify-between px-4 sm:px-8 pt-7 pb-5">
           <div>
-            <h1 className="text-[15px] font-semibold text-gray-900 tracking-tight">Invoices</h1>
-            <p className="text-xs text-gray-500 mt-0.5">{invoices.length} total</p>
+            <h1 className="text-[15px] font-semibold text-zinc-900 tracking-tight">Invoices</h1>
+            <p className="text-xs text-zinc-500 mt-0.5">{invoices.length} total</p>
           </div>
           <button onClick={openNew}
-            className="flex items-center gap-2 bg-gray-900 text-white hover:bg-gray-800 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors">
+            className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors">
             <Plus className="w-3.5 h-3.5" /> New invoice
           </button>
         </div>
 
         {/* Metrics bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 mx-4 sm:mx-8 mb-6 rounded-xl border border-gray-200 overflow-hidden bg-white">
+        <div className="grid grid-cols-2 sm:grid-cols-4 mx-4 sm:mx-8 mb-6 rounded-xl border border-zinc-200 overflow-hidden bg-white">
           {[
             { label: 'Paid',        value: `$${totalRevenue.toFixed(2)}`, accent: 'text-emerald-400' },
             { label: 'Outstanding', value: `$${outstanding.toFixed(2)}`,  accent: 'text-amber-400'   },
-            { label: 'Invoices',    value: invoices.length,               accent: 'text-gray-900'        },
-            { label: 'Overdue',     value: overdueCount,                  accent: overdueCount > 0 ? 'text-red-400' : 'text-gray-600' },
+            { label: 'Invoices',    value: invoices.length,               accent: 'text-zinc-900'        },
+            { label: 'Overdue',     value: overdueCount,                  accent: overdueCount > 0 ? 'text-red-400' : 'text-zinc-500' },
           ].map((m, idx, arr) => (
             <div key={m.label}
-              className={`flex-1 px-5 py-4 ${idx < arr.length - 1 ? 'border-r border-gray-200' : ''}`}>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1">{m.label}</div>
+              className={`flex-1 px-5 py-4 ${idx < arr.length - 1 ? 'border-r border-zinc-200' : ''}`}>
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-1">{m.label}</div>
               <div className={`text-lg font-semibold ${m.accent}`}>{m.value}</div>
             </div>
           ))}
@@ -208,17 +208,17 @@ export default function Invoicing() {
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 px-4 sm:px-8 mb-4">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search…"
-              className="bg-white border border-gray-200 text-sm text-gray-900 placeholder-gray-600 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-gray-300 w-44 transition-colors" />
+              className="bg-white border border-zinc-200 text-sm text-zinc-900 placeholder-gray-600 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-zinc-300 w-44 transition-colors" />
           </div>
 
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 overflow-x-auto">
+          <div className="flex items-center gap-1 bg-white border border-zinc-200 rounded-lg p-1 overflow-x-auto">
             {['', 'draft', 'sent', 'paid', 'overdue'].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors
-                  ${statusFilter === s ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  ${statusFilter === s ? 'bg-zinc-100 text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-600'}`}>
                 {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}
@@ -230,18 +230,18 @@ export default function Invoicing() {
           {/* Column headers */}
           <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-3 mb-2">
             {['Client', 'Amount', 'Due', 'Status', ''].map(h => (
-              <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">{h}</div>
+              <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{h}</div>
             ))}
           </div>
 
-          <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+          <div className="rounded-xl border border-zinc-200 overflow-hidden bg-white">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-10 h-10 rounded-xl bg-gray-50/50 flex items-center justify-center mb-3">
-                  <FileText className="w-5 h-5 text-gray-600" />
+                <div className="w-10 h-10 rounded-xl bg-zinc-50/50 flex items-center justify-center mb-3">
+                  <FileText className="w-5 h-5 text-zinc-500" />
                 </div>
-                <p className="text-sm text-gray-500">{search ? 'No matching invoices' : 'No invoices yet'}</p>
-                {!search && <button onClick={openNew} className="mt-3 text-xs text-sky-400 hover:text-sky-300">Create one →</button>}
+                <p className="text-sm text-zinc-500">{search ? 'No matching invoices' : 'No invoices yet'}</p>
+                {!search && <button onClick={openNew} className="mt-3 text-xs text-blue-500 hover:text-blue-400">Create one →</button>}
               </div>
             ) : filtered.map((inv, idx) => {
               const st = STATUS[inv.status] || STATUS.draft
@@ -251,9 +251,9 @@ export default function Invoicing() {
               return (
                 <div key={inv.id}
                   className={`group flex flex-wrap sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 items-center px-4 py-3.5 cursor-pointer
-                    hover:bg-gray-50/80 transition-colors
+                    hover:bg-zinc-50/80 transition-colors
                     ${idx < filtered.length - 1 ? 'border-b border-gray-100' : ''}
-                    ${selected?.id === inv.id ? 'bg-gray-50/50' : ''}`}
+                    ${selected?.id === inv.id ? 'bg-zinc-50/50' : ''}`}
                   onClick={() => openEdit(inv)}>
 
                   {/* Client */}
@@ -262,13 +262,13 @@ export default function Invoicing() {
                       {av.initials}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm text-gray-900 truncate">{clientName(inv.client_id)}</div>
-                      <div className="text-[11px] text-gray-600">{inv.invoice_number}</div>
+                      <div className="text-sm text-zinc-900 truncate">{clientName(inv.client_id)}</div>
+                      <div className="text-[11px] text-zinc-500">{inv.invoice_number}</div>
                     </div>
                   </div>
 
                   {/* Amount */}
-                  <div className="text-sm font-medium text-gray-900">${inv.total?.toFixed(2)}</div>
+                  <div className="text-sm font-medium text-zinc-900">${inv.total?.toFixed(2)}</div>
 
                   {/* Due date */}
                   <div>
@@ -277,7 +277,7 @@ export default function Invoicing() {
                         <AlertTriangle className="w-3 h-3" />{days}d overdue
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-500">{inv.due_date || '—'}</span>
+                      <span className="text-xs text-zinc-500">{inv.due_date || '—'}</span>
                     )}
                   </div>
 
@@ -292,7 +292,7 @@ export default function Invoicing() {
                     onClick={e => e.stopPropagation()}>
                     {inv.status !== 'paid' && (
                       <button onClick={() => openSend(inv)}
-                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
+                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-zinc-50 text-zinc-500 hover:bg-zinc-100 transition-colors">
                         <Send className="w-3 h-3" /> Send
                       </button>
                     )}
@@ -308,7 +308,7 @@ export default function Invoicing() {
                         <CheckCircle className="w-3 h-3" /> Paid
                       </button>
                     )}
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-600 ml-1" />
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500 ml-1" />
                   </div>
                 </div>
               )
@@ -319,30 +319,30 @@ export default function Invoicing() {
 
       {/* ── Side panel — Edit ───────────────────────────────────── */}
       {panel === 'edit' && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[420px] sm:shrink-0 sm:border-l sm:border-gray-200">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[420px] sm:shrink-0 sm:border-l sm:border-zinc-200">
 
           {/* Panel header */}
-          <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200">
+          <div className="flex items-start justify-between px-6 py-5 border-b border-zinc-200">
             <div>
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-gray-50 flex items-center justify-center">
-                  <FileText className="w-3.5 h-3.5 text-gray-400" />
+                <div className="w-6 h-6 rounded-md bg-zinc-50 flex items-center justify-center">
+                  <FileText className="w-3.5 h-3.5 text-zinc-400" />
                 </div>
-                <span className="text-sm font-semibold text-gray-900">
+                <span className="text-sm font-semibold text-zinc-900">
                   {selected ? selected.invoice_number : 'New invoice'}
                 </span>
               </div>
-              {selected && <p className="text-xs text-gray-500 mt-1 ml-8">{clientName(selected.client_id)}</p>}
+              {selected && <p className="text-xs text-zinc-500 mt-1 ml-8">{clientName(selected.client_id)}</p>}
             </div>
             <div className="flex items-center gap-1.5">
               {selected && selected.status !== 'paid' && (
                 <button onClick={() => openSend(selected)}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-zinc-50 text-zinc-500 hover:bg-zinc-100 transition-colors">
                   <Send className="w-3 h-3" /> Send
                 </button>
               )}
               <button onClick={closePanel}
-                className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-600 hover:bg-gray-50 transition-colors">
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-500 hover:bg-zinc-50 transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -355,7 +355,7 @@ export default function Invoicing() {
             <div>
               <label className={lbl}>Client</label>
               <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
-                className={inp + ' bg-gray-50'}>
+                className={inp + ' bg-zinc-50'}>
                 <option value="">Select a client…</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -366,35 +366,35 @@ export default function Invoicing() {
               <div className="flex items-center justify-between mb-3">
                 <label className={lbl.replace('mb-1.5', '')}>Line Items</label>
                 <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { ...EMPTY_ITEM }] }))}
-                  className="flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300 transition-colors">
+                  className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-400 transition-colors">
                   <Plus className="w-3 h-3" /> Add line
                 </button>
               </div>
               <div className="space-y-2">
                 {form.items.map((item, i) => (
-                  <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <div key={i} className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-2">
                     <div className="flex gap-2 items-center">
                       <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                         placeholder="Description"
-                        className="flex-1 bg-transparent border-none text-sm text-gray-900 placeholder-gray-600 focus:outline-none" />
+                        className="flex-1 bg-transparent border-none text-sm text-zinc-900 placeholder-gray-600 focus:outline-none" />
                       <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
-                        className="text-gray-700 hover:text-red-400 transition-colors shrink-0">
+                        className="text-zinc-600 hover:text-red-400 transition-colors shrink-0">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <div className="flex gap-2 items-center border-t border-gray-100 pt-2">
                       <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-gray-600 w-6">Qty</span>
+                        <span className="text-[10px] text-zinc-500 w-6">Qty</span>
                         <input type="number" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
-                          className="w-14 bg-transparent text-xs text-gray-600 focus:outline-none text-center border border-gray-200 rounded px-1 py-0.5" />
+                          className="w-14 bg-transparent text-xs text-zinc-500 focus:outline-none text-center border border-zinc-200 rounded px-1 py-0.5" />
                       </div>
-                      <span className="text-gray-700">×</span>
+                      <span className="text-zinc-600">×</span>
                       <div className="flex items-center gap-1 flex-1">
-                        <span className="text-[10px] text-gray-600">$</span>
+                        <span className="text-[10px] text-zinc-500">$</span>
                         <input type="number" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
-                          className="flex-1 bg-transparent text-xs text-gray-600 focus:outline-none border border-gray-200 rounded px-2 py-0.5" />
+                          className="flex-1 bg-transparent text-xs text-zinc-500 focus:outline-none border border-zinc-200 rounded px-2 py-0.5" />
                       </div>
-                      <span className="text-xs font-medium text-gray-900 w-16 text-right">
+                      <span className="text-xs font-medium text-zinc-900 w-16 text-right">
                         ${((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
                       </span>
                     </div>
@@ -408,12 +408,12 @@ export default function Invoicing() {
               <div>
                 <label className={lbl}>Tax %</label>
                 <input type="number" value={form.tax_rate} onChange={e => setForm(f => ({ ...f, tax_rate: e.target.value }))}
-                  className={inp + ' bg-gray-50'} />
+                  className={inp + ' bg-zinc-50'} />
               </div>
               <div>
                 <label className={lbl}>Due Date</label>
                 <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
-                  className={inp + ' bg-gray-50'} />
+                  className={inp + ' bg-zinc-50'} />
               </div>
             </div>
 
@@ -422,7 +422,7 @@ export default function Invoicing() {
               <label className={lbl}>Notes</label>
               <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 rows={3} placeholder="Payment instructions, bank details…"
-                className={inp + ' bg-gray-50 resize-none'} />
+                className={inp + ' bg-zinc-50 resize-none'} />
             </div>
 
 
@@ -433,26 +433,26 @@ export default function Invoicing() {
             />
 
             {/* Totals */}
-            <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 overflow-hidden">
               <div className="flex justify-between px-4 py-2.5 border-b border-gray-100">
-                <span className="text-xs text-gray-500">Subtotal</span>
-                <span className="text-xs text-gray-400">${sub(form.items).toFixed(2)}</span>
+                <span className="text-xs text-zinc-500">Subtotal</span>
+                <span className="text-xs text-zinc-400">${sub(form.items).toFixed(2)}</span>
               </div>
               <div className="flex justify-between px-4 py-2.5 border-b border-gray-100">
-                <span className="text-xs text-gray-500">Tax ({form.tax_rate || 0}%)</span>
-                <span className="text-xs text-gray-400">${(sub(form.items) * (parseFloat(form.tax_rate) || 0) / 100).toFixed(2)}</span>
+                <span className="text-xs text-zinc-500">Tax ({form.tax_rate || 0}%)</span>
+                <span className="text-xs text-zinc-400">${(sub(form.items) * (parseFloat(form.tax_rate) || 0) / 100).toFixed(2)}</span>
               </div>
               <div className="flex justify-between px-4 py-3">
-                <span className="text-sm font-semibold text-gray-900">Total</span>
-                <span className="text-sm font-semibold text-gray-900">${totalAmt(form.items, form.tax_rate).toFixed(2)}</span>
+                <span className="text-sm font-semibold text-zinc-900">Total</span>
+                <span className="text-sm font-semibold text-zinc-900">${totalAmt(form.items, form.tax_rate).toFixed(2)}</span>
               </div>
             </div>
           </div>
 
           {/* Panel footer */}
-          <div className="p-5 border-t border-gray-200 space-y-2">
+          <div className="p-5 border-t border-zinc-200 space-y-2">
             <button onClick={save} disabled={saving || !form.client_id}
-              className="w-full bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+              className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:bg-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
               {saving ? 'Saving…' : (selected ? 'Update invoice' : 'Create invoice')}
             </button>
             {selected && (
@@ -468,22 +468,22 @@ export default function Invoicing() {
 
       {/* ── Side panel — Send ───────────────────────────────────── */}
       {panel === 'send' && selected && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[380px] sm:shrink-0 sm:border-l sm:border-gray-200">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[380px] sm:shrink-0 sm:border-l sm:border-zinc-200">
 
-          <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200">
+          <div className="flex items-start justify-between px-6 py-5 border-b border-zinc-200">
             <div>
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-gray-50 flex items-center justify-center">
-                  <Send className="w-3 h-3 text-gray-400" />
+                <div className="w-6 h-6 rounded-md bg-zinc-50 flex items-center justify-center">
+                  <Send className="w-3 h-3 text-zinc-400" />
                 </div>
-                <span className="text-sm font-semibold text-gray-900">Send invoice</span>
+                <span className="text-sm font-semibold text-zinc-900">Send invoice</span>
               </div>
-              <p className="text-xs text-gray-500 mt-1 ml-8">
+              <p className="text-xs text-zinc-500 mt-1 ml-8">
                 {selected.invoice_number} · ${selected.total?.toFixed(2)}
               </p>
             </div>
             <button onClick={closePanel}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-600 hover:bg-gray-50 transition-colors">
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-500 hover:bg-zinc-50 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -502,8 +502,8 @@ export default function Invoicing() {
                   <button key={opt.val} onClick={() => setSendForm(f => ({ ...f, channel: opt.val }))}
                     className={`flex flex-col items-center gap-2 py-3.5 rounded-xl border text-xs font-medium transition-colors
                       ${sendForm.channel === opt.val
-                        ? 'bg-gray-100 border-gray-300 text-gray-900'
-                        : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-400'}`}>
+                        ? 'bg-zinc-100 border-zinc-300 text-zinc-900'
+                        : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-400'}`}>
                     <opt.icon className="w-4 h-4" />
                     {opt.label}
                   </button>
@@ -516,7 +516,7 @@ export default function Invoicing() {
                 <label className={lbl}>Email address</label>
                 <input value={sendForm.email} onChange={e => setSendForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="client@email.com"
-                  className={inp + ' bg-gray-50'} />
+                  className={inp + ' bg-zinc-50'} />
               </div>
             )}
 
@@ -525,38 +525,38 @@ export default function Invoicing() {
                 <label className={lbl}>Phone number</label>
                 <input value={sendForm.phone} onChange={e => setSendForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="+1 (207) 555-0100"
-                  className={inp + ' bg-gray-50'} />
+                  className={inp + ' bg-zinc-50'} />
               </div>
             )}
 
             {sendForm.channel !== 'email' && (
               <div>
-                <label className={lbl}>Custom message <span className="normal-case text-gray-600 font-normal">(optional)</span></label>
+                <label className={lbl}>Custom message <span className="normal-case text-zinc-500 font-normal">(optional)</span></label>
                 <textarea value={sendForm.custom_message} onChange={e => setSendForm(f => ({ ...f, custom_message: e.target.value }))}
                   rows={3} placeholder="Prepended to the SMS…"
-                  className={inp + ' bg-gray-50 resize-none'} />
+                  className={inp + ' bg-zinc-50 resize-none'} />
               </div>
             )}
 
             {/* Preview card */}
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-600 mb-3">Invoice</div>
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-3">Invoice</div>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm text-gray-900">{selected.invoice_number}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{clientName(selected.client_id)}</div>
+                  <div className="text-sm text-zinc-900">{selected.invoice_number}</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">{clientName(selected.client_id)}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-semibold text-gray-900">${selected.total?.toFixed(2)}</div>
-                  {selected.due_date && <div className="text-[11px] text-gray-500 mt-0.5">Due {selected.due_date}</div>}
+                  <div className="text-sm font-semibold text-zinc-900">${selected.total?.toFixed(2)}</div>
+                  {selected.due_date && <div className="text-[11px] text-zinc-500 mt-0.5">Due {selected.due_date}</div>}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="p-5 border-t border-gray-200">
+          <div className="p-5 border-t border-zinc-200">
             <button onClick={sendInvoice} disabled={sending}
-              className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
               <Send className="w-3.5 h-3.5" />
               {sending ? 'Sending…' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
             </button>

@@ -6,7 +6,7 @@ import { get, post, patch } from "../api"
 
 
 const QUOTE_STATUS_COLORS = {
-  draft:    'bg-gray-100 text-gray-600 border-gray-200',
+  draft:    'bg-zinc-100 text-zinc-500 border-zinc-200',
   sent:     'bg-blue-50 text-blue-700 border-blue-200',
   accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   declined: 'bg-red-50 text-red-700 border-red-200',
@@ -24,7 +24,7 @@ const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
 function Toast({ msg }) {
   return (
-    <div className="fixed bottom-6 right-6 bg-white border border-gray-200 text-gray-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
+    <div className="fixed bottom-6 right-6 bg-white border border-zinc-200 text-zinc-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
       <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />{msg}
     </div>
   )
@@ -175,19 +175,19 @@ export default function Quoting() {
 
         {/* Tabs + action */}
         <div className="flex justify-between items-center mb-5 shrink-0">
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
             <button onClick={() => setTab('leads')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'leads' ? 'bg-gray-200 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'leads' ? 'bg-zinc-200 text-zinc-900' : 'text-zinc-400 hover:text-zinc-500'}`}>
               Leads
               {newLeads > 0 && <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{newLeads}</span>}
             </button>
             <button onClick={() => setTab('quotes')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-gray-200 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-zinc-200 text-zinc-900' : 'text-zinc-400 hover:text-zinc-500'}`}>
               Quotes
             </button>
           </div>
           <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-            className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             <Plus className="w-4 h-4" /> New Quote
           </button>
         </div>
@@ -196,46 +196,46 @@ export default function Quoting() {
         {tab === 'leads' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
             {intakes.length === 0 && (
-              <div className="text-center py-16 text-gray-500">
+              <div className="text-center py-16 text-zinc-500">
                 <p className="text-sm">No leads yet</p>
-                <p className="text-xs mt-1 text-gray-600">Submissions from maineclean.co will appear here</p>
+                <p className="text-xs mt-1 text-zinc-500">Submissions from maineclean.co will appear here</p>
               </div>
             )}
             {intakes.map(intake => (
-              <div key={intake.id} className="bg-white border border-gray-200 rounded-xl p-4">
+              <div key={intake.id} className="bg-white border border-zinc-200 rounded-xl p-4">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-900">{intake.name}</span>
+                      <span className="font-medium text-zinc-900">{intake.name}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${LEAD_STATUS_COLORS[intake.status]}`}>{intake.status}</span>
-                      <span className="text-xs text-gray-500 capitalize bg-gray-100 px-2 py-0.5 rounded-full">{intake.service_type}</span>
+                      <span className="text-xs text-zinc-500 capitalize bg-zinc-100 px-2 py-0.5 rounded-full">{intake.service_type}</span>
                     </div>
-                    <div className="text-xs text-gray-400 space-y-0.5">
+                    <div className="text-xs text-zinc-400 space-y-0.5">
                       {(intake.phone || intake.email) && <div>{[intake.phone, intake.email].filter(Boolean).join(' · ')}</div>}
                       {intake.address && <div>{[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}</div>}
                       {intake.preferred_date && <div>Preferred: {intake.preferred_date}</div>}
-                      {intake.message && <div className="text-gray-500 italic mt-1 line-clamp-2">"{intake.message}"</div>}
+                      {intake.message && <div className="text-zinc-500 italic mt-1 line-clamp-2">"{intake.message}"</div>}
                     </div>
-                    <div className="text-xs text-gray-600 mt-1.5">
+                    <div className="text-xs text-zinc-500 mt-1.5">
                       {new Date(intake.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5 shrink-0">
                     {intake.status === 'new' && (
                       <button onClick={() => markIntakeReviewed(intake.id)}
-                        className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors border border-gray-200">
+                        className="text-xs px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 rounded-lg transition-colors border border-zinc-200">
                         Mark Reviewed
                       </button>
                     )}
                     {intake.status !== 'converted' && (
                       <button onClick={() => { openQuoteForm(null, intake); setTab('quotes') }}
-                        className="text-xs px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors flex items-center gap-1">
+                        className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1">
                         <Plus className="w-3 h-3" /> Create Quote
                       </button>
                     )}
                     {intake.client_id && (
                       <button onClick={() => navigate(`/clients/${intake.client_id}`)}
-                        className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-400 rounded-lg transition-colors">
+                        className="text-xs px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-400 rounded-lg transition-colors">
                         View Client
                       </button>
                     )}
@@ -249,21 +249,21 @@ export default function Quoting() {
         {/* Quotes tab */}
         {tab === 'quotes' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
-            {quotes.length === 0 && <div className="text-center py-16 text-gray-500 text-sm">No quotes yet</div>}
+            {quotes.length === 0 && <div className="text-center py-16 text-zinc-500 text-sm">No quotes yet</div>}
             {quotes.map(q => (
-              <div key={q.id} className="bg-white border border-gray-200 hover:border-gray-300 rounded-xl p-4 transition-colors">
+              <div key={q.id} className="bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl p-4 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-gray-900">{clientName(q.client_id)}</span>
-                      <span className="text-xs text-gray-500">{q.quote_number}</span>
+                      <span className="font-medium text-zinc-900">{clientName(q.client_id)}</span>
+                      <span className="text-xs text-zinc-500">{q.quote_number}</span>
                       <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status]}`}>{q.status}</span>
                     </div>
-                    <div className="text-xs text-gray-400 mt-0.5">
+                    <div className="text-xs text-zinc-400 mt-0.5">
                       {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address, `${q.items?.length || 0} items`, new Date(q.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  <div className="font-semibold text-gray-900 shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+                  <div className="font-semibold text-zinc-900 shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
                   <div className="flex gap-1.5 shrink-0">
                     {(q.status === 'draft' || q.status === 'sent') && (
                       <button onClick={() => openSendPanel(q)}
@@ -285,7 +285,7 @@ export default function Quoting() {
                     )}
                     {q.status === 'accepted' && (
                       <button onClick={() => convertToJob(q.id)} disabled={converting === q.id}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-200 disabled:text-gray-400 rounded-lg transition-colors">
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 disabled:text-zinc-400 rounded-lg transition-colors">
                         <Calendar className="w-3 h-3" />
                         {converting === q.id ? 'Converting…' : 'Schedule Job'}
                       </button>
@@ -300,22 +300,22 @@ export default function Quoting() {
 
       {/* Quote edit panel */}
       {panel === 'quote' && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[500px] sm:border-l sm:border-gray-200 sm:shrink-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[500px] sm:border-l sm:border-zinc-200 sm:shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 shrink-0">
             <div>
-              <h2 className="font-semibold text-gray-900">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
-              {selectedIntake && <p className="text-xs text-gray-400 mt-0.5">From: {selectedIntake.name}</p>}
+              <h2 className="font-semibold text-zinc-900">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
+              {selectedIntake && <p className="text-xs text-zinc-400 mt-0.5">From: {selectedIntake.name}</p>}
             </div>
-            <button onClick={() => setPanel(null)} className="text-gray-500 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            <button onClick={() => setPanel(null)} className="text-zinc-500 hover:text-zinc-500"><X className="w-5 h-5" /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
 
             {/* Client */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Client *</label>
+              <label className="block text-xs text-zinc-400 mb-1">Client *</label>
               <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400">
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
                 <option value="">Select client...</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -323,11 +323,11 @@ export default function Quoting() {
 
             {/* Service type */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Service Type</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">Service Type</label>
               <div className="flex gap-2">
                 {SERVICE_TYPES.map(t => (
                   <button key={t} onClick={() => setForm(f => ({ ...f, service_type: t }))}
-                    className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors ${form.service_type === t ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors ${form.service_type === t ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'}`}>
                     {t === 'str' ? 'STR / Vacation' : t}
                   </button>
                 ))}
@@ -336,48 +336,48 @@ export default function Quoting() {
 
             {/* Address */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Service Address</label>
+              <label className="block text-xs text-zinc-400 mb-1">Service Address</label>
               <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                 placeholder="123 Main St, Portland, ME 04101"
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>
 
             {/* Line items */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs text-gray-400">Line Items</label>
+                <label className="text-xs text-zinc-400">Line Items</label>
                 <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { ...EMPTY_ITEM }] }))}
-                  className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1">
+                  className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1">
                   <Plus className="w-3 h-3" /> Add item
                 </button>
               </div>
               <div className="space-y-2">
                 {form.items.map((item, i) => (
-                  <div key={i} className="bg-gray-100 rounded-lg p-3 space-y-2">
+                  <div key={i} className="bg-zinc-100 rounded-lg p-3 space-y-2">
                     <div className="flex gap-2">
                       <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                         placeholder="e.g. Standard Home Clean"
-                        className="flex-1 bg-gray-200 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-gray-400" />
+                        className="flex-1 bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400" />
                       <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
-                        className="text-gray-500 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                        className="text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>
                     </div>
                     <input value={item.description} onChange={e => updateItem(i, 'description', e.target.value)}
                       placeholder="Description (optional)"
-                      className="w-full bg-gray-200 border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-600 focus:outline-none" />
+                      className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-xs text-zinc-500 focus:outline-none" />
                     <div className="flex gap-2">
                       <div className="w-20">
-                        <label className="text-xs text-gray-500">Qty</label>
+                        <label className="text-xs text-zinc-500">Qty</label>
                         <input type="number" min="0" step="0.5" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
-                          className="w-full bg-gray-200 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
+                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
                       </div>
                       <div className="flex-1">
-                        <label className="text-xs text-gray-500">Unit Price ($)</label>
+                        <label className="text-xs text-zinc-500">Unit Price ($)</label>
                         <input type="number" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
-                          className="w-full bg-gray-200 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
+                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
                       </div>
                       <div className="flex-1 flex flex-col justify-end">
-                        <label className="text-xs text-gray-500">Line Total</label>
-                        <div className="text-sm font-semibold text-gray-900 mt-1.5">${((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}</div>
+                        <label className="text-xs text-zinc-500">Line Total</label>
+                        <div className="text-sm font-semibold text-zinc-900 mt-1.5">${((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}</div>
                       </div>
                     </div>
                   </div>
@@ -388,44 +388,44 @@ export default function Quoting() {
             {/* Tax + valid until */}
             <div className="flex gap-3">
               <div className="w-28">
-                <label className="block text-xs text-gray-400 mb-1">Tax (%)</label>
+                <label className="block text-xs text-zinc-400 mb-1">Tax (%)</label>
                 <input type="number" min="0" max="100" value={form.tax_rate} onChange={e => setForm(f => ({ ...f, tax_rate: e.target.value }))}
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-gray-400 mb-1">Valid Until</label>
+                <label className="block text-xs text-zinc-400 mb-1">Valid Until</label>
                 <input type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))}
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
             </div>
 
             {/* Totals summary */}
-            <div className="bg-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
-              <div className="flex justify-between text-gray-400">
+            <div className="bg-zinc-100 rounded-xl p-4 space-y-1.5 text-sm">
+              <div className="flex justify-between text-zinc-400">
                 <span>Subtotal</span><span>${subtotal(form.items).toFixed(2)}</span>
               </div>
               {parseFloat(form.tax_rate) > 0 && (
-                <div className="flex justify-between text-gray-400">
+                <div className="flex justify-between text-zinc-400">
                   <span>Tax ({form.tax_rate}%)</span><span>${taxAmt(form.items, form.tax_rate).toFixed(2)}</span>
                 </div>
               )}
-              <div className="flex justify-between font-bold text-gray-900 text-base border-t border-gray-200 pt-2">
+              <div className="flex justify-between font-bold text-zinc-900 text-base border-t border-zinc-200 pt-2">
                 <span>Total</span><span>${total(form.items, form.tax_rate).toFixed(2)}</span>
               </div>
             </div>
 
             {/* Notes */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Notes / Scope</label>
+              <label className="block text-xs text-zinc-400 mb-1">Notes / Scope</label>
               <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
                 placeholder="Special instructions, inclusions/exclusions, access details..."
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
           </div>
 
-          <div className="p-6 border-t border-gray-200 flex gap-3 shrink-0">
+          <div className="p-6 border-t border-zinc-200 flex gap-3 shrink-0">
             <button onClick={save} disabled={saving || !form.client_id}
-              className="flex-1 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
             </button>
             {selected && (
@@ -440,20 +440,20 @@ export default function Quoting() {
 
       {/* Send quote panel */}
       {panel === 'send' && selected && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[460px] sm:border-l sm:border-gray-200 sm:shrink-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[460px] sm:border-l sm:border-zinc-200 sm:shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 shrink-0">
             <div>
-              <h2 className="font-semibold text-gray-900">Send Quote</h2>
-              <p className="text-xs text-gray-400 mt-0.5">{selected.quote_number} · {clientName(selected.client_id)} · ${parseFloat(selected.total || 0).toFixed(2)}</p>
+              <h2 className="font-semibold text-zinc-900">Send Quote</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">{selected.quote_number} · {clientName(selected.client_id)} · ${parseFloat(selected.total || 0).toFixed(2)}</p>
             </div>
-            <button onClick={() => setPanel(null)} className="text-gray-500 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            <button onClick={() => setPanel(null)} className="text-zinc-500 hover:text-zinc-500"><X className="w-5 h-5" /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
 
             {/* Channel selector */}
             <div>
-              <label className="block text-xs text-gray-400 mb-2">Send via</label>
+              <label className="block text-xs text-zinc-400 mb-2">Send via</label>
               <div className="flex gap-2">
                 {[
                   { id: 'email', label: 'Email', icon: Mail },
@@ -461,7 +461,7 @@ export default function Quoting() {
                   { id: 'both', label: 'Both', icon: Send },
                 ].map(({ id, label, icon: Icon }) => (
                   <button key={id} onClick={() => setSendForm(f => ({ ...f, channel: id }))}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${sendForm.channel === id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${sendForm.channel === id ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'}`}>
                     <Icon className="w-3.5 h-3.5" />{label}
                   </button>
                 ))}
@@ -471,20 +471,20 @@ export default function Quoting() {
             {/* Email address */}
             {(sendForm.channel === 'email' || sendForm.channel === 'both') && (
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Email Address</label>
+                <label className="block text-xs text-zinc-400 mb-1">Email Address</label>
                 <input type="email" value={sendForm.email} onChange={e => setSendForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="client@example.com"
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
               </div>
             )}
 
             {/* Phone */}
             {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Phone Number</label>
+                <label className="block text-xs text-zinc-400 mb-1">Phone Number</label>
                 <input type="tel" value={sendForm.phone} onChange={e => setSendForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="+12075551234"
-                  className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
               </div>
             )}
 
@@ -492,11 +492,11 @@ export default function Quoting() {
             {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (
               <div>
                 <button onClick={() => setPreviewOpen(p => !p)}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mb-2">
+                  className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-500 mb-2">
                   <Eye className="w-3.5 h-3.5" /> Preview SMS <ChevronDown className={`w-3 h-3 transition-transform ${previewOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {previewOpen && (
-                  <div className="bg-gray-100 rounded-lg p-3 text-xs text-gray-600 whitespace-pre-wrap font-mono border border-gray-200">
+                  <div className="bg-zinc-100 rounded-lg p-3 text-xs text-zinc-500 whitespace-pre-wrap font-mono border border-zinc-200">
                     {previewSMS()}
                   </div>
                 )}
@@ -518,31 +518,31 @@ export default function Quoting() {
 
             {/* Custom intro message */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Personal note (optional)</label>
+              <label className="block text-xs text-zinc-400 mb-1">Personal note (optional)</label>
               <textarea value={sendForm.custom_message} onChange={e => setSendForm(f => ({ ...f, custom_message: e.target.value }))}
                 rows={3} placeholder="Hi! Great talking with you — here's the quote we discussed..."
-                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
-              <p className="text-xs text-gray-600 mt-1">Prepended to SMS. Not included in email (reply to the email thread instead).</p>
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+              <p className="text-xs text-zinc-500 mt-1">Prepended to SMS. Not included in email (reply to the email thread instead).</p>
             </div>
 
             {/* Quote summary */}
-            <div className="bg-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
-              <div className="text-xs text-gray-500 mb-2">Quote summary</div>
+            <div className="bg-zinc-100 rounded-xl p-4 space-y-1.5 text-sm">
+              <div className="text-xs text-zinc-500 mb-2">Quote summary</div>
               {(selected.items || []).map((item, i) => (
-                <div key={i} className="flex justify-between text-gray-600">
+                <div key={i} className="flex justify-between text-zinc-500">
                   <span>{item.name} {parseFloat(item.qty) !== 1 ? `×${item.qty}` : ''}</span>
                   <span>${(parseFloat(item.qty || 1) * parseFloat(item.unit_price || 0)).toFixed(2)}</span>
                 </div>
               ))}
-              <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-2 mt-1">
+              <div className="flex justify-between font-bold text-zinc-900 border-t border-zinc-200 pt-2 mt-1">
                 <span>Total</span><span>${parseFloat(selected.total || 0).toFixed(2)}</span>
               </div>
             </div>
           </div>
 
-          <div className="p-6 border-t border-gray-200 shrink-0">
+          <div className="p-6 border-t border-zinc-200 shrink-0">
             <button onClick={sendQuote} disabled={sending || (!sendForm.email && !sendForm.phone)}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <Send className="w-4 h-4" />
               {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
             </button>

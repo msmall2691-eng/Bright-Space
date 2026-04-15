@@ -23,14 +23,14 @@ const STAGE_COLORS = {
   reviewed:  { bg: 'bg-blue-50',    border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-400',   header: 'text-blue-700' },
   quoted:    { bg: 'bg-purple-50',  border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-400', header: 'text-purple-700' },
   converted: { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-400', header: 'text-emerald-700' },
-  archived:  { bg: 'bg-gray-50',    border: 'border-gray-200',   badge: 'bg-gray-100 text-gray-500',     dot: 'bg-gray-300',   header: 'text-gray-500' },
+  archived:  { bg: 'bg-zinc-50',    border: 'border-zinc-200',   badge: 'bg-zinc-100 text-zinc-500',     dot: 'bg-gray-300',   header: 'text-zinc-500' },
 }
 
 const PRIORITY_CONFIG = {
   urgent: { label: 'Urgent', color: 'text-red-600 bg-red-50 border-red-200', dot: 'bg-red-500', icon: AlertTriangle },
   high:   { label: 'High',   color: 'text-orange-600 bg-orange-50 border-orange-200', dot: 'bg-orange-500', icon: Flag },
-  normal: { label: 'Normal', color: 'text-gray-500 bg-gray-50 border-gray-200', dot: 'bg-gray-400', icon: null },
-  low:    { label: 'Low',    color: 'text-gray-400 bg-gray-50 border-gray-200', dot: 'bg-gray-300', icon: null },
+  normal: { label: 'Normal', color: 'text-zinc-500 bg-zinc-50 border-zinc-200', dot: 'bg-gray-400', icon: null },
+  low:    { label: 'Low',    color: 'text-zinc-400 bg-zinc-50 border-zinc-200', dot: 'bg-gray-300', icon: null },
 }
 
 const SERVICE_LABELS = {
@@ -64,7 +64,7 @@ function urgencyLevel(dateStr) {
 
 function Toast({ msg }) {
   return (
-    <div className="fixed bottom-6 right-6 bg-white border border-gray-200 text-gray-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
+    <div className="fixed bottom-6 right-6 bg-white border border-zinc-200 text-zinc-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
       <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />{msg}
     </div>
   )
@@ -92,7 +92,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
     <div className={`border rounded-xl transition-all ${
       urgency === 'overdue' ? 'border-red-200 bg-red-50/30' :
       urgency === 'warning' ? 'border-amber-200 bg-amber-50/20' :
-      'border-gray-200 bg-white'
+      'border-zinc-200 bg-white'
     } ${expanded ? 'shadow-md' : 'hover:shadow-sm'}`}>
       {/* Main row */}
       <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={onToggle}>
@@ -110,8 +110,8 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
         {/* Name & contact */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-gray-900 truncate">{intake.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 capitalize shrink-0">
+            <span className="font-semibold text-sm text-zinc-900 truncate">{intake.name}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 capitalize shrink-0">
               {SERVICE_LABELS[intake.service_type] || intake.service_type}
             </span>
             {intake.priority && intake.priority !== 'normal' && (
@@ -120,7 +120,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
+          <div className="flex items-center gap-3 text-xs text-zinc-400 mt-0.5">
             {intake.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{intake.phone}</span>}
             {intake.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" />{intake.email}</span>}
             {intake.address && <span className="flex items-center gap-1 truncate"><MapPin className="w-3 h-3" />{intake.address}</span>}
@@ -144,7 +144,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
         {/* Time */}
         <span className={`text-xs shrink-0 ${
           urgency === 'overdue' ? 'text-red-500 font-medium' :
-          urgency === 'warning' ? 'text-amber-500' : 'text-gray-400'
+          urgency === 'warning' ? 'text-amber-500' : 'text-zinc-400'
         }`}>
           {timeAgo(intake.created_at)}
         </span>
@@ -154,30 +154,30 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
           {intake.status === 'new' && (
             <>
               <button onClick={() => onAdvance(intake.id, 'reviewed')}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-blue-600 transition-colors" title="Mark Reviewed">
+                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-blue-600 transition-colors" title="Mark Reviewed">
                 <Eye className="w-4 h-4" />
               </button>
               <button onClick={() => onAction(intake, 'quote')}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-purple-600 transition-colors" title="Create Quote">
+                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-purple-600 transition-colors" title="Create Quote">
                 <FileText className="w-4 h-4" />
               </button>
             </>
           )}
           {intake.status === 'reviewed' && (
             <button onClick={() => onAction(intake, 'quote')}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-purple-600 transition-colors" title="Create Quote">
+              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-purple-600 transition-colors" title="Create Quote">
               <FileText className="w-4 h-4" />
             </button>
           )}
           {intake.status === 'quoted' && linkedQuote?.status === 'accepted' && (
             <button onClick={() => onAction(intake, 'schedule')}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-emerald-600 transition-colors" title="Schedule Job">
+              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-emerald-600 transition-colors" title="Schedule Job">
               <Calendar className="w-4 h-4" />
             </button>
           )}
           {intake.status !== 'archived' && intake.status !== 'converted' && (
             <button onClick={() => onAdvance(intake.id, 'archived')}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" title="Archive">
+              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-500 transition-colors" title="Archive">
               <Archive className="w-3.5 h-3.5" />
             </button>
           )}
@@ -192,45 +192,45 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
           {/* Property details */}
           <div className="flex flex-wrap gap-3">
             {intake.bedrooms && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <Bed className="w-3.5 h-3.5 text-gray-400" /> {intake.bedrooms} bed
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <Bed className="w-3.5 h-3.5 text-zinc-400" /> {intake.bedrooms} bed
               </span>
             )}
             {intake.bathrooms && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <Bath className="w-3.5 h-3.5 text-gray-400" /> {intake.bathrooms} bath
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <Bath className="w-3.5 h-3.5 text-zinc-400" /> {intake.bathrooms} bath
               </span>
             )}
             {intake.square_footage && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <Ruler className="w-3.5 h-3.5 text-gray-400" /> {intake.square_footage} sq ft
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <Ruler className="w-3.5 h-3.5 text-zinc-400" /> {intake.square_footage} sq ft
               </span>
             )}
             {intake.guests && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <Users className="w-3.5 h-3.5 text-gray-400" /> {intake.guests} guests
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <Users className="w-3.5 h-3.5 text-zinc-400" /> {intake.guests} guests
               </span>
             )}
             {intake.property_name && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <Home className="w-3.5 h-3.5 text-gray-400" /> {intake.property_name}
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <Home className="w-3.5 h-3.5 text-zinc-400" /> {intake.property_name}
               </span>
             )}
             {intake.frequency && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <RefreshCw className="w-3.5 h-3.5 text-gray-400" /> {intake.frequency}
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <RefreshCw className="w-3.5 h-3.5 text-zinc-400" /> {intake.frequency}
               </span>
             )}
             {(intake.requested_date || intake.preferred_date) && (
-              <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
-                <CalendarDays className="w-3.5 h-3.5 text-gray-400" /> {intake.requested_date || intake.preferred_date}
+              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
+                <CalendarDays className="w-3.5 h-3.5 text-zinc-400" /> {intake.requested_date || intake.preferred_date}
               </span>
             )}
           </div>
 
           {/* Check-in / Check-out */}
           {(intake.check_in || intake.check_out) && (
-            <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+            <div className="text-xs text-zinc-500 bg-zinc-50 rounded-lg px-3 py-2">
               {intake.check_in && <span>Check-in: {intake.check_in.slice(0, 10)}</span>}
               {intake.check_in && intake.check_out && <span className="mx-2 text-gray-300">|</span>}
               {intake.check_out && <span>Check-out: {intake.check_out.slice(0, 10)}</span>}
@@ -239,7 +239,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
 
           {/* Customer message */}
           {intake.message && (
-            <div className="text-xs text-gray-600 bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
+            <div className="text-xs text-zinc-500 bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
               <span className="font-medium text-blue-600">Customer note:</span> "{intake.message}"
             </div>
           )}
@@ -253,7 +253,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
                 linkedQuote.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
                 linkedQuote.status === 'sent' ? 'bg-blue-100 text-blue-700' :
                 linkedQuote.status === 'declined' ? 'bg-red-100 text-red-700' :
-                'bg-gray-100 text-gray-600'
+                'bg-zinc-100 text-zinc-500'
               }`}>{linkedQuote.status}</span>
             </div>
           )}
@@ -265,19 +265,19 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
               {editingNotes ? (
                 <div className="flex gap-2">
                   <input
-                    className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                    className="flex-1 text-xs border border-zinc-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
                     placeholder="Add internal note..."
                     value={notesVal}
                     onChange={e => setNotesVal(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && saveNotes()}
                     autoFocus
                   />
-                  <button onClick={saveNotes} className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800">Save</button>
-                  <button onClick={() => { setEditingNotes(false); setNotesVal(intake.internal_notes || '') }} className="text-xs px-3 py-1.5 text-gray-500 hover:text-gray-700">Cancel</button>
+                  <button onClick={saveNotes} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                  <button onClick={() => { setEditingNotes(false); setNotesVal(intake.internal_notes || '') }} className="text-xs px-3 py-1.5 text-zinc-500 hover:text-zinc-600">Cancel</button>
                 </div>
               ) : (
                 <button onClick={() => setEditingNotes(true)}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                  className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-500 transition-colors">
                   <StickyNote className="w-3.5 h-3.5" />
                   {intake.internal_notes || 'Add note...'}
                 </button>
@@ -286,7 +286,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
 
             {/* Priority selector */}
             <select
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              className="text-xs border border-zinc-200 rounded-lg px-2 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
               value={intake.priority || 'normal'}
               onChange={e => onUpdateField(intake.id, 'priority', e.target.value)}
             >
@@ -306,7 +306,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
               )}
               {(intake.status === 'new' || intake.status === 'reviewed') && (
                 <button onClick={() => onAction(intake, 'quote')}
-                  className="text-xs px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors font-medium">
+                  className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
                   Create Quote
                 </button>
               )}
@@ -318,7 +318,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
               )}
               {intake.client_id && (
                 <button onClick={() => onAction(intake, 'client')}
-                  className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors">
+                  className="text-xs px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-500 rounded-lg transition-colors">
                   View Client
                 </button>
               )}
@@ -326,7 +326,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
           </div>
 
           {/* Metadata */}
-          <div className="flex items-center gap-3 text-[10px] text-gray-400 pt-1 border-t border-gray-100">
+          <div className="flex items-center gap-3 text-[10px] text-zinc-400 pt-1 border-t border-gray-100">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />
               {new Date(intake.created_at).toLocaleDateString('en-US', {
                 weekday: 'short', month: 'short', day: 'numeric',
@@ -354,7 +354,7 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
 
   return (
     <div className={`bg-white border rounded-xl overflow-hidden transition-all hover:shadow-md ${
-      urgency === 'overdue' ? 'border-red-200' : urgency === 'warning' ? 'border-amber-200' : 'border-gray-200'
+      urgency === 'overdue' ? 'border-red-200' : urgency === 'warning' ? 'border-amber-200' : 'border-zinc-200'
     }`}>
       <div className="p-3">
         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -363,19 +363,19 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
               {intake.priority && intake.priority !== 'normal' && (
                 <div className={`w-2 h-2 rounded-full shrink-0 ${priorityCfg.dot}`} />
               )}
-              <span className="font-semibold text-sm text-gray-900 truncate">{intake.name}</span>
+              <span className="font-semibold text-sm text-zinc-900 truncate">{intake.name}</span>
             </div>
           </div>
           <span className={`text-xs shrink-0 ${
             urgency === 'overdue' ? 'text-red-500 font-medium' :
-            urgency === 'warning' ? 'text-amber-500' : 'text-gray-400'
+            urgency === 'warning' ? 'text-amber-500' : 'text-zinc-400'
           }`}>
             {timeAgo(intake.created_at)}
           </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 capitalize">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 capitalize">
             {SERVICE_LABELS[intake.service_type] || intake.service_type}
           </span>
           {estimate && (
@@ -385,13 +385,13 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-gray-400">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-zinc-400">
           {intake.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{intake.phone}</span>}
           {intake.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" />{intake.email}</span>}
         </div>
 
         {intake.internal_notes && (
-          <div className="mt-2 text-[11px] text-gray-500 bg-yellow-50 rounded-lg px-2 py-1 border border-yellow-100 truncate">
+          <div className="mt-2 text-[11px] text-zinc-500 bg-yellow-50 rounded-lg px-2 py-1 border border-yellow-100 truncate">
             <StickyNote className="w-3 h-3 inline mr-1 text-yellow-500" />{intake.internal_notes}
           </div>
         )}
@@ -404,22 +404,22 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
       </div>
 
       {/* Quick actions */}
-      <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 flex gap-1.5">
+      <div className="px-3 py-2 bg-zinc-50 border-t border-gray-100 flex gap-1.5">
         {intake.status === 'new' && (
           <>
             <button onClick={() => onAdvance(intake.id, 'reviewed')}
-              className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors text-center">
+              className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-white border border-zinc-200 hover:bg-zinc-100 text-zinc-600 rounded-lg transition-colors text-center">
               Review
             </button>
             <button onClick={() => onAction(intake, 'quote')}
-              className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors text-center">
+              className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-center">
               Quote
             </button>
           </>
         )}
         {intake.status === 'reviewed' && (
           <button onClick={() => onAction(intake, 'quote')}
-            className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors text-center">
+            className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-center">
             Create Quote
           </button>
         )}
@@ -430,7 +430,7 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
           </button>
         )}
         {intake.status === 'quoted' && linkedQuote && linkedQuote.status !== 'accepted' && (
-          <span className="flex-1 text-center text-[11px] text-gray-400 py-1.5">Awaiting response</span>
+          <span className="flex-1 text-center text-[11px] text-zinc-400 py-1.5">Awaiting response</span>
         )}
         {intake.status === 'converted' && (
           <span className="flex-1 text-center text-[11px] text-emerald-600 py-1.5 flex items-center justify-center gap-1">
@@ -463,32 +463,32 @@ function AddRequestModal({ onClose, onSaved }) {
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">Add Request</h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4 text-gray-400" /></button>
+          <h3 className="font-semibold text-zinc-900">Add Request</h3>
+          <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded-lg"><X className="w-4 h-4 text-zinc-400" /></button>
         </div>
         <div className="p-5 space-y-3">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Name *</label>
+            <label className="text-xs text-zinc-500 mb-1 block">Name *</label>
             <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Client name"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+              className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Phone</label>
+              <label className="text-xs text-zinc-500 mb-1 block">Phone</label>
               <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="207-555-0123"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Email</label>
+              <label className="text-xs text-zinc-500 mb-1 block">Email</label>
               <input value={form.email} onChange={e => set('email', e.target.value)} placeholder="email@example.com"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Source</label>
+              <label className="text-xs text-zinc-500 mb-1 block">Source</label>
               <select value={form.source} onChange={e => set('source', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
+                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
                 <option value="manual">Manual</option>
                 <option value="phone">Phone call</option>
                 <option value="email">Email</option>
@@ -497,9 +497,9 @@ function AddRequestModal({ onClose, onSaved }) {
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Service</label>
+              <label className="text-xs text-zinc-500 mb-1 block">Service</label>
               <select value={form.service_type} onChange={e => set('service_type', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
+                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
                 <option value="residential">Residential</option>
                 <option value="commercial">Commercial</option>
                 <option value="str">STR / Vacation</option>
@@ -507,15 +507,15 @@ function AddRequestModal({ onClose, onSaved }) {
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Notes</label>
+            <label className="text-xs text-zinc-500 mb-1 block">Notes</label>
             <textarea value={form.message} onChange={e => set('message', e.target.value)} rows={3} placeholder="Details about the request..."
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
+              className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
           </div>
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-50 rounded-lg">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-500 hover:bg-zinc-50 rounded-lg">Cancel</button>
           <button onClick={submit} disabled={saving || !form.name.trim()}
-            className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">
+            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
             {saving ? 'Saving...' : 'Add Request'}
           </button>
         </div>
@@ -647,7 +647,7 @@ export default function Requests() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <RefreshCw className="w-5 h-5 text-gray-400 animate-spin" />
+        <RefreshCw className="w-5 h-5 text-zinc-400 animate-spin" />
       </div>
     )
   }
@@ -655,10 +655,10 @@ export default function Requests() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 shrink-0 space-y-3">
+      <div className="px-6 py-4 border-b border-zinc-200 shrink-0 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-gray-900">Requests</h1>
+            <h1 className="text-lg font-semibold text-zinc-900">Requests</h1>
             {stats.new > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
                 {stats.new} new
@@ -669,25 +669,25 @@ export default function Requests() {
                 {stats.urgent} urgent
               </span>
             )}
-            <span className="text-xs text-gray-400">maineclean.co incoming leads</span>
+            <span className="text-xs text-zinc-400">maineclean.co incoming leads</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <div className="flex bg-zinc-100 rounded-lg p-0.5">
               <button onClick={() => setView('inbox')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}>
                 Inbox
               </button>
               <button onClick={() => setView('board')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'board' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'board' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}>
                 Board
               </button>
             </div>
             <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 bg-gray-900 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
               <Plus className="w-3.5 h-3.5" /> Add Request
             </button>
             <button onClick={loadData}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
+              className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors">
               <RefreshCw className="w-4 h-4" />
             </button>
           </div>
@@ -708,11 +708,11 @@ export default function Requests() {
               <button key={tab.key} onClick={() => setFilterStatus(tab.key)}
                 className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
                   filterStatus === tab.key
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-500 hover:bg-gray-100'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-zinc-500 hover:bg-zinc-100'
                 }`}>
                 {tab.label}
-                <span className={`ml-1 ${filterStatus === tab.key ? 'text-white/70' : 'text-gray-400'}`}>
+                <span className={`ml-1 ${filterStatus === tab.key ? 'text-white/70' : 'text-zinc-400'}`}>
                   {tab.count}
                 </span>
               </button>
@@ -722,7 +722,7 @@ export default function Requests() {
           <div className="ml-auto flex items-center gap-2">
             {/* Source filter */}
             <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
+              className="text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
               <option value="all">All sources</option>
               <option value="website">Website</option>
               <option value="sms">SMS</option>
@@ -734,7 +734,7 @@ export default function Requests() {
 
             {/* Service filter */}
             <select value={filterService} onChange={e => setFilterService(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
+              className="text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
               <option value="all">All services</option>
               <option value="residential">Residential</option>
               <option value="commercial">Commercial</option>
@@ -743,7 +743,7 @@ export default function Requests() {
 
             {/* Sort */}
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
+              className="text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="priority">Priority</option>
@@ -751,16 +751,16 @@ export default function Requests() {
 
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
               <input
-                className="text-xs border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                className="text-xs border border-zinc-200 rounded-lg pl-8 pr-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
                 placeholder="Search name, email, phone..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
               {searchQuery && (
                 <button onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-500">
                   <X className="w-3 h-3" />
                 </button>
               )}
@@ -775,8 +775,8 @@ export default function Requests() {
           {filtered.length === 0 ? (
             <div className="text-center py-16">
               <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">No requests found</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-sm text-zinc-500">No requests found</p>
+              <p className="text-xs text-zinc-400 mt-1">
                 {searchQuery ? 'Try a different search' : 'Submissions from maineclean.co will appear here'}
               </p>
             </div>
@@ -817,9 +817,9 @@ export default function Requests() {
                       {items.length}
                     </span>
                   </div>
-                  <div className={`flex-1 overflow-y-auto border ${colors.border} border-t-0 rounded-b-xl p-2 space-y-2 bg-gray-50/50`}>
+                  <div className={`flex-1 overflow-y-auto border ${colors.border} border-t-0 rounded-b-xl p-2 space-y-2 bg-zinc-50/50`}>
                     {items.length === 0 && (
-                      <div className="text-center py-8 text-gray-400 text-xs">No requests</div>
+                      <div className="text-center py-8 text-zinc-400 text-xs">No requests</div>
                     )}
                     {items.map(intake => (
                       <KanbanCard

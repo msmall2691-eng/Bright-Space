@@ -19,14 +19,14 @@ function AgentCard({ agent, selected, onClick }) {
       className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left w-full ${
         selected
           ? 'border-opacity-60 bg-opacity-10'
-          : 'border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300'
+          : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 hover:border-zinc-300'
       }`}
       style={selected ? { borderColor: agent.color, backgroundColor: agent.color + '18' } : {}}
     >
       <span className="text-2xl">{agent.emoji}</span>
       <div className="min-w-0">
-        <div className="text-sm font-semibold text-gray-900">{agent.name}</div>
-        <div className="text-xs text-gray-400 truncate">{agent.role}</div>
+        <div className="text-sm font-semibold text-zinc-900">{agent.name}</div>
+        <div className="text-xs text-zinc-400 truncate">{agent.role}</div>
       </div>
     </button>
   )
@@ -53,7 +53,7 @@ function Message({ msg }) {
   if (msg.role === 'tool_call') {
     return (
       <div className="flex justify-start mb-2">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200/50 text-xs text-gray-500">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200/50 text-xs text-zinc-500">
           <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shrink-0" />
           {TOOL_LABELS[msg.name] || `🔧 Calling ${msg.name}…`}
         </div>
@@ -66,8 +66,8 @@ function Message({ msg }) {
       <div
         className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
           isUser
-            ? 'bg-gray-900 text-white rounded-br-sm'
-            : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+            ? 'bg-blue-600 text-white rounded-br-sm'
+            : 'bg-zinc-100 text-gray-800 rounded-bl-sm'
         }`}
       >
         {msg.content}
@@ -176,8 +176,8 @@ export default function Workspace() {
   return (
     <div className="flex flex-col md:flex-row h-full">
       {/* Agent picker */}
-      <div className="md:w-52 bg-white md:border-r border-b md:border-b-0 border-gray-200 flex md:flex-col flex-row p-3 gap-2 overflow-x-auto md:overflow-y-auto shrink-0">
-        <p className="text-xs text-gray-500 font-medium px-1 pb-1 hidden md:block">YOUR AGENTS</p>
+      <div className="md:w-52 bg-white md:border-r border-b md:border-b-0 border-zinc-200 flex md:flex-col flex-row p-3 gap-2 overflow-x-auto md:overflow-y-auto shrink-0">
+        <p className="text-xs text-zinc-500 font-medium px-1 pb-1 hidden md:block">YOUR AGENTS</p>
         {agents.map(agent => (
           <AgentCard
             key={agent.id}
@@ -191,12 +191,12 @@ export default function Workspace() {
       {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Agent header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white/50">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-200 bg-white/50">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{activeAgent.emoji}</span>
             <div>
-              <div className="font-semibold text-gray-900">{activeAgent.name}</div>
-              <div className="text-xs text-gray-400">{activeAgent.role}</div>
+              <div className="font-semibold text-zinc-900">{activeAgent.name}</div>
+              <div className="text-xs text-zinc-400">{activeAgent.role}</div>
             </div>
             <span
               className={`ml-2 w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-600'}`}
@@ -205,7 +205,7 @@ export default function Workspace() {
           </div>
           <button
             onClick={clearChat}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-600 transition-colors px-2 py-1 rounded hover:bg-gray-100"
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-500 transition-colors px-2 py-1 rounded hover:bg-zinc-100"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Clear
@@ -217,8 +217,8 @@ export default function Workspace() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <span className="text-5xl mb-4">{activeAgent.emoji}</span>
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">Chat with {activeAgent.name}</h3>
-              <p className="text-sm text-gray-400 max-w-sm">{activeAgent.description}</p>
+              <h3 className="text-lg font-semibold text-zinc-900 mb-1">Chat with {activeAgent.name}</h3>
+              <p className="text-sm text-zinc-400 max-w-sm">{activeAgent.description}</p>
               <div className="mt-6 grid grid-cols-1 gap-2 w-full max-w-md">
                 {({
                   nova: [
@@ -253,7 +253,7 @@ export default function Workspace() {
                   ],
                 }[activeAgent.id] || []).map(q => (
                   <button key={q} onClick={() => { setInput(q); inputRef.current?.focus() }}
-                    className="text-left text-sm text-gray-500 bg-gray-50 hover:bg-gray-100 px-4 py-2.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+                    className="text-left text-sm text-zinc-500 bg-zinc-50 hover:bg-zinc-100 px-4 py-2.5 rounded-lg border border-zinc-200 hover:border-zinc-300 transition-colors">
                     {q}
                   </button>
                 ))}
@@ -267,7 +267,7 @@ export default function Workspace() {
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t border-gray-200 bg-white/50">
+        <div className="p-4 border-t border-zinc-200 bg-white/50">
           <div className="flex gap-3 items-end">
             <textarea
               ref={inputRef}
@@ -281,18 +281,18 @@ export default function Workspace() {
                 }
               }}
               placeholder={`Ask ${activeAgent.name} anything...`}
-              className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-500 resize-none focus:outline-none focus:border-gray-400 transition-colors"
+              className="flex-1 bg-white border border-zinc-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-500 resize-none focus:outline-none focus:border-blue-400 transition-colors"
               style={{ maxHeight: '120px' }}
             />
             <button
               onClick={sendMessage}
               disabled={!input.trim() || !connected}
-              className="p-3 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed rounded-xl transition-colors shrink-0"
+              className="p-3 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed rounded-xl transition-colors shrink-0"
             >
               <Send className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-xs text-gray-600 mt-1.5 ml-1">Enter to send · Shift+Enter for newline</p>
+          <p className="text-xs text-zinc-500 mt-1.5 ml-1">Enter to send · Shift+Enter for newline</p>
         </div>
       </div>
     </div>
