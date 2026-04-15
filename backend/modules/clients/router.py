@@ -8,6 +8,7 @@ import re
 
 from database.db import get_db
 from database.models import Client
+from utils.contacts import normalize_phone
 
 router = APIRouter()
 
@@ -93,6 +94,7 @@ def get_clients(status: Optional[str] = None, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     payload = data.model_dump()
+    payload["phone"] = normalize_phone(payload.get("phone"))
     payload["name"] = _derive_name(payload.get("first_name"), payload.get("last_name"), payload.get("name") or "")
     if not payload["name"]:
         raise HTTPException(status_code=422, detail="name or first_name required")
@@ -117,6 +119,8 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     updates = data.model_dump(exclude_none=True)
+    if "phone" in updates:
+        updates["phone"] = normalize_phone(updates.get("phone"))
     for field, value in updates.items():
         setattr(client, field, value)
     # Re-derive name if first/last were updated

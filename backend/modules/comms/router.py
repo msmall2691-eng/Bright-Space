@@ -24,6 +24,7 @@ from database.db import get_db
 from database.models import Message, Conversation, Client, LeadIntake
 from integrations.twilio_client import send_sms
 from integrations.email import send_email as _send_email
+from utils.contacts import find_client_by_contact, normalize_phone
 
 logger = logging.getLogger(__name__)
 
@@ -604,6 +605,7 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     """Receive inbound SMS from Twilio webhook. Groups into a conversation."""
     form = await request.form()
     from_number = form.get("From", "")
+    normalized_from = normalize_phone(from_number) or from_number
     to_number = form.get("To", "")
     body = form.get("Body", "")
     sid = form.get("MessageSid") or form.get("SmsSid")
@@ -620,12 +622,12 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
             )
 
     # Match to a client by phone number
-    client = db.query(Client).filter(Client.phone == from_number).first()
+    client = find_client_by_contact(db, phone=normalized_from)
     if not client:
         logger.info(f"[twilio] New contact from {from_number} — creating lead intake")
         client = Client(
             name=f"SMS {from_number}",
-            phone=from_number,
+            phone=normalized_from,
             status="lead",
             source="sms",
         )
@@ -633,7 +635,7 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
         db.flush()
         intake = LeadIntake(
             name=f"SMS {from_number}",
-            phone=from_number,
+            phone=normalized_from,
             message=body,
             source="sms",
             status="new",
@@ -644,14 +646,14 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     conv = find_or_create_conversation(
         db, channel="sms",
         client_id=client.id,
-        external_contact=from_number,
+        external_contact=normalized_from,
     )
     msg = Message(
         client_id=client.id,
         conversation_id=conv.id,
         channel="sms",
         direction="inbound",
-        from_addr=from_number,
+        from_addr=normalized_from,
         to_addr=to_number,
         body=body,
         status="received",

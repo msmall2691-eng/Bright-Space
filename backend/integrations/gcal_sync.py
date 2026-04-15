@@ -311,11 +311,13 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             sched_date, start_time = parsed_start
             end_time = parsed_end[1] if parsed_end else None
 
-            # Try to match to a client (3-tier matching)
+            # Try to match to a client (3-tier matching).
+            # Prefer property/address matching before attendee-email to make
+            # property-linked scheduling the default behavior.
             match = (
                 _match_by_extended_properties(event, db)
-                or _match_by_attendee_email(event, db)
                 or _match_by_address(event, db)
+                or _match_by_attendee_email(event, db)
             )
 
             if not match:

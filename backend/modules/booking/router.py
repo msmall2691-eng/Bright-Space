@@ -5,6 +5,7 @@ from typing import Optional
 
 from database.db import get_db
 from database.models import LeadIntake, Client
+from utils.contacts import find_client_by_contact, normalize_phone
 
 router = APIRouter()
 
@@ -64,18 +65,15 @@ def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
     """
     service_type = BOOKING_SERVICE_MAP.get(data.serviceType, "residential")
 
+    normalized_phone = normalize_phone(data.phone)
     # Find or create client
-    client = None
-    if data.email:
-        client = db.query(Client).filter(Client.email == data.email).first()
-    if not client and data.phone:
-        client = db.query(Client).filter(Client.phone == data.phone).first()
+    client = find_client_by_contact(db, email=data.email, phone=normalized_phone)
 
     if not client:
         client = Client(
             name=data.name,
             email=data.email,
-            phone=data.phone,
+            phone=normalized_phone,
             address=data.address,
             state="ME",
             status="lead",
@@ -99,7 +97,7 @@ def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
     intake = LeadIntake(
         name=data.name,
         email=data.email,
-        phone=data.phone,
+        phone=normalized_phone,
         address=data.address,
         state="ME",
         service_type=service_type,
