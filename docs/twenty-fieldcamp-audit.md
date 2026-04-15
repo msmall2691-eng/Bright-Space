@@ -1,6 +1,7 @@
 # Audit + Implementation Plan: BrightBase aligned to Twenty CRM + FieldCamp
 
 Date: 2026-04-15
+Canonical status: merged (no conflict markers); this is the source version.
 Scope reviewed:
 - Data schema/models (`backend/database/models.py`)
 - Intake/booking workflow routers (`backend/modules/booking/router.py`, `backend/modules/intake/router.py`)
@@ -310,4 +311,3 @@ Exit criteria:
 3. Build `normalize_inbound_lead()` service and refactor booking + webhook routes to call it.
 4. Add `Opportunity` model + CRUD + stage transition endpoint.
 5. Update sidebar/mobile nav labels to surface Pipeline and Today as first-class destinations.
-
