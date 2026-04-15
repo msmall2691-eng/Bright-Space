@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 import io
 import re
 
 from database.db import get_db
-from database.models import Client
+from database.models import Client, Property, Job, ICalEvent
 
 router = APIRouter()
 
@@ -111,6 +111,92 @@ def get_client(client_id: int, db: Session = Depends(get_db)):
     return client_to_dict(client)
 
 
+@router.get("/{client_id}/profile")
+def get_client_profile(client_id: int, db: Session = Depends(get_db)):
+    """
+    Get client's full profile including properties, upcoming/past visits, and GCal sync status.
+    """
+    client = db.query(Client).options(
+        joinedload(Client.properties).joinedload(Property.ical_events),
+        joinedload(Client.jobs)
+    ).filter(Client.id == client_id).first()
+
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # Build base client dict
+    profile = client_to_dict(client)
+
+    # Add properties
+    properties_data = []
+    for prop in client.properties:
+        properties_data.append({
+            "id": prop.id,
+            "name": prop.name,
+            "address": prop.address,
+            "ical_url": prop.ical_url,
+            "type": prop.property_type,
+        })
+    profile["properties"] = properties_data
+
+    # Split jobs into upcoming and past
+    today = date.today().isoformat()
+    upcoming_jobs = []
+    past_jobs = []
+
+    for job in client.jobs:
+        # Skip cancelled jobs in upcoming
+        if job.scheduled_date and job.scheduled_date >= today and job.status != "cancelled":
+            upcoming_jobs.append(job)
+        elif job.scheduled_date and job.scheduled_date < today:
+            past_jobs.append(job)
+
+    # Sort upcoming ascending, past descending
+    upcoming_jobs.sort(key=lambda j: (j.scheduled_date, j.start_time or ""))
+    past_jobs.sort(key=lambda j: (j.scheduled_date, j.start_time or ""), reverse=True)
+
+    # Build visit data
+    def visit_to_dict(j: Job) -> dict:
+        property_name = ""
+        if j.property:
+            property_name = j.property.name
+        return {
+            "id": j.id,
+            "title": j.title,
+            "scheduled_date": j.scheduled_date,
+            "start_time": j.start_time,
+            "end_time": j.end_time,
+            "status": j.status,
+            "job_type": j.job_type or "residential",
+            "property_name": property_name,
+            "gcal_event_id": j.gcal_event_id,
+            "calendar_invite_sent": j.calendar_invite_sent,
+            "address": j.address,
+        }
+
+    profile["upcoming_visits"] = [visit_to_dict(j) for j in upcoming_jobs]
+    profile["past_visits"] = [visit_to_dict(j) for j in past_jobs]
+
+    # Calculate visit stats
+    total_jobs = len(client.jobs)
+    completed_jobs = sum(1 for j in client.jobs if j.status == "completed")
+    upcoming_count = len(upcoming_jobs)
+    cancelled_count = sum(1 for j in client.jobs if j.status == "cancelled")
+    gcal_synced = sum(1 for j in client.jobs if j.gcal_event_id)
+    invites_sent = sum(1 for j in client.jobs if j.calendar_invite_sent)
+
+    profile["visit_stats"] = {
+        "total": total_jobs,
+        "completed": completed_jobs,
+        "upcoming": upcoming_count,
+        "cancelled": cancelled_count,
+        "gcal_synced": gcal_synced,
+        "invites_sent": invites_sent,
+    }
+
+    return profile
+
+
 @router.patch("/{client_id}")
 def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
@@ -153,11 +239,71 @@ def _parse_address(raw: str):
     state = "ME" if state_match else ""
     if state_match:
         raw = raw[:state_match.start()].strip()
-    # Remaining: "Street, City" — split on last comma
+    # Remaining: "Street, City" â split on last comma
     parts = [p.strip() for p in raw.rsplit(",", 1)]
     if len(parts) == 2:
         return {"address": parts[0], "city": parts[1], "state": state, "zip_code": zip_code}
     return {"address": parts[0], "city": "", "state": state, "zip_code": zip_code}
+
+
+@router.post("/cleanup")
+def cleanup_clients(db: Session = Depends(get_db)):
+    """
+    Data cleanup endpoint: audit clients, backfill first/last names,
+    flag SMS placeholders, and identify test records.
+    Does NOT delete anything â returns a report + applies safe fixes.
+    """
+    clients = db.query(Client).all()
+    report = {
+        "total": len(clients),
+        "names_backfilled": 0,
+        "sms_placeholders": [],
+        "test_records": [],
+        "missing_email": 0,
+        "missing_phone": 0,
+        "fixes_applied": [],
+    }
+
+    TEST_PATTERNS = {"test", "asdf", "sample", "demo", "xxx"}
+
+    for c in clients:
+        # 1. Backfill first_name / last_name from name if not set
+        if c.name and (not c.first_name and not c.last_name):
+            parts = c.name.strip().split()
+            if len(parts) >= 2 and not c.name.startswith("+"):
+                c.first_name = parts[0]
+                c.last_name = " ".join(parts[1:])
+                report["names_backfilled"] += 1
+                report["fixes_applied"].append(
+                    f"Client #{c.id} '{c.name}': set first_name='{c.first_name}', last_name='{c.last_name}'"
+                )
+            elif len(parts) == 1 and not c.name.startswith("+"):
+                c.first_name = parts[0]
+                report["names_backfilled"] += 1
+                report["fixes_applied"].append(
+                    f"Client #{c.id} '{c.name}': set first_name='{c.first_name}'"
+                )
+
+        # 2. Flag SMS placeholders (name looks like a phone number)
+        if c.name and (c.name.startswith("+") or c.name.replace("-", "").replace("(", "").replace(")", "").replace(" ", "").isdigit()):
+            report["sms_placeholders"].append({
+                "id": c.id, "name": c.name, "phone": c.phone, "status": c.status
+            })
+
+        # 3. Flag test/junk records
+        if c.name and any(t in c.name.lower() for t in TEST_PATTERNS):
+            report["test_records"].append({
+                "id": c.id, "name": c.name, "status": c.status
+            })
+
+        # 4. Count missing contact info
+        if not c.email:
+            report["missing_email"] += 1
+        if not c.phone:
+            report["missing_phone"] += 1
+
+    db.commit()
+    return report
 
 
 @router.post("/import-xlsx")
