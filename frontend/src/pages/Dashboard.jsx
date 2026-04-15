@@ -6,7 +6,7 @@ import { displayContactName } from '../utils/display'
 import {
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
-  Globe, Inbox, Phone, Mail, MessageSquare
+  Globe, Inbox, Phone, Mail, MessageSquare, GitBranch
 } from 'lucide-react'
 
 function StatCard({ icon: Icon, label, value, sub, color = 'text-gray-900', iconBg = 'bg-gray-100' }) {
@@ -42,6 +42,7 @@ export default function Dashboard() {
   const [invoices, setInvoices] = useState([])
   const [recurringCount, setRecurringCount] = useState(0)
   const [newRequests, setNewRequests] = useState([])
+  const [intakeStats, setIntakeStats] = useState({})
   const [loading, setLoading] = useState(true)
 
   const today = new Date().toISOString().slice(0, 10)
@@ -50,13 +51,14 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew] = await Promise.all([
+        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, intakeStatsRes] = await Promise.all([
           get(`/api/jobs?date=${today}`),
           get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
           get('/api/clients'),
           get('/api/invoices'),
           get('/api/recurring'),
           get('/api/intake?status=new'),
+          get('/api/intake/stats'),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         const week = Array.isArray(jobsWeek) ? jobsWeek : []
@@ -66,6 +68,7 @@ export default function Dashboard() {
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
         setRecurringCount(Array.isArray(schedules) ? schedules.filter(s => s.active).length : 0)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
+        setIntakeStats(intakeStatsRes || {})
       } catch {}
       setLoading(false)
     }
@@ -115,6 +118,9 @@ export default function Dashboard() {
       {/* Greeting */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
+          <div className="inline-flex items-center gap-2 mb-1">
+            <span className="text-[10px] tracking-[0.14em] uppercase text-indigo-500 font-semibold">Today HQ</span>
+          </div>
           <h2 className="text-lg sm:text-xl font-bold text-gray-900">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </h2>
@@ -170,6 +176,32 @@ export default function Dashboard() {
           color="text-purple-400"
           iconBg="bg-purple-50"
         />
+      </div>
+
+      {/* Pipeline snapshot */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-indigo-500" /> Pipeline Snapshot
+          </h3>
+          <button onClick={() => navigate('/pipeline')} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+            Open board →
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[
+            { label: 'New', val: intakeStats.new || 0, cls: 'bg-amber-50 text-amber-700' },
+            { label: 'Reviewed', val: intakeStats.reviewed || 0, cls: 'bg-blue-50 text-blue-700' },
+            { label: 'Quoted', val: intakeStats.quoted || 0, cls: 'bg-purple-50 text-purple-700' },
+            { label: 'Converted', val: intakeStats.converted || 0, cls: 'bg-emerald-50 text-emerald-700' },
+            { label: 'Urgent', val: intakeStats.urgent || 0, cls: 'bg-red-50 text-red-700' },
+          ].map(item => (
+            <div key={item.label} className={`rounded-lg px-3 py-2 ${item.cls}`}>
+              <div className="text-[10px] uppercase tracking-wide opacity-80">{item.label}</div>
+              <div className="text-lg font-bold">{item.val}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Main content grid */}

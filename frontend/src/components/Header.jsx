@@ -2,13 +2,13 @@ import { useLocation } from 'react-router-dom'
 import { Menu, Search, Command, Zap } from 'lucide-react'
 
 const PAGE_TITLES = {
-  '/dashboard': 'Dashboard',
+  '/dashboard': 'Today HQ',
   '/workspace': 'Workspace',
-  '/clients': 'Clients',
-  '/requests': 'Requests',
+  '/clients': 'People & Accounts',
+  '/requests': 'Leads Inbox',
   '/pipeline': 'Pipeline',
   '/quoting': 'Quoting',
-  '/scheduling': 'Schedule',
+  '/scheduling': 'Operations Schedule',
   '/invoicing': 'Invoicing',
   '/dispatch': 'Dispatch',
   '/payroll': 'Payroll',

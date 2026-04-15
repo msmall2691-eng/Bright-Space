@@ -258,6 +258,9 @@ export default function Scheduling() {
   }
 
   const statusConfig = (s) => STATUS_OPTIONS.find(o => o.value === s) || STATUS_OPTIONS[0]
+  const scheduledCount = upcomingJobs.filter(j => j.status === 'scheduled').length
+  const inProgressCount = upcomingJobs.filter(j => j.status === 'in_progress').length
+  const turnoverCount = upcomingJobs.filter(j => j.job_type === 'str_turnover').length
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -289,9 +292,23 @@ export default function Scheduling() {
 
       {/* Desktop header */}
       <div className="hidden lg:flex items-center justify-between px-6 py-3 border-b border-gray-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-gray-900">Schedule</h2>
-          <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Synced with Google Calendar</span>
+        <div className="flex items-center gap-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-indigo-500 font-semibold">Operations</div>
+            <h2 className="text-lg font-semibold text-gray-900">Schedule Command Center</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+              {scheduledCount} scheduled
+            </span>
+            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+              {inProgressCount} in progress
+            </span>
+            <span className="text-[10px] text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
+              {turnoverCount} turnovers
+            </span>
+            <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Synced with Google Calendar</span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={syncFromGCal} disabled={syncing}
