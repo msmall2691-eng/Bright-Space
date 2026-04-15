@@ -261,18 +261,93 @@ class Invoice(Base):
     client = relationship("Client", back_populates="invoices")
 
 
+class Conversation(Base):
+    """
+    A single multi-channel conversation thread with a contact.
+
+    Groups related Messages across SMS / email / chat / etc. Carries
+    inbox-level state: status, assignment, SLA, unread, priority, tags.
+    """
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+
+    # External identifier for contacts not yet linked to a client
+    # (phone number for SMS, email address for email, etc.)
+    external_contact = Column(String, nullable=True, index=True)
+
+    channel = Column(String, nullable=False, index=True)   # sms | email | chat | whatsapp
+    subject = Column(String, nullable=True)                # primarily for email threading
+
+    status = Column(String, default="open", nullable=False, index=True)
+    # open | pending | snoozed | resolved
+
+    priority = Column(String, default="normal", nullable=False)
+    # low | normal | high | urgent
+
+    assignee = Column(String, nullable=True, index=True)   # email or name of teammate
+    tags = Column(JSON, default=list)
+
+    # Activity timestamps — used to sort the inbox and measure SLAs
+    last_message_at = Column(DateTime, nullable=True, index=True)
+    last_inbound_at = Column(DateTime, nullable=True)
+    last_outbound_at = Column(DateTime, nullable=True)
+    first_response_at = Column(DateTime, nullable=True)
+    # when a teammate first replied after an inbound message
+
+    unread_count = Column(Integer, default=0, nullable=False)
+
+    # SLA: First Response Time target, in minutes.
+    # When a new inbound arrives and first_response_at is null, we compute
+    # sla_deadline = now + sla_response_minutes.
+    sla_response_minutes = Column(Integer, nullable=True)
+    sla_deadline = Column(DateTime, nullable=True)
+
+    snoozed_until = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    client = relationship("Client")
+    messages = relationship(
+        "Message", back_populates="conversation",
+        cascade="all, delete-orphan", order_by="Message.created_at",
+    )
+
+
 class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
-    channel = Column(String)       # sms, email
-    direction = Column(String)     # inbound, outbound
+
+    # Each message should belong to a Conversation. Nullable for now to
+    # allow backfill of legacy rows; new code always sets this.
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True, index=True)
+
+    channel = Column(String)       # sms | email | chat | whatsapp
+    direction = Column(String)     # inbound | outbound | note
     from_addr = Column(String)
     to_addr = Column(String)
     subject = Column(String, nullable=True)
     body = Column(Text)
     status = Column(String, default="sent")
+    # sent | received | delivered | failed | read | queued
+
+    # External provider id (Twilio SID, email Message-ID) — used for dedup
+    external_id = Column(String, nullable=True, index=True)
+
+    # Who sent it — team-member identifier for outbound/notes
+    author = Column(String, nullable=True)
+
+    # Internal team notes (e.g. @mentions) are stored as messages with
+    # is_internal_note=True so they appear inline in the thread but are
+    # never sent to the customer.
+    is_internal_note = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="messages")
+    conversation = relationship("Conversation", back_populates="messages")
