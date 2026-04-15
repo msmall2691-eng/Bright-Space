@@ -92,6 +92,7 @@ class ICalEvent(Base):
 
     uid = Column(String, nullable=False)            # Airbnb UID: "airbnb_XXX@airbnb.com"
     summary = Column(String, nullable=True)         # SUMMARY field (booking label)
+    event_type = Column(String, default="reservation")  # "reservation" | "host_block"
     checkout_date = Column(String, nullable=False)  # YYYY-MM-DD from DTEND
     checkin_date = Column(String, nullable=True)    # YYYY-MM-DD from DTSTART
     raw_event = Column(JSON, nullable=True)         # Full parsed event dict

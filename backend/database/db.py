@@ -83,6 +83,8 @@ def _run_migrations():
         "ALTER TABLE lead_intakes ADD COLUMN assigned_to TEXT",
         "ALTER TABLE lead_intakes ADD COLUMN internal_notes TEXT",
         "ALTER TABLE lead_intakes ADD COLUMN followed_up_at TIMESTAMP",
+        # iCal host block detection: track event type (reservation vs host_block)
+        "ALTER TABLE ical_events ADD COLUMN event_type TEXT DEFAULT 'reservation'",
         # Omnichannel inbox (Phase 1): conversation threading on messages
         "ALTER TABLE messages ADD COLUMN conversation_id INTEGER REFERENCES conversations(id)",
         "ALTER TABLE messages ADD COLUMN external_id TEXT",

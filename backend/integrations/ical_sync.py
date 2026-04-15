@@ -76,6 +76,7 @@ def sync_property(db: Session, prop: Property) -> dict:
     created_events = 0
     created_jobs = 0
     skipped = 0
+    host_blocks = 0
 
     for component in cal.walk():
         if component.name != "VEVENT":
@@ -86,35 +87,59 @@ def sync_property(db: Session, prop: Property) -> dict:
             continue
 
         summary = str(component.get("SUMMARY", ""))
+        description = str(component.get("DESCRIPTION", ""))
         checkout = _parse_date(component.get("DTEND"))
         checkin = _parse_date(component.get("DTSTART"))
 
-        # Skip events with no checkout or that are pure "Not available" blocks
-        # Airbnb also emits "Airbnb (BLOCKED)" events — those are owner blocks, skip them
-        low = summary.lower()
-        if not checkout or "blocked" in low or "unavailable" in low:
+        if not checkout:
             skipped += 1
             continue
 
+        # Detect host blocks vs real reservations.
+        # Airbnb patterns:  "Airbnb (Not available)", "Not available", "Airbnb (BLOCKED)"
+        # VRBO patterns:    "BLOCKED", "Not available"
+        # Real bookings:    "Reserved", guest name, or have a reservation URL in DESCRIPTION
+        low = summary.lower()
+        is_host_block = (
+            "not available" in low
+            or "blocked" in low
+            or "unavailable" in low
+            or "maintenance" in low
+            or "owner" in low
+            # Also: no reservation details in description and not "reserved"
+        )
+
         seen += 1
 
-        # Upsert ICalEvent
+        # Upsert ICalEvent — store host blocks too (flagged, no job created)
         event = db.query(ICalEvent).filter_by(
             property_id=prop.id, uid=uid
         ).first()
+
+        event_type = "host_block" if is_host_block else "reservation"
 
         if not event:
             event = ICalEvent(
                 property_id=prop.id,
                 uid=uid,
                 summary=summary,
+                event_type=event_type,
                 checkout_date=checkout,
                 checkin_date=checkin,
-                raw_event={"uid": uid, "summary": summary, "checkout": checkout, "checkin": checkin},
+                raw_event={"uid": uid, "summary": summary, "checkout": checkout, "checkin": checkin, "description": description},
             )
             db.add(event)
             db.flush()  # get event.id
             created_events += 1
+        else:
+            # Update event_type in case it changed
+            event.event_type = event_type
+
+        # Skip job creation for host blocks
+        if is_host_block:
+            host_blocks += 1
+            log.info(f"Host block detected for {prop.name}: {summary} ({checkin} → {checkout})")
+            continue
 
         # Create a Job if: no job yet + checkout is today or future
         if event.job_id is None and checkout >= today:
@@ -178,6 +203,7 @@ def sync_property(db: Session, prop: Property) -> dict:
         "events_seen": seen,
         "events_created": created_events,
         "jobs_created": created_jobs,
+        "host_blocks": host_blocks,
         "skipped": skipped,
         "synced_at": prop.ical_last_synced_at.isoformat(),
     }
