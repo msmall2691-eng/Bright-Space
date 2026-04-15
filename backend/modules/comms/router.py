@@ -663,7 +663,9 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
             logger.info(f"[twilio] Updating client phone: {client.phone!r} → {from_number!r}")
             client.phone = from_number
     else:
-        logger.info(f"[twilio] New contact from {from_number} — creating lead intake")
+        # Don't auto-create leads from unknown SMS numbers.
+        # Store as a contact without creating a lead intake.
+        logger.info(f"[twilio] Unknown SMS from {from_number} — creating contact record only (no lead)")
         client = Client(
             name=from_number,
             phone=from_number,
@@ -672,15 +674,8 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
         )
         db.add(client)
         db.flush()
-        intake = LeadIntake(
-            name=f"SMS {from_number}",
-            phone=from_number,
-            message=body,
-            source="sms",
-            status="new",
-            client_id=client.id,
-        )
-        db.add(intake)
+        # NOTE: No LeadIntake created — SMS from new numbers won't show in Requests/Intake
+        # The message will appear in Comms inbox for manual handling
 
     conv = find_or_create_conversation(
         db, channel="sms",
