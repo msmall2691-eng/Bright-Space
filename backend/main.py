@@ -102,6 +102,27 @@ def _gmail_sync_job():
         logger.error(f"Gmail sync job failed: {e}")
 
 
+def _calendar_sync_job():
+    """Background task to sync Google Calendar events every 15 minutes."""
+    try:
+        from integrations.gcal_sync import sync_calendar
+        from sqlalchemy.orm import Session
+        from database.db import engine
+
+        with Session(engine) as db:
+            stats = sync_calendar(db)
+            if stats.get("error"):
+                logger.error(f"Calendar sync failed: {stats['error']}")
+            else:
+                logger.info(
+                    f"Calendar sync: {stats.get('total_events', 0)} events processed, "
+                    f"{stats.get('jobs_created', 0)} jobs created, "
+                    f"{stats.get('jobs_updated', 0)} jobs updated"
+                )
+    except Exception as e:
+        logger.error(f"Calendar sync job failed: {e}")
+
+
 scheduler = None
 
 
@@ -111,16 +132,25 @@ async def startup():
     init_db()
     print("BrightBase backend started")
 
-    # Start Gmail sync scheduler (every 15 minutes)
+    # Start sync schedulers (every 15 minutes)
     gmail_sync_enabled = os.getenv("GMAIL_SYNC_ENABLED", "true").lower() == "true"
-    if gmail_sync_enabled:
-        try:
-            scheduler = BackgroundScheduler()
+    calendar_sync_enabled = os.getenv("CALENDAR_SYNC_ENABLED", "true").lower() == "true"
+
+    try:
+        scheduler = BackgroundScheduler()
+
+        if gmail_sync_enabled:
             scheduler.add_job(_gmail_sync_job, "interval", minutes=15, id="gmail_sync")
-            scheduler.start()
             print("✓ Gmail sync scheduler started (every 15 minutes)")
-        except Exception as e:
-            print(f"⚠ Failed to start Gmail sync scheduler: {e}")
+
+        if calendar_sync_enabled:
+            scheduler.add_job(_calendar_sync_job, "interval", minutes=15, id="calendar_sync")
+            print("✓ Calendar sync scheduler started (every 15 minutes)")
+
+        if gmail_sync_enabled or calendar_sync_enabled:
+            scheduler.start()
+    except Exception as e:
+        print(f"⚠ Failed to start sync schedulers: {e}")
 
 
 @app.on_event("shutdown")
