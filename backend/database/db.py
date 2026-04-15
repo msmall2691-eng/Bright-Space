@@ -36,6 +36,19 @@ def init_db():
 
 
 def _run_migrations():
+    """
+    Idempotent, dialect-aware ALTER TABLE migrations.
+
+    Each entry is (sql, reason_ok_to_skip). We log loud warnings on any
+    failure that *isn't* the expected "column already exists" case so
+    we can diagnose in Railway logs.
+    """
+    is_pg = DATABASE_URL.startswith("postgresql")
+
+    # Use BOOLEAN on Postgres (strict type matching with SQLAlchemy Boolean),
+    # INTEGER on SQLite (which stores booleans as int anyway).
+    bool_col = "BOOLEAN DEFAULT FALSE" if is_pg else "INTEGER DEFAULT 0"
+
     migrations = [
         "ALTER TABLE quotes ADD COLUMN intake_id INTEGER REFERENCES lead_intakes(id)",
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
@@ -74,18 +87,58 @@ def _run_migrations():
         "ALTER TABLE messages ADD COLUMN conversation_id INTEGER REFERENCES conversations(id)",
         "ALTER TABLE messages ADD COLUMN external_id TEXT",
         "ALTER TABLE messages ADD COLUMN author TEXT",
-        "ALTER TABLE messages ADD COLUMN is_internal_note INTEGER DEFAULT 0",
+        f"ALTER TABLE messages ADD COLUMN is_internal_note {bool_col}",
     ]
+
     with engine.connect() as conn:
         for sql in migrations:
             try:
                 conn.execute(text(sql))
                 conn.commit()
-            except Exception:
+            except Exception as exc:
                 try:
                     conn.rollback()
                 except Exception:
                     pass
+                # Swallow "already exists" noise, but log everything else so
+                # broken deploys surface clearly in Railway logs.
+                err_str = str(exc).lower()
+                benign = (
+                    "already exists" in err_str
+                    or "duplicate column" in err_str
+                    or "duplicate_column" in err_str
+                )
+                if not benign:
+                    logger.warning(f"[migration] {sql} -> {exc}")
+
+    # Post-migration repair: on Postgres, older deploys may have created
+    # is_internal_note as INTEGER when the model expects BOOLEAN. Coerce.
+    if is_pg:
+        _coerce_is_internal_note_to_boolean()
+
+
+def _coerce_is_internal_note_to_boolean():
+    """If messages.is_internal_note exists as INTEGER on Postgres, convert to BOOLEAN."""
+    check_sql = text("""
+        SELECT data_type FROM information_schema.columns
+        WHERE table_name = 'messages' AND column_name = 'is_internal_note'
+    """)
+    alter_sql = text("""
+        ALTER TABLE messages
+        ALTER COLUMN is_internal_note DROP DEFAULT,
+        ALTER COLUMN is_internal_note TYPE BOOLEAN
+            USING (CASE WHEN is_internal_note = 0 THEN FALSE ELSE TRUE END),
+        ALTER COLUMN is_internal_note SET DEFAULT FALSE
+    """)
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(check_sql).fetchone()
+            if row and row[0] and row[0].lower() == "integer":
+                logger.warning("[migration] coercing messages.is_internal_note INTEGER -> BOOLEAN")
+                conn.execute(alter_sql)
+                conn.commit()
+    except Exception as exc:
+        logger.warning(f"[migration] is_internal_note type coercion skipped: {exc}")
 
 
 def _backfill_conversations():
