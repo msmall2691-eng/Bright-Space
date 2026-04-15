@@ -31,6 +31,8 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     # Safe migrations: add new columns if they don't exist yet
     _run_migrations()
+    # Phase 1 omnichannel: backfill legacy messages into conversations
+    _backfill_conversations()
 
 
 def _run_migrations():
@@ -68,6 +70,11 @@ def _run_migrations():
         "ALTER TABLE lead_intakes ADD COLUMN assigned_to TEXT",
         "ALTER TABLE lead_intakes ADD COLUMN internal_notes TEXT",
         "ALTER TABLE lead_intakes ADD COLUMN followed_up_at TIMESTAMP",
+        # Omnichannel inbox (Phase 1): conversation threading on messages
+        "ALTER TABLE messages ADD COLUMN conversation_id INTEGER REFERENCES conversations(id)",
+        "ALTER TABLE messages ADD COLUMN external_id TEXT",
+        "ALTER TABLE messages ADD COLUMN author TEXT",
+        "ALTER TABLE messages ADD COLUMN is_internal_note INTEGER DEFAULT 0",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -79,6 +86,69 @@ def _run_migrations():
                     conn.rollback()
                 except Exception:
                     pass
+
+
+def _backfill_conversations():
+    """
+    Attach any legacy Messages lacking conversation_id to a Conversation.
+
+    Groups messages by (client_id or external_contact, channel). Idempotent —
+    safe to run on every boot. Legacy conversations are marked resolved so
+    they don't show up in the active inbox.
+    """
+    from database.models import Message, Conversation
+
+    db = SessionLocal()
+    try:
+        orphans = db.query(Message).filter(Message.conversation_id.is_(None)).all()
+        if not orphans:
+            return
+        logger.info(f"[backfill] Linking {len(orphans)} legacy messages to conversations")
+
+        for msg in orphans:
+            external = msg.from_addr if msg.direction == "inbound" else msg.to_addr
+
+            q = db.query(Conversation).filter(Conversation.channel == msg.channel)
+            if msg.client_id:
+                q = q.filter(Conversation.client_id == msg.client_id)
+            elif external:
+                q = q.filter(Conversation.external_contact == external)
+            else:
+                continue
+
+            conv = q.order_by(Conversation.last_message_at.desc()).first()
+            if conv is None:
+                conv = Conversation(
+                    client_id=msg.client_id,
+                    external_contact=external,
+                    channel=msg.channel,
+                    subject=msg.subject,
+                    status="resolved",
+                    last_message_at=msg.created_at,
+                )
+                db.add(conv)
+                db.flush()
+
+            msg.conversation_id = conv.id
+            # Roll up conversation activity timestamps
+            if not conv.last_message_at or (msg.created_at and msg.created_at > conv.last_message_at):
+                conv.last_message_at = msg.created_at
+            if msg.direction == "inbound" and (
+                not conv.last_inbound_at or (msg.created_at and msg.created_at > conv.last_inbound_at)
+            ):
+                conv.last_inbound_at = msg.created_at
+            if msg.direction == "outbound" and (
+                not conv.last_outbound_at or (msg.created_at and msg.created_at > conv.last_outbound_at)
+            ):
+                conv.last_outbound_at = msg.created_at
+
+        db.commit()
+    except Exception as exc:
+        logger.warning(f"[backfill] conversation backfill skipped: {exc}")
+        try: db.rollback()
+        except Exception: pass
+    finally:
+        db.close()
 
 
 def get_db():
