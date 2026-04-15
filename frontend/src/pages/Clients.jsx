@@ -4,6 +4,7 @@ import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload } from 'luci
 import { CustomFieldsForm } from '../components/CustomFields'
 import AgentWidget from '../components/AgentWidget'
 import { del, get, post, patch, upload } from "../api"
+import { displayContactName } from '../utils/display'
 
 
 const STATUS_COLORS = {
@@ -135,10 +136,10 @@ export default function Clients() {
             <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
               className="flex items-center gap-4 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm rounded-xl p-4 cursor-pointer transition-all">
               <div className="w-10 h-10 rounded-full bg-sky-50 flex items-center justify-center shrink-0">
-                <span className="text-sky-400 font-semibold text-sm">{c.name[0]?.toUpperCase()}</span>
+                <span className="text-sky-400 font-semibold text-sm">{displayContactName(c)[0]?.toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900">{c.name}</div>
+                <div className="font-medium text-gray-900">{displayContactName(c)}</div>
                 <div className="flex items-center gap-3 mt-0.5">
                   {c.phone && <span className="text-xs text-gray-400 flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
                   {c.email && <span className="text-xs text-gray-400 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>}

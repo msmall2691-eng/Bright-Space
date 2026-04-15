@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { get, post, patch } from '../api'
 import AgentWidget from '../components/AgentWidget'
+import { displayContactName } from '../utils/display'
 import {
   Inbox, Globe, ArrowRight, FileText, Calendar, CheckCircle, Clock, Eye,
   Phone, Mail, MapPin, Home, Users, ChevronDown, ChevronUp, Plus,
@@ -73,6 +74,7 @@ function Toast({ msg }) {
 // ── Inbox Row ────────────────────────────────────────────────────────────────
 function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded, onToggle }) {
   const colors = STAGE_COLORS[intake.status] || STAGE_COLORS.new
+  const displayName = displayContactName(intake)
   const linkedQuote = quotes.find(q => q.intake_id === intake.id)
   const estimate = intake.estimate_min && intake.estimate_max
     ? `$${intake.estimate_min.toFixed(0)}-$${intake.estimate_max.toFixed(0)}`
@@ -110,7 +112,7 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
         {/* Name & contact */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-gray-900 truncate">{intake.name}</span>
+            <span className="font-semibold text-sm text-gray-900 truncate">{displayName}</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 capitalize shrink-0">
               {SERVICE_LABELS[intake.service_type] || intake.service_type}
             </span>
@@ -351,6 +353,7 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
     : null
   const priorityCfg = PRIORITY_CONFIG[intake.priority || 'normal']
   const urgency = intake.status === 'new' ? urgencyLevel(intake.created_at) : 'normal'
+  const displayName = displayContactName(intake)
 
   return (
     <div className={`bg-white border rounded-xl overflow-hidden transition-all hover:shadow-md ${
@@ -363,7 +366,7 @@ function KanbanCard({ intake, quotes, onAdvance, onAction }) {
               {intake.priority && intake.priority !== 'normal' && (
                 <div className={`w-2 h-2 rounded-full shrink-0 ${priorityCfg.dot}`} />
               )}
-              <span className="font-semibold text-sm text-gray-900 truncate">{intake.name}</span>
+              <span className="font-semibold text-sm text-gray-900 truncate">{displayName}</span>
             </div>
           </div>
           <span className={`text-xs shrink-0 ${
@@ -528,12 +531,13 @@ function AddRequestModal({ onClose, onSaved }) {
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function Requests() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [intakes, setIntakes] = useState([])
   const [quotes, setQuotes] = useState([])
   const [stats, setStats] = useState({})
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
-  const [view, setView] = useState('inbox')       // 'inbox' | 'board'
+  const [view, setView] = useState(location.pathname === '/pipeline' ? 'board' : 'inbox')       // 'inbox' | 'board'
   const [filterStatus, setFilterStatus] = useState('active')  // 'active' | 'new' | 'reviewed' | 'quoted' | 'converted' | 'archived' | 'all'
   const [filterService, setFilterService] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -559,6 +563,9 @@ export default function Requests() {
   }
 
   useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    setView(location.pathname === '/pipeline' ? 'board' : 'inbox')
+  }, [location.pathname])
 
   const advanceStatus = async (intakeId, newStatus) => {
     try {
@@ -658,7 +665,7 @@ export default function Requests() {
       <div className="px-6 py-4 border-b border-gray-200 shrink-0 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-gray-900">Requests</h1>
+            <h1 className="text-lg font-semibold text-gray-900">{view === 'board' ? 'Pipeline' : 'Leads'}</h1>
             {stats.new > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
                 {stats.new} new

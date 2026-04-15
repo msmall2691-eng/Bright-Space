@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from "../api"
 import AgentWidget from '../components/AgentWidget'
+import { displayContactName } from '../utils/display'
 import {
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
@@ -204,7 +205,7 @@ export default function Dashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 truncate">{req.name}</span>
+                          <span className="text-sm font-medium text-gray-900 truncate">{displayContactName(req)}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 capitalize shrink-0">
                             {req.service_type}
                           </span>

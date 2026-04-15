@@ -3,19 +3,21 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
-  ChevronRight
+  GitBranch
 } from 'lucide-react'
 
 const nav = [
-  { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/dashboard',   icon: LayoutDashboard, label: 'Today' },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
-  { divider: true, label: 'Clients' },
+  { divider: true, label: 'CRM' },
   { to: '/clients',     icon: Users,           label: 'Clients' },
-  { to: '/requests',    icon: Inbox,           label: 'Requests' },
+  { to: '/requests',    icon: Inbox,           label: 'Leads' },
+  { to: '/pipeline',    icon: GitBranch,       label: 'Pipeline' },
+  { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
+  { divider: true, label: 'Revenue' },
   { to: '/quoting',     icon: FileText,        label: 'Quoting' },
   { to: '/invoicing',   icon: Receipt,         label: 'Invoicing' },
-  { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
-  { divider: true, label: 'Scheduling' },
+  { divider: true, label: 'Operations' },
   { to: '/scheduling',  icon: Calendar,        label: 'Schedule' },
   { to: '/recurring',   icon: Repeat,          label: 'Recurring' },
   { to: '/properties',  icon: Home,            label: 'Properties' },

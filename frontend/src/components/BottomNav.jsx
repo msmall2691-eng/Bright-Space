@@ -1,13 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Calendar, Receipt, Inbox, MoreHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { LayoutDashboard, Users, Calendar, GitBranch, MoreHorizontal } from 'lucide-react'
 
 const PRIMARY_TABS = [
-  { to: '/dashboard',  icon: LayoutDashboard, label: 'Home' },
-  { to: '/requests',   icon: Inbox,           label: 'Requests' },
+  { to: '/dashboard',  icon: LayoutDashboard, label: 'Today' },
+  { to: '/pipeline',   icon: GitBranch,       label: 'Pipeline' },
   { to: '/scheduling', icon: Calendar,        label: 'Schedule' },
   { to: '/clients',    icon: Users,           label: 'Clients' },
-  { to: '/invoicing',  icon: Receipt,         label: 'Invoicing' },
+  { to: '/settings',   icon: MoreHorizontal,  label: 'More' },
 ]
 
 export default function BottomNav() {
