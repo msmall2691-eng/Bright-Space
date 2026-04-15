@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
-  ChevronRight
+  ChevronRight, Bell, Building2,
 } from 'lucide-react'
 
 const nav = [
@@ -36,58 +36,58 @@ export default function Sidebar({ open, onClose }) {
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-40 lg:hidden"
+          className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-40 lg:hidden"
           onClick={onClose}
         />
       )}
 
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-[260px] sm:w-[220px] bg-[#FAFAFA] border-r border-gray-200/80
+        fixed inset-y-0 left-0 z-50 w-[240px] bg-zinc-950 border-r border-zinc-800
         flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out
         lg:static lg:translate-x-0 lg:w-[220px]
         ${open ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Logo area */}
-        <div className="h-12 sm:h-14 flex items-center justify-between px-4 border-b border-gray-200/60">
+        <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800/60">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-gray-900 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-white" />
             </div>
             <div>
-              <span className="text-[13px] font-semibold text-gray-900 tracking-tight leading-none">BrightBase</span>
-              <p className="text-[10px] text-gray-400 leading-none mt-0.5">Maine Cleaning Co.</p>
+              <span className="text-[13px] font-semibold text-white tracking-tight leading-none">BrightBase</span>
+              <p className="text-[10px] text-zinc-500 leading-none mt-0.5">Maine Cleaning Co.</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="lg:hidden p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-none"
+            className="lg:hidden p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-1.5 overflow-y-auto scroll-smooth-mobile">
+        <nav className="flex-1 py-2 overflow-y-auto">
           {nav.map((item, i) =>
             item.divider ? (
-              <div key={i} className="px-4 pt-5 pb-1">
-                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-[0.08em]">{item.label}</span>
+              <div key={i} className="px-4 pt-5 pb-1.5">
+                <span className="text-[10px] font-semibold text-zinc-600 uppercase tracking-[0.1em]">{item.label}</span>
               </div>
             ) : (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `group flex items-center gap-2.5 px-3 py-2.5 sm:py-[7px] mx-2 my-[1px] rounded-md transition-all text-[13px] select-none-interactive ${
+                  `group flex items-center gap-2.5 px-3 py-[7px] mx-2 my-[1px] rounded-lg transition-all text-[13px] select-none ${
                     isActive
-                      ? 'bg-gray-900 text-white font-medium'
-                      : 'text-gray-600 hover:bg-gray-100 active:bg-gray-200 hover:text-gray-900'
+                      ? 'bg-zinc-800 text-white font-medium'
+                      : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
                   }`
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white/80' : 'text-gray-400 group-hover:text-gray-500'}`} />
+                    <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-400' : 'text-zinc-600 group-hover:text-zinc-400'}`} />
                     <span className="truncate">{item.label}</span>
                   </>
                 )}
@@ -96,13 +96,16 @@ export default function Sidebar({ open, onClose }) {
           )}
         </nav>
 
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-200/60">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
-              <span className="text-[10px] font-medium text-gray-500">M</span>
+        {/* Footer / user */}
+        <div className="px-3 py-3 border-t border-zinc-800/60">
+          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-zinc-900 transition-colors cursor-pointer">
+            <div className="w-7 h-7 rounded-full bg-blue-600/20 flex items-center justify-center">
+              <span className="text-[11px] font-semibold text-blue-400">M</span>
             </div>
-            <span className="text-[12px] text-gray-500 truncate">Megan</span>
+            <div className="flex-1 min-w-0">
+              <span className="text-[12px] text-zinc-300 font-medium truncate block">Megan</span>
+              <span className="text-[10px] text-zinc-600 truncate block">Owner</span>
+            </div>
           </div>
         </div>
       </aside>
