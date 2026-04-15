@@ -240,3 +240,40 @@ def delete_quote(quote_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Quote not found")
     db.delete(quote)
     db.commit()
+
+
+@router.post("/test-email")
+def test_email():
+    """Test email configuration by sending a test email."""
+    from integrations.email import send_email
+
+    to_email = os.getenv("SMTP_USER", "test@example.com")
+
+    try:
+        result = send_email(
+            to=to_email,
+            subject="BrightBase Email Test",
+            html_body="""
+            <html>
+            <body style="font-family: Arial, sans-serif;">
+                <h2>Email Configuration Test</h2>
+                <p>If you received this email, your SMTP configuration is working correctly!</p>
+                <p><strong>From:</strong> """ + os.getenv("FROM_NAME", "Maine Cleaning Co") + """</p>
+                <p><strong>To:</strong> """ + to_email + """</p>
+                <p style="color: #16a34a; font-weight: bold;">✓ Email system is operational</p>
+            </body>
+            </html>
+            """,
+            text_body="BrightBase email test successful. If you received this, SMTP is working."
+        )
+        return {
+            "status": "success",
+            "message": f"Test email sent to {to_email}",
+            "result": result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to send test email: {str(e)}",
+            "error": str(e)
+        }
