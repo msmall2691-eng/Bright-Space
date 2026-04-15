@@ -251,6 +251,46 @@ def _apply_outbound(conv: Conversation, msg: Message):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostic / health
+# ---------------------------------------------------------------------------
+
+@router.get("/_health")
+def comms_health(db: Session = Depends(get_db)):
+    """
+    Cheap schema + connectivity smoke test. Surfaces the actual exception
+    instead of a generic 500 so we can diagnose deploy issues in the browser.
+    """
+    report = {"db": "unknown", "messages_table": None, "conversations_table": None,
+              "message_columns": [], "conversation_columns": [], "errors": []}
+    try:
+        from sqlalchemy import inspect
+        insp = inspect(db.get_bind())
+        cols_msg = [c["name"] for c in insp.get_columns("messages")] if insp.has_table("messages") else []
+        cols_conv = [c["name"] for c in insp.get_columns("conversations")] if insp.has_table("conversations") else []
+        report["messages_table"] = insp.has_table("messages")
+        report["conversations_table"] = insp.has_table("conversations")
+        report["message_columns"] = cols_msg
+        report["conversation_columns"] = cols_conv
+        report["db"] = db.get_bind().dialect.name
+    except Exception as exc:
+        report["errors"].append(f"inspect: {exc!r}")
+
+    try:
+        cnt = db.query(Message).count()
+        report["message_count"] = cnt
+    except Exception as exc:
+        report["errors"].append(f"select messages: {exc!r}")
+
+    try:
+        cnt = db.query(Conversation).count()
+        report["conversation_count"] = cnt
+    except Exception as exc:
+        report["errors"].append(f"select conversations: {exc!r}")
+
+    return report
+
+
+# ---------------------------------------------------------------------------
 # Conversation endpoints
 # ---------------------------------------------------------------------------
 
