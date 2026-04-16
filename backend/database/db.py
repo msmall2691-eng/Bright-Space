@@ -90,6 +90,14 @@ def _run_migrations():
         "ALTER TABLE messages ADD COLUMN external_id TEXT",
         "ALTER TABLE messages ADD COLUMN author TEXT",
         f"ALTER TABLE messages ADD COLUMN is_internal_note {bool_col}",
+        # CRM enrichment: client lifecycle, type, and contact tracking
+        "ALTER TABLE clients ADD COLUMN client_type TEXT",
+        "ALTER TABLE clients ADD COLUMN lifecycle_stage TEXT DEFAULT 'new'",
+        "ALTER TABLE clients ADD COLUMN source_detail TEXT",
+        "ALTER TABLE clients ADD COLUMN last_contacted_at TIMESTAMP",
+        f"ALTER TABLE clients ADD COLUMN email_verified {bool_col}",
+        # Link lead intakes to opportunities
+        "ALTER TABLE lead_intakes ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id)",
     ]
 
     with engine.connect() as conn:

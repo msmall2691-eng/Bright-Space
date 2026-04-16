@@ -48,12 +48,22 @@ class Client(Base):
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    client_type = Column(String, nullable=True)         # str | commercial | residential
+    lifecycle_stage = Column(String, default="new")     # new | qualified | opportunity | customer | churned
+    source_detail = Column(String, nullable=True)       # "maineclean.co contact form", "gmail auto-create"
+    last_contacted_at = Column(DateTime, nullable=True)
+    email_verified = Column(Boolean, default=False)
+
     quotes = relationship("Quote", back_populates="client")
     jobs = relationship("Job", back_populates="client")
     invoices = relationship("Invoice", back_populates="client")
     messages = relationship("Message", back_populates="client")
     properties = relationship("Property", back_populates="client")
     recurring_schedules = relationship("RecurringSchedule", back_populates="client")
+    opportunities = relationship("Opportunity", back_populates="client")
+    contact_emails = relationship("ContactEmail", back_populates="client", cascade="all, delete-orphan")
+    contact_phones = relationship("ContactPhone", back_populates="client", cascade="all, delete-orphan")
+    activities = relationship("Activity", back_populates="client", order_by="Activity.created_at.desc()")
 
 
 class Property(Base):
@@ -215,7 +225,10 @@ class LeadIntake(Base):
     internal_notes = Column(Text, nullable=True)
     followed_up_at = Column(DateTime, nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    opportunity = relationship("Opportunity", back_populates="intake")
 
 
 class Quote(Base):
@@ -352,3 +365,88 @@ class Message(Base):
 
     client = relationship("Client", back_populates="messages")
     conversation = relationship("Conversation", back_populates="messages")
+
+
+class Opportunity(Base):
+    """
+    Pipeline deal between lead qualification and quoting.
+    Inspired by Twenty CRM's opportunity model and Fieldcamp's deal stages.
+    """
+    __tablename__ = "opportunities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+
+    title = Column(String, nullable=False)
+    stage = Column(String, default="new", nullable=False)
+    # new | qualified | quoted | won | lost
+    amount = Column(Float, nullable=True)
+    close_date = Column(String, nullable=True)
+    probability = Column(Integer, nullable=True)       # 0-100
+    service_type = Column(String, nullable=True)       # str_turnover | residential | commercial | deep_clean
+    owner = Column(String, nullable=True)              # assigned team member
+    lost_reason = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    client = relationship("Client", back_populates="opportunities")
+    intake = relationship("LeadIntake", back_populates="opportunity", uselist=False)
+
+
+class ContactEmail(Base):
+    """Multiple email addresses per client (Twenty CRM pattern for enrichment)."""
+    __tablename__ = "contact_emails"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    email = Column(String, nullable=False, index=True)
+    is_primary = Column(Boolean, default=False)
+    source = Column(String, nullable=True)             # website | gmail_sync | manual
+    verified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="contact_emails")
+
+
+class ContactPhone(Base):
+    """Multiple phone numbers per client."""
+    __tablename__ = "contact_phones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    phone = Column(String, nullable=False, index=True)
+    is_primary = Column(Boolean, default=False)
+    phone_type = Column(String, nullable=True)         # mobile | office | home
+    source = Column(String, nullable=True)             # website | twilio | manual
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="contact_phones")
+
+
+class Activity(Base):
+    """
+    Unified timeline entry for any client/opportunity touchpoint.
+    Inspired by Twenty CRM's TimelineActivity pattern.
+    """
+    __tablename__ = "activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    message_id = Column(Integer, ForeignKey("messages.id"), nullable=True)
+
+    actor = Column(String, nullable=True)
+    activity_type = Column(String, nullable=False, index=True)
+    # email_sent | email_received | sms_sent | sms_received
+    # note_added | status_changed | quote_sent | job_completed
+    # form_submitted | call_logged | opportunity_created | opportunity_won
+    summary = Column(String, nullable=True)
+    extra_data = Column(JSON, default=dict)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="activities")
+    opportunity = relationship("Opportunity")
