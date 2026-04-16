@@ -51,7 +51,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
 
   const today = now.toISOString().slice(0, 10)
 
-  c/ Date range for current month view
+  // Date range for current month view
   const firstDay = new Date(year, month, 1)
   const lastDay  = new Date(year, month + 1, 0)
   const rangeStart = isoDate(year, month, 1)
