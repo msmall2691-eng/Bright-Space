@@ -98,9 +98,39 @@ def _run_migrations():
         f"ALTER TABLE clients ADD COLUMN email_verified {bool_col}",
         # Link lead intakes to opportunities
         "ALTER TABLE lead_intakes ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id)",
+        # Opportunities feature: add opportunity_id and updated_at to multiple tables
+        "ALTER TABLE field_definitions ADD COLUMN is_system BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE jobs ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL",
+        "ALTER TABLE jobs ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE quotes ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL",
+        "ALTER TABLE quotes ADD COLUMN custom_fields TEXT DEFAULT '{}'",
+        "ALTER TABLE quotes ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE invoices ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL",
+        "ALTER TABLE invoices ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE conversations ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL",
+        "ALTER TABLE conversations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE messages ADD COLUMN job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL",
+        "ALTER TABLE messages ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL",
+        "ALTER TABLE opportunities ADD COLUMN custom_fields TEXT DEFAULT '{}'",
+        "ALTER TABLE opportunities ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE lead_intakes ADD COLUMN opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE SET NULL",
+        "ALTER TABLE lead_intakes ADD COLUMN custom_fields TEXT DEFAULT '{}'",
+        # Create indexes for performance
+        "CREATE INDEX IF NOT EXISTS idx_job_opportunity_id ON jobs(opportunity_id)",
+        "CREATE INDEX IF NOT EXISTS idx_quote_opportunity_id ON quotes(opportunity_id)",
+        "CREATE INDEX IF NOT EXISTS idx_invoice_opportunity_id ON invoices(opportunity_id)",
+        "CREATE INDEX IF NOT EXISTS idx_message_opportunity_id ON messages(opportunity_id)",
+        "CREATE INDEX IF NOT EXISTS idx_message_job_id ON messages(job_id)",
+        "CREATE INDEX IF NOT EXISTS idx_conversation_opportunity_id ON conversations(opportunity_id)",
+        "CREATE INDEX IF NOT EXISTS idx_lead_intake_opportunity_id ON lead_intakes(opportunity_id)",
+        "CREATE INDEX IF NOT EXISTS idx_job_updated_at ON jobs(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_quote_updated_at ON quotes(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_invoice_updated_at ON invoices(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_opportunity_updated_at ON opportunities(updated_at)",
     ]
 
     with engine.connect() as conn:
+
         for sql in migrations:
             try:
                 conn.execute(text(sql))
