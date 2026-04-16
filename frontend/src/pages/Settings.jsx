@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, X, GripVertical, Settings2 } from 'lucide-react'
+import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { del, get, post, patch } from "../api"
 
@@ -49,12 +49,48 @@ function Toast({ toasts }) {
 }
 
 export default function Settings() {
+  const [section, setSection] = useState('fields') // 'fields' | 'email'
   const [entityTab, setEntityTab] = useState('client')
   const [fields, setFields] = useState([])
-  const [panel, setPanel] = useState(null)   // null | 'new' | field-id
+  const [panel, setPanel] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState([])
+
+  // Email settings state
+  const [emailConfig, setEmailConfig] = useState({
+    smtp_user: '', smtp_pass: '', smtp_host: 'smtp.gmail.com', smtp_port: '587',
+    imap_host: 'imap.gmail.com', imap_port: '993', from_email: '', from_name: '',
+    email_auto_enrich: 'true',
+  })
+  const [emailLoading, setEmailLoading] = useState(false)
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const [hasCredentials, setHasCredentials] = useState(false)
+
+  const loadEmailSettings = useCallback(async () => {
+    setEmailLoading(true)
+    try {
+      const data = await get('/api/settings/email')
+      setHasCredentials(data.has_credentials || false)
+      setEmailConfig(prev => ({
+        ...prev,
+        smtp_user: data.smtp_user || '',
+        smtp_pass: data.smtp_pass || '',
+        smtp_host: data.smtp_host || 'smtp.gmail.com',
+        smtp_port: data.smtp_port || '587',
+        imap_host: data.imap_host || 'imap.gmail.com',
+        imap_port: data.imap_port || '993',
+        from_email: data.from_email || '',
+        from_name: data.from_name || '',
+        email_auto_enrich: data.email_auto_enrich || 'true',
+      }))
+    } catch {}
+    setEmailLoading(false)
+  }, [])
+
+  useEffect(() => { if (section === 'email') loadEmailSettings() }, [section, loadEmailSettings])
 
   const toast = useCallback((message, type = 'success') => {
     const id = Date.now()
@@ -124,6 +160,27 @@ export default function Settings() {
     }
   }
 
+  const saveEmailConfig = async () => {
+    setEmailSaving(true)
+    try {
+      await post('/api/settings/email', emailConfig)
+      toast('Email settings saved')
+      loadEmailSettings()
+    } catch { toast('Failed to save', 'error') }
+    setEmailSaving(false)
+  }
+
+  const testEmailConnection = async () => {
+    setTesting(true); setTestResult(null)
+    try {
+      const res = await post('/api/settings/email/test')
+      setTestResult(res)
+    } catch (e) {
+      setTestResult({ error: e.message || 'Test failed' })
+    }
+    setTesting(false)
+  }
+
   const currentEntity = ENTITY_TABS.find(t => t.key === entityTab)
 
   return (
@@ -132,8 +189,172 @@ export default function Settings() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
+        {/* Section toggle */}
+        <div className="px-4 sm:px-8 pt-6 pb-3">
+          <div className="flex bg-zinc-100 rounded-xl p-1 w-fit">
+            <button onClick={() => setSection('fields')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
+              <Settings2 className="w-3.5 h-3.5" /> Custom Fields
+            </button>
+            <button onClick={() => setSection('email')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
+              <Mail className="w-3.5 h-3.5" /> Email & Integrations
+            </button>
+          </div>
+        </div>
+
+        {/* === EMAIL SETTINGS SECTION === */}
+        {section === 'email' && (
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8">
+            <div className="max-w-2xl">
+              <div className="mb-6">
+                <h2 className="text-[15px] font-semibold text-zinc-900">Gmail Connection</h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Connect your Gmail to see emails in Comms, auto-match senders to clients, and create leads from unknown contacts.
+                </p>
+              </div>
+
+              {/* Status indicator */}
+              <div className={`flex items-center gap-3 p-4 rounded-xl border mb-6 ${hasCredentials ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                {hasCredentials
+                  ? <><CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /><div><div className="text-sm font-medium text-emerald-800">Connected</div><div className="text-xs text-emerald-600">Gmail credentials are configured</div></div></>
+                  : <><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" /><div><div className="text-sm font-medium text-amber-800">Not Connected</div><div className="text-xs text-amber-600">Enter your Gmail address and App Password to enable email</div></div></>
+                }
+              </div>
+
+              {/* Credentials form */}
+              <div className="bg-white border border-zinc-200 rounded-xl p-5 space-y-4 mb-6">
+                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+                  <Shield className="w-4 h-4 text-blue-500" /> Credentials
+                </div>
+
+                <div>
+                  <label className={lbl}>Gmail Address</label>
+                  <input value={emailConfig.smtp_user} onChange={e => setEmailConfig(c => ({ ...c, smtp_user: e.target.value }))}
+                    placeholder="hello@maineclean.co"
+                    className={inp} />
+                </div>
+
+                <div>
+                  <label className={lbl}>App Password</label>
+                  <input type="password" value={emailConfig.smtp_pass} onChange={e => setEmailConfig(c => ({ ...c, smtp_pass: e.target.value }))}
+                    placeholder="16-character Google App Password"
+                    className={inp} />
+                  <p className="text-[11px] text-zinc-400 mt-1">
+                    Generate at Google Account → Security → 2-Step Verification → App Passwords
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl}>IMAP Host</label>
+                    <input value={emailConfig.imap_host} onChange={e => setEmailConfig(c => ({ ...c, imap_host: e.target.value }))}
+                      className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl}>IMAP Port</label>
+                    <input value={emailConfig.imap_port} onChange={e => setEmailConfig(c => ({ ...c, imap_port: e.target.value }))}
+                      className={inp} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl}>SMTP Host</label>
+                    <input value={emailConfig.smtp_host} onChange={e => setEmailConfig(c => ({ ...c, smtp_host: e.target.value }))}
+                      className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl}>SMTP Port</label>
+                    <input value={emailConfig.smtp_port} onChange={e => setEmailConfig(c => ({ ...c, smtp_port: e.target.value }))}
+                      className={inp} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sending identity */}
+              <div className="bg-white border border-zinc-200 rounded-xl p-5 space-y-4 mb-6">
+                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+                  <Plug className="w-4 h-4 text-purple-500" /> Sending Identity
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl}>From Name</label>
+                    <input value={emailConfig.from_name} onChange={e => setEmailConfig(c => ({ ...c, from_name: e.target.value }))}
+                      placeholder="Maine Cleaning Co."
+                      className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl}>From Email</label>
+                    <input value={emailConfig.from_email} onChange={e => setEmailConfig(c => ({ ...c, from_email: e.target.value }))}
+                      placeholder="hello@maineclean.co"
+                      className={inp} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Auto-enrichment toggle */}
+              <div className="bg-white border border-zinc-200 rounded-xl p-5 mb-6">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={emailConfig.email_auto_enrich === 'true'}
+                    onChange={e => setEmailConfig(c => ({ ...c, email_auto_enrich: e.target.checked ? 'true' : 'false' }))}
+                    className="w-4 h-4 rounded border-zinc-300 text-blue-600 focus:ring-0" />
+                  <div>
+                    <div className="text-sm font-medium text-zinc-900">Auto-create contacts from emails</div>
+                    <div className="text-xs text-zinc-400">When enabled, unknown email senders are automatically added as leads (like Twenty CRM)</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-3">
+                <button onClick={saveEmailConfig} disabled={emailSaving}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                  {emailSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  Save Settings
+                </button>
+                <button onClick={testEmailConnection} disabled={testing}
+                  className="flex items-center gap-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors">
+                  {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+                  Test Connection
+                </button>
+              </div>
+
+              {/* Test results */}
+              {testResult && (
+                <div className="mt-4 bg-white border border-zinc-200 rounded-xl p-4 space-y-2">
+                  <div className="text-sm font-semibold text-zinc-900">Connection Test Results</div>
+                  {testResult.error ? (
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertTriangle className="w-4 h-4" /> {testResult.error}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 text-sm">
+                        {testResult.imap === 'connected'
+                          ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700">IMAP: Connected ({testResult.email_count} emails)</span></>
+                          : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">IMAP: {testResult.imap}</span></>
+                        }
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        {testResult.smtp === 'connected'
+                          ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700">SMTP: Connected (outbound email ready)</span></>
+                          : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">SMTP: {testResult.smtp}</span></>
+                        }
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* === CUSTOM FIELDS SECTION === */}
+        {section === 'fields' && <>
+
         {/* Page header */}
-        <div className="flex items-center justify-between px-4 sm:px-8 pt-7 pb-5">
+        <div className="flex items-center justify-between px-4 sm:px-8 pt-4 pb-5">
           <div>
             <h1 className="text-[15px] font-semibold text-zinc-900 tracking-tight">Custom Fields</h1>
             <p className="text-xs text-zinc-400 mt-0.5">Define extra fields that appear on your records</p>
@@ -216,10 +437,11 @@ export default function Settings() {
             </p>
           )}
         </div>
+        </>}
       </div>
 
       {/* Side panel */}
-      {panel !== null && (
+      {section === 'fields' && panel !== null && (
         <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[360px] sm:shrink-0 sm:border-l sm:border-zinc-200">
           <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-zinc-900">

@@ -17,6 +17,28 @@ IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 
+
+def _get_credentials():
+    """Get IMAP credentials from DB settings first, fall back to env vars."""
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            user_row = db.query(AppSetting).filter(AppSetting.key == "smtp_user").first()
+            pass_row = db.query(AppSetting).filter(AppSetting.key == "smtp_pass").first()
+            host_row = db.query(AppSetting).filter(AppSetting.key == "imap_host").first()
+            port_row = db.query(AppSetting).filter(AppSetting.key == "imap_port").first()
+            user = (user_row.value if user_row and user_row.value else None) or SMTP_USER
+            passwd = (pass_row.value if pass_row and pass_row.value else None) or SMTP_PASS
+            host = (host_row.value if host_row and host_row.value else None) or IMAP_HOST
+            port = int((port_row.value if port_row and port_row.value else None) or IMAP_PORT)
+            return user, passwd, host, port
+        finally:
+            db.close()
+    except Exception:
+        return SMTP_USER, SMTP_PASS, IMAP_HOST, IMAP_PORT
+
 # Patterns to filter out automated / newsletter emails
 AUTOMATED_PATTERNS = [
     r"noreply@", r"no-reply@", r"donotreply@",
@@ -97,9 +119,12 @@ def _has_attachments(msg):
 
 
 def _connect():
-    """Create and authenticate IMAP connection."""
-    mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
-    mail.login(SMTP_USER, SMTP_PASS)
+    """Create and authenticate IMAP connection using DB or env credentials."""
+    user, passwd, host, port = _get_credentials()
+    if not user or not passwd:
+        raise ValueError("No email credentials configured")
+    mail = imaplib.IMAP4_SSL(host, port)
+    mail.login(user, passwd)
     return mail
 
 
@@ -108,8 +133,9 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
     Fetch recent emails from Gmail inbox via IMAP.
     Returns list of parsed email dicts sorted newest-first.
     """
-    if not SMTP_USER or not SMTP_PASS:
-        logger.warning("Gmail IMAP: SMTP_USER or SMTP_PASS not configured")
+    user, passwd, _, _ = _get_credentials()
+    if not user or not passwd:
+        logger.warning("Gmail IMAP: No credentials configured (check Settings or env vars)")
         return []
 
     try:
@@ -187,7 +213,8 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
 
 def fetch_email_by_id(email_id: str, folder="INBOX"):
     """Fetch a single email by its IMAP sequence number."""
-    if not SMTP_USER or not SMTP_PASS:
+    user, passwd, _, _ = _get_credentials()
+    if not user or not passwd:
         return None
     try:
         mail = _connect()

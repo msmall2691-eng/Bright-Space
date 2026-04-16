@@ -450,3 +450,12 @@ class Activity(Base):
 
     client = relationship("Client", back_populates="activities")
     opportunity = relationship("Opportunity")
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

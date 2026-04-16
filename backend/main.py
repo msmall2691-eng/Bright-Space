@@ -30,6 +30,7 @@ from modules.fields.router import router as fields_router
 from modules.gmail.router import router as gmail_router
 from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
+from modules.settings.router import router as settings_router
 
 load_dotenv()
 
@@ -70,6 +71,7 @@ app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
 app.include_router(activities_router, prefix="/api/activities", tags=["activities"])
+app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 
 # Per-connection conversation histories: {connection_key: [messages]}
 agent_histories: dict[str, list] = {}
