@@ -82,14 +82,14 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
     return true
   })
 
-  // Build day â jobs map
+  // Build day Ã¢ÂÂ jobs map
   const jobsByDay = {}
   filteredJobs.forEach(j => {
     if (!jobsByDay[j.scheduled_date]) jobsByDay[j.scheduled_date] = []
     jobsByDay[j.scheduled_date].push(j)
   })
 
-  // Build day â booking blocks map (for Airbnb stays)
+  // Build day Ã¢ÂÂ booking blocks map (for Airbnb stays)
   const bookingsByDay = {}
   icalEvents.forEach(ev => {
     if (!ev.checkin_date || !ev.checkout_date) return
@@ -141,7 +141,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
     const jobId = draggingJob.id
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
     setDraggingJob(null)
-    // Persist to backend (BrightBase is source of truth â this also syncs to GCal)
+    // Persist to backend (BrightBase is source of truth Ã¢ÂÂ this also syncs to GCal)
     try {
       await patch(`/api/jobs/${jobId}`, { scheduled_date: targetDate })
     } catch (err) {
@@ -256,6 +256,9 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                   {dayJobs.slice(0, 3).map(j => {
                     const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
                     const cleanerInits = (j.cleaner_ids || []).map(cleanerInitials).filter(Boolean)
+                    // Duplicate detection: flag if multiple turnover jobs for same property on same day
+                    const isDuplicate = j.job_type === 'str_turnover' && j.property_id &&
+                      dayJobs.filter(dj => dj.job_type === 'str_turnover' && dj.property_id === j.property_id).length > 1
                     return (
                       <div
                         key={j.id}
@@ -263,9 +266,12 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                         onDragStart={e => onDragStart(e, j)}
                         onDragEnd={onDragEnd}
                         onClick={e => { e.stopPropagation(); onJobClick?.(j) }}
-                        className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${tc.pill} ${tc.pillHover}`}
-                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''} â drag to reschedule`}
+                        className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${
+                          isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' : `${tc.pill} ${tc.pillHover}`
+                        }`}
+                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''} Ã¢ÂÂ drag to reschedule`}
                       >
+                        {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">â </span>}
                         {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
                         <span className="truncate">{j.start_time} {j.title}</span>
                         {cleanerInits.length > 0 && (
@@ -295,7 +301,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
           {selected && (
             <div className="text-xs text-gray-500 mt-0.5">
               {selectedJobs.length} job{selectedJobs.length !== 1 ? 's' : ''}
-              {selectedBookings.length > 0 && ` Â· ${selectedBookings.length} Airbnb booking${selectedBookings.length !== 1 ? 's' : ''}`}
+              {selectedBookings.length > 0 && ` ÃÂ· ${selectedBookings.length} Airbnb booking${selectedBookings.length !== 1 ? 's' : ''}`}
             </div>
           )}
         </div>
@@ -314,7 +320,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                     </div>
                     <div className="text-[10px] text-orange-600/70">{b.summary || 'Reserved'}</div>
                     <div className="text-[10px] text-gray-500 mt-1">
-                      {b.checkin_date} â {b.checkout_date}
+                      {b.checkin_date} Ã¢ÂÂ {b.checkout_date}
                       {b.checkout_date === selected && <span className="text-orange-600 ml-1 font-medium">checkout today</span>}
                     </div>
                   </div>
@@ -343,7 +349,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                             {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
                             {j.title}
                           </div>
-                          <div className="text-xs text-gray-500 mt-0.5">{j.start_time} â {j.end_time}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{j.start_time} Ã¢ÂÂ {j.end_time}</div>
                           {j.address && <div className="text-xs text-gray-400 truncate mt-0.5">{j.address}</div>}
                           {cleanerInits.length > 0 && (
                             <div className="flex items-center gap-1 mt-1">
