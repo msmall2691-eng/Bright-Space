@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import datetime
 
 from database.db import get_db
-from database.models import LeadIntake, Client
+from database.models import LeadIntake, Client, Opportunity, Activity
 
 router = APIRouter()
 
@@ -31,9 +31,11 @@ class IntakeSubmit(BaseModel):
 class IntakeUpdate(BaseModel):
     status: Optional[str] = None
     client_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
     priority: Optional[str] = None
     assigned_to: Optional[str] = None
     internal_notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
     followed_up_at: Optional[str] = None  # ISO datetime string
 
 
@@ -66,8 +68,10 @@ def intake_to_dict(i: LeadIntake) -> dict:
         "priority": getattr(i, "priority", "normal"),
         "assigned_to": getattr(i, "assigned_to", None),
         "internal_notes": getattr(i, "internal_notes", None),
+        "custom_fields": getattr(i, "custom_fields", None) or {},
         "followed_up_at": getattr(i, "followed_up_at", None).isoformat() if getattr(i, "followed_up_at", None) else None,
         "client_id": i.client_id,
+        "opportunity_id": getattr(i, "opportunity_id", None),
         "created_at": i.created_at.isoformat() if i.created_at else None,
     }
 
