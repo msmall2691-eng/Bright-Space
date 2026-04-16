@@ -27,6 +27,7 @@ from modules.reminders.router import router as reminders_router
 from modules.intake.router import router as intake_router
 from modules.booking.router import router as booking_router
 from modules.fields.router import router as fields_router
+from modules.gmail.router import router as gmail_router
 
 load_dotenv()
 
@@ -47,7 +48,7 @@ app.add_middleware(
     allow_headers=["*", "X-API-Key"],
 )
 
-# API key authentication — must be added AFTER CORS middleware
+# API key authentication â must be added AFTER CORS middleware
 # (Starlette processes middleware in reverse order, so CORS runs first)
 app.add_middleware(APIKeyMiddleware)
 
@@ -64,6 +65,7 @@ app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"]
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
 app.include_router(booking_router, prefix="/api/booking", tags=["booking"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
+app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 
 # Per-connection conversation histories: {connection_key: [messages]}
 agent_histories: dict[str, list] = {}
@@ -202,7 +204,7 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                     loop_messages.append({"role": "user", "content": tool_results})
 
                 else:
-                    # No more tool calls — done
+                    # No more tool calls â done
                     final_text = full_text
                     break
 
@@ -219,7 +221,7 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
         agent_histories.pop(conn_key, None)
 
 
-# ── Serve built React frontend (production) ────────────────────────────────────
+# ââ Serve built React frontend (production) ââââââââââââââââââââââââââââââââââââ
 _dist = Path(__file__).parent.parent / "frontend" / "dist"
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
