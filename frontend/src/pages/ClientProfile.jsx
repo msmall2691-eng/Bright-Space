@@ -5,7 +5,8 @@ import { del, get, post, patch } from "../api"
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
-  CheckCircle, Clock, AlertCircle, Send, ChevronLeft, ChevronRight, Home, RefreshCw
+  CheckCircle, Clock, AlertCircle, Send, ChevronLeft, ChevronRight, Home, RefreshCw,
+  TrendingUp, DollarSign, Target, Inbox, ArrowUpRight, Zap
 } from 'lucide-react'
 
 const STATUS_COLORS = {
@@ -64,6 +65,9 @@ export default function ClientProfile() {
   const [messages, setMessages] = useState([])
   const [properties, setProperties] = useState([])
   const [schedules, setSchedules] = useState([])
+  const [opportunities, setOpportunities] = useState([])
+  const [activities, setActivities] = useState([])
+  const [emails, setEmails] = useState([])
   const [tab, setTab] = useState('activity')
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
@@ -81,7 +85,7 @@ export default function ClientProfile() {
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
 
   const load = async () => {
-    const [profile, j, q, inv, msgs, props, scheds] = await Promise.all([
+    const [profile, j, q, inv, msgs, props, scheds, opps, acts, gmailRes] = await Promise.all([
       get(`/api/clients/${id}/profile`).catch(() => null),
       get(`/api/jobs?client_id=${id}`),
       get(`/api/quotes?client_id=${id}`),
@@ -89,6 +93,9 @@ export default function ClientProfile() {
       get(`/api/comms/messages?client_id=${id}`),
       get(`/api/properties?client_id=${id}`),
       get(`/api/recurring?client_id=${id}`),
+      get(`/api/opportunities?client_id=${id}`).catch(() => []),
+      get(`/api/activities?client_id=${id}&limit=50`).catch(() => []),
+      get(`/api/gmail/inbox?max_results=40&skip_automated=true`).catch(() => ({ emails: [] })),
     ])
     // Use profile endpoint data if available, fall back to basic client
     const c = profile || await get(`/api/clients/${id}`)
@@ -107,6 +114,11 @@ export default function ClientProfile() {
     setMessages(Array.isArray(msgs) ? msgs : [])
     setProperties(Array.isArray(props) ? props : [])
     setSchedules(Array.isArray(scheds) ? scheds : [])
+    setOpportunities(Array.isArray(opps) ? opps : [])
+    setActivities(Array.isArray(acts) ? acts : [])
+    const allEmails = gmailRes?.emails || []
+    const clientEmail = c?.email?.toLowerCase()
+    setEmails(clientEmail ? allEmails.filter(e => e.from_email?.toLowerCase() === clientEmail || e.client?.id === parseInt(id)) : [])
   }
 
   const saveProp = async () => {
@@ -174,12 +186,23 @@ export default function ClientProfile() {
     .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))
   const nextJob = upcomingJobs[0] || null
 
+  const OPP_COLORS = {
+    new: 'bg-amber-500/20 text-amber-500',
+    qualified: 'bg-blue-500/20 text-blue-400',
+    quoted: 'bg-purple-500/20 text-purple-400',
+    won: 'bg-green-500/20 text-green-400',
+    lost: 'bg-red-500/20 text-red-400',
+  }
+
   // Build activity feed (all records sorted by date)
   const activity = [
     ...jobs.map(j => ({ type: 'job', date: j.created_at, data: j })),
     ...quotes.map(q => ({ type: 'quote', date: q.created_at, data: q })),
     ...invoices.map(i => ({ type: 'invoice', date: i.created_at, data: i })),
     ...messages.map(m => ({ type: 'message', date: m.created_at, data: m })),
+    ...opportunities.map(o => ({ type: 'opportunity', date: o.created_at, data: o })),
+    ...activities.filter(a => !['email_received'].includes(a.activity_type)).map(a => ({ type: 'activity_log', date: a.created_at, data: a })),
+    ...emails.map(e => ({ type: 'email', date: e.date, data: e })),
   ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
   return (
@@ -325,6 +348,8 @@ export default function ClientProfile() {
         <Tab label="Jobs" icon={Calendar} active={tab === 'jobs'} count={jobs.length} onClick={() => setTab('jobs')} />
         <Tab label="Quotes" icon={FileText} active={tab === 'quotes'} count={quotes.length} onClick={() => setTab('quotes')} />
         <Tab label="Invoices" icon={Receipt} active={tab === 'invoices'} count={invoices.length} onClick={() => setTab('invoices')} />
+        <Tab label="Opportunities" icon={TrendingUp} active={tab === 'opportunities'} count={opportunities.length} onClick={() => setTab('opportunities')} />
+        <Tab label="Emails" icon={Mail} active={tab === 'emails'} count={emails.length} onClick={() => setTab('emails')} />
         <Tab label="Messages" icon={MessageSquare} active={tab === 'messages'} count={messages.length} onClick={() => setTab('messages')} />
         <Tab label="Details" icon={Edit2} active={tab === 'details'} count={0} onClick={() => setTab('details')} />
       </div>
@@ -340,15 +365,21 @@ export default function ClientProfile() {
               <div key={i} className="flex gap-4">
                 <div className="flex flex-col items-center">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    item.type === 'job'     ? 'bg-blue-500/10' :
-                    item.type === 'quote'   ? 'bg-blue-600/20' :
-                    item.type === 'invoice' ? 'bg-green-50' :
-                                              'bg-purple-50'
+                    item.type === 'job'          ? 'bg-blue-500/10' :
+                    item.type === 'quote'        ? 'bg-blue-600/20' :
+                    item.type === 'invoice'      ? 'bg-green-50' :
+                    item.type === 'opportunity'  ? 'bg-amber-50' :
+                    item.type === 'email'        ? 'bg-cyan-50' :
+                    item.type === 'activity_log' ? 'bg-zinc-100' :
+                                                   'bg-purple-50'
                   }`}>
-                    {item.type === 'job'     && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
-                    {item.type === 'quote'   && <FileText className="w-3.5 h-3.5 text-blue-400" />}
-                    {item.type === 'invoice' && <Receipt className="w-3.5 h-3.5 text-green-400" />}
-                    {item.type === 'message' && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
+                    {item.type === 'job'          && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
+                    {item.type === 'quote'        && <FileText className="w-3.5 h-3.5 text-blue-400" />}
+                    {item.type === 'invoice'      && <Receipt className="w-3.5 h-3.5 text-green-400" />}
+                    {item.type === 'message'      && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
+                    {item.type === 'opportunity'  && <TrendingUp className="w-3.5 h-3.5 text-amber-500" />}
+                    {item.type === 'email'        && <Mail className="w-3.5 h-3.5 text-cyan-500" />}
+                    {item.type === 'activity_log' && <Zap className="w-3.5 h-3.5 text-zinc-400" />}
                   </div>
                   {i < activity.length - 1 && <div className="w-px flex-1 bg-zinc-100 mt-1" />}
                 </div>
@@ -377,18 +408,47 @@ export default function ClientProfile() {
                         {item.type === 'message' && (
                           <>
                             <div className="text-sm text-zinc-500">{item.data.body}</div>
-                            <div className="text-xs text-zinc-500 mt-0.5">{item.data.direction} Â· {item.data.channel}</div>
+                            <div className="text-xs text-zinc-500 mt-0.5">{item.data.direction} · {item.data.channel}</div>
+                          </>
+                        )}
+                        {item.type === 'opportunity' && (
+                          <>
+                            <div className="text-sm font-medium text-zinc-900">{item.data.title}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">
+                              {item.data.amount != null && <span className="text-emerald-600 font-medium">${item.data.amount.toLocaleString()}</span>}
+                              {item.data.service_type && <span className="ml-2">{item.data.service_type.replace('_', ' ')}</span>}
+                            </div>
+                          </>
+                        )}
+                        {item.type === 'email' && (
+                          <>
+                            <div className="text-sm font-medium text-zinc-900">{item.data.subject || '(no subject)'}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">from {item.data.from_name || item.data.from_email}</div>
+                            {item.data.snippet && <div className="text-xs text-zinc-400 mt-1 truncate">{item.data.snippet.slice(0, 120)}</div>}
+                          </>
+                        )}
+                        {item.type === 'activity_log' && (
+                          <>
+                            <div className="text-sm text-zinc-500">{item.data.summary}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.activity_type.replace(/_/g, ' ')}</div>
                           </>
                         )}
                                </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
-                          item.type === 'job'     ? JOB_COLORS[item.data.status] :
-                          item.type === 'quote'   ? QUOTE_COLORS[item.data.status] :
-                          item.type === 'invoice' ? INVOICE_COLORS[item.data.status] :
+                          item.type === 'job'          ? JOB_COLORS[item.data.status] :
+                          item.type === 'quote'        ? QUOTE_COLORS[item.data.status] :
+                          item.type === 'invoice'      ? INVOICE_COLORS[item.data.status] :
+                          item.type === 'opportunity'  ? (OPP_COLORS[item.data.stage] || 'bg-amber-500/20 text-amber-500') :
+                          item.type === 'email'        ? 'bg-cyan-500/20 text-cyan-500' :
+                          item.type === 'activity_log' ? 'bg-zinc-200 text-zinc-500' :
                           'bg-purple-500/20 text-purple-400'
                         }`}>
-                          {item.type === 'message' ? item.data.direction : item.data.status?.replace('_', ' ')}
+                          {item.type === 'message' ? item.data.direction :
+                           item.type === 'opportunity' ? item.data.stage :
+                           item.type === 'email' ? 'email' :
+                           item.type === 'activity_log' ? item.data.activity_type?.split('_')[0] :
+                           item.data.status?.replace('_', ' ')}
                         </span>
                         <span className="text-xs text-zinc-500">
                           {new Date(item.date).toLocaleDateString()}
@@ -838,6 +898,87 @@ export default function ClientProfile() {
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors">
               <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}
             </button>
+          </div>
+        )}
+
+        {/* Opportunities */}
+        {tab === 'opportunities' && (
+          <div className="max-w-2xl space-y-3">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-zinc-400">{opportunities.length} opportunit{opportunities.length !== 1 ? 'ies' : 'y'}</p>
+              <button onClick={() => navigate('/pipeline')}
+                className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+                <Plus className="w-3.5 h-3.5" /> New Deal
+              </button>
+            </div>
+            {opportunities.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No opportunities yet</p>}
+            {opportunities.map(opp => (
+              <div key={opp.id} className="bg-white border border-zinc-200 rounded-xl p-4 hover:shadow-sm transition-all">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <TrendingUp className="w-4 h-4 text-amber-500" />
+                      <span className="font-medium text-zinc-900">{opp.title}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${OPP_COLORS[opp.stage] || 'bg-zinc-200 text-zinc-500'}`}>
+                        {opp.stage}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 text-xs text-zinc-400">
+                      {opp.service_type && <span className="capitalize">{opp.service_type.replace('_', ' ')}</span>}
+                      {opp.owner && <span>Owner: {opp.owner}</span>}
+                      {opp.close_date && <span>Close: {opp.close_date}</span>}
+                      {opp.probability != null && <span>{opp.probability}% likely</span>}
+                    </div>
+                    {opp.notes && <p className="text-xs text-zinc-400 mt-2 italic">{opp.notes}</p>}
+                  </div>
+                  {opp.amount != null && (
+                    <span className="text-lg font-bold text-emerald-600 shrink-0">${opp.amount.toLocaleString()}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Emails */}
+        {tab === 'emails' && (
+          <div className="max-w-2xl space-y-3">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-zinc-400">{emails.length} email{emails.length !== 1 ? 's' : ''} from this contact</p>
+            </div>
+            {emails.length === 0 && (
+              <div className="text-center py-10">
+                <Mail className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
+                <p className="text-sm text-zinc-500">No emails found for this client</p>
+                <p className="text-xs text-zinc-400 mt-1">Emails will appear here when Gmail syncs match this contact</p>
+              </div>
+            )}
+            {emails.map((em, i) => (
+              <div key={em.message_id || i} className="bg-white border border-zinc-200 rounded-xl p-4 hover:shadow-sm transition-all">
+                <div className="flex items-start gap-3">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${em.is_read ? 'bg-zinc-100' : 'bg-cyan-100'}`}>
+                    <Mail className={`w-4 h-4 ${em.is_read ? 'text-zinc-400' : 'text-cyan-600'}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm truncate flex-1 ${em.is_read ? 'text-zinc-600' : 'font-semibold text-zinc-900'}`}>
+                        {em.subject || '(no subject)'}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 shrink-0">
+                        {em.date ? new Date(em.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+                    <div className="text-xs text-zinc-400 mt-0.5">{em.from_name || em.from_email}</div>
+                    {em.snippet && <p className="text-xs text-zinc-500 mt-1.5 line-clamp-2">{em.snippet}</p>}
+                    {em.has_attachments && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 mt-1.5 bg-zinc-50 px-2 py-0.5 rounded-md">
+                        Attachments
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

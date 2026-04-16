@@ -1,12 +1,15 @@
 """
 Gmail Inbox API Router
 Fetches inbox, matches senders to clients, creates leads from unknown contacts.
+Uses ContactEmail table for multi-email matching and enrichment.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database.db import get_db
-from database.models import Client
+from database.models import Client, ContactEmail, Activity
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,36 +17,101 @@ router = APIRouter()
 
 
 def _match_email_to_client(email_addr: str, db: Session):
-    """Match an email address to an existing client record."""
     if not email_addr:
         return None
-    return db.query(Client).filter(
-        Client.email.ilike(email_addr.strip().lower())
+    addr = email_addr.strip().lower()
+    ce = db.query(ContactEmail).filter(
+        func.lower(ContactEmail.email) == addr
     ).first()
+    if ce:
+        return ce.client
+    return db.query(Client).filter(
+        func.lower(Client.email) == addr
+    ).first()
+
+
+def _ensure_contact_email(client_id: int, email: str, source: str, db: Session):
+    addr = email.strip().lower()
+    existing = db.query(ContactEmail).filter(
+        ContactEmail.client_id == client_id,
+        func.lower(ContactEmail.email) == addr,
+    ).first()
+    if not existing:
+        has_any = db.query(ContactEmail).filter(
+            ContactEmail.client_id == client_id
+        ).first()
+        ce = ContactEmail(
+            client_id=client_id,
+            email=addr,
+            is_primary=not has_any,
+            source=source,
+        )
+        db.add(ce)
+    return existing
+
+
+def _log_activity(db, **kwargs):
+    db.add(Activity(**kwargs))
 
 
 @router.get("/inbox")
 def gmail_inbox(
     max_results: int = Query(30, ge=1, le=100),
     skip_automated: bool = Query(True),
+    auto_enrich: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    """
-    Fetch Gmail inbox and auto-match senders to existing clients.
-    Non-automated emails from unknown senders are flagged as potential leads.
-    """
     emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
 
     client_cache = {}
+    new_contacts = 0
     for em in emails:
         addr = em["from_email"]
         if addr not in client_cache:
             c = _match_email_to_client(addr, db)
+            if c:
+                _ensure_contact_email(c.id, addr, "gmail_sync", db)
+                c.last_contacted_at = datetime.utcnow()
+                c.email_verified = True
+            elif auto_enrich and addr:
+                from_name = em.get("from_name", "").strip() or addr.split("@")[0]
+                parts = from_name.split(" ", 1)
+                c = Client(
+                    name=from_name,
+                    first_name=parts[0],
+                    last_name=parts[1] if len(parts) > 1 else "",
+                    email=addr.lower(),
+                    status="lead",
+                    lifecycle_stage="new",
+                    source="email",
+                    source_detail="gmail auto-enrich",
+                    email_verified=True,
+                )
+                db.add(c)
+                db.flush()
+                _ensure_contact_email(c.id, addr, "gmail_sync", db)
+                _log_activity(
+                    db,
+                    client_id=c.id,
+                    activity_type="email_received",
+                    summary=f"Auto-created from email: {em.get('subject', '(no subject)')}",
+                    extra_data={"from_email": addr, "from_name": from_name},
+                )
+                new_contacts += 1
+
             client_cache[addr] = (
-                {"id": c.id, "name": c.name, "status": c.status} if c else None
+                {"id": c.id, "name": c.name, "status": c.status,
+                 "client_type": getattr(c, "client_type", None)} if c else None
             )
+
         em["client"] = client_cache[addr]
         em["is_known_contact"] = client_cache[addr] is not None
+
+    if new_contacts > 0 or auto_enrich:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
     total = len(emails)
     linked = sum(1 for e in emails if e["is_known_contact"])
@@ -55,13 +123,13 @@ def gmail_inbox(
             "linked": linked,
             "unlinked": total - linked,
             "unread": sum(1 for e in emails if not e.get("is_read")),
+            "new_contacts_created": new_contacts,
         },
     }
 
 
 @router.get("/message/{email_id}")
 def gmail_message(email_id: str, db: Session = Depends(get_db)):
-    """Fetch a single email with full body + client match."""
     em = fetch_email_by_id(email_id)
     if not em:
         raise HTTPException(404, "Email not found")
@@ -77,7 +145,6 @@ def create_lead_from_email(
     from_email: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Create a new client (status=lead) from an email sender."""
     existing = _match_email_to_client(from_email, db)
     if existing:
         return {"status": "exists", "client": {"id": existing.id, "name": existing.name}}
@@ -89,10 +156,22 @@ def create_lead_from_email(
         last_name=parts[1] if len(parts) > 1 else "",
         email=from_email.lower(),
         status="lead",
+        lifecycle_stage="new",
         source="email",
-        notes="Auto-created from Gmail inbox",
+        source_detail="gmail manual create",
+        email_verified=True,
     )
     db.add(new_client)
+    db.flush()
+
+    _ensure_contact_email(new_client.id, from_email, "gmail_sync", db)
+    _log_activity(
+        db,
+        client_id=new_client.id,
+        activity_type="email_received",
+        summary=f"Lead created from Gmail: {from_name}",
+        extra_data={"from_email": from_email},
+    )
     db.commit()
     db.refresh(new_client)
 
@@ -106,10 +185,10 @@ def link_email_to_client(
     client_id: int = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Link an email address to an existing client by updating their email field."""
-    client = db.query(Client).get(client_id)
+    client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(404, "Client not found")
     client.email = from_email.lower()
+    _ensure_contact_email(client.id, from_email, "gmail_link", db)
     db.commit()
     return {"status": "linked", "client": {"id": client.id, "name": client.name}}
