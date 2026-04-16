@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.db import get_db
-from database.models import Client, ContactEmail, Activity
-from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id
+from database.models import Client, ContactEmail, Activity, Message
+from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
 from datetime import datetime
 import logging
 
@@ -61,7 +61,31 @@ def gmail_inbox(
     auto_enrich: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
+    try:
+        emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
+    except ConnectionError as e:
+        err = str(e)
+        if "no_credentials" in err:
+            return {
+                "emails": [],
+                "error": "no_credentials",
+                "message": "No email credentials configured. Go to Settings → Email & Integrations to connect Gmail.",
+                "summary": {"total": 0, "linked": 0, "unlinked": 0, "unread": 0},
+            }
+        elif "imap_auth_failed" in err:
+            return {
+                "emails": [],
+                "error": "auth_failed",
+                "message": "Gmail authentication failed. Check your App Password in Settings → Email & Integrations.",
+                "summary": {"total": 0, "linked": 0, "unlinked": 0, "unread": 0},
+            }
+        else:
+            return {
+                "emails": [],
+                "error": "connection_error",
+                "message": f"Could not connect to Gmail: {err}",
+                "summary": {"total": 0, "linked": 0, "unlinked": 0, "unread": 0},
+            }
 
     client_cache = {}
     new_contacts = 0
@@ -192,3 +216,55 @@ def link_email_to_client(
     _ensure_contact_email(client.id, from_email, "gmail_link", db)
     db.commit()
     return {"status": "linked", "client": {"id": client.id, "name": client.name}}
+
+
+@router.post("/send-reply")
+def send_email_reply(
+    to_email: str = Query(...),
+    from_email: str = Query(...),
+    subject: str = Query(...),
+    body: str = Query(...),
+    in_reply_to_message_id: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = send_reply(
+            to_email=to_email,
+            from_email=from_email,
+            subject=subject,
+            body=body,
+            in_reply_to_message_id=in_reply_to_message_id,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error sending reply: {e}")
+        raise HTTPException(500, "Failed to send email reply")
+
+    client = _match_email_to_client(to_email, db)
+    if client:
+        client.last_contacted_at = datetime.utcnow()
+
+        message = Message(
+            client_id=client.id,
+            channel="email",
+            direction="outbound",
+            from_addr=from_email,
+            to_addr=to_email,
+            subject=subject,
+            body=body,
+            status="sent",
+        )
+        db.add(message)
+        db.flush()
+
+        _log_activity(
+            db,
+            client_id=client.id,
+            activity_type="email_sent",
+            summary=f"Reply sent to {to_email}",
+            extra_data={"to_email": to_email, "subject": subject},
+        )
+
+    db.commit()
+    return {"status": "sent", "message": result}
