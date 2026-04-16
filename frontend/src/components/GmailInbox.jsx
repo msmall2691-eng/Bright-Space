@@ -21,7 +21,7 @@ function formatDate(dateStr) {
     ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function ReplyPanel({ email, onSent, onCancel }) {
+function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
@@ -39,12 +39,17 @@ function ReplyPanel({ email, onSent, onCancel }) {
       return
     }
 
+    if (!fromEmail) {
+      setError('from_email not configured')
+      return
+    }
+
     setSending(true)
     setError(null)
 
     try {
       const res = await post(
-        `/api/gmail/send-reply?to_email=${encodeURIComponent(email.from_email)}&from_email=${encodeURIComponent('support@example.com')}&subject=${encodeURIComponent('Re: ' + email.subject)}&body=${encodeURIComponent(body)}&in_reply_to_message_id=${encodeURIComponent(email.message_id)}`
+        `/api/gmail/send-reply?to_email=${encodeURIComponent(email.from_email)}&subject=${encodeURIComponent('Re: ' + email.subject)}&body=${encodeURIComponent(body)}&in_reply_to_message_id=${encodeURIComponent(email.message_id)}`
       )
 
       if (res.status === 'sent') {
@@ -80,6 +85,13 @@ function ReplyPanel({ email, onSent, onCancel }) {
       )}
 
       <div className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">From</label>
+          <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900">
+            {fromEmail || 'Not configured'}
+          </div>
+        </div>
+
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1.5">To</label>
           <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900">
@@ -139,7 +151,17 @@ export default function GmailInbox() {
   const [creating, setCreating] = useState(null)
   const [showReplyPanel, setShowReplyPanel] = useState(false)
   const [connectionError, setConnectionError] = useState(null)
+  const [fromEmail, setFromEmail] = useState(null)
   const detailRef = useRef(null)
+
+  const loadFromEmail = async () => {
+    try {
+      const res = await get('/api/settings/from-email')
+      setFromEmail(res.from_email)
+    } catch (err) {
+      console.error('Failed to load from_email:', err)
+    }
+  }
 
   const load = () => {
     setLoading(true)
@@ -163,7 +185,10 @@ export default function GmailInbox() {
       })
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    loadFromEmail()
+  }, [])
 
   useEffect(() => {
     if (selected && detailRef.current) {
@@ -487,6 +512,7 @@ export default function GmailInbox() {
                 email={selected}
                 onSent={handleReplySent}
                 onCancel={() => setShowReplyPanel(false)}
+                fromEmail={fromEmail}
               />
             )}
           </>

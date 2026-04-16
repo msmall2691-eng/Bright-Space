@@ -218,15 +218,24 @@ def link_email_to_client(
     return {"status": "linked", "client": {"id": client.id, "name": client.name}}
 
 
+def _get_app_setting(db: Session, key: str):
+    from database.models import AppSetting
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    return row.value if row else None
+
+
 @router.post("/send-reply")
 def send_email_reply(
     to_email: str = Query(...),
-    from_email: str = Query(...),
     subject: str = Query(...),
     body: str = Query(...),
     in_reply_to_message_id: str = Query(None),
     db: Session = Depends(get_db),
 ):
+    from_email = _get_app_setting(db, "from_email")
+    if not from_email:
+        raise HTTPException(400, "from_email not configured in settings")
+
     try:
         result = send_reply(
             to_email=to_email,
