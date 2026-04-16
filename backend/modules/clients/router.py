@@ -7,7 +7,7 @@ import io
 import re
 
 from database.db import get_db
-from database.models import Client, Property, Job, ICalEvent
+from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity
 
 router = APIRouter()
 
@@ -195,6 +195,112 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db)):
     }
 
     return profile
+
+
+@router.get("/{client_id}/crm-summary")
+def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
+    """
+    Get complete CRM view of client with all relationships:
+    opportunities, quotes, invoices, messages, activities, and contacts.
+    """
+    client = db.query(Client).options(
+        joinedload(Client.opportunities),
+        joinedload(Client.quotes),
+        joinedload(Client.invoices),
+        joinedload(Client.messages),
+        joinedload(Client.activities),
+        joinedload(Client.contact_emails),
+        joinedload(Client.contact_phones),
+        joinedload(Client.jobs),
+    ).filter(Client.id == client_id).first()
+
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    base = client_to_dict(client)
+
+    # Add lifecycle and contact info
+    base.update({
+        "client_type": client.client_type,
+        "lifecycle_stage": client.lifecycle_stage,
+        "source_detail": client.source_detail,
+        "email_verified": client.email_verified,
+        "last_contacted_at": client.last_contacted_at.isoformat() if client.last_contacted_at else None,
+    })
+
+    # Pipeline summary
+    opps_by_stage = {}
+    total_pipeline = 0.0
+    for opp in client.opportunities:
+        stage = opp.stage or "new"
+        if stage not in opps_by_stage:
+            opps_by_stage[stage] = {"count": 0, "value": 0.0}
+        opps_by_stage[stage]["count"] += 1
+        opps_by_stage[stage]["value"] += opp.amount or 0.0
+        total_pipeline += opp.amount or 0.0
+
+    base["pipeline"] = {
+        "by_stage": opps_by_stage,
+        "total_value": total_pipeline,
+        "opportunities_count": len(client.opportunities),
+    }
+
+    # Financial summary
+    quotes_sent = sum(1 for q in client.quotes if q.status in ("sent", "accepted"))
+    quotes_accepted = sum(1 for q in client.quotes if q.status == "accepted")
+    invoices_issued = len(client.invoices)
+    invoices_paid = sum(1 for i in client.invoices if i.status == "paid")
+    total_invoiced = sum(i.total for i in client.invoices)
+    total_paid = sum(i.total for i in client.invoices if i.status == "paid")
+
+    base["financial"] = {
+        "quotes_sent": quotes_sent,
+        "quotes_accepted": quotes_accepted,
+        "invoices_issued": invoices_issued,
+        "invoices_paid": invoices_paid,
+        "total_invoiced": total_invoiced,
+        "total_paid": total_paid,
+        "outstanding": total_invoiced - total_paid,
+    }
+
+    # Messages summary
+    emails_sent = sum(1 for m in client.messages if m.channel == "email" and m.direction == "outbound")
+    emails_received = sum(1 for m in client.messages if m.channel == "email" and m.direction == "inbound")
+    sms_sent = sum(1 for m in client.messages if m.channel == "sms" and m.direction == "outbound")
+    sms_received = sum(1 for m in client.messages if m.channel == "sms" and m.direction == "inbound")
+
+    base["communications"] = {
+        "emails_sent": emails_sent,
+        "emails_received": emails_received,
+        "sms_sent": sms_sent,
+        "sms_received": sms_received,
+        "total_messages": len(client.messages),
+    }
+
+    # Contact methods
+    base["contact_emails"] = [
+        {"email": ce.email, "is_primary": ce.is_primary, "verified": ce.verified_at is not None}
+        for ce in client.contact_emails
+    ]
+    base["contact_phones"] = [
+        {"phone": cp.phone, "is_primary": cp.is_primary, "type": cp.phone_type}
+        for cp in client.contact_phones
+    ]
+
+    # Recent activity timeline
+    recent_activities = sorted(client.activities, key=lambda a: a.created_at, reverse=True)[:10]
+    base["recent_activity"] = [
+        {
+            "id": a.id,
+            "activity_type": a.activity_type,
+            "summary": a.summary,
+            "actor": a.actor,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in recent_activities
+    ]
+
+    return base
 
 
 @router.patch("/{client_id}")

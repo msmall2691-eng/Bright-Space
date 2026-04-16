@@ -21,6 +21,7 @@ class InvoiceItem(BaseModel):
 class InvoiceCreate(BaseModel):
     client_id: int
     job_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
     items: List[InvoiceItem]
     tax_rate: Optional[float] = 0
     due_date: Optional[str] = None
@@ -54,6 +55,7 @@ def invoice_to_dict(inv: Invoice) -> dict:
         "id": inv.id,
         "client_id": inv.client_id,
         "job_id": inv.job_id,
+        "opportunity_id": inv.opportunity_id,
         "invoice_number": inv.invoice_number,
         "items": inv.items,
         "subtotal": inv.subtotal,
@@ -66,6 +68,7 @@ def invoice_to_dict(inv: Invoice) -> dict:
         "notes": inv.notes,
         "custom_fields": inv.custom_fields or {},
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
     }
 
 
@@ -90,6 +93,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     inv = Invoice(
         client_id=data.client_id,
         job_id=data.job_id,
+        opportunity_id=data.opportunity_id,
         invoice_number=next_invoice_number(db),
         items=items,
         subtotal=subtotal,
@@ -98,6 +102,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
         total=total,
         due_date=data.due_date,
         notes=data.notes,
+        custom_fields=data.custom_fields or {},
     )
     db.add(inv)
     db.commit()

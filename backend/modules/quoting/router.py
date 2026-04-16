@@ -20,11 +20,13 @@ class QuoteItem(BaseModel):
 class QuoteCreate(BaseModel):
     client_id: int
     intake_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
     address: Optional[str] = None
     service_type: Optional[str] = "residential"
     items: List[QuoteItem]
     tax_rate: Optional[float] = 0
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = {}
     valid_until: Optional[str] = None
 
 
@@ -34,6 +36,7 @@ class QuoteUpdate(BaseModel):
     items: Optional[List[QuoteItem]] = None
     tax_rate: Optional[float] = None
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
     valid_until: Optional[str] = None
     status: Optional[str] = None
 
@@ -55,6 +58,7 @@ def quote_to_dict(q: Quote) -> dict:
         "id": q.id,
         "client_id": q.client_id,
         "intake_id": q.intake_id,
+        "opportunity_id": q.opportunity_id,
         "quote_number": q.quote_number,
         "address": q.address,
         "service_type": q.service_type,
@@ -65,8 +69,10 @@ def quote_to_dict(q: Quote) -> dict:
         "total": q.total,
         "status": q.status,
         "notes": q.notes,
+        "custom_fields": q.custom_fields or {},
         "valid_until": q.valid_until,
         "created_at": q.created_at.isoformat() if q.created_at else None,
+        "updated_at": q.updated_at.isoformat() if q.updated_at else None,
     }
 
 
@@ -87,6 +93,7 @@ def create_quote(data: QuoteCreate, db: Session = Depends(get_db)):
     quote = Quote(
         client_id=data.client_id,
         intake_id=data.intake_id,
+        opportunity_id=data.opportunity_id,
         quote_number=next_quote_number(db),
         address=data.address,
         service_type=data.service_type,
@@ -96,6 +103,7 @@ def create_quote(data: QuoteCreate, db: Session = Depends(get_db)):
         tax=tax,
         total=total,
         notes=data.notes,
+        custom_fields=data.custom_fields or {},
         valid_until=data.valid_until,
     )
     db.add(quote)
@@ -130,7 +138,7 @@ def update_quote(quote_id: int, data: QuoteUpdate, db: Session = Depends(get_db)
         quote.subtotal = subtotal
         quote.tax = tax
         quote.total = total
-    for field in ["tax_rate", "notes", "valid_until", "status", "address", "service_type"]:
+    for field in ["tax_rate", "notes", "valid_until", "status", "address", "service_type", "custom_fields"]:
         val = getattr(data, field)
         if val is not None:
             setattr(quote, field, val)

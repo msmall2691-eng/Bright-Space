@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import AgentWidget from '../components/AgentWidget'
+import ClientCRMSummary from '../components/ClientCRMSummary'
+import ActivityTimeline from '../components/ActivityTimeline'
+import OpportunityLinker from '../components/OpportunityLinker'
 import { del, get, post, patch } from "../api"
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
@@ -341,6 +344,7 @@ export default function ClientProfile() {
 
       {/* Tabs */}
       <div className="flex border-b border-zinc-200 px-6 bg-white/30 shrink-0 overflow-x-auto">
+        <Tab label="CRM" icon={TrendingUp} active={tab === 'crm'} count={0} onClick={() => setTab('crm')} />
         <Tab label="Activity" icon={Clock} active={tab === 'activity'} count={activity.length} onClick={() => setTab('activity')} />
         <Tab label="Calendar" icon={Calendar} active={tab === 'calendar'} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
@@ -356,6 +360,11 @@ export default function ClientProfile() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin">
+
+        {/* CRM Summary */}
+        {tab === 'crm' && (
+          <ClientCRMSummary clientId={id} />
+        )}
 
         {/* Activity feed */}
         {tab === 'activity' && (
@@ -700,6 +709,14 @@ export default function ClientProfile() {
                       <div className="flex items-center gap-2">
                         {j.dispatched && <span className="text-xs bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">Dispatched</span>}
                         <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
+                        <OpportunityLinker
+                          clientId={id}
+                          itemType="job"
+                          itemId={j.id}
+                          itemName={j.title}
+                          currentOpportunityId={j.opportunity_id}
+                          onLinked={() => load()}
+                        />
                       </div>
                     </div>
                   ))}
@@ -738,12 +755,22 @@ export default function ClientProfile() {
           <div className="max-w-2xl space-y-2">
             {quotes.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No quotes yet</p>}
             {quotes.map(q => (
-              <div key={q.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
+              <div key={q.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-zinc-900">${q.total?.toFixed(2)}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5">{q.items?.length || 0} items Â· {new Date(q.created_at).toLocaleDateString()}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
                 </div>
-                <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status]}`}>{q.status}</span>
+                <div className="flex items-center gap-2 ml-4">
+                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status]}`}>{q.status}</span>
+                  <OpportunityLinker
+                    clientId={id}
+                    itemType="quote"
+                    itemId={q.id}
+                    itemName={`Quote $${q.total?.toFixed(2)}`}
+                    currentOpportunityId={q.opportunity_id}
+                    onLinked={() => load()}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -754,12 +781,22 @@ export default function ClientProfile() {
           <div className="max-w-2xl space-y-2">
             {invoices.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No invoices yet</p>}
             {invoices.map(inv => (
-              <div key={inv.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
+              <div key={inv.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-zinc-900">{inv.invoice_number}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5">Due {inv.due_date || 'N/A'} Â· ${inv.total?.toFixed(2)}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">Due {inv.due_date || 'N/A'} · ${inv.total?.toFixed(2)}</div>
                 </div>
-                <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${INVOICE_COLORS[inv.status]}`}>{inv.status}</span>
+                <div className="flex items-center gap-2 ml-4">
+                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${INVOICE_COLORS[inv.status]}`}>{inv.status}</span>
+                  <OpportunityLinker
+                    clientId={id}
+                    itemType="invoice"
+                    itemId={inv.id}
+                    itemName={inv.invoice_number}
+                    currentOpportunityId={inv.opportunity_id}
+                    onLinked={() => load()}
+                  />
+                </div>
               </div>
             ))}
           </div>
