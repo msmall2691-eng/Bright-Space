@@ -99,6 +99,21 @@ def get_jobs(
 
 @router.post("", status_code=201)
 def create_job(data: JobCreate, db: Session = Depends(get_db)):
+    # ── CONFLICT / DUPLICATE CHECK ──
+    # Prevent creating duplicate jobs for the same property + date + time
+    if data.property_id and data.job_type == "str_turnover":
+        existing = db.query(Job).filter(
+            Job.property_id == data.property_id,
+            Job.scheduled_date == data.scheduled_date,
+            Job.job_type == "str_turnover",
+            Job.status.notin_(["cancelled"]),
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A turnover job already exists for this property on {data.scheduled_date} (Job #{existing.id}: {existing.title}). Edit the existing job or cancel it first."
+            )
+
     job = Job(**data.model_dump())
     db.add(job)
     db.commit()
