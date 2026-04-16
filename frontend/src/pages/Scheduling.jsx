@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, X, Calendar, Clock, MapPin, Users, ChevronDown,
-  CheckCircle, AlertCircle, Trash2, Edit3, Send, Repeat, RefreshCw
+  CheckCircle, AlertCircle, Trash2, Edit3, Send, Repeat, RefreshCw,
+  Filter, Home
 } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
 import AgentWidget from '../components/AgentWidget'
@@ -71,11 +72,20 @@ export default function Scheduling() {
   // Jobs for list view on mobile
   const [upcomingJobs, setUpcomingJobs] = useState([])
 
-  // Load clients and employees once
+  // Filters
+  const [filters, setFilters] = useState({ job_type: '', status: '', property_id: '' })
+  const [allProperties, setAllProperties] = useState([])
+  const [showFilters, setShowFilters] = useState(false)
+  const activeFilterCount = Object.values(filters).filter(Boolean).length
+
+  // Load clients, employees, and properties once
   useEffect(() => {
     get('/api/clients?status=active').then(setClients).catch(() => {})
     get('/api/dispatch/employees')
       .then(data => setEmployees(Array.isArray(data) ? data : []))
+      .catch(() => {})
+    get('/api/properties')
+      .then(data => setAllProperties(Array.isArray(data) ? data : []))
       .catch(() => {})
   }, [])
 
@@ -168,7 +178,7 @@ export default function Scheduling() {
       ...f,
       client_id: clientId,
       address: client?.address ? [client.address, client.city, client.state].filter(Boolean).join(', ') : f.address,
-      title: f.title || (client ? `${client.name} – Clean` : ''),
+      title: f.title || (client ? `${client.name} â Clean` : ''),
       property_id: '',
     }))
   }
@@ -243,7 +253,7 @@ export default function Scheduling() {
     setDeleting(false)
   }
 
-  // Invite client to GCal event — the "I'm ready" button
+  // Invite client to GCal event â the "I'm ready" button
   const inviteClient = async (jobId) => {
     setInviting(true)
     try {
@@ -341,11 +351,97 @@ export default function Scheduling() {
           </div>
           {syncResult.unmatched > 0 && (
             <p className="mt-1.5 text-xs opacity-75">
-              {syncResult.unmatched} event(s) couldn't be matched to a client — add their email as attendee or use a known address in the location field.
+              {syncResult.unmatched} event(s) couldn't be matched to a client â add their email as attendee or use a known address in the location field.
             </p>
           )}
         </div>
       )}
+
+      {/* Filter bar */}
+      <div className="hidden lg:block border-b border-zinc-200 bg-white/50">
+        <div className="flex items-center gap-2 px-6 py-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+              activeFilterCount > 0
+                ? 'bg-blue-50 border-blue-200 text-blue-600'
+                : 'bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="bg-blue-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* Quick filter pills */}
+          {JOB_TYPES.map(t => (
+            <button
+              key={t.value}
+              onClick={() => setFilters(f => ({ ...f, job_type: f.job_type === t.value ? '' : t.value }))}
+              className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                filters.job_type === t.value
+                  ? TYPE_BADGE[t.value]
+                  : 'bg-white border-zinc-200 text-zinc-400 hover:bg-zinc-50'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+
+          <span className="text-zinc-200">|</span>
+
+          {STATUS_OPTIONS.map(s => (
+            <button
+              key={s.value}
+              onClick={() => setFilters(f => ({ ...f, status: f.status === s.value ? '' : s.value }))}
+              className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                filters.status === s.value
+                  ? s.color
+                  : 'bg-white border-zinc-200 text-zinc-400 hover:bg-zinc-50'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => setFilters({ job_type: '', status: '', property_id: '' })}
+              className="text-[11px] text-zinc-400 hover:text-zinc-600 ml-1"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+
+        {/* Expanded property filter */}
+        {showFilters && allProperties.length > 0 && (
+          <div className="px-6 pb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-zinc-400 uppercase tracking-wide flex items-center gap-1">
+                <Home className="w-3 h-3" /> Property:
+              </span>
+              {allProperties.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setFilters(f => ({ ...f, property_id: f.property_id === String(p.id) ? '' : String(p.id) }))}
+                  className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                    filters.property_id === String(p.id)
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                      : 'bg-white border-zinc-200 text-zinc-400 hover:bg-zinc-50'
+                  }`}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-1 min-h-0 relative">
         {/* Calendar view (desktop always, mobile toggled) */}
@@ -354,6 +450,7 @@ export default function Scheduling() {
             onJobClick={handleJobClick}
             onDayClick={handleDayClick}
             refreshKey={refreshKey}
+            filters={filters}
           />
         </div>
 
@@ -361,7 +458,12 @@ export default function Scheduling() {
         {mobileView === 'list' && (
           <div className="flex-1 overflow-y-auto p-4 lg:hidden">
             <MobileJobList
-              jobs={upcomingJobs}
+              jobs={upcomingJobs.filter(j => {
+                if (filters.job_type && j.job_type !== filters.job_type) return false
+                if (filters.status && j.status !== filters.status) return false
+                if (filters.property_id && String(j.property_id) !== filters.property_id) return false
+                return true
+              })}
               onJobClick={handleJobClick}
               statusConfig={statusConfig}
             />
@@ -439,7 +541,7 @@ export default function Scheduling() {
 }
 
 
-/* ────────────────────────────── Job View Panel ────────────────────────────── */
+/* ââââââââââââââââââââââââââââââ Job View Panel ââââââââââââââââââââââââââââââ */
 
 function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, onInviteClient, onNavigateToClient, deleting, statusUpdating, inviting, saveError }) {
   if (!job) return null
@@ -495,8 +597,8 @@ function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, 
           </div>
         )}
         <DetailRow icon={Calendar} label="Date"
-          value={job.scheduled_date ? new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : '—'} />
-        <DetailRow icon={Clock} label="Time" value={`${job.start_time || '—'} – ${job.end_time || '—'}`} />
+          value={job.scheduled_date ? new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'â'} />
+        <DetailRow icon={Clock} label="Time" value={`${job.start_time || 'â'} â ${job.end_time || 'â'}`} />
         {job.address && <DetailRow icon={MapPin} label="Address" value={job.address} />}
       </div>
 
@@ -621,7 +723,7 @@ function DetailRow({ icon: Icon, label, value }) {
 }
 
 
-/* ────────────────────────────── Job Form Panel ────────────────────────────── */
+/* ââââââââââââââââââââââââââââââ Job Form Panel ââââââââââââââââââââââââââââââ */
 
 function JobFormPanel({ form, setForm, clients, employees, clientProperties, isEdit, saving, saveError, onSave, onClientChange, onSelectProperty, onToggleCleaner }) {
   const canSave = form.client_id && form.title && form.scheduled_date && form.start_time && form.end_time
@@ -663,7 +765,7 @@ function JobFormPanel({ form, setForm, clients, employees, clientProperties, isE
         {/* Title */}
         <Field label="Job Title *">
           <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-            placeholder="e.g. Smith Residence – Deep Clean"
+            placeholder="e.g. Smith Residence â Deep Clean"
             className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
         </Field>
 
@@ -771,7 +873,7 @@ function Field({ label, className = '', children }) {
 }
 
 
-/* ────────────────────────────── Mobile List View ────────────────────────────── */
+/* ââââââââââââââââââââââââââââââ Mobile List View ââââââââââââââââââââââââââââââ */
 
 function MobileJobList({ jobs, onJobClick, statusConfig }) {
   if (jobs.length === 0) {
@@ -813,7 +915,7 @@ function MobileJobList({ jobs, onJobClick, statusConfig }) {
                       <div className="font-medium text-zinc-900 text-sm truncate">{j.title}</div>
                       <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />{j.start_time}–{j.end_time}
+                          <Clock className="w-3 h-3" />{j.start_time}â{j.end_time}
                         </span>
                         {j.client_name && (
                           <span className="flex items-center gap-1">
