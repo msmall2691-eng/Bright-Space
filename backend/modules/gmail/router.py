@@ -4,7 +4,7 @@ Fetches inbox, matches senders to clients, creates leads from unknown contacts.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from database.session import get_db
+from database.db import get_db
 from database.models import Client
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id
 import logging
