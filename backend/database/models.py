@@ -1,11 +1,69 @@
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text,
-    JSON, ForeignKey, Boolean, UniqueConstraint
+    JSON, ForeignKey, Boolean, UniqueConstraint, Enum as SQLEnum
 )
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
+from enum import Enum
 
 Base = declarative_base()
+
+
+class ActivityType(str, Enum):
+    """All possible activity types in the system for unified timeline."""
+    # Email events
+    EMAIL_SENT = "email_sent"
+    EMAIL_RECEIVED = "email_received"
+    EMAIL_OPENED = "email_opened"
+    EMAIL_CLICKED = "email_clicked"
+
+    # SMS events
+    SMS_SENT = "sms_sent"
+    SMS_RECEIVED = "sms_received"
+    SMS_DELIVERED = "sms_delivered"
+
+    # Job events
+    JOB_CREATED = "job_created"
+    JOB_SCHEDULED = "job_scheduled"
+    JOB_STARTED = "job_started"
+    JOB_COMPLETED = "job_completed"
+    JOB_CANCELLED = "job_cancelled"
+
+    # Quote events
+    QUOTE_CREATED = "quote_created"
+    QUOTE_SENT = "quote_sent"
+    QUOTE_ACCEPTED = "quote_accepted"
+    QUOTE_REJECTED = "quote_rejected"
+    QUOTE_EXPIRED = "quote_expired"
+
+    # Invoice events
+    INVOICE_CREATED = "invoice_created"
+    INVOICE_SENT = "invoice_sent"
+    INVOICE_PAID = "invoice_paid"
+    INVOICE_OVERDUE = "invoice_overdue"
+
+    # Opportunity events
+    OPPORTUNITY_CREATED = "opportunity_created"
+    OPPORTUNITY_QUALIFIED = "opportunity_qualified"
+    OPPORTUNITY_STAGE_CHANGED = "opportunity_stage_changed"
+    OPPORTUNITY_WON = "opportunity_won"
+    OPPORTUNITY_LOST = "opportunity_lost"
+
+    # Contact events
+    CONTACT_CREATED = "contact_created"
+    CONTACT_UPDATED = "contact_updated"
+    LEAD_CREATED = "lead_created"
+    LEAD_QUALIFIED = "lead_qualified"
+
+    # Call events
+    CALL_LOGGED = "call_logged"
+    CALL_MISSED = "call_missed"
+    CALL_VOICEMAIL = "call_voicemail"
+
+    # Note events
+    NOTE_ADDED = "note_added"
+    FORM_SUBMITTED = "form_submitted"
+    STATUS_CHANGED = "status_changed"
 
 
 class FieldDefinition(Base):
@@ -13,17 +71,23 @@ class FieldDefinition(Base):
     __tablename__ = "field_definitions"
 
     id = Column(Integer, primary_key=True, index=True)
-    entity_type = Column(String, nullable=False)   # 'client' | 'job' | 'invoice'
+    entity_type = Column(String, nullable=False)   # 'client' | 'job' | 'invoice' | 'opportunity' | 'quote'
     name = Column(String, nullable=False)           # Display label: "Pet Name"
     key = Column(String, nullable=False)            # Slug key: "pet_name"
     field_type = Column(String, default="text")     # text | number | date | select | checkbox | textarea
     options = Column(JSON, default=list)            # ['Option A', 'Option B'] for select
     required = Column(Boolean, default=False)
+    is_system = Column(Boolean, default=False)      # True for built-in fields, False for custom
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    __table_args__ = (
+        UniqueConstraint("entity_type", "key", name="uq_field_entity_key"),
+    )
+
 
 class Client(Base):
+    """Central hub entity connected to all business records."""
     __tablename__ = "clients"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -54,16 +118,19 @@ class Client(Base):
     last_contacted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, default=False)
 
-    quotes = relationship("Quote", back_populates="client")
-    jobs = relationship("Job", back_populates="client")
-    invoices = relationship("Invoice", back_populates="client")
-    messages = relationship("Message", back_populates="client")
-    properties = relationship("Property", back_populates="client")
-    recurring_schedules = relationship("RecurringSchedule", back_populates="client")
-    opportunities = relationship("Opportunity", back_populates="client")
+    # Relationships - all cascade delete with client
+    quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan")
+    jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
+    invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
+    messages = relationship("Message", back_populates="client", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="client", cascade="all, delete-orphan")
+    properties = relationship("Property", back_populates="client", cascade="all, delete-orphan")
+    recurring_schedules = relationship("RecurringSchedule", back_populates="client", cascade="all, delete-orphan")
+    opportunities = relationship("Opportunity", back_populates="client", cascade="all, delete-orphan")
     contact_emails = relationship("ContactEmail", back_populates="client", cascade="all, delete-orphan")
     contact_phones = relationship("ContactPhone", back_populates="client", cascade="all, delete-orphan")
-    activities = relationship("Activity", back_populates="client", order_by="Activity.created_at.desc()")
+    activities = relationship("Activity", back_populates="client", cascade="all, delete-orphan", order_by="Activity.created_at.desc()")
+    lead_intakes = relationship("LeadIntake", back_populates="client", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -150,11 +217,13 @@ class RecurringSchedule(Base):
 
 
 class Job(Base):
+    """A cleaning job/task linked to a client, opportunity, and possibly quote."""
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
     # Job classification
     job_type = Column(String, nullable=False, default="residential")
@@ -183,8 +252,10 @@ class Job(Base):
     dispatched = Column(Integer, default=0)
     connecteam_shift_ids = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     client = relationship("Client", back_populates="jobs")
+    opportunity = relationship("Opportunity", back_populates="jobs")
     property = relationship("Property", back_populates="jobs", foreign_keys=[property_id])
     recurring_schedule = relationship("RecurringSchedule", back_populates="jobs")
     ical_event = relationship(
@@ -194,9 +265,13 @@ class Job(Base):
 
 
 class LeadIntake(Base):
+    """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"
 
     id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+
     name = Column(String, nullable=False)
     email = Column(String)
     phone = Column(String)
@@ -223,20 +298,23 @@ class LeadIntake(Base):
     priority = Column(String, default="normal")  # low/normal/high/urgent
     assigned_to = Column(String, nullable=True)
     internal_notes = Column(Text, nullable=True)
+    custom_fields = Column(JSON, default=dict)
     followed_up_at = Column(DateTime, nullable=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
-    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    opportunity = relationship("Opportunity", back_populates="intake")
+    client = relationship("Client", back_populates="lead_intakes")
+    opportunity = relationship("Opportunity", back_populates="intake", uselist=False)
 
 
 class Quote(Base):
+    """Service quote linked to client and opportunity."""
     __tablename__ = "quotes"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
     intake_id = Column(Integer, ForeignKey("lead_intakes.id"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+
     quote_number = Column(String, unique=True, nullable=True)
     address = Column(String, nullable=True)
     service_type = Column(String, nullable=True)  # residential/commercial/str
@@ -245,47 +323,55 @@ class Quote(Base):
     tax_rate = Column(Float, default=0)
     tax = Column(Float, default=0)
     total = Column(Float, default=0)
-    status = Column(String, default="draft")
+    status = Column(String, default="draft")  # draft | sent | accepted | rejected | expired
     notes = Column(Text)
+    custom_fields = Column(JSON, default=dict)
     valid_until = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     client = relationship("Client", back_populates="quotes")
+    opportunity = relationship("Opportunity", back_populates="quotes")
 
 
 class Invoice(Base):
+    """Invoice linked to client, job, and opportunity."""
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+
     invoice_number = Column(String, unique=True)
     items = Column(JSON, default=list)
     subtotal = Column(Float, default=0)
     tax_rate = Column(Float, default=0)
     tax = Column(Float, default=0)
     total = Column(Float, default=0)
-    status = Column(String, default="draft")
+    status = Column(String, default="draft")  # draft | sent | overdue | paid
     due_date = Column(String)
     paid_at = Column(DateTime, nullable=True)
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     client = relationship("Client", back_populates="invoices")
+    opportunity = relationship("Opportunity", back_populates="invoices")
 
 
 class Conversation(Base):
     """
-    A single multi-channel conversation thread with a contact.
-
-    Groups related Messages across SMS / email / chat / etc. Carries
-    inbox-level state: status, assignment, SLA, unread, priority, tags.
+    Multi-channel conversation thread with a contact.
+    Groups related Messages across SMS / email / chat / etc.
+    Linked to client and opportunity for full context.
     """
     __tablename__ = "conversations"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
 
     # External identifier for contacts not yet linked to a client
     # (phone number for SMS, email address for email, etc.)
@@ -324,7 +410,8 @@ class Conversation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    client = relationship("Client")
+    client = relationship("Client", back_populates="conversations")
+    opportunity = relationship("Opportunity", back_populates="conversations")
     messages = relationship(
         "Message", back_populates="conversation",
         cascade="all, delete-orphan", order_by="Message.created_at",
@@ -332,10 +419,13 @@ class Conversation(Base):
 
 
 class Message(Base):
+    """Single message (email, SMS, chat, etc.) within a conversation."""
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
     # Each message should belong to a Conversation. Nullable for now to
     # allow backfill of legacy rows; new code always sets this.
@@ -364,13 +454,16 @@ class Message(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="messages")
+    job = relationship("Job")
+    opportunity = relationship("Opportunity", back_populates="messages")
     conversation = relationship("Conversation", back_populates="messages")
 
 
 class Opportunity(Base):
     """
     Pipeline deal between lead qualification and quoting.
-    Inspired by Twenty CRM's opportunity model and Fieldcamp's deal stages.
+    Central to the CRM with relationships to quotes, invoices, jobs, and messages.
+    Inspired by Twenty CRM and Fieldcamp.
     """
     __tablename__ = "opportunities"
 
@@ -387,12 +480,20 @@ class Opportunity(Base):
     owner = Column(String, nullable=True)              # assigned team member
     lost_reason = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
+    custom_fields = Column(JSON, default=dict)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Relationships
     client = relationship("Client", back_populates="opportunities")
     intake = relationship("LeadIntake", back_populates="opportunity", uselist=False)
+    quotes = relationship("Quote", back_populates="opportunity")
+    invoices = relationship("Invoice", back_populates="opportunity")
+    jobs = relationship("Job", back_populates="opportunity")
+    conversations = relationship("Conversation", back_populates="opportunity")
+    messages = relationship("Message", back_populates="opportunity")
+    activities = relationship("Activity", back_populates="opportunity")
 
 
 class ContactEmail(Base):
@@ -427,8 +528,8 @@ class ContactPhone(Base):
 
 class Activity(Base):
     """
-    Unified timeline entry for any client/opportunity touchpoint.
-    Inspired by Twenty CRM's TimelineActivity pattern.
+    Unified timeline entry for any client/opportunity/job touchpoint.
+    Tracks all interactions: emails, SMS, calls, notes, status changes, etc.
     """
     __tablename__ = "activities"
 
@@ -440,13 +541,21 @@ class Activity(Base):
 
     actor = Column(String, nullable=True)
     activity_type = Column(String, nullable=False, index=True)
-    # email_sent | email_received | sms_sent | sms_received
-    # note_added | status_changed | quote_sent | job_completed
-    # form_submitted | call_logged | opportunity_created | opportunity_won
+    # Uses ActivityType enum values (email_sent, email_received, sms_sent, etc.)
     summary = Column(String, nullable=True)
     extra_data = Column(JSON, default=dict)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="activities")
-    opportunity = relationship("Opportunity")
+    opportunity = relationship("Opportunity", back_populates="activities")
+
+
+class AppSetting(Base):
+    """Application-wide settings (email credentials, integrations, etc.)."""
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
