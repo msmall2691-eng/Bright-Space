@@ -21,9 +21,11 @@ class JobCreate(BaseModel):
     end_time: str             # HH:MM
     address: Optional[str] = None
     quote_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
     property_id: Optional[int] = None
     cleaner_ids: Optional[List[str]] = []
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = {}
 
 
 class JobUpdate(BaseModel):
@@ -50,6 +52,7 @@ def job_to_dict(j: Job, client: Client = None) -> dict:
         "client_id": j.client_id,
         "client_name": client_name,
         "quote_id": j.quote_id,
+        "opportunity_id": j.opportunity_id,
         "job_type": j.job_type or "residential",
         "property_id": j.property_id,
         "recurring_schedule_id": j.recurring_schedule_id,
@@ -68,6 +71,7 @@ def job_to_dict(j: Job, client: Client = None) -> dict:
         "gcal_event_id": j.gcal_event_id,
         "connecteam_shift_ids": j.connecteam_shift_ids or [],
         "created_at": j.created_at.isoformat() if j.created_at else None,
+        "updated_at": j.updated_at.isoformat() if j.updated_at else None,
     }
 
 
