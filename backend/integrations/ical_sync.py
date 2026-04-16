@@ -143,6 +143,28 @@ def sync_property(db: Session, prop: Property) -> dict:
 
         # Create a Job if: no job yet + checkout is today or future
         if event.job_id is None and checkout >= today:
+            # ── DEDUPLICATION CHECK ──
+            # Before creating a new turnover job, check if one already exists
+            # for the same property + date. This prevents duplicates when iCal
+            # UIDs change across syncs (common with Airbnb/VRBO) or when
+            # multiple calendar events map to the same checkout day.
+            existing_job = db.query(Job).filter(
+                Job.property_id == prop.id,
+                Job.scheduled_date == checkout,
+                Job.job_type == "str_turnover",
+                Job.status.notin_(["cancelled"]),
+            ).first()
+
+            if existing_job:
+                # Link this iCal event to the existing job instead of creating a duplicate
+                event.job_id = existing_job.id
+                log.info(
+                    f"Dedup: linked iCal event {uid} to existing job {existing_job.id} "
+                    f"for {prop.name} on {checkout} (skipped duplicate creation)"
+                )
+                skipped += 1
+                continue
+
             # Default start time = 10:00 AM on checkout day
             start_time = "10:00"
             end_time = _make_end_time(start_time, prop.default_duration_hours)
