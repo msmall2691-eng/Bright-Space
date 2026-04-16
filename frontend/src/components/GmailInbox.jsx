@@ -32,18 +32,26 @@ export default function GmailInbox() {
   const [creating, setCreating] = useState(null) // email_id being processed
   const detailRef = useRef(null)
 
+  const [connectionError, setConnectionError] = useState(null)
+
   const load = () => {
     setLoading(true)
     setError(null)
+    setConnectionError(null)
     get('/api/gmail/inbox?max_results=40&skip_automated=true')
       .then(data => {
-        setEmails(data.emails || [])
+        if (data.error) {
+          setConnectionError(data)
+          setEmails([])
+        } else {
+          setEmails(data.emails || [])
+        }
         setSummary(data.summary || {})
         setLoading(false)
       })
       .catch(err => {
         console.error('Gmail fetch error:', err)
-        setError('Could not load Gmail inbox. Check SMTP credentials.')
+        setError('Could not load Gmail inbox.')
         setLoading(false)
       })
   }
@@ -165,6 +173,20 @@ export default function GmailInbox() {
           {loading && emails.length === 0 ? (
             <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
               <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Loading emails...
+            </div>
+          ) : connectionError ? (
+            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-3">
+                <Mail className="w-6 h-6 text-amber-500" />
+              </div>
+              <div className="text-sm font-medium text-zinc-700 mb-1">
+                {connectionError.error === 'no_credentials' ? 'Email Not Connected' :
+                 connectionError.error === 'auth_failed' ? 'Authentication Failed' : 'Connection Error'}
+              </div>
+              <p className="text-xs text-zinc-400 max-w-xs mb-3">{connectionError.message}</p>
+              <a href="/settings" className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-4 py-2 rounded-lg transition-colors">
+                Go to Settings
+              </a>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex items-center justify-center h-40 text-gray-400 text-sm">

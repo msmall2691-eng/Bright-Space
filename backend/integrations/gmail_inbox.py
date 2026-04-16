@@ -133,10 +133,10 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
     Fetch recent emails from Gmail inbox via IMAP.
     Returns list of parsed email dicts sorted newest-first.
     """
-    user, passwd, _, _ = _get_credentials()
+    user, passwd, host, port = _get_credentials()
     if not user or not passwd:
         logger.warning("Gmail IMAP: No credentials configured (check Settings or env vars)")
-        return []
+        raise ConnectionError("no_credentials")
 
     try:
         mail = _connect()
@@ -205,10 +205,12 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
 
     except imaplib.IMAP4.error as e:
         logger.error(f"IMAP auth/connection error: {e}")
-        return []
+        raise ConnectionError(f"imap_auth_failed: {e}")
+    except ConnectionError:
+        raise
     except Exception as e:
         logger.error(f"Gmail fetch error: {e}")
-        return []
+        raise ConnectionError(f"imap_error: {e}")
 
 
 def fetch_email_by_id(email_id: str, folder="INBOX"):

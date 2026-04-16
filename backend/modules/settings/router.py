@@ -51,14 +51,30 @@ class EmailConfig(BaseModel):
 
 @router.get("/email")
 def get_email_settings(db: Session = Depends(get_db)):
+    import os
     result = {}
+    env_map = {
+        "smtp_user": "SMTP_USER", "smtp_pass": "SMTP_PASS",
+        "smtp_host": "SMTP_HOST", "smtp_port": "SMTP_PORT",
+        "imap_host": "IMAP_HOST", "imap_port": "IMAP_PORT",
+        "from_email": "FROM_EMAIL", "from_name": "FROM_NAME",
+    }
     for key in EMAIL_SETTING_KEYS:
-        val = get_setting(db, key)
+        db_val = get_setting(db, key)
+        env_val = os.getenv(env_map.get(key, ""), "")
+        val = db_val or env_val
         if key in SENSITIVE_KEYS and val:
             result[key] = "****" + val[-4:] if len(val) > 4 else "****"
         else:
             result[key] = val or ""
-    result["has_credentials"] = bool(get_setting(db, "smtp_user") and get_setting(db, "smtp_pass"))
+        result[f"{key}_source"] = "database" if db_val else ("env" if env_val else "none")
+
+    db_user = get_setting(db, "smtp_user")
+    db_pass = get_setting(db, "smtp_pass")
+    env_user = os.getenv("SMTP_USER", "")
+    env_pass = os.getenv("SMTP_PASS", "")
+    result["has_credentials"] = bool((db_user or env_user) and (db_pass or env_pass))
+    result["credentials_source"] = "database" if (db_user and db_pass) else ("env" if (env_user and env_pass) else "none")
     return result
 
 

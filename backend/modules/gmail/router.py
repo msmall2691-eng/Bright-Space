@@ -61,7 +61,31 @@ def gmail_inbox(
     auto_enrich: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
+    try:
+        emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
+    except ConnectionError as e:
+        err = str(e)
+        if "no_credentials" in err:
+            return {
+                "emails": [],
+                "error": "no_credentials",
+                "message": "No email credentials configured. Go to Settings → Email & Integrations to connect Gmail.",
+                "summary": {"total": 0, "linked": 0, "unlinked": 0, "unread": 0},
+            }
+        elif "imap_auth_failed" in err:
+            return {
+                "emails": [],
+                "error": "auth_failed",
+                "message": "Gmail authentication failed. Check your App Password in Settings → Email & Integrations.",
+                "summary": {"total": 0, "linked": 0, "unlinked": 0, "unread": 0},
+            }
+        else:
+            return {
+                "emails": [],
+                "error": "connection_error",
+                "message": f"Could not connect to Gmail: {err}",
+                "summary": {"total": 0, "linked": 0, "unlinked": 0, "unread": 0},
+            }
 
     client_cache = {}
     new_contacts = 0
