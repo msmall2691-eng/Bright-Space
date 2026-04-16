@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from database.db import get_db
-from database.models import Opportunity, Client, Activity
+from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message
 
 router = APIRouter()
 
@@ -19,6 +19,7 @@ class OpportunityCreate(BaseModel):
     service_type: Optional[str] = None
     owner: Optional[str] = None
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = {}
 
 
 class OpportunityUpdate(BaseModel):
@@ -31,6 +32,7 @@ class OpportunityUpdate(BaseModel):
     owner: Optional[str] = None
     lost_reason: Optional[str] = None
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = None
 
 
 def opp_to_dict(o):
@@ -47,6 +49,11 @@ def opp_to_dict(o):
         "owner": o.owner,
         "lost_reason": o.lost_reason,
         "notes": o.notes,
+        "custom_fields": o.custom_fields or {},
+        "quotes_count": len(o.quotes) if hasattr(o, 'quotes') else 0,
+        "invoices_count": len(o.invoices) if hasattr(o, 'invoices') else 0,
+        "jobs_count": len(o.jobs) if hasattr(o, 'jobs') else 0,
+        "messages_count": len(o.messages) if hasattr(o, 'messages') else 0,
         "created_at": o.created_at.isoformat() if o.created_at else None,
         "updated_at": o.updated_at.isoformat() if o.updated_at else None,
     }
@@ -109,10 +116,75 @@ def opportunity_summary(db: Session = Depends(get_db)):
 
 @router.get("/{opp_id}")
 def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
-    o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+    o = db.query(Opportunity).options(
+        joinedload(Opportunity.client),
+        joinedload(Opportunity.quotes),
+        joinedload(Opportunity.invoices),
+        joinedload(Opportunity.jobs),
+        joinedload(Opportunity.messages),
+    ).filter(Opportunity.id == opp_id).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return opp_to_dict(o)
+
+
+@router.get("/{opp_id}/details")
+def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
+    """Get full opportunity details with all related entities and timeline."""
+    o = db.query(Opportunity).options(
+        joinedload(Opportunity.client),
+        joinedload(Opportunity.quotes),
+        joinedload(Opportunity.invoices),
+        joinedload(Opportunity.jobs),
+        joinedload(Opportunity.messages),
+        joinedload(Opportunity.activities),
+    ).filter(Opportunity.id == opp_id).first()
+    if not o:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    return {
+        **opp_to_dict(o),
+        "quotes": [
+            {
+                "id": q.id,
+                "quote_number": q.quote_number,
+                "status": q.status,
+                "total": q.total,
+                "created_at": q.created_at.isoformat() if q.created_at else None,
+            }
+            for q in o.quotes
+        ],
+        "invoices": [
+            {
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "status": inv.status,
+                "total": inv.total,
+                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+            }
+            for inv in o.invoices
+        ],
+        "jobs": [
+            {
+                "id": j.id,
+                "title": j.title,
+                "status": j.status,
+                "scheduled_date": j.scheduled_date,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+            }
+            for j in o.jobs
+        ],
+        "timeline": [
+            {
+                "id": a.id,
+                "activity_type": a.activity_type,
+                "summary": a.summary,
+                "actor": a.actor,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in o.activities
+        ],
+    }
 
 
 @router.post("", status_code=201)
@@ -120,7 +192,18 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == data.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-    o = Opportunity(**data.model_dump())
+    o = Opportunity(
+        client_id=data.client_id,
+        title=data.title,
+        stage=data.stage,
+        amount=data.amount,
+        close_date=data.close_date,
+        probability=data.probability,
+        service_type=data.service_type,
+        owner=data.owner,
+        notes=data.notes,
+        custom_fields=data.custom_fields or {},
+    )
     db.add(o)
     db.flush()
 
@@ -134,6 +217,7 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
         actor=data.owner,
         activity_type="opportunity_created",
         summary=f"Created opportunity: {data.title}",
+        extra_data={"stage": data.stage, "amount": data.amount},
     )
     db.commit()
     db.refresh(o)
@@ -157,12 +241,21 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
             client_id=o.client_id,
             opportunity_id=o.id,
             actor=data.owner or o.owner,
-            activity_type=f"opportunity_{updates['stage']}",
+            activity_type="opportunity_stage_changed",
             summary=f"Stage changed: {old_stage} → {updates['stage']}",
+            extra_data={"old_stage": old_stage, "new_stage": updates["stage"]},
         )
         if updates["stage"] == "won" and o.client:
             o.client.lifecycle_stage = "customer"
             o.client.status = "active"
+            log_activity(
+                db,
+                client_id=o.client_id,
+                opportunity_id=o.id,
+                actor=data.owner or o.owner,
+                activity_type="opportunity_won",
+                summary=f"Opportunity won: {o.title}",
+            )
 
     db.commit()
     db.refresh(o)
