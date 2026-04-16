@@ -40,6 +40,7 @@ export default function App() {
           <Route path="/pipeline" element={<Requests />} />
           <Route path="/quoting" element={<Quoting />} />
           <Route path="/scheduling" element={<Scheduling />} />
+          <Route path="/schedule" element={<Navigate to="/scheduling" replace />} />
           <Route path="/invoicing" element={<Invoicing />} />
           <Route path="/dispatch" element={<Dispatch />} />
           <Route path="/payroll" element={<Payroll />} />
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/properties" element={<Properties />} />
           <Route path="/recurring" element={<Recurring />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
         </main>
       </div>
