@@ -1,11 +1,10 @@
 """
-App Settings Router
-Manages global config: email/IMAP credentials, integrations, etc.
+App Settings Router - email/IMAP credentials, integrations, etc.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional
 from database.db import get_db
 from database.models import AppSetting
 import imaplib
@@ -141,3 +140,15 @@ def get_all_settings(db: Session = Depends(get_db)):
         else:
             result[row.key] = row.value
     return result
+
+
+@router.get("/from-email")
+def get_from_email(db: Session = Depends(get_db)):
+    """Get the configured from_email for sending replies."""
+    from_email = get_setting(db, "from_email")
+    if not from_email:
+        import os
+        from_email = os.getenv("FROM_EMAIL", "")
+    if not from_email:
+        raise HTTPException(400, "from_email not configured")
+    return {"from_email": from_email}

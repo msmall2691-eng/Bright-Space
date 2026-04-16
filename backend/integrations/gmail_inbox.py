@@ -4,9 +4,12 @@ Uses existing SMTP credentials (App Password) to read emails.
 No additional OAuth required.
 """
 import imaplib
+import smtplib
 import email as email_lib
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 import os, re, logging
 
@@ -16,28 +19,6 @@ IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
-
-
-def _get_credentials():
-    """Get IMAP credentials from DB settings first, fall back to env vars."""
-    try:
-        from database.db import SessionLocal
-        from database.models import AppSetting
-        db = SessionLocal()
-        try:
-            user_row = db.query(AppSetting).filter(AppSetting.key == "smtp_user").first()
-            pass_row = db.query(AppSetting).filter(AppSetting.key == "smtp_pass").first()
-            host_row = db.query(AppSetting).filter(AppSetting.key == "imap_host").first()
-            port_row = db.query(AppSetting).filter(AppSetting.key == "imap_port").first()
-            user = (user_row.value if user_row and user_row.value else None) or SMTP_USER
-            passwd = (pass_row.value if pass_row and pass_row.value else None) or SMTP_PASS
-            host = (host_row.value if host_row and host_row.value else None) or IMAP_HOST
-            port = int((port_row.value if port_row and port_row.value else None) or IMAP_PORT)
-            return user, passwd, host, port
-        finally:
-            db.close()
-    except Exception:
-        return SMTP_USER, SMTP_PASS, IMAP_HOST, IMAP_PORT
 
 # Patterns to filter out automated / newsletter emails
 AUTOMATED_PATTERNS = [
@@ -118,12 +99,38 @@ def _has_attachments(msg):
     return False
 
 
+def _get_credentials():
+    """Get IMAP credentials from DB settings first, fall back to env vars."""
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            user_row = db.query(AppSetting).filter(AppSetting.key == "smtp_user").first()
+            pass_row = db.query(AppSetting).filter(AppSetting.key == "smtp_pass").first()
+            host_row = db.query(AppSetting).filter(AppSetting.key == "imap_host").first()
+            port_row = db.query(AppSetting).filter(AppSetting.key == "imap_port").first()
+            smtp_host_row = db.query(AppSetting).filter(AppSetting.key == "smtp_host").first()
+            smtp_port_row = db.query(AppSetting).filter(AppSetting.key == "smtp_port").first()
+            user = (user_row.value if user_row and user_row.value else None) or SMTP_USER
+            passwd = (pass_row.value if pass_row and pass_row.value else None) or SMTP_PASS
+            imap_host = (host_row.value if host_row and host_row.value else None) or IMAP_HOST
+            imap_port = int((port_row.value if port_row and port_row.value else None) or IMAP_PORT)
+            smtp_host = (smtp_host_row.value if smtp_host_row and smtp_host_row.value else None) or "smtp.gmail.com"
+            smtp_port = int((smtp_port_row.value if smtp_port_row and smtp_port_row.value else None) or "587")
+            return user, passwd, imap_host, imap_port, smtp_host, smtp_port
+        finally:
+            db.close()
+    except Exception:
+        return SMTP_USER, SMTP_PASS, IMAP_HOST, IMAP_PORT, "smtp.gmail.com", 587
+
+
 def _connect():
     """Create and authenticate IMAP connection using DB or env credentials."""
-    user, passwd, host, port = _get_credentials()
+    user, passwd, imap_host, imap_port, _, _ = _get_credentials()
     if not user or not passwd:
         raise ValueError("No email credentials configured")
-    mail = imaplib.IMAP4_SSL(host, port)
+    mail = imaplib.IMAP4_SSL(imap_host, imap_port)
     mail.login(user, passwd)
     return mail
 
@@ -133,7 +140,7 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
     Fetch recent emails from Gmail inbox via IMAP.
     Returns list of parsed email dicts sorted newest-first.
     """
-    user, passwd, host, port = _get_credentials()
+    user, passwd, host, port, _, _ = _get_credentials()
     if not user or not passwd:
         logger.warning("Gmail IMAP: No credentials configured (check Settings or env vars)")
         raise ConnectionError("no_credentials")
@@ -148,7 +155,6 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
             return []
 
         message_ids = data[0].split()
-        # Fetch extra to account for automated filtering
         fetch_count = max_results * 3 if skip_automated else max_results
         latest_ids = message_ids[-fetch_count:]
 
@@ -215,7 +221,7 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
 
 def fetch_email_by_id(email_id: str, folder="INBOX"):
     """Fetch a single email by its IMAP sequence number."""
-    user, passwd, _, _ = _get_credentials()
+    user, passwd, _, _, _, _ = _get_credentials()
     if not user or not passwd:
         return None
     try:
@@ -256,3 +262,39 @@ def fetch_email_by_id(email_id: str, folder="INBOX"):
     except Exception as e:
         logger.error(f"Error fetching email {email_id}: {e}")
         return None
+
+
+def send_reply(to_email: str, from_email: str, subject: str, body: str, in_reply_to_message_id: str = None):
+    """Send an email reply via SMTP with proper threading headers."""
+    user, passwd, _, _, smtp_host, smtp_port = _get_credentials()
+
+    if not user or not passwd:
+        raise ValueError("No email credentials configured")
+
+    if from_email.lower() != user.lower():
+        raise ValueError(f"from_email '{from_email}' does not match configured SMTP user '{user}'")
+
+    try:
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = to_email
+
+        if in_reply_to_message_id:
+            msg["In-Reply-To"] = in_reply_to_message_id
+            msg["References"] = in_reply_to_message_id
+
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.starttls()
+            server.login(user, passwd)
+            server.send_message(msg)
+
+        logger.info(f"Reply sent from {from_email} to {to_email}")
+        return {"status": "sent", "to": to_email, "subject": subject, "timestamp": datetime.utcnow().isoformat()}
+
+    except smtplib.SMTPException as e:
+        logger.error(f"SMTP error sending reply: {e}")
+        raise ValueError(f"Failed to send email: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error sending reply: {e}")
+        raise ValueError(f"Failed to send email: {str(e)}")
