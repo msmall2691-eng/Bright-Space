@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload } from 'lucide-react'
+import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { del, get, post, patch, upload } from "../api"
 
@@ -37,6 +37,7 @@ export default function Clients() {
   const [saveError, setSaveError] = useState('')
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
   const fileInputRef = useRef(null)
 
   const load = () =>
@@ -122,6 +123,20 @@ export default function Clients() {
             className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 disabled:opacity-50 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors border border-zinc-200">
             <Upload className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{importing ? 'Importing...' : 'Import'}</span>
           </button>
+          {/* View toggle (Twenty CRM-style) */}
+          <div className="hidden sm:flex items-center bg-zinc-100 rounded-lg p-0.5">
+            <button onClick={() => setViewMode('cards')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'cards' ? 'bg-white shadow-sm text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`}
+              title="Card view">
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-white shadow-sm text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`}
+              title="Table view">
+              <TableProperties className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <button onClick={openNew}
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
             <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">New Client</span>
@@ -145,30 +160,75 @@ export default function Clients() {
 
         <div className="text-[11px] text-zinc-400 mb-3 font-medium">{filtered.length} client{filtered.length !== 1 ? 's' : ''}</div>
 
-        {/* Client rows */}
-        <div className="space-y-1.5 overflow-y-auto flex-1">
-          {filtered.map(c => (
-            <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-              className="flex items-center gap-4 bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl p-3.5 cursor-pointer transition-all group">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-                <span className="text-[12px] font-bold">{c.name[0]?.toUpperCase()}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-zinc-900">{c.name}</div>
-                <div className="flex items-center gap-3 mt-0.5">
-                  {c.phone && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
-                  {c.email && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>}
-                  {c.city && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><MapPin className="w-3 h-3" />{c.city}</span>}
+        {/* Client rows â Card view */}
+        {viewMode === 'cards' && (
+          <div className="space-y-1.5 overflow-y-auto flex-1">
+            {filtered.map(c => (
+              <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
+                className="flex items-center gap-4 bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl p-3.5 cursor-pointer transition-all group">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
+                  <span className="text-[12px] font-bold">{c.name[0]?.toUpperCase()}</span>
                 </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium text-zinc-900">{c.name}</div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    {c.phone && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
+                    {c.email && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>}
+                    {c.city && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><MapPin className="w-3 h-3" />{c.city}</span>}
+                  </div>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-400 transition-colors" />
               </div>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
-              <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-400 transition-colors" />
-            </div>
-          ))}
-          {filtered.length === 0 && (
-            <div className="text-center py-16 text-zinc-400 text-[13px]">No clients found</div>
-          )}
-        </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="text-center py-16 text-zinc-400 text-[13px]">No clients found</div>
+            )}
+          </div>
+        )}
+
+        {/* Client rows â Table view (Twenty CRM-inspired) */}
+        {viewMode === 'table' && (
+          <div className="overflow-auto flex-1 border border-zinc-200 rounded-xl bg-white">
+            <table className="w-full text-left">
+              <thead className="sticky top-0 bg-zinc-50 z-10">
+                <tr className="border-b border-zinc-200">
+                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Name</th>
+                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Phone</th>
+                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Email</th>
+                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">City</th>
+                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Source</th>
+                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(c => (
+                  <tr key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
+                    className="border-b border-zinc-100 hover:bg-blue-50/30 cursor-pointer transition-colors">
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
+                          <span className="text-[10px] font-bold">{c.name[0]?.toUpperCase()}</span>
+                        </div>
+                        <span className="text-[13px] font-medium text-zinc-900 truncate">{c.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-[12px] text-zinc-500">{c.phone || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-zinc-500 truncate max-w-[200px]">{c.email || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-zinc-500">{c.city || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-zinc-400">{c.source || 'â'}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filtered.length === 0 && (
+              <div className="text-center py-16 text-zinc-400 text-[13px]">No clients found</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Slide-over form */}
