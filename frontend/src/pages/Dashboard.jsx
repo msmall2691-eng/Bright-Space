@@ -57,6 +57,7 @@ export default function Dashboard() {
   const [invoices, setInvoices] = useState([])
   const [recurringCount, setRecurringCount] = useState(0)
   const [newRequests, setNewRequests] = useState([])
+  const [recentMessages, setRecentMessages] = useState([])
   const [loading, setLoading] = useState(true)
 
   const today = new Date().toISOString().slice(0, 10)
@@ -65,13 +66,14 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew] = await Promise.all([
+        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, gmailData] = await Promise.all([
           get(`/api/jobs?date=${today}`),
           get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
           get('/api/clients'),
           get('/api/invoices'),
           get('/api/recurring'),
           get('/api/intake?status=new'),
+          get('/api/gmail/inbox?max_results=10').catch(() => ({ emails: [] })),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         const week = Array.isArray(jobsWeek) ? jobsWeek : []
@@ -81,6 +83,7 @@ export default function Dashboard() {
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
         setRecurringCount(Array.isArray(schedules) ? schedules.filter(s => s.active).length : 0)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
+        setRecentMessages((gmailData?.emails || []).slice(0, 5))
       } catch {}
       setLoading(false)
     }
@@ -201,6 +204,54 @@ export default function Dashboard() {
                     </div>
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Messages */}
+          {recentMessages.length > 0 && (
+            <div className="bg-white border border-zinc-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[13px] font-semibold text-zinc-900 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-blue-500" /> Recent Messages
+                  {recentMessages.some(m => !m.is_read) && (
+                    <span className="bg-blue-100 text-blue-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                      {recentMessages.filter(m => !m.is_read).length}
+                    </span>
+                  )}
+                </h3>
+                <button onClick={() => navigate('/inbox')}
+                  className="text-[11px] text-blue-500 hover:text-blue-600 flex items-center gap-1 font-medium">
+                  View all <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                {recentMessages.map(msg => (
+                  <div key={msg.id} onClick={() => navigate('/inbox')}
+                    className={`flex items-center gap-3 rounded-lg p-3 cursor-pointer transition-colors ${
+                      !msg.is_read ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-zinc-50'
+                    }`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+                      msg.is_known_contact ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {msg.from_name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[13px] truncate ${!msg.is_read ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
+                          {msg.from_name}
+                        </span>
+                        {!msg.is_read && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />}
+                      </div>
+                      <p className={`text-[12px] truncate mt-0.5 ${!msg.is_read ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                        {msg.subject}
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-zinc-400 shrink-0">
+                      {new Date(msg.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -338,11 +389,19 @@ export default function Dashboard() {
                 { label: 'Create Quote',      icon: FileText, to: '/quoting', cls: 'text-blue-500' },
                 { label: 'Schedule Job',      icon: Calendar, to: '/scheduling', cls: 'text-cyan-500' },
                 { label: 'Create Invoice',    icon: DollarSign, to: '/invoicing', cls: 'text-emerald-500' },
+                { label: 'View Messages',     icon: Mail, to: '/inbox', cls: 'text-blue-500', badge: recentMessages.filter(m => !m.is_read).length },
                 { label: 'Send Message',      icon: MessageSquare, to: '/comms', cls: 'text-amber-500' },
-              ].map(({ label, icon: Icon, to, cls }) => (
+              ].map(({ label, icon: Icon, to, cls, badge }) => (
                 <button key={to} onClick={() => navigate(to)}
                   className="w-full flex items-center gap-3 hover:bg-zinc-50 px-3 py-2.5 rounded-lg text-[13px] transition-colors text-left group">
-                  <Icon className={`w-4 h-4 shrink-0 ${cls}`} />
+                  <div className="relative">
+                    <Icon className={`w-4 h-4 shrink-0 ${cls}`} />
+                    {badge > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                        {badge}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-zinc-600 group-hover:text-zinc-900 transition-colors">{label}</span>
                   <ChevronRight className="w-3.5 h-3.5 ml-auto text-zinc-300 group-hover:text-zinc-400" />
                 </button>

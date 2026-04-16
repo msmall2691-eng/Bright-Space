@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { Mail, User, UserPlus, Paperclip, ArrowLeft, RefreshCw, Link2, ExternalLink, Clock, Inbox, Search, Send, X, AlertCircle } from 'lucide-react'
+import { Mail, UserPlus, Paperclip, ArrowLeft, RefreshCw, Link2, Clock, Inbox, Search, Send, X, AlertCircle, Phone, MessageCircle, MapPin, Zap } from 'lucide-react'
 import { get, post } from '../api'
+
+const QUICK_TEMPLATES = [
+  { label: 'Confirm', text: 'Thank you! I\'ll confirm the details shortly.' },
+  { label: 'Update', text: 'Thanks for the update. I\'ll follow up with you soon.' },
+  { label: 'Available', text: 'Yes, I\'m available at that time.' },
+  { label: 'Quote', text: 'I\'ve sent over a quote. Let me know if you have questions.' },
+]
 
 function timeAgo(dateStr) {
   const d = new Date(dateStr)
@@ -17,7 +24,7 @@ function timeAgo(dateStr) {
 
 function formatDate(dateStr) {
   const d = new Date(dateStr)
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) +
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) +
     ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
@@ -38,7 +45,6 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
       setError('Reply message cannot be empty')
       return
     }
-
     if (!fromEmail) {
       setError('from_email not configured')
       return
@@ -51,7 +57,6 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
       const res = await post(
         `/api/gmail/send-reply?to_email=${encodeURIComponent(email.from_email)}&subject=${encodeURIComponent('Re: ' + email.subject)}&body=${encodeURIComponent(body)}&in_reply_to_message_id=${encodeURIComponent(email.message_id)}`
       )
-
       if (res.status === 'sent') {
         setBody('')
         onSent(res.message)
@@ -65,14 +70,15 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
     }
   }
 
+  const applyTemplate = (template) => {
+    setBody(template.text)
+  }
+
   return (
     <div className="border-t border-gray-200 bg-gray-50 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Compose Reply</h3>
-        <button
-          onClick={onCancel}
-          className="p-1 rounded-md hover:bg-gray-200 text-gray-500"
-        >
+        <h3 className="text-sm font-semibold text-gray-900">Quick Reply</h3>
+        <button onClick={onCancel} className="p-1 rounded-md hover:bg-gray-200 text-gray-500">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -85,36 +91,28 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
       )}
 
       <div className="space-y-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">From</label>
-          <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900">
-            {fromEmail || 'Not configured'}
-          </div>
+        {/* Quick templates */}
+        <div className="flex gap-2 flex-wrap">
+          {QUICK_TEMPLATES.map((t) => (
+            <button
+              key={t.label}
+              onClick={() => applyTemplate(t)}
+              className="px-2.5 py-1 text-xs font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
+        {/* Compose area */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">To</label>
-          <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900">
-            {email.from_email}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">Subject</label>
-          <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900">
-            Re: {email.subject}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">Message</label>
           <textarea
             ref={bodyRef}
             value={body}
             onChange={e => setBody(e.target.value)}
-            placeholder="Type your reply here..."
+            placeholder="Type your message..."
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-            rows="5"
+            rows="4"
           />
         </div>
 
@@ -140,6 +138,94 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
   )
 }
 
+function ContactCard({ email, client, onCreateLead, creating }) {
+  return (
+    <div className="bg-white border-l border-gray-200 w-72 flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-4 border-b border-gray-200">
+        <div className="flex items-center gap-3 mb-3">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-semibold ${
+            client ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+          }`}>
+            {email.from_name?.charAt(0)?.toUpperCase() || '?'}
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{email.from_name}</h3>
+            <p className="text-xs text-gray-500 truncate">{email.from_email}</p>
+          </div>
+        </div>
+
+        {client ? (
+          <a href={`/clients?id=${client.id}`} className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-green-50 text-green-700 rounded-full hover:bg-green-100 transition-colors w-full justify-center">
+            <Link2 className="w-3 h-3" />
+            View Client: {client.name}
+          </a>
+        ) : (
+          <button
+            onClick={() => onCreateLead(email)}
+            disabled={creating === email.id}
+            className="w-full px-2 py-1 text-xs font-medium bg-orange-50 text-orange-700 rounded-full hover:bg-orange-100 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <UserPlus className="w-3 h-3" />
+            {creating === email.id ? 'Creating...' : 'Create Lead'}
+          </button>
+        )}
+      </div>
+
+      {/* Contact Info */}
+      <div className="px-4 py-4 space-y-3 flex-1">
+        <div>
+          <div className="text-xs text-gray-500 font-medium mb-2">Email Address</div>
+          <div className="text-sm text-gray-900 font-medium break-all">{email.from_email}</div>
+        </div>
+
+        {client && (
+          <>
+            {client.phone && (
+              <div>
+                <div className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-1.5">
+                  <Phone className="w-3 h-3" /> Phone
+                </div>
+                <div className="text-sm text-gray-900 font-medium">{client.phone}</div>
+              </div>
+            )}
+
+            {client.address && (
+              <div>
+                <div className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-1.5">
+                  <MapPin className="w-3 h-3" /> Address
+                </div>
+                <div className="text-sm text-gray-900">{client.address}</div>
+              </div>
+            )}
+
+            <div>
+              <div className="text-xs text-gray-500 font-medium mb-2">Status</div>
+              <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
+                client.status === 'active' ? 'bg-green-50 text-green-700' :
+                client.status === 'lead' ? 'bg-amber-50 text-amber-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {client.status}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="px-4 py-4 border-t border-gray-200 space-y-2">
+        <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium">
+          <Phone className="w-4 h-4" /> Call
+        </button>
+        <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium">
+          <MessageCircle className="w-4 h-4" /> SMS
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function GmailInbox() {
   const [emails, setEmails] = useState([])
   const [summary, setSummary] = useState({ total: 0, linked: 0, unlinked: 0, unread: 0 })
@@ -153,15 +239,6 @@ export default function GmailInbox() {
   const [connectionError, setConnectionError] = useState(null)
   const [fromEmail, setFromEmail] = useState(null)
   const detailRef = useRef(null)
-
-  const loadFromEmail = async () => {
-    try {
-      const res = await get('/api/settings/from-email')
-      setFromEmail(res.from_email)
-    } catch (err) {
-      console.error('Failed to load from_email:', err)
-    }
-  }
 
   const load = () => {
     setLoading(true)
@@ -183,6 +260,15 @@ export default function GmailInbox() {
         setError('Could not load Gmail inbox.')
         setLoading(false)
       })
+  }
+
+  const loadFromEmail = async () => {
+    try {
+      const res = await get('/api/settings/from-email')
+      setFromEmail(res.from_email)
+    } catch (err) {
+      console.error('Failed to load from_email:', err)
+    }
   }
 
   useEffect(() => {
@@ -216,24 +302,9 @@ export default function GmailInbox() {
     setCreating(null)
   }
 
-  const handleReplySent = (message) => {
+  const handleReplySent = () => {
     setShowReplyPanel(false)
-    const newEmail = {
-      id: `sent-${Date.now()}`,
-      from_name: 'You',
-      from_email: message.from || 'support@example.com',
-      to: message.to,
-      subject: message.subject,
-      snippet: message.body.substring(0, 280),
-      body: message.body,
-      date: new Date().toISOString(),
-      is_read: true,
-      has_attachments: false,
-      direction: 'outbound',
-      is_known_contact: true,
-    }
-    setEmails(prev => [newEmail, ...prev])
-    setTimeout(() => load(), 500)
+    load()
   }
 
   const filtered = emails.filter(em => {
@@ -264,28 +335,27 @@ export default function GmailInbox() {
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden bg-white">
+    <div className="flex flex-1 h-full overflow-hidden bg-gray-50">
       {/* Left pane: Email list */}
-      <div className={`lg:w-[420px] border-r border-gray-200 flex flex-col bg-white transition-all duration-300 ${
+      <div className={`lg:w-96 border-r border-gray-200 flex flex-col bg-white transition-all duration-300 ${
         selected ? 'hidden lg:flex' : 'flex'
       }`}>
         {/* Header */}
         <div className="px-4 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Mail className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-gray-900">Messages</h2>
-                <p className="text-xs text-gray-500">{summary.total} emails</p>
-              </div>
+            <div className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-blue-600" />
+              <h1 className="text-lg font-semibold text-gray-900">Inbox</h1>
+              {summary.unread > 0 && (
+                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                  {summary.unread}
+                </span>
+              )}
             </div>
             <button
               onClick={load}
               disabled={loading}
               className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 disabled:opacity-50 transition-colors"
-              title="Refresh"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -296,15 +366,15 @@ export default function GmailInbox() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search emails..."
+              placeholder="Search..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
-          {/* Filter pills */}
-          <div className="flex gap-2 flex-wrap">
+          {/* Filters */}
+          <div className="flex gap-2">
             {[
               { key: 'all', label: 'All', count: summary.total },
               { key: 'linked', label: 'Clients', count: summary.linked },
@@ -315,11 +385,11 @@ export default function GmailInbox() {
                 onClick={() => setFilter(f.key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
                   filter === f.key
-                    ? 'bg-blue-100 text-blue-700 shadow-sm'
+                    ? 'bg-blue-100 text-blue-700'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                {f.label} {f.count > 0 && <span className="ml-1 opacity-70">({f.count})</span>}
+                {f.label}
               </button>
             ))}
           </div>
@@ -329,96 +399,71 @@ export default function GmailInbox() {
         <div className="flex-1 overflow-y-auto">
           {loading && emails.length === 0 ? (
             <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
-              <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Loading emails...
+              <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Loading...
             </div>
           ) : connectionError ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-3">
-                <Mail className="w-6 h-6 text-amber-500" />
-              </div>
-              <div className="text-sm font-medium text-zinc-700 mb-1">
-                {connectionError.error === 'no_credentials' ? 'Email Not Connected' :
-                 connectionError.error === 'auth_failed' ? 'Authentication Failed' : 'Connection Error'}
-              </div>
-              <p className="text-xs text-zinc-500 max-w-xs mb-3">{connectionError.message}</p>
-              <a href="/settings" className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">
-                Go to Settings
+              <Mail className="w-10 h-10 text-amber-500 mb-2" />
+              <p className="text-sm font-medium text-gray-700 mb-1">
+                {connectionError.error === 'no_credentials' ? 'Email Not Connected' : 'Connection Error'}
+              </p>
+              <p className="text-xs text-gray-500 mb-3">{connectionError.message}</p>
+              <a href="/settings" className="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
+                Configure Email
               </a>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
-              <Inbox className="w-5 h-5 mr-2" /> No emails found
+            <div className="flex items-center justify-center h-40 text-gray-400">
+              <Inbox className="w-5 h-5 mr-2" /> No emails
             </div>
           ) : (
-            filtered.map(em => (
-              <div
-                key={em.id}
-                onClick={() => {
-                  setSelected(em)
-                  setShowReplyPanel(false)
-                }}
-                className={`px-4 py-3 border-b border-gray-100 cursor-pointer transition-colors ${
-                  selected?.id === em.id ? 'bg-blue-50' : 'hover:bg-gray-50'
-                } ${!em.is_read ? 'bg-blue-50/40' : ''}`}
-              >
-                <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5 ${
-                    em.direction === 'outbound'
-                      ? 'bg-blue-100 text-blue-700'
-                      : em.is_known_contact
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-orange-100 text-orange-700'
-                  }`}>
-                    {em.direction === 'outbound'
-                      ? 'Y'
-                      : em.is_known_contact
-                      ? em.client?.name?.charAt(0)?.toUpperCase() || 'C'
-                      : em.from_name?.charAt(0)?.toUpperCase() || '?'
-                    }
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-sm truncate ${!em.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
-                        {em.direction === 'outbound' ? 'You' : (em.is_known_contact ? em.client?.name : em.from_name)}
-                      </span>
-                      <span className="text-xs text-gray-400 shrink-0 ml-2">{timeAgo(em.date)}</span>
+            <div className="divide-y divide-gray-100">
+              {filtered.map(em => (
+                <div
+                  key={em.id}
+                  onClick={() => {
+                    setSelected(em)
+                    setShowReplyPanel(false)
+                  }}
+                  className={`px-4 py-3 cursor-pointer transition-colors ${
+                    selected?.id === em.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                  } ${!em.is_read ? 'bg-blue-50/40' : ''}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+                      em.is_known_contact ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {em.from_name?.charAt(0)?.toUpperCase() || '?'}
                     </div>
-
-                    <p className={`text-sm truncate mb-1.5 ${!em.is_read ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-                      {em.subject}
-                    </p>
-
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-xs text-gray-400 truncate flex-1">{em.snippet}</p>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {em.has_attachments && <Paperclip className="w-3 h-3 text-gray-400" />}
-                        {em.direction === 'outbound' ? (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 rounded">Sent</span>
-                        ) : em.is_known_contact ? (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-600 rounded">Client</span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-orange-50 text-orange-600 rounded">Lead</span>
-                        )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm truncate ${!em.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
+                          {em.from_name}
+                        </span>
+                        <span className="text-xs text-gray-400 shrink-0 ml-2">{timeAgo(em.date)}</span>
                       </div>
+                      <p className={`text-sm truncate mt-1 ${!em.is_read ? 'text-gray-700' : 'text-gray-500'}`}>
+                        {em.subject}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{em.snippet}</p>
                     </div>
+                    {em.has_attachments && <Paperclip className="w-3 h-3 text-gray-400 shrink-0" />}
                   </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Right pane: Email detail */}
+      {/* Middle pane: Email detail */}
       <div className={`flex-1 flex flex-col bg-white overflow-hidden transition-all duration-300 ${
         selected ? 'flex' : 'hidden lg:flex'
       }`}>
         {selected ? (
           <>
-            {/* Detail header */}
-            <div className="px-4 lg:px-6 py-4 border-b border-gray-200 shrink-0">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 shrink-0">
               <button
                 onClick={() => {
                   setSelected(null)
@@ -429,54 +474,11 @@ export default function GmailInbox() {
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
 
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">{selected.subject}</h2>
-
               <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-                    selected.direction === 'outbound'
-                      ? 'bg-blue-100 text-blue-700'
-                      : selected.is_known_contact
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-orange-100 text-orange-700'
-                  }`}>
-                    {selected.direction === 'outbound'
-                      ? 'Y'
-                      : selected.is_known_contact
-                      ? selected.client?.name?.charAt(0)?.toUpperCase() || 'C'
-                      : selected.from_name?.charAt(0)?.toUpperCase() || '?'
-                    }
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-900 truncate">
-                        {selected.direction === 'outbound' ? 'You' : selected.from_name}
-                      </span>
-                      {selected.direction !== 'outbound' && selected.is_known_contact ? (
-                        <a
-                          href={`/clients?id=${selected.client.id}`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-50 text-green-700 rounded-full hover:bg-green-100 transition-colors"
-                        >
-                          <Link2 className="w-3 h-3" />
-                          {selected.client.name}
-                        </a>
-                      ) : (
-                        selected.direction !== 'outbound' && (
-                          <button
-                            onClick={() => createLead(selected)}
-                            disabled={creating === selected.id}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-orange-50 text-orange-700 rounded-full hover:bg-orange-100 disabled:opacity-50 transition-colors"
-                          >
-                            <UserPlus className="w-3 h-3" />
-                            {creating === selected.id ? 'Creating...' : 'Create Lead'}
-                          </button>
-                        )
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">{selected.from_email}</p>
-                  </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-2">{selected.subject}</h2>
+                  <p className="text-xs text-gray-500">{formatDate(selected.date)}</p>
                 </div>
-
                 {selected.direction !== 'outbound' && (
                   <button
                     onClick={() => setShowReplyPanel(!showReplyPanel)}
@@ -486,22 +488,11 @@ export default function GmailInbox() {
                   </button>
                 )}
               </div>
-
-              <div className="flex items-center gap-2 text-xs text-gray-500 mt-3">
-                <Clock className="w-3.5 h-3.5" />
-                {formatDate(selected.date)}
-              </div>
-
-              {selected.to && (
-                <p className="text-xs text-gray-400 mt-2">
-                  To: {selected.to}
-                </p>
-              )}
             </div>
 
             {/* Email body */}
-            <div ref={detailRef} className="flex-1 overflow-y-auto px-4 lg:px-6 py-5">
-              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed font-normal">
+            <div ref={detailRef} className="flex-1 overflow-y-auto px-6 py-5">
+              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {selected.body || selected.snippet || '(No content)'}
               </div>
             </div>
@@ -519,28 +510,22 @@ export default function GmailInbox() {
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No email selected</h3>
-              <p className="text-sm text-gray-500">
-                Choose an email from the list to view and reply.
-              </p>
-              <div className="flex items-center justify-center gap-4 mt-5 text-xs text-gray-400">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-green-400"></span> Linked client
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-orange-400"></span> Potential lead
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-400"></span> Your reply
-                </span>
-              </div>
+              <Mail className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-sm text-gray-500">Select an email to read</p>
             </div>
           </div>
         )}
       </div>
+
+      {/* Right pane: Contact card */}
+      {selected && (
+        <ContactCard
+          email={selected}
+          client={selected.client}
+          onCreateLead={createLead}
+          creating={creating}
+        />
+      )}
     </div>
   )
 }
