@@ -77,9 +77,12 @@ export default function ClientProfile() {
   const [savingProp, setSavingProp] = useState(false)
   const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, notes: '' }
 
+  const [visitStats, setVisitStats] = useState(null)
+  const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
+
   const load = async () => {
-    const [c, j, q, inv, msgs, props, scheds] = await Promise.all([
-      get(`/api/clients/${id}`),
+    const [profile, j, q, inv, msgs, props, scheds] = await Promise.all([
+      get(`/api/clients/${id}/profile`).catch(() => null),
       get(`/api/jobs?client_id=${id}`),
       get(`/api/quotes?client_id=${id}`),
       get(`/api/invoices?client_id=${id}`),
@@ -87,8 +90,17 @@ export default function ClientProfile() {
       get(`/api/properties?client_id=${id}`),
       get(`/api/recurring?client_id=${id}`),
     ])
+    // Use profile endpoint data if available, fall back to basic client
+    const c = profile || await get(`/api/clients/${id}`)
     setClient(c)
     setForm(c)
+    if (profile?.visit_stats) setVisitStats(profile.visit_stats)
+    if (profile?.upcoming_visits || profile?.past_visits) {
+      setProfileVisits({
+        upcoming: profile.upcoming_visits || [],
+        past: profile.past_visits || [],
+      })
+    }
     setJobs(Array.isArray(j) ? j : [])
     setQuotes(Array.isArray(q) ? q : [])
     setInvoices(Array.isArray(inv) ? inv : [])
@@ -237,10 +249,12 @@ export default function ClientProfile() {
         <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-zinc-200">
           {[
             { label: 'Next Cleaning', value: nextJob ? new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'None', color: nextJob ? 'text-blue-600' : 'text-zinc-400' },
-            { label: 'Upcoming', value: upcomingJobs.length, color: upcomingJobs.length > 0 ? 'text-blue-600' : 'text-zinc-400' },
-            { label: 'Completed', value: completedJobs, color: 'text-zinc-900' },
+            { label: 'Upcoming', value: visitStats?.upcoming ?? upcomingJobs.length, color: (visitStats?.upcoming ?? upcomingJobs.length) > 0 ? 'text-blue-600' : 'text-zinc-400' },
+            { label: 'Completed', value: visitStats?.completed ?? completedJobs, color: 'text-zinc-900' },
             { label: 'Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-600' },
             { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-amber-600' : 'text-zinc-400' },
+            { label: 'On GCal', value: visitStats?.gcal_synced ?? 'â', color: (visitStats?.gcal_synced > 0) ? 'text-indigo-600' : 'text-zinc-400' },
+            { label: 'Invites Sent', value: visitStats?.invites_sent ?? 'â', color: (visitStats?.invites_sent > 0) ? 'text-emerald-600' : 'text-zinc-400' },
           ].map(s => (
             <div key={s.label}>
               <div className="text-xs text-zinc-500">{s.label}</div>
@@ -257,15 +271,20 @@ export default function ClientProfile() {
               <span className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Upcoming Cleanings</span>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {upcomingJobs.slice(0, 5).map(j => (
-                <div key={j.id} className="flex-shrink-0 bg-blue-500/10 border border-blue-400/30 rounded-lg px-3 py-2 min-w-[140px]">
-                  <div className="text-xs font-semibold text-blue-600">
-                    {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              {upcomingJobs.slice(0, 5).map(j => {
+                const typeColor = j.job_type === 'str_turnover' ? 'border-orange-400/30 bg-orange-500/10' : j.job_type === 'commercial' ? 'border-green-400/30 bg-green-500/10' : 'border-blue-400/30 bg-blue-500/10'
+                const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-blue-600'
+                return (
+                  <div key={j.id} className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[140px]`}>
+                    <div className={`text-xs font-semibold ${textColor}`}>
+                      {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </div>
+                    <div className={`text-[11px] ${textColor} mt-0.5`}>{j.start_time} â {j.end_time}</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5 truncate">{j.property_name || j.title}</div>
+                    {j.gcal_event_id && <span className="text-[9px] text-indigo-400 mt-0.5">â GCal</span>}
                   </div>
-                  <div className="text-[11px] text-blue-600 mt-0.5">{j.start_time} – {j.end_time}</div>
-                  <div className="text-[10px] text-zinc-500 mt-0.5 truncate">{j.title}</div>
-                </div>
-              ))}
+                )
+              })}
               {upcomingJobs.length > 5 && (
                 <button onClick={() => setTab('jobs')} className="flex-shrink-0 flex items-center text-xs text-blue-600 hover:text-blue-600 px-2">
                   +{upcomingJobs.length - 5} more <ChevronRight className="w-3 h-3 ml-0.5" />
@@ -340,28 +359,28 @@ export default function ClientProfile() {
                         {item.type === 'job' && (
                           <>
                             <div className="text-sm font-medium text-zinc-900">{item.data.title}</div>
-                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.scheduled_date} · {item.data.start_time}–{item.data.end_time}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.scheduled_date} Â· {item.data.start_time}â{item.data.end_time}</div>
                           </>
                         )}
                         {item.type === 'quote' && (
                           <>
-                            <div className="text-sm font-medium text-zinc-900">Quote — ${item.data.total?.toFixed(2)}</div>
+                            <div className="text-sm font-medium text-zinc-900">Quote â ${item.data.total?.toFixed(2)}</div>
                             <div className="text-xs text-zinc-400 mt-0.5">{item.data.items?.length || 0} items</div>
                           </>
                         )}
                         {item.type === 'invoice' && (
                           <>
-                            <div className="text-sm font-medium text-zinc-900">{item.data.invoice_number} — ${item.data.total?.toFixed(2)}</div>
+                            <div className="text-sm font-medium text-zinc-900">{item.data.invoice_number} â ${item.data.total?.toFixed(2)}</div>
                             <div className="text-xs text-zinc-400 mt-0.5">Due {item.data.due_date || 'N/A'}</div>
                           </>
                         )}
                         {item.type === 'message' && (
                           <>
                             <div className="text-sm text-zinc-500">{item.data.body}</div>
-                            <div className="text-xs text-zinc-500 mt-0.5">{item.data.direction} · {item.data.channel}</div>
+                            <div className="text-xs text-zinc-500 mt-0.5">{item.data.direction} Â· {item.data.channel}</div>
                           </>
                         )}
-                      </div>
+                               </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
                           item.type === 'job'     ? JOB_COLORS[item.data.status] :
@@ -383,9 +402,16 @@ export default function ClientProfile() {
           </div>
         )}
 
-        {/* Calendar — Twenty-style mini calendar + event list */}
+        {/* Calendar â Twenty-style mini calendar + event list */}
         {tab === 'calendar' && (
-          <ClientCalendarTab jobs={jobs} upcomingJobs={upcomingJobs} pastJobs={pastJobs} navigate={navigate} clientId={id} />
+          <ClientCalendarTab
+            jobs={jobs}
+            upcomingJobs={profileVisits.upcoming.length > 0 ? profileVisits.upcoming : upcomingJobs}
+            pastJobs={profileVisits.past.length > 0 ? profileVisits.past : pastJobs}
+            navigate={navigate}
+            clientId={id}
+            visitStats={visitStats}
+          />
         )}
 
         {/* Properties */}
@@ -571,7 +597,7 @@ export default function ClientProfile() {
                           {!s.active && <span className="text-[10px] text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">Paused</span>}
                         </div>
                         <div className="text-xs text-zinc-500">
-                          {FREQ[s.frequency]} · {s.frequency !== 'monthly' ? `${DAYS_S[s.day_of_week]}s` : `day ${s.day_of_month}`} · {s.start_time}–{s.end_time}
+                          {FREQ[s.frequency]} Â· {s.frequency !== 'monthly' ? `${DAYS_S[s.day_of_week]}s` : `day ${s.day_of_month}`} Â· {s.start_time}â{s.end_time}
                         </div>
                         {s.address && <div className="text-[10px] text-zinc-500 mt-0.5 flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{s.address}</div>}
                       </div>
@@ -655,7 +681,7 @@ export default function ClientProfile() {
               <div key={q.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-zinc-900">${q.total?.toFixed(2)}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">{q.items?.length || 0} items Â· {new Date(q.created_at).toLocaleDateString()}</div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status]}`}>{q.status}</span>
               </div>
@@ -671,7 +697,7 @@ export default function ClientProfile() {
               <div key={inv.id} className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-zinc-900">{inv.invoice_number}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5">Due {inv.due_date || 'N/A'} · ${inv.total?.toFixed(2)}</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">Due {inv.due_date || 'N/A'} Â· ${inv.total?.toFixed(2)}</div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${INVOICE_COLORS[inv.status]}`}>{inv.status}</span>
               </div>
@@ -830,7 +856,7 @@ export default function ClientProfile() {
 }
 
 
-/* ─────────── Twenty-style Client Calendar Tab ─────────── */
+/* âââââââââââ Twenty-style Client Calendar Tab âââââââââââ */
 
 const MINI_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -854,7 +880,7 @@ const STATUS_PILL = {
   cancelled:   'bg-zinc-100 text-zinc-500 border-zinc-200',
 }
 
-function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId }) {
+function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, visitStats }) {
   const now = new Date()
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -862,7 +888,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
 
   const todayStr = now.toISOString().slice(0, 10)
 
-  // Build map of date → jobs for this client
+  // Build map of date â jobs for this client
   const jobsByDate = {}
   jobs.forEach(j => {
     if (!j.scheduled_date) return
@@ -893,6 +919,23 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* GCal sync summary */}
+      {visitStats && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-indigo-500" />
+            <span className="text-sm font-medium text-indigo-700">Google Calendar</span>
+          </div>
+          <div className="flex gap-4 text-xs">
+            <span className="text-indigo-600"><strong>{visitStats.gcal_synced}</strong> synced</span>
+            <span className="text-emerald-600"><strong>{visitStats.invites_sent}</strong> invites sent</span>
+            <span className="text-blue-600"><strong>{visitStats.upcoming}</strong> upcoming</span>
+            <span className="text-zinc-500"><strong>{visitStats.completed}</strong> completed</span>
+            {visitStats.cancelled > 0 && <span className="text-red-500"><strong>{visitStats.cancelled}</strong> cancelled</span>}
+          </div>
+        </div>
+      )}
+
       {/* Mini month calendar */}
       <div className="bg-white border border-zinc-200 rounded-xl p-5">
         {/* Month nav */}
@@ -1020,13 +1063,18 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
                     <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {j.start_time} – {j.end_time}
+                        {j.start_time} â {j.end_time}
                       </span>
                       <span className="text-[10px] text-gray-300">|</span>
                       <span>{JOB_TYPE_LABEL[j.job_type] || j.job_type}</span>
                     </div>
+                    {j.property_name && (
+                      <div className="flex items-center gap-1 mt-1 text-[11px] text-indigo-500 truncate">
+                        <Home className="w-3 h-3 shrink-0" />{j.property_name}
+                      </div>
+                    )}
                     {j.address && (
-                      <div className="flex items-center gap-1 mt-1 text-[11px] text-zinc-400 truncate">
+                      <div className="flex items-center gap-1 mt-0.5 text-[11px] text-zinc-400 truncate">
                         <MapPin className="w-3 h-3 shrink-0" />{j.address}
                       </div>
                     )}
@@ -1038,9 +1086,9 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId })
                       {j.status?.replace('_', ' ')}
                     </span>
                     <div className="flex gap-1">
-                      {j.calendar_invite_sent && <span title="On Google Calendar" className="text-[10px] text-indigo-400">G</span>}
-                      {j.dispatched && <span title="Dispatched" className="text-[10px] text-emerald-500">D</span>}
-                      {j.sms_reminder_sent && <span title="SMS sent" className="text-[10px] text-green-400">S</span>}
+                      {j.gcal_event_id && <span title="On Google Calendar" className="w-3.5 h-3.5 rounded-full bg-indigo-100 flex items-center justify-center text-[8px] text-indigo-500 font-bold">G</span>}
+                      {j.calendar_invite_sent && <span title="Invite sent" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">â</span>}
+                      {j.dispatched && <span title="Dispatched" className="w-3.5 h-3.5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] text-blue-500 font-bold">D</span>}
                     </div>
                   </div>
                 </div>
