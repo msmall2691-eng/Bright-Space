@@ -60,11 +60,11 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
   useEffect(() => {
     get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
       .then(d => setJobs(Array.isArray(d) ? d : []))
-      .catch(err => console.error("[CalendarView]", err))
+      .catch(err => console.error("[CalendarView] Failed to load jobs:", err.message || err))
 
     get(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
       .then(d => setIcalEvents(Array.isArray(d) ? d : []))
-      .catch(err => console.error("[CalendarView]", err))
+      .catch(err => console.error("[CalendarView] Failed to load iCal events:", err.message || err))
   }, [year, month, refreshKey])
 
   // Load employees for cleaner initials
@@ -273,7 +273,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                       >
                         {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">â </span>}
                         {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
-                        <span className="truncate">{j.start_time} {j.title}</span>
+                        <span className="truncate">{j.start_time ? `${j.start_time} ` : ''}{j.title}</span>
                         {cleanerInits.length > 0 && (
                           <span className="ml-auto shrink-0 text-[9px] font-semibold opacity-60">{cleanerInits.join(',')}</span>
                         )}
@@ -349,7 +349,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                             {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
                             {j.title}
                           </div>
-                          <div className="text-xs text-gray-500 mt-0.5">{j.start_time} Ã¢ÂÂ {j.end_time}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>
                           {j.address && <div className="text-xs text-gray-400 truncate mt-0.5">{j.address}</div>}
                           {cleanerInits.length > 0 && (
                             <div className="flex items-center gap-1 mt-1">
