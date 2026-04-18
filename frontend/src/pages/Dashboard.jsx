@@ -56,6 +56,7 @@ export default function Dashboard() {
   const [clients, setClients] = useState([])
   const [invoices, setInvoices] = useState([])
   const [recurringCount, setRecurringCount] = useState(0)
+  const [schedules, setSchedules] = useState([])
   const [newRequests, setNewRequests] = useState([])
   const [recentMessages, setRecentMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -81,7 +82,9 @@ export default function Dashboard() {
         setUpcomingJobs(week.filter(j => j.scheduled_date > today && j.status === 'scheduled').slice(0, 3))
         setClients(Array.isArray(clientsAll) ? clientsAll : [])
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
-        setRecurringCount(Array.isArray(schedules) ? schedules.filter(s => s.active).length : 0)
+        const sched = Array.isArray(schedules) ? schedules : []
+        setSchedules(sched)
+        setRecurringCount(sched.filter(s => s.active).length)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
         setRecentMessages((gmailData?.emails || []).slice(0, 5))
       } catch {}
@@ -107,6 +110,11 @@ export default function Dashboard() {
   const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
   const completedToday = todayJobs.filter(j => j.status === 'completed').length
   const weekTotal = weekJobs.length
+
+  const activeSchedules = schedules.filter(s => s.active)
+  const recurringSubtitle = activeSchedules.length === 0
+    ? 'No active schedules'
+    : `${activeSchedules.filter(s => s.frequency === 'weekly').length} weekly · ${activeSchedules.filter(s => s.frequency === 'biweekly').length} biweekly · ${activeSchedules.filter(s => s.frequency === 'monthly').length} monthly`
 
   if (loading) {
     return (
@@ -159,7 +167,7 @@ export default function Dashboard() {
           accent={overdueInvoices.length > 0 ? 'text-red-500' : outstanding > 0 ? 'text-amber-500' : 'text-zinc-600'}
           iconCls={overdueInvoices.length > 0 ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'} />
         <StatCard icon={RefreshCw} label="Recurring" value={recurringCount}
-          sub={`${activeClients} active · ${newLeads} lead${newLeads !== 1 ? 's' : ''}`}
+          sub={recurringSubtitle}
           accent="text-violet-600"
           iconCls="bg-violet-50 text-violet-500" />
       </div>
