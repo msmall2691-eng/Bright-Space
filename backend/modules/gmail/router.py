@@ -2,6 +2,12 @@
 Gmail Inbox API Router
 Fetches inbox, matches senders to clients, creates leads from unknown contacts.
 Uses ContactEmail table for multi-email matching and enrichment.
+
+CHANGE (2026-04-18): Gmail auto-enrich no longer creates a Client record for
+every unknown sender. It now delegates the decision to
+integrations.email_filter.should_create_client_from_email(), which blocks
+no-reply / marketing senders and only creates clients for senders whose
+message looks like an actual cleaning-service inquiry.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -90,6 +96,8 @@ def gmail_inbox(
 
     client_cache = {}
     new_contacts = 0
+    skipped_by_filter = 0
+
     for em in emails:
         addr = em["from_email"]
         if addr not in client_cache:
@@ -98,7 +106,17 @@ def gmail_inbox(
                 _ensure_contact_email(c.id, addr, "gmail_sync", db)
                 c.last_contacted_at = datetime.utcnow()
                 c.email_verified = True
-            elif auto_enrich and addr and should_create_client_from_email(em):
+            elif auto_enrich and addr:
+                # Defer to the spam/intent filter before auto-creating a Client.
+                if not should_create_client_from_email(em):
+                    skipped_by_filter += 1
+                    client_cache[addr] = None
+                    em["client"] = None
+                    em["is_known_contact"] = False
+                    # Still tag the email so the UI can offer "Convert to client"
+                    em["can_convert_to_client"] = True
+                    continue
+
                 from_name = em.get("from_name", "").strip() or addr.split("@")[0]
                 parts = from_name.split(" ", 1)
                 c = Client(
@@ -149,6 +167,7 @@ def gmail_inbox(
             "unlinked": total - linked,
             "unread": sum(1 for e in emails if not e.get("is_read")),
             "new_contacts_created": new_contacts,
+            "skipped_by_filter": skipped_by_filter,
         },
     }
 
