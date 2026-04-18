@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, RotateCcw, ChevronDown } from 'lucide-react'
-import { get } from "../api"
+import { get, wsUrl } from "../api"
 
 
 const AGENTS_FALLBACK = [
@@ -97,14 +97,22 @@ export default function Workspace() {
     if (wsRef.current) {
       wsRef.current.close()
     }
-    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const wsHost = window.location.host
-    const ws = new WebSocket(`${wsProto}://${wsHost}/ws/agent/${agent.id}`)
-    ws.onopen = () => setConnected(true)
-    ws.onclose = () => setConnected(false)
-    ws.onerror = () => setConnected(false)
+    const ws = new WebSocket(wsUrl(`/ws/agent/${agent.id}`))
+    ws.onopen = () => {
+      console.log(`[ws:${agent.id}] onopen`)
+      setConnected(true)
+    }
+    ws.onclose = () => {
+      console.log(`[ws:${agent.id}] onclose`)
+      setConnected(false)
+    }
+    ws.onerror = () => {
+      console.log(`[ws:${agent.id}] onerror`)
+      setConnected(false)
+    }
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
+      console.log(`[ws:${agent.id}] onmessage:`, data.type)
 
       if (data.type === 'tool_call') {
         // Show a transient "thinking" pill
@@ -152,13 +160,13 @@ export default function Workspace() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [conversations, activeAgent])
 
-  const sendMessage = () => {
-    const msg = input.trim()
-    if (!msg || !connected || !wsRef.current) return
-    wsRef.current.send(JSON.stringify({ message: msg }))
+  const sendMessage = (msg) => {
+    const text = msg || input.trim()
+    if (!text || !connected || !wsRef.current) return
+    wsRef.current.send(JSON.stringify({ message: text }))
     setConversations(prev => ({
       ...prev,
-      [activeAgent.id]: [...(prev[activeAgent.id] || []), { role: 'user', content: msg }],
+      [activeAgent.id]: [...(prev[activeAgent.id] || []), { role: 'user', content: text }],
     }))
     setInput('')
     inputRef.current?.focus()
@@ -252,7 +260,7 @@ export default function Workspace() {
                     'Walk me through deploying to Railway step by step',
                   ],
                 }[activeAgent.id] || []).map(q => (
-                  <button key={q} onClick={() => { setInput(q); inputRef.current?.focus() }}
+                  <button key={q} onClick={() => sendMessage(q) }
                     className="text-left text-sm text-zinc-500 bg-zinc-50 hover:bg-zinc-100 px-4 py-2.5 rounded-lg border border-zinc-200 hover:border-zinc-300 transition-colors">
                     {q}
                   </button>
