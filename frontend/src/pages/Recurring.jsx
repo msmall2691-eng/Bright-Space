@@ -15,6 +15,7 @@ const EMPTY = {
 }
 
 export default function Recurring() {
+  console.log('[Recurring] rendered')
   const [schedules, setSchedules] = useState([])
   const [clients, setClients] = useState([])
   const [showForm, setShowForm] = useState(false)

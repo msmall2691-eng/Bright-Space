@@ -10,6 +10,7 @@ const EMPTY = {
 }
 
 export default function Properties() {
+  console.log('[Properties] rendered')
   const [properties, setProperties] = useState([])
   const [clients, setClients] = useState([])
   const [showForm, setShowForm] = useState(false)
