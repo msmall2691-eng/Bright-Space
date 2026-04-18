@@ -9,6 +9,7 @@ from sqlalchemy import func
 from database.db import get_db
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
+from integrations.email_filter import should_create_client_from_email
 from datetime import datetime
 import logging
 
@@ -97,7 +98,7 @@ def gmail_inbox(
                 _ensure_contact_email(c.id, addr, "gmail_sync", db)
                 c.last_contacted_at = datetime.utcnow()
                 c.email_verified = True
-            elif auto_enrich and addr:
+            elif auto_enrich and addr and should_create_client_from_email(em):
                 from_name = em.get("from_name", "").strip() or addr.split("@")[0]
                 parts = from_name.split(" ", 1)
                 c = Client(
