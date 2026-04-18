@@ -10,12 +10,12 @@ import {
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 const AVATAR_COLORS = [
-  'bg-blue-600/20 text-blue-400',
-  'bg-emerald-600/20 text-emerald-400',
-  'bg-violet-600/20 text-violet-400',
-  'bg-amber-600/20 text-amber-400',
-  'bg-rose-600/20 text-rose-400',
-  'bg-cyan-600/20 text-cyan-400',
+  'bg-blue-50 text-blue-700',
+  'bg-emerald-50 text-emerald-700',
+  'bg-violet-50 text-violet-700',
+  'bg-amber-50 text-amber-700',
+  'bg-rose-50 text-rose-700',
+  'bg-cyan-50 text-cyan-700',
 ]
 function avatarColor(name) {
   let h = 0; for (const c of (name || '')) h = ((h << 5) - h + c.charCodeAt(0)) | 0
@@ -23,21 +23,21 @@ function avatarColor(name) {
 }
 
 const JOB_STATUS = {
-  scheduled:   { label: 'Scheduled',   cls: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
-  in_progress: { label: 'In Progress', cls: 'bg-amber-500/15 text-amber-400 border-amber-500/20' },
-  completed:   { label: 'Completed',   cls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' },
-  cancelled:   { label: 'Cancelled',   cls: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20' },
+  scheduled:   { label: 'Scheduled',   cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  in_progress: { label: 'In Progress', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  completed:   { label: 'Completed',   cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  cancelled:   { label: 'Cancelled',   cls: 'bg-zinc-50 text-zinc-700 border-zinc-200' },
 }
 
 /* ── Stat Card ───────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, sub, accent = 'text-blue-400', iconCls = 'bg-blue-500/15 text-blue-400' }) {
+function StatCard({ icon: Icon, label, value, sub, accent = 'text-blue-700', iconCls = 'bg-blue-50 text-blue-700' }) {
   return (
     <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 hover:border-zinc-300 transition-colors">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">{label}</p>
+          <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">{label}</p>
           <p className={`text-xl sm:text-2xl font-bold ${accent}`}>{value}</p>
-          {sub && <p className="text-[11px] text-zinc-500 mt-1">{sub}</p>}
+          {sub && <p className="text-[11px] text-zinc-600 mt-1">{sub}</p>}
         </div>
         <div className={`p-2 rounded-lg ${iconCls}`}>
           <Icon className="w-4 h-4" />
@@ -111,7 +111,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="flex items-center gap-2 text-zinc-400 text-sm">
+        <div className="flex items-center gap-2 text-zinc-600 text-sm">
           <RefreshCw className="w-4 h-4 animate-spin" /> Loading...
         </div>
       </div>
@@ -126,7 +126,7 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold text-zinc-900">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </h2>
-          <p className="text-[13px] text-zinc-400 mt-0.5">
+          <p className="text-[13px] text-zinc-600 mt-0.5">
             {todayJobs.length === 0
               ? 'No jobs scheduled today'
               : `${todayJobs.length} job${todayJobs.length > 1 ? 's' : ''} today · ${completedToday} completed`}
@@ -148,20 +148,20 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={Calendar} label="Today's Jobs" value={todayJobs.length}
           sub={completedToday > 0 ? `${completedToday} completed` : weekTotal > 0 ? `${weekTotal} this week` : 'None scheduled'}
-          accent={todayJobs.length > 0 ? 'text-blue-600' : 'text-zinc-400'}
-          iconCls="bg-blue-500/15 text-blue-500" />
+          accent={todayJobs.length > 0 ? 'text-blue-600' : 'text-zinc-600'}
+          iconCls="bg-blue-50 text-blue-500" />
         <StatCard icon={DollarSign} label="This Month" value={`$${monthRevenue.toLocaleString()}`}
           sub="Paid invoices"
           accent="text-emerald-600"
-          iconCls="bg-emerald-500/15 text-emerald-500" />
+          iconCls="bg-emerald-50 text-emerald-500" />
         <StatCard icon={AlertCircle} label="Outstanding" value={`$${outstanding.toLocaleString()}`}
           sub={`${unpaidInvoices.length} invoice${unpaidInvoices.length !== 1 ? 's' : ''}${overdueInvoices.length > 0 ? ` · ${overdueInvoices.length} overdue` : ''}`}
-          accent={overdueInvoices.length > 0 ? 'text-red-500' : outstanding > 0 ? 'text-amber-500' : 'text-zinc-400'}
-          iconCls={overdueInvoices.length > 0 ? 'bg-red-500/15 text-red-500' : 'bg-amber-500/15 text-amber-500'} />
+          accent={overdueInvoices.length > 0 ? 'text-red-500' : outstanding > 0 ? 'text-amber-500' : 'text-zinc-600'}
+          iconCls={overdueInvoices.length > 0 ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'} />
         <StatCard icon={RefreshCw} label="Recurring" value={recurringCount}
           sub={`${activeClients} active · ${newLeads} lead${newLeads !== 1 ? 's' : ''}`}
           accent="text-violet-600"
-          iconCls="bg-violet-500/15 text-violet-500" />
+          iconCls="bg-violet-50 text-violet-500" />
       </div>
 
       {/* Main grid */}
@@ -193,12 +193,12 @@ export default function Dashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className="text-[13px] font-medium text-zinc-900 truncate block">{req.name}</span>
-                        <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
+                        <div className="flex items-center gap-2 text-[11px] text-zinc-600 mt-0.5">
                           {req.phone && <span>{req.phone}</span>}
                           <span className="capitalize">via {req.source}</span>
                         </div>
                       </div>
-                      <span className="text-[11px] text-zinc-400 shrink-0">
+                      <span className="text-[11px] text-zinc-600 shrink-0">
                         {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </span>
                     </div>
@@ -243,11 +243,11 @@ export default function Dashboard() {
                         </span>
                         {!msg.is_read && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />}
                       </div>
-                      <p className={`text-[12px] truncate mt-0.5 ${!msg.is_read ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                      <p className={`text-[12px] truncate mt-0.5 ${!msg.is_read ? 'text-zinc-600' : 'text-zinc-600'}`}>
                         {msg.subject}
                       </p>
                     </div>
-                    <span className="text-[11px] text-zinc-400 shrink-0">
+                    <span className="text-[11px] text-zinc-600 shrink-0">
                       {new Date(msg.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
                   </div>
@@ -271,7 +271,7 @@ export default function Dashboard() {
             {todayJobs.length === 0 ? (
               <div className="text-center py-10">
                 <Calendar className="w-9 h-9 mx-auto mb-2 text-zinc-300" />
-                <p className="text-[13px] text-zinc-400">No jobs today</p>
+                <p className="text-[13px] text-zinc-600">No jobs today</p>
                 <button onClick={() => navigate('/scheduling')}
                   className="mt-2 text-[12px] text-blue-500 hover:text-blue-600 font-medium">
                   + Schedule a job
@@ -286,15 +286,15 @@ export default function Dashboard() {
                       className="flex items-center gap-3 hover:bg-zinc-50 rounded-lg p-3 cursor-pointer transition-colors group">
                       <div className="text-center w-14 shrink-0">
                         <div className="text-[13px] font-semibold text-zinc-900">{job.start_time}</div>
-                        <div className="text-[11px] text-zinc-400">{job.end_time}</div>
+                        <div className="text-[11px] text-zinc-600">{job.end_time}</div>
                       </div>
                       <div className="w-px h-8 bg-zinc-100 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-medium text-zinc-900 truncate">{job.title}</div>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[11px] text-zinc-400">{clientName(job.client_id)}</span>
+                          <span className="text-[11px] text-zinc-600">{clientName(job.client_id)}</span>
                           {job.address && (
-                            <span className="text-[11px] text-zinc-400 flex items-center gap-0.5 truncate">
+                            <span className="text-[11px] text-zinc-600 flex items-center gap-0.5 truncate">
                               <MapPin className="w-3 h-3 shrink-0" />{job.address}
                             </span>
                           )}
@@ -302,7 +302,7 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {job.dispatched && (
-                          <span className="text-[10px] bg-violet-500/15 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-medium">
+                          <span className="text-[10px] bg-violet-50 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full font-medium">
                             Dispatched
                           </span>
                         )}
@@ -321,18 +321,18 @@ export default function Dashboard() {
           {upcomingJobs.length > 0 && (
             <div className="bg-white border border-zinc-200 rounded-xl p-5">
               <h3 className="text-[13px] font-semibold text-zinc-900 mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-zinc-400" /> Upcoming
+                <Clock className="w-4 h-4 text-zinc-600" /> Upcoming
               </h3>
               <div className="space-y-1.5">
                 {upcomingJobs.map(job => (
                   <div key={job.id} onClick={() => navigate('/scheduling')}
                     className="flex items-center gap-3 hover:bg-zinc-50 rounded-lg p-3 cursor-pointer transition-colors">
-                    <div className="text-[11px] text-zinc-400 w-20 shrink-0 font-medium">
+                    <div className="text-[11px] text-zinc-600 w-20 shrink-0 font-medium">
                       {new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] text-zinc-900 truncate">{job.title}</div>
-                      <div className="text-[11px] text-zinc-400">{clientName(job.client_id)} · {job.start_time}</div>
+                      <div className="text-[11px] text-zinc-600">{clientName(job.client_id)} · {job.start_time}</div>
                     </div>
                     <ChevronRight className="w-3.5 h-3.5 text-zinc-300" />
                   </div>
@@ -361,14 +361,14 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         <span className="text-[13px] font-medium text-zinc-900">{inv.invoice_number}</span>
                         <span className="text-zinc-300">·</span>
-                        <span className="text-[13px] text-zinc-500 truncate">{clientName(inv.client_id)}</span>
+                        <span className="text-[13px] text-zinc-600 truncate">{clientName(inv.client_id)}</span>
                       </div>
-                      <div className="text-[11px] text-zinc-400 mt-0.5">Due {inv.due_date || 'No due date'}</div>
+                      <div className="text-[11px] text-zinc-600 mt-0.5">Due {inv.due_date || 'No due date'}</div>
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-[13px] font-semibold text-zinc-900">${inv.total?.toFixed(2)}</div>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium capitalize ${
-                        inv.status === 'overdue' ? 'bg-red-500/15 text-red-500 border-red-500/20' : 'bg-amber-500/15 text-amber-500 border-amber-500/20'
+                        inv.status === 'overdue' ? 'bg-red-50 text-red-500 border-red-200' : 'bg-amber-50 text-amber-500 border-amber-200'
                       }`}>{inv.status}</span>
                     </div>
                   </div>
@@ -419,7 +419,7 @@ export default function Dashboard() {
               </button>
             </div>
             {recentClients.length === 0 ? (
-              <p className="text-[13px] text-zinc-400 text-center py-6">No clients yet</p>
+              <p className="text-[13px] text-zinc-600 text-center py-6">No clients yet</p>
             ) : (
               <div className="space-y-1">
                 {recentClients.map(c => (
@@ -430,12 +430,12 @@ export default function Dashboard() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] text-zinc-900 truncate font-medium">{c.name}</div>
-                      <div className="text-[11px] text-zinc-400 truncate">{c.phone || c.email || 'No contact'}</div>
+                      <div className="text-[11px] text-zinc-600 truncate">{c.phone || c.email || 'No contact'}</div>
                     </div>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${
-                      c.status === 'active' ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20' :
-                      c.status === 'lead'   ? 'bg-amber-500/15 text-amber-500 border-amber-500/20' :
-                                              'bg-zinc-100 text-zinc-400 border-zinc-200'
+                      c.status === 'active' ? 'bg-emerald-50 text-emerald-500 border-emerald-200' :
+                      c.status === 'lead'   ? 'bg-amber-50 text-amber-500 border-amber-200' :
+                                              'bg-zinc-100 text-zinc-600 border-zinc-200'
                     }`}>{c.status}</span>
                   </div>
                 ))}

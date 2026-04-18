@@ -140,7 +140,7 @@ export default function Recurring() {
 
         {/* Result banner */}
         {genResult && (
-          <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl p-3 mb-4 text-sm">
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl p-3 mb-4 text-sm">
             <CheckCircle className="w-4 h-4 shrink-0" />
             {genResult.jobs_created} job{genResult.jobs_created !== 1 ? 's' : ''} generated
             {genResult.schedules_processed != null ? ` across ${genResult.schedules_processed} schedules` : ''}
@@ -180,8 +180,8 @@ export default function Recurring() {
           {schedules.length === 0 && (
             <div className="text-center py-20">
               <Calendar className="w-12 h-12 mx-auto mb-3 text-zinc-600" />
-              <div className="text-zinc-400 font-medium mb-1">No recurring schedules yet</div>
-              <div className="text-zinc-500 text-sm mb-5 max-w-xs mx-auto">
+              <div className="text-zinc-600 font-medium mb-1">No recurring schedules yet</div>
+              <div className="text-zinc-600 text-sm mb-5 max-w-xs mx-auto">
                 Set up weekly, biweekly, or monthly schedules and BrightBase will auto-generate job visits.
               </div>
               <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -197,7 +197,7 @@ export default function Recurring() {
         <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-zinc-200 sm:shrink-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
             <h2 className="font-semibold text-zinc-900">{selected ? 'Edit Schedule' : 'New Schedule'}</h2>
-            <button onClick={() => { setShowForm(false); setSelected(null) }} className="text-zinc-500 hover:text-zinc-500">
+            <button onClick={() => { setShowForm(false); setSelected(null) }} className="text-zinc-500 hover:text-zinc-900">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -206,10 +206,10 @@ export default function Recurring() {
 
             {/* Client */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Client *</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Client *</label>
               <select value={form.client_id}
                 onChange={e => setForm(f => ({ ...f, client_id: e.target.value, property_id: '', address: '' }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none">
                 <option value="">Select client...</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -218,9 +218,9 @@ export default function Recurring() {
             {/* Property picker */}
             {form.client_id && (
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Property</label>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Property</label>
                 {clientProperties.length === 0 ? (
-                  <p className="text-xs text-zinc-500 px-1">No properties found for this client</p>
+                  <p className="text-xs text-zinc-600 px-1">No properties found for this client</p>
                 ) : (
                   <div className="space-y-1.5">
                     {clientProperties.map(p => (
@@ -228,20 +228,20 @@ export default function Recurring() {
                         onClick={() => selectProperty(p)}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors border ${
                           parseInt(form.property_id) === p.id
-                            ? 'bg-sky-50 border-sky-500/50 text-sky-300'
-                            : 'bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200 hover:border-zinc-300'
+                            ? 'bg-sky-50 border-sky-200 text-sky-800'
+                            : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:border-zinc-300'
                         }`}>
                         <Home className="w-3.5 h-3.5 shrink-0 opacity-60" />
                         <div className="min-w-0">
                           <div className="text-xs font-medium truncate">{p.name}</div>
-                          {p.address && <div className="text-[10px] text-zinc-500 truncate">{p.address}</div>}
+                          {p.address && <div className="text-[10px] text-zinc-600 truncate">{p.address}</div>}
                         </div>
                       </button>
                     ))}
                     <button
                       onClick={() => setForm(f => ({ ...f, property_id: '' }))}
                       className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-colors border ${
-                        !form.property_id ? 'bg-sky-50 border-sky-500/50 text-blue-500' : 'text-zinc-500 border-transparent hover:text-zinc-400'
+                        !form.property_id ? 'bg-sky-50 border-sky-200 text-sky-800' : 'text-zinc-600 border-transparent hover:text-zinc-900'
                       }`}>
                       + Enter address manually
                     </button>
@@ -252,19 +252,19 @@ export default function Recurring() {
 
             {/* Address — shown when no property selected or manual entry */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Service Address *</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Service Address *</label>
               <input value={form.address || ''} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                 placeholder="Full address"
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-blue-700" />
             </div>
 
             {/* Service type */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Service Type</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Service Type</label>
               <div className="flex gap-2">
                 {[['residential','Residential'],['commercial','Commercial'],['str_turnover','STR']].map(([val, label]) => (
                   <button key={val} onClick={() => setForm(f => ({ ...f, job_type: val }))}
-                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.job_type === val ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'}`}>
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${form.job_type === val ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
                     {label}
                   </button>
                 ))}
@@ -273,19 +273,19 @@ export default function Recurring() {
 
             {/* Title */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Schedule Title *</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Schedule Title *</label>
               <input value={form.title || ''} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                 placeholder="e.g. Biweekly Home Clean"
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-blue-700" />
             </div>
 
             {/* Frequency */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Frequency</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Frequency</label>
               <div className="flex gap-2">
                 {['weekly', 'biweekly', 'monthly'].map(f => (
                   <button key={f} onClick={() => setForm(fm => ({ ...fm, frequency: f }))}
-                    className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${form.frequency === f ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'}`}>
+                    className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${form.frequency === f ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
                     {f}
                   </button>
                 ))}
@@ -295,14 +295,14 @@ export default function Recurring() {
             {/* Day */}
             {form.frequency === 'monthly' ? (
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Day of Month</label>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Day of Month</label>
                 <input type="number" min="1" max="28" value={form.day_of_month || 1}
                   onChange={e => setForm(f => ({ ...f, day_of_month: e.target.value }))}
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none" />
               </div>
             ) : (
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Days of Week <span className="text-zinc-500 normal-case font-normal">(select multiple)</span></label>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Days of Week <span className="text-zinc-600 normal-case font-normal">(select multiple)</span></label>
                 <div className="grid grid-cols-7 gap-1">
                   {DAYS_SHORT.map((d, i) => {
                     const selected = (form.days_of_week || []).includes(i)
@@ -311,14 +311,14 @@ export default function Recurring() {
                         const cur = f.days_of_week || []
                         return { ...f, days_of_week: selected ? cur.filter(x => x !== i) : [...cur, i].sort() }
                       })}
-                        className={`py-1.5 rounded-lg text-xs font-medium transition-colors ${selected ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200'}`}>
+                        className={`py-1.5 rounded-lg text-xs font-medium transition-colors ${selected ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
                         {d}
                       </button>
                     )
                   })}
                 </div>
                 {(form.days_of_week || []).length === 0 && (
-                  <p className="text-xs text-red-400 mt-1">Select at least one day</p>
+                  <p className="text-xs text-red-600 mt-1">Select at least one day</p>
                 )}
               </div>
             )}
@@ -326,43 +326,43 @@ export default function Recurring() {
             {/* Times */}
             <div className="flex gap-3">
               <div className="flex-1">
-                <label className="block text-xs text-zinc-400 mb-1">Start</label>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Start</label>
                 <input type="time" value={form.start_time || '09:00'} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none" />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-zinc-400 mb-1">End</label>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">End</label>
                 <input type="time" value={form.end_time || '12:00'} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none" />
               </div>
             </div>
 
             {/* Generate ahead */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Generate jobs how far ahead?</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Generate jobs how far ahead?</label>
               <select value={form.generate_weeks_ahead} onChange={e => setForm(f => ({ ...f, generate_weeks_ahead: e.target.value }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none">
                 {[4, 6, 8, 12, 16, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
               </select>
             </div>
 
             {/* Notes */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Notes</label>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Notes</label>
               <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none resize-none" />
             </div>
           </div>
 
           <div className="p-6 border-t border-zinc-200 space-y-3">
             {saveError && (
-              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-3 py-2.5 text-xs">
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
                 <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                 {saveError}
               </div>
             )}
             <button onClick={save} disabled={saving || !form.client_id || !form.title || !form.address}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               {saving ? 'Saving...' : selected ? 'Save Changes' : 'Create & Generate Jobs'}
             </button>
           </div>
@@ -383,39 +383,40 @@ export default function Recurring() {
 
 function ScheduleCard({ s, clientName, generating, onEdit, onGenerate, onToggle }) {
   const typeColors = {
-    residential: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-    commercial:  'text-green-400 bg-green-500/10 border-green-500/20',
+    residential: 'text-blue-700 bg-blue-50 border-blue-200',
+    commercial:  'text-green-700 bg-green-50 border-green-200',
+    str_turnover: 'text-amber-700 bg-amber-50 border-amber-200',
   }
   const freqColor = {
-    weekly: 'text-purple-400', biweekly: 'text-blue-500', monthly: 'text-orange-400'
+    weekly: 'text-purple-700', biweekly: 'text-blue-500', monthly: 'text-orange-700'
   }
 
   return (
-    <div className="bg-white border border-zinc-200 hover:border-zinc-200 rounded-xl p-4 transition-colors">
+    <div className="bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl p-4 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <span className="font-medium text-zinc-900 text-sm">{s.title}</span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize ${typeColors[s.job_type] || typeColors.residential}`}>
-              {s.job_type}
+              {s.job_type === 'str_turnover' ? 'STR' : s.job_type}
             </span>
           </div>
-          <div className="text-xs text-zinc-400 mb-1">{clientName(s.client_id)}</div>
+          <div className="text-xs text-zinc-600 mb-1">{clientName(s.client_id)}</div>
           <div className="flex items-center gap-3 text-xs flex-wrap">
-            <span className={`font-medium ${freqColor[s.frequency] || 'text-zinc-400'}`}>
+            <span className={`font-medium ${freqColor[s.frequency] || 'text-zinc-600'}`}>
               {FREQ_LABELS[s.frequency] || s.frequency}
             </span>
-            <span className="text-zinc-500">
+            <span className="text-zinc-600">
               {s.frequency !== 'monthly'
                 ? (s.days_of_week?.length > 1
                     ? s.days_of_week.map(d => DAYS_SHORT[d]).join(', ')
                     : `${DAYS_SHORT[s.days_of_week?.[0] ?? s.day_of_week]}s`)
                 : `day ${s.day_of_month}`}
             </span>
-            <span className="text-zinc-500">{s.start_time}–{s.end_time}</span>
+            <span className="text-zinc-600">{s.start_time}–{s.end_time}</span>
           </div>
           {s.address && (
-            <div className="flex items-center gap-1 text-[10px] text-zinc-500 mt-1 truncate">
+            <div className="flex items-center gap-1 text-[10px] text-zinc-600 mt-1 truncate">
               <MapPin className="w-2.5 h-2.5 shrink-0" />{s.address}
             </div>
           )}
@@ -429,11 +430,11 @@ function ScheduleCard({ s, clientName, generating, onEdit, onGenerate, onToggle 
             Generate
           </button>
           <button onClick={onEdit}
-            className="text-xs text-zinc-500 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1.5 rounded-lg transition-colors">
+            className="text-xs text-zinc-600 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1.5 rounded-lg transition-colors">
             Edit
           </button>
           <button onClick={onToggle}
-            className={`text-xs px-2.5 py-1.5 rounded-lg transition-colors ${s.active ? 'bg-red-600/10 text-red-400 hover:bg-red-50 border border-red-800/40' : 'bg-green-600/10 text-green-400 hover:bg-green-50 border border-green-800/40'}`}>
+            className={`text-xs px-2.5 py-1.5 rounded-lg transition-colors ${s.active ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200' : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'}`}>
             {s.active ? 'Pause' : 'Resume'}
           </button>
         </div>
