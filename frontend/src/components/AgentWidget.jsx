@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, X, RotateCcw, Sparkles, ChevronDown, Minimize2, Maximize2 } from 'lucide-react'
-import { get, wsUrl } from '../api'
+import { wsUrl } from '../api'
 
 const AGENTS = [
   { id: 'nova',   name: 'Nova',   emoji: '⚡', role: 'Business Strategist', color: '#f59e0b' },
@@ -59,6 +59,7 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
   const wsRef = useRef(null)
+  const pendingRef = useRef([])
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -70,23 +71,31 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
   }, [pageContext])
 
   const connect = useCallback((agent) => {
-    if (wsRef.current) wsRef.current.close()
-    const ws = new WebSocket(wsUrl(`/ws/agent/${agent.id}`))
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      try { wsRef.current.close() } catch {}
+    }
+    const url = wsUrl(`/ws/agent/${agent.id}`)
+    console.debug(`[widget:${agent.id}] connecting`, url)
+    const ws = new WebSocket(url)
+
     ws.onopen = () => {
-      console.log(`[ws:${agent.id}] onopen`)
+      console.debug(`[widget:${agent.id}] open`)
       setConnected(true)
+      while (pendingRef.current.length) {
+        const msg = pendingRef.current.shift()
+        try { ws.send(JSON.stringify(msg)) } catch (e) { console.error('[widget] flush-send failed', e) }
+      }
     }
-    ws.onclose = () => {
-      console.log(`[ws:${agent.id}] onclose`)
+    ws.onclose = (e) => {
+      console.debug(`[widget:${agent.id}] close code=${e.code}`)
       setConnected(false)
     }
-    ws.onerror = () => {
-      console.log(`[ws:${agent.id}] onerror`)
-      setConnected(false)
-    }
+    ws.onerror = () => setConnected(false)
+
     ws.onmessage = (e) => {
-      const data = JSON.parse(e.data)
-      console.log(`[ws:${agent.id}] onmessage:`, data.type)
+      let data
+      try { data = JSON.parse(e.data) } catch { return }
+
       if (data.type === 'tool_call') {
         setMessages(prev => [...prev, { role: 'tool_call', name: data.name }])
       } else if (data.type === 'chunk') {
@@ -118,20 +127,35 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
       connect(activeAgent)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-    return () => { if (!open) wsRef.current?.close() }
+    return () => {
+      // Only close the socket if the widget is closing or unmounting
+      if (!open && wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        try { wsRef.current.close() } catch {}
+      }
+    }
   }, [open, activeAgent, connect])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const sendMessage = (msg) => {
-    const text = msg || input.trim()
-    if (!text || !connected || !wsRef.current) return
-    wsRef.current.send(JSON.stringify({ message: text }))
+  const sendMessage = (explicit) => {
+    const text = (explicit ?? input).trim()
+    if (!text) return
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setInput('')
     inputRef.current?.focus()
+
+    const payload = { message: text }
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload))
+    } else {
+      pendingRef.current.push(payload)
+      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        if (activeAgent) connect(activeAgent)
+      }
+    }
   }
 
   const clearChat = () => {
@@ -172,7 +196,6 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/80">
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* Agent picker dropdown */}
           <button
             onClick={() => setShowAgentPicker(!showAgentPicker)}
             className="flex items-center gap-2 hover:bg-gray-100 rounded-lg px-2 py-1 transition-colors"
@@ -297,7 +320,7 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
           />
           <button
             onClick={() => sendMessage()}
-            disabled={!input.trim() || !connected}
+            disabled={!input.trim()}
             className="p-2 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed rounded-xl transition-colors shrink-0"
           >
             <Send className="w-3.5 h-3.5" />

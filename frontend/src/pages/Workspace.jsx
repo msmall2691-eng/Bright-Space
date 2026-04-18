@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, RotateCcw, ChevronDown } from 'lucide-react'
-import { get, wsUrl } from "../api"
+import { Send, RotateCcw } from 'lucide-react'
+import { get, wsUrl } from '../api'
 
 
 const AGENTS_FALLBACK = [
@@ -61,6 +61,14 @@ function Message({ msg }) {
     )
   }
 
+  if (msg.role === 'error') {
+    return (
+      <div className="mb-3 px-4 py-2 rounded-lg bg-red-50 border border-red-100 text-sm text-red-600">
+        {msg.content}
+      </div>
+    )
+  }
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       <div
@@ -77,45 +85,94 @@ function Message({ msg }) {
   )
 }
 
+const SUGGESTED_PROMPTS = {
+  nova: [
+    'Give me a snapshot of the business right now',
+    'How can I grow my client base?',
+    'What should I charge for recurring cleans?',
+  ],
+  mia: [
+    "What jobs are coming up this week?",
+    "Which clients don't have recurring schedules yet?",
+    "Show me today's schedule",
+  ],
+  scout: [
+    'Which leads are highest priority right now?',
+    'Help me draft a quote for a new client',
+    'What is my lead-to-client conversion rate?',
+  ],
+  finn: [
+    'How much revenue did I make this month?',
+    'Which invoices are overdue?',
+    'Show me my profitability breakdown',
+  ],
+  pixel: [
+    'Check system health and fix any issues you find',
+    'Read the scheduling page and improve the job editing UX',
+    'Look at the invoicing module and build out the UI',
+  ],
+  deploy: [
+    'What do I need to do to deploy BrightBase?',
+    'Check the codebase and tell me what needs to change for production',
+    'Walk me through deploying to Railway step by step',
+  ],
+}
+
 export default function Workspace() {
   const [agents, setAgents] = useState(AGENTS_FALLBACK)
   const [activeAgent, setActiveAgent] = useState(AGENTS_FALLBACK[0])
-  const [conversations, setConversations] = useState({})  // {agentId: [messages]}
+  const [conversations, setConversations] = useState({}) // {agentId: [messages]}
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
   const wsRef = useRef(null)
+  const pendingRef = useRef([])    // messages queued before onopen
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => {
     get('/api/agents')
       .then(data => { if (data?.length) setAgents(data) })
-      .catch(err => console.error("[Workspace]", err))
+      .catch(err => console.error('[Workspace]', err))
   }, [])
 
   const connect = useCallback((agent) => {
-    if (wsRef.current) {
-      wsRef.current.close()
+    // Close any prior socket before opening a new one
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      try { wsRef.current.close() } catch {}
     }
-    const ws = new WebSocket(wsUrl(`/ws/agent/${agent.id}`))
+
+    const url = wsUrl(`/ws/agent/${agent.id}`)
+    console.debug(`[ws:${agent.id}] connecting`, url)
+    const ws = new WebSocket(url)
+
     ws.onopen = () => {
-      console.log(`[ws:${agent.id}] onopen`)
+      console.debug(`[ws:${agent.id}] open`)
       setConnected(true)
+      // Flush any messages queued while the socket was still opening
+      while (pendingRef.current.length) {
+        const msg = pendingRef.current.shift()
+        try { ws.send(JSON.stringify(msg)) } catch (e) { console.error(`[ws:${agent.id}] flush-send failed`, e) }
+      }
     }
-    ws.onclose = () => {
-      console.log(`[ws:${agent.id}] onclose`)
+
+    ws.onclose = (e) => {
+      console.debug(`[ws:${agent.id}] close code=${e.code} reason=${e.reason || 'none'}`)
       setConnected(false)
     }
-    ws.onerror = () => {
-      console.log(`[ws:${agent.id}] onerror`)
+
+    ws.onerror = (e) => {
+      console.error(`[ws:${agent.id}] error`, e)
       setConnected(false)
     }
+
     ws.onmessage = (e) => {
-      const data = JSON.parse(e.data)
-      console.log(`[ws:${agent.id}] onmessage:`, data.type)
+      let data
+      try { data = JSON.parse(e.data) } catch {
+        console.error(`[ws:${agent.id}] non-json message`, e.data)
+        return
+      }
 
       if (data.type === 'tool_call') {
-        // Show a transient "thinking" pill
         setConversations(prev => ({
           ...prev,
           [agent.id]: [...(prev[agent.id] || []), { role: 'tool_call', name: data.name }],
@@ -134,42 +191,66 @@ export default function Workspace() {
       } else if (data.type === 'done') {
         setConversations(prev => {
           const msgs = [...(prev[agent.id] || [])]
-            // Remove transient tool_call pills
             .filter(m => m.role !== 'tool_call')
           const last = msgs[msgs.length - 1]
           if (last?.streaming) msgs[msgs.length - 1] = { ...last, streaming: false }
           return { ...prev, [agent.id]: msgs }
         })
       } else if (data.type === 'error') {
+        console.error(`[ws:${agent.id}] server error`, data.content)
         setConversations(prev => ({
           ...prev,
           [agent.id]: [...(prev[agent.id] || []), { role: 'error', content: data.content }],
         }))
       }
     }
+
     wsRef.current = ws
   }, [])
 
   useEffect(() => {
     connect(activeAgent)
     inputRef.current?.focus()
-    return () => wsRef.current?.close()
+    // Only close on agent switch or full unmount, not on incidental re-renders
+    return () => {
+      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        try { wsRef.current.close() } catch {}
+      }
+    }
   }, [activeAgent, connect])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [conversations, activeAgent])
 
-  const sendMessage = (msg) => {
-    const text = msg || input.trim()
-    if (!text || !connected || !wsRef.current) return
-    wsRef.current.send(JSON.stringify({ message: text }))
+  // sendMessage accepts an optional explicit string so suggested-prompt
+  // buttons can auto-send without going through the input box.
+  const sendMessage = (explicit) => {
+    const msg = (explicit ?? input).trim()
+    if (!msg) return
+
+    // Optimistically show user message immediately
     setConversations(prev => ({
       ...prev,
-      [activeAgent.id]: [...(prev[activeAgent.id] || []), { role: 'user', content: text }],
+      [activeAgent.id]: [...(prev[activeAgent.id] || []), { role: 'user', content: msg }],
     }))
     setInput('')
     inputRef.current?.focus()
+
+    const payload = { message: msg }
+    const ws = wsRef.current
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload))
+    } else {
+      // Queue the send; onopen will flush it
+      console.debug(`[ws:${activeAgent.id}] queueing message (socket not open yet)`)
+      pendingRef.current.push(payload)
+      // If there's no socket at all, try to (re)connect
+      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        connect(activeAgent)
+      }
+    }
   }
 
   const clearChat = () => {
@@ -180,6 +261,7 @@ export default function Workspace() {
   }
 
   const messages = conversations[activeAgent.id] || []
+  const prompts = SUGGESTED_PROMPTS[activeAgent.id] || []
 
   return (
     <div className="flex flex-col md:flex-row h-full">
@@ -207,13 +289,13 @@ export default function Workspace() {
               <div className="text-xs text-zinc-400">{activeAgent.role}</div>
             </div>
             <span
-              className={`ml-2 w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-600'}`}
-              title={connected ? 'Connected' : 'Disconnected'}
+              className={`ml-2 w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-400'}`}
+              title={connected ? 'Connected' : 'Connecting…'}
             />
           </div>
           <button
             onClick={clearChat}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-500 transition-colors px-2 py-1 rounded hover:bg-zinc-100"
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-700 transition-colors px-2 py-1 rounded hover:bg-zinc-100"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Clear
@@ -228,40 +310,12 @@ export default function Workspace() {
               <h3 className="text-lg font-semibold text-zinc-900 mb-1">Chat with {activeAgent.name}</h3>
               <p className="text-sm text-zinc-400 max-w-sm">{activeAgent.description}</p>
               <div className="mt-6 grid grid-cols-1 gap-2 w-full max-w-md">
-                {({
-                  nova: [
-                    'Give me a snapshot of the business right now',
-                    'How can I grow my client base?',
-                    'What should I charge for recurring cleans?',
-                  ],
-                  mia: [
-                    "What jobs are coming up this week?",
-                    "Which clients don't have recurring schedules yet?",
-                    "Show me today's schedule",
-                  ],
-                  scout: [
-                    'Which leads are highest priority right now?',
-                    'Help me draft a quote for a new client',
-                    'What is my lead-to-client conversion rate?',
-                  ],
-                  finn: [
-                    'How much revenue did I make this month?',
-                    'Which invoices are overdue?',
-                    'Show me my profitability breakdown',
-                  ],
-                  pixel: [
-                    'Check system health and fix any issues you find',
-                    'Read the scheduling page and improve the job editing UX',
-                    'Look at the invoicing module and build out the UI',
-                  ],
-                  deploy: [
-                    'What do I need to do to deploy BrightBase?',
-                    'Check the codebase and tell me what needs to change for production',
-                    'Walk me through deploying to Railway step by step',
-                  ],
-                }[activeAgent.id] || []).map(q => (
-                  <button key={q} onClick={() => sendMessage(q) }
-                    className="text-left text-sm text-zinc-500 bg-zinc-50 hover:bg-zinc-100 px-4 py-2.5 rounded-lg border border-zinc-200 hover:border-zinc-300 transition-colors">
+                {prompts.map(q => (
+                  <button
+                    key={q}
+                    onClick={() => sendMessage(q)}
+                    className="text-left text-sm text-zinc-600 bg-zinc-50 hover:bg-zinc-100 px-4 py-2.5 rounded-lg border border-zinc-200 hover:border-zinc-300 transition-colors"
+                  >
                     {q}
                   </button>
                 ))}
@@ -293,8 +347,8 @@ export default function Workspace() {
               style={{ maxHeight: '120px' }}
             />
             <button
-              onClick={sendMessage}
-              disabled={!input.trim() || !connected}
+              onClick={() => sendMessage()}
+              disabled={!input.trim()}
               className="p-3 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed rounded-xl transition-colors shrink-0"
             >
               <Send className="w-4 h-4" />
