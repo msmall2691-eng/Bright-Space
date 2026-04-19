@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties } from 'lucide-react'
+import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2 } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { del, get, post, patch, upload } from "../api"
 
@@ -39,6 +39,10 @@ export default function Clients() {
   const [importResult, setImportResult] = useState(null)
   const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
   const fileInputRef = useRef(null)
+  const [phoneNumbers, setPhoneNumbers] = useState([])
+  const [newPhoneNumber, setNewPhoneNumber] = useState('')
+  const [newPhoneType, setNewPhoneType] = useState('mobile')
+  const [loadingPhones, setLoadingPhones] = useState(false)
 
   const load = () =>
     get(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`).then(setClients).catch(err => console.error("[Clients]", err))
@@ -55,13 +59,67 @@ export default function Clients() {
     try {
       const url = selected ? `/api/clients/${selected.id}` : '/api/clients'
       selected ? await patch(url, form) : await post(url, form)
-      await load(); setShowForm(false); setSelected(null); setForm(EMPTY)
+      await load(); setShowForm(false); setSelected(null); setForm(EMPTY); setPhoneNumbers([])
     } catch (e) { setSaveError(e.message || 'Failed to save') }
     setSaving(false)
   }
 
-  const openNew = () => { setForm(EMPTY); setSelected(null); setShowForm(true) }
-  const openEdit = (c) => { setForm({ ...c }); setSelected(c); setShowForm(true) }
+  const openNew = () => { setForm(EMPTY); setSelected(null); setPhoneNumbers([]); setShowForm(true) }
+  const openEdit = (c) => {
+    setForm({ ...c });
+    setSelected(c);
+    loadPhones(c.id)
+    setShowForm(true)
+  }
+
+  const loadPhones = async (clientId) => {
+    setLoadingPhones(true)
+    try {
+      const phones = await get(`/api/clients/${clientId}/phones`)
+      setPhoneNumbers(Array.isArray(phones) ? phones : [])
+    } catch (e) {
+      console.error("Error loading phones:", e)
+      setPhoneNumbers([])
+    }
+    setLoadingPhones(false)
+  }
+
+  const addPhoneNumber = async () => {
+    if (!newPhoneNumber.trim() || !selected) return
+    try {
+      await post(`/api/clients/${selected.id}/phones`, {
+        phone: newPhoneNumber,
+        phone_type: newPhoneType,
+        is_primary: phoneNumbers.length === 0,
+      })
+      setNewPhoneNumber('')
+      setNewPhoneType('mobile')
+      await loadPhones(selected.id)
+    } catch (e) {
+      console.error("Error adding phone:", e)
+    }
+  }
+
+  const deletePhoneNumber = async (phoneId) => {
+    if (!selected) return
+    try {
+      await del(`/api/clients/${selected.id}/phones/${phoneId}`)
+      await loadPhones(selected.id)
+    } catch (e) {
+      console.error("Error deleting phone:", e)
+    }
+  }
+
+  const setPhonePrimary = async (phoneId) => {
+    if (!selected) return
+    try {
+      await patch(`/api/clients/${selected.id}/phones/${phoneId}`, { is_primary: true })
+      await loadPhones(selected.id)
+      await load()
+    } catch (e) {
+      console.error("Error setting primary phone:", e)
+    }
+  }
 
   const handleImport = async (e) => {
     const f = e.target.files?.[0]; if (!f) return
@@ -76,7 +134,7 @@ export default function Clients() {
 
   const deleteClient = async (id) => {
     if (!confirm('Delete this client?')) return
-    await del(`/api/clients/${id}`); await load(); setShowForm(false)
+    await del(`/api/clients/${id}`); await load(); setShowForm(false); setPhoneNumbers([])
   }
 
   const statusCounts = {
@@ -236,7 +294,7 @@ export default function Clients() {
         <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-zinc-200 sm:shrink-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
             <h2 className="text-[14px] font-semibold text-zinc-900">{selected ? 'Edit Client' : 'New Client'}</h2>
-            <button onClick={() => setShowForm(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors">
+            <button onClick={() => { setShowForm(false); setPhoneNumbers([]) }} className="text-zinc-400 hover:text-zinc-600 transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -254,7 +312,6 @@ export default function Clients() {
               </div>
             </div>
             {[
-              { label: 'Phone', key: 'phone' },
               { label: 'Email', key: 'email' },
               { label: 'Source', key: 'source' },
             ].map(({ label, key }) => (
@@ -264,6 +321,61 @@ export default function Clients() {
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               </div>
             ))}
+
+            {/* Phone Numbers Management */}
+            {selected && (
+              <div className="pt-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 mb-2 flex items-center gap-2">
+                  <div className="h-px flex-1 bg-zinc-100" /><span>Phone Numbers</span><div className="h-px flex-1 bg-zinc-100" />
+                </div>
+
+                {/* Existing phone numbers */}
+                <div className="space-y-1.5 mb-3">
+                  {loadingPhones ? (
+                    <div className="text-[11px] text-zinc-400 py-2">Loading...</div>
+                  ) : phoneNumbers.length === 0 ? (
+                    <div className="text-[11px] text-zinc-400 py-2">No phone numbers yet</div>
+                  ) : (
+                    phoneNumbers.map(p => (
+                      <div key={p.id} className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12px] font-medium text-zinc-900">{p.phone}</div>
+                          <div className="text-[10px] text-zinc-400">{p.phone_type || 'mobile'}</div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {p.is_primary ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full">Primary</span>
+                          ) : (
+                            <button onClick={() => setPhonePrimary(p.id)} className="text-[10px] px-2 py-0.5 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 rounded transition-colors">
+                              Set Primary
+                            </button>
+                          )}
+                          <button onClick={() => deletePhoneNumber(p.id)} className="text-zinc-400 hover:text-red-500 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Add new phone */}
+                <div className="space-y-2">
+                  <input value={newPhoneNumber} onChange={e => setNewPhoneNumber(e.target.value)} placeholder="Add phone number"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  <select value={newPhoneType} onChange={e => setNewPhoneType(e.target.value)}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400">
+                    <option value="mobile">Mobile</option>
+                    <option value="office">Office</option>
+                    <option value="home">Home</option>
+                  </select>
+                  <button onClick={addPhoneNumber} disabled={!newPhoneNumber.trim()}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                    Add Phone Number
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="pt-1">
               <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 mb-3 flex items-center gap-2">
                 <div className="h-px flex-1 bg-zinc-100" /><span>Service Address</span><div className="h-px flex-1 bg-zinc-100" />

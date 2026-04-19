@@ -7,7 +7,7 @@ import io
 import re
 
 from database.db import get_db
-from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity
+from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail
 
 router = APIRouter()
 
@@ -56,6 +56,28 @@ class ClientUpdate(BaseModel):
     notes: Optional[str] = None
     source: Optional[str] = None
     custom_fields: Optional[dict] = None
+
+
+class ContactPhoneCreate(BaseModel):
+    phone: str
+    is_primary: Optional[bool] = False
+    phone_type: Optional[str] = None
+
+
+class ContactPhoneUpdate(BaseModel):
+    phone: Optional[str] = None
+    is_primary: Optional[bool] = None
+    phone_type: Optional[str] = None
+
+
+class ContactEmailCreate(BaseModel):
+    email: str
+    is_primary: Optional[bool] = False
+
+
+class ContactEmailUpdate(BaseModel):
+    email: Optional[str] = None
+    is_primary: Optional[bool] = None
 
 
 def client_to_dict(c: Client) -> dict:
@@ -327,6 +349,119 @@ def delete_client(client_id: int, db: Session = Depends(get_db)):
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     db.delete(client)
+    db.commit()
+
+
+@router.get("/{client_id}/phones")
+def get_client_phones(client_id: int, db: Session = Depends(get_db)):
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    phones = db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all()
+    return [
+        {
+            "id": p.id,
+            "phone": p.phone,
+            "is_primary": p.is_primary,
+            "phone_type": p.phone_type,
+            "source": p.source,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in phones
+    ]
+
+
+@router.post("/{client_id}/phones")
+def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Depends(get_db)):
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    existing = db.query(ContactPhone).filter(
+        ContactPhone.client_id == client_id,
+        ContactPhone.phone == data.phone
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Phone already exists")
+
+    phone = ContactPhone(
+        client_id=client_id,
+        phone=data.phone,
+        is_primary=data.is_primary,
+        phone_type=data.phone_type,
+        source="manual",
+    )
+    if data.is_primary:
+        db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+        client.phone = data.phone
+    db.add(phone)
+    db.commit()
+    db.refresh(phone)
+    return {
+        "id": phone.id,
+        "phone": phone.phone,
+        "is_primary": phone.is_primary,
+        "phone_type": phone.phone_type,
+        "source": phone.source,
+        "created_at": phone.created_at.isoformat() if phone.created_at else None,
+    }
+
+
+@router.patch("/{client_id}/phones/{phone_id}")
+def update_client_phone(client_id: int, phone_id: int, data: ContactPhoneUpdate, db: Session = Depends(get_db)):
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    phone = db.query(ContactPhone).filter(
+        ContactPhone.id == phone_id,
+        ContactPhone.client_id == client_id
+    ).first()
+    if not phone:
+        raise HTTPException(status_code=404, detail="Phone not found")
+
+    if data.phone:
+        existing = db.query(ContactPhone).filter(
+            ContactPhone.client_id == client_id,
+            ContactPhone.phone == data.phone,
+            ContactPhone.id != phone_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Phone already exists")
+        phone.phone = data.phone
+
+    if data.is_primary is not None:
+        if data.is_primary:
+            db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+            phone.is_primary = True
+            client.phone = phone.phone
+        else:
+            phone.is_primary = False
+
+    if data.phone_type is not None:
+        phone.phone_type = data.phone_type
+
+    db.commit()
+    db.refresh(phone)
+    return {
+        "id": phone.id,
+        "phone": phone.phone,
+        "is_primary": phone.is_primary,
+        "phone_type": phone.phone_type,
+        "source": phone.source,
+        "created_at": phone.created_at.isoformat() if phone.created_at else None,
+    }
+
+
+@router.delete("/{client_id}/phones/{phone_id}", status_code=204)
+def delete_client_phone(client_id: int, phone_id: int, db: Session = Depends(get_db)):
+    phone = db.query(ContactPhone).filter(
+        ContactPhone.id == phone_id,
+        ContactPhone.client_id == client_id
+    ).first()
+    if not phone:
+        raise HTTPException(status_code=404, detail="Phone not found")
+    db.delete(phone)
     db.commit()
 
 

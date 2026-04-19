@@ -21,7 +21,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import Message, Conversation, Client, LeadIntake
+from database.models import Message, Conversation, Client, LeadIntake, ContactPhone
 from integrations.twilio_client import send_sms
 from integrations.email import send_email as _send_email
 
@@ -117,19 +117,28 @@ def _digits_only(phone: Optional[str]) -> Optional[str]:
 
 
 def _match_client_by_phone(db: Session, phone: str) -> Optional["Client"]:
-    """Try to find a Client matching this phone number, handling format mismatches.
-    1. Exact match first (fastest).
-    2. Digits-only match on last 10 digits (handles +1, parens, dashes, spaces).
+    """Try to find a Client matching this phone number, checking both primary and contact phones.
+    1. Exact match on primary client.phone first (fastest).
+    2. Exact match on any ContactPhone.
+    3. Digits-only match on last 10 digits (handles +1, parens, dashes, spaces).
     """
-    # 1. Exact match
+    # 1. Exact match on primary phone
     client = db.query(Client).filter(Client.phone == phone).first()
     if client:
         return client
-    # 2. Strip to digits and compare last 10 (US numbers)
+
+    # 2. Exact match on any ContactPhone
+    contact_phone = db.query(ContactPhone).filter(ContactPhone.phone == phone).first()
+    if contact_phone:
+        return contact_phone.client
+
+    # 3. Strip to digits and compare last 10 (US numbers)
     incoming_digits = _digits_only(phone)
     if not incoming_digits:
         return None
     incoming_tail = incoming_digits[-10:] if len(incoming_digits) >= 10 else incoming_digits
+
+    # Check primary client phones
     candidates = db.query(Client).filter(Client.phone.isnot(None), Client.phone != "").all()
     for c in candidates:
         c_digits = _digits_only(c.phone)
@@ -138,6 +147,17 @@ def _match_client_by_phone(db: Session, phone: str) -> Optional["Client"]:
         c_tail = c_digits[-10:] if len(c_digits) >= 10 else c_digits
         if c_tail == incoming_tail:
             return c
+
+    # Check all ContactPhone records
+    all_contact_phones = db.query(ContactPhone).all()
+    for cp in all_contact_phones:
+        cp_digits = _digits_only(cp.phone)
+        if not cp_digits:
+            continue
+        cp_tail = cp_digits[-10:] if len(cp_digits) >= 10 else cp_digits
+        if cp_tail == incoming_tail:
+            return cp.client
+
     return None
 
 
@@ -658,10 +678,24 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     client = _match_client_by_phone(db, from_number)
     if client:
         logger.info(f"[twilio] Matched inbound {from_number} → client #{client.id} ({client.name})")
-        # Update phone to E.164 format if stored differently
+        # Update primary phone to E.164 format if needed
         if client.phone != from_number:
             logger.info(f"[twilio] Updating client phone: {client.phone!r} → {from_number!r}")
             client.phone = from_number
+        # Add or update contact phone if not already present
+        existing_contact = db.query(ContactPhone).filter(
+            ContactPhone.client_id == client.id,
+            ContactPhone.phone == from_number
+        ).first()
+        if not existing_contact:
+            new_contact = ContactPhone(
+                client_id=client.id,
+                phone=from_number,
+                phone_type="mobile",
+                source="twilio",
+            )
+            db.add(new_contact)
+            logger.info(f"[twilio] Added contact phone {from_number} for client #{client.id}")
     else:
         logger.info(f"[twilio] New contact from {from_number} — creating lead intake")
         client = Client(
