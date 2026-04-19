@@ -591,19 +591,31 @@ def get_messages(
 
 @router.post("/sms")
 def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
-    """Send an SMS via Twilio — attaches to a conversation automatically."""
+    """Send an SMS via Twilio — attaches to a conversation automatically.
+    If no client_id provided, tries to match the destination phone to an existing client.
+    """
     try:
         result = send_sms(to=data.to, body=data.body)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Twilio error: {e}")
 
+    client_id = data.client_id
+    if not client_id:
+        matched = _match_client_by_phone(db, data.to)
+        if matched:
+            client_id = matched.id
+
     conv = find_or_create_conversation(
         db, channel="sms",
-        client_id=data.client_id,
+        client_id=client_id,
         external_contact=data.to,
     )
+    # Ensure the conv is linked if we newly matched a client
+    if client_id and not conv.client_id:
+        conv.client_id = client_id
+
     msg = Message(
-        client_id=data.client_id,
+        client_id=client_id,
         conversation_id=conv.id,
         channel="sms",
         direction="outbound",

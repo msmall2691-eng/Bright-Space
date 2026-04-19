@@ -7,7 +7,7 @@ import io
 import re
 
 from database.db import get_db
-from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail
+from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation
 
 router = APIRouter()
 
@@ -16,6 +16,95 @@ def _derive_name(first: Optional[str], last: Optional[str], fallback: str) -> st
     """Return 'First Last' when both parts are set, else fallback to existing name."""
     parts = " ".join(p for p in [first, last] if p and p.strip())
     return parts if parts else fallback
+
+
+def _digits_only(phone: Optional[str]) -> Optional[str]:
+    """Extract just digits from any phone format for fuzzy matching."""
+    if not phone:
+        return None
+    return re.sub(r"[^\d]", "", phone)
+
+
+def _phone_tail(phone: Optional[str]) -> Optional[str]:
+    """Last 10 digits of a phone number - used for fuzzy matching across formats."""
+    digits = _digits_only(phone)
+    if not digits:
+        return None
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> dict:
+    """
+    When a phone number is added to a client:
+    1. Find orphan conversations (client_id is null) with matching external_contact.
+    2. Link them + their messages to this client.
+    3. Merge duplicate conversations (same client + same channel) into one thread.
+    Returns a report of what was done.
+    """
+    tail = _phone_tail(phone)
+    report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
+    if not tail:
+        return report
+
+    # 1. Find all conversations (orphan OR linked to other clients) with matching external_contact tail
+    all_convs = db.query(Conversation).filter(Conversation.channel == "sms").all()
+    candidates = [c for c in all_convs if _phone_tail(c.external_contact) == tail]
+
+    # 2. Link orphan conversations to this client
+    for conv in candidates:
+        if conv.client_id is None:
+            conv.client_id = client_id
+            report["linked_conversations"] += 1
+            # Also relink orphan messages in that conversation
+            for msg in conv.messages:
+                if msg.client_id is None:
+                    msg.client_id = client_id
+                    report["linked_messages"] += 1
+
+    # 3. Also relink orphan messages that match this phone but not tied to any conversation yet
+    all_msgs = db.query(Message).filter(
+        Message.channel == "sms",
+        Message.client_id.is_(None)
+    ).all()
+    for msg in all_msgs:
+        msg_phone = msg.from_addr if msg.direction == "inbound" else msg.to_addr
+        if _phone_tail(msg_phone) == tail:
+            msg.client_id = client_id
+            report["linked_messages"] += 1
+
+    # 4. Merge multiple SMS conversations for this client into one (by channel)
+    db.flush()
+    client_convs = db.query(Conversation).filter(
+        Conversation.client_id == client_id,
+        Conversation.channel == "sms"
+    ).order_by(Conversation.created_at.asc()).all()
+
+    if len(client_convs) > 1:
+        keeper = client_convs[0]
+        for dup in client_convs[1:]:
+            # Move all messages from dup into keeper
+            for msg in list(dup.messages):
+                msg.conversation_id = keeper.id
+            # Merge unread counts
+            keeper.unread_count = (keeper.unread_count or 0) + (dup.unread_count or 0)
+            # Use most recent activity timestamps
+            if dup.last_message_at and (not keeper.last_message_at or dup.last_message_at > keeper.last_message_at):
+                keeper.last_message_at = dup.last_message_at
+            if dup.last_inbound_at and (not keeper.last_inbound_at or dup.last_inbound_at > keeper.last_inbound_at):
+                keeper.last_inbound_at = dup.last_inbound_at
+            if dup.last_outbound_at and (not keeper.last_outbound_at or dup.last_outbound_at > keeper.last_outbound_at):
+                keeper.last_outbound_at = dup.last_outbound_at
+            # Keep the open status if any conversation is open
+            if dup.status == "open" and keeper.status == "resolved":
+                keeper.status = "open"
+                keeper.resolved_at = None
+            # Merge tags
+            if dup.tags:
+                keeper.tags = list(set((keeper.tags or []) + dup.tags))
+            db.delete(dup)
+            report["merged_conversations"] += 1
+
+    return report
 
 
 class ClientCreate(BaseModel):
@@ -331,6 +420,9 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     updates = data.model_dump(exclude_none=True)
+    phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
+    new_phone = updates.get("phone") if phone_changed else None
+
     for field, value in updates.items():
         setattr(client, field, value)
     # Re-derive name if first/last were updated
@@ -338,6 +430,29 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
         derived = _derive_name(client.first_name, client.last_name, client.name)
         if derived:
             client.name = derived
+
+    # If primary phone changed, mirror it in ContactPhone and backfill conversations
+    if new_phone:
+        existing_cp = db.query(ContactPhone).filter(
+            ContactPhone.client_id == client_id,
+            ContactPhone.phone == new_phone
+        ).first()
+        if not existing_cp:
+            db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+            cp = ContactPhone(
+                client_id=client_id,
+                phone=new_phone,
+                is_primary=True,
+                phone_type="mobile",
+                source="manual",
+            )
+            db.add(cp)
+        else:
+            db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+            existing_cp.is_primary = True
+        db.flush()
+        _link_and_merge_conversations(db, client_id, new_phone)
+
     db.commit()
     db.refresh(client)
     return client_to_dict(client)
@@ -391,10 +506,16 @@ def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Dep
         phone_type=data.phone_type,
         source="manual",
     )
-    if data.is_primary:
+    if data.is_primary or not client.phone:
         db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+        phone.is_primary = True
         client.phone = data.phone
     db.add(phone)
+    db.flush()
+
+    # Retroactively link any existing SMS threads for this phone number to this client
+    link_report = _link_and_merge_conversations(db, client_id, data.phone)
+
     db.commit()
     db.refresh(phone)
     return {
@@ -404,7 +525,32 @@ def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Dep
         "phone_type": phone.phone_type,
         "source": phone.source,
         "created_at": phone.created_at.isoformat() if phone.created_at else None,
+        "linked": link_report,
     }
+
+
+@router.post("/{client_id}/relink-conversations")
+def relink_conversations(client_id: int, db: Session = Depends(get_db)):
+    """
+    Re-run linking/merging of SMS threads for this client based on all their phone numbers.
+    Useful for fixing clients with unlinked SMS threads after adding phone numbers.
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    combined_report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
+    phones = [client.phone] if client.phone else []
+    phones += [p.phone for p in db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all()]
+    phones = [p for p in phones if p]
+
+    for ph in set(phones):
+        rep = _link_and_merge_conversations(db, client_id, ph)
+        for k in combined_report:
+            combined_report[k] += rep[k]
+
+    db.commit()
+    return combined_report
 
 
 @router.patch("/{client_id}/phones/{phone_id}")
