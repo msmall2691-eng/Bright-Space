@@ -82,9 +82,14 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
     if len(client_convs) > 1:
         keeper = client_convs[0]
         for dup in client_convs[1:]:
-            # Move all messages from dup into keeper
+            # Move all messages from dup into keeper.
+            # Use the relationship (not the FK column) so SQLAlchemy updates
+            # both sides of the collection — otherwise the cascade="all,
+            # delete-orphan" on Conversation.messages will delete the messages
+            # along with `dup` because they still appear in dup.messages.
             for msg in list(dup.messages):
-                msg.conversation_id = keeper.id
+                msg.conversation = keeper
+            db.flush()
             # Merge unread counts
             keeper.unread_count = (keeper.unread_count or 0) + (dup.unread_count or 0)
             # Use most recent activity timestamps
