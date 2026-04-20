@@ -82,6 +82,7 @@ export default function ClientProfile() {
   const [propForm, setPropForm] = useState({})
   const [editingProp, setEditingProp] = useState(null)
   const [savingProp, setSavingProp] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
   const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, notes: '' }
 
   const [visitStats, setVisitStats] = useState(null)
@@ -126,10 +127,14 @@ export default function ClientProfile() {
 
   const saveProp = async () => {
     setSavingProp(true)
+    setSyncResult(null)
     try {
       const url = editingProp ? `/api/properties/${editingProp.id}` : '/api/properties'
       const body = editingProp ? propForm : { ...propForm, client_id: parseInt(id) }
-      editingProp ? await patch(url, body) : await post(url, body)
+      const response = editingProp ? await patch(url, body) : await post(url, body)
+      if (response?.initial_sync) {
+        setSyncResult(response.initial_sync)
+      }
       await load(); setShowPropForm(false); setEditingProp(null)
     } catch {}
     setSavingProp(false)
@@ -579,6 +584,37 @@ export default function ClientProfile() {
                     {savingProp ? 'Saving...' : 'Save Property'}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* iCal Sync Result Banner */}
+            {syncResult && (
+              <div className={`rounded-lg p-4 mb-4 flex items-start gap-3 ${
+                syncResult.error
+                  ? 'bg-red-50 border border-red-200'
+                  : 'bg-emerald-50 border border-emerald-200'
+              }`}>
+                {syncResult.error ? (
+                  <>
+                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-red-900">iCal sync failed</p>
+                      <p className="text-xs text-red-700 mt-1">{syncResult.error}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-emerald-900">
+                        iCal synced — {syncResult.events_created || 0} reservations, {syncResult.jobs_created || 0} new turnover jobs scheduled
+                      </p>
+                      {syncResult.host_blocks > 0 && (
+                        <p className="text-xs text-emerald-700 mt-1">{syncResult.host_blocks} host blocks detected</p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

@@ -78,7 +78,14 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db)):
     db.add(prop)
     db.commit()
     db.refresh(prop)
-    return prop_to_dict(prop)
+    result = prop_to_dict(prop)
+
+    # If ical_url is set, perform initial sync
+    if prop.ical_url:
+        initial_sync = sync_property(db, prop)
+        result["initial_sync"] = initial_sync
+
+    return result
 
 
 @router.get("/{property_id}")

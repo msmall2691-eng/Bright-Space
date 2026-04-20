@@ -14,6 +14,7 @@ from agents.tools import get_tools_for_agent, execute_tool
 
 from auth import APIKeyMiddleware
 from database.db import init_db
+from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
 from modules.scheduling.router import router as scheduling_router
@@ -88,7 +89,20 @@ def load_agent_config(agent_name: str) -> dict:
 @app.on_event("startup")
 async def startup():
     init_db()
+    start_scheduler()
     print("BrightBase backend started")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    stop_scheduler()
+    print("BrightBase backend shutdown")
+
+
+@app.post("/api/admin/ical-sync-now")
+async def manual_ical_sync():
+    """Manually trigger iCal sync for all properties."""
+    return sync_all_ical_feeds_tick()
 
 
 @app.get("/api/health")
