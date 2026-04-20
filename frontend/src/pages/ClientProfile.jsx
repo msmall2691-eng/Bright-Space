@@ -117,7 +117,19 @@ export default function ClientProfile() {
     // Use profile endpoint data if available, fall back to basic client
     const c = profile || await get(`/api/clients/${id}`)
     setClient(c)
-    setForm(c)
+    // Backfill first_name / last_name from `name` if the form has empties.
+    // A lot of seeded/imported clients only have `name` set, so the Edit
+    // form was opening with blank First/Last fields even though the header
+    // displayed the right name.
+    const formFill = { ...c }
+    if ((!formFill.first_name || !formFill.first_name.trim())
+        && (!formFill.last_name || !formFill.last_name.trim())
+        && c.name) {
+      const parts = c.name.trim().split(/\s+/)
+      formFill.first_name = parts[0] || ''
+      formFill.last_name = parts.slice(1).join(' ') || ''
+    }
+    setForm(formFill)
     if (profile?.visit_stats) setVisitStats(profile.visit_stats)
     if (profile?.upcoming_visits || profile?.past_visits) {
       setProfileVisits({
@@ -297,8 +309,8 @@ export default function ClientProfile() {
             { label: 'Completed', value: visitStats?.completed ?? completedJobs, color: 'text-zinc-900' },
             { label: 'Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-600' },
             { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-amber-600' : 'text-zinc-400' },
-            { label: 'On GCal', value: visitStats?.gcal_synced ?? 'â', color: (visitStats?.gcal_synced > 0) ? 'text-indigo-600' : 'text-zinc-400' },
-            { label: 'Invites Sent', value: visitStats?.invites_sent ?? 'â', color: (visitStats?.invites_sent > 0) ? 'text-emerald-600' : 'text-zinc-400' },
+            { label: 'On GCal', value: visitStats?.gcal_synced ?? '—', color: (visitStats?.gcal_synced > 0) ? 'text-indigo-600' : 'text-zinc-400' },
+            { label: 'Invites Sent', value: visitStats?.invites_sent ?? '—', color: (visitStats?.invites_sent > 0) ? 'text-emerald-600' : 'text-zinc-400' },
           ].map(s => (
             <div key={s.label}>
               <div className="text-xs text-zinc-500">{s.label}</div>
@@ -323,9 +335,9 @@ export default function ClientProfile() {
                     <div className={`text-xs font-semibold ${textColor}`}>
                       {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </div>
-                    <div className={`text-[11px] ${textColor} mt-0.5`}>{j.start_time} â {j.end_time}</div>
+                    <div className={`text-[11px] ${textColor} mt-0.5`}>{j.start_time} – {j.end_time}</div>
                     <div className="text-[10px] text-zinc-500 mt-0.5 truncate">{j.property_name || j.title}</div>
-                    {j.gcal_event_id && <span className="text-[9px] text-indigo-400 mt-0.5">â GCal</span>}
+                    {j.gcal_event_id && <span className="text-[9px] text-indigo-400 mt-0.5">● GCal</span>}
                   </div>
                 )
               })}
@@ -417,18 +429,18 @@ export default function ClientProfile() {
                         {item.type === 'job' && (
                           <>
                             <div className="text-sm font-medium text-zinc-900">{item.data.title}</div>
-                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.scheduled_date} Â· {item.data.start_time}â{item.data.end_time}</div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.data.scheduled_date} · {item.data.start_time}–{item.data.end_time}</div>
                           </>
                         )}
                         {item.type === 'quote' && (
                           <>
-                            <div className="text-sm font-medium text-zinc-900">Quote â ${item.data.total?.toFixed(2)}</div>
+                            <div className="text-sm font-medium text-zinc-900">Quote — ${item.data.total?.toFixed(2)}</div>
                             <div className="text-xs text-zinc-400 mt-0.5">{item.data.items?.length || 0} items</div>
                           </>
                         )}
                         {item.type === 'invoice' && (
                           <>
-                            <div className="text-sm font-medium text-zinc-900">{item.data.invoice_number} â ${item.data.total?.toFixed(2)}</div>
+                            <div className="text-sm font-medium text-zinc-900">{item.data.invoice_number} — ${item.data.total?.toFixed(2)}</div>
                             <div className="text-xs text-zinc-400 mt-0.5">Due {item.data.due_date || 'N/A'}</div>
                           </>
                         )}
@@ -489,7 +501,7 @@ export default function ClientProfile() {
           </div>
         )}
 
-        {/* Calendar â Twenty-style mini calendar + event list */}
+        {/* Calendar — Twenty-style mini calendar + event list */}
         {tab === 'calendar' && (
           <ClientCalendarTab
             jobs={jobs}
@@ -678,7 +690,7 @@ export default function ClientProfile() {
                           {!s.active && <span className="text-[10px] text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">Paused</span>}
                         </div>
                         <div className="text-xs text-zinc-500">
-                          {FREQ[s.frequency]} Â· {s.frequency !== 'monthly' ? `${DAYS_S[s.day_of_week]}s` : `day ${s.day_of_month}`} Â· {s.start_time}â{s.end_time}
+                          {FREQ[s.frequency]} · {s.frequency !== 'monthly' ? `${DAYS_S[s.day_of_week]}s` : `day ${s.day_of_month}`} · {s.start_time}–{s.end_time}
                         </div>
                         {s.address && <div className="text-[10px] text-zinc-500 mt-0.5 flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{s.address}</div>}
                       </div>
@@ -1046,7 +1058,7 @@ export default function ClientProfile() {
 }
 
 
-/* âââââââââââ Twenty-style Client Calendar Tab âââââââââââ */
+/* ─────────── Twenty-style Client Calendar Tab ─────────── */
 
 const MINI_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -1078,7 +1090,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, v
 
   const todayStr = now.toISOString().slice(0, 10)
 
-  // Build map of date â jobs for this client
+  // Build map of date → jobs for this client
   const jobsByDate = {}
   jobs.forEach(j => {
     if (!j.scheduled_date) return
@@ -1253,7 +1265,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, v
                     <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {j.start_time} â {j.end_time}
+                        {j.start_time} – {j.end_time}
                       </span>
                       <span className="text-[10px] text-gray-300">|</span>
                       <span>{JOB_TYPE_LABEL[j.job_type] || j.job_type}</span>
@@ -1277,7 +1289,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, v
                     </span>
                     <div className="flex gap-1">
                       {j.gcal_event_id && <span title="On Google Calendar" className="w-3.5 h-3.5 rounded-full bg-indigo-100 flex items-center justify-center text-[8px] text-indigo-500 font-bold">G</span>}
-                      {j.calendar_invite_sent && <span title="Invite sent" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">â</span>}
+                      {j.calendar_invite_sent && <span title="Invite sent" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">✓</span>}
                       {j.dispatched && <span title="Dispatched" className="w-3.5 h-3.5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] text-blue-500 font-bold">D</span>}
                     </div>
                   </div>
