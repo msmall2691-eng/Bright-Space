@@ -371,9 +371,9 @@ finally:
 print()
 
 
-# ── 7. Placeholder-client gap (documents current limitation) ──────
+# ── 7. Placeholder-client absorption (now works!) ────────────────
 print("7. Inbound SMS auto-creates placeholder client; later we add the")
-print("   same phone to a real, named client → ideally relink; CURRENTLY DOES NOT")
+print("   same phone to a real, named client → placeholder gets absorbed")
 # Step A: simulate inbound SMS from unknown number → placeholder client
 twilio_payload = {
     "From": "+12075556666",
@@ -400,8 +400,12 @@ r = api.post(f"/api/clients/{c7['id']}/phones", json={
     "phone_type": "mobile",
     "is_primary": True,
 })
-# This currently 200s but does NOT relink the placeholder's conversation
 check("POST /phones returns 200", r.status_code == 200)
+# The response should include the absorption report
+body = r.json()
+check("response linked report shows absorption",
+      body.get("linked", {}).get("absorbed_clients", 0) >= 1,
+      f"linked={body.get('linked')}")
 
 db = fresh_session()
 try:
@@ -414,18 +418,14 @@ try:
         Conversation.channel == "sms",
     ).all()
 
-    # ASSERT current (limited) behavior so we notice if it ever changes:
-    check("placeholder still owns its conversation (current behavior)",
-          len(convs_for_placeholder) == 1)
-    check("real client has no SMS conversation linked (current behavior)",
-          len(convs_for_real) == 0)
-
-    # And surface the gap with an XFAIL row in the output
-    xfail("placeholder→real relink not yet implemented",
-          False,
-          "consider extending _link_and_merge_conversations to absorb a "
-          "placeholder client (status='lead', source='sms', name==phone) "
-          "into the new client when its phone is added.")
+    # ASSERT new behavior — placeholder absorbed into real client:
+    check("placeholder client deleted after absorption",
+          db.query(Client).filter(Client.id == placeholder_id).first() is None)
+    check("placeholder no longer owns any SMS conversation",
+          len(convs_for_placeholder) == 0)
+    check("real client now owns the SMS conversation",
+          len(convs_for_real) >= 1,
+          f"got {len(convs_for_real)} conversations")
 finally:
     db.close()
 print()

@@ -33,18 +33,143 @@ def _phone_tail(phone: Optional[str]) -> Optional[str]:
     return digits[-10:] if len(digits) >= 10 else digits
 
 
+# A client "name" that looks like a bare phone number — used to detect
+# placeholder clients auto-created by the Twilio inbound webhook when a
+# message arrives from an unknown number.
+_PLACEHOLDER_NAME_PATTERN = re.compile(r"^\+?[\d\s().\-]+$")
+
+
+def _is_placeholder_candidate(client: Client) -> bool:
+    """Heuristic: this Client row was auto-created from an inbound SMS and
+    was never promoted to a real contact, so it's safe to absorb into a real
+    client when the same phone gets attached to that real client.
+
+    ALL of these must be true for a client to qualify:
+      - status == "lead"            (never promoted past lead)
+      - source == "sms"             (came from the Twilio auto-create path)
+      - email is empty              (never filled in)
+      - billing_address is empty
+      - `name` either is empty or looks like a phone number
+      - no real business data attached:
+          quotes, invoices, jobs, properties, opportunities,
+          recurring_schedules, contact_emails
+    """
+    if client.status != "lead":
+        return False
+    if (client.source or "").strip().lower() != "sms":
+        return False
+    if client.email and client.email.strip():
+        return False
+    if client.billing_address and client.billing_address.strip():
+        return False
+    name = (client.name or "").strip()
+    if name and not _PLACEHOLDER_NAME_PATTERN.match(name):
+        return False
+    if client.quotes: return False
+    if client.invoices: return False
+    if client.jobs: return False
+    if client.properties: return False
+    if client.opportunities: return False
+    if client.recurring_schedules: return False
+    if client.contact_emails: return False
+    return True
+
+
+def _absorb_placeholder_clients(
+    db: Session, real_client_id: int, phone: str, report: dict
+) -> None:
+    """Find placeholder Client rows matching this phone's last-10 tail and
+    merge them INTO real_client_id. Placeholder is defined by
+    _is_placeholder_candidate — we refuse to absorb anything that has actual
+    business data on it.
+
+    For each placeholder we absorb we:
+      - re-parent its conversations, messages, lead_intakes, contact_phones
+        (deduped), activities, and any opportunities
+      - delete the placeholder Client row
+
+    Mutates `report` in place with absorbed_clients count.
+    """
+    report.setdefault("absorbed_clients", 0)
+    tail = _phone_tail(phone)
+    if not tail:
+        return
+
+    # Find candidate placeholder clients by phone tail
+    candidates: set[int] = set()
+    for c in db.query(Client).filter(Client.id != real_client_id).all():
+        if _phone_tail(c.phone) == tail:
+            candidates.add(c.id)
+    for cp in db.query(ContactPhone).filter(
+        ContactPhone.client_id != real_client_id
+    ).all():
+        if _phone_tail(cp.phone) == tail:
+            candidates.add(cp.client_id)
+
+    # Fetch the real client object once
+    real = db.query(Client).filter(Client.id == real_client_id).first()
+    if real is None:
+        return
+
+    for cid in candidates:
+        placeholder = db.query(Client).filter(Client.id == cid).first()
+        if not placeholder or not _is_placeholder_candidate(placeholder):
+            continue
+
+        # Re-parent each relationship using the relationship setter
+        for conv in list(placeholder.conversations):
+            conv.client = real
+            report["linked_conversations"] += 1
+        for msg in list(placeholder.messages):
+            msg.client = real
+            report["linked_messages"] += 1
+        for intake in list(placeholder.lead_intakes):
+            intake.client = real
+        for act in list(placeholder.activities):
+            act.client = real
+        for opp in list(placeholder.opportunities):
+            opp.client = real
+
+        # Contact phones: dedup by literal phone string
+        existing = {
+            cp.phone for cp in db.query(ContactPhone).filter(
+                ContactPhone.client_id == real_client_id
+            ).all()
+        }
+        for cp in list(placeholder.contact_phones):
+            if cp.phone in existing:
+                db.delete(cp)
+            else:
+                cp.client = real
+                existing.add(cp.phone)
+
+        db.flush()
+        db.delete(placeholder)
+        report["absorbed_clients"] += 1
+
+
 def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> dict:
     """
     When a phone number is added to a client:
+    0. Absorb any SMS-auto-created placeholder clients for this phone.
     1. Find orphan conversations (client_id is null) with matching external_contact.
     2. Link them + their messages to this client.
     3. Merge duplicate conversations (same client + same channel) into one thread.
     Returns a report of what was done.
     """
     tail = _phone_tail(phone)
-    report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
+    report = {
+        "linked_conversations": 0,
+        "linked_messages": 0,
+        "merged_conversations": 0,
+        "absorbed_clients": 0,
+    }
     if not tail:
         return report
+
+    # 0. Absorb any SMS-auto-created placeholder clients for this phone into
+    # the real client. Their conversations/messages/intakes get re-parented.
+    _absorb_placeholder_clients(db, client_id, phone, report)
 
     # 1. Find all conversations (orphan OR linked to other clients) with matching external_contact tail
     all_convs = db.query(Conversation).filter(Conversation.channel == "sms").all()
