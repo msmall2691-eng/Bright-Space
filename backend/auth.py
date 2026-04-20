@@ -12,9 +12,9 @@ import os
 import secrets
 import logging
 
-from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,19 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if not provided_key:
             provided_key = request.query_params.get("api_key", "")
 
+        # NOTE: we return JSONResponse directly instead of raising HTTPException.
+        # Starlette's BaseHTTPMiddleware.dispatch() runs BELOW FastAPI's
+        # exception handlers, so a raised HTTPException propagates up as an
+        # unhandled exception and Starlette serves it as a generic 500 —
+        # not the 401/403 the caller expected. Returning a JSONResponse
+        # bypasses that trap.
         if not provided_key:
-            raise HTTPException(status_code=401, detail="Missing API key.")
+            return JSONResponse(
+                {"detail": "Missing API key."}, status_code=401
+            )
         if not secrets.compare_digest(provided_key, expected_key):
-            raise HTTPException(status_code=403, detail="Invalid API key.")
+            return JSONResponse(
+                {"detail": "Invalid API key."}, status_code=403
+            )
 
         return await call_next(request)
