@@ -77,7 +77,18 @@ export default function Recurring() {
         day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
         generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
       }
-      selected ? await patch(url, body) : await post(url, body)
+      // POST returns jobs_created for new schedules — capture it so the user
+      // sees that the schedule actually did something, instead of silently
+      // looking "empty" until they click Generate All.
+      const result = selected ? await patch(url, body) : await post(url, body)
+      if (!selected && result && typeof result.jobs_created === 'number') {
+        setGenResult({
+          id: result.id,
+          jobs_created: result.jobs_created,
+          schedules_processed: 1,
+          kind: 'created',
+        })
+      }
       await load()
       setShowForm(false)
       setSelected(null)
@@ -139,12 +150,26 @@ export default function Recurring() {
           </button>
         </div>
 
-        {/* Result banner */}
+        {/* Result banner.
+            Three cases:
+              - Schedule just created (kind='created'): always tell the user
+                how many jobs landed so they don't think nothing happened.
+              - Generate(-All) produced new jobs: report count.
+              - Generate(-All) produced 0 jobs: the existing jobs are already
+                on the calendar through the horizon. Say that clearly instead
+                of "0 jobs generated", which reads like a failure. */}
         {genResult && (
           <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl p-3 mb-4 text-sm">
             <CheckCircle className="w-4 h-4 shrink-0" />
-            {genResult.jobs_created} job{genResult.jobs_created !== 1 ? 's' : ''} generated
-            {genResult.schedules_processed != null ? ` across ${genResult.schedules_processed} schedules` : ''}
+            {genResult.kind === 'created' ? (
+              <>Schedule saved — <strong>{genResult.jobs_created}</strong> upcoming job{genResult.jobs_created !== 1 ? 's' : ''} added to your calendar.</>
+            ) : genResult.jobs_created > 0 ? (
+              <><strong>{genResult.jobs_created}</strong> new job{genResult.jobs_created !== 1 ? 's' : ''} generated
+                {genResult.schedules_processed != null ? ` across ${genResult.schedules_processed} schedule${genResult.schedules_processed !== 1 ? 's' : ''}` : ''}.</>
+            ) : (
+              <>All schedules are already up to date — no new jobs needed
+                {genResult.schedules_processed != null ? ` (${genResult.schedules_processed} schedule${genResult.schedules_processed !== 1 ? 's' : ''} checked)` : ''}. Existing jobs are on the Schedule page.</>
+            )}
             <button onClick={() => setGenResult(null)} className="ml-auto opacity-60 hover:opacity-100">
               <X className="w-3.5 h-3.5" />
             </button>
@@ -419,6 +444,20 @@ function ScheduleCard({ s, clientName, generating, onEdit, onGenerate, onToggle 
           {s.address && (
             <div className="flex items-center gap-1 text-[10px] text-zinc-600 mt-1 truncate">
               <MapPin className="w-2.5 h-2.5 shrink-0" />{s.address}
+            </div>
+          )}
+          {/* Upcoming-jobs badge — tells the user this schedule actually
+              has visits on the calendar, instead of leaving them guessing
+              after they hit "Generate All" and saw "0 jobs generated". */}
+          {typeof s.upcoming_job_count === 'number' && (
+            <div className={`inline-flex items-center gap-1 text-[10px] mt-1 px-2 py-0.5 rounded-full border ${
+              s.upcoming_job_count > 0
+                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                : 'text-amber-700 bg-amber-50 border-amber-200'
+            }`}>
+              {s.upcoming_job_count > 0
+                ? `${s.upcoming_job_count} upcoming job${s.upcoming_job_count !== 1 ? 's' : ''} on calendar`
+                : 'No upcoming jobs — click Generate'}
             </div>
           )}
         </div>

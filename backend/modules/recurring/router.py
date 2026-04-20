@@ -179,7 +179,22 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
     q = db.query(RecurringSchedule)
     if client_id:
         q = q.filter(RecurringSchedule.client_id == client_id)
-    return [sched_to_dict(s) for s in q.all()]
+    schedules = q.all()
+
+    # Annotate each schedule with the count of upcoming generated jobs so the
+    # UI can show "4 upcoming" next to the schedule, instead of leaving the
+    # user guessing whether anything actually got generated.
+    today = date.today().isoformat()
+    out = []
+    for s in schedules:
+        d = sched_to_dict(s)
+        d["upcoming_job_count"] = db.query(Job).filter(
+            Job.recurring_schedule_id == s.id,
+            Job.scheduled_date >= today,
+            Job.status != "cancelled",
+        ).count()
+        out.append(d)
+    return out
 
 
 @router.post("", status_code=201)
