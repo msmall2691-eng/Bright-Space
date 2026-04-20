@@ -75,6 +75,26 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
 export default function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
+
+  // Tab redirect for backward compatibility (12 → 5 tabs)
+  const TAB_REDIRECTS = {
+    details: 'overview', crm: 'overview', properties: 'overview',
+    calendar: 'schedule', recurring: 'schedule', jobs: 'schedule',
+    emails: 'activity', quotes: 'money', invoices: 'money', opportunities: 'money',
+  }
+  
+  // On mount, check URL hash for old tab names and redirect
+  useEffect(() => {
+    const hash = window.location.hash.slice(1)
+    const params = new URLSearchParams(hash)
+    const oldTab = params.get('tab')
+    if (oldTab && TAB_REDIRECTS[oldTab]) {
+      setTab(TAB_REDIRECTS[oldTab])
+      window.location.hash = `tab=${TAB_REDIRECTS[oldTab]}`
+    } else if (hash) {
+      window.location.hash = `tab=${tab}`
+    }
+  }, [])
   const [client, setClient] = useState(null)
   const [jobs, setJobs] = useState([])
   const [quotes, setQuotes] = useState([])
@@ -85,7 +105,7 @@ export default function ClientProfile() {
   const [opportunities, setOpportunities] = useState([])
   const [activities, setActivities] = useState([])
   const [emails, setEmails] = useState([])
-  const [tab, setTab] = useState('activity')
+  const [tab, setTab] = useState('details')
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
@@ -301,22 +321,38 @@ export default function ClientProfile() {
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-zinc-200">
-          {[
-            { label: 'Next Cleaning', value: nextJob ? new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'None', color: nextJob ? 'text-blue-600' : 'text-zinc-400' },
-            { label: 'Upcoming', value: visitStats?.upcoming ?? upcomingJobs.length, color: (visitStats?.upcoming ?? upcomingJobs.length) > 0 ? 'text-blue-600' : 'text-zinc-400' },
-            { label: 'Completed', value: visitStats?.completed ?? completedJobs, color: 'text-zinc-900' },
-            { label: 'Revenue', value: `$${totalRevenue.toFixed(0)}`, color: 'text-green-600' },
-            { label: 'Outstanding', value: `$${outstanding.toFixed(0)}`, color: outstanding > 0 ? 'text-amber-600' : 'text-zinc-400' },
-            { label: 'On GCal', value: visitStats?.gcal_synced ?? '—', color: (visitStats?.gcal_synced > 0) ? 'text-indigo-600' : 'text-zinc-400' },
-            { label: 'Invites Sent', value: visitStats?.invites_sent ?? '—', color: (visitStats?.invites_sent > 0) ? 'text-emerald-600' : 'text-zinc-400' },
-          ].map(s => (
-            <div key={s.label}>
-              <div className="text-xs text-zinc-500">{s.label}</div>
-              <div className={`text-sm font-semibold mt-0.5 ${s.color}`}>{s.value}</div>
+        {/* Stats bar — 4 consolidated stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-zinc-200">
+          {/* Upcoming */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="text-xs text-blue-600 font-medium">Upcoming</div>
+            <div className="text-lg font-bold text-blue-700 mt-1">{visitStats?.upcoming ?? upcomingJobs.length}</div>
+            {nextJob && <div className="text-xs text-blue-600 mt-1">Next: {new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+          </div>
+
+          {/* Revenue */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <div className="text-xs text-green-600 font-medium">Revenue</div>
+            <div className="text-lg font-bold text-green-700 mt-1">${totalRevenue.toFixed(0)}</div>
+            {completedJobs > 0 && <div className="text-xs text-green-600 mt-1">{completedJobs} job{completedJobs !== 1 ? 's' : ''} done</div>}
+          </div>
+
+          {/* Outstanding */}
+          <div className={`border rounded-lg p-3 ${outstanding > 0 ? 'bg-amber-50 border-amber-200' : 'bg-zinc-50 border-zinc-200'}`}>
+            <div className={`text-xs font-medium ${outstanding > 0 ? 'text-amber-600' : 'text-zinc-600'}`}>Outstanding</div>
+            <div className={`text-lg font-bold mt-1 ${outstanding > 0 ? 'text-amber-700' : 'text-zinc-700'}`}>${outstanding.toFixed(0)}</div>
+            {outstanding > 0 && <div className="text-xs text-amber-600 mt-1">{invoices.filter(i => ['sent', 'overdue'].includes(i.status)).length} unpaid</div>}
+          </div>
+
+          {/* GCal */}
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+            <div className="text-xs text-indigo-600 font-medium">GCal</div>
+            <div className="text-sm font-mono text-indigo-700 mt-1">
+              <span>● {visitStats?.gcal_synced ?? 0} synced</span>
+              <br />
+              <span>✓ {visitStats?.invites_sent ?? 0} sent</span>
             </div>
-          ))}
+          </div>
         </div>
 
         {/* Upcoming cleanings banner */}
@@ -349,6 +385,64 @@ export default function ClientProfile() {
             </div>
           </div>
         )}
+
+        {/* Inline contact form — for missing phone/email */}
+        {(!client.phone || !client.email) && (
+          <div className="mt-4 pt-4 border-t border-amber-200 bg-amber-50 rounded-lg p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-amber-900 mb-2">Missing contact info</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {!client.phone && (
+                      <input
+                        type="tel"
+                        placeholder="Phone"
+                        onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                        className={`text-xs px-2 py-1.5 rounded border border-amber-300 bg-white focus:outline-none focus:border-amber-500 flex-1 min-w-[140px] ${INPUT_CLASS.split(' ').join(' ')}`}
+                        style={{width: '160px'}}
+                      />
+                    )}
+                    {!client.email && (
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                        className={`text-xs px-2 py-1.5 rounded border border-amber-300 bg-white focus:outline-none focus:border-amber-500 flex-1 min-w-[140px] ${INPUT_CLASS.split(' ').join(' ')}`}
+                        style={{width: '160px'}}
+                      />
+                    )}
+                    <button
+                      onClick={async () => {
+                        const updates = {}
+                        if (!client.phone && form.phone) updates.phone = form.phone
+                        if (!client.email && form.email) updates.email = form.email
+                        if (Object.keys(updates).length > 0) {
+                          try {
+                            await patch(`/api/clients/${id}`, updates)
+                            await load()
+                          } catch (e) {
+                            console.error('Failed to save contact info:', e)
+                          }
+                        }
+                      }}
+                      className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded font-medium transition-colors shrink-0"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setForm(f => ({ ...f, phone: client.phone, email: client.email }))}
+                className="text-amber-600 hover:text-amber-700 p-1 shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick actions */}
@@ -372,20 +466,13 @@ export default function ClientProfile() {
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — 5 consolidated tabs (Overview, Schedule, Activity, Messages, Money) */}
       <div className="flex border-b border-zinc-200 px-6 bg-white/30 shrink-0 overflow-x-auto">
-        <Tab label="CRM" icon={TrendingUp} active={tab === 'crm'} count={0} onClick={() => setTab('crm')} />
-        <Tab label="Activity" icon={Clock} active={tab === 'activity'} count={activity.length} onClick={() => setTab('activity')} />
-        <Tab label="Calendar" icon={Calendar} active={tab === 'calendar'} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
-        <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
-        <Tab label="Recurring" icon={RefreshCw} active={tab === 'recurring'} count={schedules.filter(s=>s.active).length} onClick={() => setTab('recurring')} />
-        <Tab label="Jobs" icon={Calendar} active={tab === 'jobs'} count={jobs.length} onClick={() => setTab('jobs')} />
-        <Tab label="Quotes" icon={FileText} active={tab === 'quotes'} count={quotes.length} onClick={() => setTab('quotes')} />
-        <Tab label="Invoices" icon={Receipt} active={tab === 'invoices'} count={invoices.length} onClick={() => setTab('invoices')} />
-        <Tab label="Opportunities" icon={TrendingUp} active={tab === 'opportunities'} count={opportunities.length} onClick={() => setTab('opportunities')} />
-        <Tab label="Emails" icon={Mail} active={tab === 'emails'} count={emails.length} onClick={() => setTab('emails')} />
+        <Tab label="Overview" icon={Edit2} active={['details', 'crm', 'properties'].includes(tab)} count={0} onClick={() => setTab('details')} />
+        <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
+        <Tab label="Activity" icon={Clock} active={['activity', 'emails'].includes(tab)} count={activity.length} onClick={() => setTab('activity')} />
         <Tab label="Messages" icon={MessageSquare} active={tab === 'messages'} count={messages.length} onClick={() => setTab('messages')} />
-        <Tab label="Details" icon={Edit2} active={tab === 'details'} count={0} onClick={() => setTab('details')} />
+        <Tab label="Money" icon={DollarSign} active={['quotes', 'invoices', 'opportunities'].includes(tab)} count={quotes.length + invoices.length} onClick={() => setTab('quotes')} />
       </div>
 
       {/* Tab content */}
