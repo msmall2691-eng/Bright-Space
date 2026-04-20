@@ -39,6 +39,20 @@ const QUOTE_COLORS = {
   declined: 'bg-red-500/20 text-red-400',
 }
 
+const PROPERTY_TYPE_COLORS = {
+  residential: 'bg-blue-50 text-blue-700 border-blue-200',
+  commercial:  'bg-emerald-50 text-emerald-700 border-emerald-200',
+  str:         'bg-orange-50 text-orange-700 border-orange-200',
+}
+
+const PROPERTY_TYPE_LABELS = {
+  residential: 'Residential',
+  commercial: 'Commercial',
+  str: 'STR'
+}
+
+const INPUT_CLASS = 'w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none'
+
 function Tab({ label, icon: Icon, active, count, onClick }) {
   return (
     <button onClick={onClick}
@@ -82,7 +96,6 @@ export default function ClientProfile() {
   const [propForm, setPropForm] = useState({})
   const [editingProp, setEditingProp] = useState(null)
   const [savingProp, setSavingProp] = useState(false)
-  const [syncResult, setSyncResult] = useState(null)
   const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, notes: '' }
 
   const [visitStats, setVisitStats] = useState(null)
@@ -127,16 +140,16 @@ export default function ClientProfile() {
 
   const saveProp = async () => {
     setSavingProp(true)
-    setSyncResult(null)
     try {
       const url = editingProp ? `/api/properties/${editingProp.id}` : '/api/properties'
       const body = editingProp ? propForm : { ...propForm, client_id: parseInt(id) }
-      const response = editingProp ? await patch(url, body) : await post(url, body)
-      if (response?.initial_sync) {
-        setSyncResult(response.initial_sync)
-      }
-      await load(); setShowPropForm(false); setEditingProp(null)
-    } catch {}
+      editingProp ? await patch(url, body) : await post(url, body)
+      const props = await get(`/api/properties?client_id=${id}`)
+      setProperties(Array.isArray(props) ? props : [])
+      setShowPropForm(false); setEditingProp(null); setPropForm(EMPTY_PROP)
+    } catch (e) {
+      console.error('[saveProp]', e)
+    }
     setSavingProp(false)
   }
 
@@ -511,7 +524,7 @@ export default function ClientProfile() {
                   <label className="block text-xs text-zinc-400 mb-1">Property Name *</label>
                   <input value={propForm.name || ''} onChange={e => setPropForm(f => ({ ...f, name: e.target.value }))}
                     placeholder="e.g. Main Home, Lake House"
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                    className={INPUT_CLASS} />
                 </div>
 
                 <div>
@@ -529,24 +542,24 @@ export default function ClientProfile() {
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">Address</label>
                   <input value={propForm.address || ''} onChange={e => setPropForm(f => ({ ...f, address: e.target.value }))}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                    className={INPUT_CLASS} />
                 </div>
 
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <label className="block text-xs text-zinc-400 mb-1">City</label>
                     <input value={propForm.city || ''} onChange={e => setPropForm(f => ({ ...f, city: e.target.value }))}
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className={INPUT_CLASS} />
                   </div>
                   <div className="w-16">
                     <label className="block text-xs text-zinc-400 mb-1">State</label>
                     <input value={propForm.state || ''} onChange={e => setPropForm(f => ({ ...f, state: e.target.value }))}
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className={INPUT_CLASS} />
                   </div>
                   <div className="w-24">
                     <label className="block text-xs text-zinc-400 mb-1">ZIP</label>
                     <input value={propForm.zip_code || ''} onChange={e => setPropForm(f => ({ ...f, zip_code: e.target.value }))}
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className={INPUT_CLASS} />
                   </div>
                 </div>
 
@@ -554,7 +567,7 @@ export default function ClientProfile() {
                   <label className="block text-xs text-zinc-400 mb-1">Default Duration (hrs)</label>
                   <input type="number" step="0.5" min="0.5" value={propForm.default_duration_hours || 3}
                     onChange={e => setPropForm(f => ({ ...f, default_duration_hours: parseFloat(e.target.value) }))}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                    className={INPUT_CLASS} />
                 </div>
 
                 {propForm.property_type === 'str' && (
@@ -562,14 +575,14 @@ export default function ClientProfile() {
                     <label className="block text-xs text-zinc-400 mb-1">Airbnb iCal URL</label>
                     <input value={propForm.ical_url || ''} onChange={e => setPropForm(f => ({ ...f, ical_url: e.target.value }))}
                       placeholder="https://www.airbnb.com/calendar/ical/..."
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-400" />
+                      className={INPUT_CLASS} />
                   </div>
                 )}
 
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1">Notes</label>
                   <textarea value={propForm.notes || ''} onChange={e => setPropForm(f => ({ ...f, notes: e.target.value }))} rows={2}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                    className={INPUT_CLASS + " resize-none"} />
                 </div>
 
                 <div className="flex gap-2 pt-1">
@@ -587,48 +600,11 @@ export default function ClientProfile() {
               </div>
             )}
 
-            {/* iCal Sync Result Banner */}
-            {syncResult && (
-              <div className={`rounded-lg p-4 mb-4 flex items-start gap-3 ${
-                syncResult.error
-                  ? 'bg-red-50 border border-red-200'
-                  : 'bg-emerald-50 border border-emerald-200'
-              }`}>
-                {syncResult.error ? (
-                  <>
-                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-red-900">iCal sync failed</p>
-                      <p className="text-xs text-red-700 mt-1">{syncResult.error}</p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-emerald-900">
-                        iCal synced — {syncResult.events_created || 0} reservations, {syncResult.jobs_created || 0} new turnover jobs scheduled
-                      </p>
-                      {syncResult.host_blocks > 0 && (
-                        <p className="text-xs text-emerald-700 mt-1">{syncResult.host_blocks} host blocks detected</p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
             <div className="space-y-2">
               {properties.length === 0 && !showPropForm && (
                 <p className="text-zinc-500 text-sm text-center py-10">No properties yet</p>
               )}
               {properties.map(p => {
-                const typeColors = {
-                  residential: 'bg-blue-50 text-blue-700 border-blue-200',
-                  commercial:  'bg-emerald-50 text-emerald-700 border-emerald-200',
-                  str:         'bg-orange-50 text-orange-700 border-orange-200',
-                }
-                const typeLabel = { residential: 'Residential', commercial: 'Commercial', str: 'STR' }
                 return (
                   <div key={p.id}
                     className="bg-white border border-zinc-200 hover:border-zinc-200 rounded-xl p-4 cursor-pointer transition-colors"
@@ -648,8 +624,8 @@ export default function ClientProfile() {
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-1.5">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full border ${typeColors[p.property_type] || typeColors.residential}`}>
-                              {typeLabel[p.property_type] || p.property_type}
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full border ${PROPERTY_TYPE_COLORS[p.property_type] || PROPERTY_TYPE_COLORS.residential}`}>
+                              {PROPERTY_TYPE_LABELS[p.property_type] || p.property_type}
                             </span>
                             <span className="text-[10px] text-zinc-500">{p.default_duration_hours}h default</span>
                             {p.ical_url && <span className="text-[10px] text-orange-400">iCal linked</span>}

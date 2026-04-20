@@ -1,9 +1,9 @@
 """Background scheduler for iCal auto-sync."""
 
-import os
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from config import env_flag, env_int
 from database.db import SessionLocal
 from database.models import Property
 from integrations.ical_sync import sync_property
@@ -11,20 +11,6 @@ from integrations.ical_sync import sync_property
 log = logging.getLogger(__name__)
 
 _scheduler = None
-
-
-def _env_flag(name: str, default: bool = True) -> bool:
-    """Parse environment boolean flag."""
-    val = os.getenv(name, str(default)).lower()
-    return val in ("true", "1", "yes", "on")
-
-
-def _env_int(name: str, default: int) -> int:
-    """Parse environment integer."""
-    try:
-        return int(os.getenv(name, default))
-    except (ValueError, TypeError):
-        return default
 
 
 def sync_all_ical_feeds_tick() -> dict:
@@ -78,11 +64,11 @@ def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
 
-    if not _env_flag("ICAL_AUTO_SYNC_ENABLED", True):
+    if not env_flag("ICAL_AUTO_SYNC_ENABLED", True):
         log.info("iCal auto-sync disabled via ICAL_AUTO_SYNC_ENABLED=0")
         return None
 
-    interval_minutes = _env_int("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15)
+    interval_minutes = env_int("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15)
 
     _scheduler = BackgroundScheduler()
     _scheduler.add_job(
