@@ -136,6 +136,13 @@ def _run_migrations():
         "ALTER TABLE ical_events ADD COLUMN guest_count INTEGER",
         # User authentication: add users table and cleaner assignment FK
         "ALTER TABLE jobs ADD COLUMN assigned_cleaner_user_id INTEGER REFERENCES users(id)",
+        # Flexible recurring intervals: "every N weeks" instead of just weekly/biweekly
+        "ALTER TABLE recurring_schedules ADD COLUMN interval_weeks INTEGER NOT NULL DEFAULT 1",
+    ]
+
+    backfill_migrations = [
+        # Backfill existing biweekly schedules with interval_weeks=2
+        "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
     ]
 
     with engine.connect() as conn:
@@ -159,6 +166,17 @@ def _run_migrations():
                 )
                 if not benign:
                     logger.warning(f"[migration] {sql} -> {exc}")
+
+        for sql in backfill_migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                logger.warning(f"[backfill] {sql} -> {exc}")
 
     # Post-migration repair: on Postgres, older deploys may have created
     # is_internal_note as INTEGER when the model expects BOOLEAN. Coerce.

@@ -7,10 +7,17 @@ import { get, post, patch } from "../api"
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const FREQ_LABELS = { weekly: 'Every week', biweekly: 'Every 2 weeks', monthly: 'Monthly' }
+const FREQUENCY_OPTIONS = [
+  { value: 'weekly', label: 'Weekly', interval_weeks: 1 },
+  { value: 'biweekly', label: 'Every 2 weeks', interval_weeks: 2 },
+  { value: 'every_3_weeks', label: 'Every 3 weeks', interval_weeks: 3 },
+  { value: 'every_4_weeks', label: 'Every 4 weeks', interval_weeks: 4 },
+  { value: 'monthly', label: 'Monthly', interval_weeks: null },
+]
 
 const EMPTY = {
   client_id: '', property_id: '', job_type: 'residential', title: '', address: '',
-  frequency: 'biweekly', days_of_week: [0], day_of_month: 1,
+  frequency: 'biweekly', interval_weeks: 2, days_of_week: [0], day_of_month: 1,
   start_time: '09:00', end_time: '12:00', generate_weeks_ahead: 8, notes: ''
 }
 
@@ -72,6 +79,7 @@ export default function Recurring() {
         ...form,
         client_id: parseInt(form.client_id),
         property_id: form.property_id ? parseInt(form.property_id) : null,
+        interval_weeks: form.frequency === 'monthly' ? null : parseInt(form.interval_weeks || 1),
         days_of_week: (form.days_of_week || [0]).map(Number),
         day_of_week: (form.days_of_week || [0]).map(Number)[0] ?? 0,
         day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
@@ -123,7 +131,12 @@ export default function Recurring() {
 
   const openEdit = (s) => {
     setSelected(s)
-    setForm({ ...s, property_id: s.property_id || '', days_of_week: s.days_of_week || [s.day_of_week ?? 0] })
+    setForm({
+      ...s,
+      property_id: s.property_id || '',
+      interval_weeks: s.interval_weeks || 1,
+      days_of_week: s.days_of_week || [s.day_of_week ?? 0]
+    })
     setShowForm(true)
   }
   const openNew = () => { setSelected(null); setForm(EMPTY); setShowForm(true) }
@@ -308,11 +321,15 @@ export default function Recurring() {
             {/* Frequency */}
             <div>
               <label className="block text-xs text-zinc-700 font-medium mb-1">Frequency</label>
-              <div className="flex gap-2">
-                {['weekly', 'biweekly', 'monthly'].map(f => (
-                  <button key={f} onClick={() => setForm(fm => ({ ...fm, frequency: f }))}
-                    className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${form.frequency === f ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
-                    {f}
+              <div className="grid grid-cols-2 gap-2">
+                {FREQUENCY_OPTIONS.map(opt => (
+                  <button key={opt.value} onClick={() => setForm(fm => ({
+                    ...fm,
+                    frequency: opt.value,
+                    interval_weeks: opt.interval_weeks ?? fm.interval_weeks
+                  }))}
+                    className={`py-2 rounded-lg text-xs font-medium transition-colors ${form.frequency === opt.value ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
+                    {opt.label}
                   </button>
                 ))}
               </div>
