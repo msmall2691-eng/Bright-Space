@@ -14,7 +14,7 @@ import httpx
 from icalendar import Calendar
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
-from database.models import Property, ICalEvent, Job, Client
+from database.models import Property, ICalEvent, Job, Client, PropertyIcal
 import logging
 
 log = logging.getLogger(__name__)
@@ -47,28 +47,26 @@ async def fetch_ical(url: str) -> bytes:
         return r.content
 
 
-def sync_property(db: Session, prop: Property) -> dict:
+def _sync_ical_url(db: Session, prop: Property, ical_url: str, property_ical: PropertyIcal = None) -> dict:
     """
-    Sync one property's iCal feed. Returns summary dict.
-    Designed to be called from an API route or background task.
+    Sync a single iCal URL. Returns stats dict.
     """
-    if not prop.ical_url:
-        return {"error": "No iCal URL configured for this property"}
-
-    # Fetch feed (sync wrapper — call from async context with asyncio.run or use await fetch_ical)
+    # Fetch feed
     import httpx as _httpx
     try:
         with _httpx.Client(timeout=15) as client:
-            r = client.get(prop.ical_url)
+            r = client.get(ical_url)
             r.raise_for_status()
             raw = r.content
     except Exception as e:
+        log.warning(f"Failed to fetch iCal from {ical_url}: {e}")
         return {"error": f"Failed to fetch iCal: {e}"}
 
     # Parse
     try:
         cal = Calendar.from_ical(raw)
     except Exception as e:
+        log.warning(f"Failed to parse iCal from {ical_url}: {e}")
         return {"error": f"Failed to parse iCal: {e}"}
 
     today = date.today().isoformat()
@@ -95,10 +93,7 @@ def sync_property(db: Session, prop: Property) -> dict:
             skipped += 1
             continue
 
-        # Detect host blocks vs real reservations.
-        # Airbnb patterns:  "Airbnb (Not available)", "Not available", "Airbnb (BLOCKED)"
-        # VRBO patterns:    "BLOCKED", "Not available"
-        # Real bookings:    "Reserved", guest name, or have a reservation URL in DESCRIPTION
+        # Detect host blocks vs real reservations
         low = summary.lower()
         is_host_block = (
             "not available" in low
@@ -106,7 +101,6 @@ def sync_property(db: Session, prop: Property) -> dict:
             or "unavailable" in low
             or "maintenance" in low
             or "owner" in low
-            # Also: no reservation details in description and not "reserved"
         )
 
         seen += 1
@@ -129,10 +123,9 @@ def sync_property(db: Session, prop: Property) -> dict:
                 raw_event={"uid": uid, "summary": summary, "checkout": checkout, "checkin": checkin, "description": description},
             )
             db.add(event)
-            db.flush()  # get event.id
+            db.flush()
             created_events += 1
         else:
-            # Update event_type in case it changed
             event.event_type = event_type
 
         # Skip job creation for host blocks
@@ -143,11 +136,6 @@ def sync_property(db: Session, prop: Property) -> dict:
 
         # Create a Job if: no job yet + checkout is today or future
         if event.job_id is None and checkout >= today:
-            # ── DEDUPLICATION CHECK ──
-            # Before creating a new turnover job, check if one already exists
-            # for the same property + date. This prevents duplicates when iCal
-            # UIDs change across syncs (common with Airbnb/VRBO) or when
-            # multiple calendar events map to the same checkout day.
             existing_job = db.query(Job).filter(
                 Job.property_id == prop.id,
                 Job.scheduled_date == checkout,
@@ -156,7 +144,6 @@ def sync_property(db: Session, prop: Property) -> dict:
             ).first()
 
             if existing_job:
-                # Link this iCal event to the existing job instead of creating a duplicate
                 event.job_id = existing_job.id
                 log.info(
                     f"Dedup: linked iCal event {uid} to existing job {existing_job.id} "
@@ -165,8 +152,8 @@ def sync_property(db: Session, prop: Property) -> dict:
                 skipped += 1
                 continue
 
-            # Default start time = 10:00 AM on checkout day
-            start_time = "10:00"
+            # Use property's check_out_time, default to 10:00
+            start_time = prop.check_out_time or "10:00"
             end_time = _make_end_time(start_time, prop.default_duration_hours)
 
             # Get client (property owner) for GCal invite
@@ -191,8 +178,7 @@ def sync_property(db: Session, prop: Property) -> dict:
             event.job_id = job.id
             created_jobs += 1
 
-            # Push to Google Calendar — GCal is the source of truth.
-            # The property owner gets this as a calendar invite.
+            # Push to Google Calendar
             try:
                 from integrations.google_calendar import create_event
                 job_dict = {
@@ -215,17 +201,69 @@ def sync_property(db: Session, prop: Property) -> dict:
             except Exception as e:
                 log.warning(f"Failed to push turnover to GCal for {prop.name} on {checkout}: {e}")
 
-    # Update sync timestamp
+    return {
+        "events_seen": seen,
+        "events_created": created_events,
+        "jobs_created": created_jobs,
+        "host_blocks": host_blocks,
+        "skipped": skipped,
+    }
+
+
+def sync_property(db: Session, prop: Property) -> dict:
+    """
+    Sync a property's iCal feeds (both legacy ical_url and PropertyIcal entries).
+    Returns summary dict.
+    Designed to be called from an API route or background task.
+    """
+    if not prop.ical_url and not prop.property_icals:
+        return {"error": "No iCal URLs configured for this property"}
+
+    total_seen = 0
+    total_created_events = 0
+    total_created_jobs = 0
+    total_host_blocks = 0
+    total_skipped = 0
+    sources_synced = []
+
+    # Sync legacy ical_url first if it exists
+    if prop.ical_url:
+        result = _sync_ical_url(db, prop, prop.ical_url)
+        if "error" not in result:
+            total_seen += result["events_seen"]
+            total_created_events += result["events_created"]
+            total_created_jobs += result["jobs_created"]
+            total_host_blocks += result["host_blocks"]
+            total_skipped += result["skipped"]
+            sources_synced.append("legacy_ical_url")
+
+    # Sync all PropertyIcal entries
+    for prop_ical in (prop.property_icals or []):
+        if not prop_ical.active:
+            continue
+        result = _sync_ical_url(db, prop, prop_ical.url, prop_ical)
+        if "error" not in result:
+            total_seen += result["events_seen"]
+            total_created_events += result["events_created"]
+            total_created_jobs += result["jobs_created"]
+            total_host_blocks += result["host_blocks"]
+            total_skipped += result["skipped"]
+            sources_synced.append(prop_ical.source or "unknown")
+            # Update PropertyIcal sync timestamp
+            prop_ical.last_synced_at = datetime.utcnow()
+
+    # Update property sync timestamp
     prop.ical_last_synced_at = datetime.utcnow()
     db.commit()
 
     return {
         "property_id": prop.id,
         "property_name": prop.name,
-        "events_seen": seen,
-        "events_created": created_events,
-        "jobs_created": created_jobs,
-        "host_blocks": host_blocks,
-        "skipped": skipped,
+        "events_seen": total_seen,
+        "events_created": total_created_events,
+        "jobs_created": total_created_jobs,
+        "host_blocks": total_host_blocks,
+        "skipped": total_skipped,
+        "sources_synced": sources_synced,
         "synced_at": prop.ical_last_synced_at.isoformat(),
     }

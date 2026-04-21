@@ -194,7 +194,7 @@ class ICalEvent(Base):
     event_type = Column(String, default="reservation")  # "reservation" | "host_block"
     checkout_date = Column(String, nullable=False)  # YYYY-MM-DD from DTEND
     checkin_date = Column(String, nullable=True)    # YYYY-MM-DD from DTSTART
-    guest_count = Column(Integer, nullable=True)    # Number of guests for this booking
+    guest_count = Column(Integer, nullable=True)    # Number of guests for the booking
     raw_event = Column(JSON, nullable=True)         # Full parsed event dict
 
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, unique=True)
@@ -206,6 +206,21 @@ class ICalEvent(Base):
 
     property = relationship("Property", back_populates="ical_events")
     job = relationship("Job", back_populates="ical_event", foreign_keys=[job_id], uselist=False)
+
+
+class PropertyIcal(Base):
+    """Multiple iCal URL sources for a single property (Airbnb, VRBO, manual, etc)."""
+    __tablename__ = "property_icals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
+    url = Column(String, nullable=False)
+    source = Column(String, nullable=True)  # "airbnb", "vrbo", "manual", etc
+    active = Column(Boolean, default=True, nullable=False)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    property = relationship("Property", back_populates="property_icals")
 
 
 class RecurringSchedule(Base):

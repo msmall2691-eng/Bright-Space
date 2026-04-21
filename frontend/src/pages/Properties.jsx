@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link } from 'lucide-react'
+import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link, Trash2, Users, Calendar } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { get, post, patch } from "../api"
+import { get, post, patch, del } from "../api"
 
 
 const EMPTY = {
   client_id: '', name: '', address: '', city: '', state: '',
-  zip_code: '', ical_url: '', default_duration_hours: 3, notes: ''
+  zip_code: '', ical_url: '', default_duration_hours: 3,
+  check_in_time: '14:00', check_out_time: '10:00', house_code: '', notes: ''
 }
 
 export default function Properties() {
-  console.log('[Properties] rendered')
   const [properties, setProperties] = useState([])
   const [clients, setClients] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -19,6 +19,9 @@ export default function Properties() {
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(null)
   const [syncResult, setSyncResult] = useState(null)
+  const [expandedPropId, setExpandedPropId] = useState(null)
+  const [icalForm, setIcalForm] = useState({ url: '', source: '' })
+  const [showIcalForm, setShowIcalForm] = useState(null)
 
   const load = () =>
     get('/api/properties').then(setProperties).catch(err => console.error("[Properties]", err))
@@ -40,8 +43,32 @@ export default function Properties() {
       setShowForm(false)
       setSelected(null)
       setForm(EMPTY)
-    } catch {}
+    } catch (e) {
+      alert('Error saving property: ' + e.message)
+    }
     setSaving(false)
+  }
+
+  const addIcal = async (propId) => {
+    if (!icalForm.url.trim()) return
+    try {
+      await post(`/api/properties/${propId}/icals`, icalForm)
+      await load()
+      setShowIcalForm(null)
+      setIcalForm({ url: '', source: '' })
+    } catch (e) {
+      alert('Error adding iCal: ' + e.message)
+    }
+  }
+
+  const removeIcal = async (propId, icalId) => {
+    if (!confirm('Remove this iCal URL?')) return
+    try {
+      await del(`/api/properties/${propId}/icals/${icalId}`)
+      await load()
+    } catch (e) {
+      alert('Error removing iCal: ' + e.message)
+    }
   }
 
   const syncOne = async (id) => {
@@ -72,7 +99,13 @@ export default function Properties() {
 
   const openEdit = (p) => {
     setSelected(p)
-    setForm({ ...p, client_id: p.client_id })
+    setForm({
+      ...p,
+      client_id: p.client_id,
+      check_in_time: p.check_in_time || '14:00',
+      check_out_time: p.check_out_time || '10:00',
+      house_code: p.house_code || '',
+    })
     setShowForm(true)
   }
 
@@ -117,52 +150,115 @@ export default function Properties() {
 
         <div className="space-y-3 overflow-y-auto flex-1 scrollbar-thin">
           {properties.map(p => (
-            <div key={p.id} className="bg-white border border-zinc-200 rounded-xl p-5">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center shrink-0">
-                    <Home className="w-5 h-5 text-orange-400" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-zinc-900">{p.name}</div>
-                    <div className="text-sm text-zinc-400">{clientName(p.client_id)}</div>
-                    <div className="text-sm text-zinc-500 mt-0.5">{p.address}{p.city ? `, ${p.city}` : ''}</div>
+            <div key={p.id} className="bg-white border border-zinc-200 rounded-xl">
+              {/* Property header */}
+              <div className="p-5 cursor-pointer hover:bg-zinc-50 transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-4 flex-1">
+                    <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center shrink-0">
+                      <Home className="w-5 h-5 text-orange-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-zinc-900">{p.name}</div>
+                      <div className="text-sm text-zinc-400">{clientName(p.client_id)}</div>
+                      <div className="text-sm text-zinc-500 mt-0.5">{p.address}{p.city ? `, ${p.city}` : ''}</div>
 
-                    <div className="flex items-center gap-4 mt-2">
-                      <span className="flex items-center gap-1 text-xs text-zinc-500">
-                        <Clock className="w-3 h-3" />{p.default_duration_hours}h turnover
-                      </span>
-                      {p.ical_url && (
-                        <span className="flex items-center gap-1 text-xs text-green-400">
-                          <Link className="w-3 h-3" />iCal connected
+                      <div className="flex items-center gap-4 mt-2 flex-wrap">
+                        <span className="flex items-center gap-1 text-xs text-zinc-500">
+                          <Clock className="w-3 h-3" />{p.default_duration_hours}h turnover
                         </span>
-                      )}
-                      {!p.ical_url && (
-                        <span className="text-xs text-yellow-400">No iCal URL</span>
-                      )}
-                      {p.ical_last_synced_at && (
-                        <span className="text-xs text-zinc-500">
-                          Synced {new Date(p.ical_last_synced_at).toLocaleString()}
-                        </span>
-                      )}
+                        {p.house_code && (
+                          <span className="text-xs bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded">
+                            Code: {p.house_code}
+                          </span>
+                        )}
+                        {p.check_in_time && (
+                          <span className="text-xs text-zinc-500">
+                            Check-in: {p.check_in_time}, Check-out: {p.check_out_time}
+                          </span>
+                        )}
+                        {(p.icals?.length || 0) > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-green-400">
+                            <Link className="w-3 h-3" />{p.icals.length} iCal{p.icals.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {!p.ical_url && (!p.icals || p.icals.length === 0) && (
+                          <span className="text-xs text-yellow-400">No iCal URLs</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  {p.ical_url && (
-                    <button onClick={() => syncOne(p.id)} disabled={syncing === p.id}
-                      className="flex items-center gap-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-600/30 px-3 py-1.5 rounded-lg text-xs transition-colors">
-                      <RefreshCw className={`w-3.5 h-3.5 ${syncing === p.id ? 'animate-spin' : ''}`} />
-                      {syncing === p.id ? 'Syncing...' : 'Sync'}
+                  <div className="flex items-center gap-2 ml-2">
+                    {(p.icals?.length || 0) > 0 && (
+                      <button onClick={(e) => { e.stopPropagation(); syncOne(p.id) }} disabled={syncing === p.id}
+                        className="flex items-center gap-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-600/30 px-3 py-1.5 rounded-lg text-xs transition-colors">
+                        <RefreshCw className={`w-3.5 h-3.5 ${syncing === p.id ? 'animate-spin' : ''}`} />
+                        {syncing === p.id ? 'Syncing...' : 'Sync'}
+                      </button>
+                    )}
+                    <button onClick={(e) => { e.stopPropagation(); openEdit(p) }}
+                      className="text-xs text-zinc-500 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
+                      Edit
                     </button>
-                  )}
-                  <button onClick={() => openEdit(p)}
-                    className="text-xs text-zinc-500 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
-                    Edit
-                  </button>
+                  </div>
                 </div>
               </div>
+
+              {/* Expanded details */}
+              {expandedPropId === p.id && (
+                <div className="border-t border-zinc-200 p-5 space-y-4 bg-zinc-50">
+                  {/* iCal URLs */}
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar URLs</div>
+                    {(p.icals || []).map(ical => (
+                      <div key={ical.id} className="flex items-center justify-between bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-zinc-600 truncate font-mono">{ical.url}</div>
+                          {ical.source && <div className="text-xs text-zinc-400">{ical.source}</div>}
+                        </div>
+                        <button onClick={() => removeIcal(p.id, ical.id)}
+                          className="text-red-400 hover:text-red-600 p-1 ml-2">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {showIcalForm === p.id ? (
+                      <div className="bg-white border border-zinc-200 rounded-lg p-3 space-y-2">
+                        <input value={icalForm.url} onChange={e => setIcalForm(f => ({ ...f, url: e.target.value }))}
+                          placeholder="https://www.airbnb.com/calendar/ical/..."
+                          className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                        <input value={icalForm.source} onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
+                          placeholder="airbnb / vrbo / manual"
+                          className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                        <div className="flex gap-2">
+                          <button onClick={() => addIcal(p.id)}
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded text-xs font-medium">
+                            Add
+                          </button>
+                          <button onClick={() => setShowIcalForm(null)}
+                            className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-2 py-1.5 rounded text-xs">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setShowIcalForm(p.id)}
+                        className="w-full text-xs text-blue-600 hover:text-blue-700 border border-blue-600/20 bg-blue-50/50 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+                        + Add Calendar URL
+                      </button>
+                    )}
+                  </div>
+
+                  {p.notes && (
+                    <div>
+                      <div className="text-xs text-zinc-500 font-semibold mb-1">Notes</div>
+                      <div className="text-sm text-zinc-600 bg-white rounded p-2 border border-zinc-200">{p.notes}</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
 
@@ -188,9 +284,10 @@ export default function Properties() {
         ]}
       />
 
+      {/* Edit/Create Form */}
       {showForm && (
         <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-zinc-200 sm:shrink-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 shrink-0">
             <h2 className="font-semibold text-zinc-900">{selected ? 'Edit Property' : 'Add Property'}</h2>
             <button onClick={() => setShowForm(false)} className="text-zinc-500 hover:text-zinc-500"><X className="w-5 h-5" /></button>
           </div>
@@ -217,27 +314,45 @@ export default function Properties() {
                   className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
               </div>
             ))}
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">Airbnb/VRBO iCal URL</label>
-              <input value={form.ical_url || ''} onChange={e => setForm(f => ({ ...f, ical_url: e.target.value }))}
-                placeholder="https://www.airbnb.com/calendar/ical/..."
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 font-mono text-xs" />
-              <p className="text-xs text-zinc-500 mt-1">Airbnb → Manage listing → Availability → Export calendar</p>
+
+            <div className="border-t border-zinc-200 pt-4">
+              <h3 className="text-xs font-semibold text-zinc-600 uppercase mb-3">STR Settings</h3>
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Check-in Time</label>
+                  <input type="time" value={form.check_in_time || '14:00'} onChange={e => setForm(f => ({ ...f, check_in_time: e.target.value }))}
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Check-out Time</label>
+                  <input type="time" value={form.check_out_time || '10:00'} onChange={e => setForm(f => ({ ...f, check_out_time: e.target.value }))}
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">House Code/Key Code</label>
+                <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
+                  placeholder="e.g. 1234 or Front door code"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+              </div>
+
+              <div className="mt-3">
+                <label className="block text-xs text-zinc-400 mb-1">Default Turnover Duration (hours)</label>
+                <input type="number" step="0.5" value={form.default_duration_hours || 3}
+                  onChange={e => setForm(f => ({ ...f, default_duration_hours: e.target.value }))}
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">Default Turnover Duration (hours)</label>
-              <input type="number" step="0.5" value={form.default_duration_hours || 3}
-                onChange={e => setForm(f => ({ ...f, default_duration_hours: e.target.value }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
-              <p className="text-xs text-zinc-500 mt-1">Used to calculate end time of auto-created turnover jobs</p>
-            </div>
+
             <div>
               <label className="block text-xs text-zinc-400 mb-1">Notes</label>
               <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
                 className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
           </div>
-          <div className="p-6 border-t border-zinc-200">
+          <div className="p-6 border-t border-zinc-200 shrink-0">
             <button onClick={save} disabled={saving || !form.client_id || !form.name || !form.address}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               {saving ? 'Saving...' : 'Save Property'}
