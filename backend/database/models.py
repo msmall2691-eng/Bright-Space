@@ -135,7 +135,7 @@ class Client(Base):
 
 
 class Property(Base):
-    """An STR property belonging to a client — has an iCal feed URL."""
+    """An STR property belonging to a client — has iCal feed URL(s)."""
     __tablename__ = "properties"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -148,17 +148,38 @@ class Property(Base):
     zip_code = Column(String)
     property_type = Column(String, default="str")   # "str" for now
 
-    ical_url = Column(String, nullable=True)
+    ical_url = Column(String, nullable=True)        # Legacy: single iCal (backward compat)
     ical_last_synced_at = Column(DateTime, nullable=True)
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
+
+    # STR property specific fields
+    check_in_time = Column(String(5), nullable=True)   # "14:00" format
+    check_out_time = Column(String(5), nullable=True)  # "10:00" format
+    house_code = Column(String(255), nullable=True)    # Access code or combination
 
     notes = Column(Text, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="properties")
-    ical_events = relationship("ICalEvent", back_populates="property")
+    ical_events = relationship("ICalEvent", back_populates="property", cascade="all, delete-orphan")
+    property_icals = relationship("PropertyIcal", back_populates="property", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="property")
+
+
+class PropertyIcal(Base):
+    """Multiple iCal URLs per property (Airbnb, VRBO, manual calendars, etc.)"""
+    __tablename__ = "property_icals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
+    url = Column(String, nullable=False)
+    source = Column(String, nullable=True)  # "airbnb", "vrbo", "manual", etc.
+    active = Column(Boolean, default=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    property = relationship("Property", back_populates="property_icals")
 
 
 class ICalEvent(Base):
@@ -173,6 +194,7 @@ class ICalEvent(Base):
     event_type = Column(String, default="reservation")  # "reservation" | "host_block"
     checkout_date = Column(String, nullable=False)  # YYYY-MM-DD from DTEND
     checkin_date = Column(String, nullable=True)    # YYYY-MM-DD from DTSTART
+    guest_count = Column(Integer, nullable=True)    # Number of guests for this booking
     raw_event = Column(JSON, nullable=True)         # Full parsed event dict
 
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, unique=True)
