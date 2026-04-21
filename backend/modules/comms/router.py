@@ -702,7 +702,7 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
             db.add(new_contact)
             logger.info(f"[twilio] Added contact phone {from_number} for client #{client.id}")
     else:
-        logger.info(f"[twilio] New contact from {from_number} — creating lead intake")
+        logger.info(f"[twilio] New contact from {from_number}")
         client = Client(
             name=from_number,
             phone=from_number,
@@ -711,15 +711,6 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
         )
         db.add(client)
         db.flush()
-        intake = LeadIntake(
-            name=f"SMS {from_number}",
-            phone=from_number,
-            message=body,
-            source="sms",
-            status="new",
-            client_id=client.id,
-        )
-        db.add(intake)
 
     conv = find_or_create_conversation(
         db, channel="sms",

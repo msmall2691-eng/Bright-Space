@@ -23,6 +23,7 @@ _PUBLIC_PREFIXES = (
     "/api/health",
     "/api/config",
     "/api/intake/submit",
+    "/api/intake/webhook",
     "/api/comms/twilio/webhook",
     "/api/booking",
     "/api/agents",
