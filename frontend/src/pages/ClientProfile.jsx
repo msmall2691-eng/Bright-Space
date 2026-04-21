@@ -561,20 +561,50 @@ export default function ClientProfile() {
                   </div>
                 </div>
 
-                <div className="w-40">
-                  <label className="block text-xs text-zinc-400 mb-1">Default Duration (hrs)</label>
-                  <input type="number" step="0.5" min="0.5" value={propForm.default_duration_hours || 3}
-                    onChange={e => setPropForm(f => ({ ...f, default_duration_hours: parseFloat(e.target.value) }))}
-                    className={INPUT_CLASS} />
-                </div>
-
                 {propForm.property_type === 'str' && (
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Airbnb iCal URL</label>
-                    <input value={propForm.ical_url || ''} onChange={e => setPropForm(f => ({ ...f, ical_url: e.target.value }))}
-                      placeholder="https://www.airbnb.com/calendar/ical/..."
-                      className={INPUT_CLASS} />
-                  </div>
+                  <>
+                    <div className="border-t border-zinc-200 pt-4">
+                      <h3 className="text-xs font-semibold text-zinc-600 uppercase mb-3">STR / Turnover Settings</h3>
+
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div>
+                          <label className="block text-xs text-zinc-400 mb-1">Check-in Time</label>
+                          <input type="time" value={propForm.check_in_time || '14:00'}
+                            onChange={e => setPropForm(f => ({ ...f, check_in_time: e.target.value }))}
+                            className={INPUT_CLASS} />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-zinc-400 mb-1">Check-out Time</label>
+                          <input type="time" value={propForm.check_out_time || '10:00'}
+                            onChange={e => setPropForm(f => ({ ...f, check_out_time: e.target.value }))}
+                            className={INPUT_CLASS} />
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="block text-xs text-zinc-400 mb-1">House Code/Key Code</label>
+                        <input value={propForm.house_code || ''}
+                          onChange={e => setPropForm(f => ({ ...f, house_code: e.target.value }))}
+                          placeholder="e.g. 1234 or Front door code"
+                          className={INPUT_CLASS} />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Default Turnover Duration (hours)</label>
+                        <input type="number" step="0.5" min="0.5" value={propForm.default_duration_hours || 3}
+                          onChange={e => setPropForm(f => ({ ...f, default_duration_hours: parseFloat(e.target.value) }))}
+                          className={INPUT_CLASS} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Airbnb iCal URL</label>
+                      <p className="text-xs text-zinc-500 mb-2">To add multiple iCal URLs or edit sources, visit the Properties page</p>
+                      <input value={propForm.ical_url || ''} onChange={e => setPropForm(f => ({ ...f, ical_url: e.target.value }))}
+                        placeholder="https://www.airbnb.com/calendar/ical/..."
+                        className={INPUT_CLASS} />
+                    </div>
+                  </>
                 )}
 
                 <div>
@@ -621,12 +651,18 @@ export default function ClientProfile() {
                               {p.zip_code ? ` ${p.zip_code}` : ''}
                             </div>
                           )}
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             <span className={`text-[10px] px-2 py-0.5 rounded-full border ${PROPERTY_TYPE_COLORS[p.property_type] || PROPERTY_TYPE_COLORS.residential}`}>
                               {PROPERTY_TYPE_LABELS[p.property_type] || p.property_type}
                             </span>
-                            <span className="text-[10px] text-zinc-500">{p.default_duration_hours}h default</span>
-                            {p.ical_url && <span className="text-[10px] text-orange-400">iCal linked</span>}
+                            {p.property_type === 'str' && (
+                              <>
+                                <span className="text-[10px] text-zinc-500">{p.default_duration_hours}h turnover</span>
+                                {p.house_code && <span className="text-[10px] bg-blue-500/10 text-blue-600 px-1.5 py-0.5 rounded">Code: {p.house_code}</span>}
+                                {p.check_in_time && <span className="text-[10px] text-zinc-500">Check-in: {p.check_in_time}</span>}
+                              </>
+                            )}
+                            {p.ical_url && <span className="text-[10px] text-orange-400">📅 iCal</span>}
                           </div>
                         </div>
                       </div>
