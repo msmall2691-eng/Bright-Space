@@ -308,7 +308,7 @@ def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, 
     if quote.status in ("rejected", "expired"):
         raise HTTPException(status_code=409, detail="This quote is no longer available for acceptance")
 
-    client_ip = request.client.host if request.client else ""
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "")
 
     quote.status = "accepted"
     quote.accepted_at = datetime.utcnow()
