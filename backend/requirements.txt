@@ -18,5 +18,5 @@ aiofiles==23.2.1
 openpyxl==3.1.5
 apscheduler==3.10.4
 passlib[bcrypt]==1.7.4
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
 PyJWT==2.12.1
