@@ -96,6 +96,7 @@ class Client(Base):
     last_name = Column(String, nullable=True)
     email = Column(String)
     phone = Column(String)
+    phone_tail = Column(String(10), nullable=True, index=True)
     # Service / property address (where cleaning happens)
     address = Column(String)
     city = Column(String)
@@ -518,6 +519,7 @@ class ContactPhone(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
     phone = Column(String, nullable=False, index=True)
+    phone_tail = Column(String(10), nullable=True, index=True)
     is_primary = Column(Boolean, default=False)
     phone_type = Column(String, nullable=True)         # mobile | office | home
     source = Column(String, nullable=True)             # website | twilio | manual
@@ -559,3 +561,23 @@ class AppSetting(Base):
     key = Column(String, nullable=False, unique=True, index=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# ─────────────────────────────────────────────────────────────────
+# Event listeners — keep phone_tail in sync automatically
+# ─────────────────────────────────────────────────────────────────
+
+from sqlalchemy import event
+from utils.phone import phone_tail as _compute_phone_tail
+
+
+def _sync_phone_tail(mapper, connection, target):
+    """Before insert/update on Client or ContactPhone, recompute phone_tail
+    from the literal phone column. Single source of truth — no other code
+    needs to write phone_tail directly."""
+    target.phone_tail = _compute_phone_tail(target.phone)
+
+
+event.listen(Client, "before_insert", _sync_phone_tail)
+event.listen(Client, "before_update", _sync_phone_tail)
+event.listen(ContactPhone, "before_insert", _sync_phone_tail)
+event.listen(ContactPhone, "before_update", _sync_phone_tail)

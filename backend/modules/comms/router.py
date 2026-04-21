@@ -18,12 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import or_, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
 from database.models import Message, Conversation, Client, LeadIntake, ContactPhone
 from integrations.twilio_client import send_sms
 from integrations.email import send_email as _send_email
+from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 
 logger = logging.getLogger(__name__)
 
@@ -106,22 +107,20 @@ def _normalize_contact(s: Optional[str]) -> Optional[str]:
     return s.lower()
 
 
-def _digits_only(phone: Optional[str]) -> Optional[str]:
-    """Extract just digits from any phone format for fuzzy matching.
-    '(207) 433-4929' → '2074334929'
-    '+12074334929'   → '12074334929'
-    """
-    if not phone:
-        return None
-    return re.sub(r"[^\d]", "", phone)
 
 
 def _match_client_by_phone(db: Session, phone: str) -> Optional["Client"]:
-    """Try to find a Client matching this phone number, checking both primary and contact phones.
+    """Match a phone number to a Client using indexed phone_tail column.
+    O(log n) lookup instead of full-table scans. Handles all formats
+    by matching last 10 digits.
+
     1. Exact match on primary client.phone first (fastest).
     2. Exact match on any ContactPhone.
-    3. Digits-only match on last 10 digits (handles +1, parens, dashes, spaces).
+    3. Indexed tail match across both tables (O(log n)).
     """
+    if not phone:
+        return None
+
     # 1. Exact match on primary phone
     client = db.query(Client).filter(Client.phone == phone).first()
     if client:
@@ -132,31 +131,25 @@ def _match_client_by_phone(db: Session, phone: str) -> Optional["Client"]:
     if contact_phone:
         return contact_phone.client
 
-    # 3. Strip to digits and compare last 10 (US numbers)
-    incoming_digits = _digits_only(phone)
-    if not incoming_digits:
+    # 3. Indexed tail match — no full-table scans
+    tail = _phone_tail(phone)
+    if not tail:
         return None
-    incoming_tail = incoming_digits[-10:] if len(incoming_digits) >= 10 else incoming_digits
 
-    # Check primary client phones
-    candidates = db.query(Client).filter(Client.phone.isnot(None), Client.phone != "").all()
-    for c in candidates:
-        c_digits = _digits_only(c.phone)
-        if not c_digits:
-            continue
-        c_tail = c_digits[-10:] if len(c_digits) >= 10 else c_digits
-        if c_tail == incoming_tail:
-            return c
+    # Check primary client phones via indexed lookup
+    client = db.query(Client).filter(Client.phone_tail == tail).first()
+    if client:
+        return client
 
-    # Check all ContactPhone records
-    all_contact_phones = db.query(ContactPhone).all()
-    for cp in all_contact_phones:
-        cp_digits = _digits_only(cp.phone)
-        if not cp_digits:
-            continue
-        cp_tail = cp_digits[-10:] if len(cp_digits) >= 10 else cp_digits
-        if cp_tail == incoming_tail:
-            return cp.client
+    # Check ContactPhone records via indexed lookup, eager-load the client
+    contact_phone = (
+        db.query(ContactPhone)
+          .options(joinedload(ContactPhone.client))
+          .filter(ContactPhone.phone_tail == tail)
+          .first()
+    )
+    if contact_phone:
+        return contact_phone.client
 
     return None
 

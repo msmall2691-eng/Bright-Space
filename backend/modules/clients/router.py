@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, date
@@ -8,6 +8,7 @@ import re
 
 from database.db import get_db
 from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation
+from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 
 router = APIRouter()
 
@@ -16,21 +17,6 @@ def _derive_name(first: Optional[str], last: Optional[str], fallback: str) -> st
     """Return 'First Last' when both parts are set, else fallback to existing name."""
     parts = " ".join(p for p in [first, last] if p and p.strip())
     return parts if parts else fallback
-
-
-def _digits_only(phone: Optional[str]) -> Optional[str]:
-    """Extract just digits from any phone format for fuzzy matching."""
-    if not phone:
-        return None
-    return re.sub(r"[^\d]", "", phone)
-
-
-def _phone_tail(phone: Optional[str]) -> Optional[str]:
-    """Last 10 digits of a phone number - used for fuzzy matching across formats."""
-    digits = _digits_only(phone)
-    if not digits:
-        return None
-    return digits[-10:] if len(digits) >= 10 else digits
 
 
 # A client "name" that looks like a bare phone number — used to detect
@@ -95,16 +81,20 @@ def _absorb_placeholder_clients(
     if not tail:
         return
 
-    # Find candidate placeholder clients by phone tail
+    # Find candidate placeholder clients by phone tail using indexed queries (O(log n))
     candidates: set[int] = set()
-    for c in db.query(Client).filter(Client.id != real_client_id).all():
-        if _phone_tail(c.phone) == tail:
-            candidates.add(c.id)
-    for cp in db.query(ContactPhone).filter(
-        ContactPhone.client_id != real_client_id
+    # Indexed query on Client
+    for c in db.query(Client).filter(
+        Client.id != real_client_id,
+        Client.phone_tail == tail,
     ).all():
-        if _phone_tail(cp.phone) == tail:
-            candidates.add(cp.client_id)
+        candidates.add(c.id)
+    # Indexed query on ContactPhone
+    for cp in db.query(ContactPhone).filter(
+        ContactPhone.client_id != real_client_id,
+        ContactPhone.phone_tail == tail,
+    ).all():
+        candidates.add(cp.client_id)
 
     # Fetch the real client object once
     real = db.query(Client).filter(Client.id == real_client_id).first()
@@ -172,7 +162,13 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
     _absorb_placeholder_clients(db, client_id, phone, report)
 
     # 1. Find all conversations (orphan OR linked to other clients) with matching external_contact tail
-    all_convs = db.query(Conversation).filter(Conversation.channel == "sms").all()
+    #    Eager-load messages to avoid N+1 queries
+    all_convs = (
+        db.query(Conversation)
+          .options(selectinload(Conversation.messages))
+          .filter(Conversation.channel == "sms")
+          .all()
+    )
     candidates = [c for c in all_convs if _phone_tail(c.external_contact) == tail]
 
     # 2. Link orphan conversations to this client
@@ -180,7 +176,7 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
         if conv.client_id is None:
             conv.client_id = client_id
             report["linked_conversations"] += 1
-            # Also relink orphan messages in that conversation
+            # Also relink orphan messages in that conversation (no extra queries — already eager-loaded)
             for msg in conv.messages:
                 if msg.client_id is None:
                     msg.client_id = client_id
@@ -198,11 +194,18 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
             report["linked_messages"] += 1
 
     # 4. Merge multiple SMS conversations for this client into one (by channel)
+    #    Eager-load messages to avoid N+1 when moving messages between conversations
     db.flush()
-    client_convs = db.query(Conversation).filter(
-        Conversation.client_id == client_id,
-        Conversation.channel == "sms"
-    ).order_by(Conversation.created_at.asc()).all()
+    client_convs = (
+        db.query(Conversation)
+          .options(selectinload(Conversation.messages))
+          .filter(
+              Conversation.client_id == client_id,
+              Conversation.channel == "sms"
+          )
+          .order_by(Conversation.created_at.asc())
+          .all()
+    )
 
     if len(client_convs) > 1:
         keeper = client_convs[0]
