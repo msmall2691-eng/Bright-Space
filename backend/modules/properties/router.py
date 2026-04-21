@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database.db import get_db
-from database.models import Property, ICalEvent
+from database.models import Property, ICalEvent, PropertyIcal
 from integrations.ical_sync import sync_property
 
 router = APIRouter()
