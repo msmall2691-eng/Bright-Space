@@ -596,9 +596,8 @@ function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, 
             </div>
           </div>
         )}
-        <DetailRow icon={Calendar} label="Date"
-          value={job.scheduled_date ? new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'â'} />
-        <DetailRow icon={Clock} label="Time" value={`${job.start_time || 'â'} â ${job.end_time || 'â'}`} />
+        <DetailRow icon={Calendar} label="Date" value={job.scheduled_date ? new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'Not set'} />
+        <DetailRow icon={Clock} label="Time" value={job.start_time && job.end_time ? `${job.start_time} – ${job.end_time}` : 'Not set'} />
         {job.address && <DetailRow icon={MapPin} label="Address" value={job.address} />}
       </div>
 
@@ -915,7 +914,7 @@ function MobileJobList({ jobs, onJobClick, statusConfig }) {
                       <div className="font-medium text-zinc-900 text-sm truncate">{j.title}</div>
                       <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />{j.start_time}â{j.end_time}
+                          <Clock className="w-3 h-3" />{j.start_time && j.end_time ? `${j.start_time} – ${j.end_time}` : 'Not set'}
                         </span>
                         {j.client_name && (
                           <span className="flex items-center gap-1">
