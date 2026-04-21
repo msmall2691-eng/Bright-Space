@@ -26,6 +26,7 @@ _PUBLIC_PREFIXES = (
     "/api/comms/twilio/webhook",
     "/api/booking",
     "/api/agents",
+    "/api/quotes/public/",
     "/ws/",
     "/assets/",
 )

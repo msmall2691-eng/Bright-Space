@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
 import os
+import secrets
 
 from database.db import get_db
-from database.models import Quote, Job, LeadIntake, Client, Message
+from database.models import Quote, Job, LeadIntake, Client, Message, Activity, ActivityType
 
 router = APIRouter()
 
@@ -71,6 +72,8 @@ def quote_to_dict(q: Quote) -> dict:
         "notes": q.notes,
         "custom_fields": q.custom_fields or {},
         "valid_until": q.valid_until,
+        "public_token": q.public_token,
+        "accepted_at": q.accepted_at.isoformat() if q.accepted_at else None,
         "created_at": q.created_at.isoformat() if q.created_at else None,
         "updated_at": q.updated_at.isoformat() if q.updated_at else None,
     }
@@ -164,18 +167,24 @@ def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
 
+    if not quote.public_token:
+        quote.public_token = secrets.token_urlsafe(32)
+        db.flush()
+
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     client_name = client.name if client else "Valued Customer"
     company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
+    app_url = os.getenv("APP_URL", "https://maineclean.co")
 
     q_dict = quote_to_dict(quote)
+    public_url = f"{app_url}/quote/{quote.public_token}"
     results = {}
 
     if data.channel in ("email", "both"):
         to_email = data.email or (client.email if client else None)
         if not to_email:
             raise HTTPException(status_code=400, detail="No email address available")
-        html, plain = build_quote_email(q_dict, client_name, company_phone)
+        html, plain = build_quote_email(q_dict, client_name, company_phone, public_url)
         q_num = quote.quote_number or f"QT-{quote.id}"
         try:
             send_email(to=to_email, subject=f"Your Quote from Maine Cleaning Co — {q_num}", html_body=html, text_body=plain)
@@ -191,7 +200,7 @@ def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_
         to_phone = data.phone or (client.phone if client else None)
         if not to_phone:
             raise HTTPException(status_code=400, detail="No phone number available")
-        sms_body = build_quote_sms(q_dict, client_name, company_phone)
+        sms_body = build_quote_sms(q_dict, client_name, company_phone, public_url)
         if data.custom_message:
             sms_body = data.custom_message + "\n\n" + sms_body
         try:
@@ -203,7 +212,6 @@ def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_
         except Exception as e:
             results["sms"] = f"failed: {str(e)}"
 
-    # Mark quote as sent if at least one channel succeeded
     if any(v == "sent" for v in results.values()):
         quote.status = "sent"
 
@@ -248,3 +256,92 @@ def delete_quote(quote_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Quote not found")
     db.delete(quote)
     db.commit()
+
+
+@router.post("/{quote_id}/generate-token")
+def generate_public_token(quote_id: int, db: Session = Depends(get_db)):
+    """Generate or return existing public token for a quote."""
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if quote.public_token:
+        return {"public_token": quote.public_token, "quote_id": quote_id}
+
+    token = secrets.token_urlsafe(32)
+    quote.public_token = token
+    db.commit()
+    return {"public_token": token, "quote_id": quote_id}
+
+
+@router.get("/public/{token}")
+def get_public_quote(token: str, db: Session = Depends(get_db)):
+    """Fetch a quote by public token (no auth required)."""
+    quote = db.query(Quote).filter(Quote.public_token == token).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    q_dict = quote_to_dict(quote)
+    q_dict["company_name"] = os.getenv("FROM_NAME", "Maine Cleaning Co")
+    q_dict["company_email"] = os.getenv("SMTP_USER", "")
+    q_dict["company_phone"] = os.getenv("TWILIO_PHONE_NUMBER", "")
+    return q_dict
+
+
+class AcceptQuoteRequest(BaseModel):
+    pass
+
+
+@router.post("/public/{token}/accept")
+def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, db: Session = Depends(get_db)):
+    """Accept a quote via public token (no auth required). Creates a Job."""
+    from datetime import datetime
+
+    quote = db.query(Quote).filter(Quote.public_token == token).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if quote.accepted_at:
+        raise HTTPException(status_code=409, detail="This quote was already accepted")
+
+    if quote.status in ("rejected", "expired"):
+        raise HTTPException(status_code=409, detail="This quote is no longer available for acceptance")
+
+    client_ip = request.client.host if request.client else ""
+
+    quote.status = "accepted"
+    quote.accepted_at = datetime.utcnow()
+    quote.accepted_ip = client_ip
+
+    job = Job(
+        client_id=quote.client_id,
+        quote_id=quote.id,
+        job_type=quote.service_type or "residential",
+        title=f"Clean — {quote.quote_number or f'QT-{quote.id}'}",
+        address=quote.address or "",
+        scheduled_date="",
+        start_time="09:00",
+        end_time="12:00",
+        status="scheduled",
+        notes=quote.notes,
+    )
+    db.add(job)
+
+    activity = Activity(
+        client_id=quote.client_id,
+        activity_type=ActivityType.QUOTE_ACCEPTED,
+        summary=f"Quote {quote.quote_number or f'QT-{quote.id}'} accepted via public link",
+        extra_data={"quote_id": quote.id, "accepted_ip": client_ip},
+    )
+    db.add(activity)
+
+    db.commit()
+    db.refresh(job)
+
+    from modules.scheduling.router import job_to_dict
+    return {
+        "job_id": job.id,
+        "scheduled_status": "needs_date",
+        "job": job_to_dict(job),
+    }
