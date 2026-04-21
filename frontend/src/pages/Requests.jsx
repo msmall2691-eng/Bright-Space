@@ -164,9 +164,9 @@ function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded
             </>
           )}
           {intake.status === 'reviewed' && (
-            <button onClick={() => onAction(intake, 'quote')}
-              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-purple-600 transition-colors" title="Create Quote">
-              <FileText className="w-4 h-4" />
+            <button onClick={() => onAction(intake, 'convert-quote')}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded-lg transition-colors">
+              <FileText className="w-3.5 h-3.5" /> Create Quote
             </button>
           )}
           {intake.status === 'quoted' && linkedQuote?.status === 'accepted' && (
@@ -579,12 +579,22 @@ export default function Requests() {
   const handleAction = (intake, action) => {
     if (action === 'quote') {
       navigate('/quoting', { state: { intakeId: intake.id } })
+    } else if (action === 'convert-quote') {
+      convertIntakeToQuote(intake.id)
     } else if (action === 'schedule') {
       const linkedQuote = quotes.find(q => q.intake_id === intake.id)
       if (linkedQuote) convertToJob(linkedQuote.id)
     } else if (action === 'client' && intake.client_id) {
       navigate(`/clients/${intake.client_id}`)
     }
+  }
+
+  const convertIntakeToQuote = async (intakeId) => {
+    try {
+      const quote = await post(`/api/intake/${intakeId}/convert-to-quote`, {})
+      showToast('Quote created — review and send')
+      navigate(`/quoting`, { state: { quoteId: quote.id } })
+    } catch { showToast('Error creating quote') }
   }
 
   const convertToJob = async (quoteId) => {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { get, post, patch } from "../api"
@@ -32,6 +32,7 @@ function Toast({ msg }) {
 
 export default function Quoting() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [tab, setTab] = useState('leads')
   const [quotes, setQuotes] = useState([])
   const [intakes, setIntakes] = useState([])
@@ -61,6 +62,15 @@ export default function Quoting() {
     loadIntakes()
     get('/api/clients').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   }, [])
+
+  useEffect(() => {
+    if (location.state?.quoteId) {
+      get(`/api/quotes/${location.state.quoteId}`).then(q => {
+        openQuoteForm(q)
+        setTab('quotes')
+      }).catch(err => console.error("[Quoting]", err))
+    }
+  }, [location.state?.quoteId])
 
   const clientFor = (id) => clients.find(c => c.id === id)
   const clientName = (id) => clientFor(id)?.name || `Client #${id}`
