@@ -33,6 +33,7 @@ from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
 from modules.settings.router import router as settings_router
 from modules.work import router as work_router
+from modules.auth.router import router as auth_router
 
 load_dotenv()
 
@@ -57,6 +58,7 @@ app.add_middleware(
 # (Starlette processes middleware in reverse order, so CORS runs first)
 app.add_middleware(APIKeyMiddleware)
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
 app.include_router(quoting_router, prefix="/api/quotes", tags=["quotes"])
 app.include_router(scheduling_router, prefix="/api/jobs", tags=["scheduling"])
