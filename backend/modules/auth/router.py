@@ -47,6 +47,62 @@ class UserResponse(BaseModel):
     active: bool
 
 
+def get_current_user(
+    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> User:
+    """
+    Dependency to extract and verify JWT token from Authorization header.
+    Used by protected endpoints. Raises 401 if token is missing or invalid.
+    """
+    token = credentials.credentials
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user_id = payload.get("user_id")
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
+
+
+def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optional JWT verification. Returns None if no token provided or token is invalid.
+    Used for endpoints that work with or without authentication.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    payload = verify_jwt(token)
+    if not payload:
+        return None
+
+    user_id = payload.get("user_id")
+    user = db.query(User).filter(User.id == user_id).first()
+    return user
+
+
+def require_role(*allowed_roles):
+    """
+    Factory to create a dependency that requires specific roles.
+    Usage: @router.get("/admin", dependencies=[Depends(require_role("admin"))])
+    """
+    async def check_role(current_user: User = Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return current_user
+    return check_role
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password, returns JWT token."""
@@ -131,59 +187,3 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         role=current_user.role,
         active=current_user.active,
     )
-
-
-def get_current_user(
-    db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> User:
-    """
-    Dependency to extract and verify JWT token from Authorization header.
-    Used by protected endpoints. Raises 401 if token is missing or invalid.
-    """
-    token = credentials.credentials
-    payload = verify_jwt(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    user_id = payload.get("user_id")
-    user = db.query(User).filter(User.id == user_id).first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
-    return user
-
-
-def get_current_user_optional(
-    request: Request,
-    db: Session = Depends(get_db)
-) -> Optional[User]:
-    """
-    Optional JWT verification. Returns None if no token provided or token is invalid.
-    Used for endpoints that work with or without authentication.
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-
-    token = auth_header[7:]  # Remove "Bearer " prefix
-    payload = verify_jwt(token)
-    if not payload:
-        return None
-
-    user_id = payload.get("user_id")
-    user = db.query(User).filter(User.id == user_id).first()
-    return user
-
-
-def require_role(*allowed_roles):
-    """
-    Factory to create a dependency that requires specific roles.
-    Usage: @router.get("/admin", dependencies=[Depends(require_role("admin"))])
-    """
-    async def check_role(current_user: User = Depends(get_current_user)):
-        if current_user.role not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
-        return current_user
-    return check_role
