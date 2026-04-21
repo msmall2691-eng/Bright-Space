@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 from database.db import get_db
 from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -72,7 +73,7 @@ def log_activity(db, *, client_id=None, opportunity_id=None, actor=None,
     db.add(a)
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def list_opportunities(
     stage: Optional[str] = None,
     client_id: Optional[int] = None,
@@ -187,7 +188,7 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == data.client_id).first()
     if not client:

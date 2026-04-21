@@ -7,6 +7,7 @@ from datetime import datetime, date
 
 from database.db import get_db
 from database.models import Invoice, Client, Message
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -72,7 +73,7 @@ def invoice_to_dict(inv: Invoice) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_invoices(
     client_id: Optional[int] = None,
     status: Optional[str] = None,
@@ -86,7 +87,7 @@ def get_invoices(
     return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).all()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     items = [i.model_dump() for i in data.items]
     subtotal, tax, total = calc_totals(items, data.tax_rate or 0)

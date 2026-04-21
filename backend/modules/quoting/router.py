@@ -7,6 +7,7 @@ import secrets
 
 from database.db import get_db
 from database.models import Quote, Job, LeadIntake, Client, Message, Activity, ActivityType
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -79,7 +80,7 @@ def quote_to_dict(q: Quote) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quotes(client_id: Optional[int] = None, status: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Quote)
     if client_id:
@@ -89,7 +90,7 @@ def get_quotes(client_id: Optional[int] = None, status: Optional[str] = None, db
     return [quote_to_dict(x) for x in q.order_by(Quote.created_at.desc()).all()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_quote(data: QuoteCreate, db: Session = Depends(get_db)):
     items = [i.model_dump() for i in data.items]
     subtotal, tax, total = calc_totals(items, data.tax_rate or 0)
@@ -120,7 +121,7 @@ def create_quote(data: QuoteCreate, db: Session = Depends(get_db)):
     return quote_to_dict(quote)
 
 
-@router.get("/{quote_id}")
+@router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db)):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:
@@ -128,7 +129,7 @@ def get_quote(quote_id: int, db: Session = Depends(get_db)):
     return quote_to_dict(quote)
 
 
-@router.patch("/{quote_id}")
+@router.patch("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote(quote_id: int, data: QuoteUpdate, db: Session = Depends(get_db)):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:

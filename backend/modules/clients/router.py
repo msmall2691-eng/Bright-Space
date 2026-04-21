@@ -7,9 +7,10 @@ import io
 import re
 
 from database.db import get_db
-from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation
+from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation, User
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 from utils.enrichment import enrich_client_data
+from modules.auth.router import get_current_user, require_role
 
 router = APIRouter()
 
@@ -327,7 +328,7 @@ def client_to_dict(c: Client) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_clients(status: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Client)
     if status:
@@ -335,7 +336,7 @@ def get_clients(status: Optional[str] = None, db: Session = Depends(get_db)):
     return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).all()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     payload = data.model_dump()
     # Enrich with extracted data from email, name, etc.
@@ -350,7 +351,7 @@ def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     return client_to_dict(client)
 
 
-@router.get("/{client_id}")
+@router.get("/{client_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_client(client_id: int, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:

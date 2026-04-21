@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from database.db import get_db
 from database.models import Job, Client
+from modules.auth.router import get_current_user, require_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -75,7 +76,7 @@ def job_to_dict(j: Job, client: Client = None) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_jobs(
     client_id: Optional[int] = None,
     status: Optional[str] = None,
@@ -101,7 +102,7 @@ def get_jobs(
     return [job_to_dict(j) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_job(data: JobCreate, db: Session = Depends(get_db)):
     # ── CONFLICT / DUPLICATE CHECK ──
     # Prevent creating duplicate jobs for the same property + date + time
@@ -198,7 +199,7 @@ def sync_from_gcal(db: Session = Depends(get_db)):
     return result
 
 
-@router.get("/{job_id}")
+@router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
     if not job:
@@ -206,7 +207,7 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     return job_to_dict(job)
 
 
-@router.patch("/{job_id}")
+@router.patch("/{job_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
     if not job:

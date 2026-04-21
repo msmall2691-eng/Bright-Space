@@ -6,6 +6,7 @@ from typing import Optional, List
 from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal
 from integrations.ical_sync import sync_property
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -85,7 +86,7 @@ def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
     return data
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_properties(
     client_id: Optional[int] = None,
     property_type: Optional[str] = None,
@@ -99,7 +100,7 @@ def get_properties(
     return [prop_to_dict(p) for p in q.order_by(Property.name).all()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_property(data: PropertyCreate, db: Session = Depends(get_db)):
     d = data.model_dump()
     if not d.get("address"):
