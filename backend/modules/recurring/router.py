@@ -22,6 +22,7 @@ class ScheduleCreate(BaseModel):
     title: str
     address: str
     frequency: str                 # "weekly" | "biweekly" | "monthly"
+    interval_weeks: Optional[int] = 1  # 1 for weekly, 2 for biweekly, 3+ for custom
     days_of_week: Optional[List[int]] = []  # [0,2,4] for Mon/Wed/Fri
     day_of_week: Optional[int] = 0          # kept for compat; used if days_of_week empty
     day_of_month: Optional[int] = None
@@ -38,6 +39,7 @@ class ScheduleUpdate(BaseModel):
     title: Optional[str] = None
     address: Optional[str] = None
     frequency: Optional[str] = None
+    interval_weeks: Optional[int] = None
     days_of_week: Optional[List[int]] = None
     day_of_week: Optional[int] = None
     day_of_month: Optional[int] = None
@@ -67,6 +69,7 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
         "title": s.title,
         "address": s.address,
         "frequency": s.frequency,
+        "interval_weeks": s.interval_weeks,
         "days_of_week": days,
         "day_of_week": days[0] if days else 0,
         "day_of_week_name": DAY_NAMES[days[0]] if days else "",
@@ -103,14 +106,14 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
             else:
                 current = date(current.year, current.month + 1, 1)
     else:
-        interval_weeks = 1 if sched.frequency == "weekly" else 2
+        weeks_interval = sched.interval_weeks
         days = _effective_days(sched)
         for dow in days:
             days_ahead = (dow - today.weekday()) % 7
             current = today + timedelta(days=days_ahead)
             while current <= end:
                 result.append(current.isoformat())
-                current += timedelta(weeks=interval_weeks)
+                current += timedelta(weeks=weeks_interval)
 
     return sorted(set(result))
 

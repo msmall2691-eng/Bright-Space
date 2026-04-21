@@ -220,6 +220,7 @@ class RecurringSchedule(Base):
     address = Column(String, nullable=False)
 
     frequency = Column(String, nullable=False)      # "weekly" | "biweekly" | "monthly"
+    interval_weeks = Column(Integer, default=1, nullable=False)  # 1 for weekly, 2 for biweekly, etc.
     day_of_week = Column(Integer, nullable=False)   # 0=Mon … 6=Sun (kept for compat)
     days_of_week = Column(JSON, nullable=True)      # [0,2,4] for Mon/Wed/Fri multi-day
     day_of_month = Column(Integer, nullable=True)   # 1–28, only for monthly
