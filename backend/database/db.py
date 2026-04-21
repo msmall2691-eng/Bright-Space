@@ -264,7 +264,7 @@ def _bootstrap_admin_user():
 
     try:
         from database.models import User
-        from passlib.context import CryptContext
+        from auth_jwt import hash_password
 
         db = SessionLocal()
         existing = db.query(User).filter(User.email == admin_email).first()
@@ -273,9 +273,8 @@ def _bootstrap_admin_user():
             db.close()
             return
 
-        # Hash the password
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        password_hash = pwd_context.hash(admin_password)
+        # Hash the password using bcrypt with 72-byte truncation
+        password_hash = hash_password(admin_password)
 
         # Create the admin user
         admin = User(
