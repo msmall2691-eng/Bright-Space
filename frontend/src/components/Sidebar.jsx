@@ -3,11 +3,12 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
-  ChevronRight, Bell, Building2,
+  ChevronRight, Bell, Building2, LayoutGrid,
 } from 'lucide-react'
 
 const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/work',        icon: LayoutGrid,      label: 'Work' },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
   { divider: true, label: 'Clients' },
   { to: '/clients',     icon: Users,           label: 'Clients' },

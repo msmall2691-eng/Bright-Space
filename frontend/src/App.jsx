@@ -19,6 +19,7 @@ import Recurring from './pages/Recurring'
 import Requests from './pages/Requests'
 import Settings from './pages/Settings'
 import PublicQuote from './pages/PublicQuote'
+import Work from './pages/Work'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -45,6 +46,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/work" element={<Work />} />
           <Route path="/workspace" element={<Workspace />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/clients/:id" element={<ClientProfile />} />
