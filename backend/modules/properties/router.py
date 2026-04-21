@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from database.db import get_db
-from database.models import Property, ICalEvent
+from database.models import Property, ICalEvent, PropertyIcal
 from integrations.ical_sync import sync_property
 
 router = APIRouter()
@@ -20,6 +20,9 @@ class PropertyCreate(BaseModel):
     property_type: Optional[str] = "residential"  # residential | commercial | str
     ical_url: Optional[str] = None
     default_duration_hours: Optional[float] = 3.0
+    check_in_time: Optional[str] = None  # "14:00"
+    check_out_time: Optional[str] = None  # "10:00"
+    house_code: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -32,12 +35,22 @@ class PropertyUpdate(BaseModel):
     property_type: Optional[str] = None
     ical_url: Optional[str] = None
     default_duration_hours: Optional[float] = None
+    check_in_time: Optional[str] = None
+    check_out_time: Optional[str] = None
+    house_code: Optional[str] = None
     notes: Optional[str] = None
     active: Optional[bool] = None
 
 
-def prop_to_dict(p: Property) -> dict:
-    return {
+class PropertyIcalSchema(BaseModel):
+    id: Optional[int] = None
+    url: str
+    source: Optional[str] = None  # "airbnb", "vrbo", etc
+    active: Optional[bool] = True
+
+
+def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
+    data = {
         "id": p.id,
         "client_id": p.client_id,
         "name": p.name,
@@ -49,10 +62,27 @@ def prop_to_dict(p: Property) -> dict:
         "ical_url": p.ical_url,
         "ical_last_synced_at": p.ical_last_synced_at.isoformat() if p.ical_last_synced_at else None,
         "default_duration_hours": p.default_duration_hours,
+        "check_in_time": p.check_in_time,
+        "check_out_time": p.check_out_time,
+        "house_code": p.house_code,
         "notes": p.notes,
         "active": p.active,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
+
+    if include_icals:
+        data["icals"] = [
+            {
+                "id": pi.id,
+                "url": pi.url,
+                "source": pi.source,
+                "active": pi.active,
+                "last_synced_at": pi.last_synced_at.isoformat() if pi.last_synced_at else None,
+            }
+            for pi in (p.property_icals or [])
+        ]
+
+    return data
 
 
 @router.get("")
@@ -187,4 +217,75 @@ def delete_property(property_id: int, db: Session = Depends(get_db)):
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     prop.active = False
+    db.commit()
+
+
+# Multiple iCal management endpoints
+
+@router.post("/{property_id}/icals", status_code=201)
+def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
+    """Add another iCal URL to a property (Airbnb, VRBO, etc)"""
+    prop = db.query(Property).filter(Property.id == property_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    ical = PropertyIcal(
+        property_id=property_id,
+        url=data.url,
+        source=data.source,
+        active=data.active if data.active is not None else True
+    )
+    db.add(ical)
+    db.commit()
+    db.refresh(ical)
+
+    return {
+        "id": ical.id,
+        "url": ical.url,
+        "source": ical.source,
+        "active": ical.active,
+    }
+
+
+@router.patch("/{property_id}/icals/{ical_id}")
+def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
+    """Update an iCal URL"""
+    ical = db.query(PropertyIcal).filter(
+        PropertyIcal.id == ical_id,
+        PropertyIcal.property_id == property_id
+    ).first()
+
+    if not ical:
+        raise HTTPException(status_code=404, detail="iCal not found")
+
+    if data.url:
+        ical.url = data.url
+    if data.source:
+        ical.source = data.source
+    if data.active is not None:
+        ical.active = data.active
+
+    db.commit()
+    db.refresh(ical)
+
+    return {
+        "id": ical.id,
+        "url": ical.url,
+        "source": ical.source,
+        "active": ical.active,
+    }
+
+
+@router.delete("/{property_id}/icals/{ical_id}", status_code=204)
+def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db)):
+    """Remove an iCal URL from a property"""
+    ical = db.query(PropertyIcal).filter(
+        PropertyIcal.id == ical_id,
+        PropertyIcal.property_id == property_id
+    ).first()
+
+    if not ical:
+        raise HTTPException(status_code=404, detail="iCal not found")
+
+    db.delete(ical)
     db.commit()
