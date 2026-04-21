@@ -62,6 +62,7 @@ export default function Scheduling() {
   const [deleting, setDeleting] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [inviting, setInviting] = useState(false)
+  const [converting, setConverting] = useState(false)
 
   // GCal sync
   const [syncing, setSyncing] = useState(false)
@@ -265,6 +266,18 @@ export default function Scheduling() {
       setSaveError(e.message || 'Failed to send invite')
     }
     setInviting(false)
+  }
+
+  const convertToInvoice = async (jobId) => {
+    setConverting(true)
+    try {
+      const invoice = await post(`/api/jobs/${jobId}/convert-to-invoice`)
+      setSaveError(null)
+      navigate(`/invoicing`, { state: { invoiceId: invoice.id } })
+    } catch (e) {
+      setSaveError(e.message || 'Failed to create invoice')
+    }
+    setConverting(false)
   }
 
   const statusConfig = (s) => STATUS_OPTIONS.find(o => o.value === s) || STATUS_OPTIONS[0]
@@ -500,10 +513,12 @@ export default function Scheduling() {
                     onDelete={deleteJob}
                     onStatusChange={updateStatus}
                     onInviteClient={inviteClient}
+                    onConvertToInvoice={convertToInvoice}
                     onNavigateToClient={(clientId) => navigate(`/clients/${clientId}`)}
                     deleting={deleting}
                     statusUpdating={statusUpdating}
                     inviting={inviting}
+                    converting={converting}
                     saveError={saveError}
                   />
                 ) : (
@@ -543,7 +558,7 @@ export default function Scheduling() {
 
 /* ââââââââââââââââââââââââââââââ Job View Panel ââââââââââââââââââââââââââââââ */
 
-function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, onInviteClient, onNavigateToClient, deleting, statusUpdating, inviting, saveError }) {
+function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, onDelete, onStatusChange, onInviteClient, onConvertToInvoice, onNavigateToClient, deleting, statusUpdating, inviting, converting, saveError }) {
   if (!job) return null
   const sc = statusConfig(job.status)
   const typeBadge = TYPE_BADGE[job.job_type] || TYPE_BADGE.residential
@@ -699,6 +714,18 @@ function JobViewPanel({ job, clients, employees, empName, statusConfig, onEdit, 
           ))}
         </div>
       </div>
+
+      {/* Create invoice action */}
+      {job.status === 'completed' && (
+        <button
+          onClick={() => onConvertToInvoice(job.id)}
+          disabled={converting}
+          className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-300 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <CheckCircle className="w-4 h-4" />
+          {converting ? 'Creating Invoice...' : 'Create Invoice'}
+        </button>
+      )}
 
       {saveError && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">

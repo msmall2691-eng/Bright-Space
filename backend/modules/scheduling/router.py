@@ -304,3 +304,56 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"GCal error: {e}")
+
+
+@router.post("/{job_id}/convert-to-invoice", status_code=201)
+def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
+    """Convert a completed job to an invoice."""
+    from database.models import Invoice, Quote
+    from datetime import datetime, timedelta
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=409, detail="Only completed jobs can be converted to invoices")
+
+    quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
+
+    items = []
+    if quote and quote.items:
+        items = quote.items
+    else:
+        items = [{
+            "name": job.title,
+            "qty": 1,
+            "unit_price": 0,
+            "description": ""
+        }]
+
+    subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
+    tax_rate = float(quote.tax_rate) if quote else 5.5
+    tax = round(subtotal * (tax_rate / 100), 2)
+    total = round(subtotal + tax, 2)
+    due_date = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+
+    invoice = Invoice(
+        client_id=job.client_id,
+        job_id=job.id,
+        opportunity_id=job.opportunity_id,
+        items=items,
+        subtotal=round(subtotal, 2),
+        tax_rate=tax_rate,
+        tax=tax,
+        total=total,
+        status="draft",
+        due_date=due_date,
+        notes=job.notes or "",
+    )
+    db.add(invoice)
+    db.commit()
+    db.refresh(invoice)
+
+    from modules.invoicing.router import invoice_to_dict
+    return invoice_to_dict(invoice)
