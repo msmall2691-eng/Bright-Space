@@ -33,6 +33,8 @@ def init_db():
     _run_migrations()
     # Phase 1 omnichannel: backfill legacy messages into conversations
     _backfill_conversations()
+    # Auth: bootstrap admin user if env vars set
+    _bootstrap_admin_user()
 
 
 def _run_migrations():
@@ -132,6 +134,8 @@ def _run_migrations():
         "ALTER TABLE properties ADD COLUMN check_out_time TEXT",
         "ALTER TABLE properties ADD COLUMN house_code TEXT",
         "ALTER TABLE ical_events ADD COLUMN guest_count INTEGER",
+        # User authentication: add users table and cleaner assignment FK
+        "ALTER TABLE jobs ADD COLUMN assigned_cleaner_user_id INTEGER REFERENCES users(id)",
     ]
 
     with engine.connect() as conn:
@@ -247,6 +251,46 @@ def _backfill_conversations():
         except Exception: pass
     finally:
         db.close()
+
+
+def _bootstrap_admin_user():
+    """Create bootstrap admin user if ADMIN_BOOTSTRAP_EMAIL env var is set."""
+    admin_email = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip()
+    admin_password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "").strip()
+
+    if not admin_email or not admin_password:
+        logger.info("[bootstrap] Skipping admin user creation (no ADMIN_BOOTSTRAP_EMAIL/PASSWORD env vars)")
+        return
+
+    try:
+        from database.models import User
+        from passlib.context import CryptContext
+
+        db = SessionLocal()
+        existing = db.query(User).filter(User.email == admin_email).first()
+        if existing:
+            logger.info(f"[bootstrap] Admin user {admin_email} already exists, skipping")
+            db.close()
+            return
+
+        # Hash the password
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        password_hash = pwd_context.hash(admin_password)
+
+        # Create the admin user
+        admin = User(
+            email=admin_email,
+            password_hash=password_hash,
+            full_name="Administrator",
+            role="admin",
+            active=True,
+        )
+        db.add(admin)
+        db.commit()
+        logger.info(f"[bootstrap] Created admin user: {admin_email}")
+        db.close()
+    except Exception as exc:
+        logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
 
 
 def get_db():

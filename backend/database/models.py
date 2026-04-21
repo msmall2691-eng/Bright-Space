@@ -66,6 +66,13 @@ class ActivityType(str, Enum):
     STATUS_CHANGED = "status_changed"
 
 
+class UserRole(str, Enum):
+    """User role types for auth and row-level access control."""
+    ADMIN = "admin"
+    CLEANER = "cleaner"
+    CLIENT = "client"
+
+
 class FieldDefinition(Base):
     """User-defined custom fields for Clients, Jobs, or Invoices."""
     __tablename__ = "field_definitions"
@@ -84,6 +91,26 @@ class FieldDefinition(Base):
     __table_args__ = (
         UniqueConstraint("entity_type", "key", name="uq_field_entity_key"),
     )
+
+
+class User(Base):
+    """System users: admins, cleaners, and clients who log in to the app."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    password_hash = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    role = Column(String, nullable=False, default=UserRole.CLIENT)  # admin | cleaner | client
+    # FK to Client — only set for role=client users. Admins/cleaners have no client profile.
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    phone = Column(String, nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="user")
+    jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
 
 
 class Client(Base):
@@ -120,6 +147,7 @@ class Client(Base):
     email_verified = Column(Boolean, default=False)
 
     # Relationships - all cascade delete with client
+    user = relationship("User", back_populates="client", uselist=False)  # One client per user (for role=client users)
     quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
@@ -256,6 +284,7 @@ class Job(Base):
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
     recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True)
     ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True)
+    assigned_cleaner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Future: replace cleaner_ids JSON
 
     # Notification tracking
     calendar_invite_sent = Column(Boolean, default=False, nullable=False)
@@ -285,6 +314,7 @@ class Job(Base):
         "ICalEvent", back_populates="job",
         foreign_keys="ICalEvent.job_id", uselist=False
     )
+    assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
 
 
 class LeadIntake(Base):
