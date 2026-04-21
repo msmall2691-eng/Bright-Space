@@ -44,7 +44,7 @@ def send_email(to: str, subject: str, html_body: str, text_body: str = "") -> di
     return {"status": "sent", "to": to}
 
 
-def build_quote_email(quote: dict, client_name: str, company_phone: str = "") -> tuple[str, str]:
+def build_quote_email(quote: dict, client_name: str, company_phone: str = "", public_url: str = "") -> tuple[str, str]:
     """Returns (html, plain_text) for a quote email."""
     q_num = quote.get("quote_number") or f"QT-{quote['id']}"
     items = quote.get("items") or []
@@ -136,8 +136,9 @@ def build_quote_email(quote: dict, client_name: str, company_phone: str = "") ->
 
     <!-- CTA -->
     <div style="margin:0 32px 32px;padding:20px;background:#eff6ff;border-radius:10px;text-align:center;">
-      <div style="font-size:15px;color:#1e40af;font-weight:600;margin-bottom:8px;">Ready to get started?</div>
-      <div style="font-size:14px;color:#3b82f6;margin-bottom:4px;">Reply to this email to accept or ask any questions.</div>
+      <div style="font-size:15px;color:#1e40af;font-weight:600;margin-bottom:12px;">Ready to get started?</div>
+      {f'<a href="{public_url}" style="display:inline-block;padding:12px 24px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;margin-bottom:12px;">Accept Quote</a>' if public_url else ''}
+      <div style="font-size:14px;color:#3b82f6;margin-bottom:4px;">Reply to this email to ask any questions.</div>
       {f'<div style="font-size:14px;color:#3b82f6;">Or call/text us at {company_phone}</div>' if company_phone else ''}
     </div>
 
@@ -171,7 +172,7 @@ Valid until: {valid_until}
 
 {f'Notes: {notes}' if notes else ''}
 
-To accept this quote, simply reply to this email.
+To accept this quote, click here: {public_url if public_url else 'Reply to this email'}
 {f'You can also call or text us at {company_phone}.' if company_phone else ''}
 
 Thank you,
@@ -338,7 +339,7 @@ def build_invoice_sms(invoice: dict, client_name: str, company_phone: str = "") 
     return "\n".join(lines)
 
 
-def build_quote_sms(quote: dict, client_name: str, company_phone: str = "") -> str:
+def build_quote_sms(quote: dict, client_name: str, company_phone: str = "", public_url: str = "") -> str:
     q_num = quote.get("quote_number") or f"QT-{quote['id']}"
     service_type = (quote.get("service_type") or "residential").title()
     address = quote.get("address") or ""
@@ -354,7 +355,10 @@ def build_quote_sms(quote: dict, client_name: str, company_phone: str = "") -> s
     if valid_until:
         lines.append(f"Valid until: {valid_until}")
     lines.append("")
-    lines.append("Reply YES to accept or ask any questions.")
+    if public_url:
+        lines.append(f"Accept your quote: {public_url}")
+    else:
+        lines.append("Reply YES to accept or ask any questions.")
     if company_phone:
         lines.append(f"Call/text: {company_phone}")
     return "\n".join(lines)
