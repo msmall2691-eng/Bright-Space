@@ -364,6 +364,7 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db)):
     Get client's full profile including properties, upcoming/past visits, and GCal sync status.
     """
     client = db.query(Client).options(
+        joinedload(Client.properties).joinedload(Property.property_icals),
         joinedload(Client.properties).joinedload(Property.ical_events),
         joinedload(Client.jobs)
     ).filter(Client.id == client_id).first()

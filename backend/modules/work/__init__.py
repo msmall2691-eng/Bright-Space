@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 
 from database.db import get_db
@@ -13,6 +13,9 @@ def get_work_board(db: Session = Depends(get_db)):
     """Get unified work board with all active pipeline stages."""
     now = datetime.utcnow()
 
+    # Pre-load all clients to avoid N+1 queries
+    all_clients = {c.id: c for c in db.query(Client).all()}
+
     # Requests: open intakes (new, reviewed, quoted)
     intakes = db.query(LeadIntake).filter(
         LeadIntake.status.in_(["new", "reviewed", "quoted"])
@@ -21,7 +24,7 @@ def get_work_board(db: Session = Depends(get_db)):
     requests_data = []
     for intake in intakes:
         age_days = (now - intake.created_at).days if intake.created_at else 0
-        client = db.query(Client).filter(Client.id == intake.client_id).first() if intake.client_id else None
+        client = all_clients.get(intake.client_id) if intake.client_id else None
         requests_data.append({
             "id": intake.id,
             "type": "request",
@@ -42,7 +45,7 @@ def get_work_board(db: Session = Depends(get_db)):
     quotes_data = []
     for quote in quotes:
         age_days = (now - quote.created_at).days if quote.created_at else 0
-        client = db.query(Client).filter(Client.id == quote.client_id).first()
+        client = all_clients.get(quote.client_id)
         quotes_data.append({
             "id": quote.id,
             "type": "quote",
@@ -63,7 +66,7 @@ def get_work_board(db: Session = Depends(get_db)):
     jobs_data = []
     for job in jobs:
         age_days = (now - job.created_at).days if job.created_at else 0
-        client = db.query(Client).filter(Client.id == job.client_id).first()
+        client = all_clients.get(job.client_id)
         jobs_data.append({
             "id": job.id,
             "type": "job",
@@ -84,7 +87,7 @@ def get_work_board(db: Session = Depends(get_db)):
     invoices_data = []
     for invoice in invoices:
         age_days = (now - invoice.created_at).days if invoice.created_at else 0
-        client = db.query(Client).filter(Client.id == invoice.client_id).first()
+        client = all_clients.get(invoice.client_id)
         invoices_data.append({
             "id": invoice.id,
             "type": "invoice",

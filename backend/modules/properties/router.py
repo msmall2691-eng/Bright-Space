@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -91,7 +91,7 @@ def get_properties(
     property_type: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Property).filter(Property.active == True)
+    q = db.query(Property).options(joinedload(Property.property_icals)).filter(Property.active == True)
     if client_id:
         q = q.filter(Property.client_id == client_id)
     if property_type:
@@ -113,7 +113,7 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db)):
 
 @router.get("/{property_id}")
 def get_property(property_id: int, db: Session = Depends(get_db)):
-    prop = db.query(Property).filter(Property.id == property_id).first()
+    prop = db.query(Property).options(joinedload(Property.property_icals)).filter(Property.id == property_id).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     return prop_to_dict(prop)
