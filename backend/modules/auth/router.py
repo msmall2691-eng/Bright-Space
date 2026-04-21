@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -135,7 +135,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 def get_current_user(
     db: Session = Depends(get_db),
-    credentials: HTTPAuthCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> User:
     """
     Dependency to extract and verify JWT token from Authorization header.
