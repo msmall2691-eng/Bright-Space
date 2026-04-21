@@ -9,6 +9,7 @@ import re
 from database.db import get_db
 from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
+from utils.enrichment import enrich_client_data
 
 router = APIRouter()
 
@@ -337,6 +338,8 @@ def get_clients(status: Optional[str] = None, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     payload = data.model_dump()
+    # Enrich with extracted data from email, name, etc.
+    payload = enrich_client_data(payload)
     payload["name"] = _derive_name(payload.get("first_name"), payload.get("last_name"), payload.get("name") or "")
     if not payload["name"]:
         raise HTTPException(status_code=422, detail="name or first_name required")
@@ -555,6 +558,17 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     updates = data.model_dump(exclude_none=True)
     phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
     new_phone = updates.get("phone") if phone_changed else None
+
+    # Enrich with extracted data if email changed
+    email_changed = "email" in updates and updates["email"] != client.email
+    if email_changed:
+        client_data = client_to_dict(client)
+        client_data.update(updates)
+        enriched = enrich_client_data(client_data)
+        # Add enriched data to updates (name, first_name, last_name, source_detail)
+        for key in ['name', 'first_name', 'last_name', 'source_detail']:
+            if key in enriched and enriched[key] != client_data.get(key):
+                updates[key] = enriched[key]
 
     for field, value in updates.items():
         setattr(client, field, value)
