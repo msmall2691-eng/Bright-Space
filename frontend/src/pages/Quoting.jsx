@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { get, post, patch } from "../api"
 
@@ -49,6 +49,7 @@ export default function Quoting() {
   const [converting, setConverting] = useState(null)
   const [toast, setToast] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [copiedQuoteId, setCopiedQuoteId] = useState(null)
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -129,6 +130,7 @@ export default function Quoting() {
     if (!selected) return
     setSending(true)
     try {
+      await post(`/api/quotes/${selected.id}/generate-token`, {})
       const data = await post(`/api/quotes/${selected.id}/send`, sendForm)
       const channels = Object.entries(data.results || {})
         .filter(([, v]) => v === 'sent').map(([k]) => k)
@@ -157,6 +159,24 @@ export default function Quoting() {
       navigate(`/scheduling`)
     } catch { showToast('Error converting to job') }
     setConverting(null)
+  }
+
+  const copyPublicLink = async (quote) => {
+    if (!quote.public_token) {
+      try {
+        const token = await post(`/api/quotes/${quote.id}/generate-token`, {})
+        quote = { ...quote, public_token: token.public_token }
+      } catch (e) {
+        showToast('Error generating link')
+        return
+      }
+    }
+    const appUrl = window.location.origin
+    const link = `${appUrl}/quote/${quote.public_token}`
+    await navigator.clipboard.writeText(link)
+    setCopiedQuoteId(quote.id)
+    showToast('Link copied!')
+    setTimeout(() => setCopiedQuoteId(null), 2000)
   }
 
   // Preview text for send panel
@@ -269,6 +289,13 @@ export default function Quoting() {
                       <button onClick={() => openSendPanel(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
                         <Send className="w-3 h-3" /> Send
+                      </button>
+                    )}
+                    {q.status === 'sent' && (
+                      <button onClick={() => copyPublicLink(q)}
+                        className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${copiedQuoteId === q.id ? 'bg-green-600/30 text-green-400' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
+                        {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
                       </button>
                     )}
                     {q.status === 'sent' && (

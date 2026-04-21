@@ -18,11 +18,23 @@ import Properties from './pages/Properties'
 import Recurring from './pages/Recurring'
 import Requests from './pages/Requests'
 import Settings from './pages/Settings'
+import PublicQuote from './pages/PublicQuote'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
+
+  const isPublicRoute = location.pathname.startsWith('/quote/')
+
+  if (isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/quote/:token" element={<PublicQuote />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    )
+  }
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#FCFCFC]">
