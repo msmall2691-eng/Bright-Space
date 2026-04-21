@@ -118,6 +118,11 @@ export default function ClientProfile() {
   const [savingProp, setSavingProp] = useState(false)
   const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, notes: '' }
 
+  // Schedule form state
+  const [showSchedForm, setShowSchedForm] = useState(false)
+  const [schedForm, setSchedForm] = useState({})
+  const [savingSched, setSavingSched] = useState(false)
+
   const [visitStats, setVisitStats] = useState(null)
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
 
@@ -354,6 +359,27 @@ export default function ClientProfile() {
         <button onClick={() => navigate(`/scheduling?client_id=${id}`)}
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-2 sm:py-1.5 rounded-lg transition-colors">
           <Calendar className="w-3.5 h-3.5 text-blue-500" /> <span className="hidden sm:inline">Schedule Job</span>
+        </button>
+        <button onClick={() => {
+          const initialAddr = properties.length > 0 ? properties[0].address : client.address || ''
+          setSchedForm({
+            client_id: parseInt(id),
+            job_type: 'residential',
+            title: '',
+            address: initialAddr,
+            frequency: 'biweekly',
+            interval_weeks: 2,
+            days_of_week: [0],
+            day_of_month: 1,
+            start_time: '09:00',
+            end_time: '12:00',
+            generate_weeks_ahead: 8,
+            notes: ''
+          })
+          setShowSchedForm(true)
+        }}
+          className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-2 sm:py-1.5 rounded-lg transition-colors">
+          <RefreshCw className="w-3.5 h-3.5 text-amber-500" /> <span className="hidden sm:inline">Recurring Schedule</span>
         </button>
         <button onClick={() => navigate(`/invoicing`)}
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-2 sm:py-1.5 rounded-lg transition-colors">
@@ -1358,6 +1384,159 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, v
           </div>
         )}
       </div>
+
+      {/* Schedule form drawer */}
+      {showSchedForm && (
+        <div className="fixed inset-0 z-50 bg-black/20 flex items-end sm:items-center sm:justify-end">
+          <div className="w-full sm:w-96 bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+              <h2 className="font-semibold text-zinc-900">New Recurring Schedule</h2>
+              <button onClick={() => setShowSchedForm(false)} className="text-zinc-500 hover:text-zinc-900">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
+              {/* Title */}
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Schedule Title *</label>
+                <input value={schedForm.title || ''} onChange={e => setSchedForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Biweekly Home Clean"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-blue-700" />
+              </div>
+
+              {/* Service type */}
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Service Type</label>
+                <div className="flex gap-2">
+                  {[['residential','Residential'],['commercial','Commercial'],['str_turnover','STR']].map(([val, label]) => (
+                    <button key={val} onClick={() => setSchedForm(f => ({ ...f, job_type: val }))}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${schedForm.job_type === val ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Address */}
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Service Address *</label>
+                <input value={schedForm.address || ''} onChange={e => setSchedForm(f => ({ ...f, address: e.target.value }))}
+                  placeholder="Full address"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-blue-700" />
+              </div>
+
+              {/* Frequency */}
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Frequency</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'weekly', label: 'Weekly', interval: 1 },
+                    { value: 'biweekly', label: 'Every 2 weeks', interval: 2 },
+                    { value: 'every_3_weeks', label: 'Every 3 weeks', interval: 3 },
+                    { value: 'every_4_weeks', label: 'Every 4 weeks', interval: 4 },
+                    { value: 'monthly', label: 'Monthly', interval: null },
+                  ].map(opt => (
+                    <button key={opt.value} onClick={() => setSchedForm(f => ({
+                      ...f,
+                      frequency: opt.value,
+                      interval_weeks: opt.interval ?? f.interval_weeks
+                    }))}
+                      className={`py-2 rounded-lg text-xs font-medium transition-colors ${schedForm.frequency === opt.value ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Day selection */}
+              {schedForm.frequency === 'monthly' ? (
+                <div>
+                  <label className="block text-xs text-zinc-700 font-medium mb-1">Day of Month</label>
+                  <input type="number" min="1" max="28" value={schedForm.day_of_month || 1}
+                    onChange={e => setSchedForm(f => ({ ...f, day_of_month: parseInt(e.target.value) }))}
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-zinc-700 font-medium mb-1">Days of Week</label>
+                  <div className="grid grid-cols-7 gap-1">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => {
+                      const selected = (schedForm.days_of_week || []).includes(i)
+                      return (
+                        <button key={i} onClick={() => setSchedForm(f => {
+                          const cur = f.days_of_week || []
+                          return { ...f, days_of_week: selected ? cur.filter(x => x !== i) : [...cur, i].sort() }
+                        })}
+                          className={`py-1.5 rounded-lg text-xs font-medium transition-colors ${selected ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
+                          {d}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Times */}
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-zinc-700 font-medium mb-1">Start</label>
+                  <input type="time" value={schedForm.start_time || '09:00'} onChange={e => setSchedForm(f => ({ ...f, start_time: e.target.value }))}
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs text-zinc-700 font-medium mb-1">End</label>
+                  <input type="time" value={schedForm.end_time || '12:00'} onChange={e => setSchedForm(f => ({ ...f, end_time: e.target.value }))}
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none" />
+                </div>
+              </div>
+
+              {/* Generate ahead */}
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Generate ahead</label>
+                <select value={schedForm.generate_weeks_ahead} onChange={e => setSchedForm(f => ({ ...f, generate_weeks_ahead: parseInt(e.target.value) }))}
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none">
+                  {[4, 6, 8, 12, 16, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Notes</label>
+                <textarea value={schedForm.notes || ''} onChange={e => setSchedForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none resize-none" />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-zinc-200 space-y-3">
+              <button onClick={async () => {
+                setSavingSched(true)
+                try {
+                  const body = {
+                    ...schedForm,
+                    client_id: parseInt(schedForm.client_id),
+                    property_id: schedForm.property_id ? parseInt(schedForm.property_id) : null,
+                    days_of_week: (schedForm.days_of_week || [0]).map(Number),
+                    day_of_week: (schedForm.days_of_week || [0]).map(Number)[0] ?? 0,
+                    day_of_month: schedForm.frequency === 'monthly' ? parseInt(schedForm.day_of_month) : null,
+                    generate_weeks_ahead: parseInt(schedForm.generate_weeks_ahead),
+                    interval_weeks: schedForm.frequency === 'monthly' ? null : parseInt(schedForm.interval_weeks || 1),
+                  }
+                  await post('/api/recurring', body)
+                  await load()
+                  setShowSchedForm(false)
+                } catch (e) {
+                  alert('Failed to create schedule: ' + (e.message || 'unknown error'))
+                }
+                setSavingSched(false)
+              }} disabled={savingSched || !schedForm.title || !schedForm.address || (schedForm.frequency !== 'monthly' && (schedForm.days_of_week || []).length === 0)}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-600 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+                {savingSched ? 'Creating...' : 'Create & Generate Jobs'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
