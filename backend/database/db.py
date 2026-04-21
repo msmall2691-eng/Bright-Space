@@ -127,6 +127,11 @@ def _run_migrations():
         "CREATE INDEX IF NOT EXISTS idx_quote_updated_at ON quotes(updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_invoice_updated_at ON invoices(updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_opportunity_updated_at ON opportunities(updated_at)",
+        # STR property management: multiple iCals, check-in/out times, house codes
+        "ALTER TABLE properties ADD COLUMN check_in_time TEXT",
+        "ALTER TABLE properties ADD COLUMN check_out_time TEXT",
+        "ALTER TABLE properties ADD COLUMN house_code TEXT",
+        "ALTER TABLE ical_events ADD COLUMN guest_count INTEGER",
     ]
 
     with engine.connect() as conn:
