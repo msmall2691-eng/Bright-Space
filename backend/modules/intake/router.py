@@ -187,6 +187,61 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
+@router.post("/{intake_id}/convert-to-quote", status_code=201)
+def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
+    """Convert an intake to a quote with sensible defaults."""
+    from database.models import Quote
+
+    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+    if not intake:
+        raise HTTPException(status_code=404, detail="Intake not found")
+
+    client_id = intake.client_id
+    if not client_id:
+        client = Client(
+            name=intake.name,
+            email=intake.email,
+            phone=intake.phone,
+            address=intake.address,
+            city=intake.city,
+            state=intake.state,
+            zip_code=intake.zip_code,
+            status="lead",
+            source=intake.source,
+        )
+        db.add(client)
+        db.flush()
+        client_id = client.id
+
+    address = " ".join(filter(None, [intake.address, intake.city, intake.state, intake.zip_code]))
+    quote = Quote(
+        client_id=client_id,
+        intake_id=intake_id,
+        address=address or None,
+        service_type=intake.service_type or "residential",
+        items=[{
+            "name": f"{(intake.service_type or 'residential').title()} Cleaning",
+            "qty": 1,
+            "unit_price": 0,
+            "description": ""
+        }],
+        subtotal=0,
+        tax_rate=5.5,
+        tax=0,
+        total=0,
+        status="draft",
+        notes=intake.message or "",
+        valid_until=None,
+    )
+    db.add(quote)
+    intake.status = "quoted"
+    db.commit()
+    db.refresh(quote)
+
+    from modules.quoting.router import quote_to_dict
+    return quote_to_dict(quote)
+
+
 # ---------------------------------------------------------------------------
 # Webhook endpoint — accepts the maineclean.co InstantEstimate payload format
 # Set CRM_WEBHOOK_URL=https://your-brightbase-backend.com/api/intake/webhook
