@@ -6,6 +6,7 @@ from typing import Optional, List
 
 from database.db import get_db
 from database.models import FieldDefinition
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -46,7 +47,7 @@ class FieldUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin"))])
 def list_fields(entity_type: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(FieldDefinition)
     if entity_type:
@@ -54,7 +55,7 @@ def list_fields(entity_type: Optional[str] = None, db: Session = Depends(get_db)
     return [field_to_dict(f) for f in q.order_by(FieldDefinition.entity_type, FieldDefinition.sort_order, FieldDefinition.name).all()]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin"))])
 def create_field(data: FieldCreate, db: Session = Depends(get_db)):
     key = slugify(data.name)
     # Ensure key is unique per entity_type

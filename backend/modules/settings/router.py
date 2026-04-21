@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 from database.db import get_db
 from database.models import AppSetting
+from modules.auth.router import require_role
 import imaplib
 import smtplib
 import logging
@@ -48,7 +49,7 @@ class EmailConfig(BaseModel):
     email_auto_enrich: Optional[str] = "true"
 
 
-@router.get("/email")
+@router.get("/email", dependencies=[Depends(require_role("admin"))])
 def get_email_settings(db: Session = Depends(get_db)):
     import os
     result = {}
@@ -77,7 +78,7 @@ def get_email_settings(db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/email")
+@router.post("/email", dependencies=[Depends(require_role("admin"))])
 def save_email_settings(config: EmailConfig, db: Session = Depends(get_db)):
     data = config.model_dump(exclude_none=True)
     for key, value in data.items():
@@ -88,7 +89,7 @@ def save_email_settings(config: EmailConfig, db: Session = Depends(get_db)):
     return {"status": "saved"}
 
 
-@router.post("/email/test")
+@router.post("/email/test", dependencies=[Depends(require_role("admin"))])
 def test_email_connection(db: Session = Depends(get_db)):
     user = get_setting(db, "smtp_user")
     passwd = get_setting(db, "smtp_pass")

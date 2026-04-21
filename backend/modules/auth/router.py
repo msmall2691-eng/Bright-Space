@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthCredentials
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -73,19 +73,26 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/register", response_model=RegisterResponse)
-def register(data: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    data: RegisterRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     """
-    Register a new user. Only allowed if no users exist yet (first user),
-    or if caller has admin role (future: when JWT auth is in place).
+    Register a new user.
+    - First user: self-register (no auth needed)
+    - Subsequent users: admin-only (requires JWT with admin role)
     """
     # Check if any users exist
     user_count = db.query(User).count()
 
     if user_count > 0:
-        raise HTTPException(
-            status_code=403,
-            detail="Registration is closed. Contact an administrator."
-        )
+        # Only admins can create new users after the first one
+        if not current_user or current_user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators can create new users. Contact your admin."
+            )
 
     # Check if email already exists
     existing = db.query(User).filter(User.email == data.email).first()
@@ -132,7 +139,7 @@ def get_current_user(
 ) -> User:
     """
     Dependency to extract and verify JWT token from Authorization header.
-    Used by protected endpoints.
+    Used by protected endpoints. Raises 401 if token is missing or invalid.
     """
     token = credentials.credentials
     payload = verify_jwt(token)
@@ -145,6 +152,28 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    return user
+
+
+def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optional JWT verification. Returns None if no token provided or token is invalid.
+    Used for endpoints that work with or without authentication.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    payload = verify_jwt(token)
+    if not payload:
+        return None
+
+    user_id = payload.get("user_id")
+    user = db.query(User).filter(User.id == user_id).first()
     return user
 
 

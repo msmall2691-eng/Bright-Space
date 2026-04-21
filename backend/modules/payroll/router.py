@@ -1,14 +1,15 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 
 from integrations.connecteam import get_timesheets, get_mileage
+from modules.auth.router import require_role
 
 router = APIRouter()
 
 MILEAGE_RATE = 0.67  # IRS standard mileage rate per mile
 
 
-@router.get("/timesheets")
+@router.get("/timesheets", dependencies=[Depends(require_role("admin"))])
 async def fetch_timesheets(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
