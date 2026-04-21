@@ -205,7 +205,10 @@ export default function ClientProfile() {
       if (parts) payload.name = parts
       await patch(`/api/clients/${id}`, payload)
       await load(); setEditing(false)
-    } catch {}
+    } catch (e) {
+      console.error('[ClientProfile save error]', e)
+      alert('Failed to save changes. Please try again.')
+    }
     setSaving(false)
   }
 
@@ -386,60 +389,13 @@ export default function ClientProfile() {
           </div>
         )}
 
-        {/* Inline contact form — for missing phone/email */}
+        {/* Missing contact info notice */}
         {(!client.phone || !client.email) && (
-          <div className="mt-4 pt-4 border-t border-amber-200 bg-amber-50 rounded-lg p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-amber-900 mb-2">Missing contact info</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {!client.phone && (
-                      <input
-                        type="tel"
-                        placeholder="Phone"
-                        onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                        className={`text-xs px-2 py-1.5 rounded border border-amber-300 bg-white focus:outline-none focus:border-amber-500 flex-1 min-w-[140px] ${INPUT_CLASS.split(' ').join(' ')}`}
-                        style={{width: '160px'}}
-                      />
-                    )}
-                    {!client.email && (
-                      <input
-                        type="email"
-                        placeholder="Email"
-                        onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                        className={`text-xs px-2 py-1.5 rounded border border-amber-300 bg-white focus:outline-none focus:border-amber-500 flex-1 min-w-[140px] ${INPUT_CLASS.split(' ').join(' ')}`}
-                        style={{width: '160px'}}
-                      />
-                    )}
-                    <button
-                      onClick={async () => {
-                        const updates = {}
-                        if (!client.phone && form.phone) updates.phone = form.phone
-                        if (!client.email && form.email) updates.email = form.email
-                        if (Object.keys(updates).length > 0) {
-                          try {
-                            await patch(`/api/clients/${id}`, updates)
-                            await load()
-                          } catch (e) {
-                            console.error('Failed to save contact info:', e)
-                          }
-                        }
-                      }}
-                      className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded font-medium transition-colors shrink-0"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setForm(f => ({ ...f, phone: client.phone, email: client.email }))}
-                className="text-amber-600 hover:text-amber-700 p-1 shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
+          <div className="mt-4 pt-4 border-t border-amber-200 bg-amber-50 rounded-lg p-3 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-amber-900">Missing contact info</div>
+              <p className="text-xs text-amber-700 mt-1">Add {!client.phone && !client.email ? 'phone and email' : !client.phone ? 'phone' : 'email'} in the Overview tab.</p>
             </div>
           </div>
         )}
@@ -967,43 +923,56 @@ export default function ClientProfile() {
 
             {/* Contact info */}
             <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Contact</div>
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Contact Info</div>
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="block text-xs text-zinc-500 mb-1">First Name</label>
                   <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs text-zinc-500 mb-1">Last Name</label>
                   <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
                 </div>
               </div>
-              {[
-                { label: 'Phone', key: 'phone' },
-                { label: 'Email', key: 'email' },
-                { label: 'Lead Source', key: 'source' },
-              ].map(({ label, key }) => (
-                <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
-                  <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
-                </div>
-              ))}
-              <div className="flex items-center gap-4">
-                <span className="text-xs text-zinc-500 w-24 shrink-0">Status</span>
+
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Phone *</label>
+                <input type="tel" value={form.phone || ''} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  placeholder="+1 (555) 123-4567"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Email *</label>
+                <input type="email" value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="client@example.com"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Lead Source</label>
+                <input value={form.source || ''} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
+                  placeholder="e.g., Google, Referral, Facebook"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Status</label>
                 <select value={form.status || 'lead'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none">
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400">
                   <option value="lead">Lead</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-              <div className="flex items-start gap-4">
-                <span className="text-xs text-zinc-500 w-24 shrink-0 pt-2">Notes</span>
+
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Notes</label>
                 <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                  className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-gray-400 resize-none" />
+                  placeholder="Any special notes about this client"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:border-blue-400 resize-none" />
               </div>
             </div>
 
