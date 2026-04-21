@@ -122,52 +122,49 @@ export default function ClientProfile() {
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
 
   const load = async () => {
-    const [profile, j, q, inv, msgs, props, scheds, opps, acts, gmailRes] = await Promise.all([
-      get(`/api/clients/${id}/profile`).catch(() => null),
-      get(`/api/jobs?client_id=${id}`),
-      get(`/api/quotes?client_id=${id}`),
-      get(`/api/invoices?client_id=${id}`),
-      get(`/api/comms/messages?client_id=${id}`),
-      get(`/api/properties?client_id=${id}`),
-      get(`/api/recurring?client_id=${id}`),
-      get(`/api/opportunities?client_id=${id}`).catch(() => []),
-      get(`/api/activities?client_id=${id}&limit=50`).catch(() => []),
-      get(`/api/gmail/inbox?max_results=40&skip_automated=true`).catch(() => ({ emails: [] })),
-    ])
-    // Use profile endpoint data if available, fall back to basic client
-    const c = profile || await get(`/api/clients/${id}`)
-    setClient(c)
-    // Backfill first_name / last_name from `name` if the form has empties.
-    // A lot of seeded/imported clients only have `name` set, so the Edit
-    // form was opening with blank First/Last fields even though the header
-    // displayed the right name.
-    const formFill = { ...c }
-    if ((!formFill.first_name || !formFill.first_name.trim())
-        && (!formFill.last_name || !formFill.last_name.trim())
-        && c.name) {
-      const parts = c.name.trim().split(/\s+/)
-      formFill.first_name = parts[0] || ''
-      formFill.last_name = parts.slice(1).join(' ') || ''
+    try {
+      // Load client first (blocking)
+      const profile = await get(`/api/clients/${id}/profile`).catch(() => null)
+      const c = profile || await get(`/api/clients/${id}`)
+      setClient(c)
+
+      // Backfill name
+      const formFill = { ...c }
+      if ((!formFill.first_name || !formFill.first_name.trim())
+          && (!formFill.last_name || !formFill.last_name.trim())
+          && c.name) {
+        const parts = c.name.trim().split(/\s+/)
+        formFill.first_name = parts[0] || ''
+        formFill.last_name = parts.slice(1).join(' ') || ''
+      }
+      setForm(formFill)
+      if (profile?.visit_stats) setVisitStats(profile.visit_stats)
+      if (profile?.upcoming_visits || profile?.past_visits) {
+        setProfileVisits({
+          upcoming: profile.upcoming_visits || [],
+          past: profile.past_visits || [],
+        })
+      }
+
+      // Load other data in background (non-blocking)
+      Promise.all([
+        get(`/api/jobs?client_id=${id}`).then(j => setJobs(Array.isArray(j) ? j : [])).catch(() => {}),
+        get(`/api/quotes?client_id=${id}`).then(q => setQuotes(Array.isArray(q) ? q : [])).catch(() => {}),
+        get(`/api/invoices?client_id=${id}`).then(inv => setInvoices(Array.isArray(inv) ? inv : [])).catch(() => {}),
+        get(`/api/comms/messages?client_id=${id}`).then(msgs => setMessages(Array.isArray(msgs) ? msgs : [])).catch(() => {}),
+        get(`/api/properties?client_id=${id}`).then(props => setProperties(Array.isArray(props) ? props : [])).catch(() => {}),
+        get(`/api/recurring?client_id=${id}`).then(scheds => setSchedules(Array.isArray(scheds) ? scheds : [])).catch(() => {}),
+        get(`/api/opportunities?client_id=${id}`).then(opps => setOpportunities(Array.isArray(opps) ? opps : [])).catch(() => {}),
+        get(`/api/activities?client_id=${id}&limit=50`).then(acts => setActivities(Array.isArray(acts) ? acts : [])).catch(() => {}),
+        get(`/api/gmail/inbox?max_results=40&skip_automated=true`).then(gmailRes => {
+          const allEmails = gmailRes?.emails || []
+          const clientEmail = c?.email?.toLowerCase()
+          setEmails(clientEmail ? allEmails.filter(e => e.from_email?.toLowerCase() === clientEmail || e.client?.id === parseInt(id)) : [])
+        }).catch(() => {}),
+      ])
+    } catch (e) {
+      console.error('[ClientProfile load error]', e)
     }
-    setForm(formFill)
-    if (profile?.visit_stats) setVisitStats(profile.visit_stats)
-    if (profile?.upcoming_visits || profile?.past_visits) {
-      setProfileVisits({
-        upcoming: profile.upcoming_visits || [],
-        past: profile.past_visits || [],
-      })
-    }
-    setJobs(Array.isArray(j) ? j : [])
-    setQuotes(Array.isArray(q) ? q : [])
-    setInvoices(Array.isArray(inv) ? inv : [])
-    setMessages(Array.isArray(msgs) ? msgs : [])
-    setProperties(Array.isArray(props) ? props : [])
-    setSchedules(Array.isArray(scheds) ? scheds : [])
-    setOpportunities(Array.isArray(opps) ? opps : [])
-    setActivities(Array.isArray(acts) ? acts : [])
-    const allEmails = gmailRes?.emails || []
-    const clientEmail = c?.email?.toLowerCase()
-    setEmails(clientEmail ? allEmails.filter(e => e.from_email?.toLowerCase() === clientEmail || e.client?.id === parseInt(id)) : [])
   }
 
   const saveProp = async () => {
@@ -276,18 +273,7 @@ export default function ClientProfile() {
               <span className="text-blue-500 font-bold text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
             </div>
             <div>
-              {editing ? (
-                <div className="flex gap-2">
-                  <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-                    placeholder="First"
-                    className="text-xl font-bold bg-zinc-100 border border-zinc-300 rounded-lg px-3 py-1 text-zinc-900 focus:outline-none focus:border-blue-500 w-32" />
-                  <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-                    placeholder="Last"
-                    className="text-xl font-bold bg-zinc-100 border border-zinc-300 rounded-lg px-3 py-1 text-zinc-900 focus:outline-none focus:border-blue-500 w-32" />
-                </div>
-              ) : (
-                <h1 className="text-xl font-bold text-zinc-900">{client.name}</h1>
-              )}
+              <h1 className="text-xl font-bold text-zinc-900">{client.name}</h1>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {client.phone && <span className="flex items-center gap-1 text-sm text-zinc-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
                 {client.email && <span className="flex items-center gap-1 text-sm text-zinc-400"><Mail className="w-3.5 h-3.5" />{client.email}</span>}
@@ -304,90 +290,40 @@ export default function ClientProfile() {
             <span className={`text-xs px-2.5 py-1 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
               {client.status}
             </span>
-            {editing ? (
-              <>
-                <button onClick={save} disabled={saving}
-                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm transition-colors">
-                  <Save className="w-3.5 h-3.5" />{saving ? 'Saving...' : 'Save'}
-                </button>
-                <button onClick={() => { setEditing(false); setForm(client) }}
-                  className="p-1.5 text-zinc-500 hover:text-zinc-500 rounded-lg hover:bg-zinc-100">
-                  <X className="w-4 h-4" />
-                </button>
-              </>
-            ) : (
-              <button onClick={() => setEditing(true)}
-                className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors">
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
-            )}
+            <button onClick={() => setTab('details')}
+              className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors">
+              <Edit2 className="w-3.5 h-3.5" /> Edit
+            </button>
           </div>
         </div>
 
         {/* Stats bar — 4 consolidated stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-zinc-200">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-zinc-200">
           {/* Upcoming */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
             <div className="text-xs text-blue-600 font-medium">Upcoming</div>
-            <div className="text-lg font-bold text-blue-700 mt-1">{visitStats?.upcoming ?? upcomingJobs.length}</div>
-            {nextJob && <div className="text-xs text-blue-600 mt-1">Next: {new Date(nextJob.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
+            <div className="text-base font-bold text-blue-700 mt-0.5">{visitStats?.upcoming ?? upcomingJobs.length}</div>
           </div>
 
           {/* Revenue */}
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-2">
             <div className="text-xs text-green-600 font-medium">Revenue</div>
-            <div className="text-lg font-bold text-green-700 mt-1">${totalRevenue.toFixed(0)}</div>
-            {completedJobs > 0 && <div className="text-xs text-green-600 mt-1">{completedJobs} job{completedJobs !== 1 ? 's' : ''} done</div>}
+            <div className="text-base font-bold text-green-700 mt-0.5">${totalRevenue.toFixed(0)}</div>
           </div>
 
           {/* Outstanding */}
-          <div className={`border rounded-lg p-3 ${outstanding > 0 ? 'bg-amber-50 border-amber-200' : 'bg-zinc-50 border-zinc-200'}`}>
+          <div className={`border rounded-lg p-2 ${outstanding > 0 ? 'bg-amber-50 border-amber-200' : 'bg-zinc-50 border-zinc-200'}`}>
             <div className={`text-xs font-medium ${outstanding > 0 ? 'text-amber-600' : 'text-zinc-600'}`}>Outstanding</div>
-            <div className={`text-lg font-bold mt-1 ${outstanding > 0 ? 'text-amber-700' : 'text-zinc-700'}`}>${outstanding.toFixed(0)}</div>
-            {outstanding > 0 && <div className="text-xs text-amber-600 mt-1">{invoices.filter(i => ['sent', 'overdue'].includes(i.status)).length} unpaid</div>}
+            <div className={`text-base font-bold mt-0.5 ${outstanding > 0 ? 'text-amber-700' : 'text-zinc-700'}`}>${outstanding.toFixed(0)}</div>
           </div>
 
           {/* GCal */}
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2">
             <div className="text-xs text-indigo-600 font-medium">GCal</div>
-            <div className="text-sm font-mono text-indigo-700 mt-1">
-              <span>● {visitStats?.gcal_synced ?? 0} synced</span>
-              <br />
-              <span>✓ {visitStats?.invites_sent ?? 0} sent</span>
-            </div>
+            <div className="text-xs text-indigo-700">● {visitStats?.gcal_synced ?? 0} | ✓ {visitStats?.invites_sent ?? 0}</div>
           </div>
         </div>
 
-        {/* Upcoming cleanings banner */}
-        {upcomingJobs.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-zinc-200">
-            <div className="flex items-center gap-2 mb-2">
-              <Calendar className="w-4 h-4 text-blue-500" />
-              <span className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Upcoming Cleanings</span>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {upcomingJobs.slice(0, 5).map(j => {
-                const typeColor = j.job_type === 'str_turnover' ? 'border-orange-400/30 bg-orange-500/10' : j.job_type === 'commercial' ? 'border-green-400/30 bg-green-500/10' : 'border-blue-400/30 bg-blue-500/10'
-                const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-blue-600'
-                return (
-                  <div key={j.id} className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[140px]`}>
-                    <div className={`text-xs font-semibold ${textColor}`}>
-                      {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </div>
-                    <div className={`text-[11px] ${textColor} mt-0.5`}>{j.start_time} – {j.end_time}</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5 truncate">{j.property_name || j.title}</div>
-                    {j.gcal_event_id && <span className="text-[9px] text-indigo-400 mt-0.5">● GCal</span>}
-                  </div>
-                )
-              })}
-              {upcomingJobs.length > 5 && (
-                <button onClick={() => setTab('jobs')} className="flex-shrink-0 flex items-center text-xs text-blue-600 hover:text-blue-600 px-2">
-                  +{upcomingJobs.length - 5} more <ChevronRight className="w-3 h-3 ml-0.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Missing contact info notice */}
         {(!client.phone || !client.email) && (
@@ -920,6 +856,30 @@ export default function ClientProfile() {
         {/* Details / Edit */}
         {tab === 'details' && (
           <div className="max-w-lg space-y-5">
+
+            {/* Upcoming cleanings */}
+            {upcomingJobs.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Calendar className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Upcoming Cleanings</span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  {upcomingJobs.slice(0, 5).map(j => {
+                    const typeColor = j.job_type === 'str_turnover' ? 'border-orange-400/30 bg-orange-500/10' : j.job_type === 'commercial' ? 'border-green-400/30 bg-green-500/10' : 'border-blue-400/30 bg-blue-500/10'
+                    const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-blue-600'
+                    return (
+                      <div key={j.id} className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px]`}>
+                        <div className={`text-xs font-semibold ${textColor}`}>
+                          {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className={`text-[11px] ${textColor} mt-0.5`}>{j.start_time} – {j.end_time}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Contact info */}
             <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
