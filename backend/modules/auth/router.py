@@ -96,7 +96,7 @@ def require_role(*allowed_roles):
     Factory to create a dependency that requires specific roles.
     Usage: @router.get("/admin", dependencies=[Depends(require_role("admin"))])
     """
-    async def check_role(current_user: User = Depends(get_current_user)):
+    def check_role(current_user: User = Depends(get_current_user)):
         if current_user.role not in allowed_roles:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return current_user
