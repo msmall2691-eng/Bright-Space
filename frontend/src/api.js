@@ -2,10 +2,10 @@
  * Centralized API client for BrightBase.
  *
  * All fetch calls should use these helpers instead of raw fetch().
- * The API key is injected automatically from environment, localStorage,
- * or fetched from the /api/config endpoint at startup.
+ * Uses JWT Bearer token from localStorage for authenticated endpoints.
  */
 
+let JWT_TOKEN = localStorage.getItem("brightbase_jwt") || "";
 let API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || "";
 
 // In production, fetch the API key from the backend config endpoint
@@ -27,9 +27,25 @@ async function ensureReady() {
   await _configReady;
 }
 
+/** Store JWT token (called after login) */
+export function setJWT(token) {
+  JWT_TOKEN = token;
+  localStorage.setItem("brightbase_jwt", token);
+}
+
+/** Clear JWT token (called on logout) */
+export function clearJWT() {
+  JWT_TOKEN = "";
+  localStorage.removeItem("brightbase_jwt");
+}
+
 function headers(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
-  if (API_KEY) h["X-API-Key"] = API_KEY;
+  if (JWT_TOKEN) {
+    h["Authorization"] = `Bearer ${JWT_TOKEN}`;
+  } else if (API_KEY) {
+    h["X-API-Key"] = API_KEY;
+  }
   return h;
 }
 
