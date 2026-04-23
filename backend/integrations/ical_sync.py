@@ -152,13 +152,23 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, property_ical: Pr
                 skipped += 1
                 continue
 
-            # Use property's check_out_time, default to 10:00
-            start_time = prop.check_out_time or "10:00"
-            end_time = _make_end_time(start_time, prop.default_duration_hours)
+            # Use PropertyIcal settings (if set) or property defaults
+            start_time = (property_ical.checkout_time if property_ical else None) or prop.check_out_time or "10:00"
+            duration = (property_ical.duration_hours if property_ical else None) or prop.default_duration_hours
+            end_time = _make_end_time(start_time, duration)
+            house_code = (property_ical.house_code if property_ical else None) or prop.house_code
 
             # Get client (property owner) for GCal invite
             client = db.query(Client).filter_by(id=prop.client_id).first()
             client_name = client.name if client else "Client"
+
+            # Build notes with house code and instructions if available
+            notes_parts = [f"Guest checkout. Booking: {summary}"]
+            if house_code:
+                notes_parts.append(f"Code: {house_code}")
+            if property_ical and property_ical.instructions:
+                notes_parts.append(f"Instructions: {property_ical.instructions}")
+            notes_text = " | ".join(notes_parts)
 
             job = Job(
                 client_id=prop.client_id,
@@ -169,7 +179,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, property_ical: Pr
                 start_time=start_time,
                 end_time=end_time,
                 address=prop.address,
-                notes=f"Guest checkout. Booking: {summary}",
+                notes=notes_text,
                 status="scheduled",
             )
             db.add(job)
@@ -185,7 +195,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, property_ical: Pr
                     "id": job.id, "title": job.title, "job_type": "str_turnover",
                     "scheduled_date": checkout, "start_time": start_time,
                     "end_time": end_time, "address": prop.address,
-                    "notes": f"Guest checkout. Booking: {summary}",
+                    "notes": notes_text,
                     "property_id": prop.id,
                 }
                 client_dict = {

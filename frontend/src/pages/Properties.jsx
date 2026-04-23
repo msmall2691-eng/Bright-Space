@@ -20,7 +20,11 @@ export default function Properties() {
   const [syncing, setSyncing] = useState(null)
   const [syncResult, setSyncResult] = useState(null)
   const [expandedPropId, setExpandedPropId] = useState(null)
-  const [icalForm, setIcalForm] = useState({ url: '', source: '' })
+  const [icalForm, setIcalForm] = useState({
+    url: '', source: '',
+    checkout_time: '', duration_hours: '',
+    house_code: '', access_links: '', instructions: ''
+  })
   const [showIcalForm, setShowIcalForm] = useState(null)
 
   const load = () =>
@@ -52,10 +56,15 @@ export default function Properties() {
   const addIcal = async (propId) => {
     if (!icalForm.url.trim()) return
     try {
-      await post(`/api/properties/${propId}/icals`, icalForm)
+      // Convert numeric fields
+      const data = {
+        ...icalForm,
+        duration_hours: icalForm.duration_hours ? parseFloat(icalForm.duration_hours) : null
+      }
+      await post(`/api/properties/${propId}/icals`, data)
       await load()
       setShowIcalForm(null)
-      setIcalForm({ url: '', source: '' })
+      setIcalForm({ url: '', source: '', checkout_time: '', duration_hours: '', house_code: '', access_links: '', instructions: '' })
     } catch (e) {
       alert('Error adding iCal: ' + e.message)
     }
@@ -212,15 +221,24 @@ export default function Properties() {
                   <div>
                     <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar URLs</div>
                     {(p.icals || []).map(ical => (
-                      <div key={ical.id} className="flex items-center justify-between bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs text-zinc-600 truncate font-mono">{ical.url}</div>
-                          {ical.source && <div className="text-xs text-zinc-400">{ical.source}</div>}
+                      <div key={ical.id} className="bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
+                        <div className="flex items-start justify-between mb-1.5">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-zinc-600 truncate font-mono">{ical.url}</div>
+                            {ical.source && <div className="text-xs text-zinc-400">{ical.source}</div>}
+                          </div>
+                          <button onClick={() => removeIcal(p.id, ical.id)}
+                            className="text-red-400 hover:text-red-600 p-1 ml-2 shrink-0">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button onClick={() => removeIcal(p.id, ical.id)}
-                          className="text-red-400 hover:text-red-600 p-1 ml-2">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {(ical.checkout_time || ical.house_code || ical.instructions) && (
+                          <div className="text-xs text-zinc-500 bg-zinc-50 rounded p-1.5 space-y-0.5">
+                            {ical.checkout_time && <div>Checkout: {ical.checkout_time}</div>}
+                            {ical.house_code && <div>Code: {ical.house_code}</div>}
+                            {ical.instructions && <div className="text-zinc-600">{ical.instructions}</div>}
+                          </div>
+                        )}
                       </div>
                     ))}
 
@@ -232,10 +250,33 @@ export default function Properties() {
                         <input value={icalForm.source} onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
                           placeholder="airbnb / vrbo / manual"
                           className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
-                        <div className="flex gap-2">
+
+                        <div className="border-t border-zinc-100 pt-2 mt-2">
+                          <div className="text-xs font-semibold text-zinc-600 mb-2">Turnover Settings</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input value={icalForm.checkout_time} onChange={e => setIcalForm(f => ({ ...f, checkout_time: e.target.value }))}
+                              placeholder="Checkout (e.g., 11:00)"
+                              type="time"
+                              className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                            <input value={icalForm.duration_hours} onChange={e => setIcalForm(f => ({ ...f, duration_hours: e.target.value }))}
+                              placeholder="Duration (hrs)"
+                              type="number"
+                              step="0.5"
+                              className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                          </div>
+                          <input value={icalForm.house_code} onChange={e => setIcalForm(f => ({ ...f, house_code: e.target.value }))}
+                            placeholder="Access code"
+                            className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
+                          <textarea value={icalForm.instructions} onChange={e => setIcalForm(f => ({ ...f, instructions: e.target.value }))}
+                            placeholder="Special turnover instructions..."
+                            rows="2"
+                            className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
                           <button onClick={() => addIcal(p.id)}
                             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded text-xs font-medium">
-                            Add
+                            Add Calendar
                           </button>
                           <button onClick={() => setShowIcalForm(null)}
                             className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-2 py-1.5 rounded text-xs">

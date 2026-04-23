@@ -138,6 +138,12 @@ def _run_migrations():
         "ALTER TABLE jobs ADD COLUMN assigned_cleaner_user_id INTEGER REFERENCES users(id)",
         # Flexible recurring intervals: "every N weeks" instead of just weekly/biweekly
         "ALTER TABLE recurring_schedules ADD COLUMN interval_weeks INTEGER NOT NULL DEFAULT 1",
+        # Per-iCal turnover settings: override property defaults, house codes, instructions
+        "ALTER TABLE property_icals ADD COLUMN checkout_time TEXT",
+        "ALTER TABLE property_icals ADD COLUMN duration_hours REAL",
+        "ALTER TABLE property_icals ADD COLUMN house_code TEXT",
+        "ALTER TABLE property_icals ADD COLUMN access_links TEXT",
+        "ALTER TABLE property_icals ADD COLUMN instructions TEXT",
     ]
 
     backfill_migrations = [

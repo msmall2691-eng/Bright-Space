@@ -204,6 +204,14 @@ class PropertyIcal(Base):
     url = Column(String, nullable=False)
     source = Column(String, nullable=True)  # "airbnb", "vrbo", "manual", etc.
     active = Column(Boolean, default=True, nullable=False)
+
+    # Turnover job settings (override property defaults if set)
+    checkout_time = Column(String(5), nullable=True)  # "10:00" or "11:00" — uses property default if None
+    duration_hours = Column(Float, nullable=True)     # turnover duration — uses property default if None
+    house_code = Column(String(255), nullable=True)   # Access code for this calendar source
+    access_links = Column(JSON, nullable=True)        # {"airbnb_link": "...", "vrbo_link": "..."} or similar
+    instructions = Column(Text, nullable=True)        # Special turnover instructions
+
     last_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
