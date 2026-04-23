@@ -1,77 +1,73 @@
 /**
  * Centralized API client for BrightBase.
  *
- * All fetch calls use JWT Bearer token from localStorage.
- * On 401, clears token and redirects to /login.
+ * Uses JWT authentication via Bearer token in Authorization header.
+ * JWT is stored in localStorage and automatically included in all requests.
  */
 
-let JWT_TOKEN = localStorage.getItem("brightbase_jwt") || "";
-
-/** Store JWT token (called after login) */
 export function setJWT(token) {
-  JWT_TOKEN = token;
-  localStorage.setItem("brightbase_jwt", token);
+  if (token) {
+    localStorage.setItem('brightbase_jwt', token)
+  }
 }
 
-/** Clear JWT token and user (called on logout or auth failure) */
+export function getJWT() {
+  return localStorage.getItem('brightbase_jwt')
+}
+
 export function clearJWT() {
-  JWT_TOKEN = "";
-  localStorage.removeItem("brightbase_jwt");
-  localStorage.removeItem("brightbase_user");
+  localStorage.removeItem('brightbase_jwt')
 }
 
-/** Logout: clear session and redirect to login */
 export function logout() {
-  clearJWT();
-  window.location.href = "/login";
+  clearJWT()
+  window.location.href = '/login'
 }
 
 function headers(extra = {}) {
-  const h = { "Content-Type": "application/json", ...extra };
-  if (JWT_TOKEN) {
-    h["Authorization"] = `Bearer ${JWT_TOKEN}`;
+  const h = { "Content-Type": "application/json", ...extra }
+  const token = getJWT()
+  if (token) {
+    h["Authorization"] = `Bearer ${token}`
   }
-  return h;
-}
-
-function handleAuthError() {
-  clearJWT();
-  window.location.href = "/login";
+  return h
 }
 
 /**
  * Wrapper around fetch that:
- *  - Adds JWT Authorization header
- *  - On 401: clears JWT and redirects to /login
+ *  - Adds JWT Bearer token to Authorization header
  *  - Throws on non-OK responses with useful error messages
+ *  - Redirects to /login on 401 Unauthorized
  *  - Returns parsed JSON
  */
 export async function api(url, options = {}) {
   const res = await fetch(url, {
     ...options,
     headers: headers(options.headers),
-  });
+  })
 
+  // Handle 401 Unauthorized - redirect to login
   if (res.status === 401) {
-    handleAuthError();
-    throw new Error("Unauthorized");
+    clearJWT()
+    window.location.href = '/login'
+    return
   }
 
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+    let detail = `HTTP ${res.status}`
     try {
-      const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
+      const body = await res.json()
+      detail = body.detail || JSON.stringify(body)
     } catch {
       // Response wasn't JSON
     }
-    throw new Error(detail);
+    throw new Error(detail)
   }
 
   // Handle 204 No Content
-  if (res.status === 204) return null;
+  if (res.status === 204) return null
 
-  return res.json();
+  return res.json()
 }
 
 /** GET helper */
@@ -97,19 +93,15 @@ export const del = (url) => api(url, { method: "DELETE" });
  * Does NOT set Content-Type — browser sets multipart boundary automatically.
  */
 export async function upload(url, formData) {
+  await ensureReady();
   const h = {};
-  if (JWT_TOKEN) h["Authorization"] = `Bearer ${JWT_TOKEN}`;
+  if (API_KEY) h["X-API-Key"] = API_KEY;
 
   const res = await fetch(url, {
     method: "POST",
     headers: h,
     body: formData,
   });
-
-  if (res.status === 401) {
-    handleAuthError();
-    throw new Error("Unauthorized");
-  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

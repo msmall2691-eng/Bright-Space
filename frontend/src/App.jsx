@@ -12,11 +12,9 @@ import ClientProfile from './pages/ClientProfile'
 import Quoting from './pages/Quoting'
 import Schedule from './pages/Schedule'
 import Invoicing from './pages/Invoicing'
-import Dispatch from './pages/Dispatch'
 import Payroll from './pages/Payroll'
 import Comms from './pages/Comms'
 import Properties from './pages/Properties'
-import Recurring from './pages/Recurring'
 import Requests from './pages/Requests'
 import Settings from './pages/Settings'
 import PublicQuote from './pages/PublicQuote'
@@ -81,26 +79,26 @@ export default function App() {
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto bg-[#FCFCFC] pb-bottomnav lg:pb-0 scroll-smooth-mobile">
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/workspace" element={<Workspace />} />
-          <Route path="/clients" element={<Clients />} />
-          <Route path="/clients/:id" element={<ClientProfile />} />
-          <Route path="/requests" element={<Requests />} />
-          <Route path="/pipeline" element={<Requests />} />
-          <Route path="/quoting" element={<Quoting />} />
-          <Route path="/schedule" element={<Schedule />} />
-          <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
-          <Route path="/invoicing" element={<Invoicing />} />
-          <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
-          <Route path="/payroll" element={<Payroll />} />
-          <Route path="/comms" element={<Comms />} />
-          <Route path="/properties" element={<Properties />} />
-          <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/workspace" element={<Workspace />} />
+            <Route path="/clients" element={<Clients />} />
+            <Route path="/clients/:id" element={<ClientProfile />} />
+            <Route path="/requests" element={<Requests />} />
+            <Route path="/pipeline" element={<Requests />} />
+            <Route path="/quoting" element={<Quoting />} />
+            <Route path="/schedule" element={<Schedule />} />
+            <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
+            <Route path="/invoicing" element={<Invoicing />} />
+            <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
+            <Route path="/payroll" element={<Payroll />} />
+            <Route path="/comms" element={<Comms />} />
+            <Route path="/properties" element={<Properties />} />
+            <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </main>
       </div>
       <BottomNav />

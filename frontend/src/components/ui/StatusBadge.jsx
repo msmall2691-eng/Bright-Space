@@ -1,8 +1,3 @@
-/**
- * StatusBadge Component
- * Status indicator with semantic colors
- */
-
 export default function StatusBadge({
   status,
   variant = 'filled',
