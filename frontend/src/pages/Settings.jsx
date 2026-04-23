@@ -190,8 +190,14 @@ export default function Settings() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Section toggle */}
-        <div className="px-4 sm:px-8 pt-6 pb-3">
+        {/* Header */}
+        <div className="px-4 sm:px-8 py-6 border-b border-zinc-200 bg-white">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
+              <p className="text-sm text-zinc-500 mt-1">Manage your account and integrations</p>
+            </div>
+          </div>
           <div className="flex bg-zinc-100 rounded-xl p-1 w-fit">
             <button onClick={() => setSection('fields')}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
@@ -206,12 +212,12 @@ export default function Settings() {
 
         {/* === EMAIL SETTINGS SECTION === */}
         {section === 'email' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8">
-            <div className="max-w-2xl">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+            <div className="max-w-2xl pt-6">
               <div className="mb-6">
-                <h2 className="text-[15px] font-semibold text-zinc-900">Gmail Connection</h2>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Connect your Gmail to see emails in Comms, auto-match senders to clients, and create leads from unknown contacts.
+                <h2 className="text-lg font-bold text-zinc-900">Gmail Connection</h2>
+                <p className="text-sm text-zinc-600 mt-1">
+                  Connect your Gmail to sync emails in Comms, auto-match senders to clients, and create leads from unknown contacts.
                 </p>
               </div>
 
@@ -355,13 +361,13 @@ export default function Settings() {
         {section === 'fields' && <>
 
         {/* Page header */}
-        <div className="flex items-center justify-between px-4 sm:px-8 pt-4 pb-5">
+        <div className="flex items-center justify-between px-4 sm:px-8 py-6 bg-white border-b border-zinc-200">
           <div>
-            <h1 className="text-[15px] font-semibold text-zinc-900 tracking-tight">Custom Fields</h1>
-            <p className="text-xs text-zinc-400 mt-0.5">Define extra fields that appear on your records</p>
+            <h1 className="text-lg font-bold text-zinc-900">Custom Fields</h1>
+            <p className="text-sm text-zinc-600 mt-1">Add extra fields that appear on client, job, and invoice records</p>
           </div>
           <button onClick={openNew}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors">
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0">
             <Plus className="w-3.5 h-3.5" /> Add field
           </button>
         </div>
