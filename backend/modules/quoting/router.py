@@ -222,13 +222,14 @@ def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_
 
 @router.post("/{quote_id}/convert-to-job", status_code=201)
 def convert_to_job(quote_id: int, db: Session = Depends(get_db)):
-    """Convert an accepted quote into a scheduled job."""
+    """Convert an accepted quote into a scheduled job. Links quote → job for revenue traceability."""
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
+
     job = Job(
         client_id=quote.client_id,
-        quote_id=quote.id,
+        quote_id=quote.id,  # Persist the source quote for revenue tracking
         job_type=quote.service_type or "residential",
         title=f"Clean — {quote.quote_number or f'QT-{quote.id}'}",
         address=quote.address or "",
@@ -239,11 +240,16 @@ def convert_to_job(quote_id: int, db: Session = Depends(get_db)):
         notes=quote.notes,
     )
     db.add(job)
-    # Mark intake as converted
+
+    # Mark quote as converted
+    quote.status = "converted"
+
+    # Mark intake as converted if linked
     if quote.intake_id:
         intake = db.query(LeadIntake).filter(LeadIntake.id == quote.intake_id).first()
         if intake:
             intake.status = "converted"
+
     db.commit()
     db.refresh(job)
     from modules.scheduling.router import job_to_dict
@@ -277,10 +283,18 @@ def generate_public_token(quote_id: int, db: Session = Depends(get_db)):
 
 @router.get("/public/{token}")
 def get_public_quote(token: str, db: Session = Depends(get_db)):
-    """Fetch a quote by public token (no auth required)."""
+    """Fetch a quote by public token (no auth required). Tracks first view."""
+    from datetime import datetime
+
     quote = db.query(Quote).filter(Quote.public_token == token).first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
+
+    # Track first view
+    if not quote.viewed_at:
+        quote.viewed_at = datetime.utcnow()
+        quote.status = "viewed"
+        db.commit()
 
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     q_dict = quote_to_dict(quote)

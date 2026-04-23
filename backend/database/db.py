@@ -62,6 +62,8 @@ def _run_migrations():
         "ALTER TABLE jobs ADD COLUMN end_time_new TIME",
         "ALTER TABLE recurring_schedules ADD COLUMN start_time_new TIME",
         "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
+        # PR 3: Quote traceability — track when client views quote
+        "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
         "ALTER TABLE quotes ADD COLUMN intake_id INTEGER REFERENCES lead_intakes(id)",
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
         "ALTER TABLE quotes ADD COLUMN address TEXT",

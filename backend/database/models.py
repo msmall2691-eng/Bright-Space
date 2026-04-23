@@ -385,11 +385,12 @@ class Quote(Base):
     tax_rate = Column(Float, default=0)
     tax = Column(Float, default=0)
     total = Column(Float, default=0)
-    status = Column(String, default="draft")  # draft | sent | accepted | rejected | expired
+    status = Column(String, default="draft")  # draft | sent | viewed | accepted | declined | expired | converted
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
     valid_until = Column(String)
     public_token = Column(String(48), nullable=True, index=True)  # Token for public accept link
+    viewed_at = Column(DateTime, nullable=True)  # Timestamp when quote was first viewed by client
     accepted_at = Column(DateTime, nullable=True)  # Timestamp when quote was accepted
     accepted_ip = Column(String, nullable=True)  # IP address of acceptor (audit trail)
     created_at = Column(DateTime, default=datetime.utcnow)
