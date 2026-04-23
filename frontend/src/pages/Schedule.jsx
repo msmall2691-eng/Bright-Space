@@ -158,10 +158,22 @@ export default function Schedule() {
         const end = endDate.toISOString().split('T')[0]
 
         const [visitsRes, jobsRes, propsRes, clientsRes] = await Promise.all([
-          get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`).catch(() => ({ items: [] })),
-          get('/api/jobs').catch(() => []),
-          get('/api/properties').catch(() => []),
-          get('/api/clients').catch(() => []),
+          get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`).catch(e => {
+            console.error('[Schedule] Visits API error:', e)
+            return { items: [] }
+          }),
+          get('/api/jobs').catch(e => {
+            console.error('[Schedule] Jobs API error:', e)
+            return []
+          }),
+          get('/api/properties').catch(e => {
+            console.error('[Schedule] Properties API error:', e)
+            return []
+          }),
+          get('/api/clients').catch(e => {
+            console.error('[Schedule] Clients API error:', e)
+            return []
+          }),
         ])
 
         // Index jobs, properties, clients for quick lookup
@@ -169,12 +181,20 @@ export default function Schedule() {
         const propsMap = {}
         const clientsMap = {}
 
-        ;(jobsRes || []).forEach(j => jobsMap[j.id] = j)
-        ;(propsRes || []).forEach(p => propsMap[p.id] = p)
-        ;(clientsRes || []).forEach(c => clientsMap[c.id] = c)
+        // Parse responses safely
+        const jobsList = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.items || [])
+        const propsList = Array.isArray(propsRes) ? propsRes : (propsRes?.items || [])
+        const clientsList = Array.isArray(clientsRes) ? clientsRes : (clientsRes?.items || [])
 
-        // Handle paginated response format
-        const visitsData = visitsRes?.items || visitsRes || []
+        jobsList.forEach(j => jobsMap[j.id] = j)
+        propsList.forEach(p => propsMap[p.id] = p)
+        clientsList.forEach(c => clientsMap[c.id] = c)
+
+        // Handle paginated or array response format for visits
+        const visitsData = Array.isArray(visitsRes) ? visitsRes : (visitsRes?.items || [])
+
+        console.log('[Schedule] Loaded:', { visitsCount: visitsData.length, jobsCount: jobsList.length, propsCount: propsList.length })
+
         setVisits(visitsData)
         setJobs(jobsMap)
         setProperties(propsMap)
@@ -190,17 +210,24 @@ export default function Schedule() {
 
   // Filter visits
   const filteredVisits = useMemo(() => {
-    return (visits || [])
-      .filter(v => {
-        const job = jobs[v.job_id]
-        const prop = properties[job?.property_id]
+    if (!visits || visits.length === 0) return []
 
-        if (selectedPropertyType !== 'all' && prop?.property_type !== selectedPropertyType) {
-          return false
-        }
+    return visits
+      .filter(v => {
+        // Always show visits regardless of enrichment data
         if (selectedStatus !== 'all' && v.status !== selectedStatus) {
           return false
         }
+
+        // Filter by property type if we have the data
+        if (selectedPropertyType !== 'all') {
+          const job = jobs[v.job_id]
+          const prop = properties[job?.property_id]
+          if (prop?.property_type !== selectedPropertyType) {
+            return false
+          }
+        }
+
         return true
       })
       .sort((a, b) => {
