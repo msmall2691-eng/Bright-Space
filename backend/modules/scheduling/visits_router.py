@@ -131,6 +131,51 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
     }
 
 
+@router.post("/admin/backfill-visits-from-jobs", dependencies=[Depends(require_role("admin", "manager"))])
+def backfill_visits_from_jobs(db: Session = Depends(get_db)):
+    """Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids."""
+    jobs = db.query(Job).all()
+    created_count = 0
+    skipped_count = 0
+    errors = []
+
+    for job in jobs:
+        try:
+            existing_visit = db.query(Visit).filter(Visit.job_id == job.id).first()
+            if existing_visit:
+                skipped_count += 1
+                continue
+
+            visit = Visit(
+                job_id=job.id,
+                sequence=1,
+                scheduled_date=job.scheduled_date,
+                start_time=job.start_time,
+                end_time=job.end_time,
+                status=job.status or "scheduled",
+                cleaner_ids=job.cleaner_ids or [],
+            )
+            db.add(visit)
+            created_count += 1
+        except Exception as e:
+            errors.append({
+                "job_id": job.id,
+                "job_title": job.title,
+                "error": str(e)
+            })
+            logger.error(f"Failed to create visit for job {job.id}: {e}")
+
+    db.commit()
+
+    return {
+        "created": created_count,
+        "skipped": skipped_count,
+        "errors": errors,
+        "total_jobs": len(jobs),
+        "message": f"Backfill complete: created {created_count} visits, skipped {skipped_count} existing"
+    }
+
+
 @router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_visits(
     scheduled_date_from: Optional[str] = None,
