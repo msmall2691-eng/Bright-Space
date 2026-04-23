@@ -94,6 +94,30 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
     }
 
 
+@router.get("/debug/all", dependencies=[Depends(require_role("admin", "manager"))])
+def debug_all_visits(db: Session = Depends(get_db)):
+    """DEBUG: Return ALL visits in database (no filters) to diagnose issues."""
+    all_visits = db.query(Visit).options(
+        joinedload(Visit.job).joinedload(Job.client),
+        joinedload(Visit.job).joinedload(Job.property)
+    ).all()
+
+    return {
+        "total_visits": len(all_visits),
+        "visits": [
+            {
+                "id": v.id,
+                "job_id": v.job_id,
+                "scheduled_date": str(v.scheduled_date) if v.scheduled_date else None,
+                "start_time": str(v.start_time) if v.start_time else None,
+                "status": v.status,
+                "job_title": v.job.title if v.job else None,
+            }
+            for v in all_visits
+        ]
+    }
+
+
 @router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_visits(
     scheduled_date_from: Optional[str] = None,
