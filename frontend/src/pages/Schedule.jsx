@@ -195,7 +195,22 @@ export default function Schedule() {
 
         console.log('[Schedule] Loaded:', { visitsCount: visitsData.length, jobsCount: jobsList.length, propsCount: propsList.length })
 
-        setVisits(visitsData)
+        // FALLBACK: If no visits exist, use jobs as visits (they have the same structure)
+        // This handles the case where Visit records haven't been created yet
+        const displayData = visitsData.length > 0
+          ? visitsData
+          : jobsList.map(j => ({
+              ...j,
+              id: `job-${j.id}`,
+              job_id: j.id,
+              scheduled_date: j.scheduled_date,
+              start_time: j.start_time,
+              end_time: j.end_time,
+              cleaner_ids: j.cleaner_ids || [],
+              status: j.status,
+            }))
+
+        setVisits(displayData)
         setJobs(jobsMap)
         setProperties(propsMap)
         setClients(clientsMap)
