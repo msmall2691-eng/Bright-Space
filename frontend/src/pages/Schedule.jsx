@@ -9,6 +9,7 @@ import { get, post, put } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
+import JobEditModal from '../components/JobEditModal'
 
 // Property type colors (STR = amber, residential = blue, commercial = purple)
 const PROPERTY_TYPE_CONFIG = {
@@ -138,6 +139,8 @@ export default function Schedule() {
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
+  const [editingJob, setEditingJob] = useState(null)
+  const [showJobModal, setShowJobModal] = useState(false)
 
   const dateStr = currentDate.toISOString().split('T')[0]
 
@@ -226,9 +229,28 @@ export default function Schedule() {
     try {
       await put(`/api/visits/${visitId}`, { status: 'cancelled' })
       await setVisits(visits.filter(v => v.id !== visitId))
+      setShowDetails(false)
     } catch (err) {
       alert('Error deleting visit: ' + err.message)
     }
+  }
+
+  const handleEditJob = (job) => {
+    setEditingJob(job)
+    setShowJobModal(true)
+    setShowDetails(false)
+  }
+
+  const handleJobSave = async () => {
+    // Reload schedule after job edit
+    const startDate = new Date(currentDate)
+    startDate.setDate(startDate.getDate() - startDate.getDay())
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + 6)
+    const start = startDate.toISOString().split('T')[0]
+    const end = endDate.toISOString().split('T')[0]
+    const visitsRes = await get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}`)
+    setVisits(visitsRes || [])
   }
 
   const prevWeek = () => {
@@ -409,11 +431,21 @@ export default function Schedule() {
                 )}
 
                 <div className="border-t border-neutral-200 pt-4 flex gap-2">
-                  <Button variant="secondary" size="sm" className="flex-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => handleEditJob(selectedVisit.job)}
+                  >
                     <Edit2 className="w-4 h-4 mr-2" />
-                    Edit
+                    Edit Job
                   </Button>
-                  <Button variant="danger" size="sm" className="flex-1">
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => handleDelete(selectedVisit.visit.id)}
+                  >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
                   </Button>
@@ -422,6 +454,17 @@ export default function Schedule() {
             </div>
           </GlassCard>
         </div>
+      )}
+
+      {/* Job Edit Modal */}
+      {showJobModal && editingJob && (
+        <JobEditModal
+          job={editingJob}
+          properties={Object.values(properties)}
+          clients={Object.values(clients)}
+          onClose={() => setShowJobModal(false)}
+          onSave={handleJobSave}
+        />
       )}
     </div>
   )
