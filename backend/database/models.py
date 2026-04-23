@@ -212,7 +212,12 @@ class PropertyIcal(Base):
     access_links = Column(JSON, nullable=True)        # {"airbnb_link": "...", "vrbo_link": "..."} or similar
     instructions = Column(Text, nullable=True)        # Special turnover instructions
 
+    # PR 6: Sync status — per-feed observability
     last_synced_at = Column(DateTime, nullable=True)
+    last_sync_status = Column(String, nullable=True)  # 'ok', 'failed', 'retrying', 'paused'
+    last_sync_error = Column(Text, nullable=True)     # Error message from last failed sync
+    sync_retry_count = Column(Integer, default=0)     # How many times we've retried after failure
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     property = relationship("Property", back_populates="property_icals")

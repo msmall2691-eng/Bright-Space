@@ -70,6 +70,10 @@ def _run_migrations():
         "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
         # PR 4: Visits table (created by create_all, but ensure indexes)
         # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
+        # PR 6: iCal feeds sync status tracking
+        "ALTER TABLE property_icals ADD COLUMN last_sync_status TEXT",
+        "ALTER TABLE property_icals ADD COLUMN last_sync_error TEXT",
+        "ALTER TABLE property_icals ADD COLUMN sync_retry_count INTEGER DEFAULT 0",
         "ALTER TABLE quotes ADD COLUMN intake_id INTEGER REFERENCES lead_intakes(id)",
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
         "ALTER TABLE quotes ADD COLUMN address TEXT",
@@ -653,6 +657,47 @@ def _fix_str_turnover_dates():
 
     except Exception as exc:
         logger.warning(f"[fix_str_turnover_dates] Error during fix: {exc}")
+    finally:
+        db.close()
+
+
+def update_ical_feed_status(
+    property_ical_id: int,
+    status: str,
+    error_message: str = None,
+):
+    """
+    Update sync status for an iCal feed.
+
+    Args:
+        property_ical_id: ID of the PropertyIcal record
+        status: 'ok', 'failed', 'retrying', or 'paused'
+        error_message: Optional error details for 'failed' status
+    """
+    from database.models import PropertyIcal
+    from datetime import datetime
+
+    db = SessionLocal()
+    try:
+        feed = db.query(PropertyIcal).filter(PropertyIcal.id == property_ical_id).first()
+        if not feed:
+            logger.warning(f"[update_ical_feed_status] Feed {property_ical_id} not found")
+            return
+
+        feed.last_sync_status = status
+        feed.last_synced_at = datetime.utcnow()
+
+        if status == "failed":
+            feed.last_sync_error = error_message
+            feed.sync_retry_count = (feed.sync_retry_count or 0) + 1
+        elif status == "ok":
+            feed.last_sync_error = None
+            feed.sync_retry_count = 0
+
+        db.commit()
+        logger.info(f"[update_ical_feed_status] Feed {property_ical_id} → {status}")
+    except Exception as e:
+        logger.warning(f"[update_ical_feed_status] Error updating feed {property_ical_id}: {e}")
     finally:
         db.close()
 
