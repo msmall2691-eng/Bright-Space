@@ -92,7 +92,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, property_ical: Pr
         # We need to subtract 1 day to get the actual checkout date
         dtend_raw = component.get("DTEND")
         checkout_raw = _parse_date(dtend_raw)
-        if checkout_raw and hasattr(dtend_raw, "dt") and isinstance(dtend_raw.dt, date) and not isinstance(dtend_raw.dt, datetime):
+
+        # Detect all-day event: check if DTEND is a DATE (not DATETIME)
+        # In icalendar lib, this means dtend_raw.dt is date but not datetime
+        is_all_day = False
+        if dtend_raw and hasattr(dtend_raw, "dt"):
+            dt_val = dtend_raw.dt
+            is_all_day = isinstance(dt_val, date) and not isinstance(dt_val, datetime)
+
+        if checkout_raw and is_all_day:
             # All-day event: DTEND is exclusive, subtract 1 day
             checkout_date_obj = datetime.strptime(checkout_raw, "%Y-%m-%d").date() - timedelta(days=1)
             checkout = checkout_date_obj.isoformat()
