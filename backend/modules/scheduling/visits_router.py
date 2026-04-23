@@ -120,13 +120,15 @@ def get_visits(
     if job_id:
         q = q.filter(Visit.job_id == job_id)
 
-    # Filter by property_type if provided
-    if property_type and property_type != "all":
-        q = q.join(Job).join(Property).filter(Property.property_type == property_type)
-
     # Apply pagination BEFORE executing the query
     total_count = q.count()
     visits = q.order_by(Visit.scheduled_date, Visit.start_time).limit(limit).offset(offset).all()
+
+    # Filter by property_type in Python after loading (post-processing)
+    # This avoids join complexity and works with already-loaded relationships
+    if property_type and property_type != "all":
+        visits = [v for v in visits if v.job and v.job.property and v.job.property.property_type == property_type]
+        total_count = len(visits)  # Recalculate total after Python filter
 
     return {
         "items": [
