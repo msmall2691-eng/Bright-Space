@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle, Home, Building2, Wind } from 'lucide-react'
-import { get } from '../api'
+import { ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle, Home, Building2, Wind, RefreshCw } from 'lucide-react'
+import { get, post } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -27,6 +27,8 @@ export default function Schedule() {
   const [calendarMode, setCalendarMode] = useState('day')
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
   const [selectedJob, setSelectedJob] = useState(null)
   const [filterService, setFilterService] = useState('all')
 
@@ -46,6 +48,21 @@ export default function Schedule() {
       setJobs([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const syncGoogleCalendar = async () => {
+    setSyncing(true)
+    setSyncMessage('')
+    try {
+      const response = await post('/api/jobs/sync-gcal', {})
+      setSyncMessage(`✅ Synced! ${response.synced || 0} jobs from Google Calendar`)
+      // Refetch jobs after sync
+      await fetchJobs()
+    } catch (err) {
+      setSyncMessage(`❌ Sync failed: ${err.message}`)
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -176,11 +193,28 @@ export default function Schedule() {
               {getDayLabel(currentDate)} · {todaysJobs.length} job{todaysJobs.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <Button variant="primary" size="md">
-            <Plus className="w-4 h-4 mr-2" />
-            New Job
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={syncGoogleCalendar}
+              disabled={syncing}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync Calendar'}
+            </Button>
+            <Button variant="primary" size="md">
+              <Plus className="w-4 h-4 mr-2" />
+              New Job
+            </Button>
+          </div>
         </div>
+
+        {syncMessage && (
+          <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
+            {syncMessage}
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-2">
