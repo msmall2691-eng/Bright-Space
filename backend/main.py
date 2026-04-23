@@ -18,6 +18,7 @@ from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
 from modules.scheduling.router import router as scheduling_router
+from modules.scheduling.visits_router import router as visits_router
 from modules.invoicing.router import router as invoicing_router
 from modules.dispatch.router import router as dispatch_router
 from modules.payroll.router import router as payroll_router
@@ -62,6 +63,7 @@ app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
 app.include_router(quoting_router, prefix="/api/quotes", tags=["quotes"])
 app.include_router(scheduling_router, prefix="/api/jobs", tags=["scheduling"])
+app.include_router(visits_router, prefix="/api/visits", tags=["visits"])
 app.include_router(invoicing_router, prefix="/api/invoices", tags=["invoicing"])
 app.include_router(dispatch_router, prefix="/api/dispatch", tags=["dispatch"])
 app.include_router(payroll_router, prefix="/api/payroll", tags=["payroll"])
