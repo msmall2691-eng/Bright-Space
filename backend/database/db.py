@@ -153,6 +153,8 @@ def _run_migrations():
             "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
             # Fix STR turnover dates: RFC 5545 DTEND is exclusive, subtract 1 day from existing jobs
             "UPDATE jobs SET scheduled_date = scheduled_date - INTERVAL '1 day' WHERE job_type = 'str_turnover' AND status IN ('scheduled', 'dispatched')",
+            # Also fix the iCal event checkout dates
+            "UPDATE ical_events SET checkout_date = (checkout_date::date - INTERVAL '1 day')::text WHERE event_type = 'reservation'",
         ]
     else:
         backfill_migrations = [
@@ -160,6 +162,8 @@ def _run_migrations():
             "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
             # Fix STR turnover dates: RFC 5545 DTEND is exclusive, subtract 1 day from existing jobs
             "UPDATE jobs SET scheduled_date = date(scheduled_date, '-1 day') WHERE job_type = 'str_turnover' AND status IN ('scheduled', 'dispatched')",
+            # Also fix the iCal event checkout dates
+            "UPDATE ical_events SET checkout_date = date(checkout_date, '-1 day') WHERE event_type = 'reservation'",
         ]
 
     with engine.connect() as conn:
