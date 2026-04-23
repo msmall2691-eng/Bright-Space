@@ -1,4 +1,4 @@
-"""Background scheduler for iCal auto-sync."""
+"""Background scheduler for iCal and Google Calendar auto-sync."""
 
 import logging
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -7,10 +7,25 @@ from config import env_flag, env_int
 from database.db import SessionLocal
 from database.models import Property
 from integrations.ical_sync import sync_property
+from integrations.gcal_sync import sync_calendar
 
 log = logging.getLogger(__name__)
 
 _scheduler = None
+
+
+def sync_gcal_tick() -> dict:
+    """Background job to sync Google Calendar events to BrightBase."""
+    db = SessionLocal()
+    try:
+        result = sync_calendar(db)
+        log.info(f"GCal sync completed: {result}")
+        return result
+    except Exception as e:
+        log.error(f"GCal sync failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
 
 
 def sync_all_ical_feeds_tick() -> dict:
@@ -64,22 +79,37 @@ def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
 
-    if not env_flag("ICAL_AUTO_SYNC_ENABLED", True):
-        log.info("iCal auto-sync disabled via ICAL_AUTO_SYNC_ENABLED=0")
-        return None
-
-    interval_minutes = env_int("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15)
-
     _scheduler = BackgroundScheduler()
-    _scheduler.add_job(
-        sync_all_ical_feeds_tick,
-        IntervalTrigger(minutes=interval_minutes),
-        id="ical_sync",
-        name="iCal auto-sync",
-        replace_existing=True,
-    )
+
+    # iCal auto-sync
+    if env_flag("ICAL_AUTO_SYNC_ENABLED", True):
+        interval_minutes = env_int("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15)
+        _scheduler.add_job(
+            sync_all_ical_feeds_tick,
+            IntervalTrigger(minutes=interval_minutes),
+            id="ical_sync",
+            name="iCal auto-sync",
+            replace_existing=True,
+        )
+        log.info(f"iCal auto-sync enabled (interval: {interval_minutes} min)")
+    else:
+        log.info("iCal auto-sync disabled via ICAL_AUTO_SYNC_ENABLED=0")
+
+    # Google Calendar auto-sync
+    if env_flag("GCAL_AUTO_SYNC_ENABLED", True):
+        gcal_interval_minutes = env_int("GCAL_AUTO_SYNC_INTERVAL_MINUTES", 10)
+        _scheduler.add_job(
+            sync_gcal_tick,
+            IntervalTrigger(minutes=gcal_interval_minutes),
+            id="gcal_sync",
+            name="Google Calendar auto-sync",
+            replace_existing=True,
+        )
+        log.info(f"Google Calendar auto-sync enabled (interval: {gcal_interval_minutes} min)")
+    else:
+        log.info("Google Calendar auto-sync disabled via GCAL_AUTO_SYNC_ENABLED=0")
+
     _scheduler.start()
-    log.info(f"iCal auto-sync scheduler started (interval: {interval_minutes} min)")
     return _scheduler
 
 
