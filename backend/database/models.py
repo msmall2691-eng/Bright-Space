@@ -327,6 +327,42 @@ class Job(Base):
     visits = relationship("Visit", back_populates="job", cascade="all, delete-orphan")  # PR 4: one job, many visits
 
 
+class IntegrationEvent(Base):
+    """PR 5: Audit log for all external integrations (GCal, SMS, email, Stripe, etc.)"""
+    __tablename__ = "integration_events"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+
+    # What entity triggered this event?
+    entity_type = Column(String, nullable=False, index=True)  # 'job', 'visit', 'quote', 'invoice'
+    entity_id = Column(Integer, nullable=False, index=True)
+
+    # Which provider and action?
+    provider = Column(String, nullable=False, index=True)  # 'gcal', 'sms', 'gmail', 'stripe', 'connecteam'
+    action = Column(String, nullable=False)  # 'create', 'update', 'delete', 'send', 'sync'
+    status = Column(String, nullable=False)  # 'ok', 'failed', 'retrying'
+
+    # External reference
+    external_id = Column(String, nullable=True, index=True)  # gcal_event_id, message_id, etc.
+
+    # Error details
+    error_message = Column(Text, nullable=True)
+    error_code = Column(String, nullable=True)
+
+    # Request/response for debugging
+    request_payload = Column(JSON, nullable=True)
+    response_payload = Column(JSON, nullable=True)
+
+    # Audit trail
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    retried_at = Column(DateTime, nullable=True)  # When this was last retried (if applicable)
+
+    __table_args__ = (
+        # Index for "failed events needing retry" queries
+        # Index for "events from entity X" queries
+    )
+
+
 class Visit(Base):
     """PR 4: A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
     __tablename__ = "visits"

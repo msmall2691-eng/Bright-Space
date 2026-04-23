@@ -657,6 +657,55 @@ def _fix_str_turnover_dates():
         db.close()
 
 
+def log_integration_event(
+    entity_type: str,
+    entity_id: int,
+    provider: str,
+    action: str,
+    status: str,
+    external_id: str = None,
+    error_message: str = None,
+    error_code: str = None,
+    request_payload: dict = None,
+    response_payload: dict = None,
+):
+    """
+    Helper to log integration events. Call this whenever we interact with external APIs.
+
+    Example:
+        log_integration_event(
+            entity_type="visit",
+            entity_id=job.id,
+            provider="gcal",
+            action="create",
+            status="ok",
+            external_id=event_id,
+        )
+    """
+    from database.models import IntegrationEvent
+
+    db = SessionLocal()
+    try:
+        event = IntegrationEvent(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            provider=provider,
+            action=action,
+            status=status,
+            external_id=external_id,
+            error_message=error_message,
+            error_code=error_code,
+            request_payload=request_payload,
+            response_payload=response_payload,
+        )
+        db.add(event)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"[log_integration_event] Failed to log event: {e}")
+    finally:
+        db.close()
+
+
 def get_db():
     db = SessionLocal()
     try:
