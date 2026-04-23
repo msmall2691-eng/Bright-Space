@@ -290,7 +290,7 @@ class Job(Base):
     # "residential" | "commercial" | "str_turnover"
 
     # Links — only set for the relevant type
-    property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property
     recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True)
     ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True)
     assigned_cleaner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Future: replace cleaner_ids JSON

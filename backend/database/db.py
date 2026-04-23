@@ -37,6 +37,8 @@ def init_db():
     _bootstrap_admin_user()
     # PR 1: Backfill new data types (DATE, TIME instead of VARCHAR)
     _migrate_data_types()
+    # PR 2: Backfill missing properties for orphaned jobs
+    _backfill_missing_properties()
     # Fix STR turnover dates (RFC 5545 DTEND exclusivity)
     _fix_str_turnover_dates()
 
@@ -353,6 +355,89 @@ def _bootstrap_admin_user():
         db.close()
     except Exception as exc:
         logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
+
+
+def _backfill_missing_properties():
+    """
+    PR 2: Backfill property_id for orphaned jobs.
+
+    For jobs without property_id but with an address:
+    1. Auto-create a Property for each unique (client_id, address, job_type) combo
+    2. Link the job to the new property
+    3. Use address first line as property name
+
+    Idempotent — safe to run every boot.
+    """
+    from database.models import Job, Property, Client
+
+    db = SessionLocal()
+    try:
+        # Find jobs with address but no property_id
+        orphan_jobs = db.query(Job).filter(
+            Job.property_id.is_(None),
+            Job.address.isnot(None),
+            Job.address != ""
+        ).all()
+
+        if not orphan_jobs:
+            db.close()
+            return
+
+        logger.info(f"[backfill_missing_properties] Found {len(orphan_jobs)} jobs without property_id")
+
+        created_props = 0
+        linked_jobs = 0
+
+        for job in orphan_jobs:
+            try:
+                client = db.query(Client).filter(Client.id == job.client_id).first()
+                if not client:
+                    logger.warning(f"[backfill_missing_properties] Job {job.id} has no client, skipping")
+                    continue
+
+                # Extract first line of address as property name
+                address_line = job.address.split("\n")[0] if job.address else f"Job {job.id}"
+
+                # Check if property already exists for this client/address/type combo
+                existing_prop = db.query(Property).filter(
+                    Property.client_id == job.client_id,
+                    Property.address == address_line
+                ).first()
+
+                if existing_prop:
+                    job.property_id = existing_prop.id
+                    linked_jobs += 1
+                else:
+                    # Infer property type from job type
+                    property_type = "residential"
+                    if job.job_type == "str_turnover":
+                        property_type = "str"
+                    elif job.job_type == "commercial":
+                        property_type = "commercial"
+
+                    # Create new property
+                    prop = Property(
+                        client_id=job.client_id,
+                        name=address_line,
+                        address=address_line,
+                        property_type=property_type,
+                    )
+                    db.add(prop)
+                    db.flush()
+                    job.property_id = prop.id
+                    created_props += 1
+                    linked_jobs += 1
+            except Exception as e:
+                logger.warning(f"[backfill_missing_properties] Error processing job {job.id}: {e}")
+
+        if created_props > 0 or linked_jobs > 0:
+            db.commit()
+            logger.info(f"[backfill_missing_properties] Created {created_props} properties, linked {linked_jobs} jobs")
+
+    except Exception as exc:
+        logger.warning(f"[backfill_missing_properties] Error during backfill: {exc}")
+    finally:
+        db.close()
 
 
 def _migrate_data_types():
