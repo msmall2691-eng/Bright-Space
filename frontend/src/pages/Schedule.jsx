@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle,
-  Home, Building2, Wind, RefreshCw, Filter, X, Zap, Edit2, Trash2, CheckCircle, GripVertical
+  Home, Building2, Wind, RefreshCw, Filter, X, Zap, Edit2, Trash2, CheckCircle, GripVertical, Settings
 } from 'lucide-react'
 import { get, post, put } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
+import PageSettings from '../components/PageSettings'
 import { DndContext } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -151,13 +152,23 @@ const DraggableJobCard = ({ job, isDragging, onEdit, onDelete, compact = false }
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [calendarMode, setCalendarMode] = useState('month')
+  const [calendarMode, setCalendarMode] = useState(() => {
+    return localStorage.getItem('schedule_defaultView') || 'month'
+  })
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const [editingJob, setEditingJob] = useState(null)
   const [filterService, setFilterService] = useState('all')
+  const [autoRefresh, setAutoRefresh] = useState(parseInt(localStorage.getItem('schedule_autoRefresh')) || 0)
+  const [scheduleSettings, setScheduleSettings] = useState({
+    defaultView: localStorage.getItem('schedule_defaultView') || 'month',
+    workHoursStart: parseInt(localStorage.getItem('schedule_workHoursStart')) || 8,
+    workHoursEnd: parseInt(localStorage.getItem('schedule_workHoursEnd')) || 18,
+    autoRefreshInterval: parseInt(localStorage.getItem('schedule_autoRefresh')) || 0,
+    hideServices: localStorage.getItem('schedule_hideServices')?.split(',').filter(Boolean) || [],
+  })
   const [editForm, setEditForm] = useState({
     title: '',
     client_name: '',
@@ -171,7 +182,22 @@ export default function Schedule() {
 
   useEffect(() => {
     fetchJobs()
-  }, [])
+    if (scheduleSettings.autoRefreshInterval > 0) {
+      const interval = setInterval(fetchJobs, scheduleSettings.autoRefreshInterval * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [scheduleSettings.autoRefreshInterval])
+
+  const handleSaveSettings = async (newSettings) => {
+    localStorage.setItem('schedule_defaultView', newSettings.defaultView)
+    localStorage.setItem('schedule_workHoursStart', newSettings.workHoursStart)
+    localStorage.setItem('schedule_workHoursEnd', newSettings.workHoursEnd)
+    localStorage.setItem('schedule_autoRefresh', newSettings.autoRefreshInterval)
+    localStorage.setItem('schedule_hideServices', newSettings.hideServices.join(','))
+    setScheduleSettings(newSettings)
+    setCalendarMode(newSettings.defaultView)
+    return Promise.resolve()
+  }
 
   const fetchJobs = async () => {
     try {
@@ -254,10 +280,16 @@ export default function Schedule() {
   }
 
   const filteredJobs = useMemo(() => {
-    const dateJobs = getJobsForDate(currentDate)
+    let dateJobs = getJobsForDate(currentDate)
+
+    // Hide service types based on settings
+    if (scheduleSettings.hideServices.length > 0) {
+      dateJobs = dateJobs.filter((job) => !scheduleSettings.hideServices.includes((job.job_type || job.service_type || 'residential').toLowerCase()))
+    }
+
     if (filterService === 'all') return dateJobs
     return dateJobs.filter((job) => (job.job_type || job.service_type) === filterService)
-  }, [jobs, currentDate, filterService])
+  }, [jobs, currentDate, filterService, scheduleSettings.hideServices])
 
   const getDayLabel = (date) => {
     return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -323,7 +355,96 @@ export default function Schedule() {
               {getDayLabel(currentDate)} · {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <PageSettings
+              pageName="Schedule"
+              settings={scheduleSettings}
+              onSave={handleSaveSettings}
+            >
+              {({ settings, setSettings }) => (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Default View</label>
+                    <select
+                      value={settings.defaultView}
+                      onChange={(e) => setSettings({ ...settings, defaultView: e.target.value })}
+                      className="w-full px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="month">Month</option>
+                      <option value="week">Week</option>
+                      <option value="day">Day</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Work Hours</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="23"
+                        value={settings.workHoursStart}
+                        onChange={(e) => setSettings({ ...settings, workHoursStart: parseInt(e.target.value) })}
+                        placeholder="Start"
+                        className="px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="23"
+                        value={settings.workHoursEnd}
+                        onChange={(e) => setSettings({ ...settings, workHoursEnd: parseInt(e.target.value) })}
+                        placeholder="End"
+                        className="px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <p className="text-xs text-neutral-500 mt-1">{settings.workHoursStart}:00 - {settings.workHoursEnd}:00</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Auto-Refresh (minutes)</label>
+                    <select
+                      value={settings.autoRefreshInterval}
+                      onChange={(e) => setSettings({ ...settings, autoRefreshInterval: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="0">Disabled</option>
+                      <option value="5">Every 5 minutes</option>
+                      <option value="10">Every 10 minutes</option>
+                      <option value="15">Every 15 minutes</option>
+                      <option value="30">Every 30 minutes</option>
+                      <option value="60">Every 60 minutes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Hide Service Types</label>
+                    <div className="space-y-2">
+                      {Object.entries(SERVICE_CONFIG).map(([key, config]) => {
+                        const Icon = config.icon
+                        return (
+                          <label key={key} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!settings.hideServices.includes(key)}
+                              onChange={(e) => {
+                                const hidden = e.target.checked
+                                  ? settings.hideServices.filter(s => s !== key)
+                                  : [...settings.hideServices, key]
+                                setSettings({ ...settings, hideServices: hidden })
+                              }}
+                              className="w-4 h-4 rounded border-neutral-300 text-blue-600"
+                            />
+                            <Icon className="w-4 h-4" />
+                            <span className="text-sm text-neutral-700">{config.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </PageSettings>
             <Button
               variant="secondary"
               size="md"
