@@ -146,10 +146,21 @@ def _run_migrations():
         "ALTER TABLE property_icals ADD COLUMN instructions TEXT",
     ]
 
-    backfill_migrations = [
-        # Backfill existing biweekly schedules with interval_weeks=2
-        "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
-    ]
+    # Dialect-aware backfill migrations
+    if is_pg:
+        backfill_migrations = [
+            # Backfill existing biweekly schedules with interval_weeks=2
+            "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
+            # Fix STR turnover dates: RFC 5545 DTEND is exclusive, subtract 1 day from existing jobs
+            "UPDATE jobs SET scheduled_date = scheduled_date - INTERVAL '1 day' WHERE job_type = 'str_turnover' AND status IN ('scheduled', 'dispatched')",
+        ]
+    else:
+        backfill_migrations = [
+            # Backfill existing biweekly schedules with interval_weeks=2
+            "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
+            # Fix STR turnover dates: RFC 5545 DTEND is exclusive, subtract 1 day from existing jobs
+            "UPDATE jobs SET scheduled_date = date(scheduled_date, '-1 day') WHERE job_type = 'str_turnover' AND status IN ('scheduled', 'dispatched')",
+        ]
 
     with engine.connect() as conn:
 
