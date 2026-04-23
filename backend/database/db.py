@@ -35,6 +35,8 @@ def init_db():
     _backfill_conversations()
     # Auth: bootstrap admin user if env vars set
     _bootstrap_admin_user()
+    # Fix STR turnover dates (RFC 5545 DTEND exclusivity)
+    _fix_str_turnover_dates()
 
 
 def _run_migrations():
@@ -329,6 +331,84 @@ def _bootstrap_admin_user():
         db.close()
     except Exception as exc:
         logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
+
+
+def _fix_str_turnover_dates():
+    """
+    Fix STR turnover dates to account for RFC 5545 DTEND exclusivity.
+
+    This is a Python-based migration (not SQL) because scheduled_date is stored
+    as a string. It's idempotent - safe to run on every boot.
+    """
+    from database.models import Job, ICalEvent
+    from datetime import datetime, timedelta
+
+    db = SessionLocal()
+    try:
+        # Fix Job scheduled_dates for STR turnovers
+        jobs = db.query(Job).filter(
+            Job.job_type == "str_turnover",
+            Job.status.in_(["scheduled", "dispatched"])
+        ).all()
+
+        fixed_jobs = 0
+        for job in jobs:
+            try:
+                # Parse the date string and subtract 1 day
+                job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                # Only fix if it looks like it hasn't been fixed (heuristic: if it's in the future relative to today+1)
+                # Actually, let's check if there's a corresponding iCal event with a different date
+                if job_date:
+                    # For now, we'll check the raw_event to see if adjustment is needed
+                    # This is safer than blindly subtracting 1 day from all
+                    ical_event = db.query(ICalEvent).filter(ICalEvent.job_id == job.id).first()
+                    if ical_event and ical_event.checkout_date:
+                        try:
+                            ical_date = datetime.strptime(ical_event.checkout_date, "%Y-%m-%d").date()
+                            # If job date is 1 day after iCal date, fix it
+                            if job_date == ical_date + timedelta(days=1):
+                                job.scheduled_date = ical_date.isoformat()
+                                fixed_jobs += 1
+                        except ValueError:
+                            pass
+            except ValueError:
+                # Skip if date parsing fails
+                pass
+
+        if fixed_jobs > 0:
+            db.commit()
+            logger.info(f"[fix_str_turnover_dates] Fixed {fixed_jobs} job dates")
+
+        # Fix ICalEvent checkout_dates
+        ical_events = db.query(ICalEvent).filter(
+            ICalEvent.event_type == "reservation"
+        ).all()
+
+        fixed_events = 0
+        for event in ical_events:
+            try:
+                event_date = datetime.strptime(event.checkout_date, "%Y-%m-%d").date()
+                # Check raw_event to see original DTEND
+                # For now, mark as fixed if job is already linked and has correct date
+                if event.job_id:
+                    job = db.query(Job).filter(Job.id == event.job_id).first()
+                    if job and job.scheduled_date:
+                        job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                        # If event date is 1 day after job date, event needs fixing
+                        if event_date == job_date + timedelta(days=1):
+                            event.checkout_date = job_date.isoformat()
+                            fixed_events += 1
+            except ValueError:
+                pass
+
+        if fixed_events > 0:
+            db.commit()
+            logger.info(f"[fix_str_turnover_dates] Fixed {fixed_events} iCal event dates")
+
+    except Exception as exc:
+        logger.warning(f"[fix_str_turnover_dates] Error during fix: {exc}")
+    finally:
+        db.close()
 
 
 def get_db():
