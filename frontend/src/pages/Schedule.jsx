@@ -88,6 +88,17 @@ export default function Schedule() {
     return SERVICE_ICONS[key] || SERVICE_ICONS.residential
   }
 
+  const getScheduledTime = (job) => {
+    if (job.start_time && job.end_time) {
+      return `${job.start_time} - ${job.end_time}`
+    }
+    return job.start_time || ''
+  }
+
+  const hasAssignedCleaner = (job) => {
+    return job.cleaner_ids?.length > 0
+  }
+
   const JobCard = ({ job }) => {
     const serviceInfo = getServiceIcon(job.job_type || job.service_type)
     const ServiceIcon = serviceInfo.icon
@@ -125,15 +136,15 @@ export default function Schedule() {
               <span className="truncate">{job.address}</span>
             </div>
           )}
-          {job.scheduled_time && (
+          {getScheduledTime(job) && (
             <div className="flex items-center gap-2">
               <Clock className="w-3 h-3 flex-shrink-0" />
-              <span>{job.scheduled_time}</span>
+              <span>{getScheduledTime(job)}</span>
             </div>
           )}
         </div>
 
-        {!job.cleaner_name && (
+        {!hasAssignedCleaner(job) && (
           <div className="mt-3 pt-3 border-t border-neutral-200/50">
             <button className="text-xs font-semibold text-blue-600 hover:text-blue-700">
               + Assign cleaner
@@ -141,10 +152,10 @@ export default function Schedule() {
           </div>
         )}
 
-        {job.cleaner_name && (
+        {hasAssignedCleaner(job) && (
           <div className="mt-3 pt-3 border-t border-neutral-200/50 flex items-center gap-2">
             <User className="w-3 h-3 text-green-600" />
-            <span className="text-xs font-semibold text-green-700">{job.cleaner_name}</span>
+            <span className="text-xs font-semibold text-green-700">{job.cleaner_ids.length} cleaner{job.cleaner_ids.length !== 1 ? 's' : ''}</span>
           </div>
         )}
       </div>
@@ -152,7 +163,7 @@ export default function Schedule() {
   }
 
   const todaysJobs = getTodaysJobs()
-  const unassignedCount = todaysJobs.filter((j) => !j.cleaner_name).length
+  const unassignedCount = todaysJobs.filter((j) => !hasAssignedCleaner(j)).length
 
   return (
     <div className="flex flex-col h-full bg-neutral-50">
@@ -338,21 +349,21 @@ export default function Schedule() {
                             <p className="font-semibold text-neutral-900 mt-1">{selectedJob.address}</p>
                           </div>
                         )}
-                        {selectedJob.scheduled_time && (
+                        {getScheduledTime(selectedJob) && (
                           <div>
                             <span className="text-neutral-600 text-xs uppercase font-semibold">Time</span>
-                            <p className="font-semibold text-neutral-900 mt-1">{selectedJob.scheduled_time}</p>
+                            <p className="font-semibold text-neutral-900 mt-1">{getScheduledTime(selectedJob)}</p>
                           </div>
                         )}
                         <div>
                           <span className="text-neutral-600 text-xs uppercase font-semibold">Assigned To</span>
-                          <p className={`font-semibold mt-1 ${selectedJob.cleaner_name ? 'text-green-700' : 'text-amber-700'}`}>
-                            {selectedJob.cleaner_name || 'Unassigned'}
+                          <p className={`font-semibold mt-1 ${hasAssignedCleaner(selectedJob) ? 'text-green-700' : 'text-amber-700'}`}>
+                            {hasAssignedCleaner(selectedJob) ? `${selectedJob.cleaner_ids.length} cleaner${selectedJob.cleaner_ids.length !== 1 ? 's' : ''}` : 'Unassigned'}
                           </p>
                         </div>
                         <div className="pt-2 border-t border-neutral-200/50">
                           <Button variant="primary" size="sm" className="w-full">
-                            {selectedJob.cleaner_name ? 'Change Cleaner' : 'Assign Cleaner'}
+                            {hasAssignedCleaner(selectedJob) ? 'Change Cleaners' : 'Assign Cleaner'}
                           </Button>
                         </div>
                       </div>
@@ -367,7 +378,7 @@ export default function Schedule() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-600">Assigned</span>
-                        <span className="font-semibold text-green-700">{todaysJobs.filter((j) => j.cleaner_name).length}</span>
+                        <span className="font-semibold text-green-700">{todaysJobs.filter((j) => hasAssignedCleaner(j)).length}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-neutral-600">Unassigned</span>
