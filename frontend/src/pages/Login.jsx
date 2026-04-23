@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mail, Lock, AlertCircle, Zap, Loader } from 'lucide-react'
+import { Mail, Lock, AlertCircle, Zap, Loader, Eye, EyeOff } from 'lucide-react'
 import { post, setJWT } from '../api'
 
 export default function Login({ onLoginSuccess }) {
   const navigate = useNavigate()
+  const [mode, setMode] = useState('login') // login, register
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
-  const handleSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -32,6 +35,44 @@ export default function Login({ onLoginSuccess }) {
       }
     } catch (err) {
       setError(err.message || 'Failed to log in')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRegister = async (e) => {
+    e.preventDefault()
+    setError('')
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const response = await post('/api/auth/register', {
+        email,
+        password,
+      })
+
+      if (response.access_token) {
+        setJWT(response.access_token)
+        if (onLoginSuccess) {
+          onLoginSuccess(response)
+        }
+        navigate('/dashboard')
+      } else {
+        setError('Registration failed. Try again.')
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to register')
     } finally {
       setLoading(false)
     }
@@ -67,7 +108,7 @@ export default function Login({ onLoginSuccess }) {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-4">
             {/* Email Input */}
             <div>
               <label htmlFor="email" className="block text-sm font-semibold text-neutral-700 mb-2">
@@ -97,16 +138,45 @@ export default function Login({ onLoginSuccess }) {
                 <Lock className="absolute left-3 top-3 w-5 h-5 text-neutral-400" />
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-neutral-400 hover:text-neutral-600"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
+
+            {/* Confirm Password (Register only) */}
+            {mode === 'register' && (
+              <div>
+                <label htmlFor="confirm" className="block text-sm font-semibold text-neutral-700 mb-2">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 w-5 h-5 text-neutral-400" />
+                  <input
+                    id="confirm"
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    disabled={loading}
+                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Submit Button */}
             <button
@@ -117,18 +187,44 @@ export default function Login({ onLoginSuccess }) {
               {loading ? (
                 <>
                   <Loader className="w-4 h-4 animate-spin" />
-                  <span>Signing in...</span>
+                  <span>{mode === 'login' ? 'Signing in...' : 'Creating account...'}</span>
                 </>
               ) : (
-                <span>Sign in</span>
+                <span>{mode === 'login' ? 'Sign in' : 'Create Account'}</span>
               )}
             </button>
           </form>
 
-          {/* Footer */}
-          <p className="text-center text-xs text-neutral-500 mt-6">
-            Contact your administrator for access
-          </p>
+          {/* Toggle Register/Login */}
+          <div className="text-center text-sm text-neutral-600 mt-6">
+            {mode === 'login' ? (
+              <>
+                No account?{' '}
+                <button
+                  onClick={() => {
+                    setMode('register')
+                    setError('')
+                  }}
+                  className="text-blue-600 font-semibold hover:text-blue-700"
+                >
+                  Create one
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{' '}
+                <button
+                  onClick={() => {
+                    setMode('login')
+                    setError('')
+                  }}
+                  className="text-blue-600 font-semibold hover:text-blue-700"
+                >
+                  Sign in
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
