@@ -10,7 +10,7 @@ import Workspace from './pages/Workspace'
 import Clients from './pages/Clients'
 import ClientProfile from './pages/ClientProfile'
 import Quoting from './pages/Quoting'
-import Scheduling from './pages/Scheduling'
+import Schedule from './pages/Schedule'
 import Invoicing from './pages/Invoicing'
 import Dispatch from './pages/Dispatch'
 import Payroll from './pages/Payroll'
@@ -20,7 +20,6 @@ import Recurring from './pages/Recurring'
 import Requests from './pages/Requests'
 import Settings from './pages/Settings'
 import PublicQuote from './pages/PublicQuote'
-import Work from './pages/Work'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -85,21 +84,20 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/work" element={<Work />} />
           <Route path="/workspace" element={<Workspace />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/clients/:id" element={<ClientProfile />} />
           <Route path="/requests" element={<Requests />} />
           <Route path="/pipeline" element={<Requests />} />
           <Route path="/quoting" element={<Quoting />} />
-          <Route path="/scheduling" element={<Scheduling />} />
-          <Route path="/schedule" element={<Navigate to="/scheduling" replace />} />
+          <Route path="/schedule" element={<Schedule />} />
+          <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
           <Route path="/invoicing" element={<Invoicing />} />
-          <Route path="/dispatch" element={<Dispatch />} />
+          <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/comms" element={<Comms />} />
           <Route path="/properties" element={<Properties />} />
-          <Route path="/recurring" element={<Recurring />} />
+          <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
