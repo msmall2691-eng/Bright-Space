@@ -39,6 +39,8 @@ def init_db():
     _migrate_data_types()
     # PR 2: Backfill missing properties for orphaned jobs
     _backfill_missing_properties()
+    # PR 4: Backfill Visits from existing Jobs (one visit per job)
+    _backfill_visits_from_jobs()
     # Fix STR turnover dates (RFC 5545 DTEND exclusivity)
     _fix_str_turnover_dates()
 
@@ -66,6 +68,8 @@ def _run_migrations():
         "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
         # PR 3: Quote traceability — track when client views quote
         "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
+        # PR 4: Visits table (created by create_all, but ensure indexes)
+        # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
         "ALTER TABLE quotes ADD COLUMN intake_id INTEGER REFERENCES lead_intakes(id)",
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
         "ALTER TABLE quotes ADD COLUMN address TEXT",
@@ -355,6 +359,64 @@ def _bootstrap_admin_user():
         db.close()
     except Exception as exc:
         logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
+
+
+def _backfill_visits_from_jobs():
+    """
+    PR 4: Backfill Visits table with one visit per existing Job.
+
+    Creates a Visit for each Job, inheriting the job's scheduled_date/times.
+    This allows the old Job-centric UI to keep working while we transition to
+    Visit-centric scheduling.
+
+    Idempotent — safe to run every boot.
+    """
+    from database.models import Job, Visit
+
+    db = SessionLocal()
+    try:
+        # Find jobs without corresponding visits
+        jobs_without_visits = db.query(Job).filter(~Job.visits.any()).all()
+
+        if not jobs_without_visits:
+            db.close()
+            return
+
+        created_visits = 0
+        for job in jobs_without_visits:
+            try:
+                # Skip if job has no scheduled_date
+                if not job.scheduled_date:
+                    continue
+
+                visit = Visit(
+                    job_id=job.id,
+                    scheduled_date=job.scheduled_date,
+                    start_time=job.start_time,
+                    end_time=job.end_time,
+                    status=job.status,  # inherit job status
+                    cleaner_ids=job.cleaner_ids or [],
+                    gcal_event_id=job.gcal_event_id,
+                    # iCal fields
+                    ical_source=None,
+                    ical_uid=None,
+                    # Completion fields
+                    completed_at=None,
+                    notes=job.notes,
+                )
+                db.add(visit)
+                created_visits += 1
+            except Exception as e:
+                logger.warning(f"[backfill_visits] Error creating visit for job {job.id}: {e}")
+
+        if created_visits > 0:
+            db.commit()
+            logger.info(f"[backfill_visits] Created {created_visits} visits from existing jobs")
+
+    except Exception as exc:
+        logger.warning(f"[backfill_visits] Error during backfill: {exc}")
+    finally:
+        db.close()
 
 
 def _backfill_missing_properties():

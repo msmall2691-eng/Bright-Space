@@ -1,6 +1,6 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Text, Date, Time,
-    JSON, ForeignKey, Boolean, UniqueConstraint, Enum as SQLEnum
+    Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
+    JSON, ForeignKey, Boolean, UniqueConstraint, Enum as SQLEnum, ARRAY
 )
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
@@ -324,6 +324,56 @@ class Job(Base):
         foreign_keys="ICalEvent.job_id", uselist=False
     )
     assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
+    visits = relationship("Visit", back_populates="job", cascade="all, delete-orphan")  # PR 4: one job, many visits
+
+
+class Visit(Base):
+    """PR 4: A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
+    __tablename__ = "visits"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+
+    # When is this visit scheduled?
+    scheduled_date = Column(Date, nullable=False, index=True)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+
+    # Who is assigned?
+    cleaner_ids = Column(JSON, default=list)  # [user_id, ...] for backcompat; will migrate to dedicated assignment table later
+
+    # Visit lifecycle
+    status = Column(String, nullable=False, default="scheduled")
+    # scheduled | dispatched | en_route | in_progress | completed | no_show | cancelled
+
+    # iCal source (for STR turnovers)
+    ical_source = Column(String, nullable=True)  # "airbnb", "vrbo", "hospitable", etc.
+    ical_uid = Column(String, nullable=True, index=True)  # RFC 5545 UID for idempotency
+    ical_synced_at = Column(DateTime, nullable=True)  # When this visit was imported from iCal
+
+    # GCal integration
+    gcal_event_id = Column(String, nullable=True)
+
+    # Completion tracking
+    completed_at = Column(DateTime, nullable=True)
+    completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Which user marked it complete
+    notes = Column(Text)
+
+    # Photos, checklist (structured data)
+    checklist_results = Column(JSON, nullable=True)  # {"task_id": "done"/"skipped"/"failed", ...}
+    photos = Column(JSON, default=list)  # [{"url": "...", "timestamp": "...", "label": "before"}, ...]
+
+    # Audit trail
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("ical_source", "ical_uid", name="uq_visit_ical_source_uid"),  # iCal idempotency
+    )
+
+    job = relationship("Job", back_populates="visits")
+    completed_by_user = relationship("User", foreign_keys=[completed_by], uselist=False)
 
 
 class LeadIntake(Base):
