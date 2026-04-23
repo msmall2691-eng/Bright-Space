@@ -156,6 +156,19 @@ export default function Login({ onLoginSuccess }) {
               </div>
             </div>
 
+            {/* Forgot Password (Login only) */}
+            {mode === 'login' && (
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => alert('Contact your administrator to reset your password')}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-semibold"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
+
             {/* Confirm Password (Register only) */}
             {mode === 'register' && (
               <div>
