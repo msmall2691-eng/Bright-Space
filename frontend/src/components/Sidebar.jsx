@@ -1,10 +1,11 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
-  ChevronRight, Bell, Building2, LayoutGrid,
+  ChevronRight, Bell, Building2, LayoutGrid, LogOut,
 } from 'lucide-react'
+import { logout } from '../api'
 
 const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
@@ -27,8 +28,9 @@ const nav = [
   { to: '/settings',    icon: Settings,        label: 'Settings' },
 ]
 
-export default function Sidebar({ open, onClose }) {
+export default function Sidebar({ open, onClose, user }) {
   const location = useLocation()
+  const [showUserMenu, setShowUserMenu] = useState(false)
 
   useEffect(() => { onClose() }, [location.pathname])
 
@@ -99,14 +101,40 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Footer / user */}
         <div className="px-3 py-3 border-t border-zinc-800/60">
-          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-zinc-900 transition-colors cursor-pointer">
-            <div className="w-7 h-7 rounded-full bg-blue-600/20 flex items-center justify-center">
-              <span className="text-[11px] font-semibold text-blue-400">M</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <span className="text-[12px] text-zinc-300 font-medium truncate block">Megan</span>
-              <span className="text-[10px] text-zinc-600 truncate block">Owner</span>
-            </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-zinc-900 transition-colors text-left"
+            >
+              <div className="w-7 h-7 rounded-full bg-blue-600/20 flex items-center justify-center flex-shrink-0">
+                <span className="text-[11px] font-semibold text-blue-400">
+                  {user?.email?.[0]?.toUpperCase() || 'A'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-[12px] text-zinc-300 font-medium truncate block">
+                  {user?.email || 'Admin'}
+                </span>
+                <span className="text-[10px] text-zinc-600 truncate block capitalize">
+                  {user?.role || 'User'}
+                </span>
+              </div>
+            </button>
+
+            {showUserMenu && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-800 rounded-lg shadow-lg py-1 z-50">
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false)
+                    logout()
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-zinc-400 hover:text-red-400 hover:bg-zinc-800/50 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Log out</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </aside>

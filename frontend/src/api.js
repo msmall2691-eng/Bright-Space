@@ -1,31 +1,11 @@
 /**
  * Centralized API client for BrightBase.
  *
- * All fetch calls should use these helpers instead of raw fetch().
- * Uses JWT Bearer token from localStorage for authenticated endpoints.
+ * All fetch calls use JWT Bearer token from localStorage.
+ * On 401, clears token and redirects to /login.
  */
 
 let JWT_TOKEN = localStorage.getItem("brightbase_jwt") || "";
-let API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || "";
-
-// In production, fetch the API key from the backend config endpoint
-const _configReady = (API_KEY
-  ? Promise.resolve()
-  : fetch("/api/config")
-      .then(r => r.json())
-      .then(data => {
-        if (data.api_key) {
-          API_KEY = data.api_key;
-          localStorage.setItem("brightbase_api_key", data.api_key);
-        }
-      })
-      .catch(() => { /* config endpoint not available — dev mode */ })
-);
-
-/** Wait for API key to be ready before making requests */
-async function ensureReady() {
-  await _configReady;
-}
 
 /** Store JWT token (called after login) */
 export function setJWT(token) {
@@ -33,35 +13,49 @@ export function setJWT(token) {
   localStorage.setItem("brightbase_jwt", token);
 }
 
-/** Clear JWT token (called on logout) */
+/** Clear JWT token and user (called on logout or auth failure) */
 export function clearJWT() {
   JWT_TOKEN = "";
   localStorage.removeItem("brightbase_jwt");
+  localStorage.removeItem("brightbase_user");
+}
+
+/** Logout: clear session and redirect to login */
+export function logout() {
+  clearJWT();
+  window.location.href = "/login";
 }
 
 function headers(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
   if (JWT_TOKEN) {
     h["Authorization"] = `Bearer ${JWT_TOKEN}`;
-  } else if (API_KEY) {
-    h["X-API-Key"] = API_KEY;
   }
   return h;
 }
 
+function handleAuthError() {
+  clearJWT();
+  window.location.href = "/login";
+}
+
 /**
  * Wrapper around fetch that:
- *  - Waits for API key to be available
- *  - Adds API key header automatically
+ *  - Adds JWT Authorization header
+ *  - On 401: clears JWT and redirects to /login
  *  - Throws on non-OK responses with useful error messages
  *  - Returns parsed JSON
  */
 export async function api(url, options = {}) {
-  await ensureReady();
   const res = await fetch(url, {
     ...options,
     headers: headers(options.headers),
   });
+
+  if (res.status === 401) {
+    handleAuthError();
+    throw new Error("Unauthorized");
+  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -103,15 +97,19 @@ export const del = (url) => api(url, { method: "DELETE" });
  * Does NOT set Content-Type — browser sets multipart boundary automatically.
  */
 export async function upload(url, formData) {
-  await ensureReady();
   const h = {};
-  if (API_KEY) h["X-API-Key"] = API_KEY;
+  if (JWT_TOKEN) h["Authorization"] = `Bearer ${JWT_TOKEN}`;
 
   const res = await fetch(url, {
     method: "POST",
     headers: h,
     body: formData,
   });
+
+  if (res.status === 401) {
+    handleAuthError();
+    throw new Error("Unauthorized");
+  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

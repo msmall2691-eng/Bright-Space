@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import BottomNav from './components/BottomNav'
 import AICommandBar from './components/AICommandBar'
+import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Workspace from './pages/Workspace'
 import Clients from './pages/Clients'
@@ -23,10 +24,36 @@ import Work from './pages/Work'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
   const location = useLocation()
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
 
+  useEffect(() => {
+    const jwt = localStorage.getItem('brightbase_jwt')
+    const storedUser = localStorage.getItem('brightbase_user')
+    if (jwt && storedUser) {
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch {
+        localStorage.removeItem('brightbase_user')
+      }
+    }
+    setLoading(false)
+  }, [])
+
+  const handleLoginSuccess = (loginResponse) => {
+    setUser(loginResponse)
+    localStorage.setItem('brightbase_user', JSON.stringify(loginResponse))
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen bg-white">Loading...</div>
+  }
+
   const isPublicRoute = location.pathname.startsWith('/quote/')
+  const isLoginRoute = location.pathname === '/login'
+  const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
   if (isPublicRoute) {
     return (
@@ -37,9 +64,21 @@ export default function App() {
     )
   }
 
+  if (!isAuthenticated && !isLoginRoute) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (isLoginRoute && isAuthenticated) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  if (isLoginRoute) {
+    return <Login onLoginSuccess={handleLoginSuccess} />
+  }
+
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#FCFCFC]">
-      <Sidebar open={sidebarOpen} onClose={closeSidebar} />
+      <Sidebar open={sidebarOpen} onClose={closeSidebar} user={user} />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto bg-[#FCFCFC] pb-bottomnav lg:pb-0 scroll-smooth-mobile">
