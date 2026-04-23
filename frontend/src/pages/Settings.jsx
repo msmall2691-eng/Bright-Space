@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug } from 'lucide-react'
+import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { del, get, post, patch } from "../api"
 
@@ -49,13 +49,30 @@ function Toast({ toasts }) {
 }
 
 export default function Settings() {
-  const [section, setSection] = useState('fields') // 'fields' | 'email'
+  const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations'
   const [entityTab, setEntityTab] = useState('client')
   const [fields, setFields] = useState([])
   const [panel, setPanel] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [toasts, setToasts] = useState([])
+
+  // General settings
+  const [generalSettings, setGeneralSettings] = useState({
+    company_name: 'Maine Cleaning Co.',
+    timezone: 'America/New_York',
+    currency: 'USD',
+  })
+  const [generalSaving, setGeneralSaving] = useState(false)
+
+  // Automation settings
+  const [automationSettings, setAutomationSettings] = useState({
+    ical_auto_sync_enabled: true,
+    ical_sync_interval: 15,
+    gcal_auto_sync_enabled: true,
+    gcal_sync_interval: 10,
+  })
+  const [automationSaving, setAutomationSaving] = useState(false)
 
   // Email settings state
   const [emailConfig, setEmailConfig] = useState({
@@ -182,6 +199,28 @@ export default function Settings() {
     setTesting(false)
   }
 
+  const saveGeneralSettings = async () => {
+    setGeneralSaving(true)
+    try {
+      await post('/api/settings/general', generalSettings)
+      toast('General settings saved')
+    } catch (err) {
+      toast('Failed to save general settings', 'error')
+    }
+    setGeneralSaving(false)
+  }
+
+  const saveAutomationSettings = async () => {
+    setAutomationSaving(true)
+    try {
+      await post('/api/settings/automation', automationSettings)
+      toast('Automation settings saved')
+    } catch (err) {
+      toast('Failed to save automation settings', 'error')
+    }
+    setAutomationSaving(false)
+  }
+
   const currentEntity = ENTITY_TABS.find(t => t.key === entityTab)
 
   return (
@@ -198,17 +237,188 @@ export default function Settings() {
               <p className="text-sm text-zinc-500 mt-1">Manage your account and integrations</p>
             </div>
           </div>
-          <div className="flex bg-zinc-100 rounded-xl p-1 w-fit">
-            <button onClick={() => setSection('fields')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
-              <Settings2 className="w-3.5 h-3.5" /> Custom Fields
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setSection('general')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              <Settings2 className="w-3.5 h-3.5" /> General
+            </button>
+            <button onClick={() => setSection('integrations')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              <Plug className="w-3.5 h-3.5" /> Integrations
+            </button>
+            <button onClick={() => setSection('automation')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              <RefreshCw className="w-3.5 h-3.5" /> Automation
             </button>
             <button onClick={() => setSection('email')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
-              <Mail className="w-3.5 h-3.5" /> Email & Integrations
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              <Mail className="w-3.5 h-3.5" /> Email
+            </button>
+            <button onClick={() => setSection('fields')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              <Settings2 className="w-3.5 h-3.5" /> Custom Fields
             </button>
           </div>
         </div>
+
+        {/* === GENERAL SETTINGS SECTION === */}
+        {section === 'general' && (
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+            <div className="max-w-2xl pt-6 space-y-6">
+              <div>
+                <h2 className="text-lg font-bold text-zinc-900 mb-4">Company Information</h2>
+                <div className="bg-white rounded-xl border border-zinc-200 p-6">
+                  <div>
+                    <label className={lbl}>Company Name</label>
+                    <input type="text" value={generalSettings.company_name}
+                      onChange={e => setGeneralSettings(s => ({ ...s, company_name: e.target.value }))}
+                      placeholder="Maine Cleaning Co."
+                      className={inp} />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-lg font-bold text-zinc-900 mb-4">Regional Settings</h2>
+                <div className="bg-white rounded-xl border border-zinc-200 p-6 space-y-4">
+                  <div>
+                    <label className={lbl}>Timezone</label>
+                    <select value={generalSettings.timezone}
+                      onChange={e => setGeneralSettings(s => ({ ...s, timezone: e.target.value }))}
+                      className={inp}>
+                      <option value="America/New_York">Eastern Time (ET)</option>
+                      <option value="America/Chicago">Central Time (CT)</option>
+                      <option value="America/Denver">Mountain Time (MT)</option>
+                      <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                      <option value="UTC">UTC</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={lbl}>Currency</label>
+                    <select value={generalSettings.currency}
+                      onChange={e => setGeneralSettings(s => ({ ...s, currency: e.target.value }))}
+                      className={inp}>
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="GBP">GBP (£)</option>
+                      <option value="CAD">CAD (C$)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <button onClick={saveGeneralSettings} disabled={generalSaving}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* === INTEGRATIONS SECTION === */}
+        {section === 'integrations' && (
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+            <div className="max-w-2xl pt-6">
+              <div className="mb-6">
+                <h2 className="text-lg font-bold text-zinc-900">Connected Services</h2>
+                <p className="text-sm text-zinc-600 mt-1">Connect external tools to enhance your workflow</p>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { name: 'Google Calendar', icon: '📅', desc: 'Sync jobs with Google Calendar bidirectionally', status: 'connected' },
+                  { name: 'Connecteam', icon: '👥', desc: 'Dispatch jobs to your field team', status: 'available' },
+                  { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
+                  { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },
+                ].map((integration, idx) => (
+                  <div key={idx} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">{integration.icon}</span>
+                      <div>
+                        <h3 className="font-semibold text-zinc-900">{integration.name}</h3>
+                        <p className="text-xs text-zinc-500">{integration.desc}</p>
+                      </div>
+                    </div>
+                    <button className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      integration.status === 'connected'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}>
+                      {integration.status === 'connected' ? '✓ Connected' : 'Connect'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* === AUTOMATION SECTION === */}
+        {section === 'automation' && (
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+            <div className="max-w-2xl pt-6">
+              <div className="mb-6">
+                <h2 className="text-lg font-bold text-zinc-900">Auto-Sync Settings</h2>
+                <p className="text-sm text-zinc-600 mt-1">Configure how often your calendar and feeds sync automatically</p>
+              </div>
+
+              <div className="bg-white rounded-xl border border-zinc-200 p-6 space-y-6">
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-zinc-900">iCal Auto-Sync</h3>
+                      <p className="text-xs text-zinc-500 mt-1">Sync iCal feeds to your schedule</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={automationSettings.ical_auto_sync_enabled}
+                        onChange={e => setAutomationSettings(s => ({ ...s, ical_auto_sync_enabled: e.target.checked }))}
+                        className="w-4 h-4 rounded" />
+                    </label>
+                  </div>
+                  {automationSettings.ical_auto_sync_enabled && (
+                    <div className="mt-3">
+                      <label className={lbl}>Sync Interval (minutes)</label>
+                      <input type="number" min="5" max="240" value={automationSettings.ical_sync_interval}
+                        onChange={e => setAutomationSettings(s => ({ ...s, ical_sync_interval: parseInt(e.target.value) || 15 }))}
+                        className={inp} />
+                      <p className="text-xs text-zinc-400 mt-1">Recommended: 15 minutes</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-zinc-100 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-zinc-900">Google Calendar Auto-Sync</h3>
+                      <p className="text-xs text-zinc-500 mt-1">Sync jobs to your Google Calendar</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={automationSettings.gcal_auto_sync_enabled}
+                        onChange={e => setAutomationSettings(s => ({ ...s, gcal_auto_sync_enabled: e.target.checked }))}
+                        className="w-4 h-4 rounded" />
+                    </label>
+                  </div>
+                  {automationSettings.gcal_auto_sync_enabled && (
+                    <div className="mt-3">
+                      <label className={lbl}>Sync Interval (minutes)</label>
+                      <input type="number" min="5" max="240" value={automationSettings.gcal_sync_interval}
+                        onChange={e => setAutomationSettings(s => ({ ...s, gcal_sync_interval: parseInt(e.target.value) || 10 }))}
+                        className={inp} />
+                      <p className="text-xs text-zinc-400 mt-1">Recommended: 10 minutes</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button onClick={saveAutomationSettings} disabled={automationSaving}
+                className="mt-6 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                {automationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* === EMAIL SETTINGS SECTION === */}
         {section === 'email' && (
