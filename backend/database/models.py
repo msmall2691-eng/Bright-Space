@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
-    JSON, ForeignKey, Boolean, UniqueConstraint, Enum as SQLEnum, ARRAY
+    JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
@@ -331,6 +331,12 @@ class Job(Base):
     assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
     visits = relationship("Visit", back_populates="job", cascade="all, delete-orphan")  # PR 4: one job, many visits
 
+    __table_args__ = (
+        Index("idx_job_property_date", property_id, scheduled_date),
+        Index("idx_job_client_status", client_id, status),
+        Index("idx_job_scheduled_date_status", scheduled_date, status),
+    )
+
 
 class IntegrationEvent(Base):
     """PR 5: Audit log for all external integrations (GCal, SMS, email, Stripe, etc.)"""
@@ -411,6 +417,8 @@ class Visit(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint("ical_source", "ical_uid", name="uq_visit_ical_source_uid"),  # iCal idempotency
+        Index("idx_visit_scheduled_date_status", scheduled_date, status),
+        Index("idx_visit_job_date", job_id, scheduled_date),
     )
 
     job = relationship("Job", back_populates="visits")

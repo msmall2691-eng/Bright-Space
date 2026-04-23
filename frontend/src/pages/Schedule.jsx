@@ -158,7 +158,7 @@ export default function Schedule() {
         const end = endDate.toISOString().split('T')[0]
 
         const [visitsRes, jobsRes, propsRes, clientsRes] = await Promise.all([
-          get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}`).catch(() => []),
+          get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`).catch(() => ({ items: [] })),
           get('/api/jobs').catch(() => []),
           get('/api/properties').catch(() => []),
           get('/api/clients').catch(() => []),
@@ -173,7 +173,9 @@ export default function Schedule() {
         ;(propsRes || []).forEach(p => propsMap[p.id] = p)
         ;(clientsRes || []).forEach(c => clientsMap[c.id] = c)
 
-        setVisits(visitsRes || [])
+        // Handle paginated response format
+        const visitsData = visitsRes?.items || visitsRes || []
+        setVisits(visitsData)
         setJobs(jobsMap)
         setProperties(propsMap)
         setClients(clientsMap)
@@ -249,8 +251,9 @@ export default function Schedule() {
     endDate.setDate(endDate.getDate() + 6)
     const start = startDate.toISOString().split('T')[0]
     const end = endDate.toISOString().split('T')[0]
-    const visitsRes = await get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}`)
-    setVisits(visitsRes || [])
+    const visitsRes = await get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`)
+    const visitsData = visitsRes?.items || visitsRes || []
+    setVisits(visitsData)
   }
 
   const prevWeek = () => {

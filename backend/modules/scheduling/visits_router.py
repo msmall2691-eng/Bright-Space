@@ -101,9 +101,11 @@ def get_visits(
     status: Optional[str] = None,
     property_type: Optional[str] = None,
     job_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_db),
 ):
-    """Get visits with date range and optional filters."""
+    """Get visits with date range and optional filters. Paginated for performance."""
     q = db.query(Visit).options(
         joinedload(Visit.job).joinedload(Job.client),
         joinedload(Visit.job).joinedload(Job.property)
@@ -122,17 +124,24 @@ def get_visits(
     if property_type and property_type != "all":
         q = q.join(Job).join(Property).filter(Property.property_type == property_type)
 
-    visits = q.order_by(Visit.scheduled_date, Visit.start_time).all()
+    # Apply pagination BEFORE executing the query
+    total_count = q.count()
+    visits = q.order_by(Visit.scheduled_date, Visit.start_time).limit(limit).offset(offset).all()
 
-    return [
-        visit_to_dict(
-            v,
-            job=v.job if hasattr(v, "job") else None,
-            client=v.job.client if hasattr(v, "job") and hasattr(v.job, "client") else None,
-            property_obj=v.job.property if hasattr(v, "job") and hasattr(v.job, "property") else None,
-        )
-        for v in visits
-    ]
+    return {
+        "items": [
+            visit_to_dict(
+                v,
+                job=v.job if hasattr(v, "job") else None,
+                client=v.job.client if hasattr(v, "job") and hasattr(v.job, "client") else None,
+                property_obj=v.job.property if hasattr(v, "job") and hasattr(v.job, "property") else None,
+            )
+            for v in visits
+        ],
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
