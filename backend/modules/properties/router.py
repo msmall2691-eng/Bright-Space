@@ -48,6 +48,11 @@ class PropertyIcalSchema(BaseModel):
     url: str
     source: Optional[str] = None  # "airbnb", "vrbo", etc
     active: Optional[bool] = True
+    checkout_time: Optional[str] = None
+    duration_hours: Optional[float] = None
+    house_code: Optional[str] = None
+    access_links: Optional[dict] = None
+    instructions: Optional[str] = None
 
 
 def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
@@ -78,6 +83,11 @@ def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
                 "url": pi.url,
                 "source": pi.source,
                 "active": pi.active,
+                "checkout_time": pi.checkout_time,
+                "duration_hours": pi.duration_hours,
+                "house_code": pi.house_code,
+                "access_links": pi.access_links,
+                "instructions": pi.instructions,
                 "last_synced_at": pi.last_synced_at.isoformat() if pi.last_synced_at else None,
             }
             for pi in (p.property_icals or [])
@@ -234,7 +244,12 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
         property_id=property_id,
         url=data.url,
         source=data.source,
-        active=data.active if data.active is not None else True
+        active=data.active if data.active is not None else True,
+        checkout_time=data.checkout_time,
+        duration_hours=data.duration_hours,
+        house_code=data.house_code,
+        access_links=data.access_links,
+        instructions=data.instructions,
     )
     db.add(ical)
     db.commit()
@@ -245,6 +260,11 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
         "url": ical.url,
         "source": ical.source,
         "active": ical.active,
+        "checkout_time": ical.checkout_time,
+        "duration_hours": ical.duration_hours,
+        "house_code": ical.house_code,
+        "access_links": ical.access_links,
+        "instructions": ical.instructions,
     }
 
 
@@ -265,6 +285,16 @@ def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db
         ical.source = data.source
     if data.active is not None:
         ical.active = data.active
+    if data.checkout_time is not None:
+        ical.checkout_time = data.checkout_time
+    if data.duration_hours is not None:
+        ical.duration_hours = data.duration_hours
+    if data.house_code is not None:
+        ical.house_code = data.house_code
+    if data.access_links is not None:
+        ical.access_links = data.access_links
+    if data.instructions is not None:
+        ical.instructions = data.instructions
 
     db.commit()
     db.refresh(ical)
@@ -274,6 +304,11 @@ def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db
         "url": ical.url,
         "source": ical.source,
         "active": ical.active,
+        "checkout_time": ical.checkout_time,
+        "duration_hours": ical.duration_hours,
+        "house_code": ical.house_code,
+        "access_links": ical.access_links,
+        "instructions": ical.instructions,
     }
 
 
