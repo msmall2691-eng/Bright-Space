@@ -2,8 +2,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime, timezone
+from typing import Optional, List, Literal
+from datetime import datetime, date, time, timezone
 
 from database.db import get_db
 from database.models import Visit, Job, Client, Property
@@ -14,26 +14,63 @@ router = APIRouter()
 
 
 class VisitCreate(BaseModel):
+    """Request body for POST /api/visits."""
     job_id: int
-    scheduled_date: str       # YYYY-MM-DD
-    start_time: str           # HH:MM
-    end_time: str             # HH:MM
-    cleaner_ids: Optional[List[str]] = []
-    status: Optional[str] = "scheduled"
+    sequence: int = 1
+    scheduled_date: date
+    start_time: time
+    end_time: time
+    status: Literal['scheduled','dispatched','en_route','in_progress','completed','canceled','no_show'] = 'scheduled'
+    cleaner_ids: List[int] = []
+    gcal_event_id: Optional[str] = None
+    ical_source: Optional[str] = None
+    ical_uid: Optional[str] = None
+    checklist_template_id: Optional[int] = None
     notes: Optional[str] = None
 
 
 class VisitUpdate(BaseModel):
-    scheduled_date: Optional[str] = None
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-    cleaner_ids: Optional[List[str]] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
+    """Request body for PATCH /api/visits/{id}."""
+    scheduled_date: Optional[date] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    status: Optional[Literal['scheduled','dispatched','en_route','in_progress','completed','canceled','no_show']] = None
+    cleaner_ids: Optional[List[int]] = None
+    gcal_event_id: Optional[str] = None
+    ical_source: Optional[str] = None
+    ical_uid: Optional[str] = None
+    checklist_template_id: Optional[int] = None
     completed_at: Optional[str] = None
-    completed_by: Optional[str] = None
+    completed_by: Optional[int] = None
     checklist_results: Optional[dict] = None
     photos: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+class VisitRead(BaseModel):
+    """Response model for GET /api/visits and POST/PATCH responses."""
+    id: int
+    job_id: int
+    sequence: int
+    scheduled_date: date
+    start_time: time
+    end_time: time
+    status: str
+    cleaner_ids: List[int]
+    gcal_event_id: Optional[str]
+    ical_source: Optional[str]
+    ical_uid: Optional[str]
+    checklist_template_id: Optional[int]
+    completed_at: Optional[datetime]
+    completed_by: Optional[int]
+    checklist_results: Optional[dict]
+    photos: Optional[List[str]]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj: Property = None) -> dict:
@@ -135,7 +172,7 @@ def get_visits(
     ]
 
 
-@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+@router.post("", status_code=201, response_model=VisitRead, dependencies=[Depends(require_role("admin", "manager"))])
 def create_visit(data: VisitCreate, db: Session = Depends(get_db)):
     """Create a new visit."""
     job = db.query(Job).filter(Job.id == data.job_id).first()
@@ -155,10 +192,7 @@ def create_visit(data: VisitCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(visit)
 
-    client = job.client if hasattr(job, "client") else None
-    property_obj = job.property if hasattr(job, "property") else None
-
-    return visit_to_dict(visit, job=job, client=client, property_obj=property_obj)
+    return visit
 
 
 @router.get("/{visit_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
@@ -180,8 +214,8 @@ def get_visit(visit_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.put("/{visit_id}", dependencies=[Depends(require_role("admin", "manager"))])
-@router.patch("/{visit_id}", dependencies=[Depends(require_role("admin", "manager"))])
+@router.put("/{visit_id}", response_model=VisitRead, dependencies=[Depends(require_role("admin", "manager"))])
+@router.patch("/{visit_id}", response_model=VisitRead, dependencies=[Depends(require_role("admin", "manager"))])
 def update_visit(visit_id: int, data: VisitUpdate, db: Session = Depends(get_db)):
     """Update a visit."""
     visit = db.query(Visit).options(
@@ -211,12 +245,7 @@ def update_visit(visit_id: int, data: VisitUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(visit)
 
-    return visit_to_dict(
-        visit,
-        job=visit.job if hasattr(visit, "job") else None,
-        client=visit.job.client if hasattr(visit, "job") and hasattr(visit.job, "client") else None,
-        property_obj=visit.job.property if hasattr(visit, "job") and hasattr(visit.job, "property") else None,
-    )
+    return visit
 
 
 @router.delete("/{visit_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
