@@ -120,7 +120,7 @@ def test_complete_workflow():
         # 4b. Generate recurring jobs
         print("\n4b️⃣ Generating recurring jobs...")
         jobs_created = generate_jobs(db, recurring)
-        print(f"   ✓ Jobs generated: {jobs_created}")
+        print(f"   ✓ Recurring jobs generated: {jobs_created}")
 
         # 5. Create test iCal event (mock Airbnb booking)
         print("\n5️⃣  Creating mock iCal event for STR property...")
