@@ -1,67 +1,73 @@
 /**
  * Centralized API client for BrightBase.
  *
- * All fetch calls should use these helpers instead of raw fetch().
- * The API key is injected automatically from environment, localStorage,
- * or fetched from the /api/config endpoint at startup.
+ * Uses JWT authentication via Bearer token in Authorization header.
+ * JWT is stored in localStorage and automatically included in all requests.
  */
 
-let API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || "";
+export function setJWT(token) {
+  if (token) {
+    localStorage.setItem('brightbase_jwt', token)
+  }
+}
 
-// In production, fetch the API key from the backend config endpoint
-const _configReady = (API_KEY
-  ? Promise.resolve()
-  : fetch("/api/config")
-      .then(r => r.json())
-      .then(data => {
-        if (data.api_key) {
-          API_KEY = data.api_key;
-          localStorage.setItem("brightbase_api_key", data.api_key);
-        }
-      })
-      .catch(() => { /* config endpoint not available — dev mode */ })
-);
+export function getJWT() {
+  return localStorage.getItem('brightbase_jwt')
+}
 
-/** Wait for API key to be ready before making requests */
-async function ensureReady() {
-  await _configReady;
+export function clearJWT() {
+  localStorage.removeItem('brightbase_jwt')
+}
+
+export function logout() {
+  clearJWT()
+  window.location.href = '/login'
 }
 
 function headers(extra = {}) {
-  const h = { "Content-Type": "application/json", ...extra };
-  if (API_KEY) h["X-API-Key"] = API_KEY;
-  return h;
+  const h = { "Content-Type": "application/json", ...extra }
+  const token = getJWT()
+  if (token) {
+    h["Authorization"] = `Bearer ${token}`
+  }
+  return h
 }
 
 /**
  * Wrapper around fetch that:
- *  - Waits for API key to be available
- *  - Adds API key header automatically
+ *  - Adds JWT Bearer token to Authorization header
  *  - Throws on non-OK responses with useful error messages
+ *  - Redirects to /login on 401 Unauthorized
  *  - Returns parsed JSON
  */
 export async function api(url, options = {}) {
-  await ensureReady();
   const res = await fetch(url, {
     ...options,
     headers: headers(options.headers),
-  });
+  })
+
+  // Handle 401 Unauthorized - redirect to login
+  if (res.status === 401) {
+    clearJWT()
+    window.location.href = '/login'
+    return
+  }
 
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+    let detail = `HTTP ${res.status}`
     try {
-      const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
+      const body = await res.json()
+      detail = body.detail || JSON.stringify(body)
     } catch {
       // Response wasn't JSON
     }
-    throw new Error(detail);
+    throw new Error(detail)
   }
 
   // Handle 204 No Content
-  if (res.status === 204) return null;
+  if (res.status === 204) return null
 
-  return res.json();
+  return res.json()
 }
 
 /** GET helper */
