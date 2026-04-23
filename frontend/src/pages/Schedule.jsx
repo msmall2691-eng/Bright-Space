@@ -2,146 +2,123 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle,
-  Home, Building2, Wind, RefreshCw, Filter, X, Zap, Edit2, Trash2, CheckCircle, GripVertical, Settings
+  Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
+  Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical
 } from 'lucide-react'
 import { get, post, put } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
-import PageSettings from '../components/PageSettings'
-import { DndContext } from '@dnd-kit/core'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 
-const SERVICE_CONFIG = {
-  residential: { icon: Home, color: 'bg-blue-100 text-blue-700', border: 'border-blue-200', label: 'Residential' },
-  commercial: { icon: Building2, color: 'bg-purple-100 text-purple-700', border: 'border-purple-200', label: 'Commercial' },
-  str_turnover: { icon: Wind, color: 'bg-amber-100 text-amber-700', border: 'border-amber-200', label: 'STR Turnover' },
-  str: { icon: Wind, color: 'bg-amber-100 text-amber-700', border: 'border-amber-200', label: 'STR' },
+// Property type colors (STR = amber, residential = blue, commercial = purple)
+const PROPERTY_TYPE_CONFIG = {
+  str: { color: 'bg-amber-50 border-l-4 border-l-amber-400', badge: 'bg-amber-100 text-amber-700', icon: Wind, label: 'STR' },
+  residential: { color: 'bg-blue-50 border-l-4 border-l-blue-400', badge: 'bg-blue-100 text-blue-700', icon: Home, label: 'Residential' },
+  commercial: { color: 'bg-purple-50 border-l-4 border-l-purple-400', badge: 'bg-purple-100 text-purple-700', icon: Building2, label: 'Commercial' },
 }
 
-const STATUS_CONFIG = {
-  scheduled: { badge: 'info', label: 'Scheduled', dot: 'bg-blue-500' },
-  dispatched: { badge: 'success', label: 'Dispatched', dot: 'bg-green-500' },
-  in_progress: { badge: 'warning', label: 'In Progress', dot: 'bg-amber-500' },
-  completed: { badge: 'success', label: 'Completed', dot: 'bg-green-500' },
-  cancelled: { badge: 'danger', label: 'Cancelled', dot: 'bg-red-500' },
+const VISIT_STATUS_CONFIG = {
+  scheduled: { label: 'Scheduled', dot: 'bg-blue-500', badge: 'info' },
+  dispatched: { label: 'Dispatched', dot: 'bg-green-500', badge: 'success' },
+  en_route: { label: 'En Route', dot: 'bg-cyan-500', badge: 'info' },
+  in_progress: { label: 'In Progress', dot: 'bg-amber-500', badge: 'warning' },
+  completed: { label: 'Completed', dot: 'bg-green-600', badge: 'success' },
+  no_show: { label: 'No Show', dot: 'bg-red-500', badge: 'danger' },
+  cancelled: { label: 'Cancelled', dot: 'bg-neutral-500', badge: 'danger' },
 }
 
-const DraggableJobCard = ({ job, isDragging, onEdit, onDelete, compact = false }) => {
-  const service = SERVICE_CONFIG[(job.job_type || job.service_type || 'residential').toLowerCase()] || SERVICE_CONFIG.residential
-  const ServiceIcon = service.icon
-  const status = STATUS_CONFIG[job.status] || STATUS_CONFIG.scheduled
-  const hasAssigned = job.cleaner_ids?.length > 0
+const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange }) => {
+  const propertyType = property?.property_type || 'residential'
+  const config = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
+  const PropertyIcon = config.icon
+  const statusConfig = VISIT_STATUS_CONFIG[visit.status] || VISIT_STATUS_CONFIG.scheduled
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: job.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
-
-  if (compact) {
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className="p-2 rounded-lg bg-gradient-to-r from-white to-neutral-50 border border-neutral-200 hover:border-neutral-300 cursor-move transition-all hover:shadow-sm group"
-      >
-        <div className="flex items-start gap-2">
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
-            <GripVertical className="w-3 h-3 text-neutral-400 mt-1" />
-          </div>
-          <div className={`p-1.5 rounded ${service.color}`}>
-            <ServiceIcon className="w-3 h-3" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-neutral-900 truncate">{job.title}</p>
-            <p className="text-xs text-neutral-600 truncate">{job.client_name}</p>
-          </div>
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${status.dot}`} />
-        </div>
-      </div>
-    )
-  }
+  const hasAssigned = visit.cleaner_ids?.length > 0
+  const hasGcal = visit.gcal_event_id ? '✅' : ''
+  const hasSMS = job?.sms_reminder_sent ? '📲' : ''
+  const isCompleted = visit.status === 'completed'
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      className="p-4 rounded-xl bg-gradient-to-br from-white to-neutral-50 border border-neutral-200 hover:border-blue-300 cursor-move transition-all hover:shadow-lg hover:shadow-blue-100 group"
+      className={`p-4 rounded-lg transition-all cursor-pointer hover:shadow-md ${config.color}`}
+      onClick={() => onEdit(visit, job, property)}
     >
-      <div className="flex items-start gap-3 mb-3">
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing flex-shrink-0">
-          <GripVertical className="w-5 h-5 text-neutral-400 mt-0.5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between mb-2">
-            <div className="flex items-start gap-3 flex-1">
-              <div className={`p-2.5 rounded-lg ${service.color}`}>
-                <ServiceIcon className="w-5 h-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-neutral-900">{job.title}</h3>
-                <p className="text-sm text-neutral-600">{service.label}</p>
-              </div>
+      <div className="flex items-start justify-between gap-3">
+        {/* Left: Icon + Property Type */}
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className={`p-2 rounded ${config.badge}`}>
+            <PropertyIcon className="w-4 h-4" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            {/* Title + Time */}
+            <div className="flex items-baseline gap-2 mb-1">
+              <h4 className="font-semibold text-neutral-900 truncate">{job?.title || `Visit ${visit.id}`}</h4>
+              {isCompleted && <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />}
             </div>
-            <StatusBadge status={status.badge}>{status.label}</StatusBadge>
-          </div>
 
-          <div className="space-y-2 text-sm text-neutral-600 mb-3">
-            {job.client_name && <p className="font-semibold text-neutral-900">{job.client_name}</p>}
-            {job.address && (
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 flex-shrink-0 text-neutral-400" />
-                <span className="truncate text-xs">{job.address}</span>
-              </div>
-            )}
-            {job.start_time && (
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 flex-shrink-0 text-neutral-400" />
-                <span className="text-xs">{job.start_time}{job.end_time ? ` - ${job.end_time}` : ''}</span>
-              </div>
-            )}
-          </div>
+            {/* Property + Client */}
+            <p className="text-xs text-neutral-600 mb-2">
+              {property?.name && <span>{property.name}</span>}
+              {client?.name && <span> • {client.name}</span>}
+            </p>
 
-          <div className="flex items-center justify-between pt-3 border-t border-neutral-200">
-            <div className="flex items-center gap-2">
-              {hasAssigned ? (
-                <>
-                  <User className="w-4 h-4 text-green-600" />
-                  <span className="text-xs font-semibold text-green-700">{job.cleaner_ids.length} assigned</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-4 h-4 text-amber-600" />
-                  <span className="text-xs font-semibold text-amber-700">Unassigned</span>
-                </>
+            {/* Time + Address */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+                <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{visit.start_time?.slice(0, 5)} - {visit.end_time?.slice(0, 5)}</span>
+              </div>
+              {property?.address && (
+                <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{property.address}</span>
+                </div>
               )}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => onEdit(job)}
-                className="p-1 rounded hover:bg-blue-50 text-neutral-400 hover:text-blue-600 transition-colors"
-                title="Edit"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onDelete(job.id)}
-                className="p-1 rounded hover:bg-red-50 text-neutral-400 hover:text-red-600 transition-colors"
-                title="Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+
+            {/* Integration Status Chips */}
+            <div className="flex gap-1 mt-2">
+              {hasGcal && <span className="text-sm" title="GCal synced">{hasGcal}</span>}
+              {hasSMS && <span className="text-sm" title="SMS sent">{hasSMS}</span>}
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${statusConfig.dot}`} />
             </div>
+          </div>
+        </div>
+
+        {/* Right: Status + Cleaner + Actions */}
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <StatusBadge status={statusConfig.badge}>{statusConfig.label}</StatusBadge>
+
+          {hasAssigned && (
+            <div className="flex items-center gap-1 text-xs font-semibold text-neutral-600">
+              <User className="w-3.5 h-3.5" />
+              <span>{visit.cleaner_ids.length}</span>
+            </div>
+          )}
+
+          {!hasAssigned && (
+            <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded">
+              Unassigned
+            </span>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(visit, job, property) }}
+              className="p-1 rounded hover:bg-blue-100 text-neutral-400 hover:text-blue-600 transition-colors"
+              title="Edit"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(visit.id) }}
+              className="p-1 rounded hover:bg-red-100 text-neutral-400 hover:text-red-600 transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
@@ -151,708 +128,301 @@ const DraggableJobCard = ({ job, isDragging, onEdit, onDelete, compact = false }
 
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [currentDate, setCurrentDate] = useState(new Date())
-  const [calendarMode, setCalendarMode] = useState(() => {
-    return localStorage.getItem('schedule_defaultView') || 'month'
-  })
-  const [jobs, setJobs] = useState([])
+  const [visits, setVisits] = useState([])
+  const [jobs, setJobs] = useState({})
+  const [properties, setProperties] = useState({})
+  const [clients, setClients] = useState({})
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMessage, setSyncMessage] = useState('')
-  const [editingJob, setEditingJob] = useState(null)
-  const [filterService, setFilterService] = useState('all')
-  const [autoRefresh, setAutoRefresh] = useState(parseInt(localStorage.getItem('schedule_autoRefresh')) || 0)
-  const [scheduleSettings, setScheduleSettings] = useState({
-    defaultView: localStorage.getItem('schedule_defaultView') || 'month',
-    workHoursStart: parseInt(localStorage.getItem('schedule_workHoursStart')) || 8,
-    workHoursEnd: parseInt(localStorage.getItem('schedule_workHoursEnd')) || 18,
-    autoRefreshInterval: parseInt(localStorage.getItem('schedule_autoRefresh')) || 0,
-    hideServices: localStorage.getItem('schedule_hideServices')?.split(',').filter(Boolean) || [],
-  })
-  const [editForm, setEditForm] = useState({
-    title: '',
-    client_name: '',
-    address: '',
-    start_time: '',
-    end_time: '',
-    status: 'scheduled',
-  })
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [selectedPropertyType, setSelectedPropertyType] = useState('all')
+  const [selectedStatus, setSelectedStatus] = useState('all')
+  const [selectedVisit, setSelectedVisit] = useState(null)
+  const [showDetails, setShowDetails] = useState(false)
 
-  const activeTab = searchParams.get('tab') || 'calendar'
+  const dateStr = currentDate.toISOString().split('T')[0]
 
+  // Load visits for current week
   useEffect(() => {
-    fetchJobs()
-    if (scheduleSettings.autoRefreshInterval > 0) {
-      const interval = setInterval(fetchJobs, scheduleSettings.autoRefreshInterval * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [scheduleSettings.autoRefreshInterval])
-
-  const handleSaveSettings = async (newSettings) => {
-    localStorage.setItem('schedule_defaultView', newSettings.defaultView)
-    localStorage.setItem('schedule_workHoursStart', newSettings.workHoursStart)
-    localStorage.setItem('schedule_workHoursEnd', newSettings.workHoursEnd)
-    localStorage.setItem('schedule_autoRefresh', newSettings.autoRefreshInterval)
-    localStorage.setItem('schedule_hideServices', newSettings.hideServices.join(','))
-    setScheduleSettings(newSettings)
-    setCalendarMode(newSettings.defaultView)
-    return Promise.resolve()
-  }
-
-  const fetchJobs = async () => {
-    try {
+    const loadSchedule = async () => {
       setLoading(true)
-      const response = await get('/api/jobs')
-      setJobs(response || [])
-    } catch (err) {
-      console.error('Failed to fetch jobs:', err)
-      setJobs([])
-    } finally {
+      try {
+        const startDate = new Date(currentDate)
+        startDate.setDate(startDate.getDate() - startDate.getDay())
+        const endDate = new Date(startDate)
+        endDate.setDate(endDate.getDate() + 6)
+
+        const start = startDate.toISOString().split('T')[0]
+        const end = endDate.toISOString().split('T')[0]
+
+        const [visitsRes, jobsRes, propsRes, clientsRes] = await Promise.all([
+          get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}`).catch(() => []),
+          get('/api/jobs').catch(() => []),
+          get('/api/properties').catch(() => []),
+          get('/api/clients').catch(() => []),
+        ])
+
+        // Index jobs, properties, clients for quick lookup
+        const jobsMap = {}
+        const propsMap = {}
+        const clientsMap = {}
+
+        ;(jobsRes || []).forEach(j => jobsMap[j.id] = j)
+        ;(propsRes || []).forEach(p => propsMap[p.id] = p)
+        ;(clientsRes || []).forEach(c => clientsMap[c.id] = c)
+
+        setVisits(visitsRes || [])
+        setJobs(jobsMap)
+        setProperties(propsMap)
+        setClients(clientsMap)
+      } catch (err) {
+        console.error('[Schedule]', err)
+      }
       setLoading(false)
     }
-  }
 
-  const handleEditOpen = (job) => {
-    setEditingJob(job)
-    setEditForm({
-      title: job.title || '',
-      client_name: job.client_name || '',
-      address: job.address || '',
-      start_time: job.start_time || '',
-      end_time: job.end_time || '',
-      status: job.status || 'scheduled',
+    loadSchedule()
+  }, [currentDate])
+
+  // Filter visits
+  const filteredVisits = useMemo(() => {
+    return (visits || [])
+      .filter(v => {
+        const job = jobs[v.job_id]
+        const prop = properties[job?.property_id]
+
+        if (selectedPropertyType !== 'all' && prop?.property_type !== selectedPropertyType) {
+          return false
+        }
+        if (selectedStatus !== 'all' && v.status !== selectedStatus) {
+          return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        // Sort by date, then by time
+        const aDate = new Date(`${a.scheduled_date}T${a.start_time}`)
+        const bDate = new Date(`${b.scheduled_date}T${b.start_time}`)
+        return aDate - bDate
+      })
+  }, [visits, selectedPropertyType, selectedStatus, jobs, properties])
+
+  // Group by date
+  const visitsByDate = useMemo(() => {
+    const grouped = {}
+    filteredVisits.forEach(v => {
+      if (!grouped[v.scheduled_date]) grouped[v.scheduled_date] = []
+      grouped[v.scheduled_date].push(v)
     })
+    return grouped
+  }, [filteredVisits])
+
+  const handleEdit = (visit, job, property) => {
+    setSelectedVisit({ visit, job, property })
+    setShowDetails(true)
   }
 
-  const handleEditSave = async () => {
+  const handleDelete = async (visitId) => {
+    if (!confirm('Delete this visit?')) return
     try {
-      await put(`/api/jobs/${editingJob.id}`, editForm)
-      await fetchJobs()
-      setEditingJob(null)
+      await put(`/api/visits/${visitId}`, { status: 'cancelled' })
+      await setVisits(visits.filter(v => v.id !== visitId))
     } catch (err) {
-      console.error('Failed to update job:', err)
+      alert('Error deleting visit: ' + err.message)
     }
   }
 
-  const handleDeleteJob = async (jobId) => {
-    if (confirm('Are you sure you want to delete this job?')) {
-      try {
-        await post(`/api/jobs/${jobId}/delete`, {})
-        await fetchJobs()
-      } catch (err) {
-        console.error('Failed to delete job:', err)
-      }
-    }
+  const prevWeek = () => {
+    const d = new Date(currentDate)
+    d.setDate(d.getDate() - 7)
+    setCurrentDate(d)
   }
 
-  const syncGoogleCalendar = async () => {
-    setSyncing(true)
-    setSyncMessage('')
-    try {
-      const response = await post('/api/jobs/sync-gcal', {})
-      setSyncMessage(`✅ Synced! ${response.synced || 0} jobs from Google Calendar`)
-      await fetchJobs()
-      setTimeout(() => setSyncMessage(''), 4000)
-    } catch (err) {
-      setSyncMessage(`❌ ${err.message}`)
-      setTimeout(() => setSyncMessage(''), 4000)
-    } finally {
-      setSyncing(false)
-    }
+  const nextWeek = () => {
+    const d = new Date(currentDate)
+    d.setDate(d.getDate() + 7)
+    setCurrentDate(d)
   }
 
-  const handleDragEnd = async (event) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    const draggedJob = jobs.find((j) => j.id === active.id)
-    if (!draggedJob) return
-
-    console.log(`Dragged job ${active.id} to ${over.id}`)
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-neutral-600">Loading schedule...</p>
+      </div>
+    )
   }
-
-  const getJobsForDate = (date) => {
-    return jobs.filter((job) => {
-      if (!job.scheduled_date) return false
-      const jobDate = new Date(job.scheduled_date).toDateString()
-      return jobDate === date.toDateString()
-    })
-  }
-
-  const filteredJobs = useMemo(() => {
-    let dateJobs = getJobsForDate(currentDate)
-
-    // Hide service types based on settings
-    if (scheduleSettings.hideServices.length > 0) {
-      dateJobs = dateJobs.filter((job) => !scheduleSettings.hideServices.includes((job.job_type || job.service_type || 'residential').toLowerCase()))
-    }
-
-    if (filterService === 'all') return dateJobs
-    return dateJobs.filter((job) => (job.job_type || job.service_type) === filterService)
-  }, [jobs, currentDate, filterService, scheduleSettings.hideServices])
-
-  const getDayLabel = (date) => {
-    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  }
-
-  const isToday = (date) => {
-    const today = new Date()
-    return date.toDateString() === today.toDateString()
-  }
-
-  const getDaysInMonth = (date) => {
-    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
-  }
-
-  const getFirstDayOfMonth = (date) => {
-    return new Date(date.getFullYear(), date.getMonth(), 1).getDay()
-  }
-
-  const getMonthDays = () => {
-    const days = []
-    const firstDay = getFirstDayOfMonth(currentDate)
-    const daysInMonth = getDaysInMonth(currentDate)
-    for (let i = 0; i < firstDay; i++) days.push(null)
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(new Date(currentDate.getFullYear(), currentDate.getMonth(), i))
-    }
-    return days
-  }
-
-  const getWeekDays = () => {
-    const days = []
-    const startOfWeek = new Date(currentDate)
-    startOfWeek.setDate(currentDate.getDate() - currentDate.getDay())
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek)
-      date.setDate(startOfWeek.getDate() + i)
-      days.push(date)
-    }
-    return days
-  }
-
-  const getHourSlots = () => {
-    const slots = []
-    for (let hour = 8; hour <= 18; hour++) {
-      const ampm = hour >= 12 ? 'PM' : 'AM'
-      const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour
-      slots.push({ hour, display: `${displayHour} ${ampm}` })
-    }
-    return slots
-  }
-
-  const unassignedCount = filteredJobs.filter((j) => !j.cleaner_ids?.length).length
 
   return (
-    <DndContext onDragEnd={handleDragEnd}>
-      <div className="flex flex-col h-full bg-gradient-to-br from-neutral-50 to-neutral-100">
+    <div className="flex flex-col h-screen bg-neutral-50">
       {/* Header */}
-      <div className="px-6 py-5 bg-white border-b border-neutral-200 sticky top-0 z-20 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-neutral-900">Schedule</h1>
-            <p className="text-sm text-neutral-600 mt-1">
-              {getDayLabel(currentDate)} · {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <div className="flex gap-2 items-center">
-            <PageSettings
-              pageName="Schedule"
-              settings={scheduleSettings}
-              onSave={handleSaveSettings}
-            >
-              {({ settings, setSettings }) => (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Default View</label>
-                    <select
-                      value={settings.defaultView}
-                      onChange={(e) => setSettings({ ...settings, defaultView: e.target.value })}
-                      className="w-full px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="month">Month</option>
-                      <option value="week">Week</option>
-                      <option value="day">Day</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Work Hours</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        max="23"
-                        value={settings.workHoursStart}
-                        onChange={(e) => setSettings({ ...settings, workHoursStart: parseInt(e.target.value) })}
-                        placeholder="Start"
-                        className="px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="23"
-                        value={settings.workHoursEnd}
-                        onChange={(e) => setSettings({ ...settings, workHoursEnd: parseInt(e.target.value) })}
-                        placeholder="End"
-                        className="px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <p className="text-xs text-neutral-500 mt-1">{settings.workHoursStart}:00 - {settings.workHoursEnd}:00</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Auto-Refresh (minutes)</label>
-                    <select
-                      value={settings.autoRefreshInterval}
-                      onChange={(e) => setSettings({ ...settings, autoRefreshInterval: parseInt(e.target.value) })}
-                      className="w-full px-3 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="0">Disabled</option>
-                      <option value="5">Every 5 minutes</option>
-                      <option value="10">Every 10 minutes</option>
-                      <option value="15">Every 15 minutes</option>
-                      <option value="30">Every 30 minutes</option>
-                      <option value="60">Every 60 minutes</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-neutral-600 mb-2">Hide Service Types</label>
-                    <div className="space-y-2">
-                      {Object.entries(SERVICE_CONFIG).map(([key, config]) => {
-                        const Icon = config.icon
-                        return (
-                          <label key={key} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={!settings.hideServices.includes(key)}
-                              onChange={(e) => {
-                                const hidden = e.target.checked
-                                  ? settings.hideServices.filter(s => s !== key)
-                                  : [...settings.hideServices, key]
-                                setSettings({ ...settings, hideServices: hidden })
-                              }}
-                              className="w-4 h-4 rounded border-neutral-300 text-blue-600"
-                            />
-                            <Icon className="w-4 h-4" />
-                            <span className="text-sm text-neutral-700">{config.label}</span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </PageSettings>
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={syncGoogleCalendar}
-              disabled={syncing}
-              title="Sync with Google Calendar"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync'}
-            </Button>
-            <Button variant="primary" size="md">
+      <div className="bg-white border-b border-neutral-200 p-4 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-neutral-900">Schedule</h1>
+            <Button variant="primary" size="sm">
               <Plus className="w-4 h-4 mr-2" />
               New Job
             </Button>
           </div>
-        </div>
 
-        {syncMessage && (
-          <div className={`p-3 rounded-lg text-sm font-medium mb-4 ${
-            syncMessage.includes('✅')
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>
-            {syncMessage}
-          </div>
-        )}
-
-        {/* Tabs & Controls */}
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
-            {['day', 'week', 'month'].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setCalendarMode(mode)}
-                className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                  calendarMode === mode
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-white text-neutral-600 border border-neutral-200 hover:border-neutral-300'
-                }`}
-              >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+          {/* Week Navigation */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <button onClick={prevWeek} className="p-2 hover:bg-neutral-100 rounded">
+                <ChevronLeft className="w-5 h-5" />
               </button>
-            ))}
-          </div>
+              <p className="text-sm font-semibold text-neutral-700 w-48">
+                Week of {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </p>
+              <button onClick={nextWeek} className="p-2 hover:bg-neutral-100 rounded">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentDate(new Date(currentDate.getTime() - 24 * 60 * 60 * 1000))
-              }
-              className="p-2 rounded-lg hover:bg-neutral-100 transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5 text-neutral-600" />
-            </button>
-            <button
-              onClick={() => setCurrentDate(new Date(currentDate.getTime() + 24 * 60 * 60 * 1000))}
-              className="p-2 rounded-lg hover:bg-neutral-100 transition-colors"
-            >
-              <ChevronRight className="w-5 h-5 text-neutral-600" />
-            </button>
-            {isToday(currentDate) && (
-              <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">Today</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-auto">
-        {(activeTab === null || activeTab === 'calendar') && (
-          <div className="p-6">
             {/* Filters */}
-            <div className="mb-6 flex flex-wrap gap-2">
-              <button
-                onClick={() => setFilterService('all')}
-                className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                  filterService === 'all'
-                    ? 'bg-neutral-900 text-white'
-                    : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300'
-                }`}
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedPropertyType}
+                onChange={(e) => setSelectedPropertyType(e.target.value)}
+                className="px-3 py-2 border border-neutral-200 rounded-lg text-sm bg-white"
               >
-                All Services
-              </button>
-              {Object.entries(SERVICE_CONFIG).map(([key, config]) => {
-                const Icon = config.icon
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setFilterService(key)}
-                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
-                      filterService === key ? config.color : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {config.label}
-                  </button>
-                )
-              })}
+                <option value="all">All Property Types</option>
+                <option value="residential">Residential</option>
+                <option value="str">STR</option>
+                <option value="commercial">Commercial</option>
+              </select>
+
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="px-3 py-2 border border-neutral-200 rounded-lg text-sm bg-white"
+              >
+                <option value="all">All Statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
             </div>
-
-            {/* Unassigned Alert */}
-            {unassignedCount > 0 && (
-              <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-900">
-                  <p className="font-semibold">{unassignedCount} job{unassignedCount !== 1 ? 's' : ''} need assignment</p>
-                  <p className="text-xs text-amber-700 mt-1">Assign cleaners before dispatch to Google Calendar</p>
-                </div>
-              </div>
-            )}
-
-            {/* Calendar Views */}
-            {calendarMode === 'day' && (
-              <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-4">
-                  {loading ? (
-                    <GlassCard>
-                      <div className="py-12 text-center text-neutral-500">Loading jobs...</div>
-                    </GlassCard>
-                  ) : filteredJobs.length === 0 ? (
-                    <GlassCard>
-                      <div className="py-12 text-center">
-                        <Calendar className="w-12 h-12 text-neutral-300 mx-auto mb-4" />
-                        <p className="text-neutral-500 font-medium">No jobs scheduled</p>
-                        <p className="text-sm text-neutral-400 mt-1">for {getDayLabel(currentDate)}</p>
-                      </div>
-                    </GlassCard>
-                  ) : (
-                    <>
-                      <div className="text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-2">
-                        {filteredJobs.length} Job{filteredJobs.length !== 1 ? 's' : ''} Today
-                      </div>
-                      <div className="space-y-3">
-                        {filteredJobs.map((job) => (
-                          <DraggableJobCard
-                            key={job.id}
-                            job={job}
-                            isDragging={false}
-                            onEdit={handleEditOpen}
-                            onDelete={handleDeleteJob}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="space-y-4 order-first lg:order-last">
-                  <GlassCard title="Quick Actions">
-                    <div className="space-y-2">
-                      <Button variant="primary" size="md" className="w-full">
-                        <Plus className="w-4 h-4 mr-2" />
-                        New Job
-                      </Button>
-                      <Button variant="secondary" size="md" className="w-full">
-                        <Plus className="w-4 h-4 mr-2" />
-                        New Recurring
-                      </Button>
-                    </div>
-                  </GlassCard>
-
-                  <GlassCard title="Summary">
-                    <div className="space-y-3 text-sm">
-                      <div className="flex justify-between items-center">
-                        <span className="text-neutral-600">Total Jobs</span>
-                        <span className="font-semibold text-neutral-900 text-lg">{filteredJobs.length}</span>
-                      </div>
-                      <div className="flex justify-between items-center border-t border-neutral-200 pt-3">
-                        <span className="text-neutral-600">Assigned</span>
-                        <span className="font-semibold text-green-700">
-                          {filteredJobs.filter((j) => j.cleaner_ids?.length).length}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-neutral-600">Unassigned</span>
-                        <span className="font-semibold text-amber-700">{unassignedCount}</span>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </div>
-              </div>
-            )}
-
-            {calendarMode === 'week' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
-                {getWeekDays().map((date) => {
-                  const dayJobs = getJobsForDate(date).filter((job) => {
-                    if (filterService === 'all') return true
-                    return (job.job_type || job.service_type) === filterService
-                  })
-                  return (
-                    <div key={date.toDateString()} className="rounded-xl bg-white border border-neutral-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                      <div
-                        className={`px-4 py-3 cursor-pointer transition-colors ${
-                          isToday(date) ? 'bg-blue-50 border-b border-blue-200' : 'bg-neutral-50 border-b border-neutral-200 hover:bg-neutral-100'
-                        }`}
-                        onClick={() => {
-                          setCurrentDate(date)
-                          setCalendarMode('day')
-                        }}
-                      >
-                        <p className={`font-semibold text-sm ${isToday(date) ? 'text-blue-900' : 'text-neutral-900'}`}>
-                          {date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                      <div className="p-2 space-y-1 max-h-64 overflow-y-auto">
-                        {dayJobs.length === 0 ? (
-                          <p className="text-xs text-neutral-400 text-center py-4">No jobs</p>
-                        ) : (
-                          dayJobs.map((job) => (
-                            <DraggableJobCard
-                              key={job.id}
-                              job={job}
-                              compact
-                              isDragging={false}
-                              onEdit={handleEditOpen}
-                              onDelete={handleDeleteJob}
-                            />
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {calendarMode === 'month' && (
-              <div>
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                    <div key={day} className="text-center font-semibold text-xs text-neutral-600 py-3">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {getMonthDays().map((date, idx) => (
-                    <div
-                      key={idx}
-                      className={`min-h-28 rounded-lg border transition-all cursor-pointer ${
-                        date
-                          ? isToday(date)
-                            ? 'bg-blue-50 border-blue-300 shadow-md'
-                            : 'bg-white border-neutral-200 hover:border-neutral-300 hover:shadow-sm'
-                          : 'bg-neutral-50 border-transparent'
-                      }`}
-                      onClick={() => {
-                        if (date) {
-                          setCurrentDate(date)
-                          setCalendarMode('day')
-                        }
-                      }}
-                    >
-                      {date && (
-                        <div className="p-2 h-full flex flex-col">
-                          <p className="text-xs font-semibold text-neutral-900 mb-2">{date.getDate()}</p>
-                          <div className="flex-1 space-y-1 overflow-hidden">
-                            {getJobsForDate(date)
-                              .filter((job) => {
-                                if (filterService === 'all') return true
-                                return (job.job_type || job.service_type) === filterService
-                              })
-                              .slice(0, 3)
-                              .map((job) => {
-                                const service = SERVICE_CONFIG[(job.job_type || job.service_type || 'residential').toLowerCase()] || SERVICE_CONFIG.residential
-                                return (
-                                  <div
-                                    key={job.id}
-                                    className={`text-xs rounded px-2 py-1 truncate font-medium hover:opacity-80 transition-opacity cursor-pointer ${service.color}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleEditOpen(job)
-                                    }}
-                                    title={job.title}
-                                  >
-                                    {job.title}
-                                  </div>
-                                )
-                              })}
-                            {getJobsForDate(date).length > 3 && (
-                              <p className="text-xs text-neutral-500 px-2 font-medium">
-                                +{getJobsForDate(date).length - 3} more
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
-        )}
-
-        {activeTab === 'dispatch' && (
-          <div className="p-6">
-            <GlassCard title="Dispatch to Connecteam">
-              <div className="text-center py-12 text-neutral-500">Coming soon...</div>
-            </GlassCard>
-          </div>
-        )}
-
-        {activeTab === 'recurring' && (
-          <div className="p-6">
-            <GlassCard title="Recurring Schedules">
-              <div className="text-center py-12 text-neutral-500">Coming soon...</div>
-            </GlassCard>
-          </div>
-        )}
-
+        </div>
       </div>
 
-      {/* Edit Modal */}
-      {editingJob && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-auto">
-            <div className="sticky top-0 bg-white border-b border-neutral-200 p-6 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-neutral-900">Edit Job</h2>
-              <button
-                onClick={() => setEditingJob(null)}
-                className="p-2 rounded-lg hover:bg-neutral-100 transition-colors"
-              >
-                <X className="w-5 h-5 text-neutral-600" />
-              </button>
+      {/* Schedule Grid */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-7xl mx-auto p-4">
+          {Object.keys(visitsByDate).length === 0 ? (
+            <GlassCard>
+              <div className="text-center py-12">
+                <CalendarIcon className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+                <p className="text-neutral-600">No visits scheduled for this week</p>
+              </div>
+            </GlassCard>
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(visitsByDate)
+                .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+                .map(([date, dateVisits]) => (
+                  <div key={date}>
+                    <h2 className="text-lg font-bold text-neutral-900 mb-3">
+                      {new Date(`${date}T00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                    </h2>
+                    <div className="grid gap-3">
+                      {dateVisits.map((visit) => (
+                        <VisitCard
+                          key={visit.id}
+                          visit={visit}
+                          job={jobs[visit.job_id]}
+                          property={properties[jobs[visit.job_id]?.property_id]}
+                          client={clients[jobs[visit.job_id]?.client_id]}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
             </div>
+          )}
+        </div>
+      </div>
 
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-2">Job Title</label>
-                <input
-                  type="text"
-                  value={editForm.title}
-                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                  className="w-full px-4 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-2">Client Name</label>
-                <input
-                  type="text"
-                  value={editForm.client_name}
-                  onChange={(e) => setEditForm({ ...editForm, client_name: e.target.value })}
-                  className="w-full px-4 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-2">Address</label>
-                <input
-                  type="text"
-                  value={editForm.address}
-                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                  className="w-full px-4 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-2">Start Time</label>
-                  <input
-                    type="time"
-                    value={editForm.start_time}
-                    onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
-                    className="w-full px-4 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-2">End Time</label>
-                  <input
-                    type="time"
-                    value={editForm.end_time}
-                    onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })}
-                    className="w-full px-4 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-2">Status</label>
-                <select
-                  value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                  className="w-full px-4 py-2 border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      {/* Visit Details Drawer */}
+      {showDetails && selectedVisit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-end">
+          <GlassCard className="w-full sm:w-96 h-screen sm:h-auto rounded-none sm:rounded-lg m-0 sm:m-4 overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-neutral-900">Visit Details</h2>
+                <button
+                  onClick={() => setShowDetails(false)}
+                  className="p-1 hover:bg-neutral-100 rounded"
                 >
-                  <option value="scheduled">Scheduled</option>
-                  <option value="dispatched">Dispatched</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-neutral-200">
-                <Button variant="secondary" size="md" className="flex-1" onClick={() => setEditingJob(null)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" size="md" className="flex-1" onClick={handleEditSave}>
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
+              {/* Details */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase">Date & Time</p>
+                  <p className="text-neutral-900">
+                    {new Date(`${selectedVisit.visit.scheduled_date}T${selectedVisit.visit.start_time}`).toLocaleDateString('en-US', {
+                      weekday: 'long', month: 'short', day: 'numeric'
+                    })} at {selectedVisit.visit.start_time?.slice(0, 5)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase">Property</p>
+                  <p className="text-neutral-900">{selectedVisit.property?.name}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase">Address</p>
+                  <p className="text-neutral-900">{selectedVisit.property?.address}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase">Client</p>
+                  <p className="text-neutral-900">{selectedVisit.job?.client_name}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase">Status</p>
+                  <StatusBadge status={VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.badge || 'info'}>
+                    {VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.label || selectedVisit.visit.status}
+                  </StatusBadge>
+                </div>
+
+                {selectedVisit.visit.cleaner_ids?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-600 uppercase">Assigned Cleaners</p>
+                    <p className="text-neutral-900">{selectedVisit.visit.cleaner_ids.length} cleaner(s) assigned</p>
+                  </div>
+                )}
+
+                {selectedVisit.visit.gcal_event_id && (
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-600 uppercase">Google Calendar</p>
+                    <p className="text-green-700 text-sm">✅ Synced</p>
+                  </div>
+                )}
+
+                <div className="border-t border-neutral-200 pt-4 flex gap-2">
+                  <Button variant="secondary" size="sm" className="flex-1">
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button variant="danger" size="sm" className="flex-1">
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+          </GlassCard>
         </div>
       )}
     </div>
-    </DndContext>
   )
 }
