@@ -35,6 +35,8 @@ def init_db():
     _backfill_conversations()
     # Auth: bootstrap admin user if env vars set
     _bootstrap_admin_user()
+    # PR 1: Backfill new data types (DATE, TIME instead of VARCHAR)
+    _migrate_data_types()
     # Fix STR turnover dates (RFC 5545 DTEND exclusivity)
     _fix_str_turnover_dates()
 
@@ -54,6 +56,12 @@ def _run_migrations():
     bool_col = "BOOLEAN DEFAULT FALSE" if is_pg else "INTEGER DEFAULT 0"
 
     migrations = [
+        # PR 1: Fix data types — VARCHAR dates become DATE, TIME, TIMESTAMPTZ
+        "ALTER TABLE jobs ADD COLUMN scheduled_date_new DATE",
+        "ALTER TABLE jobs ADD COLUMN start_time_new TIME",
+        "ALTER TABLE jobs ADD COLUMN end_time_new TIME",
+        "ALTER TABLE recurring_schedules ADD COLUMN start_time_new TIME",
+        "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
         "ALTER TABLE quotes ADD COLUMN intake_id INTEGER REFERENCES lead_intakes(id)",
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
         "ALTER TABLE quotes ADD COLUMN address TEXT",
@@ -151,21 +159,33 @@ def _run_migrations():
     # Dialect-aware backfill migrations
     if is_pg:
         backfill_migrations = [
+            # PR 1: Drop old VARCHAR columns and rename new DATE/TIME columns
+            "ALTER TABLE jobs DROP COLUMN IF EXISTS scheduled_date CASCADE",
+            "ALTER TABLE jobs RENAME COLUMN scheduled_date_new TO scheduled_date",
+            "ALTER TABLE jobs DROP COLUMN IF EXISTS start_time CASCADE",
+            "ALTER TABLE jobs RENAME COLUMN start_time_new TO start_time",
+            "ALTER TABLE jobs DROP COLUMN IF EXISTS end_time CASCADE",
+            "ALTER TABLE jobs RENAME COLUMN end_time_new TO end_time",
+            "CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_date ON jobs(scheduled_date)",
+            "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS start_time CASCADE",
+            "ALTER TABLE recurring_schedules RENAME COLUMN start_time_new TO start_time",
+            "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS end_time CASCADE",
+            "ALTER TABLE recurring_schedules RENAME COLUMN end_time_new TO end_time",
             # Backfill existing biweekly schedules with interval_weeks=2
             "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
-            # Fix STR turnover dates: RFC 5545 DTEND is exclusive, subtract 1 day from existing jobs
-            "UPDATE jobs SET scheduled_date = scheduled_date - INTERVAL '1 day' WHERE job_type = 'str_turnover' AND status IN ('scheduled', 'dispatched')",
-            # Also fix the iCal event checkout dates
-            "UPDATE ical_events SET checkout_date = (checkout_date::date - INTERVAL '1 day')::text WHERE event_type = 'reservation'",
         ]
     else:
         backfill_migrations = [
+            # PR 1: Drop old VARCHAR columns and rename new DATE/TIME columns (SQLite)
+            "ALTER TABLE jobs RENAME TO jobs_old",
+            "CREATE TABLE jobs AS SELECT id, client_id, quote_id, opportunity_id, job_type, property_id, recurring_schedule_id, ical_event_id, assigned_cleaner_user_id, calendar_invite_sent, sms_reminder_sent, gcal_event_id, title, scheduled_date_new as scheduled_date, start_time_new as start_time, end_time_new as end_time, address, cleaner_ids, status, notes, custom_fields, dispatched, connecteam_shift_ids, created_at, updated_at FROM jobs_old",
+            "DROP TABLE jobs_old",
+            "CREATE INDEX idx_jobs_scheduled_date ON jobs(scheduled_date)",
+            "CREATE TABLE recurring_schedules_new AS SELECT id, client_id, job_type, title, address, frequency, interval_weeks, day_of_week, days_of_week, day_of_month, start_time_new as start_time, end_time_new as end_time, cleaner_ids, quote_id, property_id, active, generate_weeks_ahead, starts_at, created_at FROM recurring_schedules",
+            "DROP TABLE recurring_schedules",
+            "ALTER TABLE recurring_schedules_new RENAME TO recurring_schedules",
             # Backfill existing biweekly schedules with interval_weeks=2
             "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
-            # Fix STR turnover dates: RFC 5545 DTEND is exclusive, subtract 1 day from existing jobs
-            "UPDATE jobs SET scheduled_date = date(scheduled_date, '-1 day') WHERE job_type = 'str_turnover' AND status IN ('scheduled', 'dispatched')",
-            # Also fix the iCal event checkout dates
-            "UPDATE ical_events SET checkout_date = date(checkout_date, '-1 day') WHERE event_type = 'reservation'",
         ]
 
     with engine.connect() as conn:
@@ -331,6 +351,83 @@ def _bootstrap_admin_user():
         db.close()
     except Exception as exc:
         logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
+
+
+def _migrate_data_types():
+    """
+    Backfill new data type columns (DATE, TIME) from old VARCHAR columns.
+
+    This migration:
+    1. Converts jobs.scheduled_date (VARCHAR) to DATE
+    2. Converts jobs/recurring_schedules start_time/end_time (VARCHAR) to TIME
+    3. Once backfilled, the old columns will be dropped and new ones renamed
+
+    Idempotent — safe to run every boot.
+    """
+    from database.models import Job, RecurringSchedule
+    from datetime import datetime, time
+
+    db = SessionLocal()
+    try:
+        # Backfill jobs.scheduled_date_new from jobs.scheduled_date
+        jobs_to_migrate = db.query(Job).filter(Job.scheduled_date_new.is_(None)).all()
+        migrated_jobs = 0
+        for job in jobs_to_migrate:
+            if job.scheduled_date:
+                try:
+                    # Parse YYYY-MM-DD string to date
+                    date_obj = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                    job.scheduled_date_new = date_obj
+                    migrated_jobs += 1
+                except (ValueError, TypeError):
+                    logger.warning(f"[migrate_data_types] Could not parse job {job.id} scheduled_date: {job.scheduled_date}")
+
+        if migrated_jobs > 0:
+            db.commit()
+            logger.info(f"[migrate_data_types] Migrated {migrated_jobs} job scheduled_dates to DATE type")
+
+        # Backfill jobs.start_time_new / end_time_new
+        jobs_time_to_migrate = db.query(Job).filter(Job.start_time_new.is_(None)).all()
+        migrated_times = 0
+        for job in jobs_time_to_migrate:
+            try:
+                if job.start_time:
+                    start = datetime.strptime(job.start_time, "%H:%M").time()
+                    job.start_time_new = start
+                if job.end_time:
+                    end = datetime.strptime(job.end_time, "%H:%M").time()
+                    job.end_time_new = end
+                migrated_times += 1
+            except (ValueError, TypeError):
+                logger.warning(f"[migrate_data_types] Could not parse job {job.id} times: {job.start_time}/{job.end_time}")
+
+        if migrated_times > 0:
+            db.commit()
+            logger.info(f"[migrate_data_types] Migrated {migrated_times} job times to TIME type")
+
+        # Backfill recurring_schedules times
+        recurring_to_migrate = db.query(RecurringSchedule).filter(RecurringSchedule.start_time_new.is_(None)).all()
+        migrated_recurring = 0
+        for sched in recurring_to_migrate:
+            try:
+                if sched.start_time:
+                    start = datetime.strptime(sched.start_time, "%H:%M").time()
+                    sched.start_time_new = start
+                if sched.end_time:
+                    end = datetime.strptime(sched.end_time, "%H:%M").time()
+                    sched.end_time_new = end
+                migrated_recurring += 1
+            except (ValueError, TypeError):
+                logger.warning(f"[migrate_data_types] Could not parse recurring {sched.id} times: {sched.start_time}/{sched.end_time}")
+
+        if migrated_recurring > 0:
+            db.commit()
+            logger.info(f"[migrate_data_types] Migrated {migrated_recurring} recurring schedule times to TIME type")
+
+    except Exception as exc:
+        logger.warning(f"[migrate_data_types] Error during migration: {exc}")
+    finally:
+        db.close()
 
 
 def _fix_str_turnover_dates():

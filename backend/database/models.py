@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Text,
+    Column, Integer, String, Float, DateTime, Text, Date, Time,
     JSON, ForeignKey, Boolean, UniqueConstraint, Enum as SQLEnum
 )
 from sqlalchemy.orm import relationship, declarative_base
@@ -261,8 +261,8 @@ class RecurringSchedule(Base):
     days_of_week = Column(JSON, nullable=True)      # [0,2,4] for Mon/Wed/Fri multi-day
     day_of_month = Column(Integer, nullable=True)   # 1–28, only for monthly
 
-    start_time = Column(String, nullable=False)     # HH:MM
-    end_time = Column(String, nullable=False)       # HH:MM
+    start_time = Column(Time, nullable=False)       # HH:MM:SS
+    end_time = Column(Time, nullable=False)         # HH:MM:SS
 
     cleaner_ids = Column(JSON, default=list)
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
@@ -301,9 +301,9 @@ class Job(Base):
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
 
     title = Column(String, nullable=False)
-    scheduled_date = Column(String)     # YYYY-MM-DD
-    start_time = Column(String)         # HH:MM
-    end_time = Column(String)           # HH:MM
+    scheduled_date = Column(Date)       # ISO date
+    start_time = Column(Time)           # HH:MM:SS
+    end_time = Column(Time)             # HH:MM:SS
     address = Column(String)
     cleaner_ids = Column(JSON, default=list)
     status = Column(String, default="scheduled")
