@@ -116,6 +116,46 @@ export default function Schedule() {
     return job.cleaner_ids?.length > 0
   }
 
+  const getDaysInMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  }
+
+  const getFirstDayOfMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay()
+  }
+
+  const getMonthDays = () => {
+    const days = []
+    const firstDay = getFirstDayOfMonth(currentDate)
+    const daysInMonth = getDaysInMonth(currentDate)
+
+    // Add empty cells for days before month starts
+    for (let i = 0; i < firstDay; i++) {
+      days.push(null)
+    }
+
+    // Add days of month
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(new Date(currentDate.getFullYear(), currentDate.getMonth(), i))
+    }
+
+    return days
+  }
+
+  const getWeekDays = () => {
+    const days = []
+    const startOfWeek = new Date(currentDate)
+    startOfWeek.setDate(currentDate.getDate() - currentDate.getDay())
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek)
+      date.setDate(startOfWeek.getDate() + i)
+      days.push(date)
+    }
+
+    return days
+  }
+
   const JobCard = ({ job }) => {
     const serviceInfo = getServiceIcon(job.job_type || job.service_type)
     const ServiceIcon = serviceInfo.icon
@@ -424,9 +464,96 @@ export default function Schedule() {
               </div>
             )}
 
-            {calendarMode !== 'day' && (
-              <div className="flex items-center justify-center h-96 rounded-lg bg-white border border-neutral-200">
-                <p className="text-neutral-500">Week & Month views coming next</p>
+            {calendarMode === 'week' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-7 gap-2">
+                  {getWeekDays().map((date) => {
+                    const dayJobs = getJobsForDate(date).filter((job) => {
+                      if (filterService === 'all') return true
+                      return (job.job_type || job.service_type) === filterService
+                    })
+                    return (
+                      <div key={date.toDateString()} className="rounded-lg bg-white border border-neutral-200 p-3 min-h-64">
+                        <p className="font-semibold text-sm text-neutral-900 mb-2">
+                          {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </p>
+                        <div className="space-y-2">
+                          {dayJobs.map((job) => (
+                            <div
+                              key={job.id}
+                              onClick={() => setSelectedJob(job)}
+                              className="p-2 rounded bg-blue-50 border border-blue-200 cursor-pointer hover:bg-blue-100 text-xs"
+                            >
+                              <p className="font-semibold text-neutral-900 truncate">{job.title}</p>
+                              <p className="text-neutral-600 truncate">{job.client_name}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {calendarMode === 'month' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-7 gap-1">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                    <div key={day} className="text-center font-semibold text-sm text-neutral-600 py-2">
+                      {day}
+                    </div>
+                  ))}
+                  {getMonthDays().map((date, idx) => (
+                    <div
+                      key={idx}
+                      className={`min-h-24 rounded-lg border p-2 cursor-pointer transition-all ${
+                        date
+                          ? isToday(date)
+                            ? 'bg-blue-50 border-blue-300'
+                            : 'bg-white border-neutral-200 hover:border-neutral-300'
+                          : 'bg-neutral-50 border-transparent'
+                      }`}
+                      onClick={() => {
+                        if (date) {
+                          setCurrentDate(date)
+                          setCalendarMode('day')
+                        }
+                      }}
+                    >
+                      {date && (
+                        <>
+                          <p className="text-xs font-semibold text-neutral-900 mb-1">{date.getDate()}</p>
+                          <div className="space-y-1">
+                            {getJobsForDate(date)
+                              .filter((job) => {
+                                if (filterService === 'all') return true
+                                return (job.job_type || job.service_type) === filterService
+                              })
+                              .slice(0, 2)
+                              .map((job) => (
+                                <div
+                                  key={job.id}
+                                  className="text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5 truncate"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedJob(job)
+                                  }}
+                                >
+                                  {job.title}
+                                </div>
+                              ))}
+                            {getJobsForDate(date).length > 2 && (
+                              <p className="text-xs text-neutral-500 px-1.5">
+                                +{getJobsForDate(date).length - 2} more
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
