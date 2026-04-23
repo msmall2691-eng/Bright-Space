@@ -86,7 +86,19 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, property_ical: Pr
 
         summary = str(component.get("SUMMARY", ""))
         description = str(component.get("DESCRIPTION", ""))
-        checkout = _parse_date(component.get("DTEND"))
+
+        # RFC 5545: DTEND is exclusive for all-day events (VALUE=DATE)
+        # If guest checks out on March 15, DTEND will be March 16
+        # We need to subtract 1 day to get the actual checkout date
+        dtend_raw = component.get("DTEND")
+        checkout_raw = _parse_date(dtend_raw)
+        if checkout_raw and hasattr(dtend_raw, "dt") and isinstance(dtend_raw.dt, date) and not isinstance(dtend_raw.dt, datetime):
+            # All-day event: DTEND is exclusive, subtract 1 day
+            checkout_date_obj = datetime.strptime(checkout_raw, "%Y-%m-%d").date() - timedelta(days=1)
+            checkout = checkout_date_obj.isoformat()
+        else:
+            checkout = checkout_raw
+
         checkin = _parse_date(component.get("DTSTART"))
 
         if not checkout:
