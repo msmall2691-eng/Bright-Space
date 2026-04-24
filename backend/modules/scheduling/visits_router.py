@@ -218,6 +218,8 @@ def backfill_visits_from_jobs(db: Session = Depends(get_db)):
                 end_time=job.end_time,
                 status=job.status or "scheduled",
                 cleaner_ids=job.cleaner_ids or [],
+                gcal_event_id=job.gcal_event_id,
+                notes=job.notes,
             )
             db.add(visit)
             created_count += 1
