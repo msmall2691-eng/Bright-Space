@@ -128,7 +128,6 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     try:
         visit = Visit(
             job_id=job.id,
-            sequence=1,
             scheduled_date=job.scheduled_date,
             start_time=job.start_time,
             end_time=job.end_time,

@@ -27,10 +27,9 @@ def test_visit_can_be_created_with_all_fields():
         db.commit()
         db.refresh(job)
 
-        # Now create a Visit with ALL fields from VisitCreate
+        # Now create a Visit with all supported fields (sequence and checklist_template_id removed)
         visit = Visit(
             job_id=job.id,
-            sequence=1,
             scheduled_date=date.today(),
             start_time=time(9, 0),
             end_time=time(12, 0),
@@ -39,7 +38,6 @@ def test_visit_can_be_created_with_all_fields():
             gcal_event_id=None,
             ical_source=None,
             ical_uid=None,
-            checklist_template_id=None,
             notes=None
         )
         db.add(visit)
@@ -49,7 +47,6 @@ def test_visit_can_be_created_with_all_fields():
         # Verify it was created
         assert visit.id is not None
         assert visit.job_id == job.id
-        assert visit.sequence == 1
         assert visit.scheduled_date == date.today()
         assert visit.status == "scheduled"
 
