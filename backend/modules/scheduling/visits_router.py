@@ -16,7 +16,6 @@ router = APIRouter()
 class VisitCreate(BaseModel):
     """Request body for POST /api/visits."""
     job_id: int
-    sequence: int = 1
     scheduled_date: date
     start_time: time
     end_time: time
@@ -25,7 +24,6 @@ class VisitCreate(BaseModel):
     gcal_event_id: Optional[str] = None
     ical_source: Optional[str] = None
     ical_uid: Optional[str] = None
-    checklist_template_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -39,7 +37,6 @@ class VisitUpdate(BaseModel):
     gcal_event_id: Optional[str] = None
     ical_source: Optional[str] = None
     ical_uid: Optional[str] = None
-    checklist_template_id: Optional[int] = None
     completed_at: Optional[str] = None
     completed_by: Optional[int] = None
     checklist_results: Optional[dict] = None
@@ -51,7 +48,6 @@ class VisitRead(BaseModel):
     """Response model for GET /api/visits and POST/PATCH responses."""
     id: int
     job_id: int
-    sequence: int
     scheduled_date: date
     start_time: time
     end_time: time
@@ -60,7 +56,6 @@ class VisitRead(BaseModel):
     gcal_event_id: Optional[str]
     ical_source: Optional[str]
     ical_uid: Optional[str]
-    checklist_template_id: Optional[int]
     completed_at: Optional[datetime]
     completed_by: Optional[int]
     checklist_results: Optional[dict]
@@ -194,7 +189,6 @@ def backfill_visits_from_jobs(db: Session = Depends(get_db)):
 
             visit = Visit(
                 job_id=job.id,
-                sequence=1,
                 scheduled_date=job.scheduled_date,
                 start_time=job.start_time,
                 end_time=job.end_time,
