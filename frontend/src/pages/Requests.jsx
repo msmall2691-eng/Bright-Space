@@ -1,869 +1,379 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { get, post, patch } from '../api'
-import AgentWidget from '../components/AgentWidget'
 import {
-  Inbox, Globe, ArrowRight, FileText, Calendar, CheckCircle, Clock, Eye,
-  Phone, Mail, MapPin, Home, Users, ChevronDown, ChevronUp, Plus,
-  RefreshCw, X, Bed, Bath, Ruler, CalendarDays, AlertTriangle,
-  Filter, Search, Star, Archive, MessageSquare, ArrowUpRight,
-  Flag, StickyNote, ChevronRight, MoreHorizontal, Zap
+  MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
+  Home, Building2, Wind, Zap, Mail, Phone, MapPin, X
 } from 'lucide-react'
+import { get, post, patch } from '../api'
+import Button from '../components/ui/Button'
+import GlassCard from '../components/ui/GlassCard'
 
-// ── Pipeline stages ──────────────────────────────────────────────────────────
-const PIPELINE_STAGES = [
-  { key: 'new',       label: 'New',        color: 'amber',   icon: Inbox },
-  { key: 'reviewed',  label: 'Reviewed',   color: 'blue',    icon: Eye },
-  { key: 'quoted',    label: 'Quoted',     color: 'purple',  icon: FileText },
-  { key: 'converted', label: 'Converted',  color: 'emerald', icon: Calendar },
-]
+const SERVICE_TYPE_CONFIG = {
+  residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home },
+  commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700', icon: Building2 },
+  str: { label: 'STR', badge: 'bg-amber-100 text-amber-700', icon: Wind },
+}
 
-const STAGE_COLORS = {
-  new:       { bg: 'bg-amber-50',   border: 'border-amber-200',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-400',  header: 'text-amber-700' },
-  reviewed:  { bg: 'bg-blue-50',    border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-400',   header: 'text-blue-700' },
-  quoted:    { bg: 'bg-purple-50',  border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-400', header: 'text-purple-700' },
-  converted: { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-400', header: 'text-emerald-700' },
-  archived:  { bg: 'bg-zinc-50',    border: 'border-zinc-200',   badge: 'bg-zinc-100 text-zinc-500',     dot: 'bg-gray-300',   header: 'text-zinc-500' },
+const STATUS_CONFIG = {
+  new: { label: 'New', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  reviewed: { label: 'Reviewed', badge: 'bg-gray-100 text-gray-700', dot: 'bg-gray-500' },
+  quoted: { label: 'Quoted', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  converted: { label: 'Converted', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  archived: { label: 'Archived', badge: 'bg-neutral-100 text-neutral-700', dot: 'bg-neutral-400' },
 }
 
 const PRIORITY_CONFIG = {
-  urgent: { label: 'Urgent', color: 'text-red-600 bg-red-50 border-red-200', dot: 'bg-red-500', icon: AlertTriangle },
-  high:   { label: 'High',   color: 'text-orange-600 bg-orange-50 border-orange-200', dot: 'bg-orange-500', icon: Flag },
-  normal: { label: 'Normal', color: 'text-zinc-500 bg-zinc-50 border-zinc-200', dot: 'bg-gray-400', icon: null },
-  low:    { label: 'Low',    color: 'text-zinc-400 bg-zinc-50 border-zinc-200', dot: 'bg-gray-300', icon: null },
+  low: { label: 'Low', color: 'text-gray-500' },
+  normal: { label: 'Normal', color: 'text-gray-600' },
+  high: { label: 'High', color: 'text-amber-600' },
+  urgent: { label: 'Urgent', color: 'text-red-600' },
 }
 
-const SERVICE_LABELS = {
-  residential: 'Residential',
-  commercial: 'Commercial',
-  str: 'STR / Vacation',
-}
+const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
+  const serviceConfig = SERVICE_TYPE_CONFIG[intake.service_type] || SERVICE_TYPE_CONFIG.residential
+  const statusConfig = STATUS_CONFIG[intake.status] || STATUS_CONFIG.new
+  const priorityConfig = PRIORITY_CONFIG[intake.priority] || PRIORITY_CONFIG.normal
+  const ServiceIcon = serviceConfig.icon
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function timeAgo(dateStr) {
-  if (!dateStr) return ''
-  const now = new Date()
-  const then = new Date(dateStr)
-  const mins = Math.floor((now - then) / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  if (days < 7) return `${days}d ago`
-  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
+  const [showMenu, setShowMenu] = useState(false)
 
-function urgencyLevel(dateStr) {
-  if (!dateStr) return 'normal'
-  const hrs = (new Date() - new Date(dateStr)) / 3600000
-  if (hrs > 48) return 'overdue'
-  if (hrs > 24) return 'warning'
-  return 'normal'
-}
-
-function Toast({ msg }) {
   return (
-    <div className="fixed bottom-6 right-6 bg-white border border-zinc-200 text-zinc-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
-      <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />{msg}
+    <div className="bg-white rounded-lg border border-neutral-200 p-4 hover:shadow-md transition-all">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          {/* Service Type Icon */}
+          <div className={`p-2 rounded ${serviceConfig.badge}`}>
+            <ServiceIcon className="w-4 h-4" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            {/* Name + Status */}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <h3 className="font-semibold text-neutral-900 truncate">{intake.name}</h3>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
+                {statusConfig.label}
+              </span>
+            </div>
+
+            {/* Contact + Priority */}
+            <div className="space-y-1 mb-2">
+              {intake.email && (
+                <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+                  <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{intake.email}</span>
+                </div>
+              )}
+              {intake.phone && (
+                <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+                  <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{intake.phone}</span>
+                </div>
+              )}
+              {intake.address && (
+                <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{intake.address}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Metadata */}
+            <div className="flex items-center gap-3 text-xs text-neutral-500 flex-wrap">
+              <span className={priorityConfig.color}>{priorityConfig.label} Priority</span>
+              {intake.requested_date && <span>• {intake.requested_date}</span>}
+              {intake.frequency && <span>• {intake.frequency}</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Menu Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="p-2 hover:bg-neutral-100 rounded transition-colors"
+          >
+            <MoreVertical className="w-4 h-4 text-neutral-500" />
+          </button>
+
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 bg-white border border-neutral-200 rounded-lg shadow-lg z-10 w-48">
+              <button
+                onClick={() => {
+                  onViewDetails(intake)
+                  setShowMenu(false)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-neutral-900 hover:bg-neutral-50 first:rounded-t-lg"
+              >
+                View Details
+              </button>
+              <button
+                onClick={() => {
+                  onCreateQuote(intake)
+                  setShowMenu(false)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-neutral-900 hover:bg-neutral-50 flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                Create Quote
+              </button>
+              {intake.status !== 'archived' && (
+                <button
+                  onClick={() => {
+                    onArchive(intake)
+                    setShowMenu(false)
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-neutral-900 hover:bg-neutral-50 flex items-center gap-2 last:rounded-b-lg"
+                >
+                  <Archive className="w-4 h-4" />
+                  Archive
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Message Preview */}
+      {intake.message && (
+        <p className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded line-clamp-2">
+          "{intake.message}"
+        </p>
+      )}
     </div>
   )
 }
 
-// ── Inbox Row ────────────────────────────────────────────────────────────────
-function InboxRow({ intake, quotes, onAdvance, onAction, onUpdateField, expanded, onToggle }) {
-  const colors = STAGE_COLORS[intake.status] || STAGE_COLORS.new
-  const linkedQuote = quotes.find(q => q.intake_id === intake.id)
-  const estimate = intake.estimate_min && intake.estimate_max
-    ? `$${intake.estimate_min.toFixed(0)}-$${intake.estimate_max.toFixed(0)}`
-    : null
-  const urgency = intake.status === 'new' ? urgencyLevel(intake.created_at) : 'normal'
-  const priorityCfg = PRIORITY_CONFIG[intake.priority || 'normal']
+export default function Requests() {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [selectedStatus, setSelectedStatus] = useState('all')
+  const [selectedServiceType, setSelectedServiceType] = useState('all')
+  const [selectedPriority, setSelectedPriority] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedRequest, setSelectedRequest] = useState(null)
+  const [showDetailsDrawer, setShowDetailsDrawer] = useState(false)
 
-  const [editingNotes, setEditingNotes] = useState(false)
-  const [notesVal, setNotesVal] = useState(intake.internal_notes || '')
+  // Load requests on mount and when filters change
+  useEffect(() => {
+    const loadRequests = async () => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams()
+        if (selectedStatus !== 'all') params.append('status', selectedStatus)
+        if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
+        if (selectedPriority !== 'all') params.append('priority', selectedPriority)
 
-  const saveNotes = () => {
-    onUpdateField(intake.id, 'internal_notes', notesVal)
-    setEditingNotes(false)
+        const res = await get(`/api/intake?${params.toString()}`)
+        setRequests(res || [])
+      } catch (err) {
+        console.error('[Requests]', err)
+      }
+      setLoading(false)
+    }
+
+    loadRequests()
+  }, [selectedStatus, selectedServiceType, selectedPriority])
+
+  // Filter by search term
+  const filteredRequests = useMemo(() => {
+    return requests.filter(r => {
+      const search = searchTerm.toLowerCase()
+      return (
+        r.name.toLowerCase().includes(search) ||
+        r.email?.toLowerCase().includes(search) ||
+        r.phone?.includes(search) ||
+        r.address?.toLowerCase().includes(search)
+      )
+    })
+  }, [requests, searchTerm])
+
+  const handleViewDetails = (intake) => {
+    setSelectedRequest(intake)
+    setShowDetailsDrawer(true)
+  }
+
+  const handleCreateQuote = (intake) => {
+    console.log('Create quote for:', intake.id)
+    // TODO: Navigate to quote creation page with intake pre-filled
+  }
+
+  const handleArchive = async (intake) => {
+    try {
+      await patch(`/api/intake/${intake.id}`, { status: 'archived' })
+      setRequests(requests.filter(r => r.id !== intake.id))
+    } catch (err) {
+      console.error('[Requests] Archive failed:', err)
+    }
   }
 
   return (
-    <div className={`border rounded-xl transition-all ${
-      urgency === 'overdue' ? 'border-red-200 bg-red-50/30' :
-      urgency === 'warning' ? 'border-amber-200 bg-amber-50/20' :
-      'border-zinc-200 bg-white'
-    } ${expanded ? 'shadow-md' : 'hover:shadow-sm'}`}>
-      {/* Main row */}
-      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={onToggle}>
-        {/* Priority dot */}
-        <div className="flex flex-col items-center gap-1">
-          <div className={`w-2.5 h-2.5 rounded-full ${priorityCfg.dot}`} />
-          {urgency === 'overdue' && <AlertTriangle className="w-3 h-3 text-red-500" />}
-        </div>
-
-        {/* Status badge */}
-        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium capitalize shrink-0 ${colors.badge}`}>
-          {intake.status}
-        </span>
-
-        {/* Name & contact */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-zinc-900 truncate">{intake.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 capitalize shrink-0">
-              {SERVICE_LABELS[intake.service_type] || intake.service_type}
-            </span>
-            {intake.priority && intake.priority !== 'normal' && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${priorityCfg.color}`}>
-                {priorityCfg.label}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-zinc-400 mt-0.5">
-            {intake.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{intake.phone}</span>}
-            {intake.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" />{intake.email}</span>}
-            {intake.address && <span className="flex items-center gap-1 truncate"><MapPin className="w-3 h-3" />{intake.address}</span>}
-          </div>
-        </div>
-
-        {/* Estimate */}
-        {estimate && (
-          <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg shrink-0">
-            {estimate}
-          </span>
-        )}
-
-        {/* Linked quote */}
-        {linkedQuote && (
-          <span className="text-[10px] bg-purple-50 text-purple-600 px-2 py-1 rounded-lg shrink-0">
-            {linkedQuote.quote_number}
-          </span>
-        )}
-
-        {/* Time */}
-        <span className={`text-xs shrink-0 ${
-          urgency === 'overdue' ? 'text-red-500 font-medium' :
-          urgency === 'warning' ? 'text-amber-500' : 'text-zinc-400'
-        }`}>
-          {timeAgo(intake.created_at)}
-        </span>
-
-        {/* Quick actions */}
-        <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-          {intake.status === 'new' && (
-            <>
-              <button onClick={() => onAdvance(intake.id, 'reviewed')}
-                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-blue-600 transition-colors" title="Mark Reviewed">
-                <Eye className="w-4 h-4" />
-              </button>
-              <button onClick={() => onAction(intake, 'quote')}
-                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-purple-600 transition-colors" title="Create Quote">
-                <FileText className="w-4 h-4" />
-              </button>
-            </>
-          )}
-          {intake.status === 'reviewed' && (
-            <button onClick={() => onAction(intake, 'convert-quote')}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded-lg transition-colors">
-              <FileText className="w-3.5 h-3.5" /> Create Quote
-            </button>
-          )}
-          {intake.status === 'quoted' && linkedQuote?.status === 'accepted' && (
-            <button onClick={() => onAction(intake, 'schedule')}
-              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-emerald-600 transition-colors" title="Schedule Job">
-              <Calendar className="w-4 h-4" />
-            </button>
-          )}
-          {intake.status !== 'archived' && intake.status !== 'converted' && (
-            <button onClick={() => onAdvance(intake.id, 'archived')}
-              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-500 transition-colors" title="Archive">
-              <Archive className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <ChevronRight className={`w-4 h-4 text-gray-300 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-      </div>
-
-      {/* Expanded detail panel */}
-      {expanded && (
-        <div className="border-t border-gray-100 px-4 py-3 space-y-3">
-          {/* Property details */}
-          <div className="flex flex-wrap gap-3">
-            {intake.bedrooms && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <Bed className="w-3.5 h-3.5 text-zinc-400" /> {intake.bedrooms} bed
-              </span>
-            )}
-            {intake.bathrooms && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <Bath className="w-3.5 h-3.5 text-zinc-400" /> {intake.bathrooms} bath
-              </span>
-            )}
-            {intake.square_footage && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <Ruler className="w-3.5 h-3.5 text-zinc-400" /> {intake.square_footage} sq ft
-              </span>
-            )}
-            {intake.guests && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <Users className="w-3.5 h-3.5 text-zinc-400" /> {intake.guests} guests
-              </span>
-            )}
-            {intake.property_name && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <Home className="w-3.5 h-3.5 text-zinc-400" /> {intake.property_name}
-              </span>
-            )}
-            {intake.frequency && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <RefreshCw className="w-3.5 h-3.5 text-zinc-400" /> {intake.frequency}
-              </span>
-            )}
-            {(intake.requested_date || intake.preferred_date) && (
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 px-2.5 py-1 rounded-lg">
-                <CalendarDays className="w-3.5 h-3.5 text-zinc-400" /> {intake.requested_date || intake.preferred_date}
-              </span>
-            )}
+    <div className="flex flex-col h-screen bg-neutral-50">
+      {/* Header */}
+      <div className="bg-white border-b border-neutral-200 p-4 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-neutral-900">Requests</h1>
+            <Button variant="primary" size="sm">
+              <Plus className="w-4 h-4 mr-2" />
+              New Request
+            </Button>
           </div>
 
-          {/* Check-in / Check-out */}
-          {(intake.check_in || intake.check_out) && (
-            <div className="text-xs text-zinc-500 bg-zinc-50 rounded-lg px-3 py-2">
-              {intake.check_in && <span>Check-in: {intake.check_in.slice(0, 10)}</span>}
-              {intake.check_in && intake.check_out && <span className="mx-2 text-gray-300">|</span>}
-              {intake.check_out && <span>Check-out: {intake.check_out.slice(0, 10)}</span>}
-            </div>
-          )}
+          {/* Search */}
+          <div className="relative mb-4">
+            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by name, email, phone, or address..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-neutral-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+          </div>
 
-          {/* Customer message */}
-          {intake.message && (
-            <div className="text-xs text-zinc-500 bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
-              <span className="font-medium text-blue-600">Customer note:</span> "{intake.message}"
-            </div>
-          )}
-
-          {/* Linked quote */}
-          {linkedQuote && (
-            <div className="text-xs bg-purple-50 text-purple-700 rounded-lg px-3 py-2 flex items-center gap-2 border border-purple-100">
-              <FileText className="w-3.5 h-3.5" />
-              <span>Quote {linkedQuote.quote_number} — ${parseFloat(linkedQuote.total || 0).toFixed(2)}</span>
-              <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full capitalize ${
-                linkedQuote.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' :
-                linkedQuote.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                linkedQuote.status === 'declined' ? 'bg-red-100 text-red-700' :
-                'bg-zinc-100 text-zinc-500'
-              }`}>{linkedQuote.status}</span>
-            </div>
-          )}
-
-          {/* Internal notes + priority + actions row */}
-          <div className="flex items-start gap-3 pt-1" onClick={e => e.stopPropagation()}>
-            {/* Internal notes */}
-            <div className="flex-1">
-              {editingNotes ? (
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 text-xs border border-zinc-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-                    placeholder="Add internal note..."
-                    value={notesVal}
-                    onChange={e => setNotesVal(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveNotes()}
-                    autoFocus
-                  />
-                  <button onClick={saveNotes} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-                  <button onClick={() => { setEditingNotes(false); setNotesVal(intake.internal_notes || '') }} className="text-xs px-3 py-1.5 text-zinc-500 hover:text-zinc-600">Cancel</button>
-                </div>
-              ) : (
-                <button onClick={() => setEditingNotes(true)}
-                  className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-500 transition-colors">
-                  <StickyNote className="w-3.5 h-3.5" />
-                  {intake.internal_notes || 'Add note...'}
-                </button>
-              )}
-            </div>
-
-            {/* Priority selector */}
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 items-center">
             <select
-              className="text-xs border border-zinc-200 rounded-lg px-2 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-              value={intake.priority || 'normal'}
-              onChange={e => onUpdateField(intake.id, 'priority', e.target.value)}
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-3 py-2 border border-neutral-200 rounded-lg text-sm bg-white"
             >
+              <option value="all">All Statuses</option>
+              <option value="new">New</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="quoted">Quoted</option>
+              <option value="converted">Converted</option>
+              <option value="archived">Archived</option>
+            </select>
+
+            <select
+              value={selectedServiceType}
+              onChange={(e) => setSelectedServiceType(e.target.value)}
+              className="px-3 py-2 border border-neutral-200 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Service Types</option>
+              <option value="residential">Residential</option>
+              <option value="commercial">Commercial</option>
+              <option value="str">STR</option>
+            </select>
+
+            <select
+              value={selectedPriority}
+              onChange={(e) => setSelectedPriority(e.target.value)}
+              className="px-3 py-2 border border-neutral-200 rounded-lg text-sm bg-white"
+            >
+              <option value="all">All Priorities</option>
               <option value="low">Low</option>
               <option value="normal">Normal</option>
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
             </select>
-
-            {/* Action buttons */}
-            <div className="flex gap-1.5">
-              {intake.status === 'new' && (
-                <button onClick={() => onAdvance(intake.id, 'reviewed')}
-                  className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors font-medium">
-                  Mark Reviewed
-                </button>
-              )}
-              {(intake.status === 'new' || intake.status === 'reviewed') && (
-                <button onClick={() => onAction(intake, 'quote')}
-                  className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
-                  Create Quote
-                </button>
-              )}
-              {intake.status === 'quoted' && linkedQuote?.status === 'accepted' && (
-                <button onClick={() => onAction(intake, 'schedule')}
-                  className="text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium">
-                  Schedule Job
-                </button>
-              )}
-              {intake.client_id && (
-                <button onClick={() => onAction(intake, 'client')}
-                  className="text-xs px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-500 rounded-lg transition-colors">
-                  View Client
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Metadata */}
-          <div className="flex items-center gap-3 text-[10px] text-zinc-400 pt-1 border-t border-gray-100">
-            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />
-              {new Date(intake.created_at).toLocaleDateString('en-US', {
-                weekday: 'short', month: 'short', day: 'numeric',
-                hour: 'numeric', minute: '2-digit'
-              })}
-            </span>
-            {intake.source && <span>via {intake.source}</span>}
-            {intake.assigned_to && <span>assigned to {intake.assigned_to}</span>}
-            {intake.followed_up_at && <span>followed up {timeAgo(intake.followed_up_at)}</span>}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Kanban Card (compact) ────────────────────────────────────────────────────
-function KanbanCard({ intake, quotes, onAdvance, onAction }) {
-  const linkedQuote = quotes.find(q => q.intake_id === intake.id)
-  const estimate = intake.estimate_min && intake.estimate_max
-    ? `$${intake.estimate_min.toFixed(0)}-$${intake.estimate_max.toFixed(0)}`
-    : null
-  const priorityCfg = PRIORITY_CONFIG[intake.priority || 'normal']
-  const urgency = intake.status === 'new' ? urgencyLevel(intake.created_at) : 'normal'
-
-  return (
-    <div className={`bg-white border rounded-xl overflow-hidden transition-all hover:shadow-md ${
-      urgency === 'overdue' ? 'border-red-200' : urgency === 'warning' ? 'border-amber-200' : 'border-zinc-200'
-    }`}>
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              {intake.priority && intake.priority !== 'normal' && (
-                <div className={`w-2 h-2 rounded-full shrink-0 ${priorityCfg.dot}`} />
-              )}
-              <span className="font-semibold text-sm text-zinc-900 truncate">{intake.name}</span>
-            </div>
-          </div>
-          <span className={`text-xs shrink-0 ${
-            urgency === 'overdue' ? 'text-red-500 font-medium' :
-            urgency === 'warning' ? 'text-amber-500' : 'text-zinc-400'
-          }`}>
-            {timeAgo(intake.created_at)}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 capitalize">
-            {SERVICE_LABELS[intake.service_type] || intake.service_type}
-          </span>
-          {estimate && (
-            <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-              {estimate}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-zinc-400">
-          {intake.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{intake.phone}</span>}
-          {intake.email && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" />{intake.email}</span>}
-        </div>
-
-        {intake.internal_notes && (
-          <div className="mt-2 text-[11px] text-zinc-500 bg-yellow-50 rounded-lg px-2 py-1 border border-yellow-100 truncate">
-            <StickyNote className="w-3 h-3 inline mr-1 text-yellow-500" />{intake.internal_notes}
-          </div>
-        )}
-
-        {linkedQuote && (
-          <div className="mt-2 text-[10px] bg-purple-50 text-purple-600 rounded-lg px-2 py-1 flex items-center gap-1">
-            <FileText className="w-3 h-3" /> {linkedQuote.quote_number} — ${parseFloat(linkedQuote.total || 0).toFixed(2)}
-          </div>
-        )}
-      </div>
-
-      {/* Quick actions */}
-      <div className="px-3 py-2 bg-zinc-50 border-t border-gray-100 flex gap-1.5">
-        {intake.status === 'new' && (
-          <>
-            <button onClick={() => onAdvance(intake.id, 'reviewed')}
-              className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-white border border-zinc-200 hover:bg-zinc-100 text-zinc-600 rounded-lg transition-colors text-center">
-              Review
-            </button>
-            <button onClick={() => onAction(intake, 'quote')}
-              className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-center">
-              Quote
-            </button>
-          </>
-        )}
-        {intake.status === 'reviewed' && (
-          <button onClick={() => onAction(intake, 'quote')}
-            className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-center">
-            Create Quote
-          </button>
-        )}
-        {intake.status === 'quoted' && linkedQuote?.status === 'accepted' && (
-          <button onClick={() => onAction(intake, 'schedule')}
-            className="flex-1 text-[11px] font-medium px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-center">
-            Schedule
-          </button>
-        )}
-        {intake.status === 'quoted' && linkedQuote && linkedQuote.status !== 'accepted' && (
-          <span className="flex-1 text-center text-[11px] text-zinc-400 py-1.5">Awaiting response</span>
-        )}
-        {intake.status === 'converted' && (
-          <span className="flex-1 text-center text-[11px] text-emerald-600 py-1.5 flex items-center justify-center gap-1">
-            <CheckCircle className="w-3 h-3" /> Done
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-
-// ── Add Request Modal ───────────────────────────────────────────────────────
-function AddRequestModal({ onClose, onSaved }) {
-  const [form, setForm] = useState({ name: '', phone: '', email: '', message: '', source: 'manual', service_type: 'residential' })
-  const [saving, setSaving] = useState(false)
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  const submit = async () => {
-    if (!form.name.trim()) return
-    setSaving(true)
-    try {
-      await post('/api/intake/submit', form)
-      onSaved()
-    } catch { }
-    setSaving(false)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-zinc-900">Add Request</h3>
-          <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded-lg"><X className="w-4 h-4 text-zinc-400" /></button>
-        </div>
-        <div className="p-5 space-y-3">
-          <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Name *</label>
-            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Client name"
-              className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-zinc-500 mb-1 block">Phone</label>
-              <input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="207-555-0123"
-                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
-            </div>
-            <div>
-              <label className="text-xs text-zinc-500 mb-1 block">Email</label>
-              <input value={form.email} onChange={e => set('email', e.target.value)} placeholder="email@example.com"
-                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-zinc-500 mb-1 block">Source</label>
-              <select value={form.source} onChange={e => set('source', e.target.value)}
-                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
-                <option value="manual">Manual</option>
-                <option value="phone">Phone call</option>
-                <option value="email">Email</option>
-                <option value="sms">SMS</option>
-                <option value="referral">Referral</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-zinc-500 mb-1 block">Service</label>
-              <select value={form.service_type} onChange={e => set('service_type', e.target.value)}
-                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200">
-                <option value="residential">Residential</option>
-                <option value="commercial">Commercial</option>
-                <option value="str">STR / Vacation</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Notes</label>
-            <textarea value={form.message} onChange={e => set('message', e.target.value)} rows={3} placeholder="Details about the request..."
-              className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200" />
-          </div>
-        </div>
-        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-zinc-500 hover:bg-zinc-50 rounded-lg">Cancel</button>
-          <button onClick={submit} disabled={saving || !form.name.trim()}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-            {saving ? 'Saving...' : 'Add Request'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-// ── Main Page ────────────────────────────────────────────────────────────────
-export default function Requests() {
-  const navigate = useNavigate()
-  const [intakes, setIntakes] = useState([])
-  const [quotes, setQuotes] = useState([])
-  const [stats, setStats] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState(null)
-  const [view, setView] = useState('inbox')       // 'inbox' | 'board'
-  const [filterStatus, setFilterStatus] = useState('active')  // 'active' | 'new' | 'reviewed' | 'quoted' | 'converted' | 'archived' | 'all'
-  const [filterService, setFilterService] = useState('all')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [expandedId, setExpandedId] = useState(null)
-  const [filterSource, setFilterSource] = useState('all')
-  const [sortBy, setSortBy] = useState('newest')   // 'newest' | 'oldest' | 'priority'
-  const [showAddModal, setShowAddModal] = useState(false)
-
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
-
-  const loadData = async () => {
-    try {
-      const [intakeRes, quoteRes, statsRes] = await Promise.all([
-        get('/api/intake'),
-        get('/api/quotes'),
-        get('/api/intake/stats'),
-      ])
-      setIntakes(Array.isArray(intakeRes) ? intakeRes : [])
-      setQuotes(Array.isArray(quoteRes) ? quoteRes : [])
-      setStats(statsRes || {})
-    } catch { }
-    setLoading(false)
-  }
-
-  useEffect(() => { loadData() }, [])
-
-  const advanceStatus = async (intakeId, newStatus) => {
-    try {
-      await patch(`/api/intake/${intakeId}`, { status: newStatus })
-      await loadData()
-      showToast(`Moved to ${newStatus}`)
-    } catch { showToast('Error updating status') }
-  }
-
-  const updateField = async (intakeId, field, value) => {
-    try {
-      await patch(`/api/intake/${intakeId}`, { [field]: value })
-      await loadData()
-      showToast('Updated')
-    } catch { showToast('Error updating') }
-  }
-
-  const handleAction = (intake, action) => {
-    if (action === 'quote') {
-      navigate('/quoting', { state: { intakeId: intake.id } })
-    } else if (action === 'convert-quote') {
-      convertIntakeToQuote(intake.id)
-    } else if (action === 'schedule') {
-      const linkedQuote = quotes.find(q => q.intake_id === intake.id)
-      if (linkedQuote) convertToJob(linkedQuote.id)
-    } else if (action === 'client' && intake.client_id) {
-      navigate(`/clients/${intake.client_id}`)
-    }
-  }
-
-  const convertIntakeToQuote = async (intakeId) => {
-    try {
-      const quote = await post(`/api/intake/${intakeId}/convert-to-quote`, {})
-      showToast('Quote created — review and send')
-      navigate(`/quoting`, { state: { quoteId: quote.id } })
-    } catch { showToast('Error creating quote') }
-  }
-
-  const convertToJob = async (quoteId) => {
-    try {
-      await post(`/api/quotes/${quoteId}/convert-to-job`)
-      showToast('Job created — set the date in Scheduling')
-      await loadData()
-    } catch { showToast('Error converting to job') }
-  }
-
-  // ── Filtering & sorting ──────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    let items = [...intakes]
-
-    // Status filter
-    if (filterStatus === 'active') {
-      items = items.filter(i => i.status !== 'archived' && i.status !== 'converted')
-    } else if (filterStatus !== 'all') {
-      items = items.filter(i => i.status === filterStatus)
-    }
-
-    // Service filter
-    if (filterService !== 'all') {
-      items = items.filter(i => i.service_type === filterService)
-    }
-
-    // Source filter
-    if (filterSource !== 'all') {
-      items = items.filter(i => i.source === filterSource)
-    }
-
-    // Search
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      items = items.filter(i =>
-        (i.name || '').toLowerCase().includes(q) ||
-        (i.email || '').toLowerCase().includes(q) ||
-        (i.phone || '').includes(q) ||
-        (i.address || '').toLowerCase().includes(q)
-      )
-    }
-
-    // Sort
-    if (sortBy === 'priority') {
-      const order = { urgent: 0, high: 1, normal: 2, low: 3 }
-      items.sort((a, b) => (order[a.priority || 'normal'] || 2) - (order[b.priority || 'normal'] || 2))
-    } else if (sortBy === 'oldest') {
-      items.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    }
-    // 'newest' is default from API
-
-    return items
-  }, [intakes, filterStatus, filterService, filterSource, searchQuery, sortBy])
-
-  const grouped = PIPELINE_STAGES.reduce((acc, stage) => {
-    acc[stage.key] = intakes.filter(i => i.status === stage.key)
-    return acc
-  }, {})
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <RefreshCw className="w-5 h-5 text-zinc-400 animate-spin" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-zinc-200 shrink-0 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-zinc-900">Requests</h1>
-            {stats.new > 0 && (
-              <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
-                {stats.new} new
-              </span>
-            )}
-            {stats.urgent > 0 && (
-              <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">
-                {stats.urgent} urgent
-              </span>
-            )}
-            <span className="text-xs text-zinc-400">maineclean.co incoming leads</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex bg-zinc-100 rounded-lg p-0.5">
-              <button onClick={() => setView('inbox')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}>
-                Inbox
-              </button>
-              <button onClick={() => setView('board')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'board' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}>
-                Board
-              </button>
-            </div>
-            <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Add Request
-            </button>
-            <button onClick={loadData}
-              className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors">
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Stats bar */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            {[
-              { key: 'active', label: 'Active', count: (stats.new || 0) + (stats.reviewed || 0) + (stats.quoted || 0) },
-              { key: 'new', label: 'New', count: stats.new || 0 },
-              { key: 'reviewed', label: 'Reviewed', count: stats.reviewed || 0 },
-              { key: 'quoted', label: 'Quoted', count: stats.quoted || 0 },
-              { key: 'converted', label: 'Converted', count: stats.converted || 0 },
-              { key: 'archived', label: 'Archived', count: stats.archived || 0 },
-              { key: 'all', label: 'All', count: stats.total || 0 },
-            ].map(tab => (
-              <button key={tab.key} onClick={() => setFilterStatus(tab.key)}
-                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
-                  filterStatus === tab.key
-                    ? 'bg-blue-600 text-white'
-                    : 'text-zinc-500 hover:bg-zinc-100'
-                }`}>
-                {tab.label}
-                <span className={`ml-1 ${filterStatus === tab.key ? 'text-white/70' : 'text-zinc-400'}`}>
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            {/* Source filter */}
-            <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
-              className="text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
-              <option value="all">All sources</option>
-              <option value="website">Website</option>
-              <option value="sms">SMS</option>
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="manual">Manual</option>
-              <option value="referral">Referral</option>
-            </select>
-
-            {/* Service filter */}
-            <select value={filterService} onChange={e => setFilterService(e.target.value)}
-              className="text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
-              <option value="all">All services</option>
-              <option value="residential">Residential</option>
-              <option value="commercial">Commercial</option>
-              <option value="str">STR / Vacation</option>
-            </select>
-
-            {/* Sort */}
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              className="text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 text-zinc-500 focus:outline-none focus:ring-2 focus:ring-gray-900/10">
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="priority">Priority</option>
-            </select>
-
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-              <input
-                className="text-xs border border-zinc-200 rounded-lg pl-8 pr-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-                placeholder="Search name, email, phone..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-500">
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Inbox view */}
-      {view === 'inbox' && (
-        <div className="flex-1 overflow-y-auto p-4">
-          {filtered.length === 0 ? (
-            <div className="text-center py-16">
-              <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-zinc-500">No requests found</p>
-              <p className="text-xs text-zinc-400 mt-1">
-                {searchQuery ? 'Try a different search' : 'Submissions from maineclean.co will appear here'}
-              </p>
-            </div>
+      {/* Content */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-6xl mx-auto p-4">
+          {loading ? (
+            <p className="text-center text-neutral-600">Loading requests...</p>
+          ) : filteredRequests.length === 0 ? (
+            <GlassCard>
+              <div className="text-center py-12">
+                <AlertCircle className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+                <p className="text-neutral-600">
+                  {requests.length === 0 ? 'No requests yet' : 'No requests match your filters'}
+                </p>
+              </div>
+            </GlassCard>
           ) : (
-            <div className="space-y-2 max-w-5xl mx-auto">
-              {filtered.map(intake => (
-                <InboxRow
+            <div className="grid gap-3">
+              {filteredRequests.map((intake) => (
+                <RequestCard
                   key={intake.id}
                   intake={intake}
-                  quotes={quotes}
-                  onAdvance={advanceStatus}
-                  onAction={handleAction}
-                  onUpdateField={updateField}
-                  expanded={expandedId === intake.id}
-                  onToggle={() => setExpandedId(expandedId === intake.id ? null : intake.id)}
+                  onViewDetails={handleViewDetails}
+                  onCreateQuote={handleCreateQuote}
+                  onArchive={handleArchive}
                 />
               ))}
             </div>
           )}
         </div>
-      )}
+      </div>
 
-      {/* Board view */}
-      {view === 'board' && (
-        <div className="flex-1 overflow-x-auto p-4">
-          <div className="flex gap-4 min-w-max h-full">
-            {PIPELINE_STAGES.map(stage => {
-              const items = grouped[stage.key] || []
-              const colors = STAGE_COLORS[stage.key]
-              const StageIcon = stage.icon
-              return (
-                <div key={stage.key} className="w-[320px] flex flex-col min-h-0">
-                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl ${colors.bg} border ${colors.border} border-b-0`}>
-                    <div className={`w-2 h-2 rounded-full ${colors.dot}`} />
-                    <StageIcon className={`w-4 h-4 ${colors.header}`} />
-                    <span className={`text-sm font-semibold ${colors.header}`}>{stage.label}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ml-auto ${colors.badge}`}>
-                      {items.length}
-                    </span>
-                  </div>
-                  <div className={`flex-1 overflow-y-auto border ${colors.border} border-t-0 rounded-b-xl p-2 space-y-2 bg-zinc-50/50`}>
-                    {items.length === 0 && (
-                      <div className="text-center py-8 text-zinc-400 text-xs">No requests</div>
-                    )}
-                    {items.map(intake => (
-                      <KanbanCard
-                        key={intake.id}
-                        intake={intake}
-                        quotes={quotes}
-                        onAdvance={advanceStatus}
-                        onAction={handleAction}
-                      />
-                    ))}
-                  </div>
+      {/* Details Drawer */}
+      {showDetailsDrawer && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
+          <div className="w-full sm:w-full max-w-2xl bg-white rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white flex items-center justify-between">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold">{selectedRequest.name}</h2>
+                <p className="text-xs sm:text-sm text-blue-100">Request #{selectedRequest.id}</p>
+              </div>
+              <button
+                onClick={() => setShowDetailsDrawer(false)}
+                className="p-2 hover:bg-blue-400 rounded transition-colors -mr-2 sm:mr-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Email</label>
+                <p className="text-sm text-neutral-900">{selectedRequest.email || '—'}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Phone</label>
+                <p className="text-sm text-neutral-900">{selectedRequest.phone || '—'}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Address</label>
+                <p className="text-sm text-neutral-900">
+                  {selectedRequest.address || '—'} {selectedRequest.city ? `, ${selectedRequest.city}` : ''} {selectedRequest.state}
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Service Type</label>
+                <p className="text-sm text-neutral-900">{SERVICE_TYPE_CONFIG[selectedRequest.service_type]?.label}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Status</label>
+                <p className="text-sm text-neutral-900">{STATUS_CONFIG[selectedRequest.status]?.label}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Priority</label>
+                <p className={`text-sm ${PRIORITY_CONFIG[selectedRequest.priority]?.color}`}>
+                  {PRIORITY_CONFIG[selectedRequest.priority]?.label}
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-neutral-600 uppercase">Message</label>
+                <p className="text-sm text-neutral-900 whitespace-pre-wrap">{selectedRequest.message || '—'}</p>
+              </div>
+              {selectedRequest.internal_notes && (
+                <div>
+                  <label className="text-xs font-semibold text-neutral-600 uppercase">Internal Notes</label>
+                  <p className="text-sm text-neutral-900 whitespace-pre-wrap">{selectedRequest.internal_notes}</p>
                 </div>
-              )
-            })}
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-neutral-200 bg-neutral-50 p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
+              <Button variant="secondary" onClick={() => setShowDetailsDrawer(false)} className="w-full sm:w-auto">
+                Close
+              </Button>
+              <Button variant="primary" className="w-full sm:w-auto flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Create Quote
+              </Button>
+            </div>
           </div>
         </div>
       )}
-
-      {toast && <Toast msg={toast} />}
-      {showAddModal && (
-        <AddRequestModal
-          onClose={() => setShowAddModal(false)}
-          onSaved={() => { setShowAddModal(false); loadData(); showToast('Request added') }}
-        />
-      )}
-
-      <AgentWidget
-        pageContext="requests"
-        prompts={[
-          'How many new leads came in this week?',
-          'Which requests are highest priority?',
-          'Help me convert this lead to a client',
-        ]}
-      />
     </div>
   )
 }

@@ -125,12 +125,23 @@ def submit_intake(data: IntakeSubmit, db: Session = Depends(get_db)):
 
 
 @router.get("")
-def get_intakes(status: Optional[str] = None, source: Optional[str] = None, db: Session = Depends(get_db)):
+def get_intakes(
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+    service_type: Optional[str] = None,
+    priority: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """List intakes with filtering by status, source, service_type, priority."""
     q = db.query(LeadIntake)
     if status:
         q = q.filter(LeadIntake.status == status)
     if source:
         q = q.filter(LeadIntake.source == source)
+    if service_type:
+        q = q.filter(LeadIntake.service_type == service_type)
+    if priority:
+        q = q.filter(LeadIntake.priority == priority)
     return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).all()]
 
 

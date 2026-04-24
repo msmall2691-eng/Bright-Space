@@ -92,10 +92,47 @@ def load_agent_config(agent_name: str) -> dict:
         return yaml.safe_load(f)
 
 
+def check_visits_coverage(db_session):
+    """Check if all jobs have corresponding visits. Logs discrepancies."""
+    from database.models import Job, Visit
+
+    total_jobs = db_session.query(Job).count()
+    total_visits = db_session.query(Visit).count()
+    jobs_without_visits = db_session.query(Job).outerjoin(Visit).filter(Visit.id.is_(None)).count()
+
+    if jobs_without_visits > 0:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"VISITS COVERAGE DRIFT: {jobs_without_visits}/{total_jobs} jobs missing visits. "
+            f"Total jobs={total_jobs}, Total visits={total_visits}. "
+            f"Run POST /api/visits/admin/backfill-visits-from-jobs to fix."
+        )
+    return {
+        "total_jobs": total_jobs,
+        "total_visits": total_visits,
+        "jobs_without_visits": jobs_without_visits,
+        "healthy": jobs_without_visits == 0
+    }
+
+
 @app.on_event("startup")
 async def startup():
     init_db()
     start_scheduler()
+
+    # Check for visits/jobs drift
+    from database.db import SessionLocal
+    db = SessionLocal()
+    try:
+        coverage = check_visits_coverage(db)
+        if not coverage["healthy"]:
+            print(f"⚠️  VISITS COVERAGE DRIFT: {coverage['jobs_without_visits']}/{coverage['total_jobs']} jobs missing visits")
+        else:
+            print(f"✓ Visits coverage healthy: {coverage['total_jobs']} jobs, {coverage['total_visits']} visits")
+    finally:
+        db.close()
+
     print("BrightBase backend started")
 
 

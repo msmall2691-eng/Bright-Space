@@ -26,3 +26,4 @@ backend/*.json
 fix_fetch.py
 fix_fetch2.py
 BrightBase_Production_Audit.docx
+CLAUDE.md

@@ -6,7 +6,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 
 from database.db import get_db
-from database.models import Job, Client
+from database.models import Job, Client, Visit
 from modules.auth.router import get_current_user, require_role
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,23 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    # Create primary Visit for this job (dual-write pattern)
+    try:
+        visit = Visit(
+            job_id=job.id,
+            sequence=1,
+            scheduled_date=job.scheduled_date,
+            start_time=job.start_time,
+            end_time=job.end_time,
+            status=job.status or "scheduled",
+            cleaner_ids=job.cleaner_ids or [],
+        )
+        db.add(visit)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to create primary Visit for job {job.id}: {e}")
+
     # Push to Google Calendar
     try:
         from integrations.google_calendar import create_event

@@ -141,6 +141,8 @@ export default function Schedule() {
   const [showDetails, setShowDetails] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
+  const [coverage, setCoverage] = useState(null)
+  const [backfilling, setBackfilling] = useState(false)
 
   const dateStr = currentDate.toISOString().split('T')[0]
 
@@ -157,7 +159,7 @@ export default function Schedule() {
         const start = startDate.toISOString().split('T')[0]
         const end = endDate.toISOString().split('T')[0]
 
-        const [visitsRes, jobsRes, propsRes, clientsRes] = await Promise.all([
+        const [visitsRes, jobsRes, propsRes, clientsRes, coverageRes] = await Promise.all([
           get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`).catch(e => {
             console.error('[Schedule] Visits API error:', e)
             return { items: [] }
@@ -174,6 +176,7 @@ export default function Schedule() {
             console.error('[Schedule] Clients API error:', e)
             return []
           }),
+          get('/api/visits/admin/coverage-check').catch(() => null),
         ])
 
         // Index jobs, properties, clients for quick lookup
@@ -214,6 +217,7 @@ export default function Schedule() {
         setJobs(jobsMap)
         setProperties(propsMap)
         setClients(clientsMap)
+        setCoverage(coverageRes)
       } catch (err) {
         console.error('[Schedule]', err)
       }
@@ -298,6 +302,20 @@ export default function Schedule() {
     setVisits(visitsData)
   }
 
+  const handleBackfill = async () => {
+    setBackfilling(true)
+    try {
+      const result = await post('/api/visits/admin/backfill-visits-from-jobs', {})
+      // Reload coverage check after backfill
+      const newCoverage = await get('/api/visits/admin/coverage-check')
+      setCoverage(newCoverage)
+    } catch (err) {
+      console.error('[Schedule] Backfill failed:', err)
+    } finally {
+      setBackfilling(false)
+    }
+  }
+
   const prevWeek = () => {
     const d = new Date(currentDate)
     d.setDate(d.getDate() - 7)
@@ -379,6 +397,35 @@ export default function Schedule() {
           </div>
         </div>
       </div>
+
+      {/* Admin Coverage Banner */}
+      {coverage && !coverage.healthy && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  Visits Coverage: {coverage.coverage_percent}% ({coverage.total_visits}/{coverage.total_jobs})
+                </p>
+                <p className="text-xs text-amber-700">
+                  {coverage.jobs_without_visits} jobs missing visits. Click below to backfill.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleBackfill}
+              disabled={backfilling}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {backfilling ? 'Backfilling...' : 'Backfill Now'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Schedule Grid */}
       <div className="flex-1 overflow-auto">
