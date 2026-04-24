@@ -28,8 +28,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    # Safe migrations: add new columns if they don't exist yet
+    # Note: Schema creation and migrations are now handled by Alembic.
+    # The 'alembic upgrade head' command runs before the app starts,
+    # ensuring the database schema is up-to-date. See alembic/versions/
+    # for the migration history.
     _run_migrations()
     # Phase 1 omnichannel: backfill legacy messages into conversations
     _backfill_conversations()
