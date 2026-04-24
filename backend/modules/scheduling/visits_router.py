@@ -131,6 +131,24 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
     }
 
 
+@router.get("/admin/coverage-check", dependencies=[Depends(require_role("admin", "manager"))])
+def check_visits_coverage(db: Session = Depends(get_db)):
+    """Check if all jobs have corresponding visits."""
+    from sqlalchemy import func
+
+    total_jobs = db.query(Job).count()
+    total_visits = db.query(Visit).count()
+    jobs_without_visits = db.query(Job).outerjoin(Visit, Job.id == Visit.job_id).filter(Visit.id.is_(None)).count()
+
+    return {
+        "total_jobs": total_jobs,
+        "total_visits": total_visits,
+        "jobs_without_visits": jobs_without_visits,
+        "coverage_percent": int((total_visits / total_jobs * 100) if total_jobs > 0 else 100),
+        "healthy": jobs_without_visits == 0
+    }
+
+
 @router.post("/admin/backfill-visits-from-jobs", dependencies=[Depends(require_role("admin", "manager"))])
 def backfill_visits_from_jobs(db: Session = Depends(get_db)):
     """Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids."""
