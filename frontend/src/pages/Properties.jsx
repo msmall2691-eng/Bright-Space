@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link, Trash2, Users, Calendar } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Clock, Link, Trash2, Users, Calendar, ChevronRight } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { get, post, patch, del } from "../api"
 
@@ -11,6 +12,7 @@ const EMPTY = {
 }
 
 export default function Properties() {
+  const navigate = useNavigate()
   const [properties, setProperties] = useState([])
   const [clients, setClients] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -206,6 +208,11 @@ export default function Properties() {
                         {syncing === p.id ? 'Syncing...' : 'Sync'}
                       </button>
                     )}
+                    <button onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}`) }}
+                      className="text-xs text-blue-600 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      Jobs
+                    </button>
                     <button onClick={(e) => { e.stopPropagation(); openEdit(p) }}
                       className="text-xs text-zinc-500 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
                       Edit

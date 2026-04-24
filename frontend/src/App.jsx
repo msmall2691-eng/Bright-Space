@@ -15,6 +15,7 @@ import Invoicing from './pages/Invoicing'
 import Payroll from './pages/Payroll'
 import Comms from './pages/Comms'
 import Properties from './pages/Properties'
+import PropertyDetail from './pages/PropertyDetail'
 import Requests from './pages/Requests'
 import Settings from './pages/Settings'
 import PublicQuote from './pages/PublicQuote'
@@ -95,6 +96,7 @@ export default function App() {
             <Route path="/payroll" element={<Payroll />} />
             <Route path="/comms" element={<Comms />} />
             <Route path="/properties" element={<Properties />} />
+            <Route path="/properties/:propertyId" element={<PropertyDetail />} />
             <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
