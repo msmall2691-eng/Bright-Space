@@ -149,6 +149,34 @@ def check_visits_coverage(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/telemetry/drift-check")
+def report_drift_check(db: Session = Depends(get_db)):
+    """Report visits/jobs drift metrics for monitoring/alerting systems."""
+    from datetime import datetime, timezone
+
+    total_jobs = db.query(Job).count()
+    total_visits = db.query(Visit).count()
+    jobs_without_visits = db.query(Job).outerjoin(Visit, Job.id == Visit.job_id).filter(Visit.id.is_(None)).count()
+
+    coverage_percent = int((total_visits / total_jobs * 100) if total_jobs > 0 else 100)
+    healthy = jobs_without_visits == 0
+
+    telemetry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metric_name": "visits_coverage_drift",
+        "total_jobs": total_jobs,
+        "total_visits": total_visits,
+        "jobs_without_visits": jobs_without_visits,
+        "coverage_percent": coverage_percent,
+        "healthy": healthy,
+        "severity": "info" if healthy else ("warning" if jobs_without_visits < total_jobs * 0.1 else "critical"),
+    }
+
+    logger.info(f"Drift check: {coverage_percent}% coverage, {jobs_without_visits} jobs missing visits")
+
+    return telemetry
+
+
 @router.post("/admin/backfill-visits-from-jobs", dependencies=[Depends(require_role("admin", "manager"))])
 def backfill_visits_from_jobs(db: Session = Depends(get_db)):
     """Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids."""
