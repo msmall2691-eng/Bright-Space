@@ -324,6 +324,46 @@ class Job(Base):
         foreign_keys="ICalEvent.job_id", uselist=False
     )
     assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
+    visits = relationship("Visit", back_populates="job", cascade="all, delete-orphan")
+
+
+class Visit(Base):
+    """Individual occurrence of a job visit (one per job, or multiple for recurring jobs)."""
+    __tablename__ = "visits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+
+    # Schedule details (inherited from Job but can be overridden per visit)
+    sequence = Column(Integer, nullable=False, default=1)  # Which occurrence of recurring job
+    scheduled_date = Column(String)     # YYYY-MM-DD
+    start_time = Column(String)         # HH:MM
+    end_time = Column(String)           # HH:MM
+    status = Column(String, default="scheduled")
+    # "scheduled" | "in_progress" | "completed" | "cancelled"
+
+    # Assignment
+    cleaner_ids = Column(JSON, default=list)
+
+    # Calendar integrations
+    gcal_event_id = Column(String, nullable=True)
+    ical_source = Column(String, nullable=True)  # "airbnb", "vrbo", "manual"
+    ical_uid = Column(String, nullable=True)     # RFC 5545 UID for idempotency
+
+    # Checklist
+    checklist_template_id = Column(Integer, nullable=True)
+    checklist_results = Column(JSON, nullable=True)
+
+    # Completion tracking
+    completed_at = Column(DateTime, nullable=True)
+    completed_by = Column(String, nullable=True)
+    photos = Column(JSON, nullable=True)  # List of photo URLs
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    job = relationship("Job", back_populates="visits", foreign_keys=[job_id])
 
 
 class LeadIntake(Base):
@@ -625,6 +665,24 @@ class AppSetting(Base):
     key = Column(String, nullable=False, unique=True, index=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class IntegrationEvent(Base):
+    """Audit log for all external integration actions (iCal syncs, GCal events, etc)."""
+    __tablename__ = "integration_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String, nullable=False)  # "job", "visit", "property", etc.
+    entity_id = Column(Integer, nullable=False)    # ID of the entity
+    provider = Column(String, nullable=False)      # "ical", "gcal", "connecteam", etc.
+    action = Column(String, nullable=False)        # "sync", "create", "update", "delete"
+    status = Column(String, nullable=False)        # "success", "failure", "pending"
+    external_id = Column(String, nullable=True)    # ID in external system
+    error_message = Column(Text, nullable=True)
+    error_code = Column(String, nullable=True)
+    request_payload = Column(JSON, nullable=True)
+    response_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 # ─────────────────────────────────────────────────────────────────
 # Event listeners — keep phone_tail in sync automatically

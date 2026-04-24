@@ -10,15 +10,15 @@ depends_on = None
 
 
 def upgrade():
-    # Create all base tables (no FKs initially to avoid circular deps)
+    # Create all base tables
     op.create_table(
         'app_settings',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('key', sa.String(), nullable=True),
+        sa.Column('key', sa.String(), nullable=False),
         sa.Column('value', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('key')
     )
 
     op.create_table(
@@ -41,6 +41,8 @@ def upgrade():
         sa.Column('source_detail', sa.String(), nullable=True),
         sa.Column('last_contacted_at', sa.DateTime(), nullable=True),
         sa.Column('email_verified', sa.Integer(), nullable=True),
+        sa.Column('phone_tail', sa.String(), nullable=True),
+        sa.Column('phone_id', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint('id')
@@ -52,6 +54,7 @@ def upgrade():
         sa.Column('client_id', sa.Integer(), nullable=True),
         sa.Column('phone', sa.String(), nullable=True),
         sa.Column('type', sa.String(), nullable=True),
+        sa.Column('phone_tail', sa.String(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
         sa.PrimaryKeyConstraint('id')
@@ -92,28 +95,38 @@ def upgrade():
         sa.Column('guest_count', sa.Integer(), nullable=True),
         sa.Column('event_type', sa.String(), nullable=True),
         sa.Column('synced_at', sa.DateTime(), nullable=True),
+        sa.Column('job_id', sa.Integer(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint('id')
     )
 
     op.create_table(
         'lead_intakes',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(), nullable=True),
+        sa.Column('client_id', sa.Integer(), nullable=True),
+        sa.Column('opportunity_id', sa.Integer(), nullable=True),
+        sa.Column('name', sa.String(), nullable=False),
         sa.Column('email', sa.String(), nullable=True),
         sa.Column('phone', sa.String(), nullable=True),
         sa.Column('address', sa.String(), nullable=True),
+        sa.Column('city', sa.String(), nullable=True),
+        sa.Column('state', sa.String(), nullable=True),
+        sa.Column('zip_code', sa.String(), nullable=True),
         sa.Column('service_type', sa.String(), nullable=True),
-        sa.Column('priority', sa.String(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('requested_date', sa.DateTime(), nullable=True),
-        sa.Column('frequency', sa.String(), nullable=True),
+        sa.Column('bedrooms', sa.Integer(), nullable=True),
         sa.Column('bathrooms', sa.Integer(), nullable=True),
+        sa.Column('square_footage', sa.Integer(), nullable=True),
         sa.Column('guests', sa.Integer(), nullable=True),
+        sa.Column('frequency', sa.String(), nullable=True),
+        sa.Column('requested_date', sa.String(), nullable=True),
         sa.Column('check_in', sa.String(), nullable=True),
         sa.Column('check_out', sa.String(), nullable=True),
         sa.Column('estimate_min', sa.Float(), nullable=True),
         sa.Column('estimate_max', sa.Float(), nullable=True),
         sa.Column('property_name', sa.String(), nullable=True),
+        sa.Column('message', sa.String(), nullable=True),
+        sa.Column('priority', sa.String(), nullable=True),
+        sa.Column('status', sa.String(), nullable=True),
         sa.Column('assigned_to', sa.String(), nullable=True),
         sa.Column('internal_notes', sa.String(), nullable=True),
         sa.Column('followed_up_at', sa.DateTime(), nullable=True),
@@ -160,9 +173,41 @@ def upgrade():
         sa.Column('name', sa.String(), nullable=True),
         sa.Column('role', sa.String(), nullable=True),
         sa.Column('hashed_password', sa.String(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=True),
+        sa.Column('is_active', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.PrimaryKeyConstraint('id')
+    )
+
+    op.create_table(
+        'quotes',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('client_id', sa.Integer(), nullable=True),
+        sa.Column('title', sa.String(), nullable=True),
+        sa.Column('description', sa.String(), nullable=True),
+        sa.Column('amount', sa.Float(), nullable=True),
+        sa.Column('status', sa.String(), nullable=True),
+        sa.Column('public_token', sa.String(), nullable=True),
+        sa.Column('viewed_at', sa.DateTime(), nullable=True),
+        sa.Column('intake_id', sa.Integer(), nullable=True),
+        sa.Column('quote_number', sa.String(), nullable=True),
+        sa.Column('address', sa.String(), nullable=True),
+        sa.Column('service_type', sa.String(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
+        sa.PrimaryKeyConstraint('id')
+    )
+
+    op.create_table(
+        'recurring_schedules',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('job_id', sa.Integer(), nullable=True),
+        sa.Column('frequency', sa.String(), nullable=True),
+        sa.Column('end_date', sa.String(), nullable=True),
+        sa.Column('days_of_week', sa.String(), nullable=True),
+        sa.Column('interval_weeks', sa.Integer(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint('id')
     )
 
@@ -171,20 +216,35 @@ def upgrade():
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('client_id', sa.Integer(), nullable=True),
         sa.Column('property_id', sa.Integer(), nullable=True),
-        sa.Column('title', sa.String(), nullable=True),
+        sa.Column('quote_id', sa.Integer(), nullable=True),
+        sa.Column('opportunity_id', sa.Integer(), nullable=True),
+        sa.Column('job_type', sa.String(), nullable=False),
+        sa.Column('recurring_schedule_id', sa.Integer(), nullable=True),
+        sa.Column('ical_event_id', sa.Integer(), nullable=True),
+        sa.Column('assigned_cleaner_user_id', sa.Integer(), nullable=True),
+        sa.Column('calendar_invite_sent', sa.Integer(), nullable=False),
+        sa.Column('sms_reminder_sent', sa.Integer(), nullable=False),
+        sa.Column('gcal_event_id', sa.String(), nullable=True),
+        sa.Column('title', sa.String(), nullable=False),
         sa.Column('scheduled_date', sa.String(), nullable=True),
         sa.Column('start_time', sa.String(), nullable=True),
         sa.Column('end_time', sa.String(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
+        sa.Column('address', sa.String(), nullable=True),
         sa.Column('cleaner_ids', sa.String(), nullable=True),
+        sa.Column('status', sa.String(), nullable=True),
         sa.Column('notes', sa.String(), nullable=True),
-        sa.Column('quote_id', sa.Integer(), nullable=True),
         sa.Column('custom_fields', sa.String(), nullable=True),
-        sa.Column('gcal_event_id', sa.String(), nullable=True),
+        sa.Column('dispatched', sa.Integer(), nullable=True),
+        sa.Column('connecteam_shift_ids', sa.String(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
+        sa.ForeignKeyConstraint(['quote_id'], ['quotes.id'], ),
+        sa.ForeignKeyConstraint(['opportunity_id'], ['opportunities.id'], ),
+        sa.ForeignKeyConstraint(['recurring_schedule_id'], ['recurring_schedules.id'], ),
+        sa.ForeignKeyConstraint(['ical_event_id'], ['ical_events.id'], ),
+        sa.ForeignKeyConstraint(['assigned_cleaner_user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
 
@@ -218,6 +278,20 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
+        sa.PrimaryKeyConstraint('id')
+    )
+
+    op.create_table(
+        'messages',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('conversation_id', sa.Integer(), nullable=True),
+        sa.Column('content', sa.String(), nullable=True),
+        sa.Column('sender', sa.String(), nullable=True),
+        sa.Column('external_id', sa.String(), nullable=True),
+        sa.Column('author', sa.String(), nullable=True),
+        sa.Column('is_internal_note', sa.Integer(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['conversation_id'], ['conversations.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
 
@@ -258,40 +332,6 @@ def upgrade():
     )
 
     op.create_table(
-        'quotes',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('title', sa.String(), nullable=True),
-        sa.Column('description', sa.String(), nullable=True),
-        sa.Column('amount', sa.Float(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('public_token', sa.String(), nullable=True),
-        sa.Column('viewed_at', sa.DateTime(), nullable=True),
-        sa.Column('intake_id', sa.Integer(), nullable=True),
-        sa.Column('quote_number', sa.String(), nullable=True),
-        sa.Column('address', sa.String(), nullable=True),
-        sa.Column('service_type', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
-
-    op.create_table(
-        'messages',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('conversation_id', sa.Integer(), nullable=True),
-        sa.Column('content', sa.String(), nullable=True),
-        sa.Column('sender', sa.String(), nullable=True),
-        sa.Column('external_id', sa.String(), nullable=True),
-        sa.Column('author', sa.String(), nullable=True),
-        sa.Column('is_internal_note', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['conversation_id'], ['conversations.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
-
-    op.create_table(
         'activities',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('entity_type', sa.String(), nullable=True),
@@ -304,29 +344,35 @@ def upgrade():
     )
 
     op.create_table(
-        'recurring_schedules',
+        'integration_events',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('job_id', sa.Integer(), nullable=True),
-        sa.Column('frequency', sa.String(), nullable=True),
-        sa.Column('end_date', sa.String(), nullable=True),
-        sa.Column('days_of_week', sa.String(), nullable=True),
-        sa.Column('interval_weeks', sa.Integer(), nullable=True),
+        sa.Column('entity_type', sa.String(), nullable=False),
+        sa.Column('entity_id', sa.Integer(), nullable=False),
+        sa.Column('provider', sa.String(), nullable=False),
+        sa.Column('action', sa.String(), nullable=False),
+        sa.Column('status', sa.String(), nullable=False),
+        sa.Column('external_id', sa.String(), nullable=True),
+        sa.Column('error_message', sa.String(), nullable=True),
+        sa.Column('error_code', sa.String(), nullable=True),
+        sa.Column('request_payload', sa.String(), nullable=True),
+        sa.Column('response_payload', sa.String(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], ),
-        sa.PrimaryKeyConstraint('id')
+        sa.PrimaryKeyConstraint('id'),
+        sa.Index('ix_integration_events_created_at', 'created_at')
     )
 
 
 def downgrade():
-    op.drop_table('recurring_schedules')
+    op.drop_table('integration_events')
     op.drop_table('activities')
-    op.drop_table('messages')
-    op.drop_table('quotes')
     op.drop_table('property_icals')
     op.drop_table('invoices')
+    op.drop_table('messages')
     op.drop_table('conversations')
     op.drop_table('visits')
     op.drop_table('jobs')
+    op.drop_table('recurring_schedules')
+    op.drop_table('quotes')
     op.drop_table('users')
     op.drop_table('properties')
     op.drop_table('opportunities')
