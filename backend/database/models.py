@@ -380,6 +380,7 @@ class Visit(Base):
 
     id = Column(BigInteger, primary_key=True, index=True)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    sequence = Column(Integer, nullable=False, default=1)  # Which occurrence of this job (1 for single, 1+ for recurring)
 
     # When is this visit scheduled?
     scheduled_date = Column(Date, nullable=False, index=True)
@@ -407,6 +408,7 @@ class Visit(Base):
     notes = Column(Text)
 
     # Photos, checklist (structured data)
+    checklist_template_id = Column(Integer, nullable=True)  # Which checklist template was used for this visit
     checklist_results = Column(JSON, nullable=True)  # {"task_id": "done"/"skipped"/"failed", ...}
     photos = Column(JSON, default=list)  # [{"url": "...", "timestamp": "...", "label": "before"}, ...]
 
