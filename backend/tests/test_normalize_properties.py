@@ -311,6 +311,47 @@ class TestNormalizePropertiesEndpoint:
         finally:
             db.close()
 
+    def test_never_auto_change_commercial(self):
+        """CRITICAL: Commercial properties should NEVER be auto-changed by type inference."""
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="test@example.com")
+            db.add(client)
+            db.commit()
+            db.refresh(client)
+
+            # Create a commercial property with ordinary notes (no commercial keywords)
+            # and NO STR signals — infer_property_type would default to 'residential'
+            prop = Property(
+                client_id=client.id,
+                name="Office Building",
+                address="999 Corporate Blvd",
+                property_type="commercial",
+                notes="Standard cleaning supplies in stock"  # No "commercial" keyword
+            )
+            db.add(prop)
+            db.commit()
+            db.refresh(prop)
+
+            from modules.properties.router import normalize_properties
+            result = normalize_properties(dry_run=True, db=db)
+
+            # Verify NO type change was proposed for this commercial property
+            change = next((c for c in result["would_change_type"] if c["id"] == prop.id), None)
+            assert change is None, "Commercial property should never have auto type-change proposed"
+
+            # Verify the property is still commercial after dry_run
+            db.refresh(prop)
+            assert prop.property_type == "commercial"
+
+            # Also verify with dry_run=False that commercial stays commercial
+            result2 = normalize_properties(dry_run=False, db=db)
+            db.refresh(prop)
+            assert prop.property_type == "commercial", "Commercial property should remain unchanged after apply"
+
+        finally:
+            db.close()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

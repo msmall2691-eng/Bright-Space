@@ -464,15 +464,17 @@ def normalize_properties(
 
     for prop in props:
         # Check 1: Infer property_type
-        inferred_type = _infer_property_type(prop, db)
-        if inferred_type != prop.property_type:
-            would_change_type.append({
-                'id': prop.id,
-                'name': prop.name,
-                'old': prop.property_type,
-                'new': inferred_type,
-                'reason': 'inferred from ical_url, PropertyIcal, or check_in_time'
-            })
+        # Guard: never auto-change commercial → anything else (commercial is human-only classification)
+        if prop.property_type != 'commercial':
+            inferred_type = _infer_property_type(prop, db)
+            if inferred_type != prop.property_type:
+                would_change_type.append({
+                    'id': prop.id,
+                    'name': prop.name,
+                    'old': prop.property_type,
+                    'new': inferred_type,
+                    'reason': 'inferred from ical_url, PropertyIcal, or check_in_time'
+                })
 
         # Check 2: Normalize property name
         new_name = _normalize_property_name(prop)
