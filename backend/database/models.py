@@ -163,29 +163,38 @@ class Client(Base):
 
 
 class Property(Base):
-    """An STR property belonging to a client — has iCal feed URL(s)."""
+    """A property (residential, commercial, or STR) belonging to a client."""
     __tablename__ = "properties"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
 
-    name = Column(String, nullable=False)           # "Ocean View Condo"
+    name = Column(String, nullable=False)           # "4 Red Barn Circle" (address, not service description)
     address = Column(String, nullable=False)
     city = Column(String)
     state = Column(String)
     zip_code = Column(String)
-    property_type = Column(String, default="str")   # "str" for now
+    property_type = Column(String, default="residential")   # "residential" | "commercial" | "str"
 
     ical_url = Column(String, nullable=True)        # Legacy: single iCal (backward compat)
     ical_last_synced_at = Column(DateTime, nullable=True)
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
+    default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs
 
-    # STR property specific fields
+    access_notes = Column(Text, nullable=True)      # "Side door, lockbox 4251"
+    parking_notes = Column(Text, nullable=True)     # Parking information
+    notes = Column(Text, nullable=True)
+
+    # STR property specific fields (NULL for residential/commercial)
     check_in_time = Column(String(5), nullable=True)   # "14:00" format
     check_out_time = Column(String(5), nullable=True)  # "10:00" format
     house_code = Column(String(255), nullable=True)    # Access code or combination
+    timezone = Column(String, nullable=True)           # Property timezone for STR
 
-    notes = Column(Text, nullable=True)
+    # Commercial property specific fields (NULL for residential/str)
+    business_name = Column(String, nullable=True)      # If different from Client.name
+    hours_of_operation = Column(Text, nullable=True)   # Hours as text or JSON
+
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
