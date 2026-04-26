@@ -166,6 +166,15 @@ def _run_migrations():
         "ALTER TABLE property_icals ADD COLUMN house_code TEXT",
         "ALTER TABLE property_icals ADD COLUMN access_links TEXT",
         "ALTER TABLE property_icals ADD COLUMN instructions TEXT",
+        # CRM cleanup: support commercial property fields and improve property data model
+        "ALTER TABLE properties ADD COLUMN business_name TEXT",
+        "ALTER TABLE properties ADD COLUMN hours_of_operation TEXT",
+        "ALTER TABLE properties ADD COLUMN default_crew_size INTEGER",
+        "ALTER TABLE properties ADD COLUMN access_notes TEXT",
+        "ALTER TABLE properties ADD COLUMN parking_notes TEXT",
+        "ALTER TABLE properties ADD COLUMN timezone TEXT",
+        # Backfill NULL property_type values to 'residential'
+        "UPDATE properties SET property_type = 'residential' WHERE property_type IS NULL OR property_type = ''",
     ]
 
     # Dialect-aware backfill migrations
