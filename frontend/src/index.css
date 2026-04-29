@@ -1,3 +1,93 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Paper (light) — default */
+  --bg: #f7f5ef;
+  --bg-2: #efece3;
+  --bg-3: #e8e4d7;
+  --panel: #fbf9f3;
+  --ink: #171512;
+  --ink-2: #4a4740;
+  --ink-3: #8a857a;
+  --hairline: #e4e0d4;
+  --hairline-2: #d4cfbe;
+  --accent: oklch(0.62 0.14 55);
+  --accent-ink: #fff;
+
+  --c-residential: oklch(0.58 0.12 245);
+  --c-residential-bg: oklch(0.92 0.03 245);
+  --c-commercial: oklch(0.60 0.14 60);
+  --c-commercial-bg: oklch(0.93 0.04 60);
+  --c-str: oklch(0.50 0.12 155);
+  --c-str-bg: oklch(0.93 0.04 155);
+  --c-alert: oklch(0.55 0.18 25);
+  --c-alert-bg: oklch(0.93 0.05 25);
+  --c-ok: oklch(0.55 0.12 155);
+
+  --shadow-1: 0 1px 0 rgba(23,21,18,0.04), 0 2px 8px rgba(23,21,18,0.04);
+  --shadow-2: 0 8px 24px rgba(23,21,18,0.08);
+}
+
+/* Dark theme — toggled with body.theme-console */
+body.theme-console {
+  --bg: #0c0d0f;
+  --bg-2: #111317;
+  --bg-3: #171a20;
+  --panel: #111317;
+  --ink: #e8e6e0;
+  --ink-2: #a5a297;
+  --ink-3: #6b6860;
+  --hairline: #20232a;
+  --hairline-2: #2a2e37;
+  --accent: oklch(0.72 0.14 200);
+  --accent-ink: #0c0d0f;
+  --c-residential: oklch(0.72 0.14 245);
+  --c-residential-bg: oklch(0.28 0.08 245);
+  --c-commercial: oklch(0.75 0.14 75);
+  --c-commercial-bg: oklch(0.28 0.08 75);
+  --c-str: oklch(0.72 0.14 155);
+  --c-str-bg: oklch(0.28 0.08 155);
+  --c-alert: oklch(0.70 0.18 25);
+  --c-alert-bg: oklch(0.30 0.10 25);
+  --shadow-1: 0 1px 0 rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-2: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+/* Clean mode — softer + roomier; toggled with body.mode-clean */
+body.mode-clean {
+  --bg: #fafafa;
+  --bg-2: #f4f4f5;
+  --bg-3: #ececef;
+  --panel: #ffffff;
+  --ink: #0a0a0b;
+  --ink-2: #52525b;
+  --ink-3: #a1a1aa;
+  --hairline: #efeff1;
+  --hairline-2: #e4e4e7;
+  --accent: oklch(0.55 0.17 255);
+  --accent-ink: #ffffff;
+  --shadow-1: 0 1px 2px rgba(10,10,11,0.04), 0 1px 3px rgba(10,10,11,0.06);
+  --shadow-2: 0 4px 12px rgba(10,10,11,0.06), 0 12px 32px rgba(10,10,11,0.08);
+  font-size: 13px;
+}
+
+body.mode-clean.theme-console {
+  --bg: #09090b;
+  --bg-2: #131316;
+  --bg-3: #1c1c21;
+  --panel: #111114;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --hairline: #1f1f23;
+  --hairline-2: #2a2a30;
+  --accent: oklch(0.72 0.16 255);
+  --accent-ink: #09090b;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

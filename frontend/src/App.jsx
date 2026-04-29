@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import BottomNav from './components/BottomNav'
 import AICommandBar from './components/AICommandBar'
+import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Workspace from './pages/Workspace'
@@ -105,6 +106,7 @@ export default function App() {
       </div>
       <BottomNav />
       <AICommandBar />
+      {import.meta.env.DEV && <TweaksPanel />}
     </div>
   )
 }
