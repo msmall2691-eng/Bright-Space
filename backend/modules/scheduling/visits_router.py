@@ -412,3 +412,97 @@ def skip_visit(visit_id: int, reason: Optional[str] = None, db: Session = Depend
         "job_status": visit.job.status if visit.job else None,
         "message": "Visit skipped — recurring schedule unchanged"
     }
+
+
+@router.get("/{visit_id}/crew-suggestions", dependencies=[Depends(require_role("admin", "manager"))])
+def get_crew_suggestions(visit_id: int, db: Session = Depends(get_db)):
+    """Get suggested crew for a visit based on recent assignments at the same property.
+
+    Returns crew members who have worked at this property recently, sorted by frequency.
+    Helps admins quickly assign visits using the auto-assignment feature.
+    """
+    visit = db.query(Visit).options(joinedload(Visit.job)).filter(Visit.id == visit_id).first()
+    if not visit or not visit.job:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    property_id = visit.job.property_id
+    if not property_id:
+        return {"suggestions": []}
+
+    # Find other jobs at the same property from the past 90 days that have crew assignments
+    from sqlalchemy import and_, or_
+    recent_jobs = db.query(Job).filter(
+        and_(
+            Job.property_id == property_id,
+            Job.cleaner_ids.isnot(None),
+            Job.scheduled_date >= (date.today().isoformat()[:10] if isinstance(date.today(), date) else str(date.today())).replace('-', '-'),  # 90 days ago
+        )
+    ).limit(20).all()
+
+    # Count frequency of each cleaner
+    crew_freq = {}
+    for job in recent_jobs:
+        if job.cleaner_ids:
+            for cleaner_id in job.cleaner_ids:
+                crew_freq[cleaner_id] = crew_freq.get(cleaner_id, 0) + 1
+
+    # Sort by frequency
+    suggestions = sorted(crew_freq.items(), key=lambda x: x[1], reverse=True)
+
+    return {
+        "visit_id": visit_id,
+        "property_id": property_id,
+        "suggestions": [
+            {"cleaner_id": cid, "frequency": freq}
+            for cid, freq in suggestions[:5]  # Top 5 suggestions
+        ]
+    }
+
+
+@router.post("/{visit_id}/auto-assign", dependencies=[Depends(require_role("admin", "manager"))])
+def auto_assign_crew(visit_id: int, db: Session = Depends(get_db)):
+    """Automatically assign crew to a visit based on property history.
+
+    Finds the crew member who has most frequently worked at this property
+    and assigns them to this visit. If no history exists, unassigns.
+    """
+    visit = db.query(Visit).options(joinedload(Visit.job)).filter(Visit.id == visit_id).first()
+    if not visit or not visit.job:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    property_id = visit.job.property_id
+    if not property_id:
+        return {"status": "no_property", "message": "Visit has no associated property"}
+
+    # Find the most frequent crew member at this property
+    from sqlalchemy import and_
+    recent_jobs = db.query(Job).filter(
+        and_(
+            Job.property_id == property_id,
+            Job.cleaner_ids.isnot(None),
+        )
+    ).limit(30).all()
+
+    crew_freq = {}
+    for job in recent_jobs:
+        if job.cleaner_ids:
+            for cleaner_id in job.cleaner_ids:
+                crew_freq[cleaner_id] = crew_freq.get(cleaner_id, 0) + 1
+
+    if not crew_freq:
+        visit.cleaner_ids = []
+        db.commit()
+        return {"status": "no_history", "message": "No crew history for this property"}
+
+    # Assign the most frequent crew member
+    top_cleaner = max(crew_freq.items(), key=lambda x: x[1])[0]
+    visit.cleaner_ids = [top_cleaner]
+    db.commit()
+    db.refresh(visit)
+
+    return {
+        "status": "assigned",
+        "visit_id": visit.id,
+        "assigned_cleaner_id": top_cleaner,
+        "message": f"Auto-assigned based on property history (appeared {crew_freq[top_cleaner]} times)"
+    }
