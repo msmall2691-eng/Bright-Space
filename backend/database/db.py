@@ -37,6 +37,14 @@ def init_db():
     _backfill_conversations()
     # Auth: bootstrap admin user if env vars set
     _bootstrap_admin_user()
+    # PR 1: Backfill new data types (DATE, TIME instead of VARCHAR)
+    _migrate_data_types()
+    # PR 2: Backfill missing properties for orphaned jobs
+    _backfill_missing_properties()
+    # PR 4: Backfill Visits from existing Jobs (one visit per job)
+    _backfill_visits_from_jobs()
+    # Fix STR turnover dates (RFC 5545 DTEND exclusivity)
+    _fix_str_turnover_dates()
 
 
 def _run_migrations():
@@ -54,6 +62,20 @@ def _run_migrations():
     bool_col = "BOOLEAN DEFAULT FALSE" if is_pg else "INTEGER DEFAULT 0"
 
     migrations = [
+        # PR 1: Fix data types — VARCHAR dates become DATE, TIME, TIMESTAMPTZ
+        "ALTER TABLE jobs ADD COLUMN scheduled_date_new DATE",
+        "ALTER TABLE jobs ADD COLUMN start_time_new TIME",
+        "ALTER TABLE jobs ADD COLUMN end_time_new TIME",
+        "ALTER TABLE recurring_schedules ADD COLUMN start_time_new TIME",
+        "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
+        # PR 3: Quote traceability — track when client views quote
+        "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
+        # PR 4: Visits table (created by create_all, but ensure indexes)
+        # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
+        # PR 6: iCal feeds sync status tracking
+        "ALTER TABLE property_icals ADD COLUMN last_sync_status TEXT",
+        "ALTER TABLE property_icals ADD COLUMN last_sync_error TEXT",
+        "ALTER TABLE property_icals ADD COLUMN sync_retry_count INTEGER DEFAULT 0",
         "ALTER TABLE quotes ADD COLUMN intake_id INTEGER REFERENCES lead_intakes(id)",
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
         "ALTER TABLE quotes ADD COLUMN address TEXT",
@@ -146,12 +168,52 @@ def _run_migrations():
         "ALTER TABLE property_icals ADD COLUMN house_code TEXT",
         "ALTER TABLE property_icals ADD COLUMN access_links TEXT",
         "ALTER TABLE property_icals ADD COLUMN instructions TEXT",
+        # CRM cleanup: support commercial property fields and improve property data model
+        "ALTER TABLE properties ADD COLUMN business_name TEXT",
+        "ALTER TABLE properties ADD COLUMN hours_of_operation TEXT",
+        "ALTER TABLE properties ADD COLUMN default_crew_size INTEGER",
+        "ALTER TABLE properties ADD COLUMN access_notes TEXT",
+        "ALTER TABLE properties ADD COLUMN parking_notes TEXT",
+        "ALTER TABLE properties ADD COLUMN timezone TEXT",
+        # Schema redesign: site contact fields (different from billing client)
+        "ALTER TABLE properties ADD COLUMN site_contact_name TEXT",
+        "ALTER TABLE properties ADD COLUMN site_contact_phone TEXT",
+        "ALTER TABLE properties ADD COLUMN site_contact_email TEXT",
+        # Backfill NULL property_type values to 'residential'
+        "UPDATE properties SET property_type = 'residential' WHERE property_type IS NULL OR property_type = ''",
     ]
 
-    backfill_migrations = [
-        # Backfill existing biweekly schedules with interval_weeks=2
-        "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
-    ]
+    # Dialect-aware backfill migrations
+    if is_pg:
+        backfill_migrations = [
+            # PR 1: Drop old VARCHAR columns and rename new DATE/TIME columns
+            "ALTER TABLE jobs DROP COLUMN IF EXISTS scheduled_date CASCADE",
+            "ALTER TABLE jobs RENAME COLUMN scheduled_date_new TO scheduled_date",
+            "ALTER TABLE jobs DROP COLUMN IF EXISTS start_time CASCADE",
+            "ALTER TABLE jobs RENAME COLUMN start_time_new TO start_time",
+            "ALTER TABLE jobs DROP COLUMN IF EXISTS end_time CASCADE",
+            "ALTER TABLE jobs RENAME COLUMN end_time_new TO end_time",
+            "CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_date ON jobs(scheduled_date)",
+            "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS start_time CASCADE",
+            "ALTER TABLE recurring_schedules RENAME COLUMN start_time_new TO start_time",
+            "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS end_time CASCADE",
+            "ALTER TABLE recurring_schedules RENAME COLUMN end_time_new TO end_time",
+            # Backfill existing biweekly schedules with interval_weeks=2
+            "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
+        ]
+    else:
+        backfill_migrations = [
+            # PR 1: Drop old VARCHAR columns and rename new DATE/TIME columns (SQLite)
+            "ALTER TABLE jobs RENAME TO jobs_old",
+            "CREATE TABLE jobs AS SELECT id, client_id, quote_id, opportunity_id, job_type, property_id, recurring_schedule_id, ical_event_id, assigned_cleaner_user_id, calendar_invite_sent, sms_reminder_sent, gcal_event_id, title, scheduled_date_new as scheduled_date, start_time_new as start_time, end_time_new as end_time, address, cleaner_ids, status, notes, custom_fields, dispatched, connecteam_shift_ids, created_at, updated_at FROM jobs_old",
+            "DROP TABLE jobs_old",
+            "CREATE INDEX idx_jobs_scheduled_date ON jobs(scheduled_date)",
+            "CREATE TABLE recurring_schedules_new AS SELECT id, client_id, job_type, title, address, frequency, interval_weeks, day_of_week, days_of_week, day_of_month, start_time_new as start_time, end_time_new as end_time, cleaner_ids, quote_id, property_id, active, generate_weeks_ahead, starts_at, created_at FROM recurring_schedules",
+            "DROP TABLE recurring_schedules",
+            "ALTER TABLE recurring_schedules_new RENAME TO recurring_schedules",
+            # Backfill existing biweekly schedules with interval_weeks=2
+            "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
+        ]
 
     with engine.connect() as conn:
 
@@ -316,6 +378,343 @@ def _bootstrap_admin_user():
         db.close()
     except Exception as exc:
         logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
+
+
+def _backfill_visits_from_jobs():
+    """
+    PR 4: Backfill Visits table with one visit per existing Job.
+
+    Creates a Visit for each Job, inheriting the job's scheduled_date/times.
+    This allows the old Job-centric UI to keep working while we transition to
+    Visit-centric scheduling.
+
+    Idempotent — safe to run every boot.
+    """
+    from database.models import Job, Visit
+
+    db = SessionLocal()
+    try:
+        # Find jobs without corresponding visits
+        jobs_without_visits = db.query(Job).filter(~Job.visits.any()).all()
+
+        if not jobs_without_visits:
+            db.close()
+            return
+
+        created_visits = 0
+        for job in jobs_without_visits:
+            try:
+                # Skip if job has no scheduled_date
+                if not job.scheduled_date:
+                    continue
+
+                visit = Visit(
+                    job_id=job.id,
+                    scheduled_date=job.scheduled_date,
+                    start_time=job.start_time,
+                    end_time=job.end_time,
+                    status=job.status,  # inherit job status
+                    cleaner_ids=job.cleaner_ids or [],
+                    gcal_event_id=job.gcal_event_id,
+                    # iCal fields
+                    ical_source=None,
+                    ical_uid=None,
+                    # Completion fields
+                    completed_at=None,
+                    notes=job.notes,
+                )
+                db.add(visit)
+                created_visits += 1
+            except Exception as e:
+                logger.warning(f"[backfill_visits] Error creating visit for job {job.id}: {e}")
+
+        if created_visits > 0:
+            db.commit()
+            logger.info(f"[backfill_visits] Created {created_visits} visits from existing jobs")
+
+    except Exception as exc:
+        logger.warning(f"[backfill_visits] Error during backfill: {exc}")
+    finally:
+        db.close()
+
+
+def _backfill_missing_properties():
+    """
+    PR 2: Backfill property_id for orphaned jobs.
+
+    For jobs without property_id but with an address:
+    1. Auto-create a Property for each unique (client_id, address, job_type) combo
+    2. Link the job to the new property
+    3. Use address first line as property name
+
+    Idempotent — safe to run every boot.
+    """
+    from database.models import Job, Property, Client
+
+    db = SessionLocal()
+    try:
+        # Find jobs with address but no property_id
+        orphan_jobs = db.query(Job).filter(
+            Job.property_id.is_(None),
+            Job.address.isnot(None),
+            Job.address != ""
+        ).all()
+
+        if not orphan_jobs:
+            db.close()
+            return
+
+        logger.info(f"[backfill_missing_properties] Found {len(orphan_jobs)} jobs without property_id")
+
+        created_props = 0
+        linked_jobs = 0
+
+        for job in orphan_jobs:
+            try:
+                client = db.query(Client).filter(Client.id == job.client_id).first()
+                if not client:
+                    logger.warning(f"[backfill_missing_properties] Job {job.id} has no client, skipping")
+                    continue
+
+                # Extract first line of address as property name
+                address_line = job.address.split("\n")[0] if job.address else f"Job {job.id}"
+
+                # Check if property already exists for this client/address/type combo
+                existing_prop = db.query(Property).filter(
+                    Property.client_id == job.client_id,
+                    Property.address == address_line
+                ).first()
+
+                if existing_prop:
+                    job.property_id = existing_prop.id
+                    linked_jobs += 1
+                else:
+                    # Infer property type from job type
+                    property_type = "residential"
+                    if job.job_type == "str_turnover":
+                        property_type = "str"
+                    elif job.job_type == "commercial":
+                        property_type = "commercial"
+
+                    # Create new property
+                    prop = Property(
+                        client_id=job.client_id,
+                        name=address_line,
+                        address=address_line,
+                        property_type=property_type,
+                    )
+                    db.add(prop)
+                    db.flush()
+                    job.property_id = prop.id
+                    created_props += 1
+                    linked_jobs += 1
+            except Exception as e:
+                logger.warning(f"[backfill_missing_properties] Error processing job {job.id}: {e}")
+
+        if created_props > 0 or linked_jobs > 0:
+            db.commit()
+            logger.info(f"[backfill_missing_properties] Created {created_props} properties, linked {linked_jobs} jobs")
+
+    except Exception as exc:
+        logger.warning(f"[backfill_missing_properties] Error during backfill: {exc}")
+    finally:
+        db.close()
+
+
+def _migrate_data_types():
+    """
+    Backfill new data type columns (DATE, TIME) from old VARCHAR columns.
+
+    This migration:
+    1. Converts jobs.scheduled_date (VARCHAR) to DATE
+    2. Converts jobs/recurring_schedules start_time/end_time (VARCHAR) to TIME
+    3. Once backfilled, the old columns will be dropped and new ones renamed
+
+    Idempotent — safe to run every boot.
+    """
+    from database.models import Job, RecurringSchedule
+    from datetime import datetime, time
+
+    db = SessionLocal()
+    try:
+        # Backfill jobs.scheduled_date_new from jobs.scheduled_date
+        jobs_to_migrate = db.query(Job).filter(Job.scheduled_date_new.is_(None)).all()
+        migrated_jobs = 0
+        for job in jobs_to_migrate:
+            if job.scheduled_date:
+                try:
+                    # Parse YYYY-MM-DD string to date
+                    date_obj = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                    job.scheduled_date_new = date_obj
+                    migrated_jobs += 1
+                except (ValueError, TypeError):
+                    logger.warning(f"[migrate_data_types] Could not parse job {job.id} scheduled_date: {job.scheduled_date}")
+
+        if migrated_jobs > 0:
+            db.commit()
+            logger.info(f"[migrate_data_types] Migrated {migrated_jobs} job scheduled_dates to DATE type")
+
+        # Backfill jobs.start_time_new / end_time_new
+        jobs_time_to_migrate = db.query(Job).filter(Job.start_time_new.is_(None)).all()
+        migrated_times = 0
+        for job in jobs_time_to_migrate:
+            try:
+                if job.start_time:
+                    start = datetime.strptime(job.start_time, "%H:%M").time()
+                    job.start_time_new = start
+                if job.end_time:
+                    end = datetime.strptime(job.end_time, "%H:%M").time()
+                    job.end_time_new = end
+                migrated_times += 1
+            except (ValueError, TypeError):
+                logger.warning(f"[migrate_data_types] Could not parse job {job.id} times: {job.start_time}/{job.end_time}")
+
+        if migrated_times > 0:
+            db.commit()
+            logger.info(f"[migrate_data_types] Migrated {migrated_times} job times to TIME type")
+
+        # Backfill recurring_schedules times
+        recurring_to_migrate = db.query(RecurringSchedule).filter(RecurringSchedule.start_time_new.is_(None)).all()
+        migrated_recurring = 0
+        for sched in recurring_to_migrate:
+            try:
+                if sched.start_time:
+                    start = datetime.strptime(sched.start_time, "%H:%M").time()
+                    sched.start_time_new = start
+                if sched.end_time:
+                    end = datetime.strptime(sched.end_time, "%H:%M").time()
+                    sched.end_time_new = end
+                migrated_recurring += 1
+            except (ValueError, TypeError):
+                logger.warning(f"[migrate_data_types] Could not parse recurring {sched.id} times: {sched.start_time}/{sched.end_time}")
+
+        if migrated_recurring > 0:
+            db.commit()
+            logger.info(f"[migrate_data_types] Migrated {migrated_recurring} recurring schedule times to TIME type")
+
+    except Exception as exc:
+        logger.warning(f"[migrate_data_types] Error during migration: {exc}")
+    finally:
+        db.close()
+
+
+def _fix_str_turnover_dates():
+    """
+    Fix STR turnover dates to account for RFC 5545 DTEND exclusivity.
+
+    This is a Python-based migration (not SQL) because scheduled_date is stored
+    as a string. It's idempotent - safe to run on every boot.
+    """
+    from database.models import Job, ICalEvent
+    from datetime import datetime, timedelta
+
+    db = SessionLocal()
+    try:
+        # Fix Job scheduled_dates for STR turnovers
+        jobs = db.query(Job).filter(
+            Job.job_type == "str_turnover",
+            Job.status.in_(["scheduled", "dispatched"])
+        ).all()
+
+        fixed_jobs = 0
+        for job in jobs:
+            try:
+                # Parse the date string and subtract 1 day
+                job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                # Only fix if it looks like it hasn't been fixed (heuristic: if it's in the future relative to today+1)
+                # Actually, let's check if there's a corresponding iCal event with a different date
+                if job_date:
+                    # For now, we'll check the raw_event to see if adjustment is needed
+                    # This is safer than blindly subtracting 1 day from all
+                    ical_event = db.query(ICalEvent).filter(ICalEvent.job_id == job.id).first()
+                    if ical_event and ical_event.checkout_date:
+                        try:
+                            ical_date = datetime.strptime(ical_event.checkout_date, "%Y-%m-%d").date()
+                            # If job date is 1 day after iCal date, fix it
+                            if job_date == ical_date + timedelta(days=1):
+                                job.scheduled_date = ical_date.isoformat()
+                                fixed_jobs += 1
+                        except ValueError:
+                            pass
+            except ValueError:
+                # Skip if date parsing fails
+                pass
+
+        if fixed_jobs > 0:
+            db.commit()
+            logger.info(f"[fix_str_turnover_dates] Fixed {fixed_jobs} job dates")
+
+        # Fix ICalEvent checkout_dates
+        ical_events = db.query(ICalEvent).filter(
+            ICalEvent.event_type == "reservation"
+        ).all()
+
+        fixed_events = 0
+        for event in ical_events:
+            try:
+                event_date = datetime.strptime(event.checkout_date, "%Y-%m-%d").date()
+                # Check raw_event to see original DTEND
+                # For now, mark as fixed if job is already linked and has correct date
+                if event.job_id:
+                    job = db.query(Job).filter(Job.id == event.job_id).first()
+                    if job and job.scheduled_date:
+                        job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                        # If event date is 1 day after job date, event needs fixing
+                        if event_date == job_date + timedelta(days=1):
+                            event.checkout_date = job_date.isoformat()
+                            fixed_events += 1
+            except ValueError:
+                pass
+
+        if fixed_events > 0:
+            db.commit()
+            logger.info(f"[fix_str_turnover_dates] Fixed {fixed_events} iCal event dates")
+
+    except Exception as exc:
+        logger.warning(f"[fix_str_turnover_dates] Error during fix: {exc}")
+    finally:
+        db.close()
+
+
+def update_ical_feed_status(
+    property_ical_id: int,
+    status: str,
+    error_message: str = None,
+):
+    """
+    Update sync status for an iCal feed.
+
+    Args:
+        property_ical_id: ID of the PropertyIcal record
+        status: 'ok', 'failed', 'retrying', or 'paused'
+        error_message: Optional error details for 'failed' status
+    """
+    from database.models import PropertyIcal
+    from datetime import datetime
+
+    db = SessionLocal()
+    try:
+        feed = db.query(PropertyIcal).filter(PropertyIcal.id == property_ical_id).first()
+        if not feed:
+            logger.warning(f"[update_ical_feed_status] Feed {property_ical_id} not found")
+            return
+
+        feed.last_sync_status = status
+        feed.last_synced_at = datetime.utcnow()
+
+        if status == "failed":
+            feed.last_sync_error = error_message
+            feed.sync_retry_count = (feed.sync_retry_count or 0) + 1
+        elif status == "ok":
+            feed.last_sync_error = None
+            feed.sync_retry_count = 0
+
+        db.commit()
+        logger.info(f"[update_ical_feed_status] Feed {property_ical_id} → {status}")
+    except Exception as e:
+        logger.warning(f"[update_ical_feed_status] Error updating feed {property_ical_id}: {e}")
+    finally:
+        db.close()
 
 
 def get_db():

@@ -3,11 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, time
+from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import Job, Client, Visit
 from modules.auth.router import get_current_user, require_role
+from utils.activity_logger import (
+    log_job_created, log_job_status_change, log_calendar_event
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -124,6 +128,10 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job)
 
+    # Log to unified activity timeline
+    log_job_created(db, job)
+    db.commit()
+
     # Create primary Visit for this job (dual-write pattern)
     try:
         visit = Visit(
@@ -133,6 +141,8 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
             end_time=job.end_time,
             status=job.status or "scheduled",
             cleaner_ids=job.cleaner_ids or [],
+            gcal_event_id=job.gcal_event_id,
+            notes=job.notes,
         )
         db.add(visit)
         db.commit()
@@ -156,6 +166,13 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
             job.gcal_event_id = event_id
             db.commit()
             db.refresh(job)
+            log_calendar_event(
+                db, "created",
+                client_id=job.client_id, job_id=job.id,
+                title=job.title, gcal_event_id=event_id,
+                scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+            )
+            db.commit()
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
     return job_to_dict(job)
@@ -228,10 +245,15 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    prev_status = job.status
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
+    # Log status transitions to the unified timeline
+    if job.status != prev_status:
+        log_job_status_change(db, job, prev_status)
+        db.commit()
     # Sync update to Google Calendar if event exists
     if job.gcal_event_id:
         try:
@@ -255,6 +277,13 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    # Log to timeline before delete (FK rows are detached when job goes away,
+    # but the activity row's job_id link still survives via the column value).
+    log_calendar_event(
+        db, "cancelled",
+        client_id=job.client_id, job_id=job.id,
+        title=job.title, gcal_event_id=job.gcal_event_id,
+    )
     # Remove from Google Calendar if event exists
     if job.gcal_event_id:
         try:
@@ -374,3 +403,187 @@ def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
 
     from modules.invoicing.router import invoice_to_dict
     return invoice_to_dict(invoice)
+
+
+@router.post("/admin/rehydrate-job-dates-from-gcal", dependencies=[Depends(require_role("admin", "manager"))])
+def rehydrate_job_dates_from_gcal(
+    dry_run: bool = False,
+    limit: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Admin endpoint that rehydrates nulled date fields on jobs by reading
+    authoritative data from Google Calendar.
+
+    Every job with scheduled_date=NULL but gcal_event_id set will be updated
+    with the correct dates from the corresponding GCal event.
+
+    Query params:
+    - dry_run=true: returns what WOULD change without writing
+    - limit=N: test on first N jobs (useful for verification before full run)
+    """
+    from integrations.google_calendar import _get_service, _calendar_id
+
+    try:
+        service = _get_service()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=f"Google Calendar not configured: {e}")
+
+    tz = ZoneInfo("America/New_York")
+
+    # Find all jobs with NULL scheduled_date but valid gcal_event_id
+    query = db.query(Job).filter(
+        Job.scheduled_date.is_(None),
+        Job.gcal_event_id.isnot(None),
+    )
+
+    if limit:
+        query = query.limit(limit)
+
+    jobs_to_check = query.all()
+    total_checked = len(jobs_to_check)
+
+    updated_count = 0
+    skipped_already_populated = 0
+    skipped_no_gcal_id = 0
+    errors = []
+    sample_updates = []
+
+    logger.info(f"[Rehydrate] Starting: {total_checked} jobs to check")
+
+    for idx, job in enumerate(jobs_to_check):
+        try:
+            # Skip if already populated
+            if job.scheduled_date is not None:
+                skipped_already_populated += 1
+                continue
+
+            if not job.gcal_event_id:
+                skipped_no_gcal_id += 1
+                continue
+
+            # Log progress every 10 jobs
+            if (idx + 1) % 10 == 0:
+                logger.info(f"[Rehydrate] Progress: {idx + 1}/{total_checked} checked")
+
+            # Fetch the event from GCal
+            # Note: gcal_event_id can be a recurring instance ID like "id_20260407T130000Z"
+            cal_id = _calendar_id(job.job_type or "residential")
+            event = service.events().get(
+                calendarId=cal_id,
+                eventId=job.gcal_event_id,
+            ).execute()
+
+            # Extract date/time information
+            start_info = event.get("start", {})
+            end_info = event.get("end", {})
+
+            # Determine if it's a timed event or all-day event
+            if "dateTime" in start_info:
+                # Timed event: parse dateTime (UTC format like "2026-04-07T13:00:00Z")
+                start_dt = datetime.fromisoformat(start_info["dateTime"].replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_info["dateTime"].replace("Z", "+00:00"))
+
+                # Convert to local timezone
+                start_local = start_dt.astimezone(tz)
+                end_local = end_dt.astimezone(tz)
+
+                new_date = start_local.date()
+                new_start_time = start_local.time()
+                new_end_time = end_local.time()
+                source = "gcal_instance"
+            else:
+                # All-day event: parse date (format like "2026-04-07")
+                date_str = start_info.get("date")
+                if date_str:
+                    new_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    new_start_time = time(9, 0, 0)  # Default to 9am-5pm
+                    new_end_time = time(17, 0, 0)
+                    source = "gcal_all_day"
+                else:
+                    # Fallback: try to parse from event ID if it's a recurring instance
+                    if "_" in job.gcal_event_id:
+                        try:
+                            parts = job.gcal_event_id.split("_")
+                            timestamp_str = parts[-1]  # "20260407T130000Z"
+                            dt_utc = datetime.strptime(timestamp_str, "%Y%m%dT%H%M%SZ").replace(tzinfo=pytz.UTC)
+                            dt_local = dt_utc.astimezone(tz)
+                            new_date = dt_local.date()
+                            new_start_time = dt_local.time()
+                            new_end_time = time(17, 0, 0)  # Assume same-day 5pm end
+                            source = "parsed_from_id"
+                        except Exception as parse_err:
+                            logger.warning(f"[Rehydrate] Could not parse event ID {job.gcal_event_id}: {parse_err}")
+                            errors.append({
+                                "job_id": job.id,
+                                "gcal_event_id": job.gcal_event_id,
+                                "error": f"Could not extract date/time: {str(parse_err)}"
+                            })
+                            continue
+                    else:
+                        logger.warning(f"[Rehydrate] Event {job.gcal_event_id} has no dateTime or date")
+                        errors.append({
+                            "job_id": job.id,
+                            "gcal_event_id": job.gcal_event_id,
+                            "error": "Event has no dateTime or date field"
+                        })
+                        continue
+
+            # If dry_run, just collect samples
+            if dry_run:
+                if len(sample_updates) < 5:
+                    sample_updates.append({
+                        "job_id": job.id,
+                        "scheduled_date": str(new_date),
+                        "start_time": str(new_start_time),
+                        "end_time": str(new_end_time),
+                        "source": source,
+                    })
+                updated_count += 1
+            else:
+                # Update the job
+                job.scheduled_date = str(new_date)
+                job.start_time = str(new_start_time)
+                job.end_time = str(new_end_time)
+                db.add(job)
+                updated_count += 1
+
+                if len(sample_updates) < 5:
+                    sample_updates.append({
+                        "job_id": job.id,
+                        "scheduled_date": str(new_date),
+                        "start_time": str(new_start_time),
+                        "end_time": str(new_end_time),
+                        "source": source,
+                    })
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.warning(f"[Rehydrate] Job {job.id}: {error_msg}")
+            errors.append({
+                "job_id": job.id,
+                "gcal_event_id": job.gcal_event_id or "unknown",
+                "error": error_msg,
+            })
+
+    # Commit all updates at once (unless dry_run)
+    if not dry_run and updated_count > 0:
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[Rehydrate] Commit failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Database commit failed: {e}")
+
+    logger.info(f"[Rehydrate] Complete: updated={updated_count}, skipped_already_populated={skipped_already_populated}, skipped_no_gcal_id={skipped_no_gcal_id}, errors={len(errors)}")
+
+    return {
+        "total_jobs_checked": total_checked,
+        "updated": updated_count,
+        "skipped_already_populated": skipped_already_populated,
+        "skipped_no_gcal_id": skipped_no_gcal_id,
+        "errors": errors,
+        "dry_run": dry_run,
+        "sample_updates": sample_updates,
+    }
+

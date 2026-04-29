@@ -74,22 +74,22 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
-      <div className="w-full sm:w-full max-w-2xl bg-white rounded-none sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col">
+      <div className="w-full sm:w-full max-w-2xl bg-white rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
         {/* Header */}
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-6 text-white">
-          <h2 className="text-2xl font-bold">Edit Job</h2>
-          <button onClick={onClose} className="p-1 hover:bg-blue-400 rounded transition-colors">
-            <X className="w-6 h-6" />
+        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
+          <h2 className="text-xl sm:text-2xl font-bold">Edit Job</h2>
+          <button onClick={onClose} className="p-2 sm:p-1 hover:bg-blue-400 rounded transition-colors -mr-2 sm:mr-0">
+            <X className="w-5 sm:w-6 h-5 sm:h-6" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto flex-1 p-6 space-y-6">
+        <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-6">
           {/* Job Info */}
           <div>
-            <h3 className="text-sm font-semibold text-neutral-600 uppercase mb-2">Job</h3>
-            <p className="text-lg font-semibold text-neutral-900">{job?.title}</p>
-            <p className="text-sm text-neutral-500">{job?.scheduled_date} • {job?.start_time?.slice(0, 5)} - {job?.end_time?.slice(0, 5)}</p>
+            <h3 className="text-xs font-semibold text-neutral-600 uppercase mb-2">Job</h3>
+            <p className="text-base sm:text-lg font-semibold text-neutral-900">{job?.title}</p>
+            <p className="text-xs sm:text-sm text-neutral-500">{job?.scheduled_date} • {job?.start_time?.slice(0, 5)} - {job?.end_time?.slice(0, 5)}</p>
           </div>
 
           {/* Property Picker */}
@@ -100,7 +100,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             <select
               value={formData.property_id}
               onChange={handlePropertyChange}
-              className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 sm:py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
             >
               <option value="">Select a property...</option>
               {properties.map(p => (
@@ -127,12 +127,12 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             {assignedCleaners.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {assignedCleaners.map(cleaner => (
-                  <div key={cleaner.id} className="flex items-center gap-2 bg-green-100 text-green-700 px-3 py-2 rounded-full text-sm">
-                    <Check className="w-4 h-4" />
-                    {cleaner.name}
+                  <div key={cleaner.id} className="flex items-center gap-2 bg-green-100 text-green-700 px-3 py-2 sm:py-2 rounded-full text-xs sm:text-sm">
+                    <Check className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="truncate">{cleaner.name}</span>
                     <button
                       onClick={() => handleRemoveCleaner(cleaner.id)}
-                      className="ml-1 hover:bg-green-200 rounded-full p-0.5"
+                      className="ml-1 hover:bg-green-200 rounded-full p-0.5 -mr-1"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -152,19 +152,19 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                     value={cleanerSearch}
                     onChange={(e) => setCleanerSearch(e.target.value)}
                     onFocus={() => setShowCleanerDropdown(true)}
-                    className="w-full pl-10 pr-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                   />
                 </div>
               </div>
 
               {/* Dropdown */}
               {showCleanerDropdown && filteredCleaners.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-300 rounded-lg shadow-lg z-10">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-300 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
                   {filteredCleaners.map(cleaner => (
                     <button
                       key={cleaner.id}
                       onClick={() => handleAddCleaner(cleaner.id)}
-                      className="w-full text-left px-4 py-2 hover:bg-blue-50 text-neutral-900 text-sm transition-colors first:rounded-t-lg last:rounded-b-lg"
+                      className="w-full text-left px-4 py-3 hover:bg-blue-50 text-neutral-900 text-sm transition-colors first:rounded-t-lg last:rounded-b-lg active:bg-blue-100"
                     >
                       {cleaner.name}
                     </button>
@@ -189,16 +189,16 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
               placeholder="Add any notes about this job..."
               rows={3}
-              className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-base"
             />
           </div>
 
           {/* Dispatch Status Indicator */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${job?.dispatched ? 'bg-green-500' : 'bg-neutral-400'}`} />
-              <div>
-                <p className="text-sm font-semibold text-neutral-900">
+              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${job?.dispatched ? 'bg-green-500' : 'bg-neutral-400'}`} />
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-semibold text-neutral-900">
                   {job?.dispatched ? '✅ Dispatched' : '⏳ Not Dispatched'}
                 </p>
                 <p className="text-xs text-neutral-600">
@@ -216,11 +216,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         </div>
 
         {/* Footer */}
-        <div className="border-t border-neutral-200 bg-neutral-50 p-6 flex gap-3 justify-end">
-          <Button variant="secondary" onClick={onClose}>
+        <div className="border-t border-neutral-200 bg-neutral-50 p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
+          <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={saving}>
+          <Button variant="primary" onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>

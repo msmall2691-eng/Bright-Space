@@ -1,6 +1,6 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Text,
-    JSON, ForeignKey, Boolean, UniqueConstraint, Enum as SQLEnum
+    Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
+    JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
@@ -163,29 +163,43 @@ class Client(Base):
 
 
 class Property(Base):
-    """An STR property belonging to a client — has iCal feed URL(s)."""
+    """A property (residential, commercial, or STR) belonging to a client."""
     __tablename__ = "properties"
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
 
-    name = Column(String, nullable=False)           # "Ocean View Condo"
+    name = Column(String, nullable=False)           # "4 Red Barn Circle" (address, not service description)
     address = Column(String, nullable=False)
     city = Column(String)
     state = Column(String)
     zip_code = Column(String)
-    property_type = Column(String, default="str")   # "str" for now
+    property_type = Column(String, default="residential")   # "residential" | "commercial" | "str"
 
     ical_url = Column(String, nullable=True)        # Legacy: single iCal (backward compat)
     ical_last_synced_at = Column(DateTime, nullable=True)
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
+    default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs
 
-    # STR property specific fields
+    access_notes = Column(Text, nullable=True)      # "Side door, lockbox 4251"
+    parking_notes = Column(Text, nullable=True)     # Parking information
+    notes = Column(Text, nullable=True)
+
+    # STR property specific fields (NULL for residential/commercial)
     check_in_time = Column(String(5), nullable=True)   # "14:00" format
     check_out_time = Column(String(5), nullable=True)  # "10:00" format
     house_code = Column(String(255), nullable=True)    # Access code or combination
+    timezone = Column(String, nullable=True)           # Property timezone for STR
 
-    notes = Column(Text, nullable=True)
+    # Commercial property specific fields (NULL for residential/str)
+    business_name = Column(String, nullable=True)      # If different from Client.name
+    hours_of_operation = Column(Text, nullable=True)   # Hours as text or JSON
+
+    # Onsite contact (different from billing client)
+    site_contact_name = Column(String, nullable=True)
+    site_contact_phone = Column(String, nullable=True)
+    site_contact_email = Column(String, nullable=True)
+
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -212,7 +226,12 @@ class PropertyIcal(Base):
     access_links = Column(JSON, nullable=True)        # {"airbnb_link": "...", "vrbo_link": "..."} or similar
     instructions = Column(Text, nullable=True)        # Special turnover instructions
 
+    # PR 6: Sync status — per-feed observability
     last_synced_at = Column(DateTime, nullable=True)
+    last_sync_status = Column(String, nullable=True)  # 'ok', 'failed', 'retrying', 'paused'
+    last_sync_error = Column(Text, nullable=True)     # Error message from last failed sync
+    sync_retry_count = Column(Integer, default=0)     # How many times we've retried after failure
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     property = relationship("Property", back_populates="property_icals")
@@ -261,8 +280,8 @@ class RecurringSchedule(Base):
     days_of_week = Column(JSON, nullable=True)      # [0,2,4] for Mon/Wed/Fri multi-day
     day_of_month = Column(Integer, nullable=True)   # 1–28, only for monthly
 
-    start_time = Column(String, nullable=False)     # HH:MM
-    end_time = Column(String, nullable=False)       # HH:MM
+    start_time = Column(Time, nullable=False)       # HH:MM:SS
+    end_time = Column(Time, nullable=False)         # HH:MM:SS
 
     cleaner_ids = Column(JSON, default=list)
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
@@ -290,7 +309,7 @@ class Job(Base):
     # "residential" | "commercial" | "str_turnover"
 
     # Links — only set for the relevant type
-    property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property
     recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True)
     ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True)
     assigned_cleaner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Future: replace cleaner_ids JSON
@@ -301,9 +320,9 @@ class Job(Base):
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
 
     title = Column(String, nullable=False)
-    scheduled_date = Column(String)     # YYYY-MM-DD
-    start_time = Column(String)         # HH:MM
-    end_time = Column(String)           # HH:MM
+    scheduled_date = Column(Date)       # ISO date
+    start_time = Column(Time)           # HH:MM:SS
+    end_time = Column(Time)             # HH:MM:SS
     address = Column(String)
     cleaner_ids = Column(JSON, default=list)
     status = Column(String, default="scheduled")
@@ -326,42 +345,62 @@ class Job(Base):
     assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
     visits = relationship("Visit", back_populates="job", cascade="all, delete-orphan")
 
+    __table_args__ = (
+        Index("idx_job_property_date", property_id, scheduled_date),
+        Index("idx_job_client_status", client_id, status),
+        Index("idx_job_scheduled_date_status", scheduled_date, status),
+    )
+
 
 class Visit(Base):
-    """Individual occurrence of a job visit (one per job, or multiple for recurring jobs)."""
+    """A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
     __tablename__ = "visits"
 
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    id = Column(BigInteger, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
 
-    # Schedule details (inherited from Job but can be overridden per visit)
-    scheduled_date = Column(String)     # YYYY-MM-DD
-    start_time = Column(String)         # HH:MM
-    end_time = Column(String)           # HH:MM
-    status = Column(String, default="scheduled")
-    # "scheduled" | "in_progress" | "completed" | "cancelled"
+    # When is this visit scheduled?
+    scheduled_date = Column(Date, nullable=False, index=True)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
 
-    # Assignment
-    cleaner_ids = Column(JSON, default=list)
+    # Who is assigned?
+    cleaner_ids = Column(JSON, default=list)  # [user_id, ...] for backcompat; will migrate to dedicated assignment table later
 
-    # Calendar integrations
+    # Visit lifecycle
+    status = Column(String, nullable=False, default="scheduled")
+    # scheduled | dispatched | en_route | in_progress | completed | no_show | cancelled
+
+    # iCal source (for STR turnovers)
+    ical_source = Column(String, nullable=True)  # "airbnb", "vrbo", "hospitable", etc.
+    ical_uid = Column(String, nullable=True, index=True)  # RFC 5545 UID for idempotency
+    ical_synced_at = Column(DateTime, nullable=True)  # When this visit was imported from iCal
+
+    # GCal integration
     gcal_event_id = Column(String, nullable=True)
-    ical_source = Column(String, nullable=True)  # "airbnb", "vrbo", "manual"
-    ical_uid = Column(String, nullable=True)     # RFC 5545 UID for idempotency
-
-    # Checklist
-    checklist_results = Column(JSON, nullable=True)
 
     # Completion tracking
     completed_at = Column(DateTime, nullable=True)
-    completed_by = Column(String, nullable=True)
-    photos = Column(JSON, nullable=True)  # List of photo URLs
-    notes = Column(Text, nullable=True)
+    completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Which user marked it complete
+    notes = Column(Text)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Photos, checklist (structured data)
+    checklist_results = Column(JSON, nullable=True)  # {"task_id": "done"/"skipped"/"failed", ...}
+    photos = Column(JSON, default=list)  # [{"url": "...", "timestamp": "...", "label": "before"}, ...]
 
-    job = relationship("Job", back_populates="visits", foreign_keys=[job_id])
+    # Audit trail
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("ical_source", "ical_uid", name="uq_visit_ical_source_uid"),  # iCal idempotency
+        Index("idx_visit_scheduled_date_status", scheduled_date, status),
+        Index("idx_visit_job_date", job_id, scheduled_date),
+    )
+
+    job = relationship("Job", back_populates="visits")
+    completed_by_user = relationship("User", foreign_keys=[completed_by], uselist=False)
 
 
 class LeadIntake(Base):
@@ -423,11 +462,12 @@ class Quote(Base):
     tax_rate = Column(Float, default=0)
     tax = Column(Float, default=0)
     total = Column(Float, default=0)
-    status = Column(String, default="draft")  # draft | sent | accepted | rejected | expired
+    status = Column(String, default="draft")  # draft | sent | viewed | accepted | declined | expired | converted
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
     valid_until = Column(String)
     public_token = Column(String(48), nullable=True, index=True)  # Token for public accept link
+    viewed_at = Column(DateTime, nullable=True)  # Timestamp when quote was first viewed by client
     accepted_at = Column(DateTime, nullable=True)  # Timestamp when quote was accepted
     accepted_ip = Column(String, nullable=True)  # IP address of acceptor (audit trail)
     created_at = Column(DateTime, default=datetime.utcnow)

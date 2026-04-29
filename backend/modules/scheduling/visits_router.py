@@ -8,6 +8,7 @@ from datetime import datetime, date, time, timezone
 from database.db import get_db
 from database.models import Visit, Job, Client, Property
 from modules.auth.router import get_current_user, require_role
+from utils.activity_logger import log_visit_skipped
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -126,6 +127,30 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
     }
 
 
+@router.get("/debug/all", dependencies=[Depends(require_role("admin", "manager"))])
+def debug_all_visits(db: Session = Depends(get_db)):
+    """DEBUG: Return ALL visits in database (no filters) to diagnose issues."""
+    all_visits = db.query(Visit).options(
+        joinedload(Visit.job).joinedload(Job.client),
+        joinedload(Visit.job).joinedload(Job.property)
+    ).all()
+
+    return {
+        "total_visits": len(all_visits),
+        "visits": [
+            {
+                "id": v.id,
+                "job_id": v.job_id,
+                "scheduled_date": str(v.scheduled_date) if v.scheduled_date else None,
+                "start_time": str(v.start_time) if v.start_time else None,
+                "status": v.status,
+                "job_title": v.job.title if v.job else None,
+            }
+            for v in all_visits
+        ]
+    }
+
+
 @router.get("/admin/coverage-check", dependencies=[Depends(require_role("admin", "manager"))])
 def check_visits_coverage(db: Session = Depends(get_db)):
     """Check if all jobs have corresponding visits."""
@@ -194,6 +219,8 @@ def backfill_visits_from_jobs(db: Session = Depends(get_db)):
                 end_time=job.end_time,
                 status=job.status or "scheduled",
                 cleaner_ids=job.cleaner_ids or [],
+                gcal_event_id=job.gcal_event_id,
+                notes=job.notes,
             )
             db.add(visit)
             created_count += 1
@@ -223,9 +250,11 @@ def get_visits(
     status: Optional[str] = None,
     property_type: Optional[str] = None,
     job_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_db),
 ):
-    """Get visits with date range and optional filters."""
+    """Get visits with date range and optional filters. Paginated for performance."""
     q = db.query(Visit).options(
         joinedload(Visit.job).joinedload(Job.client),
         joinedload(Visit.job).joinedload(Job.property)
@@ -240,21 +269,30 @@ def get_visits(
     if job_id:
         q = q.filter(Visit.job_id == job_id)
 
-    # Filter by property_type if provided
+    # Apply pagination BEFORE executing the query
+    total_count = q.count()
+    visits = q.order_by(Visit.scheduled_date, Visit.start_time).limit(limit).offset(offset).all()
+
+    # Filter by property_type in Python after loading (post-processing)
+    # This avoids join complexity and works with already-loaded relationships
     if property_type and property_type != "all":
-        q = q.join(Job).join(Property).filter(Property.property_type == property_type)
+        visits = [v for v in visits if v.job and v.job.property and v.job.property.property_type == property_type]
+        total_count = len(visits)  # Recalculate total after Python filter
 
-    visits = q.order_by(Visit.scheduled_date, Visit.start_time).all()
-
-    return [
-        visit_to_dict(
-            v,
-            job=v.job if hasattr(v, "job") else None,
-            client=v.job.client if hasattr(v, "job") and hasattr(v.job, "client") else None,
-            property_obj=v.job.property if hasattr(v, "job") and hasattr(v.job, "property") else None,
-        )
-        for v in visits
-    ]
+    return {
+        "items": [
+            visit_to_dict(
+                v,
+                job=v.job if hasattr(v, "job") else None,
+                client=v.job.client if hasattr(v, "job") and hasattr(v.job, "client") else None,
+                property_obj=v.job.property if hasattr(v, "job") and hasattr(v.job, "property") else None,
+            )
+            for v in visits
+        ],
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.post("", status_code=201, response_model=VisitRead, dependencies=[Depends(require_role("admin", "manager"))])
@@ -342,3 +380,35 @@ def delete_visit(visit_id: int, db: Session = Depends(get_db)):
 
     db.delete(visit)
     db.commit()
+
+
+@router.post("/{visit_id}/skip", dependencies=[Depends(require_role("admin", "manager"))])
+def skip_visit(visit_id: int, reason: Optional[str] = None, db: Session = Depends(get_db)):
+    """Cancel a single visit occurrence without affecting the recurring schedule.
+
+    This is the "skip just next Tuesday" action — the visit is marked cancelled,
+    its parent Job is cancelled, but the RecurringSchedule keeps running so future
+    occurrences continue to be generated.
+    """
+    visit = db.query(Visit).options(joinedload(Visit.job)).filter(Visit.id == visit_id).first()
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    visit.status = "cancelled"
+    if reason:
+        visit.notes = (visit.notes or "") + f"\n[Skipped: {reason}]"
+
+    # Cancel the parent Job for this single occurrence too — without touching
+    # the RecurringSchedule, so future visits still generate normally.
+    if visit.job:
+        visit.job.status = "cancelled"
+
+    log_visit_skipped(db, visit, reason=reason)
+    db.commit()
+    db.refresh(visit)
+    return {
+        "id": visit.id,
+        "status": visit.status,
+        "job_status": visit.job.status if visit.job else None,
+        "message": "Visit skipped — recurring schedule unchanged"
+    }

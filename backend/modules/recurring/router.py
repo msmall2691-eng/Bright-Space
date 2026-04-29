@@ -8,7 +8,8 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 from database.db import get_db
-from database.models import RecurringSchedule, Job
+from database.models import RecurringSchedule, Job, Visit
+from utils.activity_logger import log_job_created, log_calendar_event
 
 router = APIRouter()
 
@@ -119,7 +120,7 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
 
 
 def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
-    """Create Job records for dates that don't already have one. Returns count created."""
+    """Create Job + Visit records for dates that don't already have one. Returns count created."""
     from database.models import Client
     from integrations.google_calendar import create_event
 
@@ -154,6 +155,24 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
 
     db.commit()
 
+    # Pre-materialize a Visit per new Job + log to unified timeline so the
+    # client profile sees each scheduled occurrence.
+    for job in new_jobs:
+        db.refresh(job)
+        visit = Visit(
+            job_id=job.id,
+            scheduled_date=job.scheduled_date,
+            start_time=job.start_time,
+            end_time=job.end_time,
+            cleaner_ids=job.cleaner_ids or [],
+            status="scheduled",
+            notes=job.notes,
+        )
+        db.add(visit)
+        log_job_created(db, job, actor="recurring_schedule")
+    if new_jobs:
+        db.commit()
+
     # Auto-push new jobs to Google Calendar
     if new_jobs:
         client = db.query(Client).filter(Client.id == sched.client_id).first()
@@ -170,6 +189,12 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 if event_id:
                     job.calendar_invite_sent = True
                     job.gcal_event_id = event_id
+                    log_calendar_event(
+                        db, "created",
+                        client_id=job.client_id, job_id=job.id,
+                        title=job.title, gcal_event_id=event_id,
+                        scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                    )
             except Exception as e:
                 logger.warning(f"GCal push failed for job {job.id} (schedule {sched.id}): {e}")
         db.commit()

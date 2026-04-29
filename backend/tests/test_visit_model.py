@@ -1,12 +1,12 @@
-"""Test Visit ORM model can be created with supported fields."""
+"""Test Visit ORM model can be created with all VisitCreate fields."""
 import pytest
 from datetime import date, time
 from database.models import Visit, Job
 from database.db import SessionLocal
 
 
-def test_visit_can_be_created_with_supported_fields():
-    """Verify Visit ORM model accepts the currently supported fields.
+def test_visit_can_be_created_with_all_fields():
+    """Verify Visit ORM model has all columns needed by VisitCreate schema.
 
     This test catches schema drift between Pydantic models and SQLAlchemy ORM.
     If this fails, backfill and other Visit creation will fail with:
@@ -55,5 +55,5 @@ def test_visit_can_be_created_with_supported_fields():
 
 
 if __name__ == "__main__":
-    test_visit_can_be_created_with_supported_fields()
+    test_visit_can_be_created_with_all_fields()
     print("✓ Visit model test passed")
