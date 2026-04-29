@@ -153,6 +153,47 @@ def gmail_inbox(
         em["client"] = client_cache[addr]
         em["is_known_contact"] = client_cache[addr] is not None
 
+        # Message-id dedupe + activity logging for known clients
+        client_id = em["client"]["id"] if em["client"] else None
+        message_id = em.get("message_id", "").strip()
+
+        if client_id and message_id:
+            existing_msg = db.query(Message).filter(
+                Message.external_id == message_id
+            ).first()
+
+            if not existing_msg:
+                # New email — create Message row and log activity
+                msg = Message(
+                    client_id=client_id,
+                    channel="email",
+                    direction="inbound",
+                    from_addr=em.get("from_email", ""),
+                    to_addr=em.get("to_email", ""),
+                    subject=em.get("subject", ""),
+                    body=em.get("body", ""),
+                    external_id=message_id,
+                    status="received",
+                    is_internal_note=False,
+                )
+                db.add(msg)
+                db.flush()
+
+                # Log to activity timeline
+                log_email(
+                    db,
+                    "received",
+                    client_id=client_id,
+                    subject=em.get("subject"),
+                    from_email=em.get("from_email"),
+                    message_id=msg.id,
+                )
+                em["activity_logged"] = True
+            else:
+                em["activity_logged"] = False
+        else:
+            em["activity_logged"] = False
+
     if new_contacts > 0 or auto_enrich:
         try:
             db.commit()
