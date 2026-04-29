@@ -106,6 +106,7 @@ export default function ClientProfile() {
   const [activities, setActivities] = useState([])
   const [emails, setEmails] = useState([])
   const [tab, setTab] = useState('details')
+  const [activityFilter, setActivityFilter] = useState('all')
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
@@ -260,16 +261,50 @@ export default function ClientProfile() {
     lost: 'bg-red-500/20 text-red-400',
   }
 
-  // Build activity feed (all records sorted by date)
-  const activity = [
+  // Build activity feed (all records sorted by date).
+  //
+  // Dedupe: PR 1 auto-logs JOB_CREATED / JOB_SCHEDULED activities for every
+  // job, but those jobs are already in the `jobs` array — so we exclude
+  // job_* activity_log entries to avoid duplicate rows. Email and visit
+  // activities still pass through since they don't have a sibling source.
+  const JOB_SHADOWED_TYPES = new Set([
+    'job_created', 'job_scheduled', 'job_started', 'job_completed', 'job_cancelled',
+  ])
+  const activityLogVisible = activities.filter(a => {
+    if (a.activity_type === 'email_received') return false
+    // Drop job_* events that mirror a job already shown — UNLESS the row was
+    // emitted by the GCal source (event created/updated/cancelled in calendar)
+    // or it's a single-occurrence visit skip, both of which add real signal.
+    if (JOB_SHADOWED_TYPES.has(a.activity_type)) {
+      const fromGcal = a.extra_data?.source === 'gcal'
+      const visitSkip = a.extra_data?.single_occurrence === true
+      return fromGcal || visitSkip
+    }
+    return true
+  })
+
+  const allActivity = [
     ...jobs.map(j => ({ type: 'job', date: j.created_at, data: j })),
     ...quotes.map(q => ({ type: 'quote', date: q.created_at, data: q })),
     ...invoices.map(i => ({ type: 'invoice', date: i.created_at, data: i })),
     ...messages.map(m => ({ type: 'message', date: m.created_at, data: m })),
     ...opportunities.map(o => ({ type: 'opportunity', date: o.created_at, data: o })),
-    ...activities.filter(a => !['email_received'].includes(a.activity_type)).map(a => ({ type: 'activity_log', date: a.created_at, data: a })),
+    ...activityLogVisible.map(a => ({ type: 'activity_log', date: a.created_at, data: a })),
     ...emails.map(e => ({ type: 'email', date: e.date, data: e })),
   ].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  // Filter chips: All / Email / Calendar / Money / Notes
+  const ACTIVITY_FILTERS = [
+    { value: 'all',      label: 'All' },
+    { value: 'email',    label: 'Emails',   match: i => i.type === 'email' || i.type === 'message' || (i.type === 'activity_log' && i.data.activity_type?.startsWith('email_')) },
+    { value: 'calendar', label: 'Calendar', match: i => i.type === 'job' || (i.type === 'activity_log' && (i.data.activity_type?.startsWith('job_') || i.data.extra_data?.source === 'gcal')) },
+    { value: 'money',    label: 'Money',    match: i => i.type === 'quote' || i.type === 'invoice' || i.type === 'opportunity' },
+    { value: 'notes',    label: 'Notes',    match: i => i.type === 'activity_log' && (i.data.activity_type === 'note_added' || !i.data.activity_type?.match(/^(email|job|sms)_/)) },
+  ]
+  const activeFilter = ACTIVITY_FILTERS.find(f => f.value === activityFilter)
+  const activity = activityFilter === 'all' || !activeFilter?.match
+    ? allActivity
+    : allActivity.filter(activeFilter.match)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -411,7 +446,28 @@ export default function ClientProfile() {
         {/* Activity feed */}
         {tab === 'activity' && (
           <div className="max-w-2xl space-y-3">
-            {activity.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No activity yet</p>}
+            {/* Twenty-style filter chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mt-1 sticky top-0 bg-zinc-50 z-10 py-2">
+              {ACTIVITY_FILTERS.map(f => {
+                const count = f.value === 'all' ? allActivity.length : (f.match ? allActivity.filter(f.match).length : 0)
+                const isActive = activityFilter === f.value
+                return (
+                  <button
+                    key={f.value}
+                    onClick={() => setActivityFilter(f.value)}
+                    className={`text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap transition-colors ${
+                      isActive
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50'
+                    }`}
+                  >
+                    {f.label}
+                    <span className={`ml-1.5 text-[10px] opacity-70 ${isActive ? 'text-white' : 'text-zinc-400'}`}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {activity.length === 0 && <p className="text-zinc-500 text-sm text-center py-10">No {activityFilter === 'all' ? '' : activityFilter} activity yet</p>}
             {activity.map((item, i) => (
               <div key={i} className="flex gap-4">
                 <div className="flex flex-col items-center">
@@ -430,7 +486,12 @@ export default function ClientProfile() {
                     {item.type === 'message'      && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
                     {item.type === 'opportunity'  && <TrendingUp className="w-3.5 h-3.5 text-amber-500" />}
                     {item.type === 'email'        && <Mail className="w-3.5 h-3.5 text-cyan-500" />}
-                    {item.type === 'activity_log' && <Zap className="w-3.5 h-3.5 text-zinc-400" />}
+                    {item.type === 'activity_log' && (
+                      item.data.extra_data?.source === 'gcal' ? <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                      : item.data.extra_data?.single_occurrence ? <X className="w-3.5 h-3.5 text-rose-500" />
+                      : item.data.activity_type?.startsWith('email_') ? <Mail className="w-3.5 h-3.5 text-cyan-500" />
+                      : <Zap className="w-3.5 h-3.5 text-zinc-400" />
+                    )}
                   </div>
                   {i < activity.length - 1 && <div className="w-px flex-1 bg-zinc-100 mt-1" />}
                 </div>
