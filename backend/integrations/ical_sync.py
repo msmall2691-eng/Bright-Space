@@ -122,12 +122,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     seen = 0
     created_events = 0
     created_jobs = 0
+    cancelled_jobs = 0
+    rescheduled_jobs = 0
     skipped_host_blocks = 0
     skipped_not_reserved = 0
 
     # Collect all events first to enable back-to-back lookup
     events_by_checkout = {}  # For finding next booking
     all_events = []
+    feed_uids = set()  # Track UIDs seen in this sync for cancellation detection
 
     for component in cal.walk():
         if component.name != "VEVENT":
@@ -173,6 +176,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
         seen += 1
 
+        feed_uids.add(uid)
         all_events.append({
             'uid': uid,
             'summary': summary,
@@ -228,6 +232,46 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             created_events += 1
         else:
             event.event_type = "reservation"
+            # Detect date changes — guest rescheduled
+            old_checkout = event.checkout_date
+            if old_checkout != checkout_date:
+                log.info(
+                    f"Date change detected for {prop.name}: "
+                    f"booking {uid} moved from {old_checkout} to {checkout_date}"
+                )
+                event.checkout_date = checkout_date
+                event.checkin_date = checkin_date
+                # If linked to a job, update the job + GCal event
+                if event.job_id:
+                    linked_job = db.query(Job).filter(Job.id == event.job_id).first()
+                    if linked_job and linked_job.status not in ("cancelled", "completed"):
+                        linked_job.scheduled_date = checkout_date
+                        rescheduled_jobs += 1
+                        # Update GCal event if linked
+                        if linked_job.gcal_event_id:
+                            try:
+                                from integrations.google_calendar import update_event
+                                client_for_update = db.query(Client).filter_by(id=prop.client_id).first()
+                                job_dict = {
+                                    "id": linked_job.id,
+                                    "title": linked_job.title,
+                                    "job_type": "str_turnover",
+                                    "scheduled_date": checkout_date,
+                                    "start_time": str(linked_job.start_time) if linked_job.start_time else "10:00",
+                                    "end_time": str(linked_job.end_time) if linked_job.end_time else "13:00",
+                                    "address": prop.address,
+                                    "notes": linked_job.notes or "",
+                                    "property_id": prop.id,
+                                }
+                                client_dict = {
+                                    "id": prop.client_id,
+                                    "name": client_for_update.name if client_for_update else "Client",
+                                    "email": getattr(client_for_update, "email", None) if client_for_update else None,
+                                }
+                                update_event(linked_job.gcal_event_id, job_dict, client_dict)
+                                log.info(f"Updated GCal event {linked_job.gcal_event_id} for rescheduled turnover")
+                            except Exception as e:
+                                log.warning(f"Failed to update GCal for rescheduled turnover: {e}")
 
         # Create a Job if: no job yet + checkout is today or future
         if event.job_id is None and checkout_date >= today:
@@ -305,7 +349,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             event.job_id = job.id
             created_jobs += 1
 
-            # Push to Google Calendar with guest metadata in description
+            # Push to Google Calendar with guest metadata + property info in description
             try:
                 from integrations.google_calendar import create_event
 
@@ -329,7 +373,16 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                     "name": client_name,
                     "email": getattr(client, "email", None) if client else None,
                 }
-                gcal_event_id = create_event(job_dict, client_dict)
+                # Property metadata for richer GCal event description
+                property_data = {
+                    "timezone": prop.timezone,
+                    "house_code": house_code,
+                    "access_notes": prop.access_notes,
+                    "parking_notes": prop.parking_notes,
+                    "site_contact_name": prop.site_contact_name,
+                    "site_contact_phone": prop.site_contact_phone,
+                }
+                gcal_event_id = create_event(job_dict, client_dict, property_data=property_data)
                 if gcal_event_id:
                     job.gcal_event_id = gcal_event_id
                     job.calendar_invite_sent = True
@@ -337,12 +390,48 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             except Exception as e:
                 log.warning(f"Failed to push turnover to GCal for {prop.name} on {checkout_date}: {e}")
 
+    # Cancellation detection: find future ICalEvents whose UIDs no longer appear in the feed
+    # These represent cancelled bookings — we should cancel the linked Job + delete GCal event
+    if feed_uids:  # Only run if we successfully parsed at least some events
+        existing_future_events = db.query(ICalEvent).filter(
+            ICalEvent.property_id == prop.id,
+            ICalEvent.checkout_date >= today,
+            ICalEvent.event_type == "reservation",
+        ).all()
+
+        for existing in existing_future_events:
+            if existing.uid in feed_uids:
+                continue  # Still in feed — skip
+            # Booking disappeared from feed → cancellation
+            log.info(
+                f"Cancellation detected for {prop.name}: "
+                f"booking {existing.uid} (checkout {existing.checkout_date}) no longer in feed"
+            )
+            # Cancel the linked job
+            if existing.job_id:
+                linked_job = db.query(Job).filter(Job.id == existing.job_id).first()
+                if linked_job and linked_job.status not in ("cancelled", "completed"):
+                    linked_job.status = "cancelled"
+                    cancelled_jobs += 1
+                    # Delete GCal event if linked
+                    if linked_job.gcal_event_id:
+                        try:
+                            from integrations.google_calendar import delete_event
+                            delete_event(linked_job.gcal_event_id, "str_turnover")
+                            log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
+                        except Exception as e:
+                            log.warning(f"Failed to delete GCal for cancelled turnover: {e}")
+            # Mark the iCal event as cancelled (audit trail)
+            existing.event_type = "cancelled"
+
     db.commit()
 
     return {
         "events_seen": seen,
         "events_created": created_events,
         "jobs_created": created_jobs,
+        "jobs_cancelled": cancelled_jobs,
+        "jobs_rescheduled": rescheduled_jobs,
         "skipped_host_blocks": skipped_host_blocks,
         "skipped_not_reserved": skipped_not_reserved,
     }
@@ -360,6 +449,8 @@ def sync_property(db: Session, prop: Property) -> dict:
     total_seen = 0
     total_created_events = 0
     total_created_jobs = 0
+    total_cancelled_jobs = 0
+    total_rescheduled_jobs = 0
     total_skipped_host_blocks = 0
     total_skipped_not_reserved = 0
     sources_synced = []
@@ -371,6 +462,8 @@ def sync_property(db: Session, prop: Property) -> dict:
             total_seen += result["events_seen"]
             total_created_events += result["events_created"]
             total_created_jobs += result["jobs_created"]
+            total_cancelled_jobs += result.get("jobs_cancelled", 0)
+            total_rescheduled_jobs += result.get("jobs_rescheduled", 0)
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
             sources_synced.append("legacy_ical_url")
@@ -388,6 +481,8 @@ def sync_property(db: Session, prop: Property) -> dict:
             total_seen += result["events_seen"]
             total_created_events += result["events_created"]
             total_created_jobs += result["jobs_created"]
+            total_cancelled_jobs += result.get("jobs_cancelled", 0)
+            total_rescheduled_jobs += result.get("jobs_rescheduled", 0)
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
             sources_synced.append(prop_ical.source or "unknown")
@@ -404,6 +499,8 @@ def sync_property(db: Session, prop: Property) -> dict:
         "events_seen": total_seen,
         "events_created": total_created_events,
         "jobs_created": total_created_jobs,
+        "jobs_cancelled": total_cancelled_jobs,
+        "jobs_rescheduled": total_rescheduled_jobs,
         "skipped_host_blocks": total_skipped_host_blocks,
         "skipped_not_reserved": total_skipped_not_reserved,
         "sources_synced": sources_synced,
