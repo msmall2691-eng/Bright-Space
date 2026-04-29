@@ -195,6 +195,11 @@ class Property(Base):
     business_name = Column(String, nullable=True)      # If different from Client.name
     hours_of_operation = Column(Text, nullable=True)   # Hours as text or JSON
 
+    # Onsite contact (different from billing client)
+    site_contact_name = Column(String, nullable=True)
+    site_contact_phone = Column(String, nullable=True)
+    site_contact_email = Column(String, nullable=True)
+
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -173,6 +173,10 @@ def _run_migrations():
         "ALTER TABLE properties ADD COLUMN access_notes TEXT",
         "ALTER TABLE properties ADD COLUMN parking_notes TEXT",
         "ALTER TABLE properties ADD COLUMN timezone TEXT",
+        # Schema redesign: site contact fields (different from billing client)
+        "ALTER TABLE properties ADD COLUMN site_contact_name TEXT",
+        "ALTER TABLE properties ADD COLUMN site_contact_phone TEXT",
+        "ALTER TABLE properties ADD COLUMN site_contact_email TEXT",
         # Backfill NULL property_type values to 'residential'
         "UPDATE properties SET property_type = 'residential' WHERE property_type IS NULL OR property_type = ''",
     ]
