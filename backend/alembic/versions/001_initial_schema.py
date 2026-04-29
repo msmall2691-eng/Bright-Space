@@ -10,376 +10,368 @@ depends_on = None
 
 
 def upgrade():
-    # Create all base tables
-    op.create_table(
-        'app_settings',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('key', sa.String(), nullable=False),
-        sa.Column('value', sa.String(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('key')
-    )
+    # Create all base tables (idempotent using IF NOT EXISTS)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            id INTEGER PRIMARY KEY,
+            key VARCHAR NOT NULL UNIQUE,
+            value VARCHAR,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'clients',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(), nullable=True),
-        sa.Column('email', sa.String(), nullable=True),
-        sa.Column('phone', sa.String(), nullable=True),
-        sa.Column('address', sa.String(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('first_name', sa.String(), nullable=True),
-        sa.Column('last_name', sa.String(), nullable=True),
-        sa.Column('billing_address', sa.String(), nullable=True),
-        sa.Column('billing_city', sa.String(), nullable=True),
-        sa.Column('billing_state', sa.String(), nullable=True),
-        sa.Column('billing_zip', sa.String(), nullable=True),
-        sa.Column('custom_fields', sa.String(), nullable=True),
-        sa.Column('client_type', sa.String(), nullable=True),
-        sa.Column('lifecycle_stage', sa.String(), nullable=True),
-        sa.Column('source_detail', sa.String(), nullable=True),
-        sa.Column('last_contacted_at', sa.DateTime(), nullable=True),
-        sa.Column('email_verified', sa.Integer(), nullable=True),
-        sa.Column('phone_tail', sa.String(), nullable=True),
-        sa.Column('phone_id', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR,
+            email VARCHAR,
+            phone VARCHAR,
+            address VARCHAR,
+            status VARCHAR,
+            first_name VARCHAR,
+            last_name VARCHAR,
+            billing_address VARCHAR,
+            billing_city VARCHAR,
+            billing_state VARCHAR,
+            billing_zip VARCHAR,
+            custom_fields VARCHAR,
+            client_type VARCHAR,
+            lifecycle_stage VARCHAR,
+            source_detail VARCHAR,
+            last_contacted_at TIMESTAMP,
+            email_verified INTEGER,
+            phone_tail VARCHAR,
+            phone_id INTEGER,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'contact_phones',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('phone', sa.String(), nullable=True),
-        sa.Column('type', sa.String(), nullable=True),
-        sa.Column('phone_tail', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS contact_phones (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            phone VARCHAR,
+            type VARCHAR,
+            phone_tail VARCHAR,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'contact_emails',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('email', sa.String(), nullable=True),
-        sa.Column('type', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS contact_emails (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            email VARCHAR,
+            type VARCHAR,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'field_definitions',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('entity_type', sa.String(), nullable=True),
-        sa.Column('field_name', sa.String(), nullable=True),
-        sa.Column('field_type', sa.String(), nullable=True),
-        sa.Column('label', sa.String(), nullable=True),
-        sa.Column('is_system', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS field_definitions (
+            id INTEGER PRIMARY KEY,
+            entity_type VARCHAR,
+            field_name VARCHAR,
+            field_type VARCHAR,
+            label VARCHAR,
+            is_system INTEGER,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'ical_events',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('property_id', sa.Integer(), nullable=True),
-        sa.Column('ical_uid', sa.String(), nullable=True),
-        sa.Column('ical_source', sa.String(), nullable=True),
-        sa.Column('title', sa.String(), nullable=True),
-        sa.Column('start_date', sa.String(), nullable=True),
-        sa.Column('end_date', sa.String(), nullable=True),
-        sa.Column('guest_count', sa.Integer(), nullable=True),
-        sa.Column('event_type', sa.String(), nullable=True),
-        sa.Column('synced_at', sa.DateTime(), nullable=True),
-        sa.Column('job_id', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS ical_events (
+            id INTEGER PRIMARY KEY,
+            property_id INTEGER,
+            ical_uid VARCHAR,
+            ical_source VARCHAR,
+            title VARCHAR,
+            start_date VARCHAR,
+            end_date VARCHAR,
+            guest_count INTEGER,
+            event_type VARCHAR,
+            synced_at TIMESTAMP,
+            job_id INTEGER,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'lead_intakes',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('opportunity_id', sa.Integer(), nullable=True),
-        sa.Column('name', sa.String(), nullable=False),
-        sa.Column('email', sa.String(), nullable=True),
-        sa.Column('phone', sa.String(), nullable=True),
-        sa.Column('address', sa.String(), nullable=True),
-        sa.Column('city', sa.String(), nullable=True),
-        sa.Column('state', sa.String(), nullable=True),
-        sa.Column('zip_code', sa.String(), nullable=True),
-        sa.Column('service_type', sa.String(), nullable=True),
-        sa.Column('bedrooms', sa.Integer(), nullable=True),
-        sa.Column('bathrooms', sa.Integer(), nullable=True),
-        sa.Column('square_footage', sa.Integer(), nullable=True),
-        sa.Column('guests', sa.Integer(), nullable=True),
-        sa.Column('frequency', sa.String(), nullable=True),
-        sa.Column('requested_date', sa.String(), nullable=True),
-        sa.Column('check_in', sa.String(), nullable=True),
-        sa.Column('check_out', sa.String(), nullable=True),
-        sa.Column('estimate_min', sa.Float(), nullable=True),
-        sa.Column('estimate_max', sa.Float(), nullable=True),
-        sa.Column('property_name', sa.String(), nullable=True),
-        sa.Column('message', sa.String(), nullable=True),
-        sa.Column('priority', sa.String(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('assigned_to', sa.String(), nullable=True),
-        sa.Column('internal_notes', sa.String(), nullable=True),
-        sa.Column('followed_up_at', sa.DateTime(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS lead_intakes (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER,
+            opportunity_id INTEGER,
+            name VARCHAR NOT NULL,
+            email VARCHAR,
+            phone VARCHAR,
+            address VARCHAR,
+            city VARCHAR,
+            state VARCHAR,
+            zip_code VARCHAR,
+            service_type VARCHAR,
+            bedrooms INTEGER,
+            bathrooms INTEGER,
+            square_footage INTEGER,
+            guests INTEGER,
+            frequency VARCHAR,
+            requested_date VARCHAR,
+            check_in VARCHAR,
+            check_out VARCHAR,
+            estimate_min REAL,
+            estimate_max REAL,
+            property_name VARCHAR,
+            message VARCHAR,
+            priority VARCHAR,
+            status VARCHAR,
+            assigned_to VARCHAR,
+            internal_notes VARCHAR,
+            followed_up_at TIMESTAMP,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'opportunities',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('title', sa.String(), nullable=True),
-        sa.Column('amount', sa.Float(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('custom_fields', sa.String(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS opportunities (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            title VARCHAR,
+            amount REAL,
+            status VARCHAR,
+            custom_fields VARCHAR,
+            updated_at TIMESTAMP,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'properties',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('name', sa.String(), nullable=True),
-        sa.Column('address', sa.String(), nullable=True),
-        sa.Column('property_type', sa.String(), nullable=True),
-        sa.Column('check_in_time', sa.String(5), nullable=True),
-        sa.Column('check_out_time', sa.String(5), nullable=True),
-        sa.Column('house_code', sa.String(255), nullable=True),
-        sa.Column('ical_url', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS properties (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            name VARCHAR,
+            address VARCHAR,
+            property_type VARCHAR,
+            check_in_time VARCHAR,
+            check_out_time VARCHAR,
+            house_code VARCHAR,
+            ical_url VARCHAR,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'users',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('email', sa.String(), nullable=True),
-        sa.Column('name', sa.String(), nullable=True),
-        sa.Column('role', sa.String(), nullable=True),
-        sa.Column('hashed_password', sa.String(), nullable=True),
-        sa.Column('is_active', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            email VARCHAR,
+            name VARCHAR,
+            role VARCHAR,
+            hashed_password VARCHAR,
+            is_active INTEGER,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'quotes',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('title', sa.String(), nullable=True),
-        sa.Column('description', sa.String(), nullable=True),
-        sa.Column('amount', sa.Float(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('public_token', sa.String(), nullable=True),
-        sa.Column('viewed_at', sa.DateTime(), nullable=True),
-        sa.Column('intake_id', sa.Integer(), nullable=True),
-        sa.Column('quote_number', sa.String(), nullable=True),
-        sa.Column('address', sa.String(), nullable=True),
-        sa.Column('service_type', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS quotes (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            title VARCHAR,
+            description VARCHAR,
+            amount REAL,
+            status VARCHAR,
+            public_token VARCHAR,
+            viewed_at TIMESTAMP,
+            intake_id INTEGER,
+            quote_number VARCHAR,
+            address VARCHAR,
+            service_type VARCHAR,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'recurring_schedules',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('job_id', sa.Integer(), nullable=True),
-        sa.Column('frequency', sa.String(), nullable=True),
-        sa.Column('end_date', sa.String(), nullable=True),
-        sa.Column('days_of_week', sa.String(), nullable=True),
-        sa.Column('interval_weeks', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS recurring_schedules (
+            id INTEGER PRIMARY KEY,
+            job_id INTEGER,
+            frequency VARCHAR,
+            end_date VARCHAR,
+            days_of_week VARCHAR,
+            interval_weeks INTEGER,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'jobs',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('property_id', sa.Integer(), nullable=True),
-        sa.Column('quote_id', sa.Integer(), nullable=True),
-        sa.Column('opportunity_id', sa.Integer(), nullable=True),
-        sa.Column('job_type', sa.String(), nullable=False),
-        sa.Column('recurring_schedule_id', sa.Integer(), nullable=True),
-        sa.Column('ical_event_id', sa.Integer(), nullable=True),
-        sa.Column('assigned_cleaner_user_id', sa.Integer(), nullable=True),
-        sa.Column('calendar_invite_sent', sa.Integer(), nullable=False),
-        sa.Column('sms_reminder_sent', sa.Integer(), nullable=False),
-        sa.Column('gcal_event_id', sa.String(), nullable=True),
-        sa.Column('title', sa.String(), nullable=False),
-        sa.Column('scheduled_date', sa.String(), nullable=True),
-        sa.Column('start_time', sa.String(), nullable=True),
-        sa.Column('end_time', sa.String(), nullable=True),
-        sa.Column('address', sa.String(), nullable=True),
-        sa.Column('cleaner_ids', sa.String(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('notes', sa.String(), nullable=True),
-        sa.Column('custom_fields', sa.String(), nullable=True),
-        sa.Column('dispatched', sa.Integer(), nullable=True),
-        sa.Column('connecteam_shift_ids', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
-        sa.ForeignKeyConstraint(['quote_id'], ['quotes.id'], ),
-        sa.ForeignKeyConstraint(['opportunity_id'], ['opportunities.id'], ),
-        sa.ForeignKeyConstraint(['recurring_schedule_id'], ['recurring_schedules.id'], ),
-        sa.ForeignKeyConstraint(['ical_event_id'], ['ical_events.id'], ),
-        sa.ForeignKeyConstraint(['assigned_cleaner_user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS jobs (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            property_id INTEGER REFERENCES properties(id),
+            quote_id INTEGER REFERENCES quotes(id),
+            opportunity_id INTEGER REFERENCES opportunities(id),
+            job_type VARCHAR NOT NULL,
+            recurring_schedule_id INTEGER REFERENCES recurring_schedules(id),
+            ical_event_id INTEGER REFERENCES ical_events(id),
+            assigned_cleaner_user_id INTEGER REFERENCES users(id),
+            calendar_invite_sent INTEGER NOT NULL,
+            sms_reminder_sent INTEGER NOT NULL,
+            gcal_event_id VARCHAR,
+            title VARCHAR NOT NULL,
+            scheduled_date VARCHAR,
+            start_time VARCHAR,
+            end_time VARCHAR,
+            address VARCHAR,
+            cleaner_ids VARCHAR,
+            status VARCHAR,
+            notes VARCHAR,
+            custom_fields VARCHAR,
+            dispatched INTEGER,
+            connecteam_shift_ids VARCHAR,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'visits',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('job_id', sa.Integer(), nullable=False),
-        sa.Column('scheduled_date', sa.String(), nullable=True),
-        sa.Column('start_time', sa.String(), nullable=True),
-        sa.Column('end_time', sa.String(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('cleaner_ids', sa.String(), nullable=True),
-        sa.Column('gcal_event_id', sa.String(), nullable=True),
-        sa.Column('ical_source', sa.String(), nullable=True),
-        sa.Column('ical_uid', sa.String(), nullable=True),
-        sa.Column('completed_at', sa.DateTime(), nullable=True),
-        sa.Column('completed_by', sa.String(), nullable=True),
-        sa.Column('checklist_results', sa.String(), nullable=True),
-        sa.Column('photos', sa.String(), nullable=True),
-        sa.Column('notes', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS visits (
+            id INTEGER PRIMARY KEY,
+            job_id INTEGER NOT NULL REFERENCES jobs(id),
+            scheduled_date VARCHAR,
+            start_time VARCHAR,
+            end_time VARCHAR,
+            status VARCHAR,
+            cleaner_ids VARCHAR,
+            gcal_event_id VARCHAR,
+            ical_source VARCHAR,
+            ical_uid VARCHAR,
+            completed_at TIMESTAMP,
+            completed_by VARCHAR,
+            checklist_results VARCHAR,
+            photos VARCHAR,
+            notes VARCHAR,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'conversations',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'messages',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('conversation_id', sa.Integer(), nullable=True),
-        sa.Column('content', sa.String(), nullable=True),
-        sa.Column('sender', sa.String(), nullable=True),
-        sa.Column('external_id', sa.String(), nullable=True),
-        sa.Column('author', sa.String(), nullable=True),
-        sa.Column('is_internal_note', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['conversation_id'], ['conversations.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY,
+            conversation_id INTEGER REFERENCES conversations(id),
+            content VARCHAR,
+            sender VARCHAR,
+            external_id VARCHAR,
+            author VARCHAR,
+            is_internal_note INTEGER,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'invoices',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('client_id', sa.Integer(), nullable=True),
-        sa.Column('job_id', sa.Integer(), nullable=True),
-        sa.Column('amount', sa.Float(), nullable=True),
-        sa.Column('status', sa.String(), nullable=True),
-        sa.Column('custom_fields', sa.String(), nullable=True),
-        sa.Column('opportunity_id', sa.Integer(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ),
-        sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], ),
-        sa.ForeignKeyConstraint(['opportunity_id'], ['opportunities.id'], ),
-        sa.PrimaryKeyConstraint('id'),
-        sa.Index('idx_invoice_opportunity_id', 'opportunity_id'),
-        sa.Index('idx_invoice_updated_at', 'updated_at')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS invoices (
+            id INTEGER PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            job_id INTEGER REFERENCES jobs(id),
+            amount REAL,
+            status VARCHAR,
+            custom_fields VARCHAR,
+            opportunity_id INTEGER REFERENCES opportunities(id),
+            updated_at TIMESTAMP,
+            created_at TIMESTAMP
+        )
+    """)
 
-    op.create_table(
-        'property_icals',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('property_id', sa.Integer(), nullable=False),
-        sa.Column('url', sa.String(), nullable=False),
-        sa.Column('source', sa.String(), nullable=True),
-        sa.Column('active', sa.Integer(), nullable=True),
-        sa.Column('last_synced_at', sa.DateTime(), nullable=True),
-        sa.Column('last_sync_status', sa.String(), nullable=True),
-        sa.Column('last_sync_error', sa.String(), nullable=True),
-        sa.Column('sync_retry_count', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ),
-        sa.PrimaryKeyConstraint('id'),
-        sa.Index('ix_property_icals_property_id', 'property_id')
-    )
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_invoice_opportunity_id ON invoices(opportunity_id)
+    """)
 
-    op.create_table(
-        'activities',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('entity_type', sa.String(), nullable=True),
-        sa.Column('entity_id', sa.Integer(), nullable=True),
-        sa.Column('action', sa.String(), nullable=True),
-        sa.Column('actor_id', sa.Integer(), nullable=True),
-        sa.Column('details', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_invoice_updated_at ON invoices(updated_at)
+    """)
 
-    op.create_table(
-        'integration_events',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('entity_type', sa.String(), nullable=False),
-        sa.Column('entity_id', sa.Integer(), nullable=False),
-        sa.Column('provider', sa.String(), nullable=False),
-        sa.Column('action', sa.String(), nullable=False),
-        sa.Column('status', sa.String(), nullable=False),
-        sa.Column('external_id', sa.String(), nullable=True),
-        sa.Column('error_message', sa.String(), nullable=True),
-        sa.Column('error_code', sa.String(), nullable=True),
-        sa.Column('request_payload', sa.String(), nullable=True),
-        sa.Column('response_payload', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
-        sa.Index('ix_integration_events_created_at', 'created_at')
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS property_icals (
+            id INTEGER PRIMARY KEY,
+            property_id INTEGER NOT NULL REFERENCES properties(id),
+            url VARCHAR NOT NULL,
+            source VARCHAR,
+            active INTEGER,
+            last_synced_at TIMESTAMP,
+            last_sync_status VARCHAR,
+            last_sync_error VARCHAR,
+            sync_retry_count INTEGER,
+            created_at TIMESTAMP
+        )
+    """)
+
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS ix_property_icals_property_id ON property_icals(property_id)
+    """)
+
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS activities (
+            id INTEGER PRIMARY KEY,
+            entity_type VARCHAR,
+            entity_id INTEGER,
+            action VARCHAR,
+            actor_id INTEGER,
+            details VARCHAR,
+            created_at TIMESTAMP
+        )
+    """)
+
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS integration_events (
+            id INTEGER PRIMARY KEY,
+            entity_type VARCHAR NOT NULL,
+            entity_id INTEGER NOT NULL,
+            provider VARCHAR NOT NULL,
+            action VARCHAR NOT NULL,
+            status VARCHAR NOT NULL,
+            external_id VARCHAR,
+            error_message VARCHAR,
+            error_code VARCHAR,
+            request_payload VARCHAR,
+            response_payload VARCHAR,
+            created_at TIMESTAMP
+        )
+    """)
+
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS ix_integration_events_created_at ON integration_events(created_at)
+    """)
 
 
 def downgrade():
-    op.drop_table('integration_events')
-    op.drop_table('activities')
-    op.drop_table('property_icals')
-    op.drop_table('invoices')
-    op.drop_table('messages')
-    op.drop_table('conversations')
-    op.drop_table('visits')
-    op.drop_table('jobs')
-    op.drop_table('recurring_schedules')
-    op.drop_table('quotes')
-    op.drop_table('users')
-    op.drop_table('properties')
-    op.drop_table('opportunities')
-    op.drop_table('lead_intakes')
-    op.drop_table('ical_events')
-    op.drop_table('field_definitions')
-    op.drop_table('contact_emails')
-    op.drop_table('contact_phones')
-    op.drop_table('clients')
-    op.drop_table('app_settings')
+    op.execute("DROP TABLE IF EXISTS integration_events")
+    op.execute("DROP TABLE IF EXISTS activities")
+    op.execute("DROP TABLE IF EXISTS property_icals")
+    op.execute("DROP TABLE IF EXISTS invoices")
+    op.execute("DROP TABLE IF EXISTS messages")
+    op.execute("DROP TABLE IF EXISTS conversations")
+    op.execute("DROP TABLE IF EXISTS visits")
+    op.execute("DROP TABLE IF EXISTS jobs")
+    op.execute("DROP TABLE IF EXISTS recurring_schedules")
+    op.execute("DROP TABLE IF EXISTS quotes")
+    op.execute("DROP TABLE IF EXISTS users")
+    op.execute("DROP TABLE IF EXISTS properties")
+    op.execute("DROP TABLE IF EXISTS opportunities")
+    op.execute("DROP TABLE IF EXISTS lead_intakes")
+    op.execute("DROP TABLE IF EXISTS ical_events")
+    op.execute("DROP TABLE IF EXISTS field_definitions")
+    op.execute("DROP TABLE IF EXISTS contact_emails")
+    op.execute("DROP TABLE IF EXISTS contact_phones")
+    op.execute("DROP TABLE IF EXISTS clients")
+    op.execute("DROP TABLE IF EXISTS app_settings")
