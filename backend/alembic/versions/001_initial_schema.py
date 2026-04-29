@@ -247,11 +247,14 @@ def upgrade():
             gcal_event_id VARCHAR,
             ical_source VARCHAR,
             ical_uid VARCHAR,
+            ical_synced_at TIMESTAMP,
             completed_at TIMESTAMP,
-            completed_by VARCHAR,
+            completed_by INTEGER,
             checklist_results VARCHAR,
             photos VARCHAR,
             notes VARCHAR,
+            sequence INTEGER,
+            checklist_template_id INTEGER,
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         )
