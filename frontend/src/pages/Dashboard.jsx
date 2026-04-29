@@ -59,6 +59,7 @@ export default function Dashboard() {
   const [schedules, setSchedules] = useState([])
   const [newRequests, setNewRequests] = useState([])
   const [recentMessages, setRecentMessages] = useState([])
+  const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
 
   const today = new Date().toISOString().slice(0, 10)
@@ -67,7 +68,7 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, gmailData] = await Promise.all([
+        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, gmailData, empData] = await Promise.all([
           get(`/api/jobs?date=${today}`),
           get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
           get('/api/clients'),
@@ -75,6 +76,7 @@ export default function Dashboard() {
           get('/api/recurring'),
           get('/api/intake?status=new'),
           get('/api/gmail/inbox?max_results=10').catch(() => ({ emails: [] })),
+          get('/api/dispatch/employees').catch(() => []),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         const week = Array.isArray(jobsWeek) ? jobsWeek : []
@@ -87,6 +89,7 @@ export default function Dashboard() {
         setRecurringCount(sched.filter(s => s.active).length)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
         setRecentMessages((gmailData?.emails || []).slice(0, 5))
+        setEmployees(Array.isArray(empData) ? empData : [])
       } catch {}
       setLoading(false)
     }
@@ -388,6 +391,43 @@ export default function Dashboard() {
 
         {/* Right column */}
         <div className="space-y-4">
+          {/* Crew Status */}
+          {employees.length > 0 && (
+            <div className="bg-white border border-zinc-200 rounded-xl p-5">
+              <h3 className="text-[13px] font-semibold text-zinc-900 mb-3 flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-500" /> Crew Status
+              </h3>
+              <div className="space-y-2">
+                {employees.slice(0, 6).map(emp => {
+                  const empId = emp.id || emp.userId
+                  const jobsAssigned = todayJobs.filter(j => (j.cleaner_ids || []).includes(empId))
+                  const completed = jobsAssigned.filter(j => j.status === 'completed').length
+                  return (
+                    <div key={empId} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-zinc-50">
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${AVATAR_COLORS[Math.abs(empId || 0) % AVATAR_COLORS.length]}`}>
+                          {(emp.name || emp.displayName || 'C')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-medium text-zinc-900 truncate">{emp.name || emp.displayName || 'Unknown'}</div>
+                          {jobsAssigned.length > 0 && (
+                            <div className="text-[11px] text-zinc-600">{jobsAssigned.length} job{jobsAssigned.length !== 1 ? 's' : ''} today</div>
+                          )}
+                        </div>
+                      </div>
+                      {jobsAssigned.length > 0 && (
+                        <div className="text-right shrink-0">
+                          <div className="text-[11px] font-medium text-emerald-600">{completed}/{jobsAssigned.length}</div>
+                          <div className="text-[10px] text-zinc-600">completed</div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Quick Actions */}
           <div className="bg-white border border-zinc-200 rounded-xl p-5">
             <h3 className="text-[13px] font-semibold text-zinc-900 mb-3">Quick Actions</h3>
