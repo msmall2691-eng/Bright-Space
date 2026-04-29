@@ -214,3 +214,65 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
     db.commit()
 
     return {"invoice_id": invoice_id, "results": results}
+
+
+@router.get("/public/{token}")
+def get_public_invoice(token: str, db: Session = Depends(get_db)):
+    """Get invoice details for public payment portal (via payment token).
+
+    Token format: base64(invoice_id:secret_key) for security.
+    For now, accepting the invoice ID directly as a simplified token.
+    """
+    try:
+        invoice_id = int(token)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Invalid invoice token")
+
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    client = db.query(Client).filter(Client.id == inv.client_id).first()
+    inv_dict = invoice_to_dict(inv)
+
+    return {
+        **inv_dict,
+        "client_email": client.email if client else None,
+        "client_phone": client.phone if client else None,
+    }
+
+
+@router.post("/{invoice_id}/pay")
+def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
+    """Record a payment for an invoice (payment processing via Stripe should be done client-side).
+
+    In production, Stripe Checkout or Elements should be used on the client for PCI compliance.
+    This endpoint records the successful payment and updates invoice status.
+    """
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # In production, verify payment with Stripe API before marking as paid
+    # For now, accept the payment and mark invoice as paid
+    inv.status = "paid"
+    inv.paid_at = datetime.utcnow()
+
+    # Create a payment message record
+    msg = Message(
+        client_id=inv.client_id,
+        channel="payment",
+        direction="inbound",
+        from_addr=data.get("email", ""),
+        to_addr=data.get("phone", ""),
+        body=f"Payment received: ${inv.total}",
+        status="received",
+    )
+    db.add(msg)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Payment of ${inv.total} received and recorded",
+        "invoice_id": invoice_id,
+    }

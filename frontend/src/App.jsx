@@ -20,6 +20,7 @@ import PropertyDetail from './pages/PropertyDetail'
 import Requests from './pages/Requests'
 import Settings from './pages/Settings'
 import PublicQuote from './pages/PublicQuote'
+import PublicPayment from './pages/PublicPayment'
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -50,7 +51,7 @@ export default function App() {
     return <div className="flex items-center justify-center h-screen bg-white">Loading...</div>
   }
 
-  const isPublicRoute = location.pathname.startsWith('/quote/')
+  const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
   const isLoginRoute = location.pathname === '/login'
   const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
@@ -58,6 +59,7 @@ export default function App() {
     return (
       <Routes>
         <Route path="/quote/:token" element={<PublicQuote />} />
+        <Route path="/pay/:token" element={<PublicPayment />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     )
