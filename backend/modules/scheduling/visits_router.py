@@ -309,6 +309,9 @@ def create_visit(data: VisitCreate, db: Session = Depends(get_db)):
         end_time=data.end_time,
         cleaner_ids=data.cleaner_ids or [],
         status=data.status or "scheduled",
+        gcal_event_id=data.gcal_event_id,
+        ical_source=data.ical_source,
+        ical_uid=data.ical_uid,
         notes=data.notes,
     )
     db.add(visit)
