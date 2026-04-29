@@ -6,6 +6,7 @@ import {
   Filter, Home
 } from 'lucide-react'
 import CalendarView from '../components/CalendarView'
+import WeekView from '../components/WeekView'
 import AgentWidget from '../components/AgentWidget'
 import { get, post, patch, del } from '../api'
 
@@ -70,6 +71,8 @@ export default function Scheduling() {
 
   // Mobile: toggle between calendar and list view
   const [mobileView, setMobileView] = useState('calendar')
+  // Desktop: toggle between month grid and week-by-cleaner view
+  const [desktopView, setDesktopView] = useState('month') // 'month' | 'week'
   // Jobs for list view on mobile
   const [upcomingJobs, setUpcomingJobs] = useState([])
 
@@ -317,6 +320,25 @@ export default function Scheduling() {
           <span className="text-[10px] text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">Synced with Google Calendar</span>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex bg-zinc-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setDesktopView('month')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                desktopView === 'month' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+            >
+              Month
+            </button>
+            <button
+              onClick={() => setDesktopView('week')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                desktopView === 'week' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+              title="Week view by cleaner"
+            >
+              Week
+            </button>
+          </div>
           <button onClick={syncFromGCal} disabled={syncing}
             className="flex items-center gap-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 px-3 py-2 rounded-lg text-xs text-zinc-500 transition-colors">
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
@@ -459,12 +481,21 @@ export default function Scheduling() {
       <div className="flex flex-1 min-h-0 relative">
         {/* Calendar view (desktop always, mobile toggled) */}
         <div className={`flex-1 min-w-0 ${mobileView !== 'calendar' ? 'hidden lg:flex' : 'flex'}`}>
-          <CalendarView
-            onJobClick={handleJobClick}
-            onDayClick={handleDayClick}
-            refreshKey={refreshKey}
-            filters={filters}
-          />
+          {desktopView === 'week' ? (
+            <WeekView
+              onVisitClick={(v) => v?.job_id && handleJobClick({ id: v.job_id })}
+              refreshKey={refreshKey}
+              filters={filters}
+              employees={employees}
+            />
+          ) : (
+            <CalendarView
+              onJobClick={handleJobClick}
+              onDayClick={handleDayClick}
+              refreshKey={refreshKey}
+              filters={filters}
+            />
+          )}
         </div>
 
         {/* Mobile list view */}
