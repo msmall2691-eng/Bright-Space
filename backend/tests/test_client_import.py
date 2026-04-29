@@ -86,7 +86,8 @@ Valid Client,Active,(207) 555-1234,valid@example.com"""
     assert response.status_code == 200
     data = response.json()
     assert data["preview"]["valid_clients"] == 1
-    assert data["preview"]["invalid_rows"] == 2
+    assert data["preview"]["invalid_count"] == 2
+    assert len(data["preview"]["invalid_rows"]) == 2
 
 
 def test_import_clients_missing_name():
@@ -103,7 +104,8 @@ Valid Name,Active,2075551235,valid@example.com"""
 
     assert response.status_code == 200
     data = response.json()
-    assert data["preview"]["invalid_rows"] == 1
+    assert data["preview"]["invalid_count"] == 1
+    assert len(data["preview"]["invalid_rows"]) == 1
     assert data["preview"]["valid_clients"] == 1
 
 
@@ -172,10 +174,55 @@ Unit inventory and maintaince,Active,,,,2025-04-23,"",""
     # Should have 5 valid clients (internal entries excluded)
     assert data["preview"]["valid_clients"] == 5
     # Should skip 2 internal entries
-    assert data["preview"]["invalid_rows"] == 2
+    assert data["preview"]["invalid_count"] == 2
+    assert len(data["preview"]["invalid_rows"]) == 2
 
     # Check phone normalization on real data
     clients = data["preview"]["sample_clients"]
     assert any(c["phone"] == "+18455059326" for c in clients)  # 8455059326
     assert any(c["phone"] == "+12026808327" for c in clients)  # +12026808327
     assert any(c["phone"] == "+12077564056" for c in clients)  # 207-756-4056
+
+
+def test_import_clients_apply_skips_existing_with_formatted_phone():
+    """Regression test for Codex P1 finding: apply mode must compare normalized phones.
+
+    If a client exists in DB with normalized E.164 phone, and the CSV has the same
+    number in formatted display form (e.g. (207) 555-1234), the apply mode must
+    correctly skip it instead of creating a duplicate.
+    """
+    # Setup: pre-create a client with normalized phone
+    db = SessionLocal()
+    db.query(Client).filter(Client.name == "Existing Phone Match").delete()
+    pre_existing = Client(
+        name="Existing Phone Match",
+        phone="+12075558888",
+        phone_tail="2075558888",
+        email="existing.match@example.com",
+        status="active",
+    )
+    db.add(pre_existing)
+    db.commit()
+    db.close()
+
+    # CSV has the same phone in formatted form
+    csv_content = """Client Name,Status,Phone,Email
+Existing Phone Match,Active,(207) 555-8888,different.email@example.com"""
+
+    response = client.post(
+        "/api/admin/import/clients",
+        params={"dry_run": "false"},
+        files={"file": ("test.csv", io.BytesIO(csv_content.encode()), "text/csv")}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    # Should skip (not create) since the phone matches the existing record
+    assert data["result"]["created"] == 0
+    assert data["result"]["skipped"] == 1
+
+    # Cleanup
+    db = SessionLocal()
+    db.query(Client).filter(Client.name == "Existing Phone Match").delete()
+    db.commit()
+    db.close()

@@ -136,7 +136,9 @@ async def import_clients(
         if existing:
             existing_clients.append({
                 'name': client_data['name'],
-                'phone': client_data['phone_display'],
+                # Store normalized phone for matching in apply mode (display version is separate)
+                'phone': client_data['phone'],
+                'phone_display': client_data['phone_display'],
                 'email': client_data['email'],
                 'existing_id': existing.id,
                 'existing_name': existing.name,
@@ -150,7 +152,8 @@ async def import_clients(
         'valid_clients': len(clients_data),
         'duplicates_in_csv': len(duplicates),
         'existing_in_db': len(existing_clients),
-        'invalid_rows': len(invalid_rows),
+        # Renamed to avoid duplicate key collision with the detailed list below
+        'invalid_count': len(invalid_rows),
         'clients_to_create': len(clients_data) - len(existing_clients),
         'duplicates': duplicates,
         'existing_clients': existing_clients,
@@ -167,7 +170,7 @@ async def import_clients(
     errors = []
 
     for client_data in clients_data:
-        # Skip if already exists in DB
+        # Skip if already exists in DB (compare normalized phone, not display value)
         if any(ec['phone'] == client_data['phone'] and client_data['phone'] for ec in existing_clients):
             continue
         if any(ec['email'] == client_data['email'] and client_data['email'] for ec in existing_clients):
