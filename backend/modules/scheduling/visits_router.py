@@ -379,3 +379,34 @@ def delete_visit(visit_id: int, db: Session = Depends(get_db)):
 
     db.delete(visit)
     db.commit()
+
+
+@router.post("/{visit_id}/skip", dependencies=[Depends(require_role("admin", "manager"))])
+def skip_visit(visit_id: int, reason: Optional[str] = None, db: Session = Depends(get_db)):
+    """Cancel a single visit occurrence without affecting the recurring schedule.
+
+    This is the "skip just next Tuesday" action — the visit is marked cancelled,
+    its parent Job is cancelled, but the RecurringSchedule keeps running so future
+    occurrences continue to be generated.
+    """
+    visit = db.query(Visit).options(joinedload(Visit.job)).filter(Visit.id == visit_id).first()
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+
+    visit.status = "cancelled"
+    if reason:
+        visit.notes = (visit.notes or "") + f"\n[Skipped: {reason}]"
+
+    # Cancel the parent Job for this single occurrence too — without touching
+    # the RecurringSchedule, so future visits still generate normally.
+    if visit.job:
+        visit.job.status = "cancelled"
+
+    db.commit()
+    db.refresh(visit)
+    return {
+        "id": visit.id,
+        "status": visit.status,
+        "job_status": visit.job.status if visit.job else None,
+        "message": "Visit skipped — recurring schedule unchanged"
+    }

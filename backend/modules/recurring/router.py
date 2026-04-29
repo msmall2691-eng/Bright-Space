@@ -8,7 +8,7 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 from database.db import get_db
-from database.models import RecurringSchedule, Job
+from database.models import RecurringSchedule, Job, Visit
 
 router = APIRouter()
 
@@ -119,7 +119,7 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
 
 
 def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
-    """Create Job records for dates that don't already have one. Returns count created."""
+    """Create Job + Visit records for dates that don't already have one. Returns count created."""
     from database.models import Client
     from integrations.google_calendar import create_event
 
@@ -153,6 +153,23 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
         created += 1
 
     db.commit()
+
+    # Pre-materialize a Visit per new Job so the calendar UI sees individual
+    # occurrences and admins can skip/reassign one date without breaking the rule.
+    for job in new_jobs:
+        db.refresh(job)
+        visit = Visit(
+            job_id=job.id,
+            scheduled_date=job.scheduled_date,
+            start_time=job.start_time,
+            end_time=job.end_time,
+            cleaner_ids=job.cleaner_ids or [],
+            status="scheduled",
+            notes=job.notes,
+        )
+        db.add(visit)
+    if new_jobs:
+        db.commit()
 
     # Auto-push new jobs to Google Calendar
     if new_jobs:
