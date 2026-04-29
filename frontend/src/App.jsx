@@ -55,7 +55,7 @@ export default function App() {
     return <div className="flex items-center justify-center h-screen bg-white">Loading...</div>
   }
 
-  const isPublicRoute = location.pathname.startsWith('/quote/')
+  const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
   const isLoginRoute = location.pathname === '/login'
   const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
