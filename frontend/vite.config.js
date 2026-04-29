@@ -11,27 +11,38 @@ export default defineConfig({
     },
   },
   build: {
-    // Optimize bundle size and code splitting
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Split vendor libraries
-          'vendor-lucide': ['lucide-react'],
-          'vendor-router': ['react-router-dom'],
-          // Split pages into chunks
-          'pages-admin': ['./src/pages/Settings', './src/pages/Workspace'],
-          'pages-scheduling': ['./src/pages/Scheduling', './src/pages/Schedule'],
-          'pages-finance': ['./src/pages/Invoicing', './src/pages/Quoting'],
+        manualChunks(id) {
+          // Split vendor libraries into separate chunks
+          if (id.includes('node_modules/lucide-react')) return 'vendor-lucide'
+          if (id.includes('node_modules/react-router-dom')) return 'vendor-router'
+          if (id.includes('node_modules/react-dom')) return 'vendor-react'
+          if (id.includes('node_modules')) return 'vendor-other'
+
+          // Split feature pages into lazy-loaded chunks
+          if (id.includes('/pages/Schedule') || id.includes('/pages/Scheduling')) {
+            return 'pages-schedule'
+          }
+          if (id.includes('/pages/Invoicing') || id.includes('/pages/Quoting')) {
+            return 'pages-finance'
+          }
+          if (id.includes('/pages/Settings') || id.includes('/pages/Workspace')) {
+            return 'pages-admin'
+          }
+          if (id.includes('/pages/Clients') || id.includes('/pages/ClientProfile')) {
+            return 'pages-clients'
+          }
+          if (id.includes('/components')) return 'components-shared'
         },
-        // Compress and optimize
-        compact: true,
       },
     },
     minify: 'terser',
     terserOptions: {
       compress: {
         drop_console: true,
+        passes: 2,
       },
     },
   },
