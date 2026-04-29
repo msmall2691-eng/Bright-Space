@@ -8,6 +8,7 @@ from datetime import datetime, date, time, timezone
 from database.db import get_db
 from database.models import Visit, Job, Client, Property
 from modules.auth.router import get_current_user, require_role
+from utils.activity_logger import log_visit_skipped
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -402,6 +403,7 @@ def skip_visit(visit_id: int, reason: Optional[str] = None, db: Session = Depend
     if visit.job:
         visit.job.status = "cancelled"
 
+    log_visit_skipped(db, visit, reason=reason)
     db.commit()
     db.refresh(visit)
     return {

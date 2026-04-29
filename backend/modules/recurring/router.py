@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 from database.db import get_db
 from database.models import RecurringSchedule, Job, Visit
+from utils.activity_logger import log_job_created, log_calendar_event
 
 router = APIRouter()
 
@@ -154,8 +155,8 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
 
     db.commit()
 
-    # Pre-materialize a Visit per new Job so the calendar UI sees individual
-    # occurrences and admins can skip/reassign one date without breaking the rule.
+    # Pre-materialize a Visit per new Job + log to unified timeline so the
+    # client profile sees each scheduled occurrence.
     for job in new_jobs:
         db.refresh(job)
         visit = Visit(
@@ -168,6 +169,7 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             notes=job.notes,
         )
         db.add(visit)
+        log_job_created(db, job, actor="recurring_schedule")
     if new_jobs:
         db.commit()
 
@@ -187,6 +189,12 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 if event_id:
                     job.calendar_invite_sent = True
                     job.gcal_event_id = event_id
+                    log_calendar_event(
+                        db, "created",
+                        client_id=job.client_id, job_id=job.id,
+                        title=job.title, gcal_event_id=event_id,
+                        scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                    )
             except Exception as e:
                 logger.warning(f"GCal push failed for job {job.id} (schedule {sched.id}): {e}")
         db.commit()
