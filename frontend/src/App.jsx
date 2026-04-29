@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
@@ -7,20 +7,24 @@ import AICommandBar from './components/AICommandBar'
 import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
-import Workspace from './pages/Workspace'
-import Clients from './pages/Clients'
-import ClientProfile from './pages/ClientProfile'
-import Quoting from './pages/Quoting'
-import Schedule from './pages/Schedule'
-import Invoicing from './pages/Invoicing'
-import Payroll from './pages/Payroll'
-import Comms from './pages/Comms'
-import Properties from './pages/Properties'
-import PropertyDetail from './pages/PropertyDetail'
 import Requests from './pages/Requests'
-import Settings from './pages/Settings'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
+
+const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
+
+// Lazy-loaded pages for code splitting
+const Workspace = lazy(() => import('./pages/Workspace'))
+const Clients = lazy(() => import('./pages/Clients'))
+const ClientProfile = lazy(() => import('./pages/ClientProfile'))
+const Quoting = lazy(() => import('./pages/Quoting'))
+const Schedule = lazy(() => import('./pages/Schedule'))
+const Invoicing = lazy(() => import('./pages/Invoicing'))
+const Payroll = lazy(() => import('./pages/Payroll'))
+const Comms = lazy(() => import('./pages/Comms'))
+const Properties = lazy(() => import('./pages/Properties'))
+const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
+const Settings = lazy(() => import('./pages/Settings'))
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -83,27 +87,29 @@ export default function App() {
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto bg-[#FCFCFC] pb-bottomnav lg:pb-0 scroll-smooth-mobile">
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/workspace" element={<Workspace />} />
-            <Route path="/clients" element={<Clients />} />
-            <Route path="/clients/:id" element={<ClientProfile />} />
-            <Route path="/requests" element={<Requests />} />
-            <Route path="/pipeline" element={<Requests />} />
-            <Route path="/quoting" element={<Quoting />} />
-            <Route path="/schedule" element={<Schedule />} />
-            <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
-            <Route path="/invoicing" element={<Invoicing />} />
-            <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
-            <Route path="/payroll" element={<Payroll />} />
-            <Route path="/comms" element={<Comms />} />
-            <Route path="/properties" element={<Properties />} />
-            <Route path="/properties/:propertyId" element={<PropertyDetail />} />
-            <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/workspace" element={<Workspace />} />
+              <Route path="/clients" element={<Clients />} />
+              <Route path="/clients/:id" element={<ClientProfile />} />
+              <Route path="/requests" element={<Requests />} />
+              <Route path="/pipeline" element={<Requests />} />
+              <Route path="/quoting" element={<Quoting />} />
+              <Route path="/schedule" element={<Schedule />} />
+              <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
+              <Route path="/invoicing" element={<Invoicing />} />
+              <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
+              <Route path="/payroll" element={<Payroll />} />
+              <Route path="/comms" element={<Comms />} />
+              <Route path="/properties" element={<Properties />} />
+              <Route path="/properties/:propertyId" element={<PropertyDetail />} />
+              <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
       <BottomNav />
