@@ -59,6 +59,8 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [internalRefresh, setInternalRefresh] = useState(0)
+  const [draggingVisit, setDraggingVisit] = useState(null)
+  const [dropTarget, setDropTarget] = useState(null)
 
   const days = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -165,6 +167,48 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
     }
   }
 
+  const handleReassign = async (visitId, targetCleanerId) => {
+    try {
+      const visit = visits.find(v => v.id === visitId)
+      if (!visit) return
+
+      const newCleanerIds = targetCleanerId === 'unassigned' ? [] : [targetCleanerId]
+      // Use PATCH to update visit with new cleaner assignment
+      const updateFn = async () => {
+        const response = await fetch(`/api/visits/${visitId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cleaner_ids: newCleanerIds })
+        })
+        if (!response.ok) throw new Error('Update failed')
+        return response.json()
+      }
+      await updateFn()
+      setDraggingVisit(null)
+      setDropTarget(null)
+      setInternalRefresh(k => k + 1)
+    } catch (e) {
+      alert('Failed to reassign visit: ' + (e?.message || 'unknown error'))
+    }
+  }
+
+  const onDragStart = (e, visit) => {
+    setDraggingVisit(visit)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const onDragOver = (e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const onDrop = (e, targetCleanerId) => {
+    e.preventDefault()
+    if (draggingVisit && draggingVisit.id) {
+      handleReassign(draggingVisit.id, targetCleanerId)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
       {/* Header */}
@@ -242,8 +286,18 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
                   </td>
                   {days.map(d => {
                     const cellVisits = byDate[d.iso] || []
+                    const cellKey = `${cleanerId}-${d.iso}`
+                    const isDropTarget = dropTarget === cellKey
                     return (
-                      <td key={d.iso} className="align-top border-r border-zinc-100 p-1.5" style={{ minWidth: 130, height: 80 }}>
+                      <td
+                        key={d.iso}
+                        className={`align-top border-r border-zinc-100 p-1.5 transition-colors ${isDropTarget ? 'bg-blue-50' : ''}`}
+                        style={{ minWidth: 130, height: 80 }}
+                        onDragOver={onDragOver}
+                        onDrop={(e) => { onDrop(e, cleanerId); setDropTarget(null) }}
+                        onDragEnter={() => setDropTarget(cellKey)}
+                        onDragLeave={() => setDropTarget(null)}
+                      >
                         <div className="flex flex-col gap-1">
                           {cellVisits.map(v => (
                             <VisitCard
@@ -251,6 +305,8 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
                               visit={v}
                               onClick={() => onVisitClick?.(v)}
                               onSkip={() => handleSkip(v.id)}
+                              isDragging={draggingVisit?.id === v.id}
+                              onDragStart={(e) => onDragStart(e, v)}
                             />
                           ))}
                         </div>
@@ -267,7 +323,7 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
   )
 }
 
-function VisitCard({ visit, onClick, onSkip }) {
+function VisitCard({ visit, onClick, onSkip, isDragging, onDragStart }) {
   const jobType = visit.job?.job_type || 'residential'
   const status = visit.status || 'scheduled'
   const title = visit.job?.title || 'Visit'
@@ -277,8 +333,10 @@ function VisitCard({ visit, onClick, onSkip }) {
   return (
     <div
       onClick={onClick}
-      className={`group relative rounded border px-2 py-1 cursor-pointer transition-colors ${STATUS_PILL[status] || STATUS_PILL.scheduled}`}
-      title={`${title} — ${propName || ''}`}
+      draggable
+      onDragStart={onDragStart}
+      className={`group relative rounded border px-2 py-1 cursor-move transition-all ${isDragging ? 'opacity-50 ring-2 ring-blue-400' : ''} ${STATUS_PILL[status] || STATUS_PILL.scheduled}`}
+      title={`${title} — ${propName || ''} (drag to reassign)`}
     >
       <div className="flex items-center gap-1.5">
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TYPE_DOT[jobType] || 'bg-zinc-400'}`} />
