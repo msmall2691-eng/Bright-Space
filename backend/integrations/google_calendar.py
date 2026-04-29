@@ -67,13 +67,17 @@ def _get_service():
     return build("calendar", "v3", credentials=creds)
 
 
-def _build_event(job: dict, client: dict, include_attendees: bool = False) -> dict:
+def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> dict:
     """Build a Google Calendar event dict from a job and client.
 
     include_attendees: When False (default), creates the event on YOUR calendar only.
                        When True, adds the client as an attendee so they get an invite.
+    crew_emails: List of cleaner emails to add as attendees so they see event on their phones.
+    property_data: Optional dict with property metadata (timezone, house_code, access_notes, etc.)
+                   Used to enrich event description with on-site info.
     """
-    tz = "America/New_York"
+    # Use property timezone if available, otherwise default to America/New_York
+    tz = (property_data or {}).get("timezone") or "America/New_York"
     date = job["scheduled_date"]
     start_dt = f"{date}T{job['start_time']}:00"
     end_dt   = f"{date}T{job['end_time']}:00"
@@ -82,19 +86,41 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False) -> di
     type_label = {"residential": "Residential", "commercial": "Commercial", "str_turnover": "STR Turnover"}.get(job_type, "")
 
     description_lines = [
-        f"📋 Job: {job['title']}",
-        f"👤 Client: {client.get('name', '')}",
+        f"Job: {job['title']}",
+        f"Type: {type_label}" if type_label else None,
+        f"Client: {client.get('name', '')}",
     ]
     if job.get("address"):
-        description_lines.append(f"📍 {job['address']}")
+        description_lines.append(f"Address: {job['address']}")
+
+    # Property-level on-site info
+    if property_data:
+        if property_data.get("house_code"):
+            description_lines.append(f"Access Code: {property_data['house_code']}")
+        if property_data.get("access_notes"):
+            description_lines.append(f"Access: {property_data['access_notes']}")
+        if property_data.get("parking_notes"):
+            description_lines.append(f"Parking: {property_data['parking_notes']}")
+        if property_data.get("site_contact_name") and property_data.get("site_contact_phone"):
+            description_lines.append(
+                f"Site contact: {property_data['site_contact_name']} ({property_data['site_contact_phone']})"
+            )
+
+    # Crew assignment
+    if crew_emails:
+        description_lines.append(f"Crew: {len(crew_emails)} assigned")
+
     if job.get("notes"):
         description_lines.append(f"\nNotes: {job['notes']}")
     description_lines.append("\n— The Maine Cleaning Co.")
 
+    # Filter None entries
+    description = "\n".join(line for line in description_lines if line)
+
     event = {
         "summary": job["title"],
         "location": job.get("address", ""),
-        "description": "\n".join(description_lines),
+        "description": description,
         "start": {"dateTime": start_dt, "timeZone": tz},
         "end":   {"dateTime": end_dt,   "timeZone": tz},
         "colorId": JOB_TYPE_COLORS.get(job_type, "1"),
@@ -107,9 +133,16 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False) -> di
         },
     }
 
-    # Only add client as attendee when explicitly requested
+    # Build attendee list: client (if invited) + crew members
+    attendees = []
     if include_attendees and client.get("email"):
-        event["attendees"] = [{"email": client["email"], "displayName": client.get("name", "")}]
+        attendees.append({"email": client["email"], "displayName": client.get("name", "")})
+    if crew_emails:
+        for email in crew_emails:
+            if email and email.strip():
+                attendees.append({"email": email.strip(), "responseStatus": "accepted"})
+    if attendees:
+        event["attendees"] = attendees
 
     # Store BrightBase metadata as extendedProperties so the sync engine
     # can identify which client/property this event belongs to.
@@ -128,20 +161,29 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False) -> di
     return event
 
 
-def create_event(job: dict, client: dict, send_invite: bool = False) -> str | None:
+def create_event(job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> str | None:
     """Create a Google Calendar event. Returns the event ID or None on failure.
 
     send_invite: When False (default), event goes on your calendar silently.
                  When True, client is added as attendee and gets an invite email.
+    crew_emails: List of cleaner emails to add as attendees (gets event on their phone).
+    property_data: Optional property metadata for richer description (timezone, house_code, access_notes, etc.)
     """
     try:
         service = _get_service()
         cal_id = _calendar_id(job.get("job_type", "residential"))
-        event = _build_event(job, client, include_attendees=send_invite)
+        event = _build_event(
+            job, client,
+            include_attendees=send_invite,
+            crew_emails=crew_emails,
+            property_data=property_data,
+        )
+        # Send updates to crew even if not officially "inviting" the client
+        send_param = "all" if (send_invite or crew_emails) else "none"
         result = service.events().insert(
             calendarId=cal_id,
             body=event,
-            sendUpdates="all" if send_invite else "none",
+            sendUpdates=send_param,
         ).execute()
         return result.get("id")
     except RuntimeError as e:
@@ -152,17 +194,23 @@ def create_event(job: dict, client: dict, send_invite: bool = False) -> str | No
         return None
 
 
-def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False) -> bool:
+def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> bool:
     """Update an existing Google Calendar event."""
     try:
         service = _get_service()
         cal_id = _calendar_id(job.get("job_type", "residential"))
-        event = _build_event(job, client, include_attendees=send_invite)
+        event = _build_event(
+            job, client,
+            include_attendees=send_invite,
+            crew_emails=crew_emails,
+            property_data=property_data,
+        )
+        send_param = "all" if (send_invite or crew_emails) else "none"
         service.events().update(
             calendarId=cal_id,
             eventId=event_id,
             body=event,
-            sendUpdates="all" if send_invite else "none",
+            sendUpdates=send_param,
         ).execute()
         return True
     except Exception as e:
