@@ -32,4 +32,5 @@ COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 RUN mkdir -p /data
 
 EXPOSE 8000
+# Force rebuild to pick up latest migrations
 CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
