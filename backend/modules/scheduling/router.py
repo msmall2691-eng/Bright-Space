@@ -9,6 +9,9 @@ from zoneinfo import ZoneInfo
 from database.db import get_db
 from database.models import Job, Client, Visit
 from modules.auth.router import get_current_user, require_role
+from utils.activity_logger import (
+    log_job_created, log_job_status_change, log_calendar_event
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -125,6 +128,10 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job)
 
+    # Log to unified activity timeline
+    log_job_created(db, job)
+    db.commit()
+
     # Create primary Visit for this job (dual-write pattern)
     try:
         visit = Visit(
@@ -159,6 +166,13 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
             job.gcal_event_id = event_id
             db.commit()
             db.refresh(job)
+            log_calendar_event(
+                db, "created",
+                client_id=job.client_id, job_id=job.id,
+                title=job.title, gcal_event_id=event_id,
+                scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+            )
+            db.commit()
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
     return job_to_dict(job)
@@ -231,10 +245,15 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    prev_status = job.status
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
+    # Log status transitions to the unified timeline
+    if job.status != prev_status:
+        log_job_status_change(db, job, prev_status)
+        db.commit()
     # Sync update to Google Calendar if event exists
     if job.gcal_event_id:
         try:
@@ -258,6 +277,13 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    # Log to timeline before delete (FK rows are detached when job goes away,
+    # but the activity row's job_id link still survives via the column value).
+    log_calendar_event(
+        db, "cancelled",
+        client_id=job.client_id, job_id=job.id,
+        title=job.title, gcal_event_id=job.gcal_event_id,
+    )
     # Remove from Google Calendar if event exists
     if job.gcal_event_id:
         try:

@@ -16,6 +16,7 @@ from database.db import get_db
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
 from integrations.email_filter import should_create_client_from_email
+from utils.activity_logger import log_email
 from datetime import datetime
 import logging
 
@@ -58,7 +59,9 @@ def _ensure_contact_email(client_id: int, email: str, source: str, db: Session):
 
 
 def _log_activity(db, **kwargs):
-    db.add(Activity(**kwargs))
+    """Thin compat wrapper — defers to utils.activity_logger.log_activity."""
+    from utils.activity_logger import log_activity
+    return log_activity(db, **kwargs)
 
 
 @router.get("/inbox")
@@ -287,12 +290,14 @@ def send_email_reply(
         db.add(message)
         db.flush()
 
-        _log_activity(
+        log_email(
             db,
+            "sent",
             client_id=client.id,
-            activity_type="email_sent",
-            summary=f"Reply sent to {to_email}",
-            extra_data={"to_email": to_email, "subject": subject},
+            subject=subject,
+            from_email=from_email,
+            to_email=to_email,
+            message_id=message.id,
         )
 
     db.commit()
