@@ -32,19 +32,46 @@ def init_db():
     # The 'alembic upgrade head' command runs before the app starts,
     # ensuring the database schema is up-to-date. See alembic/versions/
     # for the migration history.
-    _run_migrations()
+    try:
+        _run_migrations()
+    except Exception as e:
+        logger.warning(f"Schema migration failed (non-critical): {e}")
+
     # Phase 1 omnichannel: backfill legacy messages into conversations
-    _backfill_conversations()
+    try:
+        _backfill_conversations()
+    except Exception as e:
+        logger.warning(f"Backfill conversations failed (non-critical): {e}")
+
     # Auth: bootstrap admin user if env vars set
-    _bootstrap_admin_user()
+    try:
+        _bootstrap_admin_user()
+    except Exception as e:
+        logger.warning(f"Bootstrap admin user failed (non-critical): {e}")
+
     # PR 1: Backfill new data types (DATE, TIME instead of VARCHAR)
-    _migrate_data_types()
+    try:
+        _migrate_data_types()
+    except Exception as e:
+        logger.warning(f"Data type migration failed (non-critical): {e}")
+
     # PR 2: Backfill missing properties for orphaned jobs
-    _backfill_missing_properties()
+    try:
+        _backfill_missing_properties()
+    except Exception as e:
+        logger.warning(f"Backfill properties failed (non-critical): {e}")
+
     # PR 4: Backfill Visits from existing Jobs (one visit per job)
-    _backfill_visits_from_jobs()
+    try:
+        _backfill_visits_from_jobs()
+    except Exception as e:
+        logger.warning(f"Backfill visits failed (non-critical): {e}")
+
     # Fix STR turnover dates (RFC 5545 DTEND exclusivity)
-    _fix_str_turnover_dates()
+    try:
+        _fix_str_turnover_dates()
+    except Exception as e:
+        logger.warning(f"Fix STR turnover dates failed (non-critical): {e}")
 
 
 def _run_migrations():
