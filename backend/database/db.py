@@ -49,11 +49,6 @@ def init_db():
     except Exception as e:
         logger.warning(f"Bootstrap admin user failed (non-critical): {e}")
 
-    # PR 1: Backfill new data types (DATE, TIME instead of VARCHAR)
-    try:
-        _migrate_data_types()
-    except Exception as e:
-        logger.warning(f"Data type migration failed (non-critical): {e}")
 
     # PR 2: Backfill missing properties for orphaned jobs
     try:
@@ -548,83 +543,6 @@ def _backfill_missing_properties():
         db.close()
 
 
-def _migrate_data_types():
-    """
-    Backfill new data type columns (DATE, TIME) from old VARCHAR columns.
-
-    This migration:
-    1. Converts jobs.scheduled_date (VARCHAR) to DATE
-    2. Converts jobs/recurring_schedules start_time/end_time (VARCHAR) to TIME
-    3. Once backfilled, the old columns will be dropped and new ones renamed
-
-    Idempotent — safe to run every boot.
-    """
-    from database.models import Job, RecurringSchedule
-    from datetime import datetime, time
-
-    db = SessionLocal()
-    try:
-        # Backfill jobs.scheduled_date_new from jobs.scheduled_date
-        jobs_to_migrate = db.query(Job).filter(Job.scheduled_date_new.is_(None)).all()
-        migrated_jobs = 0
-        for job in jobs_to_migrate:
-            if job.scheduled_date:
-                try:
-                    # Parse YYYY-MM-DD string to date
-                    date_obj = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
-                    job.scheduled_date_new = date_obj
-                    migrated_jobs += 1
-                except (ValueError, TypeError):
-                    logger.warning(f"[migrate_data_types] Could not parse job {job.id} scheduled_date: {job.scheduled_date}")
-
-        if migrated_jobs > 0:
-            db.commit()
-            logger.info(f"[migrate_data_types] Migrated {migrated_jobs} job scheduled_dates to DATE type")
-
-        # Backfill jobs.start_time_new / end_time_new
-        jobs_time_to_migrate = db.query(Job).filter(Job.start_time_new.is_(None)).all()
-        migrated_times = 0
-        for job in jobs_time_to_migrate:
-            try:
-                if job.start_time:
-                    start = datetime.strptime(job.start_time, "%H:%M").time()
-                    job.start_time_new = start
-                if job.end_time:
-                    end = datetime.strptime(job.end_time, "%H:%M").time()
-                    job.end_time_new = end
-                migrated_times += 1
-            except (ValueError, TypeError):
-                logger.warning(f"[migrate_data_types] Could not parse job {job.id} times: {job.start_time}/{job.end_time}")
-
-        if migrated_times > 0:
-            db.commit()
-            logger.info(f"[migrate_data_types] Migrated {migrated_times} job times to TIME type")
-
-        # Backfill recurring_schedules times
-        recurring_to_migrate = db.query(RecurringSchedule).filter(RecurringSchedule.start_time_new.is_(None)).all()
-        migrated_recurring = 0
-        for sched in recurring_to_migrate:
-            try:
-                if sched.start_time:
-                    start = datetime.strptime(sched.start_time, "%H:%M").time()
-                    sched.start_time_new = start
-                if sched.end_time:
-                    end = datetime.strptime(sched.end_time, "%H:%M").time()
-                    sched.end_time_new = end
-                migrated_recurring += 1
-            except (ValueError, TypeError):
-                logger.warning(f"[migrate_data_types] Could not parse recurring {sched.id} times: {sched.start_time}/{sched.end_time}")
-
-        if migrated_recurring > 0:
-            db.commit()
-            logger.info(f"[migrate_data_types] Migrated {migrated_recurring} recurring schedule times to TIME type")
-
-    except Exception as exc:
-        logger.warning(f"[migrate_data_types] Error during migration: {exc}")
-    finally:
-        db.close()
-
-
 def _fix_str_turnover_dates():
     """
     Fix STR turnover dates to account for RFC 5545 DTEND exclusivity.
@@ -647,7 +565,9 @@ def _fix_str_turnover_dates():
         for job in jobs:
             try:
                 # Parse the date string and subtract 1 day
-                job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                if not job.scheduled_date:
+                    continue
+                job_date = datetime.strptime(str(job.scheduled_date), "%Y-%m-%d").date()
                 # Only fix if it looks like it hasn't been fixed (heuristic: if it's in the future relative to today+1)
                 # Actually, let's check if there's a corresponding iCal event with a different date
                 if job_date:
@@ -679,13 +599,22 @@ def _fix_str_turnover_dates():
         fixed_events = 0
         for event in ical_events:
             try:
-                event_date = datetime.strptime(event.checkout_date, "%Y-%m-%d").date()
+                if not event.checkout_date:
+                    continue
+                # Handle both string and date object
+                if isinstance(event.checkout_date, str):
+                    event_date = datetime.strptime(event.checkout_date, "%Y-%m-%d").date()
+                else:
+                    event_date = event.checkout_date
                 # Check raw_event to see original DTEND
                 # For now, mark as fixed if job is already linked and has correct date
                 if event.job_id:
                     job = db.query(Job).filter(Job.id == event.job_id).first()
                     if job and job.scheduled_date:
-                        job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                        if isinstance(job.scheduled_date, str):
+                            job_date = datetime.strptime(job.scheduled_date, "%Y-%m-%d").date()
+                        else:
+                            job_date = job.scheduled_date
                         # If event date is 1 day after job date, event needs fixing
                         if event_date == job_date + timedelta(days=1):
                             event.checkout_date = job_date.isoformat()
