@@ -1,5 +1,8 @@
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
 FROM node:20-alpine AS frontend-build
+# Cache buster: force rebuild on every commit
+ARG BUILD_ID=default
+RUN echo "Building with ID: $BUILD_ID"
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
@@ -12,15 +15,18 @@ RUN npm run build
 
 # ── Stage 2: Python backend + serve frontend ───────────────────────────────────
 FROM python:3.12-slim
+# Cache buster: force rebuild on every commit
+ARG BUILD_ID=default
+RUN echo "Backend build ID: $BUILD_ID"
 WORKDIR /app/backend
 
 # System deps
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 
-# Python deps
+# Python deps - fresh install each time
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --force-reinstall -r requirements.txt
 
 # Copy backend source
 COPY backend/ .
@@ -32,5 +38,4 @@ COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 RUN mkdir -p /data
 
 EXPOSE 8000
-# Force rebuild to pick up latest migrations
 CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
