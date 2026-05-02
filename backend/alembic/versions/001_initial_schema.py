@@ -12,7 +12,7 @@ def upgrade():
     # Create all base tables using idempotent raw SQL
     op.execute("""
         CREATE TABLE IF NOT EXISTS app_settings (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             key VARCHAR NOT NULL UNIQUE,
             value VARCHAR,
             updated_at TIMESTAMP
@@ -21,7 +21,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS clients (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             name VARCHAR,
             email VARCHAR,
             phone VARCHAR,
@@ -48,7 +48,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS contact_phones (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             phone VARCHAR,
             type VARCHAR,
@@ -59,7 +59,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS contact_emails (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             email VARCHAR,
             type VARCHAR,
@@ -69,7 +69,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS field_definitions (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             entity_type VARCHAR,
             field_name VARCHAR,
             field_type VARCHAR,
@@ -81,7 +81,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS ical_events (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             property_id INTEGER,
             ical_uid VARCHAR,
             ical_source VARCHAR,
@@ -98,7 +98,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS lead_intakes (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER,
             opportunity_id INTEGER,
             name VARCHAR NOT NULL,
@@ -133,7 +133,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS opportunities (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             title VARCHAR,
             amount FLOAT,
@@ -146,7 +146,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS properties (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             name VARCHAR,
             address VARCHAR,
@@ -162,7 +162,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             email VARCHAR,
             name VARCHAR,
             role VARCHAR,
@@ -175,7 +175,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS quotes (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             title VARCHAR,
             description VARCHAR,
@@ -194,7 +194,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS recurring_schedules (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             job_id INTEGER,
             frequency VARCHAR,
             end_date VARCHAR,
@@ -206,7 +206,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             property_id INTEGER REFERENCES properties(id),
             quote_id INTEGER REFERENCES quotes(id),
@@ -236,7 +236,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS visits (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             job_id INTEGER NOT NULL REFERENCES jobs(id),
             scheduled_date VARCHAR,
             start_time VARCHAR,
@@ -261,7 +261,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS conversations (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             created_at TIMESTAMP,
             updated_at TIMESTAMP
@@ -270,7 +270,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS messages (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             conversation_id INTEGER REFERENCES conversations(id),
             content VARCHAR,
             sender VARCHAR,
@@ -283,7 +283,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             client_id INTEGER REFERENCES clients(id),
             job_id INTEGER REFERENCES jobs(id),
             amount FLOAT,
@@ -305,7 +305,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS property_icals (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             property_id INTEGER NOT NULL REFERENCES properties(id),
             url VARCHAR NOT NULL,
             source VARCHAR,
@@ -324,7 +324,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS activities (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             entity_type VARCHAR,
             entity_id INTEGER,
             action VARCHAR,
@@ -336,7 +336,7 @@ def upgrade():
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS integration_events (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             entity_type VARCHAR NOT NULL,
             entity_id INTEGER NOT NULL,
             provider VARCHAR NOT NULL,
