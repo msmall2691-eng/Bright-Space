@@ -96,14 +96,27 @@ class TagsRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _normalize_contact(s: Optional[str]) -> Optional[str]:
-    """Loose normalization — strip spaces, punctuation from phone-like inputs."""
+    """Normalize phone numbers to E.164 format (+1XXXXXXXXXX).
+    Non-phone inputs are lowercased and returned as-is.
+    """
     if not s:
         return s
     s = s.strip()
-    # Phone-ish? Keep leading +, strip everything else non-digit
+    # Is it phone-ish? Extract digits only (except leading +)
     if re.match(r"^[\+\d\s\(\)\-\.]+$", s):
-        digits = re.sub(r"[^\d+]", "", s)
-        return digits or s
+        digits = re.sub(r"[^\d]", "", s)  # Strip everything except digits
+        if not digits:
+            return s
+        # Normalize to E.164: ensure +1 prefix for US/Canada
+        if len(digits) == 10:  # (207) 233-2422 → 2072332422
+            digits = "1" + digits
+        if len(digits) == 11 and digits[0] == "1":  # Already has country code
+            return "+" + digits
+        if digits.startswith("1") and len(digits) == 11:
+            return "+" + digits
+        if len(digits) >= 10:  # Has digits, add + (assume US if no country code)
+            return "+" + digits
+        return s
     return s.lower()
 
 
@@ -592,8 +605,11 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
     """Send an SMS via Twilio — attaches to a conversation automatically.
     If no client_id provided, tries to match the destination phone to an existing client.
     """
+    # Normalize phone to E.164 format for consistent storage
+    to_normalized = _normalize_contact(data.to)
+
     try:
-        result = send_sms(to=data.to, body=data.body)
+        result = send_sms(to=to_normalized, body=data.body)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Configuration error: {e}")
     except RuntimeError as e:
@@ -604,14 +620,14 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
 
     client_id = data.client_id
     if not client_id:
-        matched = _match_client_by_phone(db, data.to)
+        matched = _match_client_by_phone(db, to_normalized)
         if matched:
             client_id = matched.id
 
     conv = find_or_create_conversation(
         db, channel="sms",
         client_id=client_id,
-        external_contact=data.to,
+        external_contact=to_normalized,
     )
     # Ensure the conv is linked if we newly matched a client
     if client_id and not conv.client_id:
@@ -622,8 +638,8 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
         conversation_id=conv.id,
         channel="sms",
         direction="outbound",
-        from_addr=os.getenv("TWILIO_PHONE_NUMBER", ""),
-        to_addr=data.to,
+        from_addr=_normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
+        to_addr=to_normalized,
         body=data.body,
         status=result.get("status", "sent"),
         external_id=result.get("sid"),
@@ -689,33 +705,36 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
                 media_type="text/xml",
             )
 
+    # Normalize phone to E.164 for consistent lookups and storage
+    from_number_normalized = _normalize_contact(from_number)
+
     # Match to a client by phone number (fuzzy — handles format mismatches)
-    client = _match_client_by_phone(db, from_number)
+    client = _match_client_by_phone(db, from_number_normalized)
     if client:
         logger.info(f"[twilio] Matched inbound {from_number} → client #{client.id} ({client.name})")
         # Update primary phone to E.164 format if needed
-        if client.phone != from_number:
-            logger.info(f"[twilio] Updating client phone: {client.phone!r} → {from_number!r}")
-            client.phone = from_number
+        if client.phone != from_number_normalized:
+            logger.info(f"[twilio] Updating client phone: {client.phone!r} → {from_number_normalized!r}")
+            client.phone = from_number_normalized
         # Add or update contact phone if not already present
         existing_contact = db.query(ContactPhone).filter(
             ContactPhone.client_id == client.id,
-            ContactPhone.phone == from_number
+            ContactPhone.phone == from_number_normalized
         ).first()
         if not existing_contact:
             new_contact = ContactPhone(
                 client_id=client.id,
-                phone=from_number,
+                phone=from_number_normalized,
                 phone_type="mobile",
                 source="twilio",
             )
             db.add(new_contact)
-            logger.info(f"[twilio] Added contact phone {from_number} for client #{client.id}")
+            logger.info(f"[twilio] Added contact phone {from_number_normalized} for client #{client.id}")
     else:
-        logger.info(f"[twilio] New contact from {from_number}")
+        logger.info(f"[twilio] New contact from {from_number_normalized}")
         client = Client(
-            name=from_number,
-            phone=from_number,
+            name=from_number_normalized,
+            phone=from_number_normalized,
             status="lead",
             source="sms",
         )
@@ -725,15 +744,15 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     conv = find_or_create_conversation(
         db, channel="sms",
         client_id=client.id,
-        external_contact=from_number,
+        external_contact=from_number_normalized,
     )
     msg = Message(
         client_id=client.id,
         conversation_id=conv.id,
         channel="sms",
         direction="inbound",
-        from_addr=from_number,
-        to_addr=to_number,
+        from_addr=from_number_normalized,
+        to_addr=_normalize_contact(to_number),
         body=body,
         status="received",
         external_id=sid,
