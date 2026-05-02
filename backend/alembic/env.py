@@ -39,7 +39,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
+    with connectable.begin() as connection:
         inspector = inspect(connection)
         tables = inspector.get_table_names()
         has_alembic_version = 'alembic_version' in tables
@@ -48,17 +48,16 @@ def run_migrations_online() -> None:
         # If tables exist but alembic_version doesn't, create it and mark 001 as applied
         # This prevents trying to re-create tables that already exist
         if has_app_settings and not has_alembic_version:
-            with connection.begin():
-                try:
-                    connection.exec_driver_sql(
-                        "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL, "
-                        "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
-                    )
-                    connection.exec_driver_sql(
-                        "INSERT INTO alembic_version (version_num) VALUES ('001')"
-                    )
-                except Exception:
-                    pass
+            try:
+                connection.exec_driver_sql(
+                    "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL, "
+                    "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
+                )
+                connection.exec_driver_sql(
+                    "INSERT INTO alembic_version (version_num) VALUES ('001')"
+                )
+            except Exception:
+                pass
 
         context.configure(
             connection=connection, target_metadata=target_metadata
