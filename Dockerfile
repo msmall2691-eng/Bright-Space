@@ -7,10 +7,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ .
-# Accept API key from Railway env vars (BRIGHTBASE_API_KEY) or explicit VITE_API_KEY
-ARG VITE_API_KEY
-ARG BRIGHTBASE_API_KEY
-ENV VITE_API_KEY=${VITE_API_KEY:-$BRIGHTBASE_API_KEY}
+# Build without exposing secrets as ARG/ENV (use runtime variables instead)
 RUN npm run build
 
 # ── Stage 2: Python backend + serve frontend ───────────────────────────────────
