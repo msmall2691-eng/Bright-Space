@@ -57,26 +57,16 @@ def upgrade():
             bind.execute(text("DELETE FROM conversations WHERE id = :id"), {"id": del_id})
 
     # Add unique constraint to prevent future duplicates
-    if is_pg:
-        bind.execute(text("""
-            ALTER TABLE conversations
-            ADD CONSTRAINT uq_conversations_client_channel
-            UNIQUE (client_id, channel) WHERE client_id IS NOT NULL
-        """))
-    else:
-        bind.execute(text("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_client_channel
-            ON conversations(client_id, channel)
-            WHERE client_id IS NOT NULL
-        """))
+    # PostgreSQL: partial unique index (WHERE not supported on UNIQUE constraint)
+    # SQLite: also uses partial unique index
+    bind.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_client_channel
+        ON conversations (client_id, channel)
+        WHERE client_id IS NOT NULL
+    """))
 
 
 def downgrade():
     bind = op.get_bind()
-    is_pg = bind.dialect.name == 'postgresql'
-
-    if is_pg:
-        bind.execute(text("ALTER TABLE conversations DROP CONSTRAINT IF EXISTS uq_conversations_client_channel"))
-    else:
-        bind.execute(text("DROP INDEX IF EXISTS uq_conversations_client_channel"))
+    bind.execute(text("DROP INDEX IF EXISTS uq_conversations_client_channel"))
 
