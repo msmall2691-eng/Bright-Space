@@ -22,55 +22,43 @@ def upgrade():
     conn = op.get_bind()
     is_pg = conn.dialect.name == 'postgresql'
 
-    # Merge conversations: move messages from newer dupes to oldest, then delete dupes
-    merge_sql = """
-    WITH conversation_groups AS (
-        SELECT
-            client_id,
-            channel,
-            MIN(id) AS keep_id,
-            COUNT(*) AS total_count
-        FROM conversations
-        WHERE channel = 'sms' AND client_id IS NOT NULL
-        GROUP BY client_id, channel
-        HAVING COUNT(*) > 1
-    ),
-    dupes AS (
-        SELECT c.id, cg.keep_id
-        FROM conversations c
-        JOIN conversation_groups cg
-            ON c.client_id = cg.client_id
-            AND c.channel = cg.channel
-        WHERE c.id != cg.keep_id
-    )
-    UPDATE messages SET conversation_id = dupes.keep_id
-    FROM dupes
-    WHERE messages.conversation_id = dupes.id;
-    """
+    # Find duplicate conversations grouped by client_id and channel
+    if is_pg:
+        query = text("""
+            SELECT client_id, channel, array_agg(id ORDER BY id) as ids
+            FROM conversations
+            WHERE client_id IS NOT NULL
+            GROUP BY client_id, channel
+            HAVING COUNT(*) > 1
+        """)
+    else:
+        # SQLite: use GROUP_CONCAT
+        query = text("""
+            SELECT client_id, channel, GROUP_CONCAT(id, ',') as ids
+            FROM conversations
+            WHERE client_id IS NOT NULL
+            GROUP BY client_id, channel
+            HAVING COUNT(*) > 1
+        """)
 
-    # This is tricky in SQLite, so we'll do it in Python instead
-    # Move messages from duplicate conversations to the primary one
-    from sqlalchemy import create_engine
-
-    # Get all conversations grouped by client_id and channel
-    result = conn.execute(text("""
-        SELECT client_id, channel, COUNT(*) as cnt, GROUP_CONCAT(id) as ids
-        FROM conversations
-        WHERE client_id IS NOT NULL
-        GROUP BY client_id, channel
-        HAVING COUNT(*) > 1
-    """))
-
+    result = conn.execute(query)
     duplicates = result.fetchall()
 
     for row in duplicates:
         if not row:
             continue
-        client_id, channel, count, ids_str = row
-        if not ids_str:
+        client_id, channel, ids_result = row
+        if not ids_result:
             continue
 
-        ids = [int(x) for x in ids_str.split(',')]
+        # Parse IDs depending on dialect
+        if is_pg:
+            # Postgres returns a list directly
+            ids = list(ids_result) if isinstance(ids_result, list) else [int(x) for x in str(ids_result).strip('{}').split(',')]
+        else:
+            # SQLite returns a comma-separated string
+            ids = [int(x) for x in ids_result.split(',')]
+
         ids.sort()  # Keep the first (oldest) one
         keep_id = ids[0]
         delete_ids = ids[1:]
