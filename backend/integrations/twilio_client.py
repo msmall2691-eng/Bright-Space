@@ -36,12 +36,22 @@ def send_sms(to: str, body: str) -> dict:
             "Twilio phone number not configured. "
             "Set TWILIO_PHONE_NUMBER environment variable."
         )
-    message = _client().messages.create(
-        body=body,
-        from_=_TWILIO_PHONE_NUMBER,
-        to=to,
-    )
-    return {"sid": message.sid, "status": message.status}
+    if not _TWILIO_ACCOUNT_SID or not _TWILIO_AUTH_TOKEN:
+        raise ValueError(
+            "Twilio credentials not configured. "
+            "Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN environment variables."
+        )
+    try:
+        message = _client().messages.create(
+            body=body,
+            from_=_TWILIO_PHONE_NUMBER,
+            to=to,
+        )
+        return {"sid": message.sid, "status": message.status}
+    except ValueError as e:
+        raise ValueError(f"Twilio configuration error: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Twilio API error: {e}")
 
 
 def get_sms_status(sid: str) -> dict:

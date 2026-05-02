@@ -442,7 +442,12 @@ def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_d
             raise HTTPException(400, f"Channel {conv.channel} not sendable")
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(400, f"Configuration error: {e}")
+    except RuntimeError as e:
+        raise HTTPException(502, f"Service error: {e}")
     except Exception as e:
+        logger.error(f"[comms] Failed to send {conv.channel} message: {e}")
         raise HTTPException(502, f"Send failed: {e}")
 
     msg = Message(
@@ -589,8 +594,13 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
     """
     try:
         result = send_sms(to=data.to, body=data.body)
-    except Exception as e:
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Configuration error: {e}")
+    except RuntimeError as e:
         raise HTTPException(status_code=502, detail=f"Twilio error: {e}")
+    except Exception as e:
+        logger.error(f"[comms] Failed to send SMS: {e}")
+        raise HTTPException(status_code=502, detail=f"SMS error: {e}")
 
     client_id = data.client_id
     if not client_id:
