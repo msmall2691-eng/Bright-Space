@@ -12,6 +12,7 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 600,
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -36,13 +37,6 @@ export default defineConfig({
           }
           if (id.includes('/components')) return 'components-shared'
         },
-      },
-    },
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        passes: 2,
       },
     },
   },
