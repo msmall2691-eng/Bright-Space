@@ -208,15 +208,21 @@ function DaySeparator({ label }) {
 function ConvItem({ conv, active, onClick }) {
   const name = contactDisplay(conv)
   const unread = conv.unread_count > 0
+  const breached = conv.sla_state === 'breached'
+  const lastInbound = conv.messages?.filter(m => m.direction === 'inbound').pop()
+  const lastOutbound = conv.messages?.filter(m => m.direction === 'outbound').pop()
+  const needsReply = lastInbound && (!lastOutbound || new Date(lastInbound.created_at) > new Date(lastOutbound.created_at))
 
   return (
     <button onClick={onClick}
-      className={`group w-full text-left px-3.5 py-3 transition-all duration-150 border-b border-zinc-100/80 ${
-        active
-          ? 'bg-blue-50/70 shadow-[inset_3px_0_0_0_#2563eb]'
-          : unread
-            ? 'bg-white hover:bg-zinc-50/80'
-            : 'bg-white/60 hover:bg-zinc-50/60'
+      className={`group w-full text-left px-3.5 py-3 transition-all duration-150 border-b border-zinc-100/80 border-l-4 ${
+        breached
+          ? 'border-l-red-500 bg-red-50/30 hover:bg-red-50/50'
+          : active
+            ? 'border-l-blue-500 bg-blue-50/70 shadow-[inset_3px_0_0_0_#2563eb]'
+            : unread
+              ? 'border-l-zinc-100 bg-white hover:bg-zinc-50/80'
+              : 'border-l-zinc-100 bg-white/60 hover:bg-zinc-50/60'
       }`}>
       <div className="flex items-start gap-3">
         <Avatar name={conv.client?.name || conv.external_contact} size="sm" />
@@ -242,10 +248,20 @@ function ConvItem({ conv, active, onClick }) {
             <SlaBadge state={conv.sla_state} compact />
           </div>
 
-          {/* Row 3: Preview */}
-          <p className={`text-[12px] leading-relaxed mt-1 truncate ${unread ? 'text-zinc-700' : 'text-zinc-400'}`}>
-            {conv.preview || 'No messages yet'}
-          </p>
+          {/* Row 3: Preview with direction */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className={`text-zinc-400 shrink-0 ${conv.last_message_at && conv.messages?.length > 0 && conv.messages[conv.messages.length - 1]?.direction === 'inbound' ? 'text-zinc-400' : 'text-zinc-300'}`}>
+              {conv.last_message_at && conv.messages?.length > 0 && conv.messages[conv.messages.length - 1]?.direction === 'inbound' ? (
+                <ArrowLeft className="w-3.5 h-3.5" />
+              ) : (
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              )}
+            </span>
+            <p className={`text-[12px] leading-relaxed truncate flex-1 ${breached ? 'text-red-700 font-medium' : unread ? 'text-zinc-700' : 'text-zinc-400'}`}>
+              {conv.preview || 'No messages yet'}
+            </p>
+            {needsReply && <div className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />}
+          </div>
         </div>
 
         {/* Unread badge */}
@@ -264,7 +280,7 @@ function ConvItem({ conv, active, onClick }) {
    MESSAGE BUBBLE â refined with delivery status + timestamps
    âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
 
-function MessageBubble({ m, isFirst, showTime }) {
+function MessageBubble({ m, isFirst, showTime, contactName }) {
   // Internal note
   if (m.is_internal_note) {
     return (
@@ -290,13 +306,13 @@ function MessageBubble({ m, isFirst, showTime }) {
         {/* Sender label on first message in group */}
         {isFirst && (
           <div className={`text-[10px] font-semibold mb-1 px-1 ${outbound ? 'text-right text-zinc-400' : 'text-zinc-500'}`}>
-            {outbound ? (m.author || 'You') : (m.from_addr ? formatPhone(m.from_addr) : 'Customer')}
+            {outbound ? (m.author || 'You') : (contactName || 'Customer')}
           </div>
         )}
         <div className={`px-4 py-2.5 text-[13px] leading-relaxed ${
           outbound
             ? 'bg-blue-600 text-white rounded-2xl rounded-br-lg shadow-sm'
-            : 'bg-white text-zinc-900 rounded-2xl rounded-bl-lg shadow-sm border border-zinc-100'
+            : 'bg-white text-zinc-800 rounded-2xl rounded-bl-lg shadow-sm border border-zinc-100'
         }`}>
           {m.subject && (
             <div className={`text-[11px] font-semibold mb-1 pb-1 border-b ${
@@ -307,7 +323,7 @@ function MessageBubble({ m, isFirst, showTime }) {
             </div>
           )}
           <div className="whitespace-pre-wrap">{m.body}</div>
-          <div className={`text-[10px] mt-1.5 flex items-center gap-1 ${outbound ? 'text-blue-200 justify-end' : 'text-zinc-400'}`}>
+          <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-blue-100 justify-end' : 'text-zinc-600'}`}>
             {fullTime(m.created_at)}
             {outbound && m.status === 'delivered' && <CheckCircle2 className="w-3 h-3" />}
             {outbound && m.status === 'failed' && <AlertTriangle className="w-3 h-3 text-red-300" />}
@@ -757,6 +773,7 @@ export default function Comms() {
     if (filter === 'mine')        params.set('assignee', 'Megan')
     else if (filter === 'unassigned') params.set('assignee', 'unassigned')
     else if (filter === 'unread') params.set('unread_only', 'true')
+    else if (filter === 'breached') params.set('sla_state', 'breached')
     else if (filter === 'resolved') params.set('status', 'resolved')
     else if (filter === 'open')   params.set('status', 'open')
     if (channelFilter) params.set('channel', channelFilter)
@@ -857,6 +874,7 @@ export default function Comms() {
 
   const filterItems = useMemo(() => ([
     { key: 'open',       label: 'Open',       icon: Inbox,        count: summary.open },
+    { key: 'breached',   label: 'Breached',   icon: AlertTriangle, count: summary.breached },
     { key: 'mine',       label: 'Mine',       icon: User,         count: null },
     { key: 'unassigned', label: 'Unassigned', icon: UserPlus,     count: summary.unassigned },
     { key: 'unread',     label: 'Unread',     icon: Bell,         count: summary.unread },
@@ -1045,6 +1063,14 @@ export default function Comms() {
           </div>
         ) : (
           <>
+            {/* SLA breach banner */}
+            {detail.sla_state === 'breached' && (
+              <div className="bg-red-50 border-b border-red-200 px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-red-700">
+                <AlertTriangle className="w-4 h-4" />
+                SLA breached — last message {relTime(detail.last_inbound_at)} ago
+              </div>
+            )}
+
             {/* Thread header */}
             <div className="border-b border-zinc-200 px-5 py-3.5 flex items-center gap-3 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               {/* Mobile back button */}
@@ -1102,7 +1128,7 @@ export default function Comms() {
                 if (item.type === 'day') {
                   return <DaySeparator key={item.key} label={item.label} />
                 }
-                return <MessageBubble key={item.key} m={item.data} isFirst={item.isFirst} />
+                return <MessageBubble key={item.key} m={item.data} isFirst={item.isFirst} contactName={contactDisplay(detail)} />
               })}
               {(!detail.messages || detail.messages.length === 0) && !loadingDetail && (
                 <div className="flex flex-col items-center justify-center py-16">
