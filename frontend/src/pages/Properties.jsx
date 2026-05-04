@@ -56,15 +56,17 @@ export default function Properties() {
     return client?.name || `Client #${id}`
   }
 
+  const propType = (p) => (p?.property_type || '').toLowerCase()
+
   const filteredProperties = currentType === 'all'
     ? properties
-    : properties.filter(p => p.property_type === currentType)
+    : properties.filter(p => propType(p) === currentType)
 
   const typeCounts = {
     all: properties.length,
-    residential: properties.filter(p => p.property_type === 'residential').length,
-    commercial: properties.filter(p => p.property_type === 'commercial').length,
-    str: properties.filter(p => p.property_type === 'str').length,
+    residential: properties.filter(p => propType(p) === 'residential').length,
+    commercial: properties.filter(p => propType(p) === 'commercial').length,
+    str: properties.filter(p => propType(p) === 'str').length,
   }
 
   const save = async () => {
@@ -226,7 +228,8 @@ export default function Properties() {
 
         <div className="space-y-3 overflow-y-auto flex-1 scrollbar-thin">
           {filteredProperties.map(p => {
-            const Config = PROPERTY_TYPE_CONFIG[p.property_type]
+            const pType = propType(p)
+            const Config = PROPERTY_TYPE_CONFIG[pType]
             const Icon = Config?.icon || Home
 
             return (
@@ -253,7 +256,7 @@ export default function Properties() {
 
                         {/* Type-specific metadata */}
                         <div className="flex items-center gap-4 mt-2 flex-wrap">
-                          {p.property_type === 'str' && (
+                          {pType === 'str' && (
                             <>
                               <span className="flex items-center gap-1 text-xs text-zinc-500">
                                 <Clock className="w-3 h-3" />{p.default_duration_hours}h turnover
@@ -275,7 +278,7 @@ export default function Properties() {
                               )}
                             </>
                           )}
-                          {(p.property_type === 'residential' || p.property_type === 'commercial') && (
+                          {(pType === 'residential' || pType === 'commercial') && (
                             <>
                               {p.default_duration_hours && (
                                 <span className="flex items-center gap-1 text-xs text-zinc-500">
@@ -294,7 +297,7 @@ export default function Properties() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-2">
-                      {p.property_type === 'str' && (p.icals?.length || 0) > 0 && (
+                      {pType === 'str' && (p.icals?.length || 0) > 0 && (
                         <button onClick={(e) => { e.stopPropagation(); syncOne(p.id) }} disabled={syncing === p.id}
                           className="flex items-center gap-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-600/30 px-3 py-1.5 rounded-lg text-xs transition-colors">
                           <RefreshCw className={`w-3.5 h-3.5 ${syncing === p.id ? 'animate-spin' : ''}`} />
@@ -318,8 +321,8 @@ export default function Properties() {
                 {expandedPropId === p.id && (
                   <div className="border-t border-zinc-200 p-5 space-y-4 bg-zinc-50">
                     {/* STR: iCal URLs */}
-                    {p.property_type === 'str' && (
-                      <div>
+                    {pType === 'str' && (
+                      <div data-testid="ical-feeds-section">
                         <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar URLs</div>
                         {(p.icals || []).map(ical => (
                           <div key={ical.id} className="bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
