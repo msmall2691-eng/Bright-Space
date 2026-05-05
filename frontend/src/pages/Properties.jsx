@@ -42,6 +42,8 @@ export default function Properties() {
     house_code: '', access_links: '', instructions: ''
   })
   const [showIcalForm, setShowIcalForm] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const load = () =>
     get('/api/properties').then(setProperties).catch(err => console.error("[Properties]", err))
@@ -56,15 +58,17 @@ export default function Properties() {
     return client?.name || `Client #${id}`
   }
 
+  const propType = (p) => (p?.property_type || '').toLowerCase()
+
   const filteredProperties = currentType === 'all'
     ? properties
-    : properties.filter(p => p.property_type === currentType)
+    : properties.filter(p => propType(p) === currentType)
 
   const typeCounts = {
     all: properties.length,
-    residential: properties.filter(p => p.property_type === 'residential').length,
-    commercial: properties.filter(p => p.property_type === 'commercial').length,
-    str: properties.filter(p => p.property_type === 'str').length,
+    residential: properties.filter(p => propType(p) === 'residential').length,
+    commercial: properties.filter(p => propType(p) === 'commercial').length,
+    str: properties.filter(p => propType(p) === 'str').length,
   }
 
   const save = async () => {
@@ -158,6 +162,38 @@ export default function Properties() {
     setShowTypeModal(true)
   }
 
+  const toggleSelect = (id, e) => {
+    e?.stopPropagation()
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      const visibleIds = filteredProperties.map(p => p.id)
+      const allSelected = visibleIds.length > 0 && visibleIds.every(id => prev.has(id))
+      return allSelected ? new Set() : new Set(visibleIds)
+    })
+  }
+  const clearSelection = () => setSelectedIds(new Set())
+  const bulkDelete = async () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      const results = await Promise.allSettled(ids.map(id => del(`/api/properties/${id}`)))
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed > 0) alert(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      clearSelection()
+      await load()
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   const confirmNewProperty = () => {
     setSelected(null)
     setForm({ ...EMPTY, property_type: newPropertyType })
@@ -209,6 +245,35 @@ export default function Properties() {
           ))}
         </div>
 
+        {/* Selection / bulk-action bar */}
+        <div className="flex items-center justify-between mb-3">
+          <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filteredProperties.length > 0 && filteredProperties.every(p => selectedIds.has(p.id))}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-zinc-300 cursor-pointer"
+              data-testid="properties-select-all"
+            />
+            <span>Select all ({filteredProperties.length})</span>
+          </label>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2" data-testid="properties-bulk-actions">
+              <span className="text-xs text-zinc-600 font-medium">{selectedIds.size} selected</span>
+              <button onClick={clearSelection}
+                className="text-xs text-zinc-500 hover:text-zinc-700 px-2 py-1 rounded">
+                Clear
+              </button>
+              <button onClick={bulkDelete} disabled={bulkDeleting}
+                data-testid="properties-bulk-delete"
+                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                <Trash2 className="w-3.5 h-3.5" />
+                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Sync result banner */}
         {syncResult && (
           <div className={`flex items-start gap-2 rounded-xl p-4 mb-4 text-sm border ${syncResult.ok ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
@@ -226,15 +291,25 @@ export default function Properties() {
 
         <div className="space-y-3 overflow-y-auto flex-1 scrollbar-thin">
           {filteredProperties.map(p => {
-            const Config = PROPERTY_TYPE_CONFIG[p.property_type]
+            const pType = propType(p)
+            const Config = PROPERTY_TYPE_CONFIG[pType]
             const Icon = Config?.icon || Home
 
             return (
-              <div key={p.id} className="bg-white border border-zinc-200 rounded-xl">
+              <div key={p.id} className={`bg-white border rounded-xl ${selectedIds.has(p.id) ? 'border-blue-400' : 'border-zinc-200'}`}>
                 {/* Property header */}
                 <div className="p-5 cursor-pointer hover:bg-zinc-50 transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4 flex-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(p.id)}
+                        onChange={(e) => toggleSelect(p.id, e)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 rounded border-zinc-300 cursor-pointer mt-3 shrink-0"
+                        data-testid="property-row-checkbox"
+                        aria-label={`Select ${p.name}`}
+                      />
                       <div className={`w-10 h-10 rounded-xl ${Config?.badge} flex items-center justify-center shrink-0 bg-opacity-20`}>
                         <Icon className={`w-5 h-5 ${Config?.color}`} />
                       </div>
@@ -253,7 +328,7 @@ export default function Properties() {
 
                         {/* Type-specific metadata */}
                         <div className="flex items-center gap-4 mt-2 flex-wrap">
-                          {p.property_type === 'str' && (
+                          {pType === 'str' && (
                             <>
                               <span className="flex items-center gap-1 text-xs text-zinc-500">
                                 <Clock className="w-3 h-3" />{p.default_duration_hours}h turnover
@@ -275,7 +350,7 @@ export default function Properties() {
                               )}
                             </>
                           )}
-                          {(p.property_type === 'residential' || p.property_type === 'commercial') && (
+                          {(pType === 'residential' || pType === 'commercial') && (
                             <>
                               {p.default_duration_hours && (
                                 <span className="flex items-center gap-1 text-xs text-zinc-500">
@@ -294,7 +369,7 @@ export default function Properties() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-2">
-                      {p.property_type === 'str' && (p.icals?.length || 0) > 0 && (
+                      {pType === 'str' && (p.icals?.length || 0) > 0 && (
                         <button onClick={(e) => { e.stopPropagation(); syncOne(p.id) }} disabled={syncing === p.id}
                           className="flex items-center gap-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-600/30 px-3 py-1.5 rounded-lg text-xs transition-colors">
                           <RefreshCw className={`w-3.5 h-3.5 ${syncing === p.id ? 'animate-spin' : ''}`} />
@@ -318,8 +393,8 @@ export default function Properties() {
                 {expandedPropId === p.id && (
                   <div className="border-t border-zinc-200 p-5 space-y-4 bg-zinc-50">
                     {/* STR: iCal URLs */}
-                    {p.property_type === 'str' && (
-                      <div>
+                    {pType === 'str' && (
+                      <div data-testid="ical-feeds-section">
                         <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar URLs</div>
                         {(p.icals || []).map(ical => (
                           <div key={ical.id} className="bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">

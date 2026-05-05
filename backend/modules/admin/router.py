@@ -1,13 +1,22 @@
 import csv
 import io
+import logging
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from pydantic import BaseModel
 
 from database.db import get_db
-from database.models import Client
+from database.models import (
+    Client, Property, PropertyIcal, ICalEvent, RecurringSchedule,
+    Job, Visit, LeadIntake, Quote, Invoice, Conversation, Message,
+    Opportunity, ContactEmail, ContactPhone, Activity,
+)
+from modules.auth.router import require_role
 from utils.phone import normalize_e164, phone_tail
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -205,4 +214,77 @@ async def import_clients(
         },
         'errors': errors,
         'summary': f"Created {created_count} clients, skipped {skipped_count} existing, {len(invalid_rows)} invalid rows",
+    }
+
+
+# ── Reset all transactional data ────────────────────────────────────────────
+
+class ResetDataRequest(BaseModel):
+    confirm: str  # must equal "RESET" — typed confirmation
+
+
+# Order matters: children before parents to satisfy FKs.
+# Reference/config tables (users, app_settings, field_definitions) are NOT
+# included and remain untouched.
+RESET_DELETE_ORDER = [
+    Activity,
+    ContactEmail,
+    ContactPhone,
+    Opportunity,
+    Invoice,
+    Quote,
+    Visit,
+    Job,
+    RecurringSchedule,
+    ICalEvent,
+    PropertyIcal,
+    Property,
+    LeadIntake,
+    Message,
+    Conversation,
+    Client,
+]
+
+
+@router.post("/reset-data", dependencies=[Depends(require_role("admin"))])
+def reset_data(payload: ResetDataRequest, db: Session = Depends(get_db)):
+    """
+    DESTRUCTIVE. Deletes all transactional data (clients, properties, jobs,
+    visits, quotes, invoices, conversations, messages, leads, opportunities,
+    activities, contact emails/phones, recurring schedules, iCal data).
+
+    Preserves: users, app_settings, field_definitions.
+
+    Requires admin role and a typed confirmation token of exactly "RESET" in
+    the request body. Runs in a single transaction; rolls back on error.
+    """
+    if payload.confirm != "RESET":
+        raise HTTPException(
+            status_code=400,
+            detail='Confirmation token must be exactly "RESET"',
+        )
+
+    counts = {}
+    try:
+        for model in RESET_DELETE_ORDER:
+            tablename = model.__tablename__
+            # bulk delete returns affected row count; synchronize_session=False is
+            # safe here because we delete every row and aren't using these objects
+            # again in this session.
+            n = db.query(model).delete(synchronize_session=False)
+            counts[tablename] = n
+            log.info("reset-data: deleted %d rows from %s", n, tablename)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log.exception("reset-data failed")
+        raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
+    total = sum(counts.values())
+    return {
+        "ok": True,
+        "deleted_total": total,
+        "deleted_by_table": counts,
+        "preserved": ["users", "app_settings", "field_definitions"],
     }

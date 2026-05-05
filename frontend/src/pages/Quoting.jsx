@@ -72,6 +72,22 @@ export default function Quoting() {
     }
   }, [location.state?.quoteId])
 
+  // Open the new-quote form pre-filled with a client (used by ClientProfile's "New Quote" button)
+  useEffect(() => {
+    if (location.state?.openNew && location.state?.clientId) {
+      setSelected(null)
+      setSelectedIntake(null)
+      setForm(f => ({
+        ...f,
+        client_id: location.state.clientId,
+        intake_id: null,
+        items: [{ ...EMPTY_ITEM }],
+      }))
+      setPanel('quote')
+      setTab('quotes')
+    }
+  }, [location.state?.openNew, location.state?.clientId])
+
   const clientFor = (id) => clients.find(c => c.id === id)
   const clientName = (id) => clientFor(id)?.name || `Client #${id}`
 

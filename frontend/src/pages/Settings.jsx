@@ -65,6 +65,28 @@ export default function Settings() {
   })
   const [generalSaving, setGeneralSaving] = useState(false)
 
+  // Danger zone — reset all data
+  const [resetConfirmText, setResetConfirmText] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetResult, setResetResult] = useState(null)
+  const runResetData = async () => {
+    if (resetConfirmText !== 'RESET') return
+    if (!confirm('This will permanently delete ALL clients, properties, jobs, visits, quotes, invoices, conversations, messages, leads, opportunities, and activities. Users and settings are preserved. Continue?')) return
+    setResetting(true)
+    setResetResult(null)
+    try {
+      const data = await post('/api/admin/reset-data', { confirm: 'RESET' })
+      setResetResult(data)
+      setResetConfirmText('')
+      toast(`Deleted ${data.deleted_total} rows across ${Object.keys(data.deleted_by_table || {}).length} tables`)
+    } catch (e) {
+      setResetResult({ error: e?.message || 'Reset failed' })
+      toast('Reset failed: ' + (e?.message || 'unknown'), 'error')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   // Automation settings
   const [automationSettings, setAutomationSettings] = useState({
     ical_auto_sync_enabled: true,
@@ -312,6 +334,63 @@ export default function Settings() {
                 {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 Save Changes
               </button>
+
+              {/* Danger zone — reset all transactional data */}
+              <div className="pt-8" data-testid="danger-zone">
+                <h2 className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" /> Danger Zone
+                </h2>
+                <div className="bg-white rounded-xl border border-red-200 p-6 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-900">Reset all data</h3>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Permanently deletes every client, property, job, visit, quote, invoice,
+                      conversation, message, lead, opportunity, and activity. Users, custom
+                      fields, and app settings are preserved. <strong>This cannot be undone.</strong>
+                    </p>
+                  </div>
+                  <div>
+                    <label className={lbl}>Type RESET to enable the button</label>
+                    <input
+                      type="text"
+                      value={resetConfirmText}
+                      onChange={e => setResetConfirmText(e.target.value)}
+                      placeholder="RESET"
+                      data-testid="reset-confirm-input"
+                      className={inp}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <button
+                    onClick={runResetData}
+                    disabled={resetting || resetConfirmText !== 'RESET'}
+                    data-testid="reset-data-button"
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                  >
+                    {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {resetting ? 'Deleting...' : 'Reset all data'}
+                  </button>
+                  {resetResult && !resetResult.error && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs">
+                      <div className="font-semibold mb-1">
+                        ✓ Deleted {resetResult.deleted_total} rows
+                      </div>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {Object.entries(resetResult.deleted_by_table || {})
+                          .filter(([, n]) => n > 0)
+                          .map(([table, n]) => (
+                            <li key={table}>{table}: {n}</li>
+                          ))}
+                      </ul>
+                    </div>
+                  )}
+                  {resetResult?.error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs">
+                      Reset failed: {resetResult.error}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
