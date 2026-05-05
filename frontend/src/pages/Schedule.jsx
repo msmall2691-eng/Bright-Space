@@ -154,6 +154,7 @@ export default function Schedule() {
   const [backfilling, setBackfilling] = useState(false)
   const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [hardDelete, setHardDelete] = useState(false)
 
   const dateStr = currentDate.toISOString().split('T')[0]
 
@@ -313,16 +314,23 @@ export default function Schedule() {
   const bulkDeleteVisits = async () => {
     const ids = Array.from(selectedVisitIds)
     if (ids.length === 0) return
-    if (!confirm(`Cancel ${ids.length} visit${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    const verb = hardDelete ? 'permanently delete' : 'cancel'
+    if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} visit${ids.length === 1 ? '' : 's'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be marked cancelled (status=cancelled).'} `)) return
     setBulkDeleting(true)
     try {
-      const results = await Promise.allSettled(
-        ids.map(id => put(`/api/visits/${id}`, { status: 'cancelled' }))
-      )
-      const failed = results.filter(r => r.status === 'rejected').length
-      if (failed > 0) alert(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      if (hardDelete) {
+        await post('/api/admin/visits/hard-delete', { ids })
+      } else {
+        const results = await Promise.allSettled(
+          ids.map(id => put(`/api/visits/${id}`, { status: 'cancelled' }))
+        )
+        const failed = results.filter(r => r.status === 'rejected').length
+        if (failed > 0) alert(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      }
       setVisits(visits.filter(v => !selectedVisitIds.has(v.id)))
       clearVisitSelection()
+    } catch (e) {
+      alert('Bulk action failed: ' + (e?.message || 'unknown'))
     } finally {
       setBulkDeleting(false)
     }
@@ -488,6 +496,12 @@ export default function Schedule() {
           {selectedVisitIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
               <span className="text-xs text-neutral-700 font-medium">{selectedVisitIds.size} selected</span>
+              <label className="flex items-center gap-1 text-[11px] text-neutral-600 cursor-pointer select-none" title="Permanently remove from database (vs. mark cancelled)">
+                <input type="checkbox" checked={hardDelete}
+                  onChange={e => setHardDelete(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer" />
+                Hard delete
+              </label>
               <button onClick={clearVisitSelection}
                 className="text-xs text-neutral-500 hover:text-neutral-700 px-2 py-1 rounded">
                 Clear
@@ -496,7 +510,9 @@ export default function Schedule() {
                 data-testid="visits-bulk-delete"
                 className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                 <Trash2 className="w-3.5 h-3.5" />
-                {bulkDeleting ? 'Cancelling...' : `Cancel ${selectedVisitIds.size}`}
+                {bulkDeleting
+                  ? 'Working...'
+                  : `${hardDelete ? 'Hard delete' : 'Cancel'} ${selectedVisitIds.size}`}
               </button>
             </div>
           )}

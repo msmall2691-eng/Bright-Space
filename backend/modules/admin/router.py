@@ -288,3 +288,94 @@ def reset_data(payload: ResetDataRequest, db: Session = Depends(get_db)):
         "deleted_by_table": counts,
         "preserved": ["users", "app_settings", "field_definitions"],
     }
+
+
+# ── Unlink calendars: detach jobs/visits from GCal, deactivate iCal feeds ───
+
+class UnlinkCalendarsRequest(BaseModel):
+    confirm: str  # must equal "UNLINK"
+    clear_gcal: bool = True            # null out gcal_event_id on jobs + visits
+    deactivate_ical_feeds: bool = True  # set property_icals.active = false; null out properties.ical_url
+
+
+@router.post("/unlink-calendars", dependencies=[Depends(require_role("admin"))])
+def unlink_calendars(payload: UnlinkCalendarsRequest, db: Session = Depends(get_db)):
+    """
+    Break the link between BrightBase records and external calendars without
+    deleting the records themselves:
+
+    - clear_gcal: null out `jobs.gcal_event_id` and `visits.gcal_event_id` so
+      future deletes won't try to also remove events from Google Calendar.
+    - deactivate_ical_feeds: set `property_icals.active = false` and null out
+      `properties.ical_url` (legacy field) so no new iCal pulls happen.
+
+    Local data (clients, properties, jobs, visits) is preserved.
+    """
+    if payload.confirm != "UNLINK":
+        raise HTTPException(
+            status_code=400,
+            detail='Confirmation token must be exactly "UNLINK"',
+        )
+
+    result = {"jobs_unlinked": 0, "visits_unlinked": 0, "ical_feeds_deactivated": 0, "properties_ical_url_cleared": 0}
+    try:
+        if payload.clear_gcal:
+            n = db.query(Job).filter(Job.gcal_event_id.isnot(None)).update(
+                {Job.gcal_event_id: None, Job.calendar_invite_sent: False},
+                synchronize_session=False,
+            )
+            result["jobs_unlinked"] = n
+            n = db.query(Visit).filter(Visit.gcal_event_id.isnot(None)).update(
+                {Visit.gcal_event_id: None}, synchronize_session=False,
+            )
+            result["visits_unlinked"] = n
+
+        if payload.deactivate_ical_feeds:
+            n = db.query(PropertyIcal).filter(PropertyIcal.active == True).update(
+                {PropertyIcal.active: False}, synchronize_session=False,
+            )
+            result["ical_feeds_deactivated"] = n
+            n = db.query(Property).filter(Property.ical_url.isnot(None)).update(
+                {Property.ical_url: None}, synchronize_session=False,
+            )
+            result["properties_ical_url_cleared"] = n
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log.exception("unlink-calendars failed")
+        raise HTTPException(status_code=500, detail=f"Unlink failed: {e}")
+
+    log.info("unlink-calendars: %s", result)
+    return {"ok": True, **result}
+
+
+# ── Hard-delete helpers (bulk by ID) ────────────────────────────────────────
+
+class BulkIdsRequest(BaseModel):
+    ids: List[int]
+
+
+@router.post("/properties/hard-delete", dependencies=[Depends(require_role("admin"))])
+def hard_delete_properties(payload: BulkIdsRequest, db: Session = Depends(get_db)):
+    """
+    Hard-delete properties by ID (vs. the default soft-delete that just sets
+    active=false). Removes property_icals rows first to satisfy FK.
+    """
+    if not payload.ids:
+        return {"deleted": 0}
+    db.query(PropertyIcal).filter(PropertyIcal.property_id.in_(payload.ids)).delete(synchronize_session=False)
+    db.query(ICalEvent).filter(ICalEvent.property_id.in_(payload.ids)).delete(synchronize_session=False)
+    n = db.query(Property).filter(Property.id.in_(payload.ids)).delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": n}
+
+
+@router.post("/visits/hard-delete", dependencies=[Depends(require_role("admin"))])
+def hard_delete_visits(payload: BulkIdsRequest, db: Session = Depends(get_db)):
+    """Hard-delete visits by ID (vs. the default cancel-by-status)."""
+    if not payload.ids:
+        return {"deleted": 0}
+    n = db.query(Visit).filter(Visit.id.in_(payload.ids)).delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": n}

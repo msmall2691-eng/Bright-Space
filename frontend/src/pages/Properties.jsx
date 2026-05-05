@@ -44,6 +44,7 @@ export default function Properties() {
   const [showIcalForm, setShowIcalForm] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [hardDelete, setHardDelete] = useState(false)
 
   const load = () =>
     get('/api/properties').then(setProperties).catch(err => console.error("[Properties]", err))
@@ -181,14 +182,21 @@ export default function Properties() {
   const bulkDelete = async () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    if (!confirm(`Delete ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? This cannot be undone.`)) return
+    const verb = hardDelete ? 'permanently delete' : 'archive'
+    if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be soft-archived (active=false).'} `)) return
     setBulkDeleting(true)
     try {
-      const results = await Promise.allSettled(ids.map(id => del(`/api/properties/${id}`)))
-      const failed = results.filter(r => r.status === 'rejected').length
-      if (failed > 0) alert(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      if (hardDelete) {
+        await post('/api/admin/properties/hard-delete', { ids })
+      } else {
+        const results = await Promise.allSettled(ids.map(id => del(`/api/properties/${id}`)))
+        const failed = results.filter(r => r.status === 'rejected').length
+        if (failed > 0) alert(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      }
       clearSelection()
       await load()
+    } catch (e) {
+      alert('Bulk delete failed: ' + (e?.message || 'unknown'))
     } finally {
       setBulkDeleting(false)
     }
@@ -260,6 +268,12 @@ export default function Properties() {
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="properties-bulk-actions">
               <span className="text-xs text-zinc-600 font-medium">{selectedIds.size} selected</span>
+              <label className="flex items-center gap-1 text-[11px] text-zinc-600 cursor-pointer select-none" title="Permanently remove from database (vs. soft-archive)">
+                <input type="checkbox" checked={hardDelete}
+                  onChange={e => setHardDelete(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer" />
+                Hard delete
+              </label>
               <button onClick={clearSelection}
                 className="text-xs text-zinc-500 hover:text-zinc-700 px-2 py-1 rounded">
                 Clear
@@ -268,7 +282,9 @@ export default function Properties() {
                 data-testid="properties-bulk-delete"
                 className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                 <Trash2 className="w-3.5 h-3.5" />
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
+                {bulkDeleting
+                  ? 'Deleting...'
+                  : `${hardDelete ? 'Hard delete' : 'Archive'} ${selectedIds.size}`}
               </button>
             </div>
           )}

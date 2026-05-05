@@ -69,6 +69,16 @@ export default function Settings() {
   const [resetConfirmText, setResetConfirmText] = useState('')
   const [resetting, setResetting] = useState(false)
   const [resetResult, setResetResult] = useState(null)
+
+  // Danger zone — unlink calendars
+  const [unlinkConfirmText, setUnlinkConfirmText] = useState('')
+  const [unlinking, setUnlinking] = useState(false)
+  const [unlinkResult, setUnlinkResult] = useState(null)
+  const [unlinkClearGcal, setUnlinkClearGcal] = useState(true)
+  const [unlinkDeactivateIcal, setUnlinkDeactivateIcal] = useState(true)
+
+  // Quick "pause all syncs" — flips both auto-sync flags off
+  const [pausing, setPausing] = useState(false)
   const runResetData = async () => {
     if (resetConfirmText !== 'RESET') return
     if (!confirm('This will permanently delete ALL clients, properties, jobs, visits, quotes, invoices, conversations, messages, leads, opportunities, and activities. Users and settings are preserved. Continue?')) return
@@ -84,6 +94,46 @@ export default function Settings() {
       toast('Reset failed: ' + (e?.message || 'unknown'), 'error')
     } finally {
       setResetting(false)
+    }
+  }
+
+  const runUnlinkCalendars = async () => {
+    if (unlinkConfirmText !== 'UNLINK') return
+    if (!unlinkClearGcal && !unlinkDeactivateIcal) {
+      toast('Select at least one option', 'error')
+      return
+    }
+    if (!confirm('This will detach BrightBase from Google Calendar and disable iCal feeds. Local jobs/visits/properties remain. Continue?')) return
+    setUnlinking(true)
+    setUnlinkResult(null)
+    try {
+      const data = await post('/api/admin/unlink-calendars', {
+        confirm: 'UNLINK',
+        clear_gcal: unlinkClearGcal,
+        deactivate_ical_feeds: unlinkDeactivateIcal,
+      })
+      setUnlinkResult(data)
+      setUnlinkConfirmText('')
+      toast(`Unlinked: ${data.jobs_unlinked} jobs, ${data.visits_unlinked} visits, ${data.ical_feeds_deactivated} iCal feeds`)
+    } catch (e) {
+      setUnlinkResult({ error: e?.message || 'Unlink failed' })
+      toast('Unlink failed: ' + (e?.message || 'unknown'), 'error')
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  const pauseAllSyncs = async () => {
+    setPausing(true)
+    try {
+      const next = { ...automationSettings, ical_auto_sync_enabled: false, gcal_auto_sync_enabled: false }
+      await post('/api/settings/automation', next)
+      setAutomationSettings(next)
+      toast('All auto-syncs paused')
+    } catch (e) {
+      toast('Failed to pause syncs: ' + (e?.message || 'unknown'), 'error')
+    } finally {
+      setPausing(false)
     }
   }
 
@@ -335,11 +385,100 @@ export default function Settings() {
                 Save Changes
               </button>
 
-              {/* Danger zone — reset all transactional data */}
+              {/* Danger zone — sync controls + reset */}
               <div className="pt-8" data-testid="danger-zone">
                 <h2 className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" /> Danger Zone
                 </h2>
+
+                {/* Pause all syncs (reversible) */}
+                <div className="bg-white rounded-xl border border-amber-200 p-6 space-y-4 mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-900">Pause all syncs</h3>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Disables both iCal pull (Airbnb / VRBO → BrightBase) and Google Calendar auto-sync.
+                      Reversible — re-enable anytime in <strong>Automation</strong>. Use this before a
+                      cleanup so new bookings/events don't repopulate while you're deleting.
+                    </p>
+                  </div>
+                  <button
+                    onClick={pauseAllSyncs}
+                    disabled={pausing || (!automationSettings.ical_auto_sync_enabled && !automationSettings.gcal_auto_sync_enabled)}
+                    data-testid="pause-syncs-button"
+                    className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                  >
+                    {pausing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {pausing
+                      ? 'Pausing...'
+                      : (!automationSettings.ical_auto_sync_enabled && !automationSettings.gcal_auto_sync_enabled)
+                        ? 'Already paused'
+                        : 'Pause all syncs'}
+                  </button>
+                </div>
+
+                {/* Unlink calendars (irreversible — but data preserved) */}
+                <div className="bg-white rounded-xl border border-orange-200 p-6 space-y-4 mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-900">Unlink calendars</h3>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Severs the link between BrightBase records and external calendars without
+                      deleting your data. Use this before a wipe so deleting a job here won't try
+                      to also delete its event from Google Calendar.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                      <input type="checkbox" checked={unlinkClearGcal}
+                        onChange={e => setUnlinkClearGcal(e.target.checked)}
+                        className="w-4 h-4 rounded border-zinc-300" />
+                      Clear <code className="text-[10px] bg-zinc-100 px-1 rounded">gcal_event_id</code> on every job and visit
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                      <input type="checkbox" checked={unlinkDeactivateIcal}
+                        onChange={e => setUnlinkDeactivateIcal(e.target.checked)}
+                        className="w-4 h-4 rounded border-zinc-300" />
+                      Deactivate every iCal feed on properties
+                    </label>
+                  </div>
+                  <div>
+                    <label className={lbl}>Type UNLINK to enable the button</label>
+                    <input
+                      type="text"
+                      value={unlinkConfirmText}
+                      onChange={e => setUnlinkConfirmText(e.target.value)}
+                      placeholder="UNLINK"
+                      data-testid="unlink-confirm-input"
+                      className={inp}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <button
+                    onClick={runUnlinkCalendars}
+                    disabled={unlinking || unlinkConfirmText !== 'UNLINK'}
+                    data-testid="unlink-button"
+                    className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                  >
+                    {unlinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    {unlinking ? 'Unlinking...' : 'Unlink calendars'}
+                  </button>
+                  {unlinkResult && !unlinkResult.error && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs">
+                      <div className="font-semibold mb-1">✓ Unlinked</div>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li>Jobs cleared: {unlinkResult.jobs_unlinked}</li>
+                        <li>Visits cleared: {unlinkResult.visits_unlinked}</li>
+                        <li>iCal feeds deactivated: {unlinkResult.ical_feeds_deactivated}</li>
+                        <li>Property iCal URLs cleared: {unlinkResult.properties_ical_url_cleared}</li>
+                      </ul>
+                    </div>
+                  )}
+                  {unlinkResult?.error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs">
+                      Unlink failed: {unlinkResult.error}
+                    </div>
+                  )}
+                </div>
+
                 <div className="bg-white rounded-xl border border-red-200 p-6 space-y-4">
                   <div>
                     <h3 className="text-sm font-semibold text-zinc-900">Reset all data</h3>
