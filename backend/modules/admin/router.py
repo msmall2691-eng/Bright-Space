@@ -350,6 +350,59 @@ def unlink_calendars(payload: UnlinkCalendarsRequest, db: Session = Depends(get_
     return {"ok": True, **result}
 
 
+# ── Delete all scheduled visits ─────────────────────────────────────────────
+
+class DeleteScheduledVisitsRequest(BaseModel):
+    confirm: str  # must equal "DELETE"
+    only_ical: bool = False  # if True, only delete visits sourced from iCal feeds
+    include_dispatched: bool = False  # if True, also delete dispatched/en_route/in_progress visits
+
+
+@router.post("/delete-scheduled-visits", dependencies=[Depends(require_role("admin"))])
+def delete_scheduled_visits(payload: DeleteScheduledVisitsRequest, db: Session = Depends(get_db)):
+    """
+    Bulk-delete scheduled (uncompleted) visits. By default removes only visits
+    in `status = 'scheduled'`. Useful after disabling iCal sync to clear out
+    auto-generated turnover visits that are no longer wanted.
+
+    - only_ical: restrict deletion to visits where `ical_source` is set
+      (i.e. created from an iCal feed).
+    - include_dispatched: also delete dispatched/en_route/in_progress visits.
+      Completed, no_show, and cancelled visits are always preserved.
+    """
+    if payload.confirm != "DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail='Confirmation token must be exactly "DELETE"',
+        )
+
+    statuses = ["scheduled"]
+    if payload.include_dispatched:
+        statuses += ["dispatched", "en_route", "in_progress"]
+
+    try:
+        q = db.query(Visit).filter(Visit.status.in_(statuses))
+        if payload.only_ical:
+            q = q.filter(Visit.ical_source.isnot(None))
+        n = q.delete(synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        log.exception("delete-scheduled-visits failed")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
+
+    log.info(
+        "delete-scheduled-visits: deleted %d visits (only_ical=%s, include_dispatched=%s)",
+        n, payload.only_ical, payload.include_dispatched,
+    )
+    return {
+        "ok": True,
+        "deleted": n,
+        "statuses_targeted": statuses,
+        "only_ical": payload.only_ical,
+    }
+
+
 # ── Hard-delete helpers (bulk by ID) ────────────────────────────────────────
 
 class BulkIdsRequest(BaseModel):

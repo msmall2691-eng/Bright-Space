@@ -79,6 +79,16 @@ export default function Settings() {
 
   // Quick "pause all syncs" — flips both auto-sync flags off
   const [pausing, setPausing] = useState(false)
+
+  // Stop iCal sync (Integrations tab) — flips iCal auto-sync off + deactivates feeds
+  const [stoppingIcal, setStoppingIcal] = useState(false)
+
+  // Delete all scheduled visits (Integrations tab)
+  const [deleteVisitsConfirm, setDeleteVisitsConfirm] = useState('')
+  const [deleteVisitsOnlyIcal, setDeleteVisitsOnlyIcal] = useState(true)
+  const [deleteVisitsIncludeDispatched, setDeleteVisitsIncludeDispatched] = useState(false)
+  const [deletingVisits, setDeletingVisits] = useState(false)
+  const [deleteVisitsResult, setDeleteVisitsResult] = useState(null)
   const runResetData = async () => {
     if (resetConfirmText !== 'RESET') return
     if (!confirm('This will permanently delete ALL clients, properties, jobs, visits, quotes, invoices, conversations, messages, leads, opportunities, and activities. Users and settings are preserved. Continue?')) return
@@ -134,6 +144,54 @@ export default function Settings() {
       toast('Failed to pause syncs: ' + (e?.message || 'unknown'), 'error')
     } finally {
       setPausing(false)
+    }
+  }
+
+  const toggleIcalSync = async (enable) => {
+    setStoppingIcal(true)
+    try {
+      const next = { ...automationSettings, ical_auto_sync_enabled: enable }
+      await post('/api/settings/automation', next)
+      setAutomationSettings(next)
+      if (!enable) {
+        // Also deactivate every iCal feed so no manual or scheduled pulls run
+        await post('/api/admin/unlink-calendars', {
+          confirm: 'UNLINK',
+          clear_gcal: false,
+          deactivate_ical_feeds: true,
+        })
+        toast('iCal sync stopped — feeds deactivated')
+      } else {
+        toast('iCal sync resumed')
+      }
+    } catch (e) {
+      toast('Failed to update iCal sync: ' + (e?.message || 'unknown'), 'error')
+    } finally {
+      setStoppingIcal(false)
+    }
+  }
+
+  const deleteScheduledVisits = async () => {
+    if (deleteVisitsConfirm !== 'DELETE') return
+    const scope = deleteVisitsOnlyIcal ? 'iCal-sourced' : 'all'
+    const lifecycle = deleteVisitsIncludeDispatched ? 'scheduled, dispatched, en-route, and in-progress' : 'scheduled'
+    if (!confirm(`This will permanently delete ${scope} visits in status: ${lifecycle}. Completed and cancelled visits are preserved. Continue?`)) return
+    setDeletingVisits(true)
+    setDeleteVisitsResult(null)
+    try {
+      const data = await post('/api/admin/delete-scheduled-visits', {
+        confirm: 'DELETE',
+        only_ical: deleteVisitsOnlyIcal,
+        include_dispatched: deleteVisitsIncludeDispatched,
+      })
+      setDeleteVisitsResult(data)
+      setDeleteVisitsConfirm('')
+      toast(`Deleted ${data.deleted} scheduled visits`)
+    } catch (e) {
+      setDeleteVisitsResult({ error: e?.message || 'Delete failed' })
+      toast('Delete failed: ' + (e?.message || 'unknown'), 'error')
+    } finally {
+      setDeletingVisits(false)
     }
   }
 
@@ -537,36 +595,166 @@ export default function Settings() {
         {/* === INTEGRATIONS SECTION === */}
         {section === 'integrations' && (
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
-            <div className="max-w-2xl pt-6">
-              <div className="mb-6">
-                <h2 className="text-lg font-bold text-zinc-900">Connected Services</h2>
-                <p className="text-sm text-zinc-600 mt-1">Connect external tools to enhance your workflow</p>
-              </div>
+            <div className="max-w-2xl pt-6 space-y-8">
 
-              <div className="space-y-3">
-                {[
-                  { name: 'Google Calendar', icon: '📅', desc: 'Sync jobs with Google Calendar bidirectionally', status: 'connected' },
-                  { name: 'Connecteam', icon: '👥', desc: 'Dispatch jobs to your field team', status: 'available' },
-                  { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
-                  { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },
-                ].map((integration, idx) => (
-                  <div key={idx} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-4">
-                      <span className="text-2xl">{integration.icon}</span>
+              {/* iCal Turnover Sync — real, controllable integration */}
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold text-zinc-900">iCal Turnover Sync</h2>
+                  <p className="text-sm text-zinc-600 mt-1">
+                    Pulls Airbnb / VRBO reservations and auto-creates turnover visits.
+                    Stop the sync to halt all new visits being generated from iCal feeds.
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-xl border border-zinc-200 p-5 space-y-4" data-testid="ical-sync-card">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl leading-none mt-0.5">🔁</span>
                       <div>
-                        <h3 className="font-semibold text-zinc-900">{integration.name}</h3>
-                        <p className="text-xs text-zinc-500">{integration.desc}</p>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-zinc-900">iCal Sync</h3>
+                          <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                            automationSettings.ical_auto_sync_enabled
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-zinc-100 text-zinc-500 border border-zinc-200'
+                          }`}>
+                            {automationSettings.ical_auto_sync_enabled ? 'Active' : 'Stopped'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          {automationSettings.ical_auto_sync_enabled
+                            ? `Pulling every ${automationSettings.ical_sync_interval} minutes`
+                            : 'Auto-sync is off and feeds are deactivated. No new turnover visits will be created.'}
+                        </p>
                       </div>
                     </div>
-                    <button className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      integration.status === 'connected'
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}>
-                      {integration.status === 'connected' ? '✓ Connected' : 'Connect'}
+                    <button
+                      onClick={() => toggleIcalSync(!automationSettings.ical_auto_sync_enabled)}
+                      disabled={stoppingIcal}
+                      data-testid={automationSettings.ical_auto_sync_enabled ? 'stop-ical-button' : 'resume-ical-button'}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${
+                        automationSettings.ical_auto_sync_enabled
+                          ? 'bg-red-600 hover:bg-red-700 text-white'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      {stoppingIcal
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : automationSettings.ical_auto_sync_enabled
+                          ? <X className="w-3.5 h-3.5" />
+                          : <RefreshCw className="w-3.5 h-3.5" />}
+                      {stoppingIcal
+                        ? 'Working...'
+                        : automationSettings.ical_auto_sync_enabled ? 'Stop iCal sync' : 'Resume iCal sync'}
                     </button>
                   </div>
-                ))}
+                </div>
+
+                {/* Maintenance — delete all scheduled visits */}
+                <div className="mt-4 bg-white rounded-xl border border-red-200 p-5 space-y-4" data-testid="delete-visits-card">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                      <Trash2 className="w-4 h-4 text-red-600" /> Delete scheduled visits
+                    </h3>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Clear out future visits that haven't been completed yet. Useful right after
+                      stopping iCal sync to wipe auto-generated turnover visits. Completed,
+                      no-show, and cancelled visits are always preserved.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                      <input
+                        type="checkbox"
+                        checked={deleteVisitsOnlyIcal}
+                        onChange={e => setDeleteVisitsOnlyIcal(e.target.checked)}
+                        className="w-4 h-4 rounded border-zinc-300"
+                        data-testid="delete-visits-only-ical"
+                      />
+                      Only delete visits sourced from iCal feeds
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                      <input
+                        type="checkbox"
+                        checked={deleteVisitsIncludeDispatched}
+                        onChange={e => setDeleteVisitsIncludeDispatched(e.target.checked)}
+                        className="w-4 h-4 rounded border-zinc-300"
+                        data-testid="delete-visits-include-dispatched"
+                      />
+                      Also delete dispatched / en-route / in-progress visits
+                    </label>
+                  </div>
+                  <div>
+                    <label className={lbl}>Type DELETE to enable the button</label>
+                    <input
+                      type="text"
+                      value={deleteVisitsConfirm}
+                      onChange={e => setDeleteVisitsConfirm(e.target.value)}
+                      placeholder="DELETE"
+                      data-testid="delete-visits-confirm-input"
+                      className={inp}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <button
+                    onClick={deleteScheduledVisits}
+                    disabled={deletingVisits || deleteVisitsConfirm !== 'DELETE'}
+                    data-testid="delete-visits-button"
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                  >
+                    {deletingVisits ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {deletingVisits ? 'Deleting...' : 'Delete scheduled visits'}
+                  </button>
+                  {deleteVisitsResult && !deleteVisitsResult.error && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs">
+                      <div className="font-semibold mb-1">✓ Deleted {deleteVisitsResult.deleted} visits</div>
+                      <div className="text-emerald-700">
+                        Statuses targeted: {(deleteVisitsResult.statuses_targeted || []).join(', ')}
+                        {deleteVisitsResult.only_ical ? ' · iCal-sourced only' : ''}
+                      </div>
+                    </div>
+                  )}
+                  {deleteVisitsResult?.error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs">
+                      Delete failed: {deleteVisitsResult.error}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Other connected services */}
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold text-zinc-900">Connected Services</h2>
+                  <p className="text-sm text-zinc-600 mt-1">Connect external tools to enhance your workflow</p>
+                </div>
+
+                <div className="space-y-3">
+                  {[
+                    { name: 'Google Calendar', icon: '📅', desc: 'Sync jobs with Google Calendar bidirectionally', status: 'connected' },
+                    { name: 'Connecteam', icon: '👥', desc: 'Dispatch jobs to your field team', status: 'available' },
+                    { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
+                    { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },
+                  ].map((integration, idx) => (
+                    <div key={idx} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl">{integration.icon}</span>
+                        <div>
+                          <h3 className="font-semibold text-zinc-900">{integration.name}</h3>
+                          <p className="text-xs text-zinc-500">{integration.desc}</p>
+                        </div>
+                      </div>
+                      <button className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        integration.status === 'connected'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}>
+                        {integration.status === 'connected' ? '✓ Connected' : 'Connect'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
