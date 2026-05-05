@@ -28,7 +28,7 @@ const VISIT_STATUS_CONFIG = {
   cancelled: { label: 'Cancelled', dot: 'bg-neutral-500', badge: 'danger' },
 }
 
-const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange }) => {
+const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect }) => {
   const propertyType = property?.property_type || 'residential'
   const config = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
   const PropertyIcon = config.icon
@@ -41,12 +41,21 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
 
   return (
     <div
-      className={`p-3 sm:p-4 rounded-lg transition-all cursor-pointer hover:shadow-md active:shadow-sm active:bg-opacity-75 ${config.color}`}
+      className={`p-3 sm:p-4 rounded-lg transition-all cursor-pointer hover:shadow-md active:shadow-sm active:bg-opacity-75 ${config.color} ${selected ? 'ring-2 ring-blue-500' : ''}`}
       onClick={() => onEdit(visit, job, property)}
     >
       <div className="flex items-start justify-between gap-2 sm:gap-3">
         {/* Left: Icon + Property Type */}
         <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onToggleSelect?.(visit.id, e)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-4 h-4 mt-1 rounded border-neutral-300 cursor-pointer shrink-0"
+            data-testid="visit-row-checkbox"
+            aria-label="Select visit"
+          />
           <div className={`p-2 rounded flex-shrink-0 ${config.badge}`}>
             <PropertyIcon className="w-4 h-4" />
           </div>
@@ -143,6 +152,8 @@ export default function Schedule() {
   const [showJobModal, setShowJobModal] = useState(false)
   const [coverage, setCoverage] = useState(null)
   const [backfilling, setBackfilling] = useState(false)
+  const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const dateStr = currentDate.toISOString().split('T')[0]
 
@@ -280,6 +291,40 @@ export default function Schedule() {
       setShowDetails(false)
     } catch (err) {
       alert('Error deleting visit: ' + err.message)
+    }
+  }
+
+  const toggleVisitSelect = (id, e) => {
+    e?.stopPropagation()
+    setSelectedVisitIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const selectAllVisible = () => {
+    setSelectedVisitIds(prev => {
+      const visibleIds = filteredVisits.map(v => v.id)
+      const allSelected = visibleIds.length > 0 && visibleIds.every(id => prev.has(id))
+      return allSelected ? new Set() : new Set(visibleIds)
+    })
+  }
+  const clearVisitSelection = () => setSelectedVisitIds(new Set())
+  const bulkDeleteVisits = async () => {
+    const ids = Array.from(selectedVisitIds)
+    if (ids.length === 0) return
+    if (!confirm(`Cancel ${ids.length} visit${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      const results = await Promise.allSettled(
+        ids.map(id => put(`/api/visits/${id}`, { status: 'cancelled' }))
+      )
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed > 0) alert(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      setVisits(visits.filter(v => !selectedVisitIds.has(v.id)))
+      clearVisitSelection()
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -427,6 +472,37 @@ export default function Schedule() {
         </div>
       )}
 
+      {/* Selection / bulk-action bar */}
+      <div className="bg-white border-b border-neutral-200 px-4 py-2">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filteredVisits.length > 0 && filteredVisits.every(v => selectedVisitIds.has(v.id))}
+              onChange={selectAllVisible}
+              className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer"
+              data-testid="visits-select-all"
+            />
+            <span>Select all visible ({filteredVisits.length})</span>
+          </label>
+          {selectedVisitIds.size > 0 && (
+            <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
+              <span className="text-xs text-neutral-700 font-medium">{selectedVisitIds.size} selected</span>
+              <button onClick={clearVisitSelection}
+                className="text-xs text-neutral-500 hover:text-neutral-700 px-2 py-1 rounded">
+                Clear
+              </button>
+              <button onClick={bulkDeleteVisits} disabled={bulkDeleting}
+                data-testid="visits-bulk-delete"
+                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                <Trash2 className="w-3.5 h-3.5" />
+                {bulkDeleting ? 'Cancelling...' : `Cancel ${selectedVisitIds.size}`}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Schedule Grid */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto p-3 sm:p-4">
@@ -456,6 +532,8 @@ export default function Schedule() {
                           client={clients[jobs[visit.job_id]?.client_id]}
                           onEdit={handleEdit}
                           onDelete={handleDelete}
+                          selected={selectedVisitIds.has(visit.id)}
+                          onToggleSelect={toggleVisitSelect}
                         />
                       ))}
                     </div>

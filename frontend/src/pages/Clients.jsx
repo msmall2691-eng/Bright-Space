@@ -43,11 +43,14 @@ export default function Clients() {
   const [newPhoneNumber, setNewPhoneNumber] = useState('')
   const [newPhoneType, setNewPhoneType] = useState('mobile')
   const [loadingPhones, setLoadingPhones] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const load = () =>
     get(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`).then(setClients).catch(err => console.error("[Clients]", err))
 
   useEffect(() => { load() }, [statusFilter])
+  useEffect(() => { clearSelection() }, [statusFilter, search])
 
   const filtered = clients.filter(c =>
     !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -137,6 +140,38 @@ export default function Clients() {
     await del(`/api/clients/${id}`); await load(); setShowForm(false); setPhoneNumbers([])
   }
 
+  const toggleSelect = (id, e) => {
+    e?.stopPropagation()
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      const visibleIds = filtered.map(c => c.id)
+      const allSelected = visibleIds.every(id => prev.has(id))
+      return allSelected ? new Set() : new Set(visibleIds)
+    })
+  }
+  const clearSelection = () => setSelectedIds(new Set())
+  const bulkDelete = async () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} client${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed > 0) alert(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      clearSelection()
+      await load()
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   const statusCounts = {
     '': clients.length,
     lead: clients.filter(c => c.status === 'lead').length,
@@ -216,14 +251,53 @@ export default function Clients() {
           </div>
         )}
 
-        <div className="text-[11px] text-zinc-400 mb-3 font-medium">{filtered.length} client{filtered.length !== 1 ? 's' : ''}</div>
+        {/* Selection / bulk-action bar */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3 text-[11px] text-zinc-400 font-medium">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
+                onChange={toggleSelectAll}
+                className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer"
+                data-testid="clients-select-all"
+              />
+              <span>Select all</span>
+            </label>
+            <span>{filtered.length} client{filtered.length !== 1 ? 's' : ''}</span>
+          </div>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2" data-testid="clients-bulk-actions">
+              <span className="text-[11px] text-zinc-600 font-medium">{selectedIds.size} selected</span>
+              <button onClick={clearSelection}
+                className="text-[11px] text-zinc-500 hover:text-zinc-700 px-2 py-1 rounded">
+                Clear
+              </button>
+              <button onClick={bulkDelete} disabled={bulkDeleting}
+                data-testid="clients-bulk-delete"
+                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
+                <Trash2 className="w-3.5 h-3.5" />
+                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Client rows â Card view */}
         {viewMode === 'cards' && (
           <div className="space-y-1.5 overflow-y-auto flex-1">
             {filtered.map(c => (
               <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                className="flex items-center gap-4 bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl p-3.5 cursor-pointer transition-all group">
+                className={`flex items-center gap-4 bg-white border rounded-xl p-3.5 cursor-pointer transition-all group ${selectedIds.has(c.id) ? 'border-blue-400 bg-blue-50/40' : 'border-zinc-200 hover:border-zinc-300'}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(c.id)}
+                  onChange={(e) => toggleSelect(c.id, e)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-4 h-4 rounded border-zinc-300 cursor-pointer shrink-0"
+                  data-testid="client-row-checkbox"
+                  aria-label={`Select ${c.name}`}
+                />
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
                   <span className="text-[12px] font-bold">{c.name[0]?.toUpperCase()}</span>
                 </div>
@@ -251,6 +325,15 @@ export default function Clients() {
             <table className="w-full text-left">
               <thead className="sticky top-0 bg-zinc-50 z-10">
                 <tr className="border-b border-zinc-200">
+                  <th className="px-3 py-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
+                      onChange={toggleSelectAll}
+                      className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer"
+                      aria-label="Select all rows"
+                    />
+                  </th>
                   <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Name</th>
                   <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Phone</th>
                   <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Email</th>
@@ -262,7 +345,16 @@ export default function Clients() {
               <tbody>
                 {filtered.map(c => (
                   <tr key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                    className="border-b border-zinc-100 hover:bg-blue-50/30 cursor-pointer transition-colors">
+                    className={`border-b border-zinc-100 cursor-pointer transition-colors ${selectedIds.has(c.id) ? 'bg-blue-50/50' : 'hover:bg-blue-50/30'}`}>
+                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(c.id)}
+                        onChange={(e) => toggleSelect(c.id, e)}
+                        className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer"
+                        aria-label={`Select ${c.name}`}
+                      />
+                    </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
