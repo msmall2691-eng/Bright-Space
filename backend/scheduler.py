@@ -5,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from config import env_flag, env_int
 from database.db import SessionLocal
-from database.models import Property
+from database.models import AppSetting, Property
 from integrations.ical_sync import sync_property
 from integrations.gcal_sync import sync_calendar
 
@@ -14,10 +14,21 @@ log = logging.getLogger(__name__)
 _scheduler = None
 
 
+def _db_flag(db, key: str, env_default: bool) -> bool:
+    """Read a boolean flag from app_settings, falling back to env_default."""
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if row is None or row.value is None:
+        return env_default
+    return str(row.value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def sync_gcal_tick() -> dict:
     """Background job to sync Google Calendar events to BrightBase."""
     db = SessionLocal()
     try:
+        if not _db_flag(db, "gcal_auto_sync_enabled", env_flag("GCAL_AUTO_SYNC_ENABLED", True)):
+            log.debug("GCal auto-sync disabled via app_settings; skipping tick")
+            return {"skipped": True, "reason": "disabled"}
         result = sync_calendar(db)
         log.info(f"GCal sync completed: {result}")
         return result
@@ -32,6 +43,9 @@ def sync_all_ical_feeds_tick() -> dict:
     """Main background job to sync all iCal feeds."""
     db = SessionLocal()
     try:
+        if not _db_flag(db, "ical_auto_sync_enabled", env_flag("ICAL_AUTO_SYNC_ENABLED", True)):
+            log.debug("iCal auto-sync disabled via app_settings; skipping tick")
+            return {"skipped": True, "reason": "disabled"}
         props = db.query(Property).filter(
             Property.active == True,
             Property.ical_url != None,

@@ -151,19 +151,9 @@ export default function Settings() {
     setStoppingIcal(true)
     try {
       const next = { ...automationSettings, ical_auto_sync_enabled: enable }
-      await post('/api/settings/automation', next)
+      await post('/api/settings/automation', { ical_auto_sync_enabled: enable })
       setAutomationSettings(next)
-      if (!enable) {
-        // Also deactivate every iCal feed so no manual or scheduled pulls run
-        await post('/api/admin/unlink-calendars', {
-          confirm: 'UNLINK',
-          clear_gcal: false,
-          deactivate_ical_feeds: true,
-        })
-        toast('iCal sync stopped — feeds deactivated')
-      } else {
-        toast('iCal sync resumed')
-      }
+      toast(enable ? 'iCal sync resumed' : 'iCal sync stopped')
     } catch (e) {
       toast('Failed to update iCal sync: ' + (e?.message || 'unknown'), 'error')
     } finally {
@@ -239,6 +229,21 @@ export default function Settings() {
   }, [])
 
   useEffect(() => { if (section === 'email') loadEmailSettings() }, [section, loadEmailSettings])
+
+  const loadAutomationSettings = useCallback(async () => {
+    try {
+      const data = await get('/api/settings/automation')
+      setAutomationSettings(s => ({ ...s, ...data }))
+    } catch (err) {
+      console.error('[Settings] failed to load automation settings', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (section === 'integrations' || section === 'automation' || section === 'general') {
+      loadAutomationSettings()
+    }
+  }, [section, loadAutomationSettings])
 
   const toast = useCallback((message, type = 'success') => {
     const id = Date.now()
@@ -625,7 +630,7 @@ export default function Settings() {
                         <p className="text-xs text-zinc-500 mt-1">
                           {automationSettings.ical_auto_sync_enabled
                             ? `Pulling every ${automationSettings.ical_sync_interval} minutes`
-                            : 'Auto-sync is off and feeds are deactivated. No new turnover visits will be created.'}
+                            : 'Auto-sync paused. No new turnover visits will be created from iCal feeds.'}
                         </p>
                       </div>
                     </div>

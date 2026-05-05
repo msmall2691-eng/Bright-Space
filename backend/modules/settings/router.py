@@ -153,3 +153,68 @@ def get_from_email(db: Session = Depends(get_db)):
     if not from_email:
         raise HTTPException(400, "from_email not configured")
     return {"from_email": from_email}
+
+
+# ── Automation settings (iCal / GCal auto-sync flags + intervals) ──────────
+
+class AutomationConfig(BaseModel):
+    ical_auto_sync_enabled: Optional[bool] = None
+    ical_sync_interval: Optional[int] = None
+    gcal_auto_sync_enabled: Optional[bool] = None
+    gcal_sync_interval: Optional[int] = None
+
+
+AUTOMATION_DEFAULTS = {
+    "ical_auto_sync_enabled": True,
+    "ical_sync_interval": 15,
+    "gcal_auto_sync_enabled": True,
+    "gcal_sync_interval": 10,
+}
+
+
+def _coerce_bool(v: Optional[str], default: bool) -> bool:
+    if v is None:
+        return default
+    return str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _coerce_int(v: Optional[str], default: int) -> int:
+    try:
+        return int(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+@router.get("/automation")
+def get_automation_settings(db: Session = Depends(get_db)):
+    """Read iCal / GCal auto-sync flags from app_settings, with env fallbacks."""
+    import os
+    return {
+        "ical_auto_sync_enabled": _coerce_bool(
+            get_setting(db, "ical_auto_sync_enabled"),
+            os.getenv("ICAL_AUTO_SYNC_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
+        ),
+        "ical_sync_interval": _coerce_int(
+            get_setting(db, "ical_sync_interval"),
+            int(os.getenv("ICAL_AUTO_SYNC_INTERVAL_MINUTES", "15") or 15),
+        ),
+        "gcal_auto_sync_enabled": _coerce_bool(
+            get_setting(db, "gcal_auto_sync_enabled"),
+            os.getenv("GCAL_AUTO_SYNC_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
+        ),
+        "gcal_sync_interval": _coerce_int(
+            get_setting(db, "gcal_sync_interval"),
+            int(os.getenv("GCAL_AUTO_SYNC_INTERVAL_MINUTES", "10") or 10),
+        ),
+    }
+
+
+@router.post("/automation", dependencies=[Depends(require_role("admin"))])
+def save_automation_settings(config: AutomationConfig, db: Session = Depends(get_db)):
+    """Persist iCal / GCal auto-sync flags to app_settings. Only set provided keys."""
+    data = config.model_dump(exclude_none=True)
+    for key, value in data.items():
+        set_setting(db, key, str(value).lower() if isinstance(value, bool) else str(value))
+    db.commit()
+    logger.info("automation settings saved: %s", data)
+    return {"status": "saved", **data}
