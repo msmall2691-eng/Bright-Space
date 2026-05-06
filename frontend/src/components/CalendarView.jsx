@@ -1,5 +1,18 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban } from 'lucide-react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  closestCenter,
+} from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import { get, patch } from "../api"
 
 
@@ -35,6 +48,20 @@ function initials(name) {
   return parts[0].slice(0, 2).toUpperCase()
 }
 
+/** Build a multi-line title attribute for a job chip — surfaces full info on hover. */
+function jobTooltip(j, cleanerInits) {
+  const lines = [
+    j.title,
+    j.start_time ? `${j.start_time}${j.end_time ? '–' + j.end_time : ''}` : null,
+    j.address,
+    cleanerInits.length > 0 ? `Cleaners: ${cleanerInits.join(', ')}` : null,
+    j.recurring_schedule_id ? 'Recurring' : null,
+    j.status === 'cancelled' ? 'CANCELLED' : null,
+    'Drag to reschedule',
+  ].filter(Boolean)
+  return lines.join('\n')
+}
+
 /** Tailwind-aware breakpoint hook (md = 768px). */
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(() =>
@@ -46,6 +73,126 @@ function useIsMobile(breakpoint = 768) {
     return () => window.removeEventListener('resize', onResize)
   }, [breakpoint])
   return isMobile
+}
+
+/** A single day-cell — drop target for @dnd-kit. */
+function DayCell({ date, isToday, isSelected, isDropTarget, dayBookings, isCheckin, isCheckout, daySkips, dayReschedFrom, dayReschedTo, dayJobs, isMobile, cleanerInitials, onSelect, onJobClick }) {
+  const { setNodeRef } = useDroppable({ id: date })
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onSelect}
+      className={`relative p-1 sm:p-1.5 min-h-[64px] sm:min-h-[80px] max-h-[180px] cursor-pointer transition-colors flex flex-col ${
+        isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
+        isSelected ? 'bg-blue-50/60' :
+        dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
+        'bg-white hover:bg-gray-50'
+      }`}
+    >
+      <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full mb-0.5 sm:mb-1 shrink-0 ${
+        isToday ? 'bg-blue-500 text-white' :
+        isSelected ? 'text-blue-600' :
+        'text-gray-600'
+      }`}>
+        {parseInt(date.slice(8))}
+      </div>
+
+      {dayBookings.length > 0 && !isMobile && (
+        <div className="text-[10px] text-orange-600/70 mb-0.5 truncate leading-tight shrink-0">
+          {isCheckin && '> '}
+          {dayBookings[0].property_name || 'Guest'}
+          {isCheckout && ' (out)'}
+        </div>
+      )}
+
+      {daySkips.length > 0 && (
+        <div
+          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/60 text-purple-700 border-purple-200 line-through truncate leading-tight shrink-0"
+          title={`${daySkips.length} occurrence(s) skipped on this date${daySkips[0].reason ? ': ' + daySkips[0].reason : ''}`}
+        >
+          <Ban className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">skipped</span>
+        </div>
+      )}
+
+      {dayReschedFrom.length > 0 && (
+        <div
+          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/40 text-purple-600 border-purple-200 italic truncate leading-tight shrink-0"
+          title={`Moved to ${dayReschedFrom[0].rescheduled_date}`}
+        >
+          <ArrowRight className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">→ {dayReschedFrom[0].rescheduled_date?.slice(5)}</span>
+        </div>
+      )}
+
+      {dayReschedTo.length > 0 && (
+        <div
+          className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50 text-purple-700 border-purple-300 truncate leading-tight shrink-0"
+          title={`Moved from ${dayReschedTo[0].exception_date}`}
+        >
+          <ArrowLeft className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">moved</span>
+        </div>
+      )}
+
+      {/* Phase 3.5: ALL chips render. Inner container scrolls so a busy
+          day with 8+ jobs doesn't push the calendar's other rows down. */}
+      <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto scrollbar-thin">
+        {dayJobs.map(j => {
+          const cleanerInits = (j.cleaner_ids || []).map(cleanerInitials).filter(Boolean)
+          const isDuplicate = j.job_type === 'str_turnover' && j.property_id &&
+            dayJobs.filter(dj => dj.job_type === 'str_turnover' && dj.property_id === j.property_id).length > 1
+          return (
+            <DraggableChip
+              key={j.id}
+              job={j}
+              cleanerInits={cleanerInits}
+              isDuplicate={isDuplicate}
+              isMobile={isMobile}
+              onClick={(e) => { e.stopPropagation(); onJobClick?.(j) }}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** A single job chip — drag source for @dnd-kit. */
+function DraggableChip({ job, cleanerInits, isDuplicate, isMobile, onClick }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: String(job.id),
+    data: { jobId: job.id },
+  })
+  const tc = TYPE_CONFIG[job.job_type] || TYPE_CONFIG.residential
+  const isCancelled = job.status === 'cancelled'
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.5 : 1,
+    touchAction: 'manipulation',
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      onClick={onClick}
+      className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing select-none ${
+        isCancelled ? 'bg-zinc-100 text-zinc-400 border-zinc-200 line-through' :
+        isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
+        `${tc.pill} ${tc.pillHover}`
+      }`}
+      title={jobTooltip(job, cleanerInits)}
+    >
+      {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">⚠</span>}
+      {job.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
+      <span className="truncate">{!isMobile && job.start_time ? `${job.start_time} ` : ''}{job.title}</span>
+      {!isMobile && cleanerInits.length > 0 && (
+        <span className="ml-auto shrink-0 text-[9px] font-semibold opacity-60">{cleanerInits.join(',')}</span>
+      )}
+    </div>
+  )
 }
 
 export default function CalendarView({ onJobClick, onDayClick, refreshKey, filters = {} }) {
@@ -60,6 +207,16 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
 
   const [draggingJob, setDraggingJob] = useState(null)
   const [dropTarget, setDropTarget]   = useState(null)
+
+  // @dnd-kit sensors. PointerSensor covers mouse + most touch with a small
+  // 5px drag threshold so a click doesn't accidentally drag. TouchSensor adds
+  // a 200ms press-and-hold so tap-to-select on phones doesn't initiate a drag.
+  // KeyboardSensor is for accessibility (Tab + Space picks up a chip).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+    useSensor(KeyboardSensor),
+  )
 
   const isMobile = useIsMobile()
   const today = now.toISOString().slice(0, 10)
@@ -135,36 +292,26 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
   const next = () => { if (month === 11) { setYear(y => y + 1); setMonth(0) } else setMonth(m => m + 1) }
   const goToday = () => { setYear(now.getFullYear()); setMonth(now.getMonth()); setSelected(today) }
 
-  const onDragStart = (e, job) => {
-    if (isMobile) return
-    setDraggingJob(job)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', JSON.stringify({ jobId: job.id }))
-    if (e.target) e.target.style.opacity = '0.5'
+  // @dnd-kit handlers — single onDragStart/onDragEnd at the DndContext level,
+  // works for mouse, touch, and keyboard. Drop targets register via useDroppable
+  // (each day cell), draggables via useDraggable (each job chip).
+  const handleDragStart = ({ active }) => {
+    const job = filteredJobs.find(j => String(j.id) === String(active.id))
+    if (job) setDraggingJob(job)
   }
-  const onDragEnd = (e) => {
-    if (e.target) e.target.style.opacity = '1'
-    setDraggingJob(null)
+  const handleDragOver = ({ over }) => {
+    setDropTarget(over ? over.id : null)
+  }
+  const handleDragEnd = async ({ active, over }) => {
     setDropTarget(null)
-  }
-  const onDragOver = (e, date) => {
-    if (isMobile) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (dropTarget !== date) setDropTarget(date)
-  }
-  const onDragLeave = () => setDropTarget(null)
-  const onDrop = async (e, targetDate) => {
-    if (isMobile) return
-    e.preventDefault()
-    setDropTarget(null)
-    if (!draggingJob) return
-    if (draggingJob.scheduled_date === targetDate) { setDraggingJob(null); return }
-    const jobId = draggingJob.id
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
+    const job = draggingJob
     setDraggingJob(null)
+    if (!job || !over) return
+    const targetDate = String(over.id)
+    if (job.scheduled_date === targetDate) return
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: targetDate } : j))
     try {
-      await patch(`/api/jobs/${jobId}`, { scheduled_date: targetDate })
+      await patch(`/api/jobs/${job.id}`, { scheduled_date: targetDate })
     } catch (err) {
       console.error('[CalendarView] Reschedule failed:', err)
       get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
@@ -383,122 +530,51 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
           ))}
         </div>
 
-        <div className="grid grid-cols-7 flex-1 gap-px bg-gray-200 rounded-xl overflow-hidden border border-gray-200">
-          {cells.map((date, i) => {
-            if (!date) return <div key={i} className="bg-gray-50" />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="grid grid-cols-7 flex-1 gap-px bg-gray-200 rounded-xl overflow-hidden border border-gray-200">
+            {cells.map((date, i) => {
+              if (!date) return <div key={i} className="bg-gray-50" />
+              const dayJobs = jobsByDay[date] || []
+              return (
+                <DayCell
+                  key={date}
+                  date={date}
+                  isToday={date === today}
+                  isSelected={date === selected}
+                  isDropTarget={dropTarget === date}
+                  dayBookings={bookingsByDay[date] || []}
+                  isCheckin={icalEvents.some(e => e.checkin_date === date)}
+                  isCheckout={icalEvents.some(e => e.checkout_date === date)}
+                  daySkips={skipsByDay[date] || []}
+                  dayReschedFrom={reschedulesFromByDay[date] || []}
+                  dayReschedTo={reschedulesToByDay[date] || []}
+                  dayJobs={dayJobs}
+                  isMobile={isMobile}
+                  cleanerInitials={cleanerInitials}
+                  onSelect={() => { setSelected(date); onDayClick?.(date) }}
+                  onJobClick={onJobClick}
+                />
+              )
+            })}
+          </div>
 
-            const dayJobs = jobsByDay[date] || []
-            const dayBookings = bookingsByDay[date] || []
-            const daySkips = skipsByDay[date] || []
-            const dayReschedFrom = reschedulesFromByDay[date] || []
-            const dayReschedTo = reschedulesToByDay[date] || []
-            const isToday = date === today
-            const isSelected = date === selected
-            const isCheckout = icalEvents.some(e => e.checkout_date === date)
-            const isCheckin  = icalEvents.some(e => e.checkin_date  === date)
-            const isDropTarget = dropTarget === date
-            const maxPills = isMobile ? 1 : 3
-
-            return (
-              <div
-                key={date}
-                onClick={() => { setSelected(date); onDayClick?.(date) }}
-                onDragOver={e => onDragOver(e, date)}
-                onDragLeave={onDragLeave}
-                onDrop={e => onDrop(e, date)}
-                className={`relative p-1 sm:p-1.5 min-h-[64px] sm:min-h-[80px] cursor-pointer transition-colors ${
-                  isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
-                  isSelected ? 'bg-blue-50/60' :
-                  dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
-                  'bg-white hover:bg-gray-50'
-                }`}
-              >
-                <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full mb-0.5 sm:mb-1 ${
-                  isToday ? 'bg-blue-500 text-white' :
-                  isSelected ? 'text-blue-600' :
-                  'text-gray-600'
-                }`}>
-                  {parseInt(date.slice(8))}
-                </div>
-
-                {dayBookings.length > 0 && !isMobile && (
-                  <div className="text-[10px] text-orange-600/70 mb-0.5 truncate leading-tight">
-                    {isCheckin && '> '}
-                    {dayBookings[0].property_name || 'Guest'}
-                    {isCheckout && ' (out)'}
-                  </div>
-                )}
-
-                {daySkips.length > 0 && (
-                  <div
-                    className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/60 text-purple-700 border-purple-200 line-through truncate leading-tight"
-                    title={`${daySkips.length} occurrence(s) skipped on this date${daySkips[0].reason ? ': ' + daySkips[0].reason : ''}`}
-                  >
-                    <Ban className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">skipped</span>
-                  </div>
-                )}
-
-                {dayReschedFrom.length > 0 && (
-                  <div
-                    className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/40 text-purple-600 border-purple-200 italic truncate leading-tight"
-                    title={`Moved to ${dayReschedFrom[0].rescheduled_date}`}
-                  >
-                    <ArrowRight className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">→ {dayReschedFrom[0].rescheduled_date?.slice(5)}</span>
-                  </div>
-                )}
-
-                {dayReschedTo.length > 0 && (
-                  <div
-                    className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50 text-purple-700 border-purple-300 truncate leading-tight"
-                    title={`Moved from ${dayReschedTo[0].exception_date}`}
-                  >
-                    <ArrowLeft className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">moved</span>
-                  </div>
-                )}
-
-                <div className="space-y-0.5">
-                  {dayJobs.slice(0, maxPills).map(j => {
-                    const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
-                    const cleanerInits = (j.cleaner_ids || []).map(cleanerInitials).filter(Boolean)
-                    const isDuplicate = j.job_type === 'str_turnover' && j.property_id &&
-                      dayJobs.filter(dj => dj.job_type === 'str_turnover' && dj.property_id === j.property_id).length > 1
-                    const isCancelled = j.status === 'cancelled'
-                    return (
-                      <div
-                        key={j.id}
-                        draggable={!isMobile}
-                        onDragStart={e => onDragStart(e, j)}
-                        onDragEnd={onDragEnd}
-                        onClick={e => { e.stopPropagation(); onJobClick?.(j) }}
-                        className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded border truncate leading-tight ${
-                          isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
-                        } ${
-                          isCancelled ? 'bg-zinc-100 text-zinc-400 border-zinc-200 line-through' :
-                          isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
-                          `${tc.pill} ${tc.pillHover}`
-                        }`}
-                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''}${isMobile ? '' : ' — drag to reschedule'}`}
-                      >
-                        {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">⚠</span>}
-                        {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
-                        <span className="truncate">{!isMobile && j.start_time ? `${j.start_time} ` : ''}{j.title}</span>
-                        {!isMobile && cleanerInits.length > 0 && (
-                          <span className="ml-auto shrink-0 text-[9px] font-semibold opacity-60">{cleanerInits.join(',')}</span>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {dayJobs.length > maxPills && (
-                    <div className="text-[9px] sm:text-[10px] text-gray-400 px-0.5 sm:px-1">+{dayJobs.length - maxPills} more</div>
-                  )}
-                </div>
+          {/* Floating preview while a chip is being dragged. */}
+          <DragOverlay>
+            {draggingJob && (
+              <div className={`text-[10px] px-1.5 py-0.5 rounded border shadow-lg ${
+                (TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).pill
+              }`}>
+                {draggingJob.title}
               </div>
-            )
-          })}
-        </div>
+            )}
+          </DragOverlay>
+        </DndContext>
       </div>
 
       {!isMobile && (
