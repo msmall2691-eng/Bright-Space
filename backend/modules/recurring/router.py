@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, timedelta
@@ -54,9 +55,19 @@ class ScheduleUpdate(BaseModel):
 
 
 def _effective_days(s: RecurringSchedule) -> List[int]:
-    """Return the list of days-of-week for this schedule (handles legacy single-day)."""
+    """Return the list of days-of-week for this schedule (handles legacy single-day).
+
+    Phase 0 hardening: only fall back to the legacy ``day_of_week`` column when
+    ``days_of_week`` is *truly* empty. An empty list previously collapsed
+    multi-day schedules (Mon/Wed/Fri) to a single day after an update that
+    omitted ``days_of_week``.
+    """
     if s.days_of_week:
-        return s.days_of_week
+        # Defensive: dedupe + clamp to valid 0-6 range so a corrupted JSON blob
+        # (e.g. [0, 0, 9]) does not silently break date generation.
+        cleaned = sorted({int(d) for d in s.days_of_week if isinstance(d, (int, float)) and 0 <= int(d) <= 6})
+        if cleaned:
+            return cleaned
     return [s.day_of_week] if s.day_of_week is not None else [0]
 
 
@@ -128,7 +139,24 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     created = 0
     new_jobs = []
 
+    # Dates already cancelled at the Visit level should NOT regenerate even if
+    # the parent Job row is later hard-deleted. Visit is the durable cancellation
+    # record until Phase 1 introduces a proper RecurrenceException table.
+    cancelled_dates = {
+        v.scheduled_date.isoformat() if hasattr(v.scheduled_date, "isoformat") else str(v.scheduled_date)
+        for v in db.query(Visit)
+        .join(Job, Visit.job_id == Job.id)
+        .filter(
+            Job.recurring_schedule_id == sched.id,
+            Visit.status == "cancelled",
+        )
+        .all()
+    }
+
     for d in dates:
+        if d in cancelled_dates:
+            # User cancelled this occurrence already; do not resurrect it.
+            continue
         exists = db.query(Job).filter(
             Job.recurring_schedule_id == sched.id,
             Job.scheduled_date == d,
@@ -149,9 +177,22 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             status="scheduled",
             notes=sched.notes,
         )
-        db.add(job)
-        new_jobs.append(job)
-        created += 1
+        # Race-safe: if a concurrent /generate-all already inserted this row,
+        # the partial unique index added in migration 004 raises IntegrityError;
+        # roll back the savepoint and treat as already-exists.
+        sp = db.begin_nested()
+        try:
+            db.add(job)
+            db.flush()
+            sp.commit()
+            new_jobs.append(job)
+            created += 1
+        except IntegrityError:
+            sp.rollback()
+            logger.info(
+                f"Skipped duplicate job for schedule {sched.id} on {d} "
+                "(concurrent generate-all). This is expected and harmless."
+            )
 
     db.commit()
 
@@ -258,6 +299,13 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
     if not sched:
         raise HTTPException(status_code=404, detail="Schedule not found")
     updates = data.model_dump(exclude_none=True)
+    # Phase 0 fix: an empty days_of_week list would silently collapse a
+    # multi-day schedule. Reject it explicitly rather than dropping days.
+    if "days_of_week" in updates and not updates["days_of_week"]:
+        raise HTTPException(
+            status_code=400,
+            detail="days_of_week cannot be empty; pass null to leave unchanged or supply at least one day",
+        )
     for field, value in updates.items():
         setattr(sched, field, value)
     # Keep day_of_week in sync with first element of days_of_week
