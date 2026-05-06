@@ -8,7 +8,7 @@ from datetime import datetime, timezone, date, time
 from zoneinfo import ZoneInfo
 
 from database.db import get_db
-from database.models import Job, Client, Visit
+from database.models import Job, Client, Visit, ICalEvent
 from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event
@@ -46,7 +46,40 @@ class JobUpdate(BaseModel):
     custom_fields: Optional[dict] = None
 
 
-def job_to_dict(j: Job, client: Client = None, effective_date=None) -> dict:
+def _detect_booking_source(uid: str) -> str:
+    """Best-effort identification of the booking platform from the iCal UID."""
+    if not uid:
+        return "iCal"
+    low = uid.lower()
+    if "airbnb" in low:
+        return "Airbnb"
+    if "vrbo" in low or "homeaway" in low:
+        return "VRBO"
+    if "hospitable" in low:
+        return "Hospitable"
+    if "guesty" in low:
+        return "Guesty"
+    if "booking.com" in low or "booking_com" in low:
+        return "Booking.com"
+    return "iCal"
+
+
+def _booking_dict(event: ICalEvent) -> dict:
+    """Serialize the subset of ICalEvent fields useful for a turnover Job card."""
+    if not event:
+        return None
+    return {
+        "uid": event.uid,
+        "summary": event.summary,
+        "guest_count": event.guest_count,
+        "checkin_date": event.checkin_date,
+        "checkout_date": event.checkout_date,
+        "source": _detect_booking_source(event.uid),
+    }
+
+
+def job_to_dict(j: Job, client: Client = None, effective_date=None,
+                booking_event: ICalEvent = None, next_arrival: ICalEvent = None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
@@ -84,6 +117,15 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None) -> dict:
         "connecteam_shift_ids": j.connecteam_shift_ids or [],
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+        # Phase 5: booking enrichment for STR turnovers. Lazy-matched in
+        # get_jobs() if the Job has no direct ical_event_id link.
+        "booking": _booking_dict(booking_event) if booking_event else None,
+        "next_arrival": _booking_dict(next_arrival) if next_arrival else None,
+        "is_immediate_turnover": (
+            booking_event is not None
+            and next_arrival is not None
+            and next_arrival.checkin_date == booking_event.checkout_date
+        ),
     }
 
 
@@ -136,7 +178,51 @@ def get_jobs(
         q = q.filter(Job.job_type == job_type)
 
     rows = q.order_by(effective_date, Job.start_time).all()
-    return [job_to_dict(j, effective_date=eff) for j, eff in rows]
+
+    # Phase 5: build a per-property index of relevant ICalEvent rows so
+    # we can attach booking details to str_turnover Jobs that lack a
+    # direct ical_event_id (production data is currently mostly unlinked).
+    rendered = []
+    if rows:
+        prop_ids = {j.property_id for j, _ in rows if j.property_id and j.job_type == "str_turnover"}
+        events_by_prop = {}
+        if prop_ids:
+            ical_rows = (
+                db.query(ICalEvent)
+                  .filter(ICalEvent.property_id.in_(prop_ids))
+                  .filter(ICalEvent.event_type == "reservation")
+                  .all()
+            )
+            for ev in ical_rows:
+                events_by_prop.setdefault(ev.property_id, []).append(ev)
+            # Sort each property's events by checkin_date for next-arrival lookup.
+            for pid, evs in events_by_prop.items():
+                evs.sort(key=lambda e: e.checkin_date or "")
+
+        for j, eff in rows:
+            booking = None
+            next_arrival = None
+            if j.job_type == "str_turnover" and j.property_id:
+                # Already-linked ical_event_id wins.
+                if j.ical_event_id:
+                    booking = next((e for e in events_by_prop.get(j.property_id, [])
+                                     if e.id == j.ical_event_id), None)
+                # Fall back to checkout-date == job-date matching.
+                if booking is None:
+                    iso = eff.isoformat() if hasattr(eff, "isoformat") else (str(eff) if eff else None)
+                    booking = next((e for e in events_by_prop.get(j.property_id, [])
+                                     if e.checkout_date == iso), None)
+                # Find the next reservation that starts on/after this turnover.
+                if booking is not None:
+                    next_arrival = next(
+                        (e for e in events_by_prop.get(j.property_id, [])
+                         if e.checkin_date and e.checkin_date >= booking.checkout_date and e.uid != booking.uid),
+                        None,
+                    )
+            rendered.append(job_to_dict(j, effective_date=eff,
+                                        booking_event=booking,
+                                        next_arrival=next_arrival))
+    return rendered
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
