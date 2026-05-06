@@ -421,6 +421,11 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                             log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
                         except Exception as e:
                             log.warning(f"Failed to delete GCal for cancelled turnover: {e}")
+                # Phase 0 fix: drop the link to the cancelled Job. Without this,
+                # if the same UID reappears (guest rebooks) the next sync sees
+                # event.job_id set and treats it as already-linked, leaving the
+                # cancelled Job in place and skipping new-Job creation.
+                existing.job_id = None
             # Mark the iCal event as cancelled (audit trail)
             existing.event_type = "cancelled"
 
