@@ -293,6 +293,55 @@ class RecurringSchedule(Base):
 
     client = relationship("Client", back_populates="recurring_schedules")
     jobs = relationship("Job", back_populates="recurring_schedule")
+    exceptions = relationship(
+        "RecurrenceException",
+        back_populates="recurring_schedule",
+        cascade="all, delete-orphan",
+    )
+
+
+class RecurrenceException(Base):
+    """A skip or reschedule applied to a single occurrence of a RecurringSchedule.
+
+    Phase 1: durable RFC-5545-style exception model. A row here means the
+    corresponding date in the recurrence rule should NOT generate a Job (skip),
+    or should generate a Job at a different date/time (reschedule). The
+    UNIQUE(recurring_schedule_id, exception_date) constraint guarantees at
+    most one exception per (schedule, original date) pair so repeated user
+    actions are idempotent.
+    """
+    __tablename__ = "recurrence_exceptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recurring_schedule_id = Column(
+        Integer,
+        ForeignKey("recurring_schedules.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    exception_date = Column(Date, nullable=False, index=True)
+    # "skip" — date is excluded from generation entirely
+    # "reschedule" — date is excluded; a Job is created at rescheduled_date instead
+    exception_type = Column(String, nullable=False)
+    rescheduled_date = Column(Date, nullable=True)
+    rescheduled_start_time = Column(Time, nullable=True)
+    rescheduled_end_time = Column(Time, nullable=True)
+    reason = Column(Text, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    recurring_schedule = relationship(
+        "RecurringSchedule", back_populates="exceptions"
+    )
+    creator = relationship("User", foreign_keys=[created_by])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "recurring_schedule_id",
+            "exception_date",
+            name="uq_recurrence_exception_schedule_date",
+        ),
+    )
 
 
 class Job(Base):
