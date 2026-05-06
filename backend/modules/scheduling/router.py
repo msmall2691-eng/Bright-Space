@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
@@ -97,10 +98,29 @@ def get_jobs(
         q = q.filter(Job.status == status)
     if date:
         q = q.filter(Job.scheduled_date == date)
-    if date_from:
-        q = q.filter(Job.scheduled_date >= date_from)
-    if date_to:
-        q = q.filter(Job.scheduled_date <= date_to)
+
+    # Some Jobs were created without populating Job.scheduled_date (the date
+    # is durable on the Visit row). Outer-join the earliest visit date so
+    # the date_from / date_to filter falls back to it when scheduled_date
+    # is NULL — keeps the calendar from going dark for those rows.
+    if date_from or date_to:
+        visit_min = (
+            db.query(Visit.job_id, func.min(Visit.scheduled_date).label("min_date"))
+              .group_by(Visit.job_id)
+              .subquery()
+        )
+        q = q.outerjoin(visit_min, visit_min.c.job_id == Job.id)
+        if date_from:
+            q = q.filter(or_(
+                Job.scheduled_date >= date_from,
+                and_(Job.scheduled_date.is_(None), visit_min.c.min_date >= date_from),
+            ))
+        if date_to:
+            q = q.filter(or_(
+                Job.scheduled_date <= date_to,
+                and_(Job.scheduled_date.is_(None), visit_min.c.min_date <= date_to),
+            ))
+
     if job_type:
         q = q.filter(Job.job_type == job_type)
     return [job_to_dict(j) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
