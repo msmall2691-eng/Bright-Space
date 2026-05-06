@@ -6,7 +6,7 @@ from typing import Optional, List, Literal
 from datetime import datetime, date, time, timezone
 
 from database.db import get_db
-from database.models import Visit, Job, Client, Property
+from database.models import Visit, Job, Client, Property, RecurrenceException
 from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import log_visit_skipped
 
@@ -405,6 +405,26 @@ def skip_visit(visit_id: int, reason: Optional[str] = None, db: Session = Depend
     # the RecurringSchedule, so future visits still generate normally.
     if visit.job:
         visit.job.status = "cancelled"
+
+    # Phase 1: write a durable skip exception so the cancellation survives
+    # any future Job hard-delete and is visible in the schedule's exception
+    # history. Idempotent thanks to the unique (schedule_id, date) constraint.
+    if visit.job and visit.job.recurring_schedule_id and visit.scheduled_date:
+        existing = (
+            db.query(RecurrenceException)
+            .filter(
+                RecurrenceException.recurring_schedule_id == visit.job.recurring_schedule_id,
+                RecurrenceException.exception_date == visit.scheduled_date,
+            )
+            .first()
+        )
+        if existing is None:
+            db.add(RecurrenceException(
+                recurring_schedule_id=visit.job.recurring_schedule_id,
+                exception_date=visit.scheduled_date,
+                exception_type="skip",
+                reason=reason or "Visit skipped via /api/visits/{id}/skip",
+            ))
 
     log_visit_skipped(db, visit, reason=reason)
     db.commit()

@@ -9,7 +9,7 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 from database.db import get_db
-from database.models import RecurringSchedule, Job, Visit
+from database.models import RecurringSchedule, Job, Visit, RecurrenceException
 from utils.activity_logger import log_job_created, log_calendar_event
 
 router = APIRouter()
@@ -35,6 +35,16 @@ class ScheduleCreate(BaseModel):
     property_id: Optional[int] = None
     generate_weeks_ahead: Optional[int] = 8
     notes: Optional[str] = None
+
+
+class ExceptionCreate(BaseModel):
+    """Body for POST /api/recurring/{id}/skip and /reschedule."""
+    exception_date: date              # the original occurrence to mark
+    exception_type: Optional[str] = None  # set automatically by the endpoint
+    rescheduled_date: Optional[date] = None
+    rescheduled_start_time: Optional[str] = None  # HH:MM
+    rescheduled_end_time: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class ScheduleUpdate(BaseModel):
@@ -130,12 +140,44 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
     return sorted(set(result))
 
 
+def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[str]) -> List[str]:
+    """Apply RecurrenceException rows to the rule-expanded date list.
+
+    - skip rows REMOVE the original date.
+    - reschedule rows REMOVE the original date and ADD the rescheduled_date.
+
+    Returns a new sorted list. Phase 1: this is now the durable cancellation
+    mechanism — the cancelled-Visit query in generate_jobs() is kept as a
+    belt-and-suspenders safety net for any cancellations not yet migrated.
+    """
+    exceptions = (
+        db.query(RecurrenceException)
+        .filter(RecurrenceException.recurring_schedule_id == sched.id)
+        .all()
+    )
+    if not exceptions:
+        return dates
+
+    skip_dates = set()
+    add_dates = set()
+    for ex in exceptions:
+        ex_iso = ex.exception_date.isoformat() if hasattr(ex.exception_date, "isoformat") else str(ex.exception_date)
+        skip_dates.add(ex_iso)
+        if ex.exception_type == "reschedule" and ex.rescheduled_date:
+            new_iso = ex.rescheduled_date.isoformat() if hasattr(ex.rescheduled_date, "isoformat") else str(ex.rescheduled_date)
+            add_dates.add(new_iso)
+
+    return sorted((set(dates) - skip_dates) | add_dates)
+
+
 def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     """Create Job + Visit records for dates that don't already have one. Returns count created."""
     from database.models import Client
     from integrations.google_calendar import create_event
 
     dates = generate_dates(sched, sched.generate_weeks_ahead)
+    # Phase 1: subtract skips and apply reschedules from the exception table.
+    dates = _apply_exceptions(db, sched, dates)
     created = 0
     new_jobs = []
 
@@ -340,4 +382,178 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
     if not sched:
         raise HTTPException(status_code=404, detail="Schedule not found")
     sched.active = False
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: exception endpoints (skip / reschedule a single occurrence)
+# ---------------------------------------------------------------------------
+
+def _ex_to_dict(ex: RecurrenceException) -> dict:
+    return {
+        "id": ex.id,
+        "recurring_schedule_id": ex.recurring_schedule_id,
+        "exception_date": ex.exception_date.isoformat() if ex.exception_date else None,
+        "exception_type": ex.exception_type,
+        "rescheduled_date": ex.rescheduled_date.isoformat() if ex.rescheduled_date else None,
+        "rescheduled_start_time": str(ex.rescheduled_start_time) if ex.rescheduled_start_time else None,
+        "rescheduled_end_time": str(ex.rescheduled_end_time) if ex.rescheduled_end_time else None,
+        "reason": ex.reason,
+        "created_by": ex.created_by,
+        "created_at": ex.created_at.isoformat() if ex.created_at else None,
+    }
+
+
+def _cancel_existing_job_and_visit(db: Session, sched_id: int, target_date: date, reason: Optional[str]) -> None:
+    """Mark any Job + Visit on (schedule_id, target_date) as cancelled. Used
+    when a skip/reschedule exception is added so the immediate UI reflects
+    the change without waiting for the next /generate-all run."""
+    iso = target_date.isoformat() if hasattr(target_date, "isoformat") else str(target_date)
+    job = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched_id,
+            Job.scheduled_date == iso,
+            Job.status != "completed",
+        )
+        .first()
+    )
+    if job is None:
+        return
+    job.status = "cancelled"
+    for v in db.query(Visit).filter(Visit.job_id == job.id).all():
+        if v.status not in ("completed", "cancelled"):
+            v.status = "cancelled"
+            if reason:
+                v.notes = (v.notes or "") + f"\n[Skipped via exception: {reason}]"
+
+
+@router.post("/{schedule_id}/skip", status_code=201)
+def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
+    """Skip a single occurrence of a recurring schedule.
+
+    Idempotent: if an exception already exists for this date, the existing one
+    is updated (reason/type) and returned with HTTP 200 semantics surfaced via
+    the response payload's ``existing`` flag.
+    """
+    sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
+    if not sched:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    existing = (
+        db.query(RecurrenceException)
+        .filter(
+            RecurrenceException.recurring_schedule_id == schedule_id,
+            RecurrenceException.exception_date == body.exception_date,
+        )
+        .first()
+    )
+    if existing:
+        existing.exception_type = "skip"
+        existing.rescheduled_date = None
+        existing.rescheduled_start_time = None
+        existing.rescheduled_end_time = None
+        if body.reason:
+            existing.reason = body.reason
+        ex = existing
+    else:
+        ex = RecurrenceException(
+            recurring_schedule_id=schedule_id,
+            exception_date=body.exception_date,
+            exception_type="skip",
+            reason=body.reason,
+        )
+        db.add(ex)
+
+    _cancel_existing_job_and_visit(db, schedule_id, body.exception_date, body.reason)
+    db.commit()
+    db.refresh(ex)
+    return _ex_to_dict(ex)
+
+
+@router.post("/{schedule_id}/reschedule", status_code=201)
+def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
+    """Reschedule a single occurrence to a different date (and optionally time).
+
+    The original Job/Visit on the original date is cancelled; the next
+    generate_jobs call will create a Job for the new date.
+    """
+    if body.rescheduled_date is None:
+        raise HTTPException(
+            status_code=400,
+            detail="rescheduled_date is required for a reschedule exception",
+        )
+
+    sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
+    if not sched:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    existing = (
+        db.query(RecurrenceException)
+        .filter(
+            RecurrenceException.recurring_schedule_id == schedule_id,
+            RecurrenceException.exception_date == body.exception_date,
+        )
+        .first()
+    )
+    if existing:
+        ex = existing
+        ex.exception_type = "reschedule"
+        ex.rescheduled_date = body.rescheduled_date
+        ex.rescheduled_start_time = body.rescheduled_start_time
+        ex.rescheduled_end_time = body.rescheduled_end_time
+        if body.reason:
+            ex.reason = body.reason
+    else:
+        ex = RecurrenceException(
+            recurring_schedule_id=schedule_id,
+            exception_date=body.exception_date,
+            exception_type="reschedule",
+            rescheduled_date=body.rescheduled_date,
+            rescheduled_start_time=body.rescheduled_start_time,
+            rescheduled_end_time=body.rescheduled_end_time,
+            reason=body.reason,
+        )
+        db.add(ex)
+
+    _cancel_existing_job_and_visit(db, schedule_id, body.exception_date, body.reason)
+    db.commit()
+    db.refresh(ex)
+    return _ex_to_dict(ex)
+
+
+@router.get("/{schedule_id}/exceptions")
+def list_exceptions(schedule_id: int, db: Session = Depends(get_db)):
+    sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
+    if not sched:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    exceptions = (
+        db.query(RecurrenceException)
+        .filter(RecurrenceException.recurring_schedule_id == schedule_id)
+        .order_by(RecurrenceException.exception_date)
+        .all()
+    )
+    return [_ex_to_dict(e) for e in exceptions]
+
+
+@router.delete("/{schedule_id}/exceptions/{exception_id}", status_code=204)
+def delete_exception(schedule_id: int, exception_id: int, db: Session = Depends(get_db)):
+    """Undo a skip or reschedule. The next generate_jobs call will recreate
+    the Job for the original date if it falls within generate_weeks_ahead.
+
+    Note: this does NOT automatically un-cancel an already-cancelled Job/Visit
+    pair — the next generate run handles that by creating a fresh Job, since
+    the cancelled Job from the skip is now an unrelated historical record.
+    """
+    ex = (
+        db.query(RecurrenceException)
+        .filter(
+            RecurrenceException.id == exception_id,
+            RecurrenceException.recurring_schedule_id == schedule_id,
+        )
+        .first()
+    )
+    if not ex:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    db.delete(ex)
     db.commit()
