@@ -98,11 +98,21 @@ def test_jobs_endpoint_returns_null_scheduled_date_jobs_via_visit(fresh_client):
         date_to = (target + timedelta(days=1)).isoformat()
         r = api.get(f"/api/jobs?date_from={date_from}&date_to={date_to}")
         assert r.status_code == 200, r.text
-        ids = [row["id"] for row in r.json()]
+        rows = r.json()
+        ids = [row["id"] for row in rows]
         assert job.id in ids, (
             f"Job {job.id} (scheduled_date=NULL, visit on {target}) was not "
             f"returned by /api/jobs?date_from={date_from}&date_to={date_to}. "
             f"Got: {ids}"
+        )
+        # Phase 3 fix #2: the response must surface the visit's date in
+        # scheduled_date so consumers can bucket by it. Otherwise the
+        # filter works but the calendar bucket-by-date step still drops
+        # the row into the null bucket.
+        row = next(r for r in rows if r["id"] == job.id)
+        assert row["scheduled_date"] == target.isoformat(), (
+            f"Expected response scheduled_date == {target.isoformat()} "
+            f"(from the visit), got {row['scheduled_date']}"
         )
     finally:
         db.close()
@@ -163,5 +173,61 @@ def test_jobs_endpoint_excludes_null_jobs_outside_visit_range(fresh_client):
         assert r.status_code == 200
         ids = [row["id"] for row in r.json()]
         assert job.id not in ids
+    finally:
+        db.close()
+
+
+def test_jobs_endpoint_serializes_effective_date_without_filter(fresh_client):
+    """Even when the caller doesn't pass date_from/date_to, the response
+    should still surface the visit's date for jobs whose scheduled_date
+    column is NULL — the COALESCE must run on every call, not just the
+    filtered ones."""
+    from fastapi.testclient import TestClient
+    from main import app
+    from modules.auth.router import get_current_user
+
+    class _AdminStub:
+        id = 0
+        role = "admin"
+        email = "test@brightspace.local"
+        active = True
+
+    app.dependency_overrides[get_current_user] = lambda: _AdminStub()
+    api = TestClient(app)
+
+    client, prop = fresh_client
+    db = SessionLocal()
+    try:
+        target = date.today() + timedelta(days=4)
+        job = Job(
+            client_id=client.id,
+            property_id=prop.id,
+            job_type="residential",
+            title="No-Filter Effective Date Job",
+            address="9 Fallback Way",
+            scheduled_date=None,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            cleaner_ids=[],
+            status="scheduled",
+        )
+        db.add(job); db.commit(); db.refresh(job)
+
+        next_visit_id = (db.query(func.max(Visit.id)).scalar() or 0) + 1
+        db.add(Visit(
+            id=next_visit_id,
+            job_id=job.id,
+            scheduled_date=target,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            cleaner_ids=[],
+            status="scheduled",
+        ))
+        db.commit()
+
+        r = api.get(f"/api/jobs?client_id={client.id}")
+        assert r.status_code == 200, r.text
+        row = next(x for x in r.json() if x["id"] == job.id)
+        assert row["scheduled_date"] == target.isoformat()
     finally:
         db.close()

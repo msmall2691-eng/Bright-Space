@@ -46,13 +46,19 @@ class JobUpdate(BaseModel):
     custom_fields: Optional[dict] = None
 
 
-def job_to_dict(j: Job, client: Client = None) -> dict:
+def job_to_dict(j: Job, client: Client = None, effective_date=None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
         client_name = client.name or ""
     elif j.client and hasattr(j, "client"):
         client_name = j.client.name if j.client else ""
+    # Phase 3 calendar fix: prefer the COALESCE(Job.scheduled_date,
+    # earliest Visit.scheduled_date) computed by get_jobs() so consumers
+    # like CalendarView can bucket by date even when the Job column is
+    # NULL (some startup tasks null it out at boot; Visit is the durable
+    # source of truth).
+    sched = effective_date if effective_date is not None else j.scheduled_date
     return {
         "id": j.id,
         "client_id": j.client_id,
@@ -65,7 +71,7 @@ def job_to_dict(j: Job, client: Client = None) -> dict:
         "calendar_invite_sent": j.calendar_invite_sent,
         "sms_reminder_sent": j.sms_reminder_sent,
         "title": j.title,
-        "scheduled_date": j.scheduled_date,
+        "scheduled_date": sched,
         "start_time": j.start_time,
         "end_time": j.end_time,
         "address": j.address,
@@ -91,39 +97,46 @@ def get_jobs(
     job_type: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Job).options(joinedload(Job.client))
+    # Per-job earliest visit date. Used both for filtering AND for the
+    # serialized response so that consumers (e.g. CalendarView) bucket by
+    # the right date when Job.scheduled_date is NULL — the durable date
+    # lives on the Visit row.
+    visit_min = (
+        db.query(Visit.job_id, func.min(Visit.scheduled_date).label("min_date"))
+          .group_by(Visit.job_id)
+          .subquery()
+    )
+    effective_date = func.coalesce(Job.scheduled_date, visit_min.c.min_date).label("effective_date")
+    q = (
+        db.query(Job, effective_date)
+          .options(joinedload(Job.client))
+          .outerjoin(visit_min, visit_min.c.job_id == Job.id)
+    )
+
     if client_id:
         q = q.filter(Job.client_id == client_id)
     if status:
         q = q.filter(Job.status == status)
     if date:
-        q = q.filter(Job.scheduled_date == date)
-
-    # Some Jobs were created without populating Job.scheduled_date (the date
-    # is durable on the Visit row). Outer-join the earliest visit date so
-    # the date_from / date_to filter falls back to it when scheduled_date
-    # is NULL — keeps the calendar from going dark for those rows.
-    if date_from or date_to:
-        visit_min = (
-            db.query(Visit.job_id, func.min(Visit.scheduled_date).label("min_date"))
-              .group_by(Visit.job_id)
-              .subquery()
-        )
-        q = q.outerjoin(visit_min, visit_min.c.job_id == Job.id)
-        if date_from:
-            q = q.filter(or_(
-                Job.scheduled_date >= date_from,
-                and_(Job.scheduled_date.is_(None), visit_min.c.min_date >= date_from),
-            ))
-        if date_to:
-            q = q.filter(or_(
-                Job.scheduled_date <= date_to,
-                and_(Job.scheduled_date.is_(None), visit_min.c.min_date <= date_to),
-            ))
-
+        q = q.filter(or_(
+            Job.scheduled_date == date,
+            and_(Job.scheduled_date.is_(None), visit_min.c.min_date == date),
+        ))
+    if date_from:
+        q = q.filter(or_(
+            Job.scheduled_date >= date_from,
+            and_(Job.scheduled_date.is_(None), visit_min.c.min_date >= date_from),
+        ))
+    if date_to:
+        q = q.filter(or_(
+            Job.scheduled_date <= date_to,
+            and_(Job.scheduled_date.is_(None), visit_min.c.min_date <= date_to),
+        ))
     if job_type:
         q = q.filter(Job.job_type == job_type)
-    return [job_to_dict(j) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
+
+    rows = q.order_by(effective_date, Job.start_time).all()
+    return [job_to_dict(j, effective_date=eff) for j, eff in rows]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
