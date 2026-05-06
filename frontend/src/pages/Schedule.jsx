@@ -3,13 +3,15 @@ import { useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
-  Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical
+  Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical,
+  List, Grid3x3
 } from 'lucide-react'
 import { get, post, put } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import JobEditModal from '../components/JobEditModal'
+import CalendarView from '../components/CalendarView'
 
 // Property type colors (STR = amber, residential = blue, commercial = purple)
 const PROPERTY_TYPE_CONFIG = {
@@ -138,6 +140,16 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
 
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
+  // Phase 3: view mode toggle. ?view=month renders the CalendarView month
+  // grid; default is the existing list view. Stored in the URL so it
+  // survives reload and is bookmarkable.
+  const viewMode = searchParams.get('view') === 'month' ? 'month' : 'list'
+  const setViewMode = (next) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'month') params.set('view', 'month')
+    else params.delete('view')
+    setSearchParams(params, { replace: true })
+  }
   const [visits, setVisits] = useState([])
   const [jobs, setJobs] = useState({})
   const [properties, setProperties] = useState({})
@@ -396,10 +408,39 @@ export default function Schedule() {
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
             <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Schedule</h1>
-            <Button variant="primary" size="sm" className="whitespace-nowrap">
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline ml-2">New Job</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Phase 3: List / Month view toggle. URL-driven via ?view=. */}
+              <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded text-xs sm:text-sm font-medium transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-neutral-600 hover:bg-neutral-50 active:bg-neutral-100'
+                  }`}
+                  aria-pressed={viewMode === 'list'}
+                >
+                  <List className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">List</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('month')}
+                  className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded text-xs sm:text-sm font-medium transition-colors ${
+                    viewMode === 'month'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-neutral-600 hover:bg-neutral-50 active:bg-neutral-100'
+                  }`}
+                  aria-pressed={viewMode === 'month'}
+                >
+                  <Grid3x3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Month</span>
+                </button>
+              </div>
+              <Button variant="primary" size="sm" className="whitespace-nowrap">
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline ml-2">New Job</span>
+              </Button>
+            </div>
           </div>
 
           {/* Week Navigation */}
@@ -519,7 +560,20 @@ export default function Schedule() {
         </div>
       </div>
 
-      {/* Schedule Grid */}
+      {/* Phase 3: month view branch */}
+      {viewMode === 'month' ? (
+        <div className="flex-1 overflow-hidden">
+          <CalendarView
+            onJobClick={(j) => setEditingJob(jobs[j.id] || j)}
+            filters={{
+              ...(selectedPropertyType !== 'all' ? { job_type: selectedPropertyType === 'str' ? 'str_turnover' : selectedPropertyType } : {}),
+              ...(selectedStatus !== 'all' ? { status: selectedStatus } : {}),
+            }}
+          />
+        </div>
+      ) : (
+      <>
+      {/* Schedule Grid (list view) */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto p-3 sm:p-4">
           {Object.keys(visitsByDate).length === 0 ? (
@@ -559,6 +613,9 @@ export default function Schedule() {
           )}
         </div>
       </div>
+
+      </>
+      )}
 
       {/* Visit Details Drawer */}
       {showDetails && selectedVisit && (

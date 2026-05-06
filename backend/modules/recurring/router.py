@@ -327,6 +327,41 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/exceptions")
+def list_all_exceptions(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """List recurrence exceptions across ALL schedules, optionally filtered by
+    a date range that matches against ``exception_date`` OR ``rescheduled_date``.
+
+    Designed for the calendar view, which fetches Jobs in a date range and
+    overlays exceptions to render skipped/rescheduled occurrences.
+    """
+    q = db.query(RecurrenceException)
+    if date_from:
+        try:
+            d_from = date.fromisoformat(date_from)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_from must be YYYY-MM-DD")
+        q = q.filter(
+            (RecurrenceException.exception_date >= d_from)
+            | (RecurrenceException.rescheduled_date >= d_from)
+        )
+    if date_to:
+        try:
+            d_to = date.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_to must be YYYY-MM-DD")
+        q = q.filter(
+            (RecurrenceException.exception_date <= d_to)
+            | (RecurrenceException.rescheduled_date <= d_to)
+        )
+    rows = q.order_by(RecurrenceException.exception_date).all()
+    return [_ex_to_dict(e) for e in rows]
+
+
 @router.get("/{schedule_id}")
 def get_schedule(schedule_id: int, db: Session = Depends(get_db)):
     sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
