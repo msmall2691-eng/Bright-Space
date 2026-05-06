@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink } from 'lucide-react'
 import { get, patch } from "../api"
 
 
@@ -310,6 +310,11 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-gray-900 truncate flex items-center gap-1">
                           {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
+                          {j.is_immediate_turnover && (
+                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700 bg-red-100 border border-red-200 px-1 rounded shrink-0" title="Same-day check-out and check-in — tight cleaning window">
+                              <Zap className="w-2.5 h-2.5" /> immediate
+                            </span>
+                          )}
                           {j.title}
                         </div>
                         <div className="text-xs text-gray-500 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>
@@ -321,6 +326,39 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                                 {ci}
                               </span>
                             ))}
+                          </div>
+                        )}
+                        {/* Phase 5: booking enrichment for STR turnovers. */}
+                        {j.booking && (
+                          <div className="mt-2 pt-2 border-t border-gray-100 space-y-0.5">
+                            <div className="flex items-center gap-1 text-[10px]">
+                              <ExternalLink className="w-2.5 h-2.5 text-gray-400 shrink-0" />
+                              <span className="font-medium text-gray-700">{j.booking.source}</span>
+                              {j.booking.summary && (
+                                <span className="text-gray-500 truncate">· {j.booking.summary}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                              {j.booking.guest_count && (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <Users className="w-2.5 h-2.5" /> {j.booking.guest_count} guest{j.booking.guest_count !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {j.booking.checkin_date && (
+                                <span>in: {j.booking.checkin_date.slice(5)}</span>
+                              )}
+                              {j.booking.checkout_date && (
+                                <span>out: {j.booking.checkout_date.slice(5)}</span>
+                              )}
+                            </div>
+                            {j.next_arrival && (
+                              <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-1">
+                                <span>→ next: {j.next_arrival.checkin_date}</span>
+                                {j.next_arrival.guest_count && (
+                                  <span className="text-gray-500">· {j.next_arrival.guest_count} guest{j.next_arrival.guest_count !== 1 ? 's' : ''}</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -483,6 +521,9 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                         title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''}${isMobile ? '' : ' — drag to reschedule'}`}
                       >
                         {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">⚠</span>}
+                        {j.is_immediate_turnover && (
+                          <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
+                        )}
                         {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
                         <span className="truncate">{!isMobile && j.start_time ? `${j.start_time} ` : ''}{j.title}</span>
                         {!isMobile && cleanerInits.length > 0 && (
