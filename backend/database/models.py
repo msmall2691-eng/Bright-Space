@@ -174,7 +174,9 @@ class Property(Base):
     city = Column(String)
     state = Column(String)
     zip_code = Column(String)
-    property_type = Column(String, default="residential")   # "residential" | "commercial" | "str"
+    # Constrained at the DB level via migration 006's CHECK constraint
+    # (`ck_properties_property_type`) to one of: residential | commercial | str.
+    property_type = Column(String, default="residential", nullable=False)
 
     ical_url = Column(String, nullable=True)        # Legacy: single iCal (backward compat)
     ical_last_synced_at = Column(DateTime, nullable=True)
