@@ -4,6 +4,7 @@ import {
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X
 } from 'lucide-react'
 import { get, post, patch } from '../api'
+import { displayContactName } from '../utils/display'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 
@@ -48,7 +49,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
           <div className="flex-1 min-w-0">
             {/* Name + Status */}
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <h3 className="font-semibold text-neutral-900 truncate">{intake.name}</h3>
+              <h3 className="font-semibold text-neutral-900 truncate">{displayContactName(intake)}</h3>
               <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
                 {statusConfig.label}
               </span>
