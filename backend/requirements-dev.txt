@@ -1,0 +1,8 @@
+# Development-only dependencies. NOT installed in production builds
+# (Dockerfile installs requirements.txt only).
+#
+# Install locally with:
+#   pip install -r requirements-dev.txt
+
+mypy==1.13.0
+types-python-dateutil==2.9.0.20240821

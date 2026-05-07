@@ -112,7 +112,7 @@ def _detect_booking_source(uid: str) -> str:
     return "iCal"
 
 
-def _booking_dict(event: ICalEvent) -> dict:
+def _booking_dict(event: Optional[ICalEvent]) -> Optional[dict]:
     """Serialize the subset of ICalEvent fields useful for a turnover Job card."""
     if not event:
         return None
@@ -673,7 +673,7 @@ def rehydrate_job_dates_from_gcal(
                         try:
                             parts = job.gcal_event_id.split("_")
                             timestamp_str = parts[-1]  # "20260407T130000Z"
-                            dt_utc = datetime.strptime(timestamp_str, "%Y%m%dT%H%M%SZ").replace(tzinfo=pytz.UTC)
+                            dt_utc = datetime.strptime(timestamp_str, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
                             dt_local = dt_utc.astimezone(tz)
                             new_date = dt_local.date()
                             new_start_time = dt_local.time()
