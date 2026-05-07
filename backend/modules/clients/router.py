@@ -9,6 +9,7 @@ import re
 from database.db import get_db
 from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation, User
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
+from utils.contacts import normalize_phone
 from utils.enrichment import enrich_client_data
 from modules.auth.router import get_current_user, require_role
 
@@ -355,6 +356,8 @@ def get_clients(status: Optional[str] = None, db: Session = Depends(get_db)):
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     payload = data.model_dump()
+    if "phone" in payload:
+        payload["phone"] = normalize_phone(payload.get("phone"))
     # Enrich with extracted data from email, name, etc.
     payload = enrich_client_data(payload)
     payload["name"] = _derive_name(payload.get("first_name"), payload.get("last_name"), payload.get("name") or "")
@@ -574,6 +577,8 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     updates = data.model_dump(exclude_none=True)
+    if "phone" in updates:
+        updates["phone"] = normalize_phone(updates.get("phone"))
     phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
     new_phone = updates.get("phone") if phone_changed else None
 
