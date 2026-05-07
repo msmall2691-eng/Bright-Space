@@ -2439,6 +2439,26 @@ export interface components {
             file: string;
         };
         /**
+         * BookingInfo
+         * @description Phase 5 turnover-enrichment payload — surfaces ICalEvent fields on
+         *     str_turnover Job responses. All fields are optional so a partially-
+         *     populated event still serializes cleanly.
+         */
+        BookingInfo: {
+            /** Uid */
+            uid?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Guest Count */
+            guest_count?: number | null;
+            /** Checkin Date */
+            checkin_date?: string | null;
+            /** Checkout Date */
+            checkout_date?: string | null;
+            /** Source */
+            source: string;
+        };
+        /**
          * BookingSubmit
          * @description Matches the payload from maineclean.co booking form.
          */
@@ -2885,6 +2905,88 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * JobResponse
+         * @description Phase 6 step 2: concrete response model for GET /api/jobs.
+         *
+         *     Matches the dict returned by ``job_to_dict``. Adding this here makes the
+         *     OpenAPI schema explicit so ``npm run gen:types`` produces a real
+         *     ``Job`` type in the frontend instead of ``unknown``.
+         */
+        JobResponse: {
+            /** Id */
+            id: number;
+            /** Client Id */
+            client_id?: number | null;
+            /**
+             * Client Name
+             * @default
+             */
+            client_name: string;
+            /** Quote Id */
+            quote_id?: number | null;
+            /** Opportunity Id */
+            opportunity_id?: number | null;
+            /** Job Type */
+            job_type: string;
+            /** Property Id */
+            property_id?: number | null;
+            /** Recurring Schedule Id */
+            recurring_schedule_id?: number | null;
+            /** Calendar Invite Sent */
+            calendar_invite_sent?: boolean | null;
+            /** Sms Reminder Sent */
+            sms_reminder_sent?: boolean | null;
+            /** Title */
+            title: string;
+            /** Scheduled Date */
+            scheduled_date?: string | null;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /** Address */
+            address?: string | null;
+            /**
+             * Cleaner Ids
+             * @default []
+             */
+            cleaner_ids: string[];
+            /** Status */
+            status?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Custom Fields
+             * @default {}
+             */
+            custom_fields: {
+                [key: string]: unknown;
+            };
+            /**
+             * Dispatched
+             * @default false
+             */
+            dispatched: boolean;
+            /** Gcal Event Id */
+            gcal_event_id?: string | null;
+            /**
+             * Connecteam Shift Ids
+             * @default []
+             */
+            connecteam_shift_ids: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            booking?: components["schemas"]["BookingInfo"] | null;
+            next_arrival?: components["schemas"]["BookingInfo"] | null;
+            /**
+             * Is Immediate Turnover
+             * @default false
+             */
+            is_immediate_turnover: boolean;
+        };
         /** JobUpdate */
         JobUpdate: {
             /** Title */
@@ -3177,6 +3279,33 @@ export interface components {
             valid_until?: string | null;
             /** Status */
             status?: string | null;
+        };
+        /**
+         * RecurrenceExceptionRead
+         * @description Phase 6 step 2: response model for the exception endpoints. Matches
+         *     the dict shape produced by ``_ex_to_dict``.
+         */
+        RecurrenceExceptionRead: {
+            /** Id */
+            id: number;
+            /** Recurring Schedule Id */
+            recurring_schedule_id: number;
+            /** Exception Date */
+            exception_date?: string | null;
+            /** Exception Type */
+            exception_type: string;
+            /** Rescheduled Date */
+            rescheduled_date?: string | null;
+            /** Rescheduled Start Time */
+            rescheduled_start_time?: string | null;
+            /** Rescheduled End Time */
+            rescheduled_end_time?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Created By */
+            created_by?: number | null;
+            /** Created At */
+            created_at?: string | null;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -4433,7 +4562,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["JobResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -6460,7 +6589,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RecurrenceExceptionRead"][];
                 };
             };
             /** @description Validation Error */
@@ -6641,7 +6770,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RecurrenceExceptionRead"];
                 };
             };
             /** @description Validation Error */
@@ -6676,7 +6805,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RecurrenceExceptionRead"];
                 };
             };
             /** @description Validation Error */
@@ -6707,7 +6836,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RecurrenceExceptionRead"][];
                 };
             };
             /** @description Validation Error */

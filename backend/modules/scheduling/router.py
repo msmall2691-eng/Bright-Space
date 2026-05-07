@@ -46,6 +46,54 @@ class JobUpdate(BaseModel):
     custom_fields: Optional[dict] = None
 
 
+class BookingInfo(BaseModel):
+    """Phase 5 turnover-enrichment payload — surfaces ICalEvent fields on
+    str_turnover Job responses. All fields are optional so a partially-
+    populated event still serializes cleanly."""
+    uid: Optional[str] = None
+    summary: Optional[str] = None
+    guest_count: Optional[int] = None
+    checkin_date: Optional[str] = None
+    checkout_date: Optional[str] = None
+    source: str
+
+
+class JobResponse(BaseModel):
+    """Phase 6 step 2: concrete response model for GET /api/jobs.
+
+    Matches the dict returned by ``job_to_dict``. Adding this here makes the
+    OpenAPI schema explicit so ``npm run gen:types`` produces a real
+    ``Job`` type in the frontend instead of ``unknown``.
+    """
+    id: int
+    client_id: Optional[int] = None
+    client_name: str = ""
+    quote_id: Optional[int] = None
+    opportunity_id: Optional[int] = None
+    job_type: str
+    property_id: Optional[int] = None
+    recurring_schedule_id: Optional[int] = None
+    calendar_invite_sent: Optional[bool] = None
+    sms_reminder_sent: Optional[bool] = None
+    title: str
+    scheduled_date: Optional[date] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    address: Optional[str] = None
+    cleaner_ids: List[str] = []
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    custom_fields: dict = {}
+    dispatched: bool = False
+    gcal_event_id: Optional[str] = None
+    connecteam_shift_ids: List[str] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    booking: Optional[BookingInfo] = None
+    next_arrival: Optional[BookingInfo] = None
+    is_immediate_turnover: bool = False
+
+
 def _detect_booking_source(uid: str) -> str:
     """Best-effort identification of the booking platform from the iCal UID."""
     if not uid:
@@ -129,7 +177,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     }
 
 
-@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+@router.get("", response_model=List[JobResponse], dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_jobs(
     client_id: Optional[int] = None,
     status: Optional[str] = None,

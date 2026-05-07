@@ -47,6 +47,21 @@ class ExceptionCreate(BaseModel):
     reason: Optional[str] = None
 
 
+class RecurrenceExceptionRead(BaseModel):
+    """Phase 6 step 2: response model for the exception endpoints. Matches
+    the dict shape produced by ``_ex_to_dict``."""
+    id: int
+    recurring_schedule_id: int
+    exception_date: Optional[str] = None
+    exception_type: str
+    rescheduled_date: Optional[str] = None
+    rescheduled_start_time: Optional[str] = None
+    rescheduled_end_time: Optional[str] = None
+    reason: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: Optional[str] = None
+
+
 class ScheduleUpdate(BaseModel):
     title: Optional[str] = None
     address: Optional[str] = None
@@ -327,7 +342,7 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
     return result
 
 
-@router.get("/exceptions")
+@router.get("/exceptions", response_model=List[RecurrenceExceptionRead])
 def list_all_exceptions(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -463,7 +478,7 @@ def _cancel_existing_job_and_visit(db: Session, sched_id: int, target_date: date
                 v.notes = (v.notes or "") + f"\n[Skipped via exception: {reason}]"
 
 
-@router.post("/{schedule_id}/skip", status_code=201)
+@router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead)
 def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
     """Skip a single occurrence of a recurring schedule.
 
@@ -506,7 +521,7 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
     return _ex_to_dict(ex)
 
 
-@router.post("/{schedule_id}/reschedule", status_code=201)
+@router.post("/{schedule_id}/reschedule", status_code=201, response_model=RecurrenceExceptionRead)
 def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
     """Reschedule a single occurrence to a different date (and optionally time).
 
@@ -557,7 +572,7 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
     return _ex_to_dict(ex)
 
 
-@router.get("/{schedule_id}/exceptions")
+@router.get("/{schedule_id}/exceptions", response_model=List[RecurrenceExceptionRead])
 def list_exceptions(schedule_id: int, db: Session = Depends(get_db)):
     sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
     if not sched:
