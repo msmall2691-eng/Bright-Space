@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink } from 'lucide-react'
 import { get, patch } from "../api"
 
@@ -171,6 +171,90 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
         .then(d => setJobs(Array.isArray(d) ? d : []))
         .catch(() => {})
     }
+  }
+
+  // Touch drag-to-reschedule. HTML5 DnD doesn't fire on touch, so we
+  // implement a small custom gesture: 200ms press-and-hold to activate,
+  // then track the floating preview and the day cell under the finger via
+  // document.elementFromPoint hit-testing. Persistence reuses the same
+  // PATCH /api/jobs/{id} call as the desktop path.
+  const [touchDrag, setTouchDrag] = useState(null) // {x, y, hoverDate} | null
+  const touchStartRef = useRef(null)               // {x, y, job, timer}
+  const justDraggedRef = useRef(false)             // suppress synthetic click
+
+  const onChipTouchStart = (e, job) => {
+    if (e.touches.length !== 1) return
+    const t = e.touches[0]
+    const startX = t.clientX
+    const startY = t.clientY
+    const timer = setTimeout(() => {
+      // Press-and-hold fired — activate drag.
+      setTouchDrag({ x: startX, y: startY, hoverDate: null })
+      setDraggingJob(job)
+    }, 200)
+    touchStartRef.current = { x: startX, y: startY, job, timer }
+  }
+
+  const onChipTouchMove = (e) => {
+    const start = touchStartRef.current
+    if (!start || e.touches.length !== 1) return
+    const t = e.touches[0]
+    const dx = Math.abs(t.clientX - start.x)
+    const dy = Math.abs(t.clientY - start.y)
+    if (touchDrag === null) {
+      // Drag not active yet. If finger moves > 8px before the press-and-hold
+      // timer fires, it's a scroll/swipe — cancel the drag arming.
+      if (dx > 8 || dy > 8) {
+        clearTimeout(start.timer)
+        touchStartRef.current = null
+      }
+      return
+    }
+    // Drag active — find the day cell under the finger.
+    const el = typeof document !== 'undefined' ? document.elementFromPoint(t.clientX, t.clientY) : null
+    const cell = el?.closest?.('[data-day-cell]')
+    const date = cell?.getAttribute('data-day-cell') || null
+    setTouchDrag({ x: t.clientX, y: t.clientY, hoverDate: date })
+    if (dropTarget !== date) setDropTarget(date)
+  }
+
+  const onChipTouchEnd = async (e) => {
+    const start = touchStartRef.current
+    if (start?.timer) clearTimeout(start.timer)
+    touchStartRef.current = null
+    if (!touchDrag || !start) {
+      setTouchDrag(null)
+      setDropTarget(null)
+      setDraggingJob(null)
+      return
+    }
+    // We did a real drag — suppress the synthetic click that fires after
+    // touchend on touch devices (don't open the Job Edit modal).
+    justDraggedRef.current = true
+    const targetDate = touchDrag.hoverDate
+    const job = start.job
+    setTouchDrag(null)
+    setDropTarget(null)
+    setDraggingJob(null)
+    if (!targetDate || job.scheduled_date === targetDate) return
+    // Optimistic update + persist (same shape as desktop drop).
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: targetDate } : j))
+    try {
+      await patch(`/api/jobs/${job.id}`, { scheduled_date: targetDate })
+    } catch (err) {
+      console.error('[CalendarView] Touch reschedule failed:', err)
+      get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
+        .then(d => setJobs(Array.isArray(d) ? d : []))
+        .catch(() => {})
+    }
+  }
+
+  const onChipTouchCancel = () => {
+    if (touchStartRef.current?.timer) clearTimeout(touchStartRef.current.timer)
+    touchStartRef.current = null
+    setTouchDrag(null)
+    setDropTarget(null)
+    setDraggingJob(null)
   }
 
   const startDow = firstDay.getDay()
@@ -440,6 +524,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
             return (
               <div
                 key={date}
+                data-day-cell={date}
                 onClick={() => { setSelected(date); onDayClick?.(date) }}
                 onDragOver={e => onDragOver(e, date)}
                 onDragLeave={onDragLeave}
@@ -510,15 +595,27 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                         draggable={!isMobile}
                         onDragStart={e => onDragStart(e, j)}
                         onDragEnd={onDragEnd}
-                        onClick={e => { e.stopPropagation(); onJobClick?.(j) }}
-                        className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded border truncate leading-tight ${
-                          isMobile ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
-                        } ${
+                        onTouchStart={e => onChipTouchStart(e, j)}
+                        onTouchMove={onChipTouchMove}
+                        onTouchEnd={onChipTouchEnd}
+                        onTouchCancel={onChipTouchCancel}
+                        style={{ touchAction: 'none' }}
+                        onClick={e => {
+                          // Suppress the synthetic click that fires after a touch-drag.
+                          if (justDraggedRef.current) {
+                            justDraggedRef.current = false
+                            e.stopPropagation()
+                            return
+                          }
+                          e.stopPropagation()
+                          onJobClick?.(j)
+                        }}
+                        className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${
                           isCancelled ? 'bg-zinc-100 text-zinc-400 border-zinc-200 line-through' :
                           isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
                           `${tc.pill} ${tc.pillHover}`
                         }`}
-                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''}${isMobile ? '' : ' — drag to reschedule'}`}
+                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
                       >
                         {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">⚠</span>}
                         {j.is_immediate_turnover && (
@@ -561,6 +658,21 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
             <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto my-2 shrink-0" />
             {dayDetail}
           </div>
+        </div>
+      )}
+
+      {/* Touch-drag floating preview. Renders only while an active drag is
+          in progress (after the 200ms press-and-hold has fired). The
+          underlying chip stays where it is; this is the visual that
+          tracks the finger. */}
+      {touchDrag && draggingJob && (
+        <div
+          className={`fixed pointer-events-none z-50 px-2 py-1 rounded shadow-lg text-xs font-medium border ${
+            (TYPE_CONFIG[draggingJob.job_type] || TYPE_CONFIG.residential).pill
+          }`}
+          style={{ left: touchDrag.x + 12, top: touchDrag.y + 12 }}
+        >
+          {draggingJob.title}
         </div>
       )}
     </div>
