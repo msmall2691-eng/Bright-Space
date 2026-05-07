@@ -1124,11 +1124,11 @@ export default function Comms() {
           </div>
         ) : (
           <>
-            {/* SLA breach banner */}
+            {/* Phase 8: Overdue banner (renamed from "SLA breached"). */}
             {detail.sla_state === 'breached' && (
               <div className="bg-red-50 border-b border-red-200 px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-red-700">
-                <AlertTriangle className="w-4 h-4" />
-                SLA breached — last message {relTime(detail.last_inbound_at)} ago
+                <Clock className="w-4 h-4" />
+                Overdue — last reply {relTime(detail.last_inbound_at)} ago
               </div>
             )}
 
