@@ -50,7 +50,7 @@ async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
             errors.append({"employee_id": employee_id, "error": str(e)})
 
     if shift_ids:
-        job.dispatched = 1
+        job.dispatched = True
         job.connecteam_shift_ids = shift_ids
         db.commit()
 
@@ -76,7 +76,7 @@ async def undispatch_job(job_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             errors.append({"shift_id": shift_id, "error": str(e)})
 
-    job.dispatched = 0
+    job.dispatched = False
     job.connecteam_shift_ids = []
     db.commit()
 

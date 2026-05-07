@@ -386,7 +386,7 @@ class Job(Base):
     # "scheduled" | "in_progress" | "completed" | "cancelled"
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
-    dispatched = Column(Integer, default=0)
+    dispatched = Column(Boolean, default=False, nullable=False)
     connecteam_shift_ids = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
