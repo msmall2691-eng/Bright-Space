@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from "../api"
+import { displayContactName } from '../utils/display'
 import {
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
@@ -203,7 +204,7 @@ export default function Dashboard() {
                         <SrcIcon className="w-3.5 h-3.5 text-amber-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-medium text-zinc-900 truncate block">{req.name}</span>
+                        <span className="text-[13px] font-medium text-zinc-900 truncate block">{displayContactName(req)}</span>
                         <div className="flex items-center gap-2 text-[11px] text-zinc-600 mt-0.5">
                           {req.phone && <span>{req.phone}</span>}
                           <span className="capitalize">via {req.source}</span>

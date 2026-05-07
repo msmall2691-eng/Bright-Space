@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2 } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { del, get, post, patch, upload } from "../api"
+import { displayContactName } from '../utils/display'
 
 const STATUS_COLORS = {
   lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
@@ -299,10 +300,10 @@ export default function Clients() {
                   aria-label={`Select ${c.name}`}
                 />
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-                  <span className="text-[12px] font-bold">{c.name[0]?.toUpperCase()}</span>
+                  <span className="text-[12px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-zinc-900">{c.name}</div>
+                  <div className="text-[13px] font-medium text-zinc-900">{displayContactName(c)}</div>
                   <div className="flex items-center gap-3 mt-0.5">
                     {c.phone && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
                     {c.email && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>}
@@ -358,9 +359,9 @@ export default function Clients() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-                          <span className="text-[10px] font-bold">{c.name[0]?.toUpperCase()}</span>
+                          <span className="text-[10px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
                         </div>
-                        <span className="text-[13px] font-medium text-zinc-900 truncate">{c.name}</span>
+                        <span className="text-[13px] font-medium text-zinc-900 truncate">{displayContactName(c)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-[12px] text-zinc-500">{c.phone || 'â'}</td>
