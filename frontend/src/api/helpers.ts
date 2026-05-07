@@ -19,6 +19,13 @@ export type ScheduleUpdate = components['schemas']['ScheduleUpdate']
 export type ExceptionCreate = components['schemas']['ExceptionCreate']
 export type VisitRead = components['schemas']['VisitRead']
 
+// Response shapes — added in Phase 6 step 2 by attaching `response_model=`
+// to the hot routes. The short alias name (`Job`, `RecurrenceException`)
+// is the consumer-facing handle.
+export type Job = components['schemas']['JobResponse']
+export type Booking = components['schemas']['BookingInfo']
+export type RecurrenceException = components['schemas']['RecurrenceExceptionRead']
+
 // Re-export the path map for advanced consumers (`Paths['/api/jobs']`).
 export type Paths = paths
 export type Schemas = components['schemas']
