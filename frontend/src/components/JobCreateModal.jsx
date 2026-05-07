@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, Clock, MapPin, AlertCircle, Home } from 'lucide-react'
+import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon } from 'lucide-react'
 import { get, post } from '../api'
 
 const JOB_TYPES = [
@@ -8,6 +8,16 @@ const JOB_TYPES = [
   { value: 'str_turnover', label: 'STR Turnover' },
 ]
 
+const FREQUENCIES = [
+  { value: 'weekly',         label: 'Weekly',         interval: 1 },
+  { value: 'biweekly',       label: 'Every 2 weeks',  interval: 2 },
+  { value: 'every_3_weeks',  label: 'Every 3 weeks',  interval: 3 },
+  { value: 'every_4_weeks',  label: 'Every 4 weeks',  interval: 4 },
+  { value: 'monthly',        label: 'Monthly',        interval: null },
+]
+
+const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
 function jobTypeFromProperty(propertyType) {
   const t = (propertyType || '').toLowerCase()
   if (t === 'commercial') return 'commercial'
@@ -15,6 +25,18 @@ function jobTypeFromProperty(propertyType) {
   return 'residential'
 }
 
+/**
+ * Unified Schedule Job modal.
+ *
+ * Two modes selected by the "Repeat" toggle:
+ *  - One-time (default): single Date field. Submit → POST /api/jobs.
+ *  - Recurring: Frequency + Days of Week (or Day of Month) + Generate-ahead.
+ *               Submit → POST /api/recurring (RecurringSchedule, which then
+ *               generates the first batch of Jobs).
+ *
+ * Replaces the previous parallel JobCreateModal + inline RecurringSchedule
+ * modal in ClientProfile. Common fields share a single source of truth.
+ */
 export default function JobCreateModal({
   clientId,
   clientName,
@@ -25,6 +47,7 @@ export default function JobCreateModal({
 }) {
   const [properties, setProperties] = useState([])
   const [loadingProps, setLoadingProps] = useState(false)
+  const [recurring, setRecurring] = useState(false)
   const [form, setForm] = useState({
     title: clientName ? `${clientName} — Clean` : '',
     job_type: 'residential',
@@ -34,6 +57,12 @@ export default function JobCreateModal({
     address: '',
     notes: '',
     property_id: initialPropertyId ? String(initialPropertyId) : '',
+    // Recurring-only fields
+    frequency: 'biweekly',
+    interval_weeks: 2,
+    days_of_week: [0],
+    day_of_month: 1,
+    generate_weeks_ahead: 8,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -45,7 +74,6 @@ export default function JobCreateModal({
       .then(data => {
         const list = Array.isArray(data) ? data : []
         setProperties(list)
-        // If we have an initialPropertyId, pre-fill address/job_type from it
         if (initialPropertyId) {
           const prop = list.find(p => p.id === parseInt(initialPropertyId))
           if (prop) applyProperty(prop)
@@ -77,12 +105,42 @@ export default function JobCreateModal({
     if (prop) applyProperty(prop)
   }
 
-  const canSave = form.title && form.scheduled_date && form.start_time && form.end_time
+  // Validation differs by mode.
+  const canSave = recurring
+    ? form.title && form.address &&
+      (form.frequency === 'monthly'
+        ? !!form.day_of_month
+        : (form.days_of_week || []).length > 0)
+    : form.title && form.scheduled_date && form.start_time && form.end_time
 
   const save = async () => {
     setSaving(true)
     setError(null)
     try {
+      if (recurring) {
+        const body = {
+          client_id: parseInt(clientId),
+          property_id: form.property_id ? parseInt(form.property_id) : null,
+          job_type: form.job_type,
+          title: form.title,
+          address: form.address,
+          frequency: form.frequency,
+          interval_weeks: form.frequency === 'monthly'
+            ? null
+            : parseInt(form.interval_weeks || 1),
+          days_of_week: (form.days_of_week || [0]).map(Number),
+          day_of_week: (form.days_of_week || [0]).map(Number)[0] ?? 0,
+          day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
+          start_time: form.start_time,
+          end_time: form.end_time,
+          generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
+          notes: form.notes || null,
+        }
+        const sched = await post('/api/recurring', body)
+        onCreated?.({ kind: 'recurring', schedule: sched })
+        onClose?.()
+        return
+      }
       const body = {
         client_id: parseInt(clientId),
         title: form.title,
@@ -95,10 +153,10 @@ export default function JobCreateModal({
         property_id: form.property_id ? parseInt(form.property_id) : null,
       }
       const job = await post('/api/jobs', body)
-      onCreated?.(job)
+      onCreated?.({ kind: 'job', job })
       onClose?.()
     } catch (e) {
-      setError(e?.message || 'Failed to create job')
+      setError(e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`)
     } finally {
       setSaving(false)
     }
@@ -111,7 +169,9 @@ export default function JobCreateModal({
     >
       <div className="w-full sm:w-[420px] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-          <h2 className="font-semibold text-zinc-900">Schedule Job</h2>
+          <h2 className="font-semibold text-zinc-900">
+            {recurring ? 'Recurring Schedule' : 'Schedule Job'}
+          </h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
@@ -154,7 +214,7 @@ export default function JobCreateModal({
             <input
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              placeholder="e.g. Smith Residence — Deep Clean"
+              placeholder={recurring ? 'e.g. Biweekly Home Clean' : 'e.g. Smith Residence — Deep Clean'}
               className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
@@ -179,17 +239,120 @@ export default function JobCreateModal({
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs text-zinc-700 font-medium mb-1">
-              <Calendar className="w-3 h-3 inline mr-1" /> Date *
+          {/* Repeat toggle — drives the rest of the form. */}
+          <div className="flex items-center justify-between bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5">
+            <label className="flex items-center gap-2 text-sm text-zinc-700 font-medium cursor-pointer">
+              <RepeatIcon className="w-4 h-4 text-zinc-500" />
+              Repeat
+              <span className="text-xs text-zinc-400 font-normal">
+                {recurring ? '— recurring schedule' : '— one-time job'}
+              </span>
             </label>
-            <input
-              type="date"
-              value={form.scheduled_date}
-              onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
-              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-            />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={recurring}
+              onClick={() => setRecurring(r => !r)}
+              data-testid="job-create-repeat-toggle"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                recurring ? 'bg-blue-600' : 'bg-zinc-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  recurring ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
           </div>
+
+          {/* One-time mode: single Date */}
+          {!recurring && (
+            <div>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">
+                <Calendar className="w-3 h-3 inline mr-1" /> Date *
+              </label>
+              <input
+                type="date"
+                value={form.scheduled_date}
+                onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          )}
+
+          {/* Recurring mode: Frequency + Days/Day-of-month */}
+          {recurring && (
+            <>
+              <div>
+                <label className="block text-xs text-zinc-700 font-medium mb-1">Frequency</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {FREQUENCIES.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm(f => ({
+                        ...f,
+                        frequency: opt.value,
+                        interval_weeks: opt.interval ?? f.interval_weeks,
+                      }))}
+                      className={`py-2 rounded-lg text-xs font-medium transition-colors border ${
+                        form.frequency === opt.value
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {form.frequency === 'monthly' ? (
+                <div>
+                  <label className="block text-xs text-zinc-700 font-medium mb-1">Day of Month</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="28"
+                    value={form.day_of_month || 1}
+                    onChange={e => setForm(f => ({ ...f, day_of_month: parseInt(e.target.value) }))}
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-400 mt-1">1-28; months without a 29th/30th/31st are skipped automatically.</p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-zinc-700 font-medium mb-1">Days of Week *</label>
+                  <div className="grid grid-cols-7 gap-1">
+                    {WEEK_LABELS.map((d, i) => {
+                      const selected = (form.days_of_week || []).includes(i)
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setForm(f => {
+                            const cur = f.days_of_week || []
+                            return {
+                              ...f,
+                              days_of_week: selected ? cur.filter(x => x !== i) : [...cur, i].sort(),
+                            }
+                          })}
+                          className={`py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                            selected
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+                          }`}
+                        >
+                          {d}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
           <div className="flex gap-3">
             <div className="flex-1">
@@ -216,7 +379,7 @@ export default function JobCreateModal({
 
           <div>
             <label className="block text-xs text-zinc-700 font-medium mb-1">
-              <MapPin className="w-3 h-3 inline mr-1" /> Address
+              <MapPin className="w-3 h-3 inline mr-1" /> Address {recurring ? '*' : ''}
             </label>
             <input
               value={form.address}
@@ -225,6 +388,20 @@ export default function JobCreateModal({
               className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
+
+          {recurring && (
+            <div>
+              <label className="block text-xs text-zinc-700 font-medium mb-1">Generate ahead</label>
+              <select
+                value={form.generate_weeks_ahead}
+                onChange={e => setForm(f => ({ ...f, generate_weeks_ahead: parseInt(e.target.value) }))}
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              >
+                {[4, 6, 8, 12, 16, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
+              </select>
+              <p className="text-[10px] text-zinc-400 mt-1">How many weeks of Jobs to materialize from this schedule.</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-zinc-700 font-medium mb-1">Notes</label>
@@ -251,7 +428,11 @@ export default function JobCreateModal({
             disabled={saving || !canSave}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            {saving ? 'Creating...' : 'Create Job'}
+            {saving
+              ? 'Creating...'
+              : recurring
+                ? 'Create & Generate Jobs'
+                : 'Create Job'}
           </button>
         </div>
       </div>
