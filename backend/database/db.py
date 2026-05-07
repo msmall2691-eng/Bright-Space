@@ -138,8 +138,8 @@ def _run_migrations():
         "ALTER TABLE messages ADD COLUMN external_id TEXT",
         "ALTER TABLE messages ADD COLUMN author TEXT",
         f"ALTER TABLE messages ADD COLUMN is_internal_note {bool_col}",
-        # CRM enrichment: client lifecycle, type, and contact tracking
-        "ALTER TABLE clients ADD COLUMN client_type TEXT",
+        # CRM enrichment: client lifecycle and contact tracking.
+        # (client_type column removed by migration 007 — derive from properties.)
         "ALTER TABLE clients ADD COLUMN lifecycle_stage TEXT DEFAULT 'new'",
         "ALTER TABLE clients ADD COLUMN source_detail TEXT",
         "ALTER TABLE clients ADD COLUMN last_contacted_at TIMESTAMP",

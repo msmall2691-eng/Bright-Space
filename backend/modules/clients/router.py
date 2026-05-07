@@ -304,6 +304,22 @@ class ContactEmailUpdate(BaseModel):
     is_primary: Optional[bool] = None
 
 
+def _derive_property_type(client: Client) -> str:
+    """Compute a client's effective property type from its properties.
+
+    Replaces the dropped ``Client.client_type`` column. Single property type
+    (or all properties share one) → that type. Multiple distinct types →
+    ``"mixed"``. No properties yet → ``"residential"`` (matches the historic
+    UI default).
+    """
+    types = {p.property_type for p in (client.properties or []) if p.property_type}
+    if not types:
+        return "residential"
+    if len(types) == 1:
+        return next(iter(types))
+    return "mixed"
+
+
 def client_to_dict(c: Client) -> dict:
     return {
         "id": c.id,
@@ -470,7 +486,7 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
 
     # Add lifecycle and contact info
     base.update({
-        "client_type": client.client_type,
+        "client_type": _derive_property_type(client),
         "lifecycle_stage": client.lifecycle_stage,
         "source_detail": client.source_detail,
         "email_verified": client.email_verified,

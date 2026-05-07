@@ -140,7 +140,10 @@ class Client(Base):
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    client_type = Column(String, nullable=True)         # str | commercial | residential
+    # client_type column removed by migration 007 — duplicated property_type
+    # semantically. The CRM summary endpoint now derives it from
+    # client.properties (single type → that type, multiple → "mixed",
+    # none → "residential" default).
     lifecycle_stage = Column(String, default="new")     # new | qualified | opportunity | customer | churned
     source_detail = Column(String, nullable=True)       # "maineclean.co contact form", "gmail auto-create"
     last_contacted_at = Column(DateTime, nullable=True)
