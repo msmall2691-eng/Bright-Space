@@ -6,7 +6,7 @@ import {
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
   Globe, Inbox, Phone, Mail, MessageSquare, Zap, ArrowUpRight,
-  CheckCircle2, ChevronRight
+  CheckCircle2, ChevronRight, GitBranch
 } from 'lucide-react'
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -59,6 +59,7 @@ export default function Dashboard() {
   const [recurringCount, setRecurringCount] = useState(0)
   const [schedules, setSchedules] = useState([])
   const [newRequests, setNewRequests] = useState([])
+  const [intakeStats, setIntakeStats] = useState({})
   const [recentMessages, setRecentMessages] = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
@@ -69,13 +70,14 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, gmailData, empData] = await Promise.all([
+        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, intakeStatsRes, gmailData, empData] = await Promise.all([
           get(`/api/jobs?date=${today}`),
           get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
           get('/api/clients'),
           get('/api/invoices'),
           get('/api/recurring'),
           get('/api/intake?status=new'),
+          get('/api/intake/stats').catch(() => ({})),
           get('/api/gmail/inbox?max_results=10').catch(() => ({ emails: [] })),
           get('/api/dispatch/employees').catch(() => []),
         ])
@@ -89,6 +91,7 @@ export default function Dashboard() {
         setSchedules(sched)
         setRecurringCount(sched.filter(s => s.active).length)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
+        setIntakeStats(intakeStatsRes && typeof intakeStatsRes === 'object' ? intakeStatsRes : {})
         setRecentMessages((gmailData?.emails || []).slice(0, 5))
         setEmployees(Array.isArray(empData) ? empData : [])
       } catch {}
@@ -174,6 +177,32 @@ export default function Dashboard() {
           sub={recurringSubtitle}
           accent="text-violet-600"
           iconCls="bg-violet-50 text-violet-500" />
+      </div>
+
+      {/* Pipeline snapshot — sourced from /api/intake/stats */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-indigo-500" /> Pipeline Snapshot
+          </h3>
+          <button onClick={() => navigate('/requests')} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+            Open board →
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[
+            { label: 'New',       val: intakeStats.new       || 0, cls: 'bg-amber-50 text-amber-700' },
+            { label: 'Reviewed',  val: intakeStats.reviewed  || 0, cls: 'bg-blue-50 text-blue-700' },
+            { label: 'Quoted',    val: intakeStats.quoted    || 0, cls: 'bg-purple-50 text-purple-700' },
+            { label: 'Converted', val: intakeStats.converted || 0, cls: 'bg-emerald-50 text-emerald-700' },
+            { label: 'Urgent',    val: intakeStats.urgent    || 0, cls: 'bg-red-50 text-red-700' },
+          ].map(item => (
+            <div key={item.label} className={`rounded-lg px-3 py-2 ${item.cls}`}>
+              <div className="text-[10px] uppercase tracking-wide opacity-80">{item.label}</div>
+              <div className="text-lg font-bold">{item.val}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Main grid */}
