@@ -173,7 +173,7 @@ class Property(Base):
     __tablename__ = "properties"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
 
     name = Column(String, nullable=False)           # "4 Red Barn Circle" (address, not service description)
     address = Column(String, nullable=False)
@@ -276,7 +276,7 @@ class RecurringSchedule(Base):
     __tablename__ = "recurring_schedules"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
 
     job_type = Column(String, nullable=False)       # "residential" | "commercial"
     title = Column(String, nullable=False)          # "Biweekly Home Clean"
@@ -293,7 +293,7 @@ class RecurringSchedule(Base):
 
     cleaner_ids = Column(JSON, default=list)
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
-    property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
     notes = Column(Text, nullable=True)
@@ -368,8 +368,8 @@ class Job(Base):
     # Links — only set for the relevant type
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property
     recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True)
-    ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True)
-    assigned_cleaner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Future: replace cleaner_ids JSON
+    ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True, index=True)
+    assigned_cleaner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # Future: replace cleaner_ids JSON
 
     # Notification tracking
     calendar_invite_sent = Column(Boolean, default=False, nullable=False)
@@ -507,7 +507,7 @@ class Quote(Base):
     __tablename__ = "quotes"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))
+    client_id = Column(Integer, ForeignKey("clients.id"), index=True)
     intake_id = Column(Integer, ForeignKey("lead_intakes.id"), nullable=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
@@ -539,8 +539,8 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, index=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
     invoice_number = Column(String, unique=True)
@@ -623,8 +623,8 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, index=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
     # Each message should belong to a Conversation. Nullable for now to
