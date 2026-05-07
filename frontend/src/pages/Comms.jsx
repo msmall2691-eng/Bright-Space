@@ -609,68 +609,12 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
         )}
       </div>
 
-      {/* Controls */}
+      {/* Phase 8 (cleanup): removed the Assignee / Priority / Status block.
+          Mark done lives in the thread header (top-right). Assign + Snooze
+          will move into a "⋯" overflow menu later if anyone misses them.
+          What stays here: contact summary, tags, activity timeline. */}
       <div className="overflow-y-auto flex-1">
-        <div className="p-4 space-y-4 border-b border-zinc-100">
-          {/* Assignee */}
-          <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Assignee</label>
-            <select value={detail.assignee || 'Unassigned'} onChange={e => onAssign(e.target.value)}
-              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-[13px] text-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all appearance-none cursor-pointer">
-              {TEAM_ASSIGNEES.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </div>
-
-          {/* Priority */}
-          <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Priority</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {['low', 'normal', 'high', 'urgent'].map(p => {
-                const active = detail.priority === p
-                const pc = PRIORITY_COLORS[p]
-                return (
-                  <button key={p} onClick={() => onPriority(p)}
-                    className={`text-[11px] font-medium py-1.5 rounded-lg capitalize transition-all ${
-                      active
-                        ? `${pc.active} ring-1`
-                        : 'bg-zinc-50 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'
-                    }`}>
-                    {p}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Status actions */}
-          <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Status</label>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => onStatus(detail.status === 'resolved' ? 'open' : 'resolved')}
-                className={`text-[11px] font-medium py-2 rounded-lg flex items-center justify-center gap-1 transition-all ${
-                  detail.status === 'resolved'
-                    ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
-                    : 'bg-zinc-50 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700'
-                }`}>
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {detail.status === 'resolved' ? 'Done' : 'Mark done'}
-              </button>
-              <button onClick={() => onStatus('snoozed')} disabled={detail.status === 'snoozed'}
-                className={`text-[11px] font-medium py-2 rounded-lg flex items-center justify-center gap-1 transition-all ${
-                  detail.status === 'snoozed'
-                    ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
-                    : 'bg-zinc-50 text-zinc-500 hover:bg-amber-50 hover:text-amber-700'
-                } disabled:opacity-40`}>
-                <Clock className="w-3.5 h-3.5" />
-                Snooze
-              </button>
-            </div>
-          </div>
-
-          {/* Phase 8: SLA "respond rate / deadline" panel removed. The
-              actionable signal — Overdue — now surfaces inline on the
-              conversation row and on the thread header instead. */}
-
+        <div className="px-4 pt-2 space-y-4">
           {/* Tags */}
           {detail.tags?.length > 0 && (
             <div>
