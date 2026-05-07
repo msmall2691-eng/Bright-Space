@@ -219,65 +219,65 @@ function DaySeparator({ label }) {
 function ConvItem({ conv, active, onClick }) {
   const name = contactDisplay(conv)
   const unread = conv.unread_count > 0
-  const breached = conv.sla_state === 'breached'
-  const lastInbound = conv.messages?.filter(m => m.direction === 'inbound').pop()
-  const lastOutbound = conv.messages?.filter(m => m.direction === 'outbound').pop()
-  const needsReply = lastInbound && (!lastOutbound || new Date(lastInbound.created_at) > new Date(lastOutbound.created_at))
+  const overdue = conv.sla_state === 'breached'
+  const unassigned = !conv.assignee
+  const channel = CHANNEL_CONFIG[conv.channel] || CHANNEL_CONFIG.sms
+  const ChannelIcon = channel.icon
 
   return (
     <button onClick={onClick}
-      className={`group w-full text-left px-3.5 py-3 transition-all duration-150 border-b border-zinc-100/80 border-l-4 ${
-        breached
-          ? 'border-l-red-500 bg-red-50/30 hover:bg-red-50/50'
-          : active
-            ? 'border-l-blue-500 bg-blue-50/70 shadow-[inset_3px_0_0_0_#2563eb]'
-            : unread
-              ? 'border-l-zinc-100 bg-white hover:bg-zinc-50/80'
-              : 'border-l-zinc-100 bg-white/60 hover:bg-zinc-50/60'
+      className={`group w-full text-left px-4 py-3 transition-colors border-b border-zinc-100 ${
+        active
+          ? 'bg-blue-50/60'
+          : unread
+            ? 'bg-white hover:bg-zinc-50'
+            : 'bg-white hover:bg-zinc-50/70'
       }`}>
-      <div className="flex items-start gap-3">
-        <Avatar name={conv.client?.name || conv.external_contact} size="sm" />
+      <div className="flex items-center gap-3">
+        {/* Avatar with channel chip in bottom-right corner */}
+        <div className="relative shrink-0">
+          <Avatar name={conv.client?.name || conv.external_contact} size="md" />
+          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${channel.bg} ring-2 ring-white flex items-center justify-center`}>
+            <ChannelIcon className={`w-2.5 h-2.5 ${channel.text}`} />
+          </div>
+        </div>
+
         <div className="flex-1 min-w-0">
-          {/* Row 1: Name + time */}
-          <div className="flex items-center gap-1.5">
-            <span className={`text-[13px] truncate flex-1 ${unread ? 'font-bold text-zinc-900' : 'font-medium text-zinc-600'}`}>
+          {/* Name + time */}
+          <div className="flex items-baseline gap-2">
+            <span className={`text-[14px] truncate flex-1 ${unread ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
               {name}
             </span>
-            <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums font-medium">
+            <span className="text-[11px] text-zinc-400 shrink-0 tabular-nums">
               {relTime(conv.last_message_at)}
             </span>
           </div>
 
-          {/* Row 2: Channel + assignee + priority + SLA */}
-          <div className="flex items-center gap-1.5 mt-1">
-            <ChannelBadge channel={conv.channel} compact />
-            <PriorityDot priority={conv.priority} />
-            {conv.assignee
-              ? <span className="text-[10px] text-zinc-400 font-medium">{conv.assignee}</span>
-              : <span className="text-[10px] text-amber-500 font-semibold">Unassigned</span>
-            }
-            <SlaBadge state={conv.sla_state} compact />
-          </div>
+          {/* Preview (single line) */}
+          <p className={`text-[12.5px] truncate mt-0.5 ${unread ? 'text-zinc-600' : 'text-zinc-400'}`}>
+            {conv.preview || 'No messages yet'}
+          </p>
 
-          {/* Row 3: Preview with direction */}
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className={`text-zinc-400 shrink-0 ${conv.last_message_at && conv.messages?.length > 0 && conv.messages[conv.messages.length - 1]?.direction === 'inbound' ? 'text-zinc-400' : 'text-zinc-300'}`}>
-              {conv.last_message_at && conv.messages?.length > 0 && conv.messages[conv.messages.length - 1]?.direction === 'inbound' ? (
-                <ArrowLeft className="w-3.5 h-3.5" />
-              ) : (
-                <ArrowUpRight className="w-3.5 h-3.5" />
+          {/* Status chips — only render when actionable */}
+          {(overdue || unassigned) && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              {overdue && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-px rounded bg-red-50 text-red-700 border border-red-100">
+                  <Clock className="w-2.5 h-2.5" /> Overdue
+                </span>
               )}
-            </span>
-            <p className={`text-[12px] leading-relaxed truncate flex-1 ${breached ? 'text-red-700 font-medium' : unread ? 'text-zinc-700' : 'text-zinc-400'}`}>
-              {conv.preview || 'No messages yet'}
-            </p>
-            {needsReply && <div className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />}
-          </div>
+              {unassigned && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-px rounded bg-amber-50 text-amber-700 border border-amber-100">
+                  Unassigned
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Unread badge */}
+        {/* Unread count pill */}
         {unread && (
-          <span className="mt-1 bg-blue-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0 shadow-sm">
+          <span className="bg-blue-600 text-white text-[10px] font-bold min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-sm">
             {conv.unread_count > 9 ? '9+' : conv.unread_count}
           </span>
         )}
@@ -1140,23 +1140,29 @@ export default function Comms() {
                 <ArrowLeft className="w-4 h-4" />
               </button>
 
-              <Avatar name={detail.client?.name || detail.external_contact} size="md" />
+              {/* Avatar with channel chip in corner — matches the inbox row */}
+              <div className="relative shrink-0">
+                <Avatar name={detail.client?.name || detail.external_contact} size="md" />
+                {(() => {
+                  const ch = CHANNEL_CONFIG[detail.channel] || CHANNEL_CONFIG.sms
+                  const Ic = ch.icon
+                  return (
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${ch.bg} ring-2 ring-white flex items-center justify-center`}>
+                      <Ic className={`w-2.5 h-2.5 ${ch.text}`} />
+                    </div>
+                  )
+                })()}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="font-bold text-zinc-900 text-[15px] truncate">{contactDisplay(detail)}</h2>
-                  <ChannelBadge channel={detail.channel} />
-                  <SlaBadge state={detail.sla_state} deadline={detail.sla_deadline} />
+                  <SlaBadge state={detail.sla_state} />
                 </div>
-                <div className="text-[12px] text-zinc-500 mt-0.5 truncate flex items-center gap-2">
-                  {detail.client?.phone && (
-                    <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{formatPhone(detail.client.phone)}</span>
-                  )}
-                  {detail.client?.email && (
-                    <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{detail.client.email}</span>
-                  )}
-                  {!detail.client?.phone && !detail.client?.email && detail.external_contact && (
-                    <span>{formatPhone(detail.external_contact)}</span>
-                  )}
+                <div className="text-[12px] text-zinc-500 mt-0.5 truncate">
+                  {detail.client?.phone && formatPhone(detail.client.phone)}
+                  {detail.client?.phone && detail.client?.email && <span className="mx-1.5 text-zinc-300">·</span>}
+                  {detail.client?.email && detail.client.email}
+                  {!detail.client?.phone && !detail.client?.email && detail.external_contact && formatPhone(detail.external_contact)}
                 </div>
               </div>
 
