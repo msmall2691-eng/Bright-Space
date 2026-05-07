@@ -124,7 +124,10 @@ class Client(Base):
     email = Column(String)
     phone = Column(String)
     phone_tail = Column(String(10), nullable=True, index=True)
-    # Service / property address (where cleaning happens)
+    # Lead-phase contact address. Used before any Property exists, and as
+    # a fallback when client.properties is empty. Once properties exist,
+    # prefer properties[0].address (or the property selected in the UI)
+    # for correspondence and job defaults.
     address = Column(String)
     city = Column(String)
     state = Column(String)

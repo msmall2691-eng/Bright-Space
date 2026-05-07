@@ -110,6 +110,22 @@ export default function Scheduling() {
       .catch(() => setClientProperties([]))
   }, [form.client_id])
 
+  // Once clientProperties loads, if the client has exactly one property
+  // auto-fill the address from it — the multi-property case still routes
+  // through the property picker rendered below. Stopgap: with 2+ properties
+  // we leave whatever onClientChange seeded (typically the client's
+  // lead-phase address) and rely on the user picking explicitly. A proper
+  // property dropdown in the form is the better long-term fix.
+  useEffect(() => {
+    if (clientProperties.length === 1 && !form.property_id) {
+      const p = clientProperties[0]
+      setForm(f => ({
+        ...f,
+        address: [p.address, p.city, p.state].filter(Boolean).join(', '),
+      }))
+    }
+  }, [clientProperties, form.property_id])
+
   // Sync from Google Calendar (GCal is source of truth)
   const syncFromGCal = async () => {
     setSyncing(true)
