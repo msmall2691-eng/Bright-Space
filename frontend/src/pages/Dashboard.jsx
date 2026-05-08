@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from "../api"
 import { displayContactName } from '../utils/display'
@@ -6,7 +6,7 @@ import {
   Calendar, DollarSign, Users, FileText, Clock,
   AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
   Globe, Inbox, Phone, Mail, MessageSquare, Zap, ArrowUpRight,
-  CheckCircle2, ChevronRight, GitBranch
+  CheckCircle2, ChevronRight, GitBranch, Activity, Navigation2,
 } from 'lucide-react'
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -60,6 +60,7 @@ export default function Dashboard() {
   const [schedules, setSchedules] = useState([])
   const [newRequests, setNewRequests] = useState([])
   const [intakeStats, setIntakeStats] = useState({})
+  const [todayVisits, setTodayVisits] = useState([])
   const [recentMessages, setRecentMessages] = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
@@ -70,7 +71,7 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, intakeStatsRes, gmailData, empData] = await Promise.all([
+        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, intakeStatsRes, visitsToday, gmailData, empData] = await Promise.all([
           get(`/api/jobs?date=${today}`),
           get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
           get('/api/clients'),
@@ -78,6 +79,7 @@ export default function Dashboard() {
           get('/api/recurring'),
           get('/api/intake?status=new'),
           get('/api/intake/stats').catch(() => ({})),
+          get(`/api/visits?scheduled_date_from=${today}&scheduled_date_to=${today}&limit=100`).catch(() => ({ items: [] })),
           get('/api/gmail/inbox?max_results=10').catch(() => ({ emails: [] })),
           get('/api/dispatch/employees').catch(() => []),
         ])
@@ -92,6 +94,8 @@ export default function Dashboard() {
         setRecurringCount(sched.filter(s => s.active).length)
         setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
         setIntakeStats(intakeStatsRes && typeof intakeStatsRes === 'object' ? intakeStatsRes : {})
+        const tv = Array.isArray(visitsToday) ? visitsToday : (visitsToday?.items || [])
+        setTodayVisits(tv)
         setRecentMessages((gmailData?.emails || []).slice(0, 5))
         setEmployees(Array.isArray(empData) ? empData : [])
       } catch {}
@@ -122,6 +126,28 @@ export default function Dashboard() {
   const recurringSubtitle = activeSchedules.length === 0
     ? 'No active schedules'
     : `${activeSchedules.filter(s => s.frequency === 'weekly').length} weekly · ${activeSchedules.filter(s => s.frequency === 'biweekly').length} biweekly · ${activeSchedules.filter(s => s.frequency === 'monthly').length} monthly`
+
+  // Live Ops buckets — compute from todayVisits.
+  // "Overdue" here = scheduled today, status still 'scheduled', and the
+  // start time has already passed in the local clock. Different from the
+  // SLA "Overdue" in Comms (which is about reply time on a conversation).
+  const liveOps = useMemo(() => {
+    const nowHHMM = new Date().toTimeString().slice(0, 5)
+    const buckets = { in_progress: [], en_route: [], overdue: [], up_next: [] }
+    for (const v of todayVisits) {
+      if (v.status === 'in_progress') buckets.in_progress.push(v)
+      else if (v.status === 'en_route') buckets.en_route.push(v)
+      else if (v.status === 'scheduled') {
+        const startHHMM = (v.start_time || '').slice(0, 5)
+        if (startHHMM && startHHMM < nowHHMM) buckets.overdue.push(v)
+        else buckets.up_next.push(v)
+      }
+    }
+    buckets.up_next.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+    buckets.up_next = buckets.up_next.slice(0, 3)
+    return buckets
+  }, [todayVisits])
+  const liveOpsTotal = liveOps.in_progress.length + liveOps.en_route.length + liveOps.overdue.length + liveOps.up_next.length
 
   if (loading) {
     return (
@@ -177,6 +203,59 @@ export default function Dashboard() {
           sub={recurringSubtitle}
           accent="text-violet-600"
           iconCls="bg-violet-50 text-violet-500" />
+      </div>
+
+      {/* Live Ops — what's happening right now (today's visits). */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-rose-500" /> Live Ops
+            <span className="text-[10px] font-normal text-gray-400 ml-1">today</span>
+          </h3>
+          <button onClick={() => navigate('/schedule')} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+            Open schedule →
+          </button>
+        </div>
+        {liveOpsTotal === 0 ? (
+          <div className="py-6 text-center">
+            <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-500">All clear · nothing in motion</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { key: 'in_progress', label: 'In progress', icon: Activity,    cls: 'bg-rose-50 text-rose-700 border-rose-100',     iconCls: 'text-rose-500' },
+              { key: 'en_route',    label: 'En route',    icon: Navigation2, cls: 'bg-cyan-50 text-cyan-700 border-cyan-100',     iconCls: 'text-cyan-500' },
+              { key: 'overdue',     label: 'Overdue',     icon: AlertCircle, cls: 'bg-amber-50 text-amber-700 border-amber-100', iconCls: 'text-amber-500' },
+              { key: 'up_next',     label: 'Up next',     icon: Clock,       cls: 'bg-blue-50 text-blue-700 border-blue-100',     iconCls: 'text-blue-500' },
+            ].map(({ key, label, icon: Ic, cls, iconCls }) => {
+              const items = liveOps[key]
+              return (
+                <div key={key} className={`rounded-lg border p-3 ${cls}`}>
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide">
+                    <Ic className={`w-3.5 h-3.5 ${iconCls}`} />
+                    {label}
+                    <span className="ml-auto tabular-nums">{items.length}</span>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {items.length === 0 ? (
+                      <p className="text-[11px] text-gray-400">—</p>
+                    ) : items.slice(0, 3).map(v => (
+                      <div key={v.id} className="text-[11px] truncate text-gray-700">
+                        <span className="font-medium">{v.start_time?.slice(0, 5) || '—'}</span>
+                        <span className="text-gray-400"> · </span>
+                        {v.job?.title || v.property?.name || `Visit #${v.id}`}
+                      </div>
+                    ))}
+                    {items.length > 3 && (
+                      <p className="text-[10px] text-gray-400">+{items.length - 3} more</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Pipeline snapshot — sourced from /api/intake/stats */}
