@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react'
 import { X, Search, Check, User, Zap } from 'lucide-react'
-import { patch } from '../api'
+import { get, patch } from '../api'
 import Button from './ui/Button'
+
+/** Resolve a Connecteam employee to an id+name pair, defensively.
+ *  Connecteam returns shapes like { userId, firstName, lastName, displayName }
+ *  or sometimes { id, name } — handle both. Mirrors CalendarView's logic. */
+function normalizeEmployee(e) {
+  const id = String(e?.id ?? e?.userId ?? '')
+  const composed = [e?.firstName, e?.lastName].filter(Boolean).join(' ').trim()
+  const name = e?.name || e?.displayName || composed || `Cleaner ${id}`
+  return { id, name }
+}
 
 export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave }) {
   const [formData, setFormData] = useState({
@@ -17,17 +27,29 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Mock cleaner list (in production, fetch from API)
-  const mockCleaners = [
-    { id: 'cleaner_1', name: 'Alice Johnson' },
-    { id: 'cleaner_2', name: 'Bob Smith' },
-    { id: 'cleaner_3', name: 'Carol Martinez' },
-    { id: 'cleaner_4', name: 'David Lee' },
-  ]
+  // Real cleaner roster from Connecteam via /api/dispatch/employees.
+  // Mirrors the fetch CalendarView already does. Defensive: tolerates 502s
+  // (Connecteam offline) by leaving the list empty.
+  const [cleaners, setCleaners] = useState([])
+  const [loadingCleaners, setLoadingCleaners] = useState(false)
+
+  useEffect(() => {
+    setLoadingCleaners(true)
+    get('/api/dispatch/employees')
+      .then(rows => {
+        const list = Array.isArray(rows) ? rows.map(normalizeEmployee).filter(c => c.id) : []
+        setCleaners(list)
+      })
+      .catch(err => {
+        console.error('[JobEditModal] failed to load cleaners', err)
+        setCleaners([])
+      })
+      .finally(() => setLoadingCleaners(false))
+  }, [])
 
   const selectedProperty = properties.find(p => p.id === parseInt(formData.property_id))
-  const assignedCleaners = mockCleaners.filter(c => formData.cleaner_ids.includes(c.id))
-  const filteredCleaners = mockCleaners.filter(c =>
+  const assignedCleaners = cleaners.filter(c => formData.cleaner_ids.includes(c.id))
+  const filteredCleaners = cleaners.filter(c =>
     !formData.cleaner_ids.includes(c.id) &&
     c.name.toLowerCase().includes(cleanerSearch.toLowerCase())
   )
@@ -184,11 +206,12 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="Search cleaners..."
+                    placeholder={loadingCleaners ? 'Loading cleaners…' : (cleaners.length === 0 ? 'No cleaners available' : 'Search cleaners…')}
                     value={cleanerSearch}
                     onChange={(e) => setCleanerSearch(e.target.value)}
                     onFocus={() => setShowCleanerDropdown(true)}
-                    className="w-full pl-10 pr-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                    disabled={loadingCleaners || cleaners.length === 0}
+                    className="w-full pl-10 pr-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base disabled:bg-neutral-50 disabled:text-neutral-400"
                   />
                 </div>
               </div>
@@ -206,6 +229,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                     </button>
                   ))}
                 </div>
+              )}
+              {!loadingCleaners && cleaners.length === 0 && (
+                <p className="text-xs text-neutral-500 mt-2">
+                  No cleaners returned from Connecteam. Check the Connecteam integration in Settings.
+                </p>
               )}
             </div>
 
