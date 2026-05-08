@@ -1,618 +1,426 @@
+/**
+ * Dashboard — Command Center.
+ *
+ * Three-column layout (stacks on mobile):
+ *   Top:    4 KPI tiles  (Today · Month-to-date · Outstanding · Pipeline)
+ *   Bottom: Priorities  ·  Unified Inbox  ·  Schedule
+ *
+ * Each panel reuses the existing API surface — no backend changes. The
+ * priorities feed is derived client-side from a few endpoints (overdue
+ * conversations, unassigned, past-due invoices, draft quotes, today's
+ * scheduled visits whose start_time has passed).
+ */
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { get } from "../api"
+import { get } from '../api'
 import { displayContactName } from '../utils/display'
 import {
-  Calendar, DollarSign, Users, FileText, Clock,
-  AlertCircle, TrendingUp, Plus, ArrowRight, MapPin, RefreshCw,
-  Globe, Inbox, Phone, Mail, MessageSquare, Zap, ArrowUpRight,
-  CheckCircle2, ChevronRight, GitBranch, Activity, Navigation2,
+  Calendar, DollarSign, FileText, Clock, AlertCircle, ArrowRight,
+  Inbox, Phone, Mail, MessageSquare, Activity, Navigation2,
+  CheckCircle2, GitBranch, RefreshCw, ArrowUpRight, Zap,
 } from 'lucide-react'
 
-/* ── Helpers ─────────────────────────────────────────────────── */
-const AVATAR_COLORS = [
-  'bg-blue-50 text-blue-700',
-  'bg-emerald-50 text-emerald-700',
-  'bg-violet-50 text-violet-700',
-  'bg-amber-50 text-amber-700',
-  'bg-rose-50 text-rose-700',
-  'bg-cyan-50 text-cyan-700',
-]
-function avatarColor(name) {
-  let h = 0; for (const c of (name || '')) h = ((h << 5) - h + c.charCodeAt(0)) | 0
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
+const today = () => new Date().toISOString().slice(0, 10)
+const monthStart = () => {
+  const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
 }
+const fmtMoney = (n) => `$${Math.round(n || 0).toLocaleString()}`
+const channelIcon = (ch) => ({ sms: Phone, email: Mail, chat: MessageSquare }[ch] || MessageSquare)
+const channelColor = (ch) => ({
+  sms:   'bg-emerald-50 text-emerald-700',
+  email: 'bg-blue-50 text-blue-700',
+  chat:  'bg-violet-50 text-violet-700',
+}[ch] || 'bg-zinc-100 text-zinc-600')
 
-const JOB_STATUS = {
-  scheduled:   { label: 'Scheduled',   cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  in_progress: { label: 'In Progress', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  completed:   { label: 'Completed',   cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  cancelled:   { label: 'Cancelled',   cls: 'bg-zinc-50 text-zinc-700 border-zinc-200' },
-}
 
-/* ── Stat Card ───────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, sub, accent = 'text-blue-700', iconCls = 'bg-blue-50 text-blue-700' }) {
+/* ── KPI tile ──────────────────────────────────────────────────── */
+function KpiTile({ label, value, sub, accent = 'text-zinc-900' }) {
   return (
-    <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 hover:border-zinc-300 transition-colors">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">{label}</p>
-          <p className={`text-xl sm:text-2xl font-bold ${accent}`}>{value}</p>
-          {sub && <p className="text-[11px] text-zinc-600 mt-1">{sub}</p>}
+    <div className="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5">
+      <div className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-[0.14em]">{label}</div>
+      <div className={`text-2xl sm:text-3xl font-bold mt-2 ${accent}`}>{value}</div>
+      {sub && <div className="text-[11px] text-zinc-500 mt-1.5">{sub}</div>}
+    </div>
+  )
+}
+
+
+/* ── Priority row ──────────────────────────────────────────────── */
+function PriorityRow({ dot, title, sub, action, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 active:bg-zinc-100 transition-colors border-b border-zinc-100 last:border-b-0"
+    >
+      <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium text-zinc-900 truncate">{title}</div>
+        {sub && <div className="text-[11px] text-zinc-500 mt-0.5 truncate">{sub}</div>}
+      </div>
+      {action && (
+        <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{action}</span>
+      )}
+    </button>
+  )
+}
+
+
+/* ── Compact inbox row ─────────────────────────────────────────── */
+function InboxRow({ conv, onClick }) {
+  const name = displayContactName(conv.client) || conv.external_contact || 'Unknown'
+  const unread = conv.unread_count > 0
+  const overdue = conv.sla_state === 'breached'
+  const Ic = channelIcon(conv.channel)
+  const ts = conv.last_message_at ? relTime(conv.last_message_at) : ''
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 active:bg-zinc-100 transition-colors border-b border-zinc-100 last:border-b-0"
+    >
+      <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${channelColor(conv.channel)}`}>
+        <Ic className="w-3.5 h-3.5" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2">
+          <span className={`text-[13px] truncate flex-1 ${unread ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>{name}</span>
+          <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums">{ts}</span>
         </div>
-        <div className={`p-2 rounded-lg ${iconCls}`}>
-          <Icon className="w-4 h-4" />
-        </div>
+        <div className={`text-[11.5px] truncate mt-0.5 ${unread ? 'text-zinc-600' : 'text-zinc-400'}`}>{conv.preview || 'No messages yet'}</div>
+        {overdue && (
+          <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold mt-1 px-1.5 py-px rounded bg-red-50 text-red-700 border border-red-100">
+            <Clock className="w-2.5 h-2.5" /> Overdue
+          </span>
+        )}
+      </div>
+      {unread && (
+        <span className="bg-blue-600 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1.5 rounded-full flex items-center justify-center shrink-0 mt-1">
+          {conv.unread_count > 9 ? '9+' : conv.unread_count}
+        </span>
+      )}
+    </button>
+  )
+}
+
+function relTime(iso) {
+  const d = new Date(iso); const diff = (Date.now() - d.getTime()) / 1000
+  if (diff < 60) return 'now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d`
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+
+/* ── Mini month calendar with dots ─────────────────────────────── */
+function MiniCalendar({ datesWithJobs, onPick }) {
+  const now = new Date()
+  const year = now.getFullYear(), month = now.getMonth()
+  const first = new Date(year, month, 1)
+  const last = new Date(year, month + 1, 0)
+  const totalDays = last.getDate()
+  const startDow = first.getDay()
+  const cells = []
+  for (let i = 0; i < startDow; i++) cells.push(null)
+  for (let d = 1; d <= totalDays; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+  const todayISO = today()
+  const monthName = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  return (
+    <div className="px-4 pb-4">
+      <div className="text-[11px] font-semibold text-zinc-500 mb-2">{monthName}</div>
+      <div className="grid grid-cols-7 gap-px text-center">
+        {['S','M','T','W','T','F','S'].map((d, i) => (
+          <div key={i} className="text-[9px] font-semibold text-zinc-400 py-1">{d}</div>
+        ))}
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} />
+          const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+          const isToday = iso === todayISO
+          const has = datesWithJobs.has(iso)
+          return (
+            <button
+              key={i}
+              onClick={() => onPick?.(iso)}
+              className={`relative text-[11px] py-1.5 rounded ${
+                isToday ? 'bg-blue-600 text-white font-semibold' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+            >
+              {d}
+              {has && !isToday && (
+                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-500" />
+              )}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-/* ── Page ─────────────────────────────────────────────────────── */
+
+/* ── Page ──────────────────────────────────────────────────────── */
 export default function Dashboard() {
   const navigate = useNavigate()
   const [todayJobs, setTodayJobs] = useState([])
-  const [upcomingJobs, setUpcomingJobs] = useState([])
   const [weekJobs, setWeekJobs] = useState([])
-  const [clients, setClients] = useState([])
   const [invoices, setInvoices] = useState([])
-  const [recurringCount, setRecurringCount] = useState(0)
-  const [schedules, setSchedules] = useState([])
-  const [newRequests, setNewRequests] = useState([])
+  const [quotes, setQuotes] = useState([])
   const [intakeStats, setIntakeStats] = useState({})
   const [todayVisits, setTodayVisits] = useState([])
-  const [recentMessages, setRecentMessages] = useState([])
-  const [employees, setEmployees] = useState([])
+  const [openConvs, setOpenConvs] = useState([])
+  const [overdueConvs, setOverdueConvs] = useState([])
+  const [unassignedConvs, setUnassignedConvs] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const today = new Date().toISOString().slice(0, 10)
+  const t = today()
   const weekEnd = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [jobsToday, jobsWeek, clientsAll, invoicesAll, schedules, intakesNew, intakeStatsRes, visitsToday, gmailData, empData] = await Promise.all([
-          get(`/api/jobs?date=${today}`),
-          get(`/api/jobs?date_from=${today}&date_to=${weekEnd}`),
-          get('/api/clients'),
-          get('/api/invoices'),
-          get('/api/recurring'),
-          get('/api/intake?status=new'),
+        const [
+          jobsToday, jobsWeek, invoicesAll, quotesAll, intakeStatsRes,
+          visitsToday, conversationsOpen, conversationsOverdue, conversationsUnassigned,
+        ] = await Promise.all([
+          get(`/api/jobs?date=${t}`).catch(() => []),
+          get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
+          get('/api/invoices').catch(() => []),
+          get('/api/quotes').catch(() => []),
           get('/api/intake/stats').catch(() => ({})),
-          get(`/api/visits?scheduled_date_from=${today}&scheduled_date_to=${today}&limit=100`).catch(() => ({ items: [] })),
-          get('/api/gmail/inbox?max_results=10').catch(() => ({ emails: [] })),
-          get('/api/dispatch/employees').catch(() => []),
+          get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`).catch(() => ({ items: [] })),
+          get('/api/comms/conversations?status=open&limit=10').catch(() => ({ items: [] })),
+          get('/api/comms/conversations?sla_state=breached&status=open&limit=20').catch(() => ({ items: [] })),
+          get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
-        const week = Array.isArray(jobsWeek) ? jobsWeek : []
-        setWeekJobs(week)
-        setUpcomingJobs(week.filter(j => j.scheduled_date > today && j.status === 'scheduled').slice(0, 3))
-        setClients(Array.isArray(clientsAll) ? clientsAll : [])
+        setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
-        const sched = Array.isArray(schedules) ? schedules : []
-        setSchedules(sched)
-        setRecurringCount(sched.filter(s => s.active).length)
-        setNewRequests(Array.isArray(intakesNew) ? intakesNew.slice(0, 5) : [])
+        setQuotes(Array.isArray(quotesAll) ? quotesAll : (quotesAll?.items || []))
         setIntakeStats(intakeStatsRes && typeof intakeStatsRes === 'object' ? intakeStatsRes : {})
         const tv = Array.isArray(visitsToday) ? visitsToday : (visitsToday?.items || [])
         setTodayVisits(tv)
-        setRecentMessages((gmailData?.emails || []).slice(0, 5))
-        setEmployees(Array.isArray(empData) ? empData : [])
-      } catch {}
+        setOpenConvs(Array.isArray(conversationsOpen) ? conversationsOpen : (conversationsOpen?.items || []))
+        setOverdueConvs(Array.isArray(conversationsOverdue) ? conversationsOverdue : (conversationsOverdue?.items || []))
+        setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
+      } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
     load()
   }, [])
 
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-  const monthRevenue = invoices
-    .filter(i => i.status === 'paid' && i.paid_at && i.paid_at.slice(0, 10) >= monthStart)
-    .reduce((s, i) => s + (i.total || 0), 0)
-  const outstanding = invoices
+  /* ── KPI calcs ── */
+  const todayRevenue = useMemo(() => invoices
+    .filter(i => i.status === 'paid' && (i.paid_at || '').slice(0, 10) === t)
+    .reduce((s, i) => s + (i.total || 0), 0), [invoices, t])
+  const mtdRevenue = useMemo(() => invoices
+    .filter(i => i.status === 'paid' && (i.paid_at || '').slice(0, 10) >= monthStart())
+    .reduce((s, i) => s + (i.total || 0), 0), [invoices])
+  const outstanding = useMemo(() => invoices
     .filter(i => ['sent', 'overdue'].includes(i.status))
-    .reduce((s, i) => s + (i.total || 0), 0)
-  const overdueInvoices = invoices.filter(i => i.status === 'overdue')
-  const unpaidInvoices = invoices.filter(i => ['sent', 'overdue'].includes(i.status))
-    .sort((a, b) => (a.status === 'overdue' ? -1 : 1)).slice(0, 5)
-  const activeClients = clients.filter(c => c.status === 'active').length
-  const newLeads = clients.filter(c => c.status === 'lead').length
-  const recentClients = [...clients].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5)
-  const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
-  const completedToday = todayJobs.filter(j => j.status === 'completed').length
-  const weekTotal = weekJobs.length
+    .reduce((s, i) => s + (i.total || 0), 0), [invoices])
+  const pipeline = useMemo(() => quotes
+    .filter(q => ['sent', 'draft'].includes(q.status))
+    .reduce((s, q) => s + (q.total || 0), 0), [quotes])
 
-  const activeSchedules = schedules.filter(s => s.active)
-  const recurringSubtitle = activeSchedules.length === 0
-    ? 'No active schedules'
-    : `${activeSchedules.filter(s => s.frequency === 'weekly').length} weekly · ${activeSchedules.filter(s => s.frequency === 'biweekly').length} biweekly · ${activeSchedules.filter(s => s.frequency === 'monthly').length} monthly`
-
-  // Live Ops buckets — compute from todayVisits.
-  // "Overdue" here = scheduled today, status still 'scheduled', and the
-  // start time has already passed in the local clock. Different from the
-  // SLA "Overdue" in Comms (which is about reply time on a conversation).
-  const liveOps = useMemo(() => {
+  /* ── Priorities derivation ── */
+  const priorities = useMemo(() => {
+    const items = []
     const nowHHMM = new Date().toTimeString().slice(0, 5)
-    const buckets = { in_progress: [], en_route: [], overdue: [], up_next: [] }
-    for (const v of todayVisits) {
-      if (v.status === 'in_progress') buckets.in_progress.push(v)
-      else if (v.status === 'en_route') buckets.en_route.push(v)
-      else if (v.status === 'scheduled') {
-        const startHHMM = (v.start_time || '').slice(0, 5)
-        if (startHHMM && startHHMM < nowHHMM) buckets.overdue.push(v)
-        else buckets.up_next.push(v)
-      }
-    }
-    buckets.up_next.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
-    buckets.up_next = buckets.up_next.slice(0, 3)
-    return buckets
-  }, [todayVisits])
-  const liveOpsTotal = liveOps.in_progress.length + liveOps.en_route.length + liveOps.overdue.length + liveOps.up_next.length
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex items-center gap-2 text-zinc-600 text-sm">
-          <RefreshCw className="w-4 h-4 animate-spin" /> Loading...
-        </div>
-      </div>
-    )
-  }
+    overdueConvs.slice(0, 3).forEach(c => items.push({
+      key: `od-${c.id}`,
+      dot: 'bg-red-500',
+      title: `Overdue reply · ${displayContactName(c.client) || c.external_contact || 'Unknown'}`,
+      sub: c.preview || 'Awaiting reply',
+      action: 'Reply',
+      onClick: () => navigate('/comms'),
+    }))
+
+    todayVisits
+      .filter(v => v.status === 'scheduled' && (v.start_time || '').slice(0, 5) < nowHHMM)
+      .slice(0, 3)
+      .forEach(v => items.push({
+        key: `late-${v.id}`,
+        dot: 'bg-amber-500',
+        title: `Late start · ${v.job?.title || `Visit #${v.id}`}`,
+        sub: `${(v.start_time || '').slice(0, 5)} · ${v.property?.name || ''}`,
+        action: 'Open',
+        onClick: () => navigate('/schedule'),
+      }))
+
+    unassignedConvs.slice(0, 2).forEach(c => items.push({
+      key: `un-${c.id}`,
+      dot: 'bg-amber-400',
+      title: `Unassigned · ${displayContactName(c.client) || c.external_contact || 'Unknown'}`,
+      sub: c.preview || '',
+      action: 'Assign',
+      onClick: () => navigate('/comms'),
+    }))
+
+    invoices
+      .filter(i => i.status === 'overdue')
+      .slice(0, 2)
+      .forEach(i => items.push({
+        key: `inv-${i.id}`,
+        dot: 'bg-rose-500',
+        title: `Past-due invoice · ${fmtMoney(i.total)}`,
+        sub: `Invoice #${i.id}${i.client_name ? ` · ${i.client_name}` : ''}`,
+        action: 'Call',
+        onClick: () => navigate('/invoicing'),
+      }))
+
+    return items.slice(0, 7)
+  }, [overdueConvs, todayVisits, unassignedConvs, invoices, navigate])
+
+  /* ── Mini calendar dots ── */
+  const datesWithJobs = useMemo(() => {
+    const s = new Set()
+    weekJobs.forEach(j => { if (j.scheduled_date) s.add(j.scheduled_date.slice(0, 10)) })
+    return s
+  }, [weekJobs])
+
+  const todayCount = todayJobs.length
+  const weekCount = weekJobs.length
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 overflow-y-auto h-full">
-      {/* Header row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-900">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </h2>
-          <p className="text-[13px] text-zinc-600 mt-0.5">
-            {todayJobs.length === 0
-              ? 'No jobs scheduled today'
-              : `${todayJobs.length} job${todayJobs.length > 1 ? 's' : ''} today · ${completedToday} completed`}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => navigate('/clients')}
-            className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 border border-zinc-200 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors">
-            <Plus className="w-3.5 h-3.5" /> Client
-          </button>
-          <button onClick={() => navigate('/scheduling')}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-[13px] font-medium transition-colors">
-            <Plus className="w-3.5 h-3.5" /> Job
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={Calendar} label="Today's Jobs" value={todayJobs.length}
-          sub={completedToday > 0 ? `${completedToday} completed` : weekTotal > 0 ? `${weekTotal} this week` : 'None scheduled'}
-          accent={todayJobs.length > 0 ? 'text-blue-600' : 'text-zinc-600'}
-          iconCls="bg-blue-50 text-blue-500" />
-        <StatCard icon={DollarSign} label="This Month" value={`$${monthRevenue.toLocaleString()}`}
-          sub="Paid invoices"
-          accent="text-emerald-600"
-          iconCls="bg-emerald-50 text-emerald-500" />
-        <StatCard icon={AlertCircle} label="Outstanding" value={`$${outstanding.toLocaleString()}`}
-          sub={`${unpaidInvoices.length} invoice${unpaidInvoices.length !== 1 ? 's' : ''}${overdueInvoices.length > 0 ? ` · ${overdueInvoices.length} overdue` : ''}`}
-          accent={overdueInvoices.length > 0 ? 'text-red-500' : outstanding > 0 ? 'text-amber-500' : 'text-zinc-600'}
-          iconCls={overdueInvoices.length > 0 ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'} />
-        <StatCard icon={RefreshCw} label="Recurring" value={recurringCount}
-          sub={recurringSubtitle}
-          accent="text-violet-600"
-          iconCls="bg-violet-50 text-violet-500" />
-      </div>
-
-      {/* Live Ops — what's happening right now (today's visits). */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-rose-500" /> Live Ops
-            <span className="text-[10px] font-normal text-gray-400 ml-1">today</span>
-          </h3>
-          <button onClick={() => navigate('/schedule')} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-            Open schedule →
-          </button>
-        </div>
-        {liveOpsTotal === 0 ? (
-          <div className="py-6 text-center">
-            <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">All clear · nothing in motion</p>
+    <div className="min-h-screen bg-zinc-50">
+      {/* Header */}
+      <div className="px-4 sm:px-6 pt-5 sm:pt-6 pb-4">
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <div className="text-[10px] sm:text-[11px] font-semibold text-indigo-500 uppercase tracking-[0.14em]">
+              Command Center
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 mt-0.5">
+              {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            </h1>
+            <p className="text-[12px] text-zinc-500 mt-1">
+              {todayCount === 0 ? 'No jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
+              {' · '}
+              {weekCount} this week
+              {priorities.length > 0 && ` · ${priorities.length} need attention`}
+            </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { key: 'in_progress', label: 'In progress', icon: Activity,    cls: 'bg-rose-50 text-rose-700 border-rose-100',     iconCls: 'text-rose-500' },
-              { key: 'en_route',    label: 'En route',    icon: Navigation2, cls: 'bg-cyan-50 text-cyan-700 border-cyan-100',     iconCls: 'text-cyan-500' },
-              { key: 'overdue',     label: 'Overdue',     icon: AlertCircle, cls: 'bg-amber-50 text-amber-700 border-amber-100', iconCls: 'text-amber-500' },
-              { key: 'up_next',     label: 'Up next',     icon: Clock,       cls: 'bg-blue-50 text-blue-700 border-blue-100',     iconCls: 'text-blue-500' },
-            ].map(({ key, label, icon: Ic, cls, iconCls }) => {
-              const items = liveOps[key]
-              return (
-                <div key={key} className={`rounded-lg border p-3 ${cls}`}>
-                  <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide">
-                    <Ic className={`w-3.5 h-3.5 ${iconCls}`} />
-                    {label}
-                    <span className="ml-auto tabular-nums">{items.length}</span>
-                  </div>
-                  <div className="mt-2 space-y-1">
-                    {items.length === 0 ? (
-                      <p className="text-[11px] text-gray-400">—</p>
-                    ) : items.slice(0, 3).map(v => (
-                      <div key={v.id} className="text-[11px] truncate text-gray-700">
-                        <span className="font-medium">{v.start_time?.slice(0, 5) || '—'}</span>
-                        <span className="text-gray-400"> · </span>
-                        {v.job?.title || v.property?.name || `Visit #${v.id}`}
-                      </div>
-                    ))}
-                    {items.length > 3 && (
-                      <p className="text-[10px] text-gray-400">+{items.length - 3} more</p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Pipeline snapshot — sourced from /api/intake/stats */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-indigo-500" /> Pipeline Snapshot
-          </h3>
-          <button onClick={() => navigate('/requests')} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-            Open board →
-          </button>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {[
-            { label: 'New',       val: intakeStats.new       || 0, cls: 'bg-amber-50 text-amber-700' },
-            { label: 'Reviewed',  val: intakeStats.reviewed  || 0, cls: 'bg-blue-50 text-blue-700' },
-            { label: 'Quoted',    val: intakeStats.quoted    || 0, cls: 'bg-purple-50 text-purple-700' },
-            { label: 'Converted', val: intakeStats.converted || 0, cls: 'bg-emerald-50 text-emerald-700' },
-            { label: 'Urgent',    val: intakeStats.urgent    || 0, cls: 'bg-red-50 text-red-700' },
-          ].map(item => (
-            <div key={item.label} className={`rounded-lg px-3 py-2 ${item.cls}`}>
-              <div className="text-[10px] uppercase tracking-wide opacity-80">{item.label}</div>
-              <div className="text-lg font-bold">{item.val}</div>
-            </div>
-          ))}
         </div>
       </div>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left — spans 2 */}
-        <div className="lg:col-span-2 space-y-4">
-
-          {/* New Requests */}
-          {newRequests.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200/60 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[13px] font-semibold text-amber-800 flex items-center gap-2">
-                  <Inbox className="w-4 h-4 text-amber-500" /> New Requests
-                  <span className="bg-amber-200 text-amber-800 text-[11px] font-bold px-2 py-0.5 rounded-full">{newRequests.length}</span>
-                </h3>
-                <button onClick={() => navigate('/requests')}
-                  className="text-[11px] text-amber-700 hover:text-amber-900 flex items-center gap-1 font-medium">
-                  View all <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {newRequests.map(req => {
-                  const SrcIcon = { website: Globe, sms: MessageSquare, email: Mail, phone: Phone, manual: Plus }[req.source] || Globe
-                  return (
-                    <div key={req.id} onClick={() => navigate('/requests')}
-                      className="flex items-center gap-3 bg-white hover:bg-amber-50/50 border border-amber-100 rounded-lg p-3 cursor-pointer transition-colors">
-                      <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
-                        <SrcIcon className="w-3.5 h-3.5 text-amber-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-medium text-zinc-900 truncate block">{displayContactName(req)}</span>
-                        <div className="flex items-center gap-2 text-[11px] text-zinc-600 mt-0.5">
-                          {req.phone && <span>{req.phone}</span>}
-                          <span className="capitalize">via {req.source}</span>
-                        </div>
-                      </div>
-                      <span className="text-[11px] text-zinc-600 shrink-0">
-                        {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Recent Messages */}
-          {recentMessages.length > 0 && (
-            <div className="bg-white border border-zinc-200 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[13px] font-semibold text-zinc-900 flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-blue-500" /> Recent Messages
-                  {recentMessages.some(m => !m.is_read) && (
-                    <span className="bg-blue-100 text-blue-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
-                      {recentMessages.filter(m => !m.is_read).length}
-                    </span>
-                  )}
-                </h3>
-                <button onClick={() => navigate('/inbox')}
-                  className="text-[11px] text-blue-500 hover:text-blue-600 flex items-center gap-1 font-medium">
-                  View all <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {recentMessages.map(msg => (
-                  <div key={msg.id} onClick={() => navigate('/inbox')}
-                    className={`flex items-center gap-3 rounded-lg p-3 cursor-pointer transition-colors ${
-                      !msg.is_read ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-zinc-50'
-                    }`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                      msg.is_known_contact ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                    }`}>
-                      {msg.from_name?.charAt(0)?.toUpperCase() || '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[13px] truncate ${!msg.is_read ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
-                          {msg.from_name}
-                        </span>
-                        {!msg.is_read && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />}
-                      </div>
-                      <p className={`text-[12px] truncate mt-0.5 ${!msg.is_read ? 'text-zinc-600' : 'text-zinc-600'}`}>
-                        {msg.subject}
-                      </p>
-                    </div>
-                    <span className="text-[11px] text-zinc-600 shrink-0">
-                      {new Date(msg.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Today's Schedule */}
-          <div className="bg-white border border-zinc-200 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[13px] font-semibold text-zinc-900 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-blue-500" /> Today's Schedule
-              </h3>
-              <button onClick={() => navigate('/scheduling')}
-                className="text-[11px] text-blue-500 hover:text-blue-600 flex items-center gap-1 font-medium">
-                View all <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
-
-            {todayJobs.length === 0 ? (
-              <div className="text-center py-10">
-                <Calendar className="w-9 h-9 mx-auto mb-2 text-zinc-300" />
-                <p className="text-[13px] text-zinc-600">No jobs today</p>
-                <button onClick={() => navigate('/scheduling')}
-                  className="mt-2 text-[12px] text-blue-500 hover:text-blue-600 font-medium">
-                  + Schedule a job
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {todayJobs.map(job => {
-                  const st = JOB_STATUS[job.status] || JOB_STATUS.scheduled
-                  return (
-                    <div key={job.id} onClick={() => navigate('/scheduling')}
-                      className="flex items-center gap-3 hover:bg-zinc-50 rounded-lg p-3 cursor-pointer transition-colors group">
-                      <div className="text-center w-14 shrink-0">
-                        <div className="text-[13px] font-semibold text-zinc-900">{job.start_time}</div>
-                        <div className="text-[11px] text-zinc-600">{job.end_time}</div>
-                      </div>
-                      <div className="w-px h-8 bg-zinc-100 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-zinc-900 truncate">{job.title}</div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[11px] text-zinc-600">{clientName(job.client_id)}</span>
-                          {job.address && (
-                            <span className="text-[11px] text-zinc-600 flex items-center gap-0.5 truncate">
-                              <MapPin className="w-3 h-3 shrink-0" />{job.address}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {job.dispatched && (
-                          <span className="text-[10px] bg-violet-50 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full font-medium">
-                            Dispatched
-                          </span>
-                        )}
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${st.cls}`}>
-                          {st.label}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Upcoming */}
-          {upcomingJobs.length > 0 && (
-            <div className="bg-white border border-zinc-200 rounded-xl p-5">
-              <h3 className="text-[13px] font-semibold text-zinc-900 mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-zinc-600" /> Upcoming
-              </h3>
-              <div className="space-y-1.5">
-                {upcomingJobs.map(job => (
-                  <div key={job.id} onClick={() => navigate('/scheduling')}
-                    className="flex items-center gap-3 hover:bg-zinc-50 rounded-lg p-3 cursor-pointer transition-colors">
-                    <div className="text-[11px] text-zinc-600 w-20 shrink-0 font-medium">
-                      {new Date(job.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-zinc-900 truncate">{job.title}</div>
-                      <div className="text-[11px] text-zinc-600">{clientName(job.client_id)} · {job.start_time}</div>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-zinc-300" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Outstanding Invoices */}
-          {unpaidInvoices.length > 0 && (
-            <div className="bg-white border border-zinc-200 rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[13px] font-semibold text-zinc-900 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-amber-500" /> Outstanding Invoices
-                </h3>
-                <button onClick={() => navigate('/invoicing')}
-                  className="text-[11px] text-blue-500 hover:text-blue-600 flex items-center gap-1 font-medium">
-                  View all <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {unpaidInvoices.map(inv => (
-                  <div key={inv.id} onClick={() => navigate('/invoicing')}
-                    className="flex items-center gap-3 hover:bg-zinc-50 rounded-lg p-3 cursor-pointer transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-medium text-zinc-900">{inv.invoice_number}</span>
-                        <span className="text-zinc-300">·</span>
-                        <span className="text-[13px] text-zinc-600 truncate">{clientName(inv.client_id)}</span>
-                      </div>
-                      <div className="text-[11px] text-zinc-600 mt-0.5">Due {inv.due_date || 'No due date'}</div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-[13px] font-semibold text-zinc-900">${inv.total?.toFixed(2)}</div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium capitalize ${
-                        inv.status === 'overdue' ? 'bg-red-50 text-red-500 border-red-200' : 'bg-amber-50 text-amber-500 border-amber-200'
-                      }`}>{inv.status}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* KPI tiles */}
+      <div className="px-4 sm:px-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <KpiTile label="Today"          value={fmtMoney(todayRevenue)} sub={todayRevenue > 0 ? 'collected today' : 'nothing collected yet'} accent="text-zinc-900" />
+          <KpiTile label="Month to date"  value={fmtMoney(mtdRevenue)}   sub={`${invoices.filter(i => i.status === 'paid').length} paid invoices`} />
+          <KpiTile label="Outstanding AR" value={fmtMoney(outstanding)}  sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid · ${invoices.filter(i => i.status === 'overdue').length} overdue`} accent={outstanding > 0 ? 'text-amber-600' : 'text-zinc-900'} />
+          <KpiTile label="Pipeline"       value={fmtMoney(pipeline)}     sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`} accent="text-emerald-600" />
         </div>
+      </div>
 
-        {/* Right column */}
-        <div className="space-y-4">
-          {/* Crew Status */}
-          {employees.length > 0 && (
-            <div className="bg-white border border-zinc-200 rounded-xl p-5">
-              <h3 className="text-[13px] font-semibold text-zinc-900 mb-3 flex items-center gap-2">
-                <Users className="w-4 h-4 text-indigo-500" /> Crew Status
-              </h3>
-              <div className="space-y-2">
-                {employees.slice(0, 6).map(emp => {
-                  const empId = emp.id || emp.userId
-                  const jobsAssigned = todayJobs.filter(j => (j.cleaner_ids || []).includes(empId))
-                  const completed = jobsAssigned.filter(j => j.status === 'completed').length
-                  return (
-                    <div key={empId} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-zinc-50">
-                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${AVATAR_COLORS[Math.abs(empId || 0) % AVATAR_COLORS.length]}`}>
-                          {(emp.name || emp.displayName || 'C')[0].toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-medium text-zinc-900 truncate">{emp.name || emp.displayName || 'Unknown'}</div>
-                          {jobsAssigned.length > 0 && (
-                            <div className="text-[11px] text-zinc-600">{jobsAssigned.length} job{jobsAssigned.length !== 1 ? 's' : ''} today</div>
-                          )}
-                        </div>
-                      </div>
-                      {jobsAssigned.length > 0 && (
-                        <div className="text-right shrink-0">
-                          <div className="text-[11px] font-medium text-emerald-600">{completed}/{jobsAssigned.length}</div>
-                          <div className="text-[10px] text-zinc-600">completed</div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+      {/* Three-column main */}
+      <div className="px-4 sm:px-6 pt-5 sm:pt-6 pb-8 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        {/* Priorities — 4 cols */}
+        <section className="lg:col-span-4 bg-white border border-zinc-200 rounded-2xl flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-500" />
+              <h2 className="text-sm font-semibold text-zinc-900">Today's priorities</h2>
+              {priorities.length > 0 && (
+                <span className="text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded-full">{priorities.length}</span>
+              )}
             </div>
-          )}
-
-          {/* Quick Actions */}
-          <div className="bg-white border border-zinc-200 rounded-xl p-5">
-            <h3 className="text-[13px] font-semibold text-zinc-900 mb-3">Quick Actions</h3>
-            <div className="space-y-1">
-              {[
-                { label: 'New Client / Lead', icon: Users, to: '/clients', cls: 'text-violet-500' },
-                { label: 'Create Quote',      icon: FileText, to: '/quoting', cls: 'text-blue-500' },
-                { label: 'Schedule Job',      icon: Calendar, to: '/scheduling', cls: 'text-cyan-500' },
-                { label: 'Create Invoice',    icon: DollarSign, to: '/invoicing', cls: 'text-emerald-500' },
-                { label: 'View Messages',     icon: Mail, to: '/inbox', cls: 'text-blue-500', badge: recentMessages.filter(m => !m.is_read).length },
-                { label: 'Send Message',      icon: MessageSquare, to: '/comms', cls: 'text-amber-500' },
-              ].map(({ label, icon: Icon, to, cls, badge }) => (
-                <button key={to} onClick={() => navigate(to)}
-                  className="w-full flex items-center gap-3 hover:bg-zinc-50 px-3 py-2.5 rounded-lg text-[13px] transition-colors text-left group">
-                  <div className="relative">
-                    <Icon className={`w-4 h-4 shrink-0 ${cls}`} />
-                    {badge > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                        {badge}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-zinc-600 group-hover:text-zinc-900 transition-colors">{label}</span>
-                  <ChevronRight className="w-3.5 h-3.5 ml-auto text-zinc-300 group-hover:text-zinc-400" />
-                </button>
+          </div>
+          {loading ? (
+            <div className="py-8 text-center text-[12px] text-zinc-400">Loading…</div>
+          ) : priorities.length === 0 ? (
+            <div className="py-10 text-center">
+              <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+              <p className="text-[13px] text-zinc-500">All clear · nothing urgent</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto max-h-[420px]">
+              {priorities.map(p => (
+                <PriorityRow
+                  key={p.key}
+                  dot={p.dot}
+                  title={p.title}
+                  sub={p.sub}
+                  action={p.action}
+                  onClick={p.onClick}
+                />
               ))}
             </div>
-          </div>
+          )}
+        </section>
 
-          {/* Recent Clients */}
-          <div className="bg-white border border-zinc-200 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[13px] font-semibold text-zinc-900">Recent Clients</h3>
-              <button onClick={() => navigate('/clients')}
-                className="text-[11px] text-blue-500 hover:text-blue-600 flex items-center gap-1 font-medium">
-                All <ArrowRight className="w-3 h-3" />
-              </button>
+        {/* Inbox — 5 cols */}
+        <section className="lg:col-span-5 bg-white border border-zinc-200 rounded-2xl flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+            <div className="flex items-center gap-2">
+              <Inbox className="w-4 h-4 text-blue-500" />
+              <h2 className="text-sm font-semibold text-zinc-900">Unified inbox</h2>
+              {openConvs.filter(c => c.unread_count > 0).length > 0 && (
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                  {openConvs.filter(c => c.unread_count > 0).length} new
+                </span>
+              )}
             </div>
-            {recentClients.length === 0 ? (
-              <p className="text-[13px] text-zinc-600 text-center py-6">No clients yet</p>
+            <button onClick={() => navigate('/comms')} className="text-[11px] font-semibold text-blue-600 hover:text-blue-700">
+              Open Comms →
+            </button>
+          </div>
+          {loading ? (
+            <div className="py-8 text-center text-[12px] text-zinc-400">Loading…</div>
+          ) : openConvs.length === 0 ? (
+            <div className="py-10 text-center">
+              <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
+              <p className="text-[13px] text-zinc-500">Inbox zero · nothing waiting</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto max-h-[420px]">
+              {openConvs.slice(0, 8).map(c => (
+                <InboxRow key={c.id} conv={c} onClick={() => navigate('/comms')} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Schedule — 3 cols */}
+        <section className="lg:col-span-3 bg-white border border-zinc-200 rounded-2xl flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-violet-500" />
+              <h2 className="text-sm font-semibold text-zinc-900">Schedule</h2>
+            </div>
+            <button onClick={() => navigate('/schedule?view=month')} className="text-[11px] font-semibold text-blue-600 hover:text-blue-700">
+              Open →
+            </button>
+          </div>
+          <MiniCalendar datesWithJobs={datesWithJobs} onPick={() => navigate('/schedule?view=month')} />
+          <div className="border-t border-zinc-100">
+            <div className="px-4 py-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Today</div>
+            {todayJobs.length === 0 ? (
+              <div className="px-4 pb-4 text-[12px] text-zinc-400">Nothing scheduled today.</div>
             ) : (
-              <div className="space-y-1">
-                {recentClients.map(c => (
-                  <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                    className="flex items-center gap-3 hover:bg-zinc-50 rounded-lg p-2 cursor-pointer transition-colors">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-                      <span className="text-[11px] font-bold">{c.name[0]?.toUpperCase()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-zinc-900 truncate font-medium">{c.name}</div>
-                      <div className="text-[11px] text-zinc-600 truncate">{c.phone || c.email || 'No contact'}</div>
-                    </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${
-                      c.status === 'active' ? 'bg-emerald-50 text-emerald-500 border-emerald-200' :
-                      c.status === 'lead'   ? 'bg-amber-50 text-amber-500 border-amber-200' :
-                                              'bg-zinc-100 text-zinc-600 border-zinc-200'
-                    }`}>{c.status}</span>
-                  </div>
+              <div className="max-h-[180px] overflow-y-auto pb-2">
+                {todayJobs.slice(0, 5).map(j => (
+                  <button
+                    key={j.id}
+                    onClick={() => navigate('/schedule?view=month')}
+                    className="w-full text-left px-4 py-2 hover:bg-zinc-50 flex items-baseline gap-2"
+                  >
+                    <span className="text-[11px] font-semibold text-zinc-900 tabular-nums shrink-0">
+                      {(j.start_time || '').slice(0, 5) || '—'}
+                    </span>
+                    <span className="text-[12px] text-zinc-700 truncate flex-1">{j.title}</span>
+                  </button>
                 ))}
+                {todayJobs.length > 5 && (
+                  <div className="px-4 py-1 text-[10px] text-zinc-400">+{todayJobs.length - 5} more</div>
+                )}
               </div>
             )}
           </div>
+        </section>
 
-          {/* Workspace CTA */}
-          <div onClick={() => navigate('/workspace')}
-            className="bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl p-5 cursor-pointer hover:opacity-95 transition-opacity">
-            <div className="flex items-center gap-2 mb-2">
-              <Zap className="w-4 h-4 text-white" />
-              <h3 className="text-[13px] font-semibold text-white">AI Workspace</h3>
-            </div>
-            <p className="text-[11px] text-blue-100/80 mb-3 leading-relaxed">Your AI agents are ready to help you run and grow your business.</p>
-            <div className="flex items-center gap-1 text-[11px] text-white font-medium">
-              Open Workspace <ArrowRight className="w-3 h-3" />
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )
