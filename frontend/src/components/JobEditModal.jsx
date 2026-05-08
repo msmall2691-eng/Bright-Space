@@ -8,6 +8,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     property_id: job?.property_id || '',
     cleaner_ids: job?.cleaner_ids || [],
     notes: job?.notes || '',
+    scheduled_date: job?.scheduled_date || '',
+    start_time: (job?.start_time || '').slice(0, 5),
+    end_time: (job?.end_time || '').slice(0, 5),
   })
   const [cleanerSearch, setCleanerSearch] = useState('')
   const [showCleanerDropdown, setShowCleanerDropdown] = useState(false)
@@ -62,6 +65,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         property_id: parseInt(formData.property_id),
         cleaner_ids: formData.cleaner_ids,
         notes: formData.notes,
+        scheduled_date: formData.scheduled_date || null,
+        start_time: formData.start_time || null,
+        end_time: formData.end_time || null,
       })
       onSave?.()
       onClose()
@@ -89,7 +95,37 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           <div>
             <h3 className="text-xs font-semibold text-neutral-600 uppercase mb-2">Job</h3>
             <p className="text-base sm:text-lg font-semibold text-neutral-900">{job?.title}</p>
-            <p className="text-xs sm:text-sm text-neutral-500">{job?.scheduled_date} • {job?.start_time?.slice(0, 5)} - {job?.end_time?.slice(0, 5)}</p>
+          </div>
+
+          {/* Date + times — finally editable */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-1">
+              <label className="block text-sm font-semibold text-neutral-700 mb-2">Date</label>
+              <input
+                type="date"
+                value={formData.scheduled_date || ''}
+                onChange={e => setFormData(f => ({ ...f, scheduled_date: e.target.value }))}
+                className="w-full px-3 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-neutral-700 mb-2">Start</label>
+              <input
+                type="time"
+                value={formData.start_time || ''}
+                onChange={e => setFormData(f => ({ ...f, start_time: e.target.value }))}
+                className="w-full px-3 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-neutral-700 mb-2">End</label>
+              <input
+                type="time"
+                value={formData.end_time || ''}
+                onChange={e => setFormData(f => ({ ...f, end_time: e.target.value }))}
+                className="w-full px-3 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              />
+            </div>
           </div>
 
           {/* Property Picker */}
