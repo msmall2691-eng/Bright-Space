@@ -354,3 +354,97 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
         f"{results['unmatched']} unmatched."
     )
     return results
+
+
+def sync_gcal_cancellations(db: Session) -> dict:
+    """Reverse linkage check: for every Job that has a gcal_event_id, ask
+    Google whether the event still exists. If it's gone (404/410) or its
+    status is 'cancelled', soft-cancel the Job + its Visits. If the Job
+    was created from a recurring schedule, also write a RecurrenceException
+    so the next /generate-all run doesn't recreate the date.
+
+    The existing sync_calendar() catches events that come back as
+    status='cancelled' from events.list. But fully-deleted events
+    disappear from events.list entirely, leaving the linked Job orphaned.
+    This function is the missing other half of two-way GCal sync.
+
+    Returns a stats dict with how many were touched.
+    """
+    from database.models import Job, Visit, RecurrenceException
+    from integrations.google_calendar import get_event
+
+    out = {
+        "checked": 0,
+        "still_present": 0,
+        "deleted_or_cancelled": 0,
+        "exceptions_written": 0,
+        "errors": 0,
+    }
+
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.gcal_event_id.isnot(None),
+            Job.gcal_event_id != "",
+            Job.status.notin_(("cancelled", "completed")),
+        )
+        .all()
+    )
+    out["checked"] = len(jobs)
+
+    for job in jobs:
+        try:
+            event = get_event(job.gcal_event_id, job_type=job.job_type or "residential")
+        except Exception as e:
+            # Transient Google error or auth issue — don't cascade-cancel jobs
+            # because of an integration hiccup. Skip and let the next tick try.
+            log.warning(f"[gcal-cancellations] get_event failed for job {job.id}: {e}")
+            out["errors"] += 1
+            continue
+
+        if event is not None and event.get("status") != "cancelled":
+            out["still_present"] += 1
+            continue
+
+        # Event is gone (None) or marked cancelled. Soft-cancel.
+        out["deleted_or_cancelled"] += 1
+        job.status = "cancelled"
+        for v in db.query(Visit).filter(Visit.job_id == job.id).all():
+            if v.status not in ("completed", "cancelled"):
+                v.status = "cancelled"
+                if v.notes:
+                    v.notes = (v.notes or "") + "\n[Cancelled via Google Calendar deletion]"
+                else:
+                    v.notes = "Cancelled via Google Calendar deletion"
+
+        # If recurring, write a durable exception so the next /generate-all
+        # doesn't resurrect the date. Idempotent via the unique
+        # (recurring_schedule_id, exception_date) constraint.
+        if job.recurring_schedule_id and job.scheduled_date:
+            existing = (
+                db.query(RecurrenceException)
+                .filter(
+                    RecurrenceException.recurring_schedule_id == job.recurring_schedule_id,
+                    RecurrenceException.exception_date == job.scheduled_date,
+                )
+                .first()
+            )
+            if existing is None:
+                db.add(RecurrenceException(
+                    recurring_schedule_id=job.recurring_schedule_id,
+                    exception_date=job.scheduled_date,
+                    exception_type="skip",
+                    reason="Cancelled via Google Calendar deletion",
+                ))
+                out["exceptions_written"] += 1
+
+    if out["deleted_or_cancelled"] > 0 or out["exceptions_written"] > 0:
+        db.commit()
+
+    log.info(
+        f"[gcal-cancellations] checked={out['checked']} "
+        f"deleted_or_cancelled={out['deleted_or_cancelled']} "
+        f"exceptions_written={out['exceptions_written']} "
+        f"errors={out['errors']}"
+    )
+    return out
