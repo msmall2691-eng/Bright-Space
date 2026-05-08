@@ -548,7 +548,7 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
   }, [detail.messages, name])
 
   return (
-    <div className="w-[320px] border-l border-zinc-200 bg-white flex flex-col overflow-hidden">
+    <div className="hidden lg:flex w-[320px] border-l border-zinc-200 bg-white flex-col overflow-hidden">
       {/* Contact header */}
       <div className="p-5 bg-gradient-to-b from-zinc-50 to-white border-b border-zinc-100">
         <div className="flex items-start gap-3">
