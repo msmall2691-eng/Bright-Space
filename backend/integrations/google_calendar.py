@@ -264,3 +264,27 @@ def delete_event(event_id: str, job_type: str = "residential") -> bool:
     except Exception as e:
         print(f"[GCal] Error deleting event: {e}")
         return False
+
+
+def get_event(event_id: str, job_type: str = "residential") -> dict | None:
+    """Fetch a single GCal event by id. Returns:
+    - the event dict (with whatever shape Google returns) if found
+    - None if the event was deleted (404)
+    - raises on other errors so the caller can decide what to do
+
+    Used by sync_gcal_cancellations() to detect events that have been
+    deleted from Google Calendar — they disappear from events.list,
+    so a per-event check is the only reliable signal.
+    """
+    from googleapiclient.errors import HttpError
+    service = _get_service()
+    cal_id = _calendar_id(job_type)
+    try:
+        return service.events().get(calendarId=cal_id, eventId=event_id).execute()
+    except HttpError as e:
+        if getattr(e, "resp", None) is not None and e.resp.status == 404:
+            return None
+        if getattr(e, "resp", None) is not None and e.resp.status == 410:
+            # 410 Gone = event was permanently deleted. Treat same as 404.
+            return None
+        raise

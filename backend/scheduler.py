@@ -23,7 +23,17 @@ def _db_flag(db, key: str, env_default: bool) -> bool:
 
 
 def sync_gcal_tick() -> dict:
-    """Background job to sync Google Calendar events to BrightBase."""
+    """Background job to sync Google Calendar events to BrightBase, in
+    both directions:
+    1. sync_calendar() — pulls events INTO BrightBase (creates Jobs from
+       new GCal events, marks Jobs cancelled if the event came back
+       cancelled in events.list).
+    2. sync_gcal_cancellations() — reverse linkage check that catches
+       events fully DELETED from GCal (those disappear from events.list
+       so step 1 misses them). Soft-cancels the Job + Visits, writes a
+       RecurrenceException if the job was from a recurring schedule.
+    """
+    from integrations.gcal_sync import sync_gcal_cancellations
     db = SessionLocal()
     try:
         if not _db_flag(db, "gcal_auto_sync_enabled", env_flag("GCAL_AUTO_SYNC_ENABLED", True)):
@@ -31,6 +41,12 @@ def sync_gcal_tick() -> dict:
             return {"skipped": True, "reason": "disabled"}
         result = sync_calendar(db)
         log.info(f"GCal sync completed: {result}")
+        try:
+            cancellations = sync_gcal_cancellations(db)
+            result["cancellations"] = cancellations
+        except Exception as e:
+            log.warning(f"GCal cancellation backflow failed (non-fatal): {e}")
+            result["cancellations"] = {"error": str(e)}
         return result
     except Exception as e:
         log.error(f"GCal sync failed: {e}")

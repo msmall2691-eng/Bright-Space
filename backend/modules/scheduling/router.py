@@ -392,11 +392,26 @@ def sync_from_gcal(db: Session = Depends(get_db)):
     Full two-way sync with Google Calendar.
     Matches events to clients by: extendedProperties → attendee email → address.
     """
-    from integrations.gcal_sync import sync_calendar
+    from integrations.gcal_sync import sync_calendar, sync_gcal_cancellations
     result = sync_calendar(db)
     if result.get("error"):
         raise HTTPException(status_code=502, detail=result["error"])
+    # Reverse linkage check: catch events that were deleted in GCal
+    # (deleted events disappear from events.list, so sync_calendar
+    # misses them). Non-fatal if it errors.
+    try:
+        result["cancellations"] = sync_gcal_cancellations(db)
+    except Exception as e:
+        result["cancellations"] = {"error": str(e)}
     return result
+
+
+@router.post("/sync-gcal-cancellations")
+def sync_gcal_cancellations_endpoint(db: Session = Depends(get_db)):
+    """Manual trigger for the GCal-cancellation reverse linkage check.
+    Useful for testing without waiting for the scheduler tick."""
+    from integrations.gcal_sync import sync_gcal_cancellations
+    return sync_gcal_cancellations(db)
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
