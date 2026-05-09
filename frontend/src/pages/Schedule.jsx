@@ -41,98 +41,84 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
   const hasSMS = job?.sms_reminder_sent ? '📲' : ''
   const isCompleted = visit.status === 'completed'
 
+  // Phase 8 redesign: tighter list-row layout. Single horizontal row with
+  // time on the left, title + property + status inline, action overflow on
+  // the right. ~30% less vertical space, easier to scan.
   return (
     <div
-      className={`p-3 sm:p-4 rounded-lg transition-all cursor-pointer hover:shadow-md active:shadow-sm active:bg-opacity-75 ${config.color} ${selected ? 'ring-2 ring-blue-500' : ''}`}
+      className={`group flex items-center gap-3 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg transition-colors cursor-pointer ${
+        selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-white hover:bg-neutral-50'
+      } border border-neutral-200`}
       onClick={() => onEdit(visit, job, property)}
     >
-      <div className="flex items-start justify-between gap-2 sm:gap-3">
-        {/* Left: Icon + Property Type */}
-        <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={(e) => onToggleSelect?.(visit.id, e)}
-            onClick={(e) => e.stopPropagation()}
-            className="w-4 h-4 mt-1 rounded border-neutral-300 cursor-pointer shrink-0"
-            data-testid="visit-row-checkbox"
-            aria-label="Select visit"
-          />
-          <div className={`p-2 rounded flex-shrink-0 ${config.badge}`}>
-            <PropertyIcon className="w-4 h-4" />
-          </div>
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={(e) => onToggleSelect?.(visit.id, e)}
+        onClick={(e) => e.stopPropagation()}
+        className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer shrink-0"
+        data-testid="visit-row-checkbox"
+        aria-label="Select visit"
+      />
 
-          <div className="flex-1 min-w-0">
-            {/* Title + Time */}
-            <div className="flex items-baseline gap-2 mb-1">
-              <h4 className="text-sm sm:text-base font-semibold text-neutral-900 truncate">{job?.title || `Visit ${visit.id}`}</h4>
-              {isCompleted && <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600 flex-shrink-0" />}
-            </div>
+      {/* Start time — fixed width column */}
+      <div className="text-[12px] font-semibold text-neutral-900 tabular-nums w-12 shrink-0">
+        {visit.start_time?.slice(0, 5) || '—'}
+      </div>
 
-            {/* Property + Client */}
-            <p className="text-xs text-neutral-600 mb-1.5 sm:mb-2 truncate">
-              <span className="truncate">{property?.name && <span>{property.name}</span>}
-              {client?.name && <span> • {client.name}</span>}</span>
-            </p>
+      {/* Property type icon */}
+      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${config.badge}`}>
+        <PropertyIcon className="w-3.5 h-3.5" />
+      </div>
 
-            {/* Time + Address */}
-            <div className="space-y-0.5 sm:space-y-1">
-              <div className="flex items-center gap-1 sm:gap-1.5 text-xs text-neutral-600">
-                <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                <span className="font-medium">{visit.start_time?.slice(0, 5)}</span>
-              </div>
-              {property?.address && (
-                <div className="flex items-center gap-1 sm:gap-1.5 text-xs text-neutral-600">
-                  <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                  <span className="truncate">{property.address}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Integration Status Chips */}
-            <div className="flex gap-1 mt-1.5 sm:mt-2">
-              {hasGcal && <span className="text-xs sm:text-sm" title="GCal synced">{hasGcal}</span>}
-              {hasSMS && <span className="text-xs sm:text-sm" title="SMS sent">{hasSMS}</span>}
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${statusConfig.dot}`} />
-            </div>
-          </div>
+      {/* Title + property + client on one stacked line */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[13px] font-semibold text-neutral-900 truncate">
+            {job?.title || `Visit ${visit.id}`}
+          </span>
+          {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
         </div>
-
-        {/* Right: Status + Cleaner + Actions */}
-        <div className="flex flex-col items-end gap-1.5 sm:gap-2 flex-shrink-0">
-          <StatusBadge status={statusConfig.badge} className="text-xs sm:text-sm">{statusConfig.label}</StatusBadge>
-
-          {hasAssigned && (
-            <div className="flex items-center gap-1 text-xs font-semibold text-neutral-600 bg-green-50 px-2 py-1 rounded">
-              <User className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>{visit.cleaner_ids.length}</span>
-            </div>
-          )}
-
-          {!hasAssigned && (
-            <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded">
-              ⚠️
-            </span>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-1">
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(visit, job, property) }}
-              className="p-2 sm:p-1 rounded hover:bg-blue-200 sm:hover:bg-blue-100 text-neutral-400 hover:text-blue-600 transition-colors active:bg-blue-200 -m-1 sm:m-0 min-w-9 min-h-9 sm:min-w-auto sm:min-h-auto flex items-center justify-center"
-              title="Edit"
-            >
-              <Edit2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(visit.id) }}
-              className="p-2 sm:p-1 rounded hover:bg-red-200 sm:hover:bg-red-100 text-neutral-400 hover:text-red-600 transition-colors active:bg-red-200 -m-1 sm:m-0 min-w-9 min-h-9 sm:min-w-auto sm:min-h-auto flex items-center justify-center"
-              title="Delete"
-            >
-              <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-            </button>
-          </div>
+        <div className="text-[11px] text-neutral-500 truncate">
+          {property?.name || ''}
+          {property?.address && <span className="text-neutral-400"> · {property.address}</span>}
+          {client?.name && <span className="text-neutral-400"> · {client.name}</span>}
         </div>
+      </div>
+
+      {/* Status pill + cleaner indicator */}
+      <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+        <StatusBadge status={statusConfig.badge} className="text-[10px]">{statusConfig.label}</StatusBadge>
+        {hasAssigned ? (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+            <User className="w-2.5 h-2.5" /> {visit.cleaner_ids.length}
+          </span>
+        ) : (
+          <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+            no cleaner
+          </span>
+        )}
+      </div>
+
+      {/* Mobile-only status dot */}
+      <span className={`sm:hidden w-2 h-2 rounded-full shrink-0 ${statusConfig.dot}`} />
+
+      {/* Action buttons — visible on hover (desktop), always on mobile */}
+      <div className="flex gap-0.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(visit, job, property) }}
+          className="p-1.5 rounded hover:bg-blue-100 text-neutral-400 hover:text-blue-600"
+          title="Edit"
+        >
+          <Edit2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(visit.id) }}
+          className="p-1.5 rounded hover:bg-red-100 text-neutral-400 hover:text-red-600"
+          title="Delete"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   )
@@ -404,119 +390,124 @@ export default function Schedule() {
   return (
     <div className="flex flex-col h-screen bg-neutral-50">
       {/* Header */}
-      <div className="bg-white border-b border-neutral-200 p-3 sm:p-4 sticky top-0 z-10 safe-top">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
-            <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Schedule</h1>
-            <div className="flex items-center gap-2">
-              {/* Phase 3: List / Month view toggle. URL-driven via ?view=. */}
-              <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded text-xs sm:text-sm font-medium transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-neutral-600 hover:bg-neutral-50 active:bg-neutral-100'
-                  }`}
-                  aria-pressed={viewMode === 'list'}
-                >
-                  <List className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">List</span>
-                </button>
-                <button
-                  onClick={() => setViewMode('month')}
-                  className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded text-xs sm:text-sm font-medium transition-colors ${
-                    viewMode === 'month'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-neutral-600 hover:bg-neutral-50 active:bg-neutral-100'
-                  }`}
-                  aria-pressed={viewMode === 'month'}
-                >
-                  <Grid3x3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">Month</span>
-                </button>
-              </div>
-              <Button variant="primary" size="sm" className="whitespace-nowrap">
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline ml-2">New Job</span>
-              </Button>
+      <div className="bg-white border-b border-neutral-200 sticky top-0 z-10 safe-top">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
+          {/* Single compact row: title · date nav · view toggle · New Job */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h1 className="text-base sm:text-lg font-bold text-neutral-900 shrink-0">Schedule</h1>
+
+            <div className="hidden sm:flex items-center gap-1 ml-1">
+              <button onClick={prevWeek} className="p-1 hover:bg-neutral-100 rounded text-neutral-500" aria-label="Previous week">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-semibold text-neutral-700 whitespace-nowrap min-w-[64px] text-center">
+                {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
+              <button onClick={nextWeek} className="p-1 hover:bg-neutral-100 rounded text-neutral-500" aria-label="Next week">
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
+
+            <div className="flex-1" />
+
+            {/* Phase 3: List / Month view toggle. URL-driven via ?view=. */}
+            <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
+                }`}
+                aria-pressed={viewMode === 'list'}
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">List</span>
+              </button>
+              <button
+                onClick={() => setViewMode('month')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  viewMode === 'month' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
+                }`}
+                aria-pressed={viewMode === 'month'}
+              >
+                <Grid3x3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Month</span>
+              </button>
+            </div>
+
+            <Button variant="primary" size="sm" className="whitespace-nowrap">
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1.5">New Job</span>
+            </Button>
           </div>
 
-          {/* Week Navigation */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-0">
-            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-              <button
-                onClick={prevWeek}
-                className="p-2 sm:p-2 hover:bg-neutral-100 rounded active:bg-neutral-200 min-w-10 min-h-10 flex items-center justify-center"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <p className="text-xs sm:text-sm font-semibold text-neutral-700 whitespace-nowrap">
-                {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-              </p>
-              <button
-                onClick={nextWeek}
-                className="p-2 sm:p-2 hover:bg-neutral-100 rounded active:bg-neutral-200 min-w-10 min-h-10 flex items-center justify-center"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
+          {/* Mobile-only date nav — desktop has it inline above */}
+          <div className="sm:hidden flex items-center gap-2 mt-2">
+            <button onClick={prevWeek} className="p-1.5 hover:bg-neutral-100 rounded text-neutral-500">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-semibold text-neutral-700 flex-1 text-center">
+              {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+            </span>
+            <button onClick={nextWeek} className="p-1.5 hover:bg-neutral-100 rounded text-neutral-500">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
 
-            {/* Filters - Stack on mobile */}
-            <div className="flex gap-2 flex-wrap">
-              <select
-                value={selectedPropertyType}
-                onChange={(e) => setSelectedPropertyType(e.target.value)}
-                className="px-2 py-2 sm:px-3 sm:py-2 border border-neutral-200 rounded-lg text-xs sm:text-sm bg-white flex-1 min-w-[100px] active:bg-neutral-50"
-              >
-                <option value="all">All Types</option>
-                <option value="residential">Residential</option>
-                <option value="str">STR</option>
-                <option value="commercial">Commercial</option>
-              </select>
-
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-2 py-2 sm:px-3 sm:py-2 border border-neutral-200 rounded-lg text-xs sm:text-sm bg-white flex-1 min-w-[100px] active:bg-neutral-50"
-              >
-                <option value="all">All Status</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="dispatched">Dispatched</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
+          {/* Filter chips — compact, only render when active or hover-reveal */}
+          <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
+            <select
+              value={selectedPropertyType}
+              onChange={(e) => setSelectedPropertyType(e.target.value)}
+              className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
+                selectedPropertyType === 'all'
+                  ? 'bg-white text-neutral-500 border-neutral-200'
+                  : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}
+            >
+              <option value="all">All types</option>
+              <option value="residential">Residential</option>
+              <option value="str">STR</option>
+              <option value="commercial">Commercial</option>
+            </select>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
+                selectedStatus === 'all'
+                  ? 'bg-white text-neutral-500 border-neutral-200'
+                  : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}
+            >
+              <option value="all">All status</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="dispatched">Dispatched</option>
+              <option value="in_progress">In progress</option>
+              <option value="completed">Completed</option>
+            </select>
           </div>
         </div>
       </div>
 
-      {/* Admin Coverage Banner */}
-      {coverage && !coverage.healthy && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600" />
-              <div>
-                <p className="text-sm font-semibold text-amber-900">
-                  Visits Coverage: {coverage.coverage_percent}% ({coverage.total_visits}/{coverage.total_jobs})
-                </p>
-                <p className="text-xs text-amber-700">
-                  {coverage.jobs_without_visits} jobs missing visits. Click below to backfill.
-                </p>
-              </div>
+      {/* Coverage banner — only when actually problematic. A 98%/1-missing
+          state was triggering a giant warning that operators dismissed and
+          ignored, eating prime header real estate. Now: thin pill, only
+          renders if coverage drops below 95% AND >2 jobs are unbacked. */}
+      {coverage && !coverage.healthy && coverage.coverage_percent < 95 && coverage.jobs_without_visits > 2 && (
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 pt-2">
+          <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <p className="text-[11px] text-amber-800 truncate">
+                {coverage.jobs_without_visits} jobs without visits ({coverage.coverage_percent}% coverage)
+              </p>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
+            <button
               onClick={handleBackfill}
               disabled={backfilling}
-              className="flex items-center gap-2"
+              className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 disabled:opacity-50 whitespace-nowrap"
             >
-              <RefreshCw className="w-4 h-4" />
-              {backfilling ? 'Backfilling...' : 'Backfill Now'}
-            </Button>
+              {backfilling ? 'Backfilling…' : 'Backfill →'}
+            </button>
           </div>
         </div>
       )}
