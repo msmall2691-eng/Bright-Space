@@ -45,6 +45,11 @@ SLA_FRT_MINUTES = {
 
 DEFAULT_ASSIGNEE = os.getenv("DEFAULT_CONVERSATION_ASSIGNEE") or None
 
+# Phase 4 — operator notification: when an inbound SMS arrives, forward a
+# copy to this number so on-call staff get the message even when the
+# BrightBase tab/laptop is closed. Unset (default) disables forwarding.
+FORWARD_INBOUND_SMS_TO = os.getenv("FORWARD_INBOUND_SMS_TO") or None
+
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -819,7 +824,45 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     _apply_inbound(conv, msg)
     db.commit()
 
+    # Phase 4 — operator forward. After persisting, fan out a copy to the
+    # configured personal number so on-call staff get the message even when
+    # BrightBase isn't open. Failures here MUST NOT break the webhook reply
+    # (Twilio retries on non-2xx, which would re-trigger a duplicate
+    # inbound and we already deduped above).
+    _forward_inbound_sms_if_configured(
+        from_number=from_number_normalized,
+        client_name=client.name if client else None,
+        body=body,
+    )
+
     return Response(
         content="<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
         media_type="text/xml",
     )
+
+
+def _forward_inbound_sms_if_configured(*, from_number: str, client_name: Optional[str], body: str) -> None:
+    """Forward a copy of an inbound SMS to FORWARD_INBOUND_SMS_TO."""
+    target = FORWARD_INBOUND_SMS_TO
+    if not target:
+        return
+
+    target_normalized = _normalize_contact(target)
+    # Loop prevention: never forward a message that originated from the
+    # forwarding number itself (e.g. on-call staff replying via SMS gateway).
+    if from_number and from_number == target_normalized:
+        logger.info("[twilio] Skipping forward: inbound is from the forward target")
+        return
+
+    label = client_name or from_number or "unknown"
+    snippet = (body or "").strip()
+    if len(snippet) > 1200:
+        snippet = snippet[:1200] + "…"
+    forward_body = f"BrightBase SMS from {label}:\n{snippet}"
+
+    try:
+        send_sms(to=target_normalized, body=forward_body)
+        logger.info(f"[twilio] Forwarded inbound SMS from {from_number} to {target_normalized}")
+    except Exception as e:
+        # Don't surface to caller — failed forward shouldn't make Twilio retry.
+        logger.warning(f"[twilio] Forward to {target_normalized} failed: {e}")
