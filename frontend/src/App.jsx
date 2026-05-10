@@ -10,8 +10,23 @@ import Dashboard from './pages/Dashboard'
 import Requests from './pages/Requests'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
+import { useUnreadCount } from './hooks/useUnreadCount'
+import { playChime } from './utils/chime'
 
 const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
+
+// Wraps Sidebar with the global unread poller. Lives inline in App so the
+// poll only runs when the user is actually inside the authenticated shell
+// (skipped on /login and public /quote/:token, /pay/:token routes).
+function SidebarWithUnread(props) {
+  const { unreadConversations } = useUnreadCount({ onIncrease: playChime })
+  useEffect(() => {
+    document.title = unreadConversations > 0
+      ? `(${unreadConversations}) BrightBase`
+      : 'BrightBase'
+  }, [unreadConversations])
+  return <Sidebar {...props} badges={{ '/comms': unreadConversations }} />
+}
 
 // Lazy-loaded pages for code splitting
 const Workspace = lazy(() => import('./pages/Workspace'))
@@ -83,7 +98,7 @@ export default function App() {
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#FCFCFC]">
-      <Sidebar open={sidebarOpen} onClose={closeSidebar} user={user} />
+      <SidebarWithUnread open={sidebarOpen} onClose={closeSidebar} user={user} />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto bg-[#FCFCFC] pb-bottomnav lg:pb-0 scroll-smooth-mobile">

@@ -432,14 +432,21 @@ def list_conversations(
 def conversations_summary(db: Session = Depends(get_db)):
     """Quick counts for inbox filter badges."""
     base = db.query(Conversation)
+    # Sum total unread messages across all conversations. Used by the global
+    # unread badge / chime poller — strictly monotonic in 'new arrivals' so
+    # the FE can detect increases between polls and chime on actual deltas.
+    unread_messages = (
+        db.query(func.coalesce(func.sum(Conversation.unread_count), 0)).scalar() or 0
+    )
     return {
-        "open":       base.filter(Conversation.status == "open").count(),
-        "pending":    base.filter(Conversation.status == "pending").count(),
-        "snoozed":    base.filter(Conversation.status == "snoozed").count(),
-        "resolved":   base.filter(Conversation.status == "resolved").count(),
-        "unassigned": base.filter(Conversation.assignee.is_(None),
-                                   Conversation.status == "open").count(),
-        "unread":     base.filter(Conversation.unread_count > 0).count(),
+        "open":             base.filter(Conversation.status == "open").count(),
+        "pending":          base.filter(Conversation.status == "pending").count(),
+        "snoozed":          base.filter(Conversation.status == "snoozed").count(),
+        "resolved":         base.filter(Conversation.status == "resolved").count(),
+        "unassigned":       base.filter(Conversation.assignee.is_(None),
+                                         Conversation.status == "open").count(),
+        "unread":           base.filter(Conversation.unread_count > 0).count(),
+        "unread_messages":  int(unread_messages),
     }
 
 
