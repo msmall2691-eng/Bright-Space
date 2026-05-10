@@ -9,7 +9,7 @@ Legacy endpoints (/messages, /sms, /email) are preserved for backward
 compatibility — they now auto-attach to a Conversation behind the scenes.
 """
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Union
 import logging
 import os
 import re
@@ -76,6 +76,36 @@ class InternalNoteRequest(BaseModel):
 
 class AssignRequest(BaseModel):
     assignee: Optional[str] = None   # null to unassign
+
+
+class MessageRead(BaseModel):
+    """Mirrors the dict returned by ``msg_to_dict``."""
+    id: int
+    conversation_id: Optional[int] = None
+    client_id: Optional[int] = None
+    channel: str
+    direction: str
+    from_addr: Optional[str] = None
+    to_addr: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    status: Optional[str] = None
+    is_internal_note: bool = False
+    author: Optional[str] = None
+    external_id: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class SMSPersistenceError(BaseModel):
+    """Returned when Twilio accepted the SMS but the local DB write failed.
+    The FE should surface this distinct shape instead of treating it as a
+    normal Message row."""
+    success: bool = False
+    persistence_error: str
+    twilio_sid: Optional[str] = None
+    status: Optional[str] = None
+    to: str
+    body: str
 
 
 class StatusRequest(BaseModel):
@@ -600,7 +630,7 @@ def get_messages(
     return [msg_to_dict(m) for m in q.order_by(Message.created_at.desc()).limit(200).all()]
 
 
-@router.post("/sms")
+@router.post("/sms", response_model=Union[MessageRead, SMSPersistenceError])
 def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
     """Send an SMS via Twilio — attaches to a conversation automatically.
     If no client_id provided, tries to match the destination phone to an existing client.
@@ -672,7 +702,7 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
         }
 
 
-@router.post("/email")
+@router.post("/email", response_model=MessageRead)
 def send_email_message(data: EmailRequest, db: Session = Depends(get_db)):
     """Send an email via SMTP — attaches to a conversation automatically."""
     try:

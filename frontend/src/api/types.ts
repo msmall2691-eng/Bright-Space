@@ -2704,6 +2704,26 @@ export interface components {
              */
             include_dispatched: boolean;
         };
+        /** DispatchError */
+        DispatchError: {
+            /** Employee Id */
+            employee_id: string;
+            /** Error */
+            error: string;
+        };
+        /** DispatchResponse */
+        DispatchResponse: {
+            /** Job Id */
+            job_id: number;
+            /** Dispatched */
+            dispatched: boolean;
+            /** Dispatched Count */
+            dispatched_count: number;
+            /** Shift Ids */
+            shift_ids: string[];
+            /** Errors */
+            errors: components["schemas"]["DispatchError"][];
+        };
         /** EmailConfig */
         EmailConfig: {
             /** Smtp User */
@@ -3114,6 +3134,43 @@ export interface components {
             /** Role */
             role: string;
         };
+        /**
+         * MessageRead
+         * @description Mirrors the dict returned by ``msg_to_dict``.
+         */
+        MessageRead: {
+            /** Id */
+            id: number;
+            /** Conversation Id */
+            conversation_id?: number | null;
+            /** Client Id */
+            client_id?: number | null;
+            /** Channel */
+            channel: string;
+            /** Direction */
+            direction: string;
+            /** From Addr */
+            from_addr?: string | null;
+            /** To Addr */
+            to_addr?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /** Body */
+            body?: string | null;
+            /** Status */
+            status?: string | null;
+            /**
+             * Is Internal Note
+             * @default false
+             */
+            is_internal_note: boolean;
+            /** Author */
+            author?: string | null;
+            /** External Id */
+            external_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /** Client Id */
@@ -3413,6 +3470,29 @@ export interface components {
             /** Confirm */
             confirm: string;
         };
+        /**
+         * SMSPersistenceError
+         * @description Returned when Twilio accepted the SMS but the local DB write failed.
+         *     The FE should surface this distinct shape instead of treating it as a
+         *     normal Message row.
+         */
+        SMSPersistenceError: {
+            /**
+             * Success
+             * @default false
+             */
+            success: boolean;
+            /** Persistence Error */
+            persistence_error: string;
+            /** Twilio Sid */
+            twilio_sid?: string | null;
+            /** Status */
+            status?: string | null;
+            /** To */
+            to: string;
+            /** Body */
+            body: string;
+        };
         /** SMSRequest */
         SMSRequest: {
             /** To */
@@ -3548,6 +3628,20 @@ export interface components {
         TagsRequest: {
             /** Tags */
             tags: string[];
+        };
+        /** UndispatchError */
+        UndispatchError: {
+            /** Shift Id */
+            shift_id: string;
+            /** Error */
+            error: string;
+        };
+        /** UndispatchResponse */
+        UndispatchResponse: {
+            /** Job Id */
+            job_id: number;
+            /** Errors */
+            errors: components["schemas"]["UndispatchError"][];
         };
         /** UnlinkCalendarsRequest */
         UnlinkCalendarsRequest: {
@@ -5613,7 +5707,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DispatchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5644,7 +5738,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["UndispatchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6131,7 +6225,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MessageRead"] | components["schemas"]["SMSPersistenceError"];
                 };
             };
             /** @description Validation Error */
@@ -6164,7 +6258,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MessageRead"];
                 };
             };
             /** @description Validation Error */
