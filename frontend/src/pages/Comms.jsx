@@ -386,12 +386,13 @@ function ComposeModal({ onClose, onSent, clients }) {
     if (!to.trim() || !body.trim()) return
     setSending(true); setError(null)
     try {
+      let response
       if (channel === 'sms') {
-        await post('/api/comms/sms', { to, body })
+        response = await post('/api/comms/sms', { to, body })
       } else {
-        await post('/api/comms/email', { to, subject: subject || '(no subject)', body })
+        response = await post('/api/comms/email', { to, subject: subject || '(no subject)', body })
       }
-      onSent?.()
+      onSent?.(response)
       onClose()
     } catch (e) {
       setError(e.message || 'Failed to send')
@@ -708,6 +709,11 @@ export default function Comms() {
   const [showCompose, setShowCompose] = useState(false)
   const [showContactPanel, setShowContactPanel] = useState(true)
   const [mobileView, setMobileView] = useState('list') // list | thread
+  const [toast, setToast] = useState(null) // { ok: bool, msg: string }
+  const showToast = useCallback((msg, ok = true) => {
+    setToast({ ok, msg })
+    setTimeout(() => setToast(null), ok ? 2500 : 5000)
+  }, [])
 
   const threadRef = useRef(null)
   const replyRef = useRef(null)
@@ -1241,7 +1247,23 @@ export default function Comms() {
         <ComposeModal
           clients={clients}
           onClose={() => setShowCompose(false)}
-          onSent={() => { loadList(); loadSummary() }}
+          onSent={async (response) => {
+            // SMSPersistenceError: Twilio accepted but local DB write failed.
+            // Distinct envelope (success: false) — surface as a warning so the
+            // operator knows the recipient got the SMS but it's not in our log.
+            if (response && response.success === false) {
+              showToast('SMS sent, but failed to record in inbox (Twilio sid: ' + (response.twilio_sid || 'n/a') + ')', false)
+              await loadList(); await loadSummary()
+              return
+            }
+            await loadList(); await loadSummary()
+            // Auto-select the new thread so the user sees their message land.
+            if (response && response.conversation_id) {
+              setSelectedId(response.conversation_id)
+              setMobileView('thread')
+            }
+            showToast('Message sent')
+          }}
         />
       )}
 
@@ -1252,6 +1274,19 @@ export default function Comms() {
         'Summarize the selected conversation',
         'Help me write a thank-you message after a job',
       ]} />
+
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm ${
+          toast.ok
+            ? 'bg-white border-zinc-200 text-zinc-900'
+            : 'bg-amber-50 border-amber-200 text-amber-900'
+        }`}>
+          {toast.ok
+            ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            : <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
+          <span>{toast.msg}</span>
+        </div>
+      )}
     </div>
   )
 }
