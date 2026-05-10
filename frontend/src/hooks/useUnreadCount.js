@@ -19,8 +19,15 @@ export function useUnreadCount({ intervalMs = 30000, onIncrease } = {}) {
 
   useEffect(() => {
     let cancelled = false
+    let inFlight = false
 
     const tick = async () => {
+      // Serialize polls. Under latency spikes, overlapping requests can
+      // resolve out of order; an older response landing after a newer one
+      // would clobber lastSeen with a stale value and the next normal poll
+      // would be misclassified as an increase, firing a false chime.
+      if (inFlight) return
+      inFlight = true
       try {
         const data = await get('/api/comms/conversations/summary')
         if (cancelled) return
@@ -34,6 +41,8 @@ export function useUnreadCount({ intervalMs = 30000, onIncrease } = {}) {
         lastSeen.current = total
       } catch {
         // Silent — auth errors handled centrally; transient network blips shouldn't spam.
+      } finally {
+        inFlight = false
       }
     }
 
