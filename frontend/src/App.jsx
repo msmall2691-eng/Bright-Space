@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, Suspense, lazy } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import BottomNav from './components/BottomNav'
@@ -12,6 +12,7 @@ import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
 import { useUnreadCount } from './hooks/useUnreadCount'
 import { playChime } from './utils/chime'
+import { notify } from './utils/notifications'
 
 const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
 
@@ -19,7 +20,20 @@ const PageLoader = () => <div className="flex items-center justify-center min-h-
 // poll only runs when the user is actually inside the authenticated shell
 // (skipped on /login and public /quote/:token, /pay/:token routes).
 function SidebarWithUnread(props) {
-  const { unreadConversations } = useUnreadCount({ onIncrease: playChime })
+  const navigate = useNavigate()
+  const { unreadConversations } = useUnreadCount({
+    onIncrease: (newTotal, prevTotal) => {
+      playChime()
+      const delta = newTotal - prevTotal
+      // notify() is a no-op when the tab is already visible, so we avoid
+      // showing a desktop popup on top of the in-app chime + badge.
+      notify(delta === 1 ? 'New message' : `${delta} new messages`, {
+        body: 'Open BrightBase to view',
+        tag: 'brightbase-comms',
+        onClick: () => navigate('/comms'),
+      })
+    },
+  })
   useEffect(() => {
     document.title = unreadConversations > 0
       ? `(${unreadConversations}) BrightBase`

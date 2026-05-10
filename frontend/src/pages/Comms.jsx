@@ -31,6 +31,7 @@ import {
 import AgentWidget from '../components/AgentWidget'
 import GmailInbox from '../components/GmailInbox'
 import { get, post } from "../api"
+import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
 
 
 /* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -112,6 +113,27 @@ function dayLabel(iso) {
 }
 
 function isPhoneNumber(s) { return /^\+?\d[\d\s\-\(\)]+$/.test(s || '') }
+
+// Small bell button in the inbox header. Hides itself once permission has
+// been resolved (granted or denied) — there's no useful action after that
+// point. Browsers don't let JS un-grant; the user has to do it via site
+// settings, which they'll know how to find if they want to.
+function NotifPermissionButton() {
+  const [permission, setPermission] = useState(notificationsSupported() ? getNotifPermission() : 'denied')
+  if (!notificationsSupported() || permission !== 'default') return null
+  return (
+    <button
+      onClick={async () => {
+        const result = await requestNotifPermission()
+        setPermission(result)
+      }}
+      title="Enable desktop notifications for new messages"
+      className="w-8 h-8 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-600 flex items-center justify-center transition-colors"
+    >
+      <Bell className="w-4 h-4" />
+    </button>
+  )
+}
 
 function contactDisplay(conv) {
   const name = conv?.client?.name || conv?.external_contact || 'Unknown'
@@ -935,10 +957,13 @@ export default function Comms() {
         <div className="px-4 pt-4 pb-3">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-bold text-zinc-900 tracking-tight">Inbox</h1>
-            <button onClick={() => setShowCompose(true)}
-              className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-sm transition-all hover:shadow-md active:scale-95">
-              <Plus className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <NotifPermissionButton />
+              <button onClick={() => setShowCompose(true)}
+                className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-sm transition-all hover:shadow-md active:scale-95">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Search */}
