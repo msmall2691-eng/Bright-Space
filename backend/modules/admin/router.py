@@ -482,3 +482,96 @@ def merge_duplicate_threads(db: Session = Depends(get_db)):
         "phones_processed": phones_processed,
         **totals,
     }
+
+
+# ---------------------------------------------------------------------------
+# Schedule audit — diagnostics for stale property data showing up in jobs.
+#
+# Symptom that prompted these: a job titled "Turnover — Spin Drift" was
+# rendering at address "5 Moors Point Road" on the Schedule. Possible
+# causes: a duplicate Property row (e.g. an iCal feed auto-created a
+# second "Spin Drift" at a different address), or a Job whose property_id
+# was set to the wrong property. These endpoints surface both so an
+# operator can fix the data manually.
+# ---------------------------------------------------------------------------
+
+def _norm_name(s: Optional[str]) -> str:
+    """Loose normalization for property-name grouping: lower, trimmed,
+    collapsed whitespace, stripped of common punctuation. Two rows with
+    names 'Spin Drift' and 'Spin  Drift!' should group together."""
+    if not s:
+        return ""
+    import re as _re
+    s = s.lower().strip()
+    s = _re.sub(r"[^a-z0-9 ]", " ", s)
+    s = _re.sub(r"\s+", " ", s)
+    return s
+
+
+@router.get("/properties/duplicates", dependencies=[Depends(require_role("admin", "manager"))])
+def find_duplicate_properties(db: Session = Depends(get_db)):
+    """Group Property rows by normalized name and return any group with
+    more than one row. The most common source of duplicates is an iCal
+    feed import: the listing's address didn't string-match an existing
+    property, so a second Property got created."""
+    props = db.query(Property).all()
+    groups: dict[str, list[dict]] = {}
+    for p in props:
+        key = _norm_name(p.name)
+        if not key:
+            continue
+        groups.setdefault(key, []).append({
+            "id": p.id,
+            "name": p.name,
+            "address": p.address,
+            "property_type": getattr(p, "property_type", None),
+            "client_id": getattr(p, "client_id", None),
+            "created_at": p.created_at.isoformat() if getattr(p, "created_at", None) else None,
+        })
+    dups = [{"normalized_name": k, "count": len(v), "rows": v}
+            for k, v in groups.items() if len(v) > 1]
+    dups.sort(key=lambda g: g["count"], reverse=True)
+    return {"groups": dups, "total_duplicate_rows": sum(g["count"] for g in dups)}
+
+
+@router.get("/jobs/property-mismatches", dependencies=[Depends(require_role("admin", "manager"))])
+def find_job_property_mismatches(db: Session = Depends(get_db)):
+    """Find Jobs where the title doesn't appear to reference the linked
+    Property's name. Heuristic — looks for ANY normalized-name token of
+    the property name inside the normalized job title. Skips Jobs with
+    no property_id (no property to compare to). False positives are
+    fine since this is just a manual-review surface."""
+    jobs = (db.query(Job)
+              .filter(Job.property_id.isnot(None))
+              .order_by(Job.scheduled_date.desc().nullslast() if hasattr(Job.scheduled_date.desc(), "nullslast") else Job.scheduled_date.desc())
+              .limit(2000)
+              .all())
+    prop_by_id = {p.id: p for p in db.query(Property).filter(
+        Property.id.in_({j.property_id for j in jobs})
+    ).all()}
+
+    mismatches = []
+    for j in jobs:
+        prop = prop_by_id.get(j.property_id)
+        if not prop:
+            continue
+        title_norm = _norm_name(j.title)
+        prop_name_norm = _norm_name(prop.name)
+        if not prop_name_norm:
+            continue
+        # Any token of the prop name length >= 4 has to appear in the title.
+        tokens = [t for t in prop_name_norm.split(" ") if len(t) >= 4]
+        if not tokens:
+            continue
+        if any(t in title_norm for t in tokens):
+            continue
+        mismatches.append({
+            "job_id": j.id,
+            "job_title": j.title,
+            "job_address": j.address,
+            "scheduled_date": j.scheduled_date.isoformat() if j.scheduled_date else None,
+            "property_id": prop.id,
+            "property_name": prop.name,
+            "property_address": prop.address,
+        })
+    return {"mismatches": mismatches, "count": len(mismatches)}
