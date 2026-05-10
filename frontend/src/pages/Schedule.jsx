@@ -446,7 +446,7 @@ export default function Schedule() {
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-xs font-semibold text-neutral-700 flex-1 text-center">
-              {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+              {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
             <button onClick={nextWeek} className="p-1.5 hover:bg-neutral-100 rounded text-neutral-500">
               <ChevronRight className="w-4 h-4" />

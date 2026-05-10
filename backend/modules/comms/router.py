@@ -618,38 +618,64 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
         logger.error(f"[comms] Failed to send SMS: {e}")
         raise HTTPException(status_code=502, detail=f"SMS error: {e}")
 
-    client_id = data.client_id
-    if not client_id:
-        matched = _match_client_by_phone(db, to_normalized)
-        if matched:
-            client_id = matched.id
+    # Twilio accepted the message — from here on, persistence failures must
+    # NOT make the caller think the SMS wasn't sent. Roll back the DB session
+    # on error and return a synthesized success payload instead of a 500.
+    try:
+        client_id = data.client_id
+        if not client_id:
+            matched = _match_client_by_phone(db, to_normalized)
+            if matched:
+                client_id = matched.id
 
-    conv = find_or_create_conversation(
-        db, channel="sms",
-        client_id=client_id,
-        external_contact=to_normalized,
-    )
-    # Ensure the conv is linked if we newly matched a client
-    if client_id and not conv.client_id:
-        conv.client_id = client_id
+        conv = find_or_create_conversation(
+            db, channel="sms",
+            client_id=client_id,
+            external_contact=to_normalized,
+        )
+        if client_id and not conv.client_id:
+            conv.client_id = client_id
 
-    msg = Message(
-        client_id=client_id,
-        conversation_id=conv.id,
-        channel="sms",
-        direction="outbound",
-        from_addr=_normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
-        to_addr=to_normalized,
-        body=data.body,
-        status=result.get("status", "sent"),
-        external_id=result.get("sid"),
-    )
-    db.add(msg)
-    db.flush()
-    _apply_outbound(conv, msg)
-    db.commit()
-    db.refresh(msg)
-    return msg_to_dict(msg)
+        msg = Message(
+            client_id=client_id,
+            conversation_id=conv.id,
+            channel="sms",
+            direction="outbound",
+            from_addr=_normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
+            to_addr=to_normalized,
+            body=data.body,
+            status=result.get("status", "sent"),
+            external_id=result.get("sid"),
+        )
+        db.add(msg)
+        db.flush()
+        _apply_outbound(conv, msg)
+        db.commit()
+        db.refresh(msg)
+        return msg_to_dict(msg)
+    except Exception as e:
+        logger.exception(f"[comms] SMS sent (sid={result.get('sid')}) but persistence failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {
+            "id": None,
+            "conversation_id": None,
+            "client_id": data.client_id,
+            "channel": "sms",
+            "direction": "outbound",
+            "from_addr": _normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
+            "to_addr": to_normalized,
+            "subject": None,
+            "body": data.body,
+            "status": result.get("status", "sent"),
+            "is_internal_note": False,
+            "author": None,
+            "external_id": result.get("sid"),
+            "created_at": datetime.utcnow().isoformat(),
+            "persistence_error": str(e),
+        }
 
 
 @router.post("/email")
