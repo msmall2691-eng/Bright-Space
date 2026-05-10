@@ -439,6 +439,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/sync-gcal-cancellations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Gcal Cancellations Endpoint
+         * @description Manual trigger for the GCal-cancellation reverse linkage check.
+         *     Useful for testing without waiting for the scheduler tick.
+         */
+        post: operations["sync_gcal_cancellations_endpoint_api_jobs_sync_gcal_cancellations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2412,6 +2433,15 @@ export interface components {
             /** Address */
             address: string;
         };
+        /** AddressValidateResponse */
+        AddressValidateResponse: {
+            /** Eligible */
+            eligible: boolean;
+            /** Distancemiles */
+            distanceMiles?: number | null;
+            /** Message */
+            message: string;
+        };
         /** AssignRequest */
         AssignRequest: {
             /** Assignee */
@@ -2430,12 +2460,18 @@ export interface components {
         };
         /** Body_import_clients_api_admin_import_clients_post */
         Body_import_clients_api_admin_import_clients_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_import_clients_xlsx_api_clients_import_xlsx_post */
         Body_import_clients_xlsx_api_clients_import_xlsx_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /**
@@ -2457,6 +2493,17 @@ export interface components {
             checkout_date?: string | null;
             /** Source */
             source: string;
+        };
+        /** BookingResponse */
+        BookingResponse: {
+            /** Success */
+            success: boolean;
+            /** Bookingid */
+            bookingId: number;
+            /** Requesteddate */
+            requestedDate: string;
+            /** Message */
+            message: string;
         };
         /**
          * BookingSubmit
@@ -2598,6 +2645,40 @@ export interface components {
             is_primary: boolean | null;
             /** Phone Type */
             phone_type?: string | null;
+        };
+        /** ContactPhoneCreateResponse */
+        ContactPhoneCreateResponse: {
+            /** Id */
+            id: number;
+            /** Phone */
+            phone: string;
+            /** Is Primary */
+            is_primary: boolean;
+            /** Phone Type */
+            phone_type?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Linked */
+            linked: {
+                [key: string]: unknown;
+            };
+        };
+        /** ContactPhoneRead */
+        ContactPhoneRead: {
+            /** Id */
+            id: number;
+            /** Phone */
+            phone: string;
+            /** Is Primary */
+            is_primary: boolean;
+            /** Phone Type */
+            phone_type?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Created At */
+            created_at?: string | null;
         };
         /** ContactPhoneUpdate */
         ContactPhoneUpdate: {
@@ -3424,8 +3505,11 @@ export interface components {
         };
         /** SendInvoiceRequest */
         SendInvoiceRequest: {
-            /** Channel */
-            channel: string;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "email" | "sms" | "both";
             /** Email */
             email?: string | null;
             /** Phone */
@@ -3501,10 +3585,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /**
          * VisitCreate
@@ -4018,7 +4098,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ContactPhoneRead"][];
                 };
             };
             /** @description Validation Error */
@@ -4053,7 +4133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ContactPhoneCreateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4150,7 +4230,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ContactPhoneRead"];
                 };
             };
             /** @description Validation Error */
@@ -4630,6 +4710,26 @@ export interface operations {
         };
     };
     sync_from_gcal_api_jobs_sync_gcal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    sync_gcal_cancellations_endpoint_api_jobs_sync_gcal_cancellations_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -7249,7 +7349,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BookingResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7282,7 +7382,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AddressValidateResponse"];
                 };
             };
             /** @description Validation Error */
