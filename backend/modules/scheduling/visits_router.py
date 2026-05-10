@@ -20,7 +20,7 @@ class VisitCreate(BaseModel):
     scheduled_date: date
     start_time: time
     end_time: time
-    status: Literal['scheduled','dispatched','en_route','in_progress','completed','canceled','no_show'] = 'scheduled'
+    status: Literal['scheduled','dispatched','en_route','in_progress','completed','cancelled','no_show'] = 'scheduled'
     cleaner_ids: List[int] = []
     gcal_event_id: Optional[str] = None
     ical_source: Optional[str] = None
@@ -33,7 +33,7 @@ class VisitUpdate(BaseModel):
     scheduled_date: Optional[date] = None
     start_time: Optional[time] = None
     end_time: Optional[time] = None
-    status: Optional[Literal['scheduled','dispatched','en_route','in_progress','completed','canceled','no_show']] = None
+    status: Optional[Literal['scheduled','dispatched','en_route','in_progress','completed','cancelled','no_show']] = None
     cleaner_ids: Optional[List[int]] = None
     gcal_event_id: Optional[str] = None
     ical_source: Optional[str] = None

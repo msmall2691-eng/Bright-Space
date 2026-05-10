@@ -59,7 +59,11 @@ export async function api(url, options = {}) {
     if (raw) {
       try {
         const body = JSON.parse(raw)
-        detail = body.detail || body.message || body.error || JSON.stringify(body)
+        const picked = body.detail ?? body.message ?? body.error ?? body
+        // FastAPI 422 returns detail as an array of {loc, msg, type} objects;
+        // coercing that to Error() yields "[object Object]" — JSON-stringify
+        // anything that isn't already a string so the user sees the real cause.
+        detail = typeof picked === 'string' ? picked : JSON.stringify(picked)
       } catch {
         // Not JSON — surface the raw text (trimmed) so we get a real reason
         const trimmed = raw.trim().slice(0, 300)
@@ -114,7 +118,8 @@ export async function upload(url, formData) {
     if (raw) {
       try {
         const body = JSON.parse(raw);
-        detail = body.detail || body.message || body.error || JSON.stringify(body);
+        const picked = body.detail ?? body.message ?? body.error ?? body;
+        detail = typeof picked === 'string' ? picked : JSON.stringify(picked);
       } catch {
         const trimmed = raw.trim().slice(0, 300);
         if (trimmed) detail = `HTTP ${res.status}: ${trimmed}`;

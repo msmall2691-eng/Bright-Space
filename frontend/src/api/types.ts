@@ -3707,7 +3707,7 @@ export interface components {
              * @default scheduled
              * @enum {string}
              */
-            status: "scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "canceled" | "no_show";
+            status: "scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "cancelled" | "no_show";
             /**
              * Cleaner Ids
              * @default []
@@ -3791,7 +3791,7 @@ export interface components {
             /** End Time */
             end_time?: string | null;
             /** Status */
-            status?: ("scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "canceled" | "no_show") | null;
+            status?: ("scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "cancelled" | "no_show") | null;
             /** Cleaner Ids */
             cleaner_ids?: number[] | null;
             /** Gcal Event Id */
