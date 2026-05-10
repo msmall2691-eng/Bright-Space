@@ -92,7 +92,7 @@ export default function Dispatch() {
         }`}>
           {result.ok ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
           <div>
-            {result.ok ? `Dispatched ${result.dispatched} shift(s) for job #${result.jobId}` : `Error: ${result.detail || 'Dispatch failed'}`}
+            {result.ok ? `Dispatched ${result.dispatched_count} shift(s) for job #${result.jobId}` : `Error: ${result.detail || 'Dispatch failed'}`}
             {result.errors?.length > 0 && <div className="mt-1 text-xs opacity-75">{result.errors.map(e => e.error).join(', ')}</div>}
           </div>
         </div>

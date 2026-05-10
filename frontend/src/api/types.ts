@@ -439,6 +439,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/sync-gcal-cancellations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Gcal Cancellations Endpoint
+         * @description Manual trigger for the GCal-cancellation reverse linkage check.
+         *     Useful for testing without waiting for the scheduler tick.
+         */
+        post: operations["sync_gcal_cancellations_endpoint_api_jobs_sync_gcal_cancellations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2412,6 +2433,15 @@ export interface components {
             /** Address */
             address: string;
         };
+        /** AddressValidateResponse */
+        AddressValidateResponse: {
+            /** Eligible */
+            eligible: boolean;
+            /** Distancemiles */
+            distanceMiles?: number | null;
+            /** Message */
+            message: string;
+        };
         /** AssignRequest */
         AssignRequest: {
             /** Assignee */
@@ -2430,12 +2460,18 @@ export interface components {
         };
         /** Body_import_clients_api_admin_import_clients_post */
         Body_import_clients_api_admin_import_clients_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_import_clients_xlsx_api_clients_import_xlsx_post */
         Body_import_clients_xlsx_api_clients_import_xlsx_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /**
@@ -2457,6 +2493,17 @@ export interface components {
             checkout_date?: string | null;
             /** Source */
             source: string;
+        };
+        /** BookingResponse */
+        BookingResponse: {
+            /** Success */
+            success: boolean;
+            /** Bookingid */
+            bookingId: number;
+            /** Requesteddate */
+            requestedDate: string;
+            /** Message */
+            message: string;
         };
         /**
          * BookingSubmit
@@ -2599,6 +2646,40 @@ export interface components {
             /** Phone Type */
             phone_type?: string | null;
         };
+        /** ContactPhoneCreateResponse */
+        ContactPhoneCreateResponse: {
+            /** Id */
+            id: number;
+            /** Phone */
+            phone: string;
+            /** Is Primary */
+            is_primary: boolean;
+            /** Phone Type */
+            phone_type?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Linked */
+            linked: {
+                [key: string]: unknown;
+            };
+        };
+        /** ContactPhoneRead */
+        ContactPhoneRead: {
+            /** Id */
+            id: number;
+            /** Phone */
+            phone: string;
+            /** Is Primary */
+            is_primary: boolean;
+            /** Phone Type */
+            phone_type?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** ContactPhoneUpdate */
         ContactPhoneUpdate: {
             /** Phone */
@@ -2622,6 +2703,26 @@ export interface components {
              * @default false
              */
             include_dispatched: boolean;
+        };
+        /** DispatchError */
+        DispatchError: {
+            /** Employee Id */
+            employee_id: string;
+            /** Error */
+            error: string;
+        };
+        /** DispatchResponse */
+        DispatchResponse: {
+            /** Job Id */
+            job_id: number;
+            /** Dispatched */
+            dispatched: boolean;
+            /** Dispatched Count */
+            dispatched_count: number;
+            /** Shift Ids */
+            shift_ids: string[];
+            /** Errors */
+            errors: components["schemas"]["DispatchError"][];
         };
         /** EmailConfig */
         EmailConfig: {
@@ -3033,6 +3134,43 @@ export interface components {
             /** Role */
             role: string;
         };
+        /**
+         * MessageRead
+         * @description Mirrors the dict returned by ``msg_to_dict``.
+         */
+        MessageRead: {
+            /** Id */
+            id: number;
+            /** Conversation Id */
+            conversation_id?: number | null;
+            /** Client Id */
+            client_id?: number | null;
+            /** Channel */
+            channel: string;
+            /** Direction */
+            direction: string;
+            /** From Addr */
+            from_addr?: string | null;
+            /** To Addr */
+            to_addr?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /** Body */
+            body?: string | null;
+            /** Status */
+            status?: string | null;
+            /**
+             * Is Internal Note
+             * @default false
+             */
+            is_internal_note: boolean;
+            /** Author */
+            author?: string | null;
+            /** External Id */
+            external_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /** Client Id */
@@ -3332,6 +3470,29 @@ export interface components {
             /** Confirm */
             confirm: string;
         };
+        /**
+         * SMSPersistenceError
+         * @description Returned when Twilio accepted the SMS but the local DB write failed.
+         *     The FE should surface this distinct shape instead of treating it as a
+         *     normal Message row.
+         */
+        SMSPersistenceError: {
+            /**
+             * Success
+             * @default false
+             */
+            success: boolean;
+            /** Persistence Error */
+            persistence_error: string;
+            /** Twilio Sid */
+            twilio_sid?: string | null;
+            /** Status */
+            status?: string | null;
+            /** To */
+            to: string;
+            /** Body */
+            body: string;
+        };
         /** SMSRequest */
         SMSRequest: {
             /** To */
@@ -3424,8 +3585,11 @@ export interface components {
         };
         /** SendInvoiceRequest */
         SendInvoiceRequest: {
-            /** Channel */
-            channel: string;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "email" | "sms" | "both";
             /** Email */
             email?: string | null;
             /** Phone */
@@ -3465,6 +3629,20 @@ export interface components {
             /** Tags */
             tags: string[];
         };
+        /** UndispatchError */
+        UndispatchError: {
+            /** Shift Id */
+            shift_id: string;
+            /** Error */
+            error: string;
+        };
+        /** UndispatchResponse */
+        UndispatchResponse: {
+            /** Job Id */
+            job_id: number;
+            /** Errors */
+            errors: components["schemas"]["UndispatchError"][];
+        };
         /** UnlinkCalendarsRequest */
         UnlinkCalendarsRequest: {
             /** Confirm */
@@ -3501,10 +3679,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /**
          * VisitCreate
@@ -3533,7 +3707,7 @@ export interface components {
              * @default scheduled
              * @enum {string}
              */
-            status: "scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "canceled" | "no_show";
+            status: "scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "cancelled" | "no_show";
             /**
              * Cleaner Ids
              * @default []
@@ -3617,7 +3791,7 @@ export interface components {
             /** End Time */
             end_time?: string | null;
             /** Status */
-            status?: ("scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "canceled" | "no_show") | null;
+            status?: ("scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "cancelled" | "no_show") | null;
             /** Cleaner Ids */
             cleaner_ids?: number[] | null;
             /** Gcal Event Id */
@@ -4018,7 +4192,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ContactPhoneRead"][];
                 };
             };
             /** @description Validation Error */
@@ -4053,7 +4227,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ContactPhoneCreateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4150,7 +4324,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ContactPhoneRead"];
                 };
             };
             /** @description Validation Error */
@@ -4630,6 +4804,26 @@ export interface operations {
         };
     };
     sync_from_gcal_api_jobs_sync_gcal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    sync_gcal_cancellations_endpoint_api_jobs_sync_gcal_cancellations_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5513,7 +5707,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DispatchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5544,7 +5738,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["UndispatchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6031,7 +6225,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MessageRead"] | components["schemas"]["SMSPersistenceError"];
                 };
             };
             /** @description Validation Error */
@@ -6064,7 +6258,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MessageRead"];
                 };
             };
             /** @description Validation Error */
@@ -7249,7 +7443,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BookingResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7282,7 +7476,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AddressValidateResponse"];
                 };
             };
             /** @description Validation Error */

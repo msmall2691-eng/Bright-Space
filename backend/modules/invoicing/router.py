@@ -2,7 +2,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, date
 
 from database.db import get_db
@@ -154,7 +154,7 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
 
 class SendInvoiceRequest(BaseModel):
-    channel: str                        # "email" | "sms" | "both"
+    channel: Literal["email", "sms", "both"]
     email: Optional[str] = None
     phone: Optional[str] = None
     custom_message: Optional[str] = None

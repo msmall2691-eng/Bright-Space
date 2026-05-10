@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session, joinedload, selectinload
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, date
 import io
 import re
@@ -293,6 +293,30 @@ class ContactPhoneUpdate(BaseModel):
     phone: Optional[str] = None
     is_primary: Optional[bool] = None
     phone_type: Optional[str] = None
+
+
+class ContactPhoneRead(BaseModel):
+    id: int
+    phone: str
+    is_primary: bool
+    phone_type: Optional[str] = None
+    source: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class ContactPhoneCreateResponse(ContactPhoneRead):
+    linked: dict
+
+
+def _phone_to_dict(phone: ContactPhone) -> dict:
+    return {
+        "id": phone.id,
+        "phone": phone.phone,
+        "is_primary": phone.is_primary,
+        "phone_type": phone.phone_type,
+        "source": phone.source,
+        "created_at": phone.created_at.isoformat() if phone.created_at else None,
+    }
 
 
 class ContactEmailCreate(BaseModel):
@@ -637,26 +661,16 @@ def delete_client(client_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-@router.get("/{client_id}/phones")
+@router.get("/{client_id}/phones", response_model=List[ContactPhoneRead])
 def get_client_phones(client_id: int, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     phones = db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all()
-    return [
-        {
-            "id": p.id,
-            "phone": p.phone,
-            "is_primary": p.is_primary,
-            "phone_type": p.phone_type,
-            "source": p.source,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-        }
-        for p in phones
-    ]
+    return [_phone_to_dict(p) for p in phones]
 
 
-@router.post("/{client_id}/phones")
+@router.post("/{client_id}/phones", response_model=ContactPhoneCreateResponse)
 def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -688,15 +702,7 @@ def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Dep
 
     db.commit()
     db.refresh(phone)
-    return {
-        "id": phone.id,
-        "phone": phone.phone,
-        "is_primary": phone.is_primary,
-        "phone_type": phone.phone_type,
-        "source": phone.source,
-        "created_at": phone.created_at.isoformat() if phone.created_at else None,
-        "linked": link_report,
-    }
+    return {**_phone_to_dict(phone), "linked": link_report}
 
 
 @router.post("/{client_id}/relink-conversations")
@@ -723,7 +729,7 @@ def relink_conversations(client_id: int, db: Session = Depends(get_db)):
     return combined_report
 
 
-@router.patch("/{client_id}/phones/{phone_id}")
+@router.patch("/{client_id}/phones/{phone_id}", response_model=ContactPhoneRead)
 def update_client_phone(client_id: int, phone_id: int, data: ContactPhoneUpdate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -759,14 +765,7 @@ def update_client_phone(client_id: int, phone_id: int, data: ContactPhoneUpdate,
 
     db.commit()
     db.refresh(phone)
-    return {
-        "id": phone.id,
-        "phone": phone.phone,
-        "is_primary": phone.is_primary,
-        "phone_type": phone.phone_type,
-        "source": phone.source,
-        "created_at": phone.created_at.isoformat() if phone.created_at else None,
-    }
+    return _phone_to_dict(phone)
 
 
 @router.delete("/{client_id}/phones/{phone_id}", status_code=204)

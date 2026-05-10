@@ -10,6 +10,29 @@ from integrations.connecteam import create_shift, delete_shift, get_employees
 router = APIRouter()
 
 
+class DispatchError(BaseModel):
+    employee_id: str
+    error: str
+
+
+class DispatchResponse(BaseModel):
+    job_id: int
+    dispatched: bool
+    dispatched_count: int
+    shift_ids: List[str]
+    errors: List[DispatchError]
+
+
+class UndispatchError(BaseModel):
+    shift_id: str
+    error: str
+
+
+class UndispatchResponse(BaseModel):
+    job_id: int
+    errors: List[UndispatchError]
+
+
 @router.get("/employees")
 async def list_employees():
     """Fetch all employees from Connecteam."""
@@ -19,7 +42,7 @@ async def list_employees():
         raise HTTPException(status_code=502, detail=f"Connecteam error: {str(e)}")
 
 
-@router.post("/jobs/{job_id}/dispatch")
+@router.post("/jobs/{job_id}/dispatch", response_model=DispatchResponse)
 async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
     """Push a job as shifts to Connecteam for all assigned cleaners."""
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -56,13 +79,14 @@ async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
 
     return {
         "job_id": job_id,
-        "dispatched": len(shift_ids),
+        "dispatched": bool(shift_ids),
+        "dispatched_count": len(shift_ids),
         "shift_ids": shift_ids,
         "errors": errors,
     }
 
 
-@router.delete("/jobs/{job_id}/dispatch")
+@router.delete("/jobs/{job_id}/dispatch", response_model=UndispatchResponse)
 async def undispatch_job(job_id: int, db: Session = Depends(get_db)):
     """Remove Connecteam shifts for a job."""
     job = db.query(Job).filter(Job.id == job_id).first()

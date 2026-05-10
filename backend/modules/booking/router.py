@@ -57,7 +57,20 @@ class AddressValidate(BaseModel):
     address: str
 
 
-@router.post("/submit", status_code=201)
+class BookingResponse(BaseModel):
+    success: bool
+    bookingId: int
+    requestedDate: str
+    message: str
+
+
+class AddressValidateResponse(BaseModel):
+    eligible: bool
+    distanceMiles: Optional[int] = None
+    message: str
+
+
+@router.post("/submit", status_code=201, response_model=BookingResponse)
 def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
     """
     Public endpoint — called from maineclean.co booking/quote request form.
@@ -120,15 +133,15 @@ def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(intake)
 
-    return {
-        "success": True,
-        "bookingId": intake.id,
-        "requestedDate": data.requestedDate,
-        "message": "Your booking request has been submitted! We'll review and confirm within 1 business day.",
-    }
+    return BookingResponse(
+        success=True,
+        bookingId=intake.id,
+        requestedDate=data.requestedDate,
+        message="Your booking request has been submitted! We'll review and confirm within 1 business day.",
+    )
 
 
-@router.post("/validate-address")
+@router.post("/validate-address", response_model=AddressValidateResponse)
 def validate_address(data: AddressValidate):
     """
     Validates whether an address is within the Maine Cleaning Co. service area.
