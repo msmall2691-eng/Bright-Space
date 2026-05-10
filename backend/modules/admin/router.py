@@ -432,3 +432,53 @@ def hard_delete_visits(payload: BulkIdsRequest, db: Session = Depends(get_db)):
     n = db.query(Visit).filter(Visit.id.in_(payload.ids)).delete(synchronize_session=False)
     db.commit()
     return {"deleted": n}
+
+
+@router.post("/comms/merge-duplicate-threads", dependencies=[Depends(require_role("admin"))])
+def merge_duplicate_threads(db: Session = Depends(get_db)):
+    """Phase 5 — one-time backfill. Iterate every client's phone numbers
+    (primary + ContactPhone rows) and run the existing per-phone merge
+    helper to:
+      - absorb SMS-auto-created placeholder clients into the real client
+      - link orphan Conversations / Messages by phone-tail match
+      - collapse multiple SMS conversations for the same client into one
+
+    Run this after deploying so historical duplicates from before the
+    auto-merge-on-webhook hook get cleaned up. Idempotent.
+    """
+    from modules.clients.router import _link_and_merge_conversations
+
+    totals = {"linked_conversations": 0, "linked_messages": 0,
+              "merged_conversations": 0, "absorbed_clients": 0}
+    clients_processed = 0
+    phones_processed = 0
+
+    for client in db.query(Client).all():
+        phones = set()
+        if client.phone:
+            phones.add(client.phone)
+        for cp in db.query(ContactPhone).filter(ContactPhone.client_id == client.id).all():
+            if cp.phone:
+                phones.add(cp.phone)
+
+        for phone in phones:
+            try:
+                report = _link_and_merge_conversations(db, client.id, phone)
+                for k, v in report.items():
+                    totals[k] = totals.get(k, 0) + v
+                phones_processed += 1
+            except Exception as e:
+                log.warning(f"merge-duplicate-threads: client #{client.id} phone {phone!r}: {e}")
+
+        clients_processed += 1
+
+    db.commit()
+    log.info(
+        "merge-duplicate-threads: %d clients, %d phones, totals=%s",
+        clients_processed, phones_processed, totals,
+    )
+    return {
+        "clients_processed": clients_processed,
+        "phones_processed": phones_processed,
+        **totals,
+    }

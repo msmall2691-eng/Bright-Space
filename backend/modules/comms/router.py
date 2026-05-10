@@ -792,6 +792,19 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
             )
             db.add(new_contact)
             logger.info(f"[twilio] Added contact phone {from_number_normalized} for client #{client.id}")
+            # Phase 5 — thread per client. The first inbound from a new
+            # number that turns out to belong to an existing client may
+            # have created a placeholder Client + Conversation while the
+            # match was still uncertain. Now that we've linked the phone,
+            # absorb that placeholder + merge any duplicate threads so
+            # the operator sees one inbox row per client, not per number.
+            from modules.clients.router import _link_and_merge_conversations
+            try:
+                report = _link_and_merge_conversations(db, client.id, from_number_normalized)
+                if any(report.values()):
+                    logger.info(f"[twilio] Auto-merged threads for client #{client.id}: {report}")
+            except Exception as e:
+                logger.warning(f"[twilio] Auto-merge failed (non-fatal): {e}")
     else:
         logger.info(f"[twilio] New contact from {from_number_normalized}")
         client = Client(
