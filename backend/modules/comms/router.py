@@ -659,22 +659,16 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
             db.rollback()
         except Exception:
             pass
+        # Twilio accepted the message but we failed to record it locally.
+        # Surface a distinct envelope so the FE can flag the partial-success
+        # state instead of treating it as a normal Message row.
         return {
-            "id": None,
-            "conversation_id": None,
-            "client_id": data.client_id,
-            "channel": "sms",
-            "direction": "outbound",
-            "from_addr": _normalize_contact(os.getenv("TWILIO_PHONE_NUMBER", "")),
-            "to_addr": to_normalized,
-            "subject": None,
-            "body": data.body,
-            "status": result.get("status", "sent"),
-            "is_internal_note": False,
-            "author": None,
-            "external_id": result.get("sid"),
-            "created_at": datetime.utcnow().isoformat(),
+            "success": False,
             "persistence_error": str(e),
+            "twilio_sid": result.get("sid"),
+            "status": result.get("status", "sent"),
+            "to": to_normalized,
+            "body": data.body,
         }
 
 

@@ -56,7 +56,8 @@ async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
 
     return {
         "job_id": job_id,
-        "dispatched": len(shift_ids),
+        "dispatched": bool(shift_ids),
+        "dispatched_count": len(shift_ids),
         "shift_ids": shift_ids,
         "errors": errors,
     }
