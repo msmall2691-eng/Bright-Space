@@ -55,11 +55,16 @@ export async function api(url, options = {}) {
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      detail = body.detail || JSON.stringify(body)
-    } catch {
-      // Response wasn't JSON
+    const raw = await res.text().catch(() => '')
+    if (raw) {
+      try {
+        const body = JSON.parse(raw)
+        detail = body.detail || body.message || body.error || JSON.stringify(body)
+      } catch {
+        // Not JSON — surface the raw text (trimmed) so we get a real reason
+        const trimmed = raw.trim().slice(0, 300)
+        if (trimmed) detail = `HTTP ${res.status}: ${trimmed}`
+      }
     }
     throw new Error(detail)
   }
@@ -105,10 +110,16 @@ export async function upload(url, formData) {
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
-    } catch {}
+    const raw = await res.text().catch(() => '');
+    if (raw) {
+      try {
+        const body = JSON.parse(raw);
+        detail = body.detail || body.message || body.error || JSON.stringify(body);
+      } catch {
+        const trimmed = raw.trim().slice(0, 300);
+        if (trimmed) detail = `HTTP ${res.status}: ${trimmed}`;
+      }
+    }
     throw new Error(detail);
   }
 

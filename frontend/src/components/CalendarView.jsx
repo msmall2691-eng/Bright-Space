@@ -519,7 +519,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
             const isCheckout = icalEvents.some(e => e.checkout_date === date)
             const isCheckin  = icalEvents.some(e => e.checkin_date  === date)
             const isDropTarget = dropTarget === date
-            const maxPills = isMobile ? 1 : 3
+            const maxPills = isMobile ? 2 : 3
 
             return (
               <div
@@ -610,7 +610,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                           e.stopPropagation()
                           onJobClick?.(j)
                         }}
-                        className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${
+                        className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-0.5 sm:px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${
                           isCancelled ? 'bg-zinc-100 text-zinc-400 border-zinc-200 line-through' :
                           isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
                           `${tc.pill} ${tc.pillHover}`
@@ -630,7 +630,13 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                     )
                   })}
                   {dayJobs.length > maxPills && (
-                    <div className="text-[9px] sm:text-[10px] text-gray-400 px-0.5 sm:px-1">+{dayJobs.length - maxPills} more</div>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); setSelected(date); onDayClick?.(date) }}
+                      className="text-[9px] sm:text-[10px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
+                    >
+                      +{dayJobs.length - maxPills} more
+                    </button>
                   )}
                 </div>
               </div>
