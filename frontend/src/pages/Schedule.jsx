@@ -21,13 +21,13 @@ const PROPERTY_TYPE_CONFIG = {
 }
 
 const VISIT_STATUS_CONFIG = {
-  scheduled: { label: 'Scheduled', dot: 'bg-blue-500', badge: 'info' },
-  dispatched: { label: 'Dispatched', dot: 'bg-green-500', badge: 'success' },
-  en_route: { label: 'En Route', dot: 'bg-cyan-500', badge: 'info' },
-  in_progress: { label: 'In Progress', dot: 'bg-amber-500', badge: 'warning' },
-  completed: { label: 'Completed', dot: 'bg-green-600', badge: 'success' },
-  no_show: { label: 'No Show', dot: 'bg-red-500', badge: 'danger' },
-  cancelled: { label: 'Cancelled', dot: 'bg-neutral-500', badge: 'danger' },
+  scheduled:   { label: 'Scheduled',   dot: 'bg-blue-500',    badge: 'info',    pillMobile: 'bg-blue-50 text-blue-700' },
+  dispatched:  { label: 'Dispatched',  dot: 'bg-green-500',   badge: 'success', pillMobile: 'bg-green-50 text-green-700' },
+  en_route:    { label: 'En Route',    dot: 'bg-cyan-500',    badge: 'info',    pillMobile: 'bg-cyan-50 text-cyan-700' },
+  in_progress: { label: 'In Progress', dot: 'bg-amber-500',   badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700' },
+  completed:   { label: 'Completed',   dot: 'bg-green-600',   badge: 'success', pillMobile: 'bg-emerald-50 text-emerald-700' },
+  no_show:     { label: 'No Show',     dot: 'bg-red-500',     badge: 'danger',  pillMobile: 'bg-red-50 text-red-700' },
+  cancelled:   { label: 'Cancelled',   dot: 'bg-neutral-500', badge: 'danger',  pillMobile: 'bg-zinc-100 text-zinc-600' },
 }
 
 const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect }) => {
@@ -100,11 +100,16 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
         )}
       </div>
 
-      {/* Mobile-only status dot */}
-      <span className={`sm:hidden w-2 h-2 rounded-full shrink-0 ${statusConfig.dot}`} />
+      {/* Mobile-only status pill — replaces the bare dot so the status
+          is actually legible at a glance. */}
+      <span className={`sm:hidden inline-flex items-center text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${statusConfig.pillMobile || 'bg-zinc-100 text-zinc-700'}`}>
+        {statusConfig.label}
+      </span>
 
-      {/* Action buttons — visible on hover (desktop), always on mobile */}
-      <div className="flex gap-0.5 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+      {/* Action buttons — desktop only. Mobile relies on tap-row → detail
+          panel, which has its own edit + delete buttons; doubling them up
+          here was eating title space and made delete easy to mis-tap. */}
+      <div className="hidden sm:flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(visit, job, property) }}
           className="p-1.5 rounded hover:bg-blue-100 text-neutral-400 hover:text-blue-600"
