@@ -25,7 +25,7 @@ const nav = [
   { to: '/settings',    icon: Settings,        label: 'Settings' },
 ]
 
-export default function Sidebar({ open, onClose, user }) {
+export default function Sidebar({ open, onClose, user, badges = {} }) {
   const location = useLocation()
   const [showUserMenu, setShowUserMenu] = useState(false)
 
@@ -89,13 +89,23 @@ export default function Sidebar({ open, onClose, user }) {
                   }`
                 }
               >
-                {({ isActive }) => (
-                  <>
-                    <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-neutral-400 group-hover:text-blue-600'}`} />
-                    <span className="truncate flex-1">{item.label}</span>
-                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white"></div>}
-                  </>
-                )}
+                {({ isActive }) => {
+                  const badge = badges[item.to]
+                  return (
+                    <>
+                      <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-neutral-400 group-hover:text-blue-600'}`} />
+                      <span className="truncate flex-1">{item.label}</span>
+                      {badge > 0 && (
+                        <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold ${
+                          isActive ? 'bg-white text-blue-700' : 'bg-red-500 text-white'
+                        }`}>
+                          {badge > 99 ? '99+' : badge}
+                        </span>
+                      )}
+                      {isActive && !badge && <div className="w-1.5 h-1.5 rounded-full bg-white"></div>}
+                    </>
+                  )
+                }}
               </NavLink>
             )
           )}
