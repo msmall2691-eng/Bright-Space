@@ -173,14 +173,16 @@ export default function Dashboard() {
     .reduce((s, q) => s + (q.total || 0), 0), [quotes])
   const overdueInvoiceCount = invoices.filter(i => i.status === 'overdue').length
 
-  /* ── Unified attention list, deduped on conversation id so the same
+  /* ── Unified attention list. Each category is capped before pushing
+        so a flood of overdue replies can't crowd out late visits or
+        past-due invoices. Deduped on conversation id so the same
         thread can't appear as both overdue AND unassigned. ── */
   const attention = useMemo(() => {
     const items = []
     const seenConvs = new Set()
     const nowHHMM = new Date().toTimeString().slice(0, 5)
 
-    overdueConvs.forEach(c => {
+    overdueConvs.slice(0, 3).forEach(c => {
       if (seenConvs.has(c.id)) return
       seenConvs.add(c.id)
       items.push({
@@ -195,6 +197,7 @@ export default function Dashboard() {
 
     todayVisits
       .filter(v => v.status === 'scheduled' && (v.start_time || '').slice(0, 5) < nowHHMM)
+      .slice(0, 3)
       .forEach(v => items.push({
         key: `late-${v.id}`,
         tone: 'amber',
@@ -204,7 +207,7 @@ export default function Dashboard() {
         onClick: () => navigate('/schedule'),
       }))
 
-    unassignedConvs.forEach(c => {
+    unassignedConvs.slice(0, 2).forEach(c => {
       if (seenConvs.has(c.id)) return
       seenConvs.add(c.id)
       items.push({
@@ -219,6 +222,7 @@ export default function Dashboard() {
 
     invoices
       .filter(i => i.status === 'overdue')
+      .slice(0, 2)
       .forEach(i => items.push({
         key: `inv-${i.id}`,
         tone: 'rose',
@@ -230,6 +234,17 @@ export default function Dashboard() {
 
     return items
   }, [overdueConvs, todayVisits, unassignedConvs, invoices, navigate])
+
+  // Hidden-overflow counts so the CTA can route correctly when the
+  // hidden item is a late visit or overdue invoice (which /comms can't
+  // surface), not a conversation.
+  const hiddenOverdueConvs = Math.max(0, overdueConvs.length - 3)
+  const hiddenUnassignedConvs = Math.max(0, unassignedConvs.length - 2)
+  const hiddenInvoices = Math.max(0, invoices.filter(i => i.status === 'overdue').length - 2)
+  const hiddenLateVisits = Math.max(
+    0,
+    todayVisits.filter(v => v.status === 'scheduled').length - 3,
+  )
 
   const todayCount = todayJobs.length
   const weekCount = weekJobs.length
@@ -277,13 +292,36 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto max-h-[380px]">
-              {attention.slice(0, 8).map(p => (
+              {attention.map(p => (
                 <AttentionRow key={p.key} {...p} />
               ))}
-              {attention.length > 8 && (
-                <div className="px-4 py-2 text-[10px] text-zinc-400">
-                  +{attention.length - 8} more · open Comms to see all
-                </div>
+              {/* Per-category overflow: route each "+N more" to the page
+                  where those items actually live. /comms doesn't surface
+                  late visits or overdue invoices, so the CTA needs to
+                  match the category. */}
+              {(hiddenOverdueConvs + hiddenUnassignedConvs > 0) && (
+                <button
+                  onClick={() => navigate('/comms')}
+                  className="w-full text-left px-4 py-2 text-[10px] text-zinc-500 hover:text-blue-600 hover:bg-zinc-50 transition-colors"
+                >
+                  +{hiddenOverdueConvs + hiddenUnassignedConvs} more in inbox · Open Comms →
+                </button>
+              )}
+              {hiddenLateVisits > 0 && (
+                <button
+                  onClick={() => navigate('/schedule')}
+                  className="w-full text-left px-4 py-2 text-[10px] text-zinc-500 hover:text-blue-600 hover:bg-zinc-50 transition-colors"
+                >
+                  +{hiddenLateVisits} more late {hiddenLateVisits === 1 ? 'visit' : 'visits'} · Open Schedule →
+                </button>
+              )}
+              {hiddenInvoices > 0 && (
+                <button
+                  onClick={() => navigate('/invoicing')}
+                  className="w-full text-left px-4 py-2 text-[10px] text-zinc-500 hover:text-blue-600 hover:bg-zinc-50 transition-colors"
+                >
+                  +{hiddenInvoices} more past-due {hiddenInvoices === 1 ? 'invoice' : 'invoices'} · Open Invoicing →
+                </button>
               )}
             </div>
           )}
