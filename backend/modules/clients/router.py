@@ -96,15 +96,25 @@ def _fold_conv_into(db: Session, source: "Conversation", keeper: "Conversation",
 def _attach_conv_to_client(
     db: Session,
     conv: "Conversation",
-    client_id: int,
+    client: "Client",
     existing_keeper_by_channel: dict,
     report: dict,
 ) -> "Conversation":
-    """Attach `conv` to `client_id`, respecting the partial unique index on
+    """Attach `conv` to `client`, respecting the partial unique index on
     (client_id, channel). If the client already has a conversation for the
     same channel (tracked via the caller-supplied dict), fold `conv`'s
     messages into that keeper and delete `conv` instead of triggering the
     UNIQUE violation we used to hit before this guard.
+
+    IMPORTANT: takes a `Client` object (not an id) and uses the
+    relationship setter `conv.client = client` rather than
+    `conv.client_id = client.id`. Because Client.conversations and
+    Client.messages are configured with cascade="all, delete-orphan",
+    a bare FK reassignment leaves the source-side collection stale —
+    the conv stays in placeholder.conversations until delete time, and
+    the cascade then deletes the just-moved conv (and its messages).
+    The relationship setter updates both sides of the collection so the
+    cascade can't reach the moved rows.
 
     Returns whichever conversation now represents the client's thread for
     that channel (caller may want to keep using it as the keeper for
@@ -112,11 +122,11 @@ def _attach_conv_to_client(
     keeper = existing_keeper_by_channel.get(conv.channel)
     if keeper is None or keeper.id == conv.id:
         # First conv we see for this channel — safe to re-parent.
-        conv.client_id = client_id
+        conv.client = client
         report["linked_conversations"] = report.get("linked_conversations", 0) + 1
         for msg in conv.messages:
             if msg.client_id is None:
-                msg.client_id = client_id
+                msg.client = client
                 report["linked_messages"] = report.get("linked_messages", 0) + 1
         existing_keeper_by_channel[conv.channel] = conv
         return conv
@@ -181,7 +191,7 @@ def _absorb_placeholder_clients(
 
         # Re-parent each relationship using the relationship setter
         for conv in list(placeholder.conversations):
-            _attach_conv_to_client(db, conv, real_client_id, keepers_by_channel, report)
+            _attach_conv_to_client(db, conv, real, keepers_by_channel, report)
         for msg in list(placeholder.messages):
             msg.client = real
             report["linked_messages"] += 1
@@ -247,6 +257,11 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
     # _attach_conv_to_client so the (client_id, channel) unique index can't
     # blow up when the client already has a conversation on the same channel
     # — in that case we fold instead of re-parent (Bug C — #81 follow-up).
+    # Fetch the Client object so we can use the relationship setter
+    # (avoids the cascade-delete-orphan trap; see _attach_conv_to_client).
+    client_obj = db.query(Client).filter(Client.id == client_id).first()
+    if client_obj is None:
+        return report
     keepers_by_channel: dict = {
         c.channel: c for c in db.query(Conversation).filter(
             Conversation.client_id == client_id
@@ -254,7 +269,7 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
     }
     for conv in candidates:
         if conv.client_id is None:
-            _attach_conv_to_client(db, conv, client_id, keepers_by_channel, report)
+            _attach_conv_to_client(db, conv, client_obj, keepers_by_channel, report)
 
     # 3. Also relink orphan messages that match this phone but not tied to any conversation yet
     all_msgs = db.query(Message).filter(
