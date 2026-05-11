@@ -5,7 +5,7 @@ const PAGE_TITLES = {
   '/dashboard': 'Dashboard',
   '/workspace': 'Workspace',
   '/clients': 'Clients',
-  '/requests': 'Requests',
+  '/requests': 'Leads',
   '/pipeline': 'Pipeline',
   '/quoting': 'Quoting',
   '/scheduling': 'Schedule',

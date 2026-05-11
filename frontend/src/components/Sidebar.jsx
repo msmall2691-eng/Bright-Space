@@ -11,7 +11,7 @@ const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
   { divider: true, label: 'Sales Pipeline' },
-  { to: '/requests',    icon: Inbox,           label: 'Requests' },
+  { to: '/requests',    icon: Inbox,           label: 'Leads' },
   { to: '/quoting',     icon: FileText,        label: 'Quoting' },
   { to: '/invoicing',   icon: Receipt,         label: 'Invoicing' },
   { divider: true, label: 'Operations' },
