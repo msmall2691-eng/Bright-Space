@@ -64,6 +64,67 @@ def _is_placeholder_candidate(client: Client) -> bool:
     return True
 
 
+def _fold_conv_into(db: Session, source: "Conversation", keeper: "Conversation", report: dict) -> None:
+    """Move every message off `source` into `keeper`, merge metadata, delete
+    source. Used both for absorbing placeholder-client conversations and for
+    de-duplicating multiple SMS conversations against the (client_id, channel)
+    unique index. Must use the relationship setter (not the FK column) so
+    SQLAlchemy updates both sides — otherwise the cascade="all, delete-orphan"
+    on Conversation.messages will delete the messages along with `source`."""
+    for msg in list(source.messages):
+        msg.conversation = keeper
+        if msg.client_id is None and keeper.client_id is not None:
+            msg.client_id = keeper.client_id
+            report["linked_messages"] = report.get("linked_messages", 0) + 1
+    db.flush()
+    keeper.unread_count = (keeper.unread_count or 0) + (source.unread_count or 0)
+    if source.last_message_at and (not keeper.last_message_at or source.last_message_at > keeper.last_message_at):
+        keeper.last_message_at = source.last_message_at
+    if source.last_inbound_at and (not keeper.last_inbound_at or source.last_inbound_at > keeper.last_inbound_at):
+        keeper.last_inbound_at = source.last_inbound_at
+    if source.last_outbound_at and (not keeper.last_outbound_at or source.last_outbound_at > keeper.last_outbound_at):
+        keeper.last_outbound_at = source.last_outbound_at
+    if source.status == "open" and keeper.status == "resolved":
+        keeper.status = "open"
+        keeper.resolved_at = None
+    if source.tags:
+        keeper.tags = list(set((keeper.tags or []) + source.tags))
+    db.delete(source)
+    report["merged_conversations"] = report.get("merged_conversations", 0) + 1
+
+
+def _attach_conv_to_client(
+    db: Session,
+    conv: "Conversation",
+    client_id: int,
+    existing_keeper_by_channel: dict,
+    report: dict,
+) -> "Conversation":
+    """Attach `conv` to `client_id`, respecting the partial unique index on
+    (client_id, channel). If the client already has a conversation for the
+    same channel (tracked via the caller-supplied dict), fold `conv`'s
+    messages into that keeper and delete `conv` instead of triggering the
+    UNIQUE violation we used to hit before this guard.
+
+    Returns whichever conversation now represents the client's thread for
+    that channel (caller may want to keep using it as the keeper for
+    subsequent folds in the same pass)."""
+    keeper = existing_keeper_by_channel.get(conv.channel)
+    if keeper is None or keeper.id == conv.id:
+        # First conv we see for this channel — safe to re-parent.
+        conv.client_id = client_id
+        report["linked_conversations"] = report.get("linked_conversations", 0) + 1
+        for msg in conv.messages:
+            if msg.client_id is None:
+                msg.client_id = client_id
+                report["linked_messages"] = report.get("linked_messages", 0) + 1
+        existing_keeper_by_channel[conv.channel] = conv
+        return conv
+    # A keeper already exists for this (client_id, channel) — fold this one in.
+    _fold_conv_into(db, conv, keeper, report)
+    return keeper
+
+
 def _absorb_placeholder_clients(
     db: Session, real_client_id: int, phone: str, report: dict
 ) -> None:
@@ -104,6 +165,15 @@ def _absorb_placeholder_clients(
     if real is None:
         return
 
+    # Track the real client's existing conversations per channel so
+    # re-parenting an absorbed placeholder's conversation doesn't trip the
+    # (client_id, channel) unique index (Bug C — #81 follow-up).
+    keepers_by_channel: dict = {
+        c.channel: c for c in db.query(Conversation).filter(
+            Conversation.client_id == real_client_id
+        ).all()
+    }
+
     for cid in candidates:
         placeholder = db.query(Client).filter(Client.id == cid).first()
         if not placeholder or not _is_placeholder_candidate(placeholder):
@@ -111,8 +181,7 @@ def _absorb_placeholder_clients(
 
         # Re-parent each relationship using the relationship setter
         for conv in list(placeholder.conversations):
-            conv.client = real
-            report["linked_conversations"] += 1
+            _attach_conv_to_client(db, conv, real_client_id, keepers_by_channel, report)
         for msg in list(placeholder.messages):
             msg.client = real
             report["linked_messages"] += 1
@@ -174,16 +243,18 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
     )
     candidates = [c for c in all_convs if _phone_tail(c.external_contact) == tail]
 
-    # 2. Link orphan conversations to this client
+    # 2. Link orphan conversations to this client. Route through
+    # _attach_conv_to_client so the (client_id, channel) unique index can't
+    # blow up when the client already has a conversation on the same channel
+    # — in that case we fold instead of re-parent (Bug C — #81 follow-up).
+    keepers_by_channel: dict = {
+        c.channel: c for c in db.query(Conversation).filter(
+            Conversation.client_id == client_id
+        ).all()
+    }
     for conv in candidates:
         if conv.client_id is None:
-            conv.client_id = client_id
-            report["linked_conversations"] += 1
-            # Also relink orphan messages in that conversation (no extra queries — already eager-loaded)
-            for msg in conv.messages:
-                if msg.client_id is None:
-                    msg.client_id = client_id
-                    report["linked_messages"] += 1
+            _attach_conv_to_client(db, conv, client_id, keepers_by_channel, report)
 
     # 3. Also relink orphan messages that match this phone but not tied to any conversation yet
     all_msgs = db.query(Message).filter(
@@ -213,32 +284,7 @@ def _link_and_merge_conversations(db: Session, client_id: int, phone: str) -> di
     if len(client_convs) > 1:
         keeper = client_convs[0]
         for dup in client_convs[1:]:
-            # Move all messages from dup into keeper.
-            # Use the relationship (not the FK column) so SQLAlchemy updates
-            # both sides of the collection — otherwise the cascade="all,
-            # delete-orphan" on Conversation.messages will delete the messages
-            # along with `dup` because they still appear in dup.messages.
-            for msg in list(dup.messages):
-                msg.conversation = keeper
-            db.flush()
-            # Merge unread counts
-            keeper.unread_count = (keeper.unread_count or 0) + (dup.unread_count or 0)
-            # Use most recent activity timestamps
-            if dup.last_message_at and (not keeper.last_message_at or dup.last_message_at > keeper.last_message_at):
-                keeper.last_message_at = dup.last_message_at
-            if dup.last_inbound_at and (not keeper.last_inbound_at or dup.last_inbound_at > keeper.last_inbound_at):
-                keeper.last_inbound_at = dup.last_inbound_at
-            if dup.last_outbound_at and (not keeper.last_outbound_at or dup.last_outbound_at > keeper.last_outbound_at):
-                keeper.last_outbound_at = dup.last_outbound_at
-            # Keep the open status if any conversation is open
-            if dup.status == "open" and keeper.status == "resolved":
-                keeper.status = "open"
-                keeper.resolved_at = None
-            # Merge tags
-            if dup.tags:
-                keeper.tags = list(set((keeper.tags or []) + dup.tags))
-            db.delete(dup)
-            report["merged_conversations"] += 1
+            _fold_conv_into(db, dup, keeper, report)
 
     return report
 

@@ -557,7 +557,18 @@ def find_job_property_mismatches(db: Session = Depends(get_db)):
             continue
         title_norm = _norm_name(j.title)
         prop_name_norm = _norm_name(prop.name)
+        prop_address_norm = _norm_name(prop.address)
         if not prop_name_norm:
+            continue
+        # Skip properties where name == address. Those have no human-set
+        # name, so comparing the job title to the address-as-name produces
+        # false positives ("Residential bi-weekly" at "17 Oakmont Dr" was
+        # being flagged even though the job_address matched perfectly).
+        if prop_name_norm == prop_address_norm:
+            continue
+        # And if the job's own address matches the property's address,
+        # the data is consistent — title divergence isn't a misrouting bug.
+        if j.address and _norm_name(j.address) == prop_address_norm:
             continue
         # Any token of the prop name length >= 4 has to appear in the title.
         tokens = [t for t in prop_name_norm.split(" ") if len(t) >= 4]
@@ -575,3 +586,54 @@ def find_job_property_mismatches(db: Session = Depends(get_db)):
             "property_address": prop.address,
         })
     return {"mismatches": mismatches, "count": len(mismatches)}
+
+
+class ReassignJobPropertyRequest(BaseModel):
+    job_ids: List[int]
+    to_property_id: int
+
+
+@router.post("/jobs/reassign-property", dependencies=[Depends(require_role("admin"))])
+def reassign_job_property(payload: ReassignJobPropertyRequest, db: Session = Depends(get_db)):
+    """Bulk-update Job.property_id for the given job_ids. Companion to the
+    /jobs/property-mismatches diagnostic — once a misrouting is confirmed
+    (e.g. 12 Spin Drift turnovers pointing at property_id=3 when they
+    should point at property_id=5), this endpoint applies the fix
+    transactionally.
+
+    Validates that the target property exists and that the requested job
+    ids actually exist; returns which IDs were updated vs skipped. Safe
+    to retry — re-running on already-updated rows is a no-op."""
+    if not payload.job_ids:
+        return {"updated": 0, "skipped": [], "missing": []}
+
+    target = db.query(Property).filter(Property.id == payload.to_property_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Property {payload.to_property_id} not found")
+
+    found = db.query(Job).filter(Job.id.in_(payload.job_ids)).all()
+    found_ids = {j.id for j in found}
+    missing = [jid for jid in payload.job_ids if jid not in found_ids]
+
+    updated = 0
+    skipped = []
+    for j in found:
+        if j.property_id == payload.to_property_id:
+            skipped.append(j.id)  # already on the target — no-op
+            continue
+        j.property_id = payload.to_property_id
+        updated += 1
+
+    db.commit()
+    log.info(
+        "reassign-property: %d jobs → property %d (target=%s, skipped=%d, missing=%d)",
+        updated, payload.to_property_id, target.name, len(skipped), len(missing),
+    )
+    return {
+        "updated": updated,
+        "skipped_already_on_target": skipped,
+        "missing": missing,
+        "to_property_id": payload.to_property_id,
+        "to_property_name": target.name,
+        "to_property_address": target.address,
+    }
