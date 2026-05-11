@@ -6,6 +6,7 @@ from typing import Optional
 from database.db import get_db
 from database.models import LeadIntake, Client
 from utils.contacts import find_client_by_contact, normalize_phone
+from modules.booking.pricing import estimate_price
 
 router = APIRouter()
 
@@ -70,6 +71,30 @@ class AddressValidateResponse(BaseModel):
     message: str
 
 
+class InstantQuoteRequest(BaseModel):
+    """Payload for the public instant-quote calculator on maineclean.co.
+    Mirrors the same field shape as BookingSubmit so the website can use
+    the form's existing state, but everything except service_type is
+    optional — the calculator returns a sensible range with whatever info
+    the user has typed so far."""
+    serviceType: Optional[str] = "residential"
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[int] = None
+    squareFeet: Optional[int] = None
+    frequency: Optional[str] = None
+    message: Optional[str] = None
+
+    class Config:
+        extra = "allow"
+
+
+class InstantQuoteResponse(BaseModel):
+    estimate_min: int
+    estimate_max: int
+    currency: str
+    breakdown: dict
+
+
 @router.post("/submit", status_code=201, response_model=BookingResponse)
 def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
     """
@@ -108,6 +133,18 @@ def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
         parts.append(f"Guests: {data.guests}")
     message = " | ".join(parts) if parts else None
 
+    # Run the same pricing engine the public /instant-quote endpoint uses,
+    # so the operator sees a price range on every new intake without having
+    # to flip back to the website.
+    estimate = estimate_price(
+        service_type=service_type,
+        bedrooms=data.bedrooms,
+        bathrooms=data.bathrooms,
+        square_footage=data.squareFeet,
+        frequency=None,
+        message=message,
+    )
+
     intake = LeadIntake(
         name=data.name,
         email=data.email,
@@ -128,6 +165,8 @@ def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
         preferred_date=data.requestedDate,
         source="website",
         client_id=client.id,
+        estimate_min=estimate["estimate_min"],
+        estimate_max=estimate["estimate_max"],
     )
     db.add(intake)
     db.commit()
@@ -172,3 +211,24 @@ def validate_address(data: AddressValidate):
             "distanceMiles": None,
             "message": "We're not sure this address is in our service area. Please call us to confirm.",
         }
+
+
+@router.post("/instant-quote", response_model=InstantQuoteResponse)
+def instant_quote(data: InstantQuoteRequest):
+    """Public — called from the maineclean.co booking form to show a live
+    price range as the customer fills it in. Stateless: doesn't write
+    anything to the DB. The actual quote is finalized by the operator
+    inside BrightBase after the booking lands as a LeadIntake.
+
+    Same pricing engine is used to populate estimate_min/max on every
+    new LeadIntake (POST /api/booking/submit), so the customer-facing
+    range and the operator-facing range agree by construction."""
+    service_type = BOOKING_SERVICE_MAP.get((data.serviceType or "").lower(), "residential")
+    return estimate_price(
+        service_type=service_type,
+        bedrooms=data.bedrooms,
+        bathrooms=data.bathrooms,
+        square_footage=data.squareFeet,
+        frequency=data.frequency,
+        message=data.message,
+    )
