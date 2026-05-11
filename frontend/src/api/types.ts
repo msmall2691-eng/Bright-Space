@@ -1865,6 +1865,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/booking/instant-quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Instant Quote
+         * @description Public — called from the maineclean.co booking form to show a live
+         *     price range as the customer fills it in. Stateless: doesn't write
+         *     anything to the DB. The actual quote is finalized by the operator
+         *     inside BrightBase after the booking lands as a LeadIntake.
+         *
+         *     Same pricing engine is used to populate estimate_min/max on every
+         *     new LeadIntake (POST /api/booking/submit), so the customer-facing
+         *     range and the operator-facing range agree by construction.
+         */
+        post: operations["instant_quote_api_booking_instant_quote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fields": {
         parameters: {
             query?: never;
@@ -2342,6 +2369,109 @@ export interface paths {
          * @description Hard-delete visits by ID (vs. the default cancel-by-status).
          */
         post: operations["hard_delete_visits_api_admin_visits_hard_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/comms/merge-duplicate-threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Duplicate Threads
+         * @description Phase 5 — one-time backfill. Iterate every client's phone numbers
+         *     (primary + ContactPhone rows) and run the existing per-phone merge
+         *     helper to:
+         *       - absorb SMS-auto-created placeholder clients into the real client
+         *       - link orphan Conversations / Messages by phone-tail match
+         *       - collapse multiple SMS conversations for the same client into one
+         *
+         *     Run this after deploying so historical duplicates from before the
+         *     auto-merge-on-webhook hook get cleaned up. Idempotent.
+         */
+        post: operations["merge_duplicate_threads_api_admin_comms_merge_duplicate_threads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/properties/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find Duplicate Properties
+         * @description Group Property rows by normalized name and return any group with
+         *     more than one row. The most common source of duplicates is an iCal
+         *     feed import: the listing's address didn't string-match an existing
+         *     property, so a second Property got created.
+         */
+        get: operations["find_duplicate_properties_api_admin_properties_duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/jobs/property-mismatches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find Job Property Mismatches
+         * @description Find Jobs where the title doesn't appear to reference the linked
+         *     Property's name. Heuristic — looks for ANY normalized-name token of
+         *     the property name inside the normalized job title. Skips Jobs with
+         *     no property_id (no property to compare to). False positives are
+         *     fine since this is just a manual-review surface.
+         */
+        get: operations["find_job_property_mismatches_api_admin_jobs_property_mismatches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/jobs/reassign-property": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reassign Job Property
+         * @description Bulk-update Job.property_id for the given job_ids. Companion to the
+         *     /jobs/property-mismatches diagnostic — once a misrouting is confirmed
+         *     (e.g. 12 Spin Drift turnovers pointing at property_id=3 when they
+         *     should point at property_id=5), this endpoint applies the fix
+         *     transactionally.
+         *
+         *     Validates that the target property exists and that the requested job
+         *     ids actually exist; returns which IDs were updated vs skipped. Safe
+         *     to retry — re-running on already-updated rows is a no-op.
+         */
+        post: operations["reassign_job_property_api_admin_jobs_reassign_property_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2836,6 +2966,46 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * InstantQuoteRequest
+         * @description Payload for the public instant-quote calculator on maineclean.co.
+         *     Mirrors the same field shape as BookingSubmit so the website can use
+         *     the form's existing state, but everything except service_type is
+         *     optional — the calculator returns a sensible range with whatever info
+         *     the user has typed so far.
+         */
+        InstantQuoteRequest: {
+            /**
+             * Servicetype
+             * @default residential
+             */
+            serviceType: string | null;
+            /** Bedrooms */
+            bedrooms?: number | null;
+            /** Bathrooms */
+            bathrooms?: number | null;
+            /** Squarefeet */
+            squareFeet?: number | null;
+            /** Frequency */
+            frequency?: string | null;
+            /** Message */
+            message?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** InstantQuoteResponse */
+        InstantQuoteResponse: {
+            /** Estimate Min */
+            estimate_min: number;
+            /** Estimate Max */
+            estimate_max: number;
+            /** Currency */
+            currency: string;
+            /** Breakdown */
+            breakdown: {
+                [key: string]: unknown;
+            };
         };
         /** IntakeSubmit */
         IntakeSubmit: {
@@ -3417,6 +3587,13 @@ export interface components {
             valid_until?: string | null;
             /** Status */
             status?: string | null;
+        };
+        /** ReassignJobPropertyRequest */
+        ReassignJobPropertyRequest: {
+            /** Job Ids */
+            job_ids: number[];
+            /** To Property Id */
+            to_property_id: number;
         };
         /**
          * RecurrenceExceptionRead
@@ -7490,6 +7667,39 @@ export interface operations {
             };
         };
     };
+    instant_quote_api_booking_instant_quote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstantQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstantQuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_fields_api_fields_get: {
         parameters: {
             query?: {
@@ -8392,6 +8602,99 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BulkIdsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_duplicate_threads_api_admin_comms_merge_duplicate_threads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    find_duplicate_properties_api_admin_properties_duplicates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    find_job_property_mismatches_api_admin_jobs_property_mismatches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    reassign_job_property_api_admin_jobs_reassign_property_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReassignJobPropertyRequest"];
             };
         };
         responses: {

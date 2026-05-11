@@ -83,6 +83,11 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
               <span className={priorityConfig.color}>{priorityConfig.label} Priority</span>
               {intake.requested_date && <span>• {intake.requested_date}</span>}
               {intake.frequency && <span>• {intake.frequency}</span>}
+              {(intake.estimate_min || intake.estimate_max) && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
+                  ${intake.estimate_min ?? '?'}–${intake.estimate_max ?? '?'}
+                </span>
+              )}
             </div>
           </div>
         </div>
