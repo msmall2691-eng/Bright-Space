@@ -3,7 +3,16 @@
  *
  * Uses JWT authentication via Bearer token in Authorization header.
  * JWT is stored in localStorage and automatically included in all requests.
+ *
+ * Note on API_KEY: main.jsx installs a global fetch interceptor that
+ * injects X-API-Key on every fetch, so most call paths don't need to
+ * touch this directly. We still need it for `wsUrl()` (WebSocket URLs
+ * can't go through fetch) and as a fallback inside `upload()`.
  */
+
+const API_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY)
+  || (typeof localStorage !== 'undefined' ? localStorage.getItem('brightbase_api_key') : '')
+  || ''
 
 export function setJWT(token) {
   if (token) {
@@ -102,9 +111,10 @@ export const del = (url) => api(url, { method: "DELETE" });
  * Does NOT set Content-Type — browser sets multipart boundary automatically.
  */
 export async function upload(url, formData) {
-  await ensureReady();
   const h = {};
   if (API_KEY) h["X-API-Key"] = API_KEY;
+  const token = getJWT();
+  if (token) h["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(url, {
     method: "POST",
