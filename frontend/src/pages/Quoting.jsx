@@ -88,6 +88,19 @@ export default function Quoting() {
     }
   }, [location.state?.openNew, location.state?.clientId])
 
+  // Open the new-quote form pre-filled from a LeadIntake (Requests page → "Create Quote")
+  useEffect(() => {
+    const intake = location.state?.openNewFromIntake
+    if (intake) {
+      openQuoteForm(null, intake)
+      setTab('quotes')
+    }
+    // We deliberately only run when the intake id changes; openQuoteForm is
+    // stable within a render and React-Router doesn't change location.state
+    // reference unless the navigation actually fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.openNewFromIntake?.id])
+
   const clientFor = (id) => clients.find(c => c.id === id)
   const clientName = (id) => clientFor(id)?.name || `Client #${id}`
 

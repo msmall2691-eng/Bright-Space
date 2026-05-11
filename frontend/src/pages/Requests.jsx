@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X
@@ -144,6 +145,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
 }
 
 export default function Requests() {
+  const navigate = useNavigate()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState('all')
@@ -193,8 +195,12 @@ export default function Requests() {
   }
 
   const handleCreateQuote = (intake) => {
-    console.log('Create quote for:', intake.id)
-    // TODO: Navigate to quote creation page with intake pre-filled
+    // Hand off to /quoting with the intake attached. Quoting picks it up
+    // via location.state and opens the new-quote form pre-filled with the
+    // intake's contact, address, and message. Backend already transitions
+    // lead_intake.status → 'quoted' when the quote is created with
+    // intake_id, and → 'converted' when that quote becomes a job.
+    navigate('/quoting', { state: { openNewFromIntake: intake } })
   }
 
   const handleArchive = async (intake) => {
