@@ -7,6 +7,10 @@ import {
 import { get, patch, post } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
+// Normalize API responses — some endpoints return raw arrays, others return
+// paginated envelopes like { items, total, limit, offset }.
+const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? [])
+
 
 const PROPERTY_TYPE_CONFIG = {
   residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home },
@@ -46,8 +50,8 @@ export default function PropertyDetail() {
         ])
 
         setProperty(propRes)
-        setJobs(jobsRes || [])
-        setVisits(visitsRes || [])
+        setJobs(toArray(jobsRes))
+        setVisits(toArray(visitsRes))
       } catch (err) {
         console.error('[PropertyDetail]', err)
         setError('Failed to load property details')
@@ -92,6 +96,7 @@ export default function PropertyDetail() {
 
   // Get visits for each job
   const getJobVisits = (jobId) => {
+    if (!Array.isArray(visits)) return []
     return visits.filter(v => v.job_id === jobId)
   }
 
