@@ -28,13 +28,41 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def _parse_date(val) -> str | None:
-    """Convert icalendar date/datetime to YYYY-MM-DD string."""
+def _parse_date(val, default_tz: str | None = None) -> str | None:
+    """Convert an icalendar date/datetime to a ``YYYY-MM-DD`` string in
+    the property's local timezone.
+
+    Why TZ matters here: feeds vary in how they encode checkout times.
+    - Airbnb uses ``VALUE=DATE`` (all-day, no time, no TZ). Treat as
+      the calendar date directly.
+    - VRBO / Booking.com / manual ICS files sometimes use
+      ``VALUE=DATE-TIME`` with a ``TZID`` or trailing ``Z``. Without
+      converting to the property's local TZ, a ``2026-04-20T04:00:00Z``
+      checkout from a New York property would naively decode to
+      2026-04-20 in summer (UTC-4 → still Apr 20 local) but to
+      2026-04-19 in winter (UTC-5 → 23:00 the previous day). That's
+      the off-by-one we were seeing on the Pier House schedule.
+
+    If the value is tz-aware, convert to ``default_tz`` before taking
+    ``.date()``. If naive, assume it's already in the property's
+    local TZ. Falls back to ``America/New_York`` when ``default_tz``
+    is None or invalid (operating region for the only ME-based
+    deployment today).
+    """
     if val is None:
         return None
     if hasattr(val, "dt"):
         val = val.dt
     if isinstance(val, datetime):
+        if val.tzinfo is not None:
+            try:
+                local_tz = pytz_timezone(default_tz or "America/New_York")
+                val = val.astimezone(local_tz)
+            except Exception:
+                # Bad TZ string — fall through to naive .date(); better
+                # to keep the old behavior for this row than crash the
+                # whole sync.
+                pass
         return val.date().isoformat()
     if isinstance(val, date):
         return val.isoformat()
@@ -154,12 +182,16 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             skipped_not_reserved += 1
             continue
 
-        # Parse dates
+        # Parse dates — pass the property's local TZ so tz-aware DTEND
+        # values get converted before the date() call. Property.timezone
+        # may legitimately be empty for non-STR rows; _parse_date falls
+        # back to America/New_York in that case.
         dtstart_raw = component.get("DTSTART")
         dtend_raw = component.get("DTEND")
 
-        checkin_date = _parse_date(dtstart_raw)
-        checkout_raw = _parse_date(dtend_raw)
+        prop_tz = prop.timezone or "America/New_York"
+        checkin_date = _parse_date(dtstart_raw, default_tz=prop_tz)
+        checkout_raw = _parse_date(dtend_raw, default_tz=prop_tz)
 
         # RFC 5545: detect all-day event
         is_all_day = False
