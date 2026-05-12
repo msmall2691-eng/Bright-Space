@@ -3,7 +3,7 @@ import { LayoutDashboard, Users, Calendar, Receipt, Inbox } from 'lucide-react'
 
 const PRIMARY_TABS = [
   { to: '/dashboard',  icon: LayoutDashboard, label: 'Home' },
-  { to: '/requests',   icon: Inbox,           label: 'Requests' },
+  { to: '/requests',   icon: Inbox,           label: 'Leads' },
   { to: '/scheduling', icon: Calendar,        label: 'Schedule' },
   { to: '/clients',    icon: Users,           label: 'Clients' },
   { to: '/invoicing',  icon: Receipt,         label: 'Invoicing' },

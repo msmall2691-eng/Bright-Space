@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
-  Home, Building2, Wind, Zap, Mail, Phone, MapPin, X
+  Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
 } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { displayContactName } from '../utils/display'
@@ -30,6 +30,27 @@ const PRIORITY_CONFIG = {
   urgent: { label: 'Urgent', color: 'text-red-600' },
 }
 
+// Source chip on every Lead row — makes it obvious whether a lead came
+// in via the website form, an SMS, or an email reply. Used by both
+// RequestCard (intake) and ConversationLeadCard (conversation) so the
+// /leads feed reads as one unified inbox even though the data lives in
+// two tables.
+const SOURCE_CONFIG = {
+  website: { label: 'Website', icon: Globe,         badge: 'bg-blue-50 text-blue-700' },
+  sms:     { label: 'SMS',     icon: Phone,         badge: 'bg-emerald-50 text-emerald-700' },
+  email:   { label: 'Email',   icon: Mail,          badge: 'bg-violet-50 text-violet-700' },
+  chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-amber-50 text-amber-700' },
+}
+function SourceChip({ source }) {
+  const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
+  const Ic = cfg.icon
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${cfg.badge}`}>
+      <Ic className="w-3 h-3" /> {cfg.label}
+    </span>
+  )
+}
+
 const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
   const serviceConfig = SERVICE_TYPE_CONFIG[intake.service_type] || SERVICE_TYPE_CONFIG.residential
   const statusConfig = STATUS_CONFIG[intake.status] || STATUS_CONFIG.new
@@ -48,9 +69,10 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
           </div>
 
           <div className="flex-1 min-w-0">
-            {/* Name + Status */}
+            {/* Name + Source + Status */}
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <h3 className="font-semibold text-neutral-900 truncate">{displayContactName(intake)}</h3>
+              <SourceChip source={intake.source || 'website'} />
               <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
                 {statusConfig.label}
               </span>
@@ -149,9 +171,72 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
   )
 }
 
+
+// Row variant for "lead" rows that came in via SMS/Email rather than the
+// website form — i.e. an existing open Conversation whose Client is still
+// in 'lead' status. Same visual rhythm as RequestCard so the unified feed
+// reads cohesively, but the actions are "Reply" (route to /comms) and
+// "Mark as resolved" instead of "Create Quote" / "Archive".
+function ConversationLeadCard({ conv, onReply, onCreateQuote }) {
+  const ch = conv.channel || 'sms'
+  const sourceConfig = SOURCE_CONFIG[ch] || SOURCE_CONFIG.sms
+  const SourceIcon = sourceConfig.icon
+  const name = conv.client?.name || conv.external_contact || 'Unknown'
+  const unread = (conv.unread_count || 0) > 0
+  return (
+    <div className="bg-white rounded-lg border border-neutral-200 p-4 hover:shadow-md transition-all">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className={`p-2 rounded ${sourceConfig.badge}`}>
+            <SourceIcon className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <h3 className="font-semibold text-neutral-900 truncate">{name}</h3>
+              <SourceChip source={ch} />
+              {unread && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white">
+                  {conv.unread_count > 9 ? '9+' : conv.unread_count} new
+                </span>
+              )}
+            </div>
+            {conv.preview && (
+              <p className="text-[13px] text-neutral-600 line-clamp-2 mb-2">{conv.preview}</p>
+            )}
+            <div className="flex items-center gap-3 text-xs text-neutral-500 flex-wrap">
+              {conv.client?.phone && (
+                <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{conv.client.phone}</span>
+              )}
+              {conv.client?.email && (
+                <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" />{conv.client.email}</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <button
+            onClick={() => onReply(conv)}
+            className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
+          >
+            Reply
+          </button>
+          <button
+            onClick={() => onCreateQuote(conv)}
+            className="px-3 py-1.5 rounded-md bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-700 text-xs font-semibold transition-colors"
+          >
+            Quote
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 export default function Requests() {
   const navigate = useNavigate()
   const [requests, setRequests] = useState([])
+  const [leadConvs, setLeadConvs] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [selectedServiceType, setSelectedServiceType] = useState('all')
@@ -160,9 +245,11 @@ export default function Requests() {
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false)
 
-  // Load requests on mount and when filters change
+  // Load both intakes AND open conversations belonging to clients still
+  // marked 'lead' — so SMS/email replies from people who aren't customers
+  // yet show up in the same feed as the website booking form submissions.
   useEffect(() => {
-    const loadRequests = async () => {
+    const load = async () => {
       setLoading(true)
       try {
         const params = new URLSearchParams()
@@ -170,29 +257,67 @@ export default function Requests() {
         if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
         if (selectedPriority !== 'all') params.append('priority', selectedPriority)
 
-        const res = await get(`/api/intake?${params.toString()}`)
-        setRequests(res || [])
+        const [intakes, convs] = await Promise.all([
+          get(`/api/intake?${params.toString()}`).catch(() => []),
+          // Skip the lead-conversation fetch when the user has narrowed
+          // to an intake-specific filter; those filters don't apply to
+          // conversations and the mix would be confusing.
+          (selectedStatus === 'all' && selectedServiceType === 'all' && selectedPriority === 'all')
+            ? get('/api/comms/conversations?status=open&limit=50').catch(() => [])
+            : Promise.resolve([]),
+        ])
+        setRequests(Array.isArray(intakes) ? intakes : [])
+        const convArr = Array.isArray(convs) ? convs : (convs?.items || [])
+        // Filter to conversations whose client is still in 'lead' status —
+        // we don't want active-customer convs cluttering the leads feed.
+        setLeadConvs(convArr.filter(c => c?.client?.status === 'lead'))
       } catch (err) {
         console.error('[Requests]', err)
       }
       setLoading(false)
     }
 
-    loadRequests()
+    load()
   }, [selectedStatus, selectedServiceType, selectedPriority])
 
   // Filter by search term
-  const filteredRequests = useMemo(() => {
-    return requests.filter(r => {
-      const search = searchTerm.toLowerCase()
+  // Merge intakes + lead-status conversations into one chronological feed.
+  // Each entry is tagged with a `kind` discriminator so the render layer
+  // can pick the right card component without inspecting field shapes.
+  const feed = useMemo(() => {
+    const items = []
+    for (const r of requests) {
+      items.push({ kind: 'intake', sortAt: r.created_at || '', data: r })
+    }
+    for (const c of leadConvs) {
+      items.push({
+        kind: 'conversation',
+        sortAt: c.last_message_at || c.created_at || '',
+        data: c,
+      })
+    }
+    items.sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
+
+    if (!searchTerm.trim()) return items
+    const q = searchTerm.toLowerCase()
+    return items.filter(({ kind, data: r }) => {
+      if (kind === 'intake') {
+        return (
+          r.name?.toLowerCase().includes(q) ||
+          r.email?.toLowerCase().includes(q) ||
+          r.phone?.includes(q) ||
+          r.address?.toLowerCase().includes(q)
+        )
+      }
       return (
-        r.name.toLowerCase().includes(search) ||
-        r.email?.toLowerCase().includes(search) ||
-        r.phone?.includes(search) ||
-        r.address?.toLowerCase().includes(search)
+        r.client?.name?.toLowerCase().includes(q) ||
+        r.client?.email?.toLowerCase().includes(q) ||
+        r.client?.phone?.includes(q) ||
+        r.external_contact?.toLowerCase().includes(q) ||
+        r.preview?.toLowerCase().includes(q)
       )
     })
-  }, [requests, searchTerm])
+  }, [requests, leadConvs, searchTerm])
 
   const handleViewDetails = (intake) => {
     setSelectedRequest(intake)
@@ -223,7 +348,7 @@ export default function Requests() {
       <div className="bg-white border-b border-neutral-200 p-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-neutral-900">Requests</h1>
+            <h1 className="text-2xl font-bold text-neutral-900">Leads</h1>
             <Button variant="primary" size="sm">
               <Plus className="w-4 h-4 mr-2" />
               New Request
@@ -287,26 +412,51 @@ export default function Requests() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto p-4">
           {loading ? (
-            <p className="text-center text-neutral-600">Loading requests...</p>
-          ) : filteredRequests.length === 0 ? (
+            <p className="text-center text-neutral-600">Loading leads...</p>
+          ) : feed.length === 0 ? (
             <GlassCard>
               <div className="text-center py-12">
                 <AlertCircle className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
                 <p className="text-neutral-600">
-                  {requests.length === 0 ? 'No requests yet' : 'No requests match your filters'}
+                  {(requests.length === 0 && leadConvs.length === 0)
+                    ? 'No leads yet'
+                    : 'No leads match your filters'}
                 </p>
               </div>
             </GlassCard>
           ) : (
             <div className="grid gap-3">
-              {filteredRequests.map((intake) => (
-                <RequestCard
-                  key={intake.id}
-                  intake={intake}
-                  onViewDetails={handleViewDetails}
-                  onCreateQuote={handleCreateQuote}
-                  onArchive={handleArchive}
-                />
+              {feed.map(({ kind, data }) => (
+                kind === 'intake' ? (
+                  <RequestCard
+                    key={`intake-${data.id}`}
+                    intake={data}
+                    onViewDetails={handleViewDetails}
+                    onCreateQuote={handleCreateQuote}
+                    onArchive={handleArchive}
+                  />
+                ) : (
+                  <ConversationLeadCard
+                    key={`conv-${data.id}`}
+                    conv={data}
+                    onReply={() => navigate('/comms')}
+                    onCreateQuote={() => {
+                      // Synthesize a minimal intake-like object so /quoting
+                      // can pre-fill from the conversation's client.
+                      const synthetic = {
+                        id: null,
+                        client_id: data.client_id,
+                        name: data.client?.name || data.external_contact || 'Unknown',
+                        email: data.client?.email || '',
+                        phone: data.client?.phone || data.external_contact || '',
+                        address: '',
+                        service_type: 'residential',
+                        message: data.preview || '',
+                      }
+                      navigate('/quoting', { state: { openNewFromIntake: synthetic } })
+                    }}
+                  />
+                )
               ))}
             </div>
           )}
