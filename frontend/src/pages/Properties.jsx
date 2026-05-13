@@ -5,6 +5,111 @@ import AgentWidget from '../components/AgentWidget'
 import { get, post, patch, del } from "../api"
 
 
+// Source dropdown values + their display labels. Keep aligned with the
+// backend's iCal source labels (used as "ical_source" on Visit rows for
+// turnover idempotency).
+const ICAL_SOURCES = [
+  { value: 'airbnb',     label: 'Airbnb' },
+  { value: 'vrbo',       label: 'VRBO' },
+  { value: 'booking_com', label: 'Booking.com' },
+  { value: 'manual',     label: 'Manual / Custom' },
+]
+
+
+function relTimeAgo(iso) {
+  if (!iso) return null
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 60_000) return 'just now'
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+
+// One row per iCal feed on a STR property. Shows the URL (truncated),
+// source label, and a sync-status pill so the operator can see at a
+// glance "is this feed actually working?" without checking server logs.
+// The per-feed Sync Now button currently triggers a property-level sync
+// (the backend syncs all feeds on a property together, by design).
+function IcalFeedRow({ ical, onRemove, onSync, syncing }) {
+  const sourceLabel = ICAL_SOURCES.find(s => s.value === (ical.source || '').toLowerCase())?.label
+    || ical.source
+    || 'Custom'
+  const status = ical.last_sync_status
+  const lastAt = relTimeAgo(ical.last_synced_at)
+
+  let statusPill
+  if (status === 'ok') {
+    statusPill = (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+        <CheckCircle className="w-3 h-3" /> Synced {lastAt || ''}
+      </span>
+    )
+  } else if (status === 'failed' || status === 'retrying') {
+    statusPill = (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={ical.last_sync_error || ''}>
+        <AlertTriangle className="w-3 h-3" /> Failed {lastAt || ''}
+      </span>
+    )
+  } else {
+    statusPill = (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+        <Clock className="w-3 h-3" /> Never synced
+      </span>
+    )
+  }
+
+  return (
+    <div className="bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">{sourceLabel}</span>
+            {!ical.active && (
+              <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">paused</span>
+            )}
+            {statusPill}
+          </div>
+          <div className="text-xs text-zinc-500 truncate font-mono" title={ical.url}>{ical.url}</div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onSync}
+            disabled={syncing}
+            className="text-blue-600 hover:text-blue-700 disabled:opacity-50 p-1"
+            title="Sync this property now"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={onRemove}
+            className="text-red-400 hover:text-red-600 p-1"
+            title="Remove feed"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+      {status === 'failed' && ical.last_sync_error && (
+        <div className="text-[11px] text-red-700 bg-red-50 rounded p-1.5 mb-1.5 font-mono break-all">
+          {ical.last_sync_error.slice(0, 200)}
+        </div>
+      )}
+      {(ical.checkout_time || ical.house_code || ical.instructions) && (
+        <div className="text-xs text-zinc-500 bg-zinc-50 rounded p-1.5 space-y-0.5">
+          {ical.checkout_time && <div>Checkout: {ical.checkout_time}</div>}
+          {ical.house_code && <div>Code: {ical.house_code}</div>}
+          {ical.instructions && <div className="text-zinc-600">{ical.instructions}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 const EMPTY = {
   client_id: '', property_type: 'residential', name: '', address: '', city: '', state: '',
   zip_code: '', ical_url: '', default_duration_hours: 3, default_crew_size: null,
@@ -411,27 +516,15 @@ export default function Properties() {
                     {/* STR: iCal URLs */}
                     {pType === 'str' && (
                       <div data-testid="ical-feeds-section">
-                        <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar URLs</div>
+                        <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar Feeds</div>
                         {(p.icals || []).map(ical => (
-                          <div key={ical.id} className="bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
-                            <div className="flex items-start justify-between mb-1.5">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs text-zinc-600 truncate font-mono">{ical.url}</div>
-                                {ical.source && <div className="text-xs text-zinc-400">{ical.source}</div>}
-                              </div>
-                              <button onClick={() => removeIcal(p.id, ical.id)}
-                                className="text-red-400 hover:text-red-600 p-1 ml-2 shrink-0">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            {(ical.checkout_time || ical.house_code || ical.instructions) && (
-                              <div className="text-xs text-zinc-500 bg-zinc-50 rounded p-1.5 space-y-0.5">
-                                {ical.checkout_time && <div>Checkout: {ical.checkout_time}</div>}
-                                {ical.house_code && <div>Code: {ical.house_code}</div>}
-                                {ical.instructions && <div className="text-zinc-600">{ical.instructions}</div>}
-                              </div>
-                            )}
-                          </div>
+                          <IcalFeedRow
+                            key={ical.id}
+                            ical={ical}
+                            onRemove={() => removeIcal(p.id, ical.id)}
+                            onSync={() => syncOne(p.id)}
+                            syncing={syncing === p.id}
+                          />
                         ))}
 
                         {showIcalForm === p.id ? (
@@ -439,9 +532,13 @@ export default function Properties() {
                             <input value={icalForm.url} onChange={e => setIcalForm(f => ({ ...f, url: e.target.value }))}
                               placeholder="https://www.airbnb.com/calendar/ical/..."
                               className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
-                            <input value={icalForm.source} onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
-                              placeholder="airbnb / vrbo / manual"
-                              className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                            <select value={icalForm.source} onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
+                              className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none">
+                              <option value="">Source (Airbnb / VRBO / …)</option>
+                              {ICAL_SOURCES.map(s => (
+                                <option key={s.value} value={s.value}>{s.label}</option>
+                              ))}
+                            </select>
 
                             <div className="border-t border-zinc-100 pt-2 mt-2">
                               <div className="text-xs font-semibold text-zinc-600 mb-2">Turnover Settings</div>
