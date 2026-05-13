@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
   Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical,
-  List, Grid3x3
+  List, Grid3x3, AlignLeft
 } from 'lucide-react'
 import { get, post, put } from '../api'
 import Button from '../components/ui/Button'
@@ -29,6 +29,130 @@ const VISIT_STATUS_CONFIG = {
   no_show:     { label: 'No Show',     dot: 'bg-red-500',     badge: 'danger',  pillMobile: 'bg-red-50 text-red-700' },
   cancelled:   { label: 'Cancelled',   dot: 'bg-neutral-500', badge: 'danger',  pillMobile: 'bg-zinc-100 text-zinc-600' },
 }
+
+// Single-day mobile-first view. Renders the day's visits as full-width
+// cards stacked vertically — no grid, no truncation, no horizontal scroll.
+// Tap a card to open the existing detail drawer via onSelect (same handler
+// the list view's cards use, so detail-panel behavior is identical).
+const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, isToday }) => {
+  // Sort by start_time so the day reads top-down chronologically. Visits
+  // without a start_time sink to the bottom.
+  const sorted = [...(visits || [])].sort((a, b) => {
+    const at = (a.start_time || '99:99').slice(0, 5)
+    const bt = (b.start_time || '99:99').slice(0, 5)
+    return at.localeCompare(bt)
+  })
+  const completed = sorted.filter(v => v.status === 'completed').length
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-2xl mx-auto px-3 pt-3 pb-6">
+        {/* Day header */}
+        <div className="mb-3 px-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            {isToday ? 'Today' : ''}
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-neutral-900">
+            {new Date(`${currentDate.toISOString().split('T')[0]}T00:00`).toLocaleDateString('en-US', {
+              weekday: 'long', month: 'long', day: 'numeric',
+            })}
+          </h2>
+          {sorted.length > 0 && (
+            <p className="text-[12px] text-neutral-500 mt-0.5">
+              {sorted.length} job{sorted.length === 1 ? '' : 's'}
+              {completed > 0 && ` · ${completed} done`}
+            </p>
+          )}
+        </div>
+
+        {sorted.length === 0 ? (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-10 text-center">
+            <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+            <p className="text-[13px] text-neutral-500">Nothing scheduled for this day</p>
+          </div>
+        ) : (
+          <ul className="space-y-2.5">
+            {sorted.map((v) => {
+              const job = jobs[v.job_id]
+              const property = properties[job?.property_id]
+              const client = clients[job?.client_id]
+              const propertyType = property?.property_type || 'residential'
+              const typeCfg = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
+              const statusCfg = VISIT_STATUS_CONFIG[v.status] || VISIT_STATUS_CONFIG.scheduled
+              const TypeIcon = typeCfg.icon
+              const startHHMM = (v.start_time || '').slice(0, 5)
+              const endHHMM = (v.end_time || '').slice(0, 5)
+              const cleanerCount = v.cleaner_ids?.length || 0
+              const isCancelled = v.status === 'cancelled'
+              return (
+                <li key={v.id}>
+                  <button
+                    onClick={() => onSelect(v, job, property)}
+                    className={`group w-full text-left flex items-stretch rounded-2xl border bg-white overflow-hidden transition-all active:scale-[0.99] ${
+                      isCancelled
+                        ? 'border-neutral-200 opacity-60'
+                        : 'border-neutral-200 hover:border-neutral-300 hover:shadow-sm'
+                    }`}
+                  >
+                    {/* Color bar — job type signal */}
+                    <span className={`w-1.5 shrink-0 ${
+                      propertyType === 'str' ? 'bg-amber-400'
+                      : propertyType === 'commercial' ? 'bg-purple-400'
+                      : 'bg-blue-400'
+                    }`} />
+                    <div className="flex-1 min-w-0 p-3">
+                      {/* Time row */}
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[14px] font-bold text-neutral-900 tabular-nums">
+                          {startHHMM || '—'}
+                          {endHHMM && <span className="text-neutral-400 font-medium"> – {endHHMM}</span>}
+                        </span>
+                        <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.pillMobile}`}>
+                          {statusCfg.label}
+                        </span>
+                      </div>
+                      {/* Title row */}
+                      <div className="flex items-start gap-2 mb-1">
+                        <div className={`shrink-0 mt-0.5 w-6 h-6 rounded-md flex items-center justify-center ${typeCfg.badge}`}>
+                          <TypeIcon className="w-3 h-3" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-[14px] font-semibold text-neutral-900 ${isCancelled ? 'line-through' : ''}`}>
+                            {job?.title || `Visit ${v.id}`}
+                          </div>
+                          {property?.address && (
+                            <div className="text-[12px] text-neutral-500 mt-0.5">
+                              {property.address}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Meta footer */}
+                      <div className="flex items-center gap-3 mt-2 text-[11px] text-neutral-500">
+                        {client?.name && (
+                          <span className="truncate">{client.name}</span>
+                        )}
+                        {cleanerCount > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700">
+                            <User className="w-3 h-3" /> {cleanerCount} cleaner{cleanerCount === 1 ? '' : 's'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-amber-700">
+                            <AlertCircle className="w-3 h-3" /> no cleaner
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
 
 const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect }) => {
   const propertyType = property?.property_type || 'residential'
@@ -131,14 +255,22 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
 
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
-  // Phase 3: view mode toggle. ?view=month renders the CalendarView month
-  // grid; default is the existing list view. Stored in the URL so it
-  // survives reload and is bookmarkable.
-  const viewMode = searchParams.get('view') === 'month' ? 'month' : 'list'
+  // Three view modes today:
+  //   agenda — single-day full-width card stack (default on phone, the
+  //            screen a cleaner actually uses in the field)
+  //   list   — week, grouped by day, dense rows (desktop-leaning)
+  //   month  — CalendarView month grid (desktop-leaning)
+  // Stored in the URL via ?view= so reload + bookmarks survive. If the
+  // URL is unset we default to agenda on phone viewports and list on
+  // desktop — see the useEffect below.
+  const rawView = searchParams.get('view')
+  const viewMode = (rawView === 'agenda' || rawView === 'month' || rawView === 'list')
+    ? rawView
+    : (typeof window !== 'undefined' && window.innerWidth < 768 ? 'agenda' : 'list')
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
-    if (next === 'month') params.set('view', 'month')
-    else params.delete('view')
+    if (next === 'list') params.delete('view')
+    else params.set('view', next)
     setSearchParams(params, { replace: true })
   }
   const [visits, setVisits] = useState([])
@@ -374,13 +506,13 @@ export default function Schedule() {
 
   const prevWeek = () => {
     const d = new Date(currentDate)
-    d.setDate(d.getDate() - 7)
+    d.setDate(d.getDate() - (viewMode === 'agenda' ? 1 : 7))
     setCurrentDate(d)
   }
 
   const nextWeek = () => {
     const d = new Date(currentDate)
-    d.setDate(d.getDate() + 7)
+    d.setDate(d.getDate() + (viewMode === 'agenda' ? 1 : 7))
     setCurrentDate(d)
   }
 
@@ -415,14 +547,27 @@ export default function Schedule() {
 
             <div className="flex-1" />
 
-            {/* Phase 3: List / Month view toggle. URL-driven via ?view=. */}
+            {/* Agenda / List / Month view toggle. URL-driven via ?view=.
+                Agenda is the mobile default; List/Month are desktop-leaning. */}
             <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
+              <button
+                onClick={() => setViewMode('agenda')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  viewMode === 'agenda' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
+                }`}
+                aria-pressed={viewMode === 'agenda'}
+                title="Agenda — single day"
+              >
+                <AlignLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Agenda</span>
+              </button>
               <button
                 onClick={() => setViewMode('list')}
                 className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
                   viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
                 }`}
                 aria-pressed={viewMode === 'list'}
+                title="List — week grouped by day"
               >
                 <List className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">List</span>
@@ -433,6 +578,7 @@ export default function Schedule() {
                   viewMode === 'month' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
                 }`}
                 aria-pressed={viewMode === 'month'}
+                title="Month — calendar grid"
               >
                 <Grid3x3 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Month</span>
@@ -556,8 +702,18 @@ export default function Schedule() {
         </div>
       </div>
 
-      {/* Phase 3: month view branch */}
-      {viewMode === 'month' ? (
+      {/* Render branch: agenda (single-day cards) / list (week, grouped) / month (CalendarView) */}
+      {viewMode === 'agenda' ? (
+        <AgendaDay
+          currentDate={currentDate}
+          visits={filteredVisits.filter(v => v.scheduled_date === dateStr)}
+          jobs={jobs}
+          properties={properties}
+          clients={clients}
+          onSelect={handleEdit}
+          isToday={dateStr === new Date().toISOString().split('T')[0]}
+        />
+      ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
           <CalendarView
             onJobClick={(j) => setEditingJob(jobs[j.id] || j)}
