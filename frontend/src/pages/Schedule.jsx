@@ -269,8 +269,11 @@ export default function Schedule() {
     : (typeof window !== 'undefined' && window.innerWidth < 768 ? 'agenda' : 'list')
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
-    if (next === 'list') params.delete('view')
-    else params.set('view', next)
+    // Always write the chosen view explicitly. We can't "delete to mean
+    // list" because the unset case falls back to viewport-based default
+    // (agenda on <768px), which would silently revert an explicit list
+    // pick on mobile. Codex caught this on the #92 review.
+    params.set('view', next)
     setSearchParams(params, { replace: true })
   }
   const [visits, setVisits] = useState([])
@@ -438,9 +441,20 @@ export default function Schedule() {
       return next
     })
   }
+  // What the operator can actually SEE right now. In agenda mode we show
+  // a single day, so "select all visible" must mean that day only — not
+  // the whole filtered week (Codex caught this as a P1 on #92: bulk-cancel
+  // from agenda could have hit hidden days otherwise).
+  const currentlyVisibleVisits = useMemo(() => {
+    if (viewMode === 'agenda') {
+      return filteredVisits.filter(v => v.scheduled_date === dateStr)
+    }
+    return filteredVisits
+  }, [viewMode, filteredVisits, dateStr])
+
   const selectAllVisible = () => {
     setSelectedVisitIds(prev => {
-      const visibleIds = filteredVisits.map(v => v.id)
+      const visibleIds = currentlyVisibleVisits.map(v => v.id)
       const allSelected = visibleIds.length > 0 && visibleIds.every(id => prev.has(id))
       return allSelected ? new Set() : new Set(visibleIds)
     })
@@ -669,12 +683,12 @@ export default function Schedule() {
           <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked={filteredVisits.length > 0 && filteredVisits.every(v => selectedVisitIds.has(v.id))}
+              checked={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
               onChange={selectAllVisible}
               className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer"
               data-testid="visits-select-all"
             />
-            <span>Select all visible ({filteredVisits.length})</span>
+            <span>Select all visible ({currentlyVisibleVisits.length})</span>
           </label>
           {selectedVisitIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
