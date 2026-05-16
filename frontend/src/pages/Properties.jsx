@@ -41,17 +41,23 @@ function IcalFeedRow({ ical, onRemove, onSync, syncing }) {
   const status = ical.last_sync_status
   const lastAt = relTimeAgo(ical.last_synced_at)
 
+  // Status precedence: failed > ok-on-timestamp > never synced.
+  // Treat any feed with last_synced_at set as "Synced" even when
+  // last_sync_status is null — historic rows from before #93's
+  // sync_property update lacked a status string, and rendering them
+  // as "Never synced" would defeat the whole observability feature
+  // (Codex P1).
   let statusPill
-  if (status === 'ok') {
-    statusPill = (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-        <CheckCircle className="w-3 h-3" /> Synced {lastAt || ''}
-      </span>
-    )
-  } else if (status === 'failed' || status === 'retrying') {
+  if (status === 'failed' || status === 'retrying') {
     statusPill = (
       <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={ical.last_sync_error || ''}>
         <AlertTriangle className="w-3 h-3" /> Failed {lastAt || ''}
+      </span>
+    )
+  } else if (status === 'ok' || ical.last_synced_at) {
+    statusPill = (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+        <CheckCircle className="w-3 h-3" /> Synced {lastAt || ''}
       </span>
     )
   } else {
