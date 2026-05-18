@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 import re
 import logging
@@ -69,6 +69,24 @@ class PropertyIcalSchema(BaseModel):
     house_code: Optional[str] = None
     access_links: Optional[dict] = None
     instructions: Optional[str] = None
+
+    @field_validator('access_links', mode='before')
+    @classmethod
+    def _coerce_access_links(cls, v):
+        """Frontend sends '' (empty string) when no access links are set.
+        Coerce to None, or parse a JSON string into a dict if possible."""
+        if v is None or v == '' or v == {} or v == []:
+            return None
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            try:
+                import json as _json
+                parsed = _json.loads(v)
+                return parsed if isinstance(parsed, dict) else None
+            except (ValueError, TypeError):
+                return None
+        return None
 
 
 def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
