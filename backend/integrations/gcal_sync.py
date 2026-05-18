@@ -379,6 +379,8 @@ def sync_gcal_cancellations(db: Session) -> dict:
         "deleted_or_cancelled": 0,
         "exceptions_written": 0,
         "errors": 0,
+        "would_cancel": 0,
+        "circuit_breaker_tripped": False,
     }
 
     jobs = (
@@ -392,13 +394,49 @@ def sync_gcal_cancellations(db: Session) -> dict:
     )
     out["checked"] = len(jobs)
 
+    # === CIRCUIT BREAKER PRE-PASS ===
+    # Before mutating anything, fetch every GCal event and count how many
+    # would be cancelled. If that's more than 20% of the checked set (and
+    # more than 5 jobs absolute), refuse to cancel any of them. Prevents
+    # mass-cancellation events caused by auth lapses, calendar ID swaps,
+    # or transient Google API issues returning None for every event.
+    fetched = {}  # job_id -> (event, error)
+    would_cancel = 0
     for job in jobs:
         try:
             event = get_event(job.gcal_event_id, job_type=job.job_type or "residential")
+            fetched[job.id] = (event, None)
+            if event is None or event.get("status") == "cancelled":
+                would_cancel += 1
         except Exception as e:
-            # Transient Google error or auth issue — don't cascade-cancel jobs
-            # because of an integration hiccup. Skip and let the next tick try.
-            log.warning(f"[gcal-cancellations] get_event failed for job {job.id}: {e}")
+            fetched[job.id] = (None, e)
+
+    out["would_cancel"] = would_cancel
+
+    MAX_CANCEL_RATIO = 0.20
+    MIN_TRIP_COUNT = 5
+    if would_cancel > MIN_TRIP_COUNT and len(jobs) > 0:
+        cancel_ratio = would_cancel / len(jobs)
+        if cancel_ratio > MAX_CANCEL_RATIO:
+            out["circuit_breaker_tripped"] = True
+            log.critical(
+                f"[gcal-cancellations] CIRCUIT-BREAKER TRIPPED: would "
+                f"cancel {would_cancel}/{len(jobs)} jobs "
+                f"({cancel_ratio*100:.0f}%). Refusing to cancel any this "
+                f"tick. Possible causes: GCal auth issue, calendar ID "
+                f"mismatch, or API outage. If intentional, run the sync "
+                f"manually or temporarily disable gcal_auto_sync_enabled."
+            )
+            return out
+    # === END CIRCUIT BREAKER ===
+
+    for job in jobs:
+        event, err = fetched[job.id]
+        if err is not None:
+            # Transient Google error or auth issue — don't cascade-cancel
+            # jobs because of an integration hiccup. Skip and let the next
+            # tick try.
+            log.warning(f"[gcal-cancellations] get_event failed for job {job.id}: {err}")
             out["errors"] += 1
             continue
 
