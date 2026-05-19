@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
@@ -210,6 +211,37 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
         .all()
     }
 
+    # Safety-net: rescue any existing Jobs for this schedule whose
+    # scheduled_date got nulled (root cause under investigation — see iCal
+    # parallel). Map them onto rule-derived dates that have no Job yet so
+    # they show on the Schedule again instead of being orphaned.
+    orphaned = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched.id,
+            Job.scheduled_date.is_(None),
+            Job.status.notin_(("cancelled", "completed")),
+        )
+        .order_by(Job.id.asc())
+        .all()
+    )
+    if orphaned:
+        taken_dates = {
+            j.scheduled_date for j in db.query(Job).filter(
+                Job.recurring_schedule_id == sched.id,
+                Job.scheduled_date.isnot(None),
+            ).all()
+        }
+        available = [d for d in dates if d not in cancelled_dates and d not in taken_dates]
+        for j, d in zip(orphaned, available):
+            j.scheduled_date = d
+            if not j.start_time:
+                j.start_time = sched.start_time
+            if not j.end_time:
+                j.end_time = sched.end_time
+            logger.info(f"[recurring] rescued orphan Job {j.id} → scheduled_date={d}")
+        db.flush()
+
     for d in dates:
         if d in cancelled_dates:
             # User cancelled this occurrence already; do not resurrect it.
@@ -316,8 +348,8 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
         d = sched_to_dict(s)
         d["upcoming_job_count"] = db.query(Job).filter(
             Job.recurring_schedule_id == s.id,
-            Job.scheduled_date >= today,
             Job.status != "cancelled",
+            or_(Job.scheduled_date == None, Job.scheduled_date >= today),
         ).count()
         out.append(d)
     return out
