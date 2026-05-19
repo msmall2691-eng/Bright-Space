@@ -253,8 +253,119 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
   )
 }
 
+function RecurringPanel() {
+  const [schedules, setSchedules] = useState([])
+  const [clients, setClients] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(null)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [sch, cli] = await Promise.all([
+        get('/api/recurring'),
+        get('/api/clients'),
+      ])
+      const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
+      const cliMap = {}
+      cliArr.forEach(c => { cliMap[c.id] = c })
+      setSchedules(Array.isArray(sch) ? sch : (sch.items || []))
+      setClients(cliMap)
+    } catch (e) {
+      setError(e.message || 'Failed to load recurring schedules')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleGenerate = async (id) => {
+    setGenerating(id)
+    try {
+      const r = await post(`/api/recurring/${id}/generate`, {})
+      await load()
+      alert(`Generated ${r.jobs_created || 0} new jobs.`)
+    } catch (e) {
+      alert(`Generation failed: ${e.message || e}`)
+    } finally {
+      setGenerating(null)
+    }
+  }
+
+  const handleToggleActive = async (s) => {
+    try {
+      await put(`/api/recurring/${s.id}`, { active: !s.active })
+      await load()
+    } catch (e) {
+      alert(`Update failed: ${e.message || e}`)
+    }
+  }
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Recurring schedules</h1>
+            <p className="text-sm text-neutral-500 mt-1">Auto-generates jobs daily. Manual trigger available per schedule.</p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={load}><RefreshCw className="w-4 h-4 mr-1" />Refresh</Button>
+        </div>
+        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
+        {loading ? (
+          <div className="text-center text-neutral-400 py-12">Loading...</div>
+        ) : schedules.length === 0 ? (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-10 text-center">
+            <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+            <p className="text-[13px] text-neutral-500">No recurring schedules yet</p>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {schedules.map(s => {
+              const client = clients[s.client_id]
+              const days = s.days_of_week || [s.day_of_week]
+              const dayStr = days.map(d => dayNames[(d + 1) % 7]).join(', ')
+              return (
+                <li key={s.id} className="bg-white border border-neutral-200 rounded-2xl p-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-semibold text-neutral-900">{s.title || 'Untitled'}</h3>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.active ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                          {s.active ? 'Active' : 'Paused'}
+                        </span>
+                      </div>
+                      <p className="text-[13px] text-neutral-600">{client?.name || 'Unknown client'} · {s.address}</p>
+                      <p className="text-[12px] text-neutral-500 mt-1">
+                        {s.frequency} · {dayStr} · {s.upcoming_job_count || 0} upcoming job{s.upcoming_job_count === 1 ? '' : 's'} · generates {s.generate_weeks_ahead} weeks ahead
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => handleToggleActive(s)}>
+                        {s.active ? 'Pause' : 'Resume'}
+                      </Button>
+                      <Button variant="primary" size="sm" disabled={generating === s.id || !s.active} onClick={() => handleGenerate(s.id)}>
+                        {generating === s.id ? 'Generating...' : 'Generate now'}
+                      </Button>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
+  if (searchParams.get('tab') === 'recurring') return <RecurringPanel />
   // Three view modes today:
   //   agenda — single-day full-width card stack (default on phone, the
   //            screen a cleaner actually uses in the field)
