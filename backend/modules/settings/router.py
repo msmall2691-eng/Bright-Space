@@ -223,3 +223,76 @@ def save_automation_settings(config: AutomationConfig, db: Session = Depends(get
     db.commit()
     logger.info("automation settings saved: %s", data)
     return {"status": "saved", **data}
+
+
+# ---------- Quote Templates ----------
+import json as _json
+
+DEFAULT_QUOTE_TEMPLATES = [
+    {"id": "biweekly_residential", "label": "Biweekly Residential", "service_type": "residential",
+     "items": [{"name": "Biweekly home clean", "description": "Recurring biweekly residential cleaning", "qty": 1, "unit_price": 185}]},
+    {"id": "weekly_residential", "label": "Weekly Residential", "service_type": "residential",
+     "items": [{"name": "Weekly home clean", "description": "Recurring weekly residential cleaning", "qty": 1, "unit_price": 165}]},
+    {"id": "str_turnover", "label": "STR Turnover", "service_type": "str",
+     "items": [{"name": "Airbnb / VRBO turnover", "description": "Strip beds, clean kitchen + baths, restock linens between guests", "qty": 1, "unit_price": 145}]},
+    {"id": "one_time_deep", "label": "One-Time Deep Clean", "service_type": "residential",
+     "items": [{"name": "Deep clean (one-time)", "description": "Full top-to-bottom deep clean of the home", "qty": 1, "unit_price": 425}]},
+    {"id": "move_in_out", "label": "Move-In / Move-Out", "service_type": "residential",
+     "items": [{"name": "Move-in / move-out clean", "description": "Empty-home top-to-bottom clean, inside cabinets, appliances, baseboards", "qty": 1, "unit_price": 525}]},
+    {"id": "office_clean", "label": "Commercial / Office", "service_type": "commercial",
+     "items": [{"name": "Office clean", "description": "Recurring office cleaning - trash, restrooms, vacuum, kitchen", "qty": 1, "unit_price": 295}]},
+]
+
+
+@router.get("/quote-templates")
+def get_quote_templates(db: Session = Depends(get_db)):
+    """Return the saved quote templates list. Seeds with defaults if empty."""
+    row = db.query(AppSetting).filter(AppSetting.key == "quote_templates").first()
+    if row and row.value:
+        try:
+            templates = _json.loads(row.value)
+            if isinstance(templates, list):
+                return {"templates": templates}
+        except Exception as e:
+            logger.warning(f"Bad quote_templates JSON, falling back to defaults: {e}")
+    return {"templates": DEFAULT_QUOTE_TEMPLATES}
+
+
+class QuoteTemplateItemBody(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    qty: float = 1
+    unit_price: float = 0
+
+
+class QuoteTemplateBody(BaseModel):
+    id: str
+    label: str
+    service_type: str
+    items: list
+
+
+class QuoteTemplatesUpdate(BaseModel):
+    templates: list
+
+
+@router.put("/quote-templates", dependencies=[Depends(require_role("admin", "manager"))])
+def update_quote_templates(body: QuoteTemplatesUpdate, db: Session = Depends(get_db)):
+    """Overwrite the quote templates list. Caller sends the full array."""
+    if not isinstance(body.templates, list):
+        raise HTTPException(400, "templates must be an array")
+    # Light validation — every template needs id + label + items list
+    for i, t in enumerate(body.templates):
+        if not isinstance(t, dict) or not t.get("id") or not t.get("label"):
+            raise HTTPException(400, f"Template #{i + 1} is missing id or label")
+        if not isinstance(t.get("items"), list) or not t["items"]:
+            raise HTTPException(400, f"Template \"{t.get('label') or t.get('id')}\" needs at least one line item")
+    payload = _json.dumps(body.templates)
+    row = db.query(AppSetting).filter(AppSetting.key == "quote_templates").first()
+    if row:
+        row.value = payload
+    else:
+        row = AppSetting(key="quote_templates", value=payload)
+        db.add(row)
+    db.commit()
+    return {"templates": body.templates, "saved": True}
