@@ -220,7 +220,7 @@ def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     client_name = client.name if client else "Valued Customer"
     company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
-        from database.models import AppSetting as _AS
+    from database.models import AppSetting as _AS
     _app_url_row = db.query(_AS).filter(_AS.key == "app_url").first()
     app_url = (_app_url_row.value if _app_url_row and _app_url_row.value else None) or os.getenv("APP_URL") or "https://brightbase-production.up.railway.app"
 
