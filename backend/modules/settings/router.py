@@ -162,6 +162,7 @@ class AutomationConfig(BaseModel):
     ical_sync_interval: Optional[int] = None
     gcal_auto_sync_enabled: Optional[bool] = None
     gcal_sync_interval: Optional[int] = None
+    recurring_auto_generate_enabled: Optional[bool] = None
 
 
 AUTOMATION_DEFAULTS = {
@@ -205,6 +206,10 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "gcal_sync_interval": _coerce_int(
             get_setting(db, "gcal_sync_interval"),
             int(os.getenv("GCAL_AUTO_SYNC_INTERVAL_MINUTES", "10") or 10),
+        ),
+        "recurring_auto_generate_enabled": _coerce_bool(
+            get_setting(db, "recurring_auto_generate_enabled"),
+            os.getenv("RECURRING_AUTO_GENERATE_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
         ),
     }
 
