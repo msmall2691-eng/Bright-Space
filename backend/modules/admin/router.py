@@ -637,3 +637,76 @@ def reassign_job_property(payload: ReassignJobPropertyRequest, db: Session = Dep
         "to_property_name": target.name,
         "to_property_address": target.address,
     }
+
+
+class SyncFlagsBody(BaseModel):
+    ical_auto_sync_enabled: Optional[bool] = None
+    gcal_auto_sync_enabled: Optional[bool] = None
+    recurring_auto_generate_enabled: Optional[bool] = None
+
+
+@router.get("/settings", dependencies=[Depends(require_role("admin", "manager"))])
+def get_settings(db: Session = Depends(get_db)):
+    """Return current sync flags (DB-backed) and read-only env-derived config
+    so the Settings page can render company info, calendar IDs, and webhook
+    URLs without exposing secrets.
+    """
+    import os
+    from database.models import AppSetting
+
+    def _flag(key: str, default: bool = True) -> bool:
+        row = db.query(AppSetting).filter(AppSetting.key == key).first()
+        if row is None or row.value is None:
+            env_val = os.getenv(key.upper(), "1" if default else "0")
+            return str(env_val).strip().lower() in {"1", "true", "yes", "on"}
+        return str(row.value).strip().lower() in {"1", "true", "yes", "on"}
+
+    return {
+        "sync_flags": {
+            "ical_auto_sync_enabled": _flag("ical_auto_sync_enabled", True),
+            "gcal_auto_sync_enabled": _flag("gcal_auto_sync_enabled", True),
+            "recurring_auto_generate_enabled": _flag("recurring_auto_generate_enabled", True),
+        },
+        "intervals": {
+            "ical_minutes": int(os.getenv("ICAL_AUTO_SYNC_INTERVAL_MINUTES", "15")),
+            "gcal_minutes": int(os.getenv("GCAL_AUTO_SYNC_INTERVAL_MINUTES", "10")),
+            "recurring_hours": int(os.getenv("RECURRING_AUTO_GENERATE_INTERVAL_HOURS", "24")),
+        },
+        "company": {
+            "name": os.getenv("FROM_NAME", "Maine Cleaning Co"),
+            "email": os.getenv("SMTP_USER", ""),
+            "phone": os.getenv("TWILIO_PHONE_NUMBER", ""),
+            "notify_email": os.getenv("NOTIFY_EMAIL", ""),
+            "app_url": os.getenv("APP_URL", "https://maineclean.co"),
+        },
+        "gcal_calendar_ids": {
+            "residential": os.getenv("GCAL_RESIDENTIAL_CALENDAR_ID", ""),
+            "str": os.getenv("GCAL_STR_CALENDAR_ID", ""),
+            "commercial": os.getenv("GCAL_COMMERCIAL_CALENDAR_ID", ""),
+        },
+        "smtp_configured": bool(os.getenv("SMTP_PASS")),
+    }
+
+
+@router.patch("/settings/sync-flags", dependencies=[Depends(require_role("admin", "manager"))])
+def update_sync_flags(body: SyncFlagsBody, db: Session = Depends(get_db)):
+    """Update DB-backed sync feature flags. These override env defaults at
+    runtime (see scheduler._db_flag)."""
+    from database.models import AppSetting
+
+    payload = body.model_dump(exclude_none=True)
+    if not payload:
+        return {"updated": []}
+
+    updated = []
+    for key, value in payload.items():
+        row = db.query(AppSetting).filter(AppSetting.key == key).first()
+        val_str = "1" if value else "0"
+        if row:
+            row.value = val_str
+        else:
+            row = AppSetting(key=key, value=val_str)
+            db.add(row)
+        updated.append({"key": key, "value": value})
+    db.commit()
+    return {"updated": updated}
