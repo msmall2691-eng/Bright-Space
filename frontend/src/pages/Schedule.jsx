@@ -384,7 +384,10 @@ export default function Schedule() {
     return visits
       .filter(v => {
         // Always show visits regardless of enrichment data
-        if (selectedStatus !== 'all' && v.status !== selectedStatus) {
+        if (selectedStatus === 'all') {
+          // 'all' means all active — hide cancelled (see them via the Cancelled option)
+          if (v.status === 'cancelled') return false
+        } else if (v.status !== selectedStatus) {
           return false
         }
 
@@ -648,6 +651,7 @@ export default function Schedule() {
               <option value="dispatched">Dispatched</option>
               <option value="in_progress">In progress</option>
               <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </div>
         </div>
