@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle, AlertCircle, Clock } from 'lucide-react'
+import { CheckCircle, AlertCircle, Clock, MessageSquare } from 'lucide-react'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -9,6 +9,10 @@ export default function PublicQuote() {
   const [error, setError] = useState(null)
   const [accepting, setAccepting] = useState(false)
   const [accepted, setAccepted] = useState(false)
+  const [showRequest, setShowRequest] = useState(false)
+  const [requestMsg, setRequestMsg] = useState("")
+  const [requesting, setRequesting] = useState(false)
+  const [requested, setRequested] = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -57,6 +61,29 @@ export default function PublicQuote() {
     }
   }
 
+  const handleRequestChanges = async () => {
+    if (!requestMsg.trim()) return
+    setRequesting(true)
+    try {
+      const res = await window.fetch(`/api/quotes/public/${token}/request-changes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: requestMsg.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || 'Could not send your request. Please try again.')
+        return
+      }
+      setRequested(true)
+      setShowRequest(false)
+    } catch (e) {
+      setError('Connection error. Please try again.')
+    } finally {
+      setRequesting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
@@ -91,6 +118,21 @@ export default function PublicQuote() {
           <p className="text-zinc-600 mb-2">Your quote has been accepted.</p>
           <p className="text-sm text-zinc-500">
             We'll reach out shortly to confirm your scheduled date and answer any questions.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (requested) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <MessageSquare className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-zinc-900 mb-2">Got it.</h1>
+          <p className="text-zinc-600 mb-2">We received your change request.</p>
+          <p className="text-sm text-zinc-500">
+            We'll review and send you an updated quote shortly.
           </p>
         </div>
       </div>
@@ -198,10 +240,47 @@ export default function PublicQuote() {
           >
             {accepting ? 'Accepting...' : 'Accept Quote'}
           </button>
+          <button
+            onClick={() => setShowRequest(true)}
+            className="w-full bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-700 font-medium py-3 rounded-lg transition-colors"
+          >
+            Request changes
+          </button>
           <p className="text-xs text-zinc-500 text-center">
             By accepting, you're confirming your interest. We'll contact you to schedule the service.
           </p>
         </div>
+
+        {showRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
+            <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-lg shadow-xl flex flex-col max-h-[95vh]">
+              <div className="p-5 border-b border-zinc-200">
+                <h2 className="text-lg font-bold text-zinc-900">What would you like changed?</h2>
+                <p className="text-xs text-zinc-500 mt-1">Tell us what to adjust and we'll send you a new quote.</p>
+              </div>
+              <div className="p-5 overflow-y-auto flex-1">
+                <textarea
+                  value={requestMsg}
+                  onChange={(e) => setRequestMsg(e.target.value)}
+                  placeholder="e.g. Can we add a deep clean of the kitchen? Or remove the basement?"
+                  rows={6}
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  autoFocus
+                />
+              </div>
+              <div className="p-4 border-t border-zinc-200 bg-zinc-50 flex justify-end gap-2">
+                <button onClick={() => setShowRequest(false)} className="px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 rounded-lg">Cancel</button>
+                <button
+                  onClick={handleRequestChanges}
+                  disabled={requesting || !requestMsg.trim()}
+                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white rounded-lg disabled:cursor-not-allowed"
+                >
+                  {requesting ? 'Sending...' : 'Send request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Contact */}
         {(quote.company_email || quote.company_phone) && (
