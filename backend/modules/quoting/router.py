@@ -358,6 +358,12 @@ class AcceptQuoteRequest(BaseModel):
     pass
 
 
+class RequestChangesBody(BaseModel):
+    message: str
+    customer_name: Optional[str] = None
+    customer_email: Optional[str] = None
+
+
 @router.post("/public/{token}/accept")
 def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, db: Session = Depends(get_db)):
     """Accept a quote via public token (no auth required). Creates a Job."""
@@ -429,3 +435,76 @@ def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, 
         "scheduled_status": "needs_date",
         "job": job_to_dict(job),
     }
+
+
+@router.post("/public/{token}/request-changes")
+def request_quote_changes(token: str, body: RequestChangesBody, request: Request, db: Session = Depends(get_db)):
+    """Customer asks for changes via the public quote link. Records an
+    Activity and emails the company so staff can edit + resend the quote."""
+    from datetime import datetime
+    from integrations.email import send_email
+
+    quote = db.query(Quote).filter(Quote.public_token == token).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    if quote.accepted_at:
+        raise HTTPException(status_code=409, detail="This quote was already accepted")
+
+    msg = (body.message or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="Tell us what to change")
+
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "")
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    customer_name = (body.customer_name or (client.name if client else "Customer")).strip()
+    customer_email = (body.customer_email or (client.email if client else "")).strip()
+
+    # Move quote back to "viewed" so the dashboard surfaces it for follow-up
+    quote.status = "viewed"
+
+    activity = Activity(
+        client_id=quote.client_id,
+        activity_type=ActivityType.QUOTE_ACCEPTED,  # reusing the enum (no QUOTE_CHANGES yet)
+        summary=f"Customer requested changes on quote {quote.quote_number or f'QT-{quote.id}'}",
+        extra_data={
+            "quote_id": quote.id,
+            "kind": "request_changes",
+            "message": msg,
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "ip": client_ip,
+        },
+    )
+    db.add(activity)
+
+    # Drop a message into the comms thread so it shows up in the inbox.
+    inbound = Message(
+        client_id=quote.client_id,
+        channel="email",
+        direction="inbound",
+        from_addr=customer_email or "(public quote link)",
+        to_addr=os.getenv("SMTP_USER", ""),
+        subject=f"Changes requested on quote {quote.quote_number or f'QT-{quote.id}'}",
+        body=msg,
+        status="received",
+    )
+    db.add(inbound)
+
+    # Notify staff via email (best-effort — never block customer response).
+    try:
+        notify_to = os.getenv("NOTIFY_EMAIL") or os.getenv("SMTP_USER")
+        if notify_to:
+            q_num = quote.quote_number or f"QT-{quote.id}"
+            subject = f"[Quote {q_num}] Customer requested changes"
+            body_html = (
+                f"<p>{customer_name} asked for changes on quote <b>{q_num}</b>.</p>"
+                f"<p><b>Message:</b></p><blockquote>{msg}</blockquote>"
+                f"<p>Open the quote in BrightBase to edit and resend.</p>"
+            )
+            body_plain = f"{customer_name} requested changes on quote {q_num}:\n\n{msg}\n\nOpen the quote in BrightBase to edit and resend."
+            send_email(to=notify_to, subject=subject, html_body=body_html, text_body=body_plain)
+    except Exception:
+        pass
+
+    db.commit()
+    return {"quote_id": quote.id, "status": "changes_requested"}
