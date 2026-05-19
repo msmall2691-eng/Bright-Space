@@ -84,12 +84,17 @@ def _run_migrations():
     bool_col = "BOOLEAN DEFAULT FALSE" if is_pg else "INTEGER DEFAULT 0"
 
     migrations = [
-        # PR 1: Fix data types — VARCHAR dates become DATE, TIME, TIMESTAMPTZ
-        "ALTER TABLE jobs ADD COLUMN scheduled_date_new DATE",
-        "ALTER TABLE jobs ADD COLUMN start_time_new TIME",
-        "ALTER TABLE jobs ADD COLUMN end_time_new TIME",
-        "ALTER TABLE recurring_schedules ADD COLUMN start_time_new TIME",
-        "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
+        # PR 1: VARCHAR->DATE conversion (one-time, completed in prod 2026-04).
+        # The ADD+DROP+RENAME pair below had NO data-copy step, so each boot
+        # silently wiped Job.scheduled_date / start_time / end_time. The Visit
+        # table preserved dates so list views still worked, but /api/jobs/{id},
+        # recurring upcoming counts, and any direct Job.scheduled_date read
+        # returned NULL. Disabled until needed for a fresh deploy.
+        # "ALTER TABLE jobs ADD COLUMN scheduled_date_new DATE",
+        # "ALTER TABLE jobs ADD COLUMN start_time_new TIME",
+        # "ALTER TABLE jobs ADD COLUMN end_time_new TIME",
+        # "ALTER TABLE recurring_schedules ADD COLUMN start_time_new TIME",
+        # "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
         # PR 3: Quote traceability — track when client views quote
         "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
         # PR 4: Visits table (created by create_all, but ensure indexes)
@@ -208,18 +213,22 @@ def _run_migrations():
     # Dialect-aware backfill migrations
     if is_pg:
         backfill_migrations = [
-            # PR 1: Drop old VARCHAR columns and rename new DATE/TIME columns
-            "ALTER TABLE jobs DROP COLUMN IF EXISTS scheduled_date CASCADE",
-            "ALTER TABLE jobs RENAME COLUMN scheduled_date_new TO scheduled_date",
-            "ALTER TABLE jobs DROP COLUMN IF EXISTS start_time CASCADE",
-            "ALTER TABLE jobs RENAME COLUMN start_time_new TO start_time",
-            "ALTER TABLE jobs DROP COLUMN IF EXISTS end_time CASCADE",
-            "ALTER TABLE jobs RENAME COLUMN end_time_new TO end_time",
+            # PR 1: DROP+RENAME paired with the ADD above. DISABLED because
+            # boot N would (a) ADD a fresh empty _new column, (b) DROP the
+            # populated scheduled_date column, (c) RENAME the empty _new
+            # column into its place — wiping all Job.scheduled_date values.
+            # The index create is idempotent and kept.
+            # "ALTER TABLE jobs DROP COLUMN IF EXISTS scheduled_date CASCADE",
+            # "ALTER TABLE jobs RENAME COLUMN scheduled_date_new TO scheduled_date",
+            # "ALTER TABLE jobs DROP COLUMN IF EXISTS start_time CASCADE",
+            # "ALTER TABLE jobs RENAME COLUMN start_time_new TO start_time",
+            # "ALTER TABLE jobs DROP COLUMN IF EXISTS end_time CASCADE",
+            # "ALTER TABLE jobs RENAME COLUMN end_time_new TO end_time",
             "CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_date ON jobs(scheduled_date)",
-            "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS start_time CASCADE",
-            "ALTER TABLE recurring_schedules RENAME COLUMN start_time_new TO start_time",
-            "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS end_time CASCADE",
-            "ALTER TABLE recurring_schedules RENAME COLUMN end_time_new TO end_time",
+            # "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS start_time CASCADE",
+            # "ALTER TABLE recurring_schedules RENAME COLUMN start_time_new TO start_time",
+            # "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS end_time CASCADE",
+            # "ALTER TABLE recurring_schedules RENAME COLUMN end_time_new TO end_time",
             # Backfill existing biweekly schedules with interval_weeks=2
             "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
         ]
