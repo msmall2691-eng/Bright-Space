@@ -462,7 +462,7 @@ export default function Quoting() {
                     <div className="flex gap-2">
                       <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                         placeholder="e.g. Standard Home Clean"
-                        className="flex-1 bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400" />
+                        className="flex-1 bg-zinc-200 border border-zinc-300 rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none focus:border-blue-400" />
                       <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
                         className="text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -472,13 +472,13 @@ export default function Quoting() {
                     <div className="flex gap-2">
                       <div className="w-20">
                         <label className="text-xs text-zinc-500">Qty</label>
-                        <input type="number" min="0" step="0.5" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
-                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
+                        <input type="number" inputMode="decimal" min="0" step="0.5" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
+                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                       </div>
                       <div className="flex-1">
                         <label className="text-xs text-zinc-500">Unit Price ($)</label>
-                        <input type="number" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
-                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
+                        <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                       </div>
                       <div className="flex-1 flex flex-col justify-end">
                         <label className="text-xs text-zinc-500">Line Total</label>
