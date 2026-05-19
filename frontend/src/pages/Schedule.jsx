@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
@@ -288,6 +288,7 @@ export default function Schedule() {
   const [showDetails, setShowDetails] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
+  const navigate = useNavigate()
   const [coverage, setCoverage] = useState(null)
   const [backfilling, setBackfilling] = useState(false)
   const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
@@ -602,7 +603,7 @@ export default function Schedule() {
               </button>
             </div>
 
-            <Button variant="primary" size="sm" className="whitespace-nowrap">
+            <Button onClick={() => navigate('/scheduling')} variant="primary" size="sm" className="whitespace-nowrap">
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline ml-1.5">New Job</span>
             </Button>
