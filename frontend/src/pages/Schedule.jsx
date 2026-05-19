@@ -253,9 +253,178 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
   )
 }
 
+function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
+  const [form, setForm] = useState({
+    client_id: '',
+    property_id: '',
+    job_type: 'residential',
+    title: '',
+    address: '',
+    frequency: 'weekly',
+    days_of_week: [1],
+    day_of_month: 1,
+    start_time: '09:00',
+    end_time: '11:00',
+    generate_weeks_ahead: 8,
+    notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const filteredProps = properties.filter(p => !form.client_id || p.client_id === parseInt(form.client_id))
+  const toggleDay = (d) => {
+    setForm(f => {
+      const has = f.days_of_week.includes(d)
+      return { ...f, days_of_week: has ? f.days_of_week.filter(x => x !== d) : [...f.days_of_week, d].sort() }
+    })
+  }
+  const handlePropertyChange = (pid) => {
+    const p = properties.find(x => String(x.id) === String(pid))
+    setForm(f => ({
+      ...f,
+      property_id: pid,
+      address: p?.address || f.address,
+      job_type: p?.property_type === 'commercial' ? 'commercial' : 'residential',
+    }))
+  }
+  const submit = async () => {
+    if (!form.client_id) { setError('Pick a client'); return }
+    if (!form.title.trim()) { setError('Title is required'); return }
+    if (!form.address.trim()) { setError('Address is required'); return }
+    if (form.frequency !== 'monthly' && form.days_of_week.length === 0) {
+      setError('Pick at least one day of week'); return
+    }
+    setSaving(true); setError('')
+    try {
+      const payload = {
+        client_id: parseInt(form.client_id),
+        property_id: form.property_id ? parseInt(form.property_id) : null,
+        job_type: form.job_type,
+        title: form.title.trim(),
+        address: form.address.trim(),
+        frequency: form.frequency,
+        interval_weeks: form.frequency === 'biweekly' ? 2 : 1,
+        days_of_week: form.frequency === 'monthly' ? [] : form.days_of_week,
+        day_of_week: form.days_of_week[0] || 0,
+        day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
+        start_time: form.start_time + ':00',
+        end_time: form.end_time + ':00',
+        generate_weeks_ahead: parseInt(form.generate_weeks_ahead) || 8,
+        notes: form.notes || null,
+      }
+      await post('/api/recurring', payload)
+      onCreated(); onClose()
+    } catch (e) {
+      setError(e.message || 'Failed to create schedule')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
+      <div className="w-full sm:max-w-2xl bg-white rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
+          <h2 className="text-xl sm:text-2xl font-bold">New recurring schedule</h2>
+          <button onClick={onClose} className="p-2 hover:bg-blue-400 rounded"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Client *</label>
+              <select value={form.client_id} onChange={e => setForm(f => ({...f, client_id: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+                <option value="">Select a client...</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Property (optional)</label>
+              <select value={form.property_id} onChange={e => handlePropertyChange(e.target.value)} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+                <option value="">None</option>
+                {filteredProps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Title *</label>
+            <input type="text" value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder="Weekly home clean" className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Address *</label>
+            <input type="text" value={form.address} onChange={e => setForm(f => ({...f, address: e.target.value}))} placeholder="123 Main St, Portland, ME" className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Frequency</label>
+              <select value={form.frequency} onChange={e => setForm(f => ({...f, frequency: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Biweekly (every 2 weeks)</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Type</label>
+              <select value={form.job_type} onChange={e => setForm(f => ({...f, job_type: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+              </select>
+            </div>
+          </div>
+          {form.frequency === 'monthly' ? (
+            <div>
+              <label className="block text-sm font-semibold mb-1">Day of month (1-28)</label>
+              <input type="number" min="1" max="28" value={form.day_of_month} onChange={e => setForm(f => ({...f, day_of_month: e.target.value}))} className="w-32 px-3 py-2 border border-neutral-300 rounded-lg" />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-semibold mb-1">Day(s) of week</label>
+              <div className="flex flex-wrap gap-2">
+                {dayLabels.map((label, i) => {
+                  const dayNum = (i + 6) % 7
+                  const sel = form.days_of_week.includes(dayNum)
+                  return (
+                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-neutral-700 border-neutral-300')}>
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Start time</label>
+              <input type="time" value={form.start_time} onChange={e => setForm(f => ({...f, start_time: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">End time</label>
+              <input type="time" value={form.end_time} onChange={e => setForm(f => ({...f, end_time: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Generate weeks ahead</label>
+            <input type="number" min="1" max="52" value={form.generate_weeks_ahead} onChange={e => setForm(f => ({...f, generate_weeks_ahead: e.target.value}))} className="w-32 px-3 py-2 border border-neutral-300 rounded-lg" />
+            <p className="text-xs text-neutral-500 mt-1">How many weeks of future jobs to materialize.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Notes</label>
+            <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+          </div>
+          {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+        </div>
+        <div className="border-t border-neutral-200 bg-neutral-50 p-4 flex justify-end gap-3">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={submit} disabled={saving}>{saving ? 'Creating...' : 'Create schedule'}</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RecurringPanel() {
   const [schedules, setSchedules] = useState([])
   const [clients, setClients] = useState({})
+  const [propertiesList, setPropertiesList] = useState([])
+  const [showCreate, setShowCreate] = useState(false)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(null)
   const [error, setError] = useState('')
@@ -263,15 +432,18 @@ function RecurringPanel() {
   const load = async () => {
     setLoading(true)
     try {
-      const [sch, cli] = await Promise.all([
+      const [sch, cli, props] = await Promise.all([
         get('/api/recurring'),
         get('/api/clients'),
+        get('/api/properties'),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
       const cliMap = {}
       cliArr.forEach(c => { cliMap[c.id] = c })
       setSchedules(Array.isArray(sch) ? sch : (sch.items || []))
       setClients(cliMap)
+      const propsArr = Array.isArray(props) ? props : (props.items || [])
+      setPropertiesList(propsArr)
     } catch (e) {
       setError(e.message || 'Failed to load recurring schedules')
     } finally {
@@ -313,7 +485,10 @@ function RecurringPanel() {
             <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Recurring schedules</h1>
             <p className="text-sm text-neutral-500 mt-1">Auto-generates jobs daily. Manual trigger available per schedule.</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={load}><RefreshCw className="w-4 h-4 mr-1" />Refresh</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={load}><RefreshCw className="w-4 h-4 mr-1" />Refresh</Button>
+            <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}><Plus className="w-4 h-4 mr-1" />New schedule</Button>
+          </div>
         </div>
         {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
         {loading ? (
@@ -359,6 +534,14 @@ function RecurringPanel() {
           </ul>
         )}
       </div>
+      {showCreate && (
+        <RecurringCreateModal
+          clients={Object.values(clients)}
+          properties={propertiesList}
+          onClose={() => setShowCreate(false)}
+          onCreated={load}
+        />
+      )}
     </div>
   )
 }
