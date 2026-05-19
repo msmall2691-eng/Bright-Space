@@ -6,10 +6,55 @@ import os
 import secrets
 
 from database.db import get_db
-from database.models import Quote, Job, LeadIntake, Client, Message, Activity, ActivityType
+from database.models import Quote, Job, LeadIntake, Client, Message, Activity, ActivityType, Property
 from modules.auth.router import require_role
 
 router = APIRouter()
+
+
+def _resolve_property_for_quote(db: Session, quote: Quote) -> int | None:
+    """Find an existing Property for this quote's address, or create one.
+
+    Job.property_id is NOT NULL — every Job needs a Property. When we convert
+    a Quote to a Job we either match the Quote's address to a Property the
+    client already owns, or auto-create a minimal Property record so the
+    pipeline doesn't fail. Returns property.id, or None only if quote has no
+    address and no fallback property (caller should 422).
+    """
+    if not quote.client_id:
+        return None
+    addr = (quote.address or "").strip()
+    if addr:
+        norm = addr.lower()
+        existing = (
+            db.query(Property)
+            .filter(Property.client_id == quote.client_id)
+            .all()
+        )
+        for p in existing:
+            pa = (p.address or "").strip().lower()
+            if pa and (pa == norm or pa in norm or norm in pa):
+                return p.id
+        # No match — auto-create a residential Property for this address.
+        new_prop = Property(
+            client_id=quote.client_id,
+            name=addr[:120],
+            address=addr,
+            property_type=(quote.service_type or "residential"),
+            active=True,
+        )
+        db.add(new_prop)
+        db.flush()
+        return new_prop.id
+    # No address on the quote — fall back to client's first property if any.
+    fallback = (
+        db.query(Property)
+        .filter(Property.client_id == quote.client_id, Property.active == True)
+        .order_by(Property.id.asc())
+        .first()
+    )
+    return fallback.id if fallback else None
+
 
 
 class QuoteItem(BaseModel):
@@ -227,13 +272,18 @@ def convert_to_job(quote_id: int, db: Session = Depends(get_db)):
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
 
+    property_id = _resolve_property_for_quote(db, quote)
+    if property_id is None:
+        raise HTTPException(status_code=422, detail="Quote has no address and the client has no property. Add an address to the quote or a property to the client first.")
+
     job = Job(
         client_id=quote.client_id,
+        property_id=property_id,
         quote_id=quote.id,  # Persist the source quote for revenue tracking
         job_type=quote.service_type or "residential",
         title=f"Clean — {quote.quote_number or f'QT-{quote.id}'}",
         address=quote.address or "",
-        scheduled_date="",  # user sets this when editing the job
+        scheduled_date=None,  # user sets this when editing the job
         start_time="09:00",
         end_time="12:00",
         status="scheduled",
@@ -329,13 +379,32 @@ def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, 
     quote.accepted_at = datetime.utcnow()
     quote.accepted_ip = client_ip
 
+    # Resolve a Property for the Job — auto-create from quote.address if needed.
+    # Job.property_id is NOT NULL so this is required for the insert to succeed.
+    property_id = _resolve_property_for_quote(db, quote)
+    if property_id is None:
+        # No address on quote and no existing property to fall back to. We do
+        # not 422 the public endpoint (the customer cannot fix this) — instead
+        # we mark the quote accepted, log it, and let staff create the Job
+        # manually with the right Property.
+        activity = Activity(
+            client_id=quote.client_id,
+            activity_type=ActivityType.QUOTE_ACCEPTED,
+            summary=f"Quote {quote.quote_number or f'QT-{quote.id}'} accepted (manual Job creation needed — no property)",
+            extra_data={"quote_id": quote.id, "accepted_ip": client_ip, "needs_manual_job": True},
+        )
+        db.add(activity)
+        db.commit()
+        return {"job_id": None, "scheduled_status": "needs_property"}
+
     job = Job(
         client_id=quote.client_id,
+        property_id=property_id,
         quote_id=quote.id,
         job_type=quote.service_type or "residential",
         title=f"Clean — {quote.quote_number or f'QT-{quote.id}'}",
         address=quote.address or "",
-        scheduled_date="",
+        scheduled_date=None,
         start_time="09:00",
         end_time="12:00",
         status="scheduled",
