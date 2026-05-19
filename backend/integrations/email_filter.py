@@ -75,14 +75,15 @@ SPAM_LOCAL_PART_PATTERNS = [
 # If the subject or the first ~500 chars of the body contains any of these,
 # we treat the sender as a real prospect even if their domain is unknown.
 CUSTOMER_KEYWORDS = [
+    # Only truly cleaning-domain terms. Generic words like "service",
+    # "schedule", "office", "home", "appointment" caused too many false
+    # positives — every SaaS marketing email matched them. Real
+    # customer inquiries will mention one of these specific words.
     "cleaning", "clean", "cleaner", "maid", "housekeeper",
-    "quote", "estimate", "price", "pricing", "cost",
-    "book", "booking", "appointment", "schedule", "availability",
-    "service", "recurring", "weekly", "bi-weekly", "biweekly", "monthly",
-    "airbnb", "str", "short term rental", "short-term rental",
+    "deep clean", "deep cleaning",
+    "airbnb", "vrbo", "str", "short term rental", "short-term rental",
     "vacation rental", "turnover", "turn over",
-    "house", "home", "apartment", "condo", "office",
-    "move in", "move out", "move-in", "move-out", "deep clean",
+    "move in", "move out", "move-in", "move-out",
 ]
 
 # Domains the business operates under — replies to threads we started.
