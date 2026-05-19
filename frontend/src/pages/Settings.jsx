@@ -191,6 +191,7 @@ export default function Settings() {
     ical_sync_interval: 15,
     gcal_auto_sync_enabled: true,
     gcal_sync_interval: 10,
+    recurring_auto_generate_enabled: true,
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
@@ -818,6 +819,23 @@ export default function Settings() {
                         className={inp} />
                       <p className="text-xs text-zinc-400 mt-1">Recommended: 10 minutes</p>
                     </div>
+                  )}
+                </div>
+
+                <div className="border-t border-zinc-100 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-zinc-900">Recurring Jobs Auto-Generate</h3>
+                      <p className="text-xs text-zinc-500 mt-1">Auto-create scheduled jobs from active recurring schedules every day. Backfills missed dates so you never run out of upcoming jobs.</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={automationSettings.recurring_auto_generate_enabled}
+                        onChange={e => setAutomationSettings(s => ({ ...s, recurring_auto_generate_enabled: e.target.checked }))}
+                        className="w-4 h-4 rounded" />
+                    </label>
+                  </div>
+                  {automationSettings.recurring_auto_generate_enabled && (
+                    <p className="text-xs text-zinc-500 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
                   )}
                 </div>
               </div>
