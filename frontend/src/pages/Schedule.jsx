@@ -603,7 +603,7 @@ export default function Schedule() {
               </button>
             </div>
 
-            <Button onClick={() => navigate('/scheduling')} variant="primary" size="sm" className="whitespace-nowrap">
+            <Button onClick={() => { setEditingJob(null); setShowJobModal(true) }} variant="primary" size="sm" className="whitespace-nowrap">
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline ml-1.5">New Job</span>
             </Button>
