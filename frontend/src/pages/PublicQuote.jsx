@@ -236,13 +236,13 @@ export default function PublicQuote() {
           <button
             onClick={handleAccept}
             disabled={accepting}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-300 text-white font-semibold py-3 rounded-lg transition-colors disabled:cursor-not-allowed"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-300 text-white font-semibold py-4 sm:py-3 text-base rounded-lg min-h-[52px] transition-colors disabled:cursor-not-allowed"
           >
             {accepting ? 'Accepting...' : 'Accept Quote'}
           </button>
           <button
             onClick={() => setShowRequest(true)}
-            className="w-full bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-700 font-medium py-3 rounded-lg transition-colors"
+            className="w-full bg-white hover:bg-zinc-50 border border-zinc-300 text-zinc-700 font-medium py-4 sm:py-3 text-base rounded-lg min-h-[52px] transition-colors"
           >
             Request changes
           </button>
@@ -264,7 +264,7 @@ export default function PublicQuote() {
                   onChange={(e) => setRequestMsg(e.target.value)}
                   placeholder="e.g. Can we add a deep clean of the kitchen? Or remove the basement?"
                   rows={6}
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   autoFocus
                 />
               </div>
