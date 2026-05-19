@@ -149,7 +149,8 @@ export default function Quoting() {
   }
 
   const save = async () => {
-    if (!form.client_id) return
+    if (!form.client_id) { showToast('Please select a client first'); return }
+    if (!form.items.length || form.items.every(i => !i.name || !i.name.trim())) { showToast('Add at least one line item with a name'); return }
     setSaving(true)
     try {
       const body = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
