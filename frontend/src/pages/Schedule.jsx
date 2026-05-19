@@ -877,7 +877,7 @@ export default function Schedule() {
       )}
 
       {/* Job Edit Modal */}
-      {showJobModal && editingJob && (
+      {showJobModal && (
         <JobEditModal
           job={editingJob}
           properties={Object.values(properties)}
