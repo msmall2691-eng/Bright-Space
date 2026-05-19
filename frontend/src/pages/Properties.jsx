@@ -424,6 +424,38 @@ export default function Properties() {
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
+                            {(ical.last_synced_at || ical.last_sync_status) && (
+                              <div className="flex items-center gap-1.5 text-xs mb-1.5">
+                                {ical.last_sync_status === 'failed' ? (
+                                  <>
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                    <span className="text-red-600 font-medium">Sync failed</span>
+                                    {ical.last_sync_error && <span className="text-zinc-500 truncate ml-1">{ical.last_sync_error}</span>}
+                                  </>
+                                ) : ical.last_sync_status === 'retrying' ? (
+                                  <>
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                    <span className="text-amber-600 font-medium">Retrying</span>
+                                    {ical.sync_retry_count > 0 && <span className="text-zinc-500 ml-1">({ical.sync_retry_count} attempts)</span>}
+                                  </>
+                                ) : ical.last_sync_status === 'paused' ? (
+                                  <>
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+                                    <span className="text-zinc-500">Paused</span>
+                                  </>
+                                ) : ical.last_synced_at ? (
+                                  <>
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    <span className="text-zinc-600">Synced {new Date(ical.last_synced_at).toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-300"></span>
+                                    <span className="text-zinc-400">Never synced</span>
+                                  </>
+                                )}
+                              </div>
+                            )}
                             {(ical.checkout_time || ical.house_code || ical.instructions) && (
                               <div className="text-xs text-zinc-500 bg-zinc-50 rounded p-1.5 space-y-0.5">
                                 {ical.checkout_time && <div>Checkout: {ical.checkout_time}</div>}
