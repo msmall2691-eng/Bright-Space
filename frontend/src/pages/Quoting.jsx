@@ -22,6 +22,23 @@ const LEAD_STATUS_COLORS = {
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
+const QUOTE_TEMPLATES = [
+  { id: 'biweekly_residential', label: 'Biweekly Residential', service_type: 'residential',
+    items: [{ name: 'Biweekly home clean', description: 'Recurring biweekly residential cleaning', qty: 1, unit_price: 185 }] },
+  { id: 'weekly_residential', label: 'Weekly Residential', service_type: 'residential',
+    items: [{ name: 'Weekly home clean', description: 'Recurring weekly residential cleaning', qty: 1, unit_price: 165 }] },
+  { id: 'str_turnover', label: 'STR Turnover', service_type: 'str',
+    items: [{ name: 'Airbnb / VRBO turnover', description: 'Strip beds, clean kitchen + baths, restock linens between guests', qty: 1, unit_price: 145 }] },
+  { id: 'one_time_deep', label: 'One-Time Deep Clean', service_type: 'residential',
+    items: [{ name: 'Deep clean (one-time)', description: 'Full top-to-bottom deep clean of the home', qty: 1, unit_price: 425 }] },
+  { id: 'move_in_out', label: 'Move-In / Move-Out', service_type: 'residential',
+    items: [
+      { name: 'Move-in / move-out clean', description: 'Empty-home top-to-bottom clean, inside cabinets, appliances, baseboards', qty: 1, unit_price: 525 },
+    ] },
+  { id: 'office_clean', label: 'Commercial / Office', service_type: 'commercial',
+    items: [{ name: 'Office clean', description: 'Recurring office cleaning - trash, restrooms, vacuum, kitchen', qty: 1, unit_price: 295 }] },
+]
+
 function Toast({ msg }) {
   return (
     <div className="fixed bottom-6 right-6 bg-white border border-zinc-200 text-zinc-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
@@ -407,6 +424,27 @@ export default function Quoting() {
               <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                 placeholder="123 Main St, Portland, ME 04101"
                 className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+
+            {/* Templates */}
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1">Start from template</label>
+              <select
+                value=""
+                onChange={e => {
+                  const tpl = QUOTE_TEMPLATES.find(t => t.id === e.target.value)
+                  if (!tpl) return
+                  setForm(f => ({ ...f, service_type: tpl.service_type, items: tpl.items.map(it => ({ ...it })) }))
+                  e.target.value = ''
+                }}
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white text-sm"
+              >
+                <option value="">Custom (build from scratch)</option>
+                {QUOTE_TEMPLATES.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-zinc-500 mt-1">Pick a template to pre-fill the line items. You can still edit everything.</p>
             </div>
 
             {/* Line items */}
