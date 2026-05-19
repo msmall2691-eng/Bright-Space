@@ -180,6 +180,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
 @router.get("", response_model=List[JobResponse], dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_jobs(
     client_id: Optional[int] = None,
+    property_id: Optional[int] = None,
     status: Optional[str] = None,
     date: Optional[str] = None,
     date_from: Optional[str] = None,
@@ -205,6 +206,8 @@ def get_jobs(
 
     if client_id:
         q = q.filter(Job.client_id == client_id)
+    if property_id:
+        q = q.filter(Job.property_id == property_id)
     if status:
         q = q.filter(Job.status == status)
     if date:
