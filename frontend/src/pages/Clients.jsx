@@ -406,6 +406,7 @@ export default function Clients() {
             </div>
             {[
               { label: 'Email', key: 'email' },
+              { label: 'Phone', key: 'phone' },
               { label: 'Source', key: 'source' },
             ].map(({ label, key }) => (
               <div key={key}>
