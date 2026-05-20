@@ -987,3 +987,145 @@ async def import_clients_xlsx(file: UploadFile = File(...), db: Session = Depend
 
     db.commit()
     return {"added": added, "skipped": skipped, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Cleanup: merge placeholder-named Client rows into properly-named clients
+# that share the same email. Safe — only merges where the keeper is the one
+# with a real name. Default is dry_run=True so you can preview the changes.
+# ---------------------------------------------------------------------------
+
+# Re-uses _PLACEHOLDER_NAME_PATTERN-style heuristics. A name is "placeholder"
+# if it's empty, "Unknown", "BrightBase Webhook Test", or looks like a phone
+# number. Anything else is treated as a real customer name.
+import re as _re_dedupe
+
+_DEDUPE_PLACEHOLDER_NAME_RE = _re_dedupe.compile(
+    r"^(unknown|brightbase webhook test|webhook test|test client|n/a|\+?[\d\s().\-]+)$",
+    _re_dedupe.IGNORECASE,
+)
+
+
+def _dedupe_is_placeholder(name):
+    if not name:
+        return True
+    s = str(name).strip()
+    if not s:
+        return True
+    return bool(_DEDUPE_PLACEHOLDER_NAME_RE.match(s))
+
+
+@router.post("/cleanup-duplicates-by-email", dependencies=[Depends(require_role("admin"))])
+def cleanup_duplicates_by_email(dry_run: bool = True, db: Session = Depends(get_db)):
+    """Merge placeholder-named Client rows into properly-named clients that
+    share the same (case-insensitive) email. Default dry_run=true returns a
+    preview without applying changes.
+
+    Reassigns these to the keeper before deleting the placeholder:
+      - leads (LeadIntake.client_id)
+      - quotes (Quote.client_id)
+      - jobs (Job.client_id)
+      - properties (Property.client_id)
+      - opportunities (Opportunity.client_id)
+      - activities (Activity.client_id)
+      - messages (Message.client_id)
+    """
+    from sqlalchemy import func as _sa_func
+    from database.models import LeadIntake as _LI, Quote as _Q, Job as _J, Property as _P, Activity as _A, Message as _M
+
+    try:
+        from database.models import Opportunity as _O
+    except Exception:
+        _O = None
+
+    # Group clients by lowercased email, only emails with > 1 client
+    rows = (
+        db.query(Client)
+        .filter(Client.email.isnot(None), Client.email != "")
+        .all()
+    )
+    by_email = {}
+    for c in rows:
+        key = (c.email or "").strip().lower()
+        if not key:
+            continue
+        by_email.setdefault(key, []).append(c)
+
+    report = {"dry_run": bool(dry_run), "merges": [], "errors": []}
+
+    for email, group in by_email.items():
+        if len(group) < 2:
+            continue
+        # Pick the keeper: prefer the one with a real (non-placeholder) name.
+        real_named = [c for c in group if not _dedupe_is_placeholder(c.name)]
+        placeholders = [c for c in group if _dedupe_is_placeholder(c.name)]
+        if not real_named:
+            # All look like placeholders — skip; safer not to merge.
+            continue
+        if not placeholders:
+            # No placeholders to merge in.
+            continue
+        # Prefer the one with the most attached records as the keeper
+        def _score(c):
+            return (
+                len(getattr(c, "jobs", []) or []),
+                len(getattr(c, "quotes", []) or []),
+                len(getattr(c, "invoices", []) or []),
+                -c.id,  # tie-break: oldest id wins
+            )
+        keeper = max(real_named, key=_score)
+
+        for placeholder in placeholders:
+            if placeholder.id == keeper.id:
+                continue
+            merge_detail = {
+                "email": email,
+                "keeper_id": keeper.id,
+                "keeper_name": keeper.name,
+                "placeholder_id": placeholder.id,
+                "placeholder_name": placeholder.name,
+                "reassigned": {},
+            }
+            try:
+                if not dry_run:
+                    # Reassign FK rows
+                    n_leads = db.query(_LI).filter(_LI.client_id == placeholder.id).update({"client_id": keeper.id})
+                    n_quotes = db.query(_Q).filter(_Q.client_id == placeholder.id).update({"client_id": keeper.id})
+                    n_jobs = db.query(_J).filter(_J.client_id == placeholder.id).update({"client_id": keeper.id})
+                    n_props = db.query(_P).filter(_P.client_id == placeholder.id).update({"client_id": keeper.id})
+                    n_acts = db.query(_A).filter(_A.client_id == placeholder.id).update({"client_id": keeper.id})
+                    n_msgs = db.query(_M).filter(_M.client_id == placeholder.id).update({"client_id": keeper.id})
+                    n_opps = 0
+                    if _O is not None:
+                        n_opps = db.query(_O).filter(_O.client_id == placeholder.id).update({"client_id": keeper.id})
+                    merge_detail["reassigned"] = {
+                        "leads": n_leads, "quotes": n_quotes, "jobs": n_jobs,
+                        "properties": n_props, "activities": n_acts,
+                        "messages": n_msgs, "opportunities": n_opps,
+                    }
+                    # Backfill keeper contact fields from the placeholder if missing
+                    if placeholder.phone and not (keeper.phone and keeper.phone.strip()):
+                        keeper.phone = placeholder.phone
+                    if placeholder.address and not (keeper.address and keeper.address.strip()):
+                        keeper.address = placeholder.address
+                    db.flush()
+                    db.delete(placeholder)
+                else:
+                    # Dry-run: just count what WOULD be reassigned
+                    merge_detail["reassigned"] = {
+                        "leads": db.query(_sa_func.count(_LI.id)).filter(_LI.client_id == placeholder.id).scalar(),
+                        "quotes": db.query(_sa_func.count(_Q.id)).filter(_Q.client_id == placeholder.id).scalar(),
+                        "jobs": db.query(_sa_func.count(_J.id)).filter(_J.client_id == placeholder.id).scalar(),
+                        "properties": db.query(_sa_func.count(_P.id)).filter(_P.client_id == placeholder.id).scalar(),
+                        "activities": db.query(_sa_func.count(_A.id)).filter(_A.client_id == placeholder.id).scalar(),
+                        "messages": db.query(_sa_func.count(_M.id)).filter(_M.client_id == placeholder.id).scalar(),
+                    }
+                report["merges"].append(merge_detail)
+            except Exception as e:
+                report["errors"].append({**merge_detail, "error": str(e)})
+
+    if not dry_run and report["merges"]:
+        db.commit()
+
+    report["merged_count"] = len(report["merges"])
+    return report
