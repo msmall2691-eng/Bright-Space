@@ -128,7 +128,13 @@ def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
                 "house_code": pi.house_code,
                 "access_links": pi.access_links,
                 "instructions": pi.instructions,
+                # Sync observability — these fields exist on the model but
+                # weren't surfaced, which is why operators couldn't tell
+                # "is it actually syncing?" from the UI.
                 "last_synced_at": pi.last_synced_at.isoformat() if pi.last_synced_at else None,
+                "last_sync_status": pi.last_sync_status,
+                "last_sync_error": pi.last_sync_error,
+                "sync_retry_count": pi.sync_retry_count or 0,
             }
             for pi in (p.property_icals or [])
         ]

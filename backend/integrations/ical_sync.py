@@ -514,7 +514,19 @@ def sync_property(db: Session, prop: Property) -> dict:
             ical_source_label=prop_ical.source or "unknown",
             property_ical=prop_ical
         )
-        if "error" not in result:
+        # Always record sync attempt outcome so the operator UI can show
+        # an accurate status pill — last_synced_at alone with no status
+        # left the FE unable to distinguish "successful" from "never run"
+        # (Codex P1 on #93).
+        prop_ical.last_synced_at = datetime.utcnow()
+        if "error" in result:
+            prop_ical.last_sync_status = "failed"
+            prop_ical.last_sync_error = str(result.get("error", ""))[:500]
+            prop_ical.sync_retry_count = (prop_ical.sync_retry_count or 0) + 1
+        else:
+            prop_ical.last_sync_status = "ok"
+            prop_ical.last_sync_error = None
+            prop_ical.sync_retry_count = 0
             total_seen += result["events_seen"]
             total_created_events += result["events_created"]
             total_created_jobs += result["jobs_created"]
@@ -523,8 +535,6 @@ def sync_property(db: Session, prop: Property) -> dict:
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
             sources_synced.append(prop_ical.source or "unknown")
-            # Update PropertyIcal sync timestamp
-            prop_ical.last_synced_at = datetime.utcnow()
 
     # Update property sync timestamp
     prop.ical_last_synced_at = datetime.utcnow()
