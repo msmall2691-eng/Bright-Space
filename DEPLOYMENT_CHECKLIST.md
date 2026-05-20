@@ -462,3 +462,5 @@ psql bright_space < bright_space_backup_YYYYMMDD_HHMMSS.sql
 **Deployment Date**: [To be filled in]
 **Deployed By**: [To be filled in]
 **Approved By**: [To be filled in]
+
+<!-- 2026-05-20: redeploy trigger after GCP outage recovery -->
