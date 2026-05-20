@@ -10,7 +10,7 @@ import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
   CheckCircle, Clock, AlertCircle, Send, ChevronLeft, ChevronRight, Home, RefreshCw,
-  TrendingUp, DollarSign, Target, Inbox, ArrowUpRight, Zap
+  TrendingUp, DollarSign, Target, Inbox, ArrowUpRight, Zap, Trash2
 } from 'lucide-react'
 
 const STATUS_COLORS = {
@@ -114,12 +114,20 @@ export default function ClientProfile() {
   const [saving, setSaving] = useState(false)
   const [smsText, setSmsText] = useState('')
   const [sending, setSending] = useState(false)
+  const [showBilling, setShowBilling] = useState(false)
   // Property form state
   const [showPropForm, setShowPropForm] = useState(false)
   const [propForm, setPropForm] = useState({})
   const [editingProp, setEditingProp] = useState(null)
   const [savingProp, setSavingProp] = useState(false)
   const EMPTY_PROP = { name: '', address: '', city: '', state: 'ME', zip_code: '', property_type: 'residential', default_duration_hours: 3, notes: '' }
+
+  // iCal feed management (STR turnover automation)
+  const EMPTY_ICAL = { url: '', source: '', checkout_time: '', duration_hours: '', house_code: '', instructions: '' }
+  const [icalForm, setIcalForm] = useState(EMPTY_ICAL)
+  const [showIcalForm, setShowIcalForm] = useState(false)
+  const [syncingPropId, setSyncingPropId] = useState(null)
+  const [syncBanner, setSyncBanner] = useState(null)
 
   // Schedule form state
 
@@ -146,6 +154,8 @@ export default function ClientProfile() {
         formFill.last_name = parts.slice(1).join(' ') || ''
       }
       setForm(formFill)
+      const hasBilling = !!(c.billing_address || c.billing_city || c.billing_state || c.billing_zip)
+      if (hasBilling) setShowBilling(true)
       if (profile?.visit_stats) setVisitStats(profile.visit_stats)
       if (profile?.upcoming_visits || profile?.past_visits) {
         setProfileVisits({
@@ -183,15 +193,28 @@ export default function ClientProfile() {
     }
   }
 
+  const reloadProperties = async () => {
+    const props = await get(`/api/properties?client_id=${id}`)
+    setProperties(Array.isArray(props) ? props : [])
+    return Array.isArray(props) ? props : []
+  }
+
   const saveProp = async () => {
     setSavingProp(true)
     try {
       const url = editingProp ? `/api/properties/${editingProp.id}` : '/api/properties'
       const body = editingProp ? propForm : { ...propForm, client_id: parseInt(id) }
-      editingProp ? await patch(url, body) : await post(url, body)
-      const props = await get(`/api/properties?client_id=${id}`)
-      setProperties(Array.isArray(props) ? props : [])
-      setShowPropForm(false); setEditingProp(null); setPropForm(EMPTY_PROP)
+      const saved = editingProp ? await patch(url, body) : await post(url, body)
+      const props = await reloadProperties()
+      // If a brand-new STR property was just created, keep the form open so the
+      // user can add iCal feeds without an extra navigation step.
+      if (!editingProp && saved?.id && propForm.property_type === 'str') {
+        const fresh = props.find(p => p.id === saved.id) || saved
+        setEditingProp(fresh)
+        setPropForm({ ...fresh })
+      } else {
+        setShowPropForm(false); setEditingProp(null); setPropForm(EMPTY_PROP)
+      }
     } catch (e) {
       console.error('[saveProp]', e)
     }
@@ -204,8 +227,51 @@ export default function ClientProfile() {
     await load()
   }
 
-  const openNewProp = () => { setPropForm(EMPTY_PROP); setEditingProp(null); setShowPropForm(true) }
-  const openEditProp = (p) => { setPropForm({ ...p }); setEditingProp(p); setShowPropForm(true) }
+  const addIcal = async (propId) => {
+    if (!icalForm.url.trim()) return
+    try {
+      const body = {
+        ...icalForm,
+        duration_hours: icalForm.duration_hours ? parseFloat(icalForm.duration_hours) : null,
+      }
+      await post(`/api/properties/${propId}/icals`, body)
+      const props = await reloadProperties()
+      const updated = props.find(p => p.id === propId)
+      if (updated) { setEditingProp(updated); setPropForm({ ...updated }) }
+      setIcalForm(EMPTY_ICAL); setShowIcalForm(false)
+    } catch (e) {
+      console.error('[addIcal]', e)
+      alert('Could not add iCal: ' + (e?.message || 'unknown error'))
+    }
+  }
+
+  const removeIcal = async (propId, icalId) => {
+    if (!confirm('Remove this calendar feed?')) return
+    try {
+      await del(`/api/properties/${propId}/icals/${icalId}`)
+      const props = await reloadProperties()
+      const updated = props.find(p => p.id === propId)
+      if (updated) { setEditingProp(updated); setPropForm({ ...updated }) }
+    } catch (e) {
+      console.error('[removeIcal]', e)
+    }
+  }
+
+  const syncProperty = async (propId) => {
+    setSyncingPropId(propId); setSyncBanner(null)
+    try {
+      const data = await post(`/api/properties/${propId}/sync`)
+      const jobsCreated = data?.jobs_created ?? 0
+      setSyncBanner({ ok: true, propId, message: jobsCreated > 0 ? `Synced — ${jobsCreated} new turnover${jobsCreated === 1 ? '' : 's'} scheduled` : 'Synced — no new turnovers' })
+      await Promise.all([reloadProperties(), load()])
+    } catch (e) {
+      setSyncBanner({ ok: false, propId, message: e?.message || 'Sync failed' })
+    }
+    setSyncingPropId(null)
+  }
+
+  const openNewProp = () => { setPropForm(EMPTY_PROP); setEditingProp(null); setShowIcalForm(false); setIcalForm(EMPTY_ICAL); setShowPropForm(true) }
+  const openEditProp = (p) => { setPropForm({ ...p }); setEditingProp(p); setShowIcalForm(false); setIcalForm(EMPTY_ICAL); setShowPropForm(true) }
 
   useEffect(() => { load() }, [id])
 
@@ -317,18 +383,23 @@ export default function ClientProfile() {
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Clients
         </button>
 
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
-              <span className="text-blue-500 font-bold text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
+              <span className="text-blue-500 font-bold text-lg sm:text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-zinc-900">{client.name}</h1>
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
-                {client.phone && <span className="flex items-center gap-1 text-sm text-zinc-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
-                {client.email && <span className="flex items-center gap-1 text-sm text-zinc-400"><Mail className="w-3.5 h-3.5" />{client.email}</span>}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-bold text-zinc-900 truncate">{client.name}</h1>
+                <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
+                  {client.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap">
+                {client.phone && <span className="flex items-center gap-1 text-xs sm:text-sm text-zinc-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
+                {client.email && <span className="flex items-center gap-1 text-xs sm:text-sm text-zinc-400 truncate max-w-full"><Mail className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{client.email}</span></span>}
                 {(client.city || client.address) && (
-                  <span className="flex items-center gap-1 text-sm text-zinc-400">
+                  <span className="flex items-center gap-1 text-xs sm:text-sm text-zinc-400">
                     <MapPin className="w-3.5 h-3.5" />{client.city || client.address}
                   </span>
                 )}
@@ -336,15 +407,11 @@ export default function ClientProfile() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className={`text-xs px-2.5 py-1 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
-              {client.status}
-            </span>
-            <button onClick={() => setTab('details')}
-              className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors">
-              <Edit2 className="w-3.5 h-3.5" /> Edit
-            </button>
-          </div>
+          <button onClick={() => setTab('details')}
+            data-testid="client-header-edit"
+            className="flex items-center justify-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0 self-start">
+            <Edit2 className="w-3.5 h-3.5" /> Edit Info
+          </button>
         </div>
 
         {/* Stats bar — compact on mobile, normal on desktop */}
@@ -410,7 +477,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tabs — Overview, Properties, Schedule, Activity, Messages, Money */}
-      <div className="flex border-b border-zinc-200 px-6 bg-white/30 shrink-0 overflow-x-auto" data-testid="client-profile-tabs">
+      <div className="flex border-b border-zinc-200 px-4 sm:px-6 bg-white/30 shrink-0 overflow-x-auto" data-testid="client-profile-tabs">
         <Tab label="Overview" icon={Edit2} active={['details', 'crm'].includes(tab)} count={0} onClick={() => setTab('details')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
@@ -582,6 +649,14 @@ export default function ClientProfile() {
               </button>
             </div>
 
+            {syncBanner && (
+              <div className={`flex items-start gap-2 rounded-lg p-3 mb-3 text-xs border ${syncBanner.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                {syncBanner.ok ? <CheckCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+                <span className="flex-1">{syncBanner.message}</span>
+                <button onClick={() => setSyncBanner(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
+              </div>
+            )}
+
             {/* Property form */}
             {showPropForm && (
               <div className="bg-white border border-zinc-200 rounded-xl p-5 mb-4 space-y-3">
@@ -669,12 +744,115 @@ export default function ClientProfile() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs text-zinc-400 mb-1">Airbnb iCal URL</label>
-                      <p className="text-xs text-zinc-500 mb-2">To add multiple iCal URLs or edit sources, visit the Properties page</p>
-                      <input value={propForm.ical_url || ''} onChange={e => setPropForm(f => ({ ...f, ical_url: e.target.value }))}
-                        placeholder="https://www.airbnb.com/calendar/ical/..."
-                        className={INPUT_CLASS} />
+                    {/* Multi-iCal feed management (Airbnb / VRBO / etc.) */}
+                    <div className="border-t border-zinc-200 pt-4" data-testid="client-property-ical-section">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-semibold text-zinc-600 uppercase">Calendar Feeds</h3>
+                        {editingProp && (editingProp.icals?.length || 0) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => syncProperty(editingProp.id)}
+                            disabled={syncingPropId === editingProp.id}
+                            className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 disabled:opacity-50">
+                            <RefreshCw className={`w-3 h-3 ${syncingPropId === editingProp.id ? 'animate-spin' : ''}`} />
+                            {syncingPropId === editingProp.id ? 'Syncing…' : 'Sync now'}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 mb-3">Paste an iCal URL from Airbnb, VRBO, or any booking platform. Turnover jobs are auto-created on each checkout.</p>
+
+                      {!editingProp ? (
+                        <p className="text-xs text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2">
+                          Save the property first, then add calendar feeds here.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="space-y-2 mb-2">
+                            {(editingProp.icals || []).map(ical => (
+                              <div key={ical.id} className="bg-zinc-50 border border-zinc-200 rounded-lg p-2.5" data-testid="client-property-ical-row">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[11px] font-mono text-zinc-600 truncate">{ical.url}</div>
+                                    {ical.source && <div className="text-[10px] text-zinc-400 mt-0.5">{ical.source}</div>}
+                                    {(ical.last_synced_at || ical.last_sync_status) && (
+                                      <div className="flex items-center gap-1.5 text-[10px] mt-1">
+                                        {ical.last_sync_status === 'failed' ? (
+                                          <>
+                                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
+                                            <span className="text-red-600 font-medium">Sync failed</span>
+                                            {ical.last_sync_error && <span className="text-zinc-500 truncate">{ical.last_sync_error}</span>}
+                                          </>
+                                        ) : ical.last_synced_at ? (
+                                          <>
+                                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                            <span className="text-zinc-600">Synced {new Date(ical.last_synced_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-300" />
+                                            <span className="text-zinc-400">Never synced</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeIcal(editingProp.id, ical.id)}
+                                    className="text-zinc-400 hover:text-red-500 shrink-0"
+                                    aria-label="Remove calendar feed">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                            {(editingProp.icals?.length || 0) === 0 && !showIcalForm && (
+                              <p className="text-xs text-zinc-400 italic py-1">No calendar feeds yet.</p>
+                            )}
+                          </div>
+
+                          {showIcalForm ? (
+                            <div className="bg-white border border-zinc-200 rounded-lg p-3 space-y-2">
+                              <input value={icalForm.url}
+                                onChange={e => setIcalForm(f => ({ ...f, url: e.target.value }))}
+                                placeholder="https://www.airbnb.com/calendar/ical/…"
+                                className={INPUT_CLASS} />
+                              <input value={icalForm.source}
+                                onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
+                                placeholder="Source (airbnb, vrbo, …)"
+                                className={INPUT_CLASS} />
+                              <div className="grid grid-cols-2 gap-2">
+                                <input type="time" value={icalForm.checkout_time}
+                                  onChange={e => setIcalForm(f => ({ ...f, checkout_time: e.target.value }))}
+                                  placeholder="Checkout"
+                                  className={INPUT_CLASS} />
+                                <input type="number" step="0.5" min="0.5" value={icalForm.duration_hours}
+                                  onChange={e => setIcalForm(f => ({ ...f, duration_hours: e.target.value }))}
+                                  placeholder="Duration (hrs)"
+                                  className={INPUT_CLASS} />
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <button type="button" onClick={() => addIcal(editingProp.id)}
+                                  disabled={!icalForm.url.trim()}
+                                  data-testid="client-property-ical-save"
+                                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white px-3 py-2 rounded-lg text-xs font-medium">
+                                  Add Feed
+                                </button>
+                                <button type="button" onClick={() => { setShowIcalForm(false); setIcalForm(EMPTY_ICAL) }}
+                                  className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3 py-2 rounded-lg text-xs">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setShowIcalForm(true)}
+                              data-testid="client-property-ical-add"
+                              className="w-full text-xs text-blue-600 hover:text-blue-700 border border-blue-200 bg-blue-50/50 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+                              + Add Calendar Feed
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </>
                 )}
@@ -749,7 +927,27 @@ export default function ClientProfile() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                        {isStr && feedCount > 0 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); syncProperty(p.id) }}
+                            disabled={syncingPropId === p.id}
+                            data-testid="client-property-sync"
+                            className="flex items-center gap-1 text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                            title="Sync iCal feeds and auto-create turnover jobs"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${syncingPropId === p.id ? 'animate-spin' : ''}`} />
+                            {syncingPropId === p.id ? '…' : 'Sync'}
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); navigate(`/properties/${p.id}`) }}
+                          data-testid="client-property-view-jobs"
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                          title="View jobs and visits for this property"
+                        >
+                          <Calendar className="w-3 h-3" /> Jobs
+                        </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setJobModal({ propertyId: p.id }) }}
                           data-testid="client-property-add-job"
@@ -1023,7 +1221,7 @@ export default function ClientProfile() {
             )}
 
             {/* Contact info */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 space-y-4" data-testid="client-edit-contact">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Contact Info</div>
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1">
@@ -1078,42 +1276,59 @@ export default function ClientProfile() {
             </div>
 
             {/* Service address */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Service Address</div>
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 space-y-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Service Address</div>
               {[
                 { label: 'Street', key: 'address' },
                 { label: 'City', key: 'city' },
                 { label: 'State', key: 'state' },
                 { label: 'ZIP', key: 'zip_code' },
               ].map(({ label, key }) => (
-                <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
+                <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
+                  <span className="text-xs text-zinc-500 sm:w-24 sm:shrink-0 mb-1 sm:mb-0">{label}</span>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
+                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 sm:py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
                 </div>
               ))}
             </div>
 
-            {/* Billing address */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Billing Address</div>
-              <p className="text-xs text-zinc-400 -mt-2">Leave blank to use service address on invoices</p>
-              {[
-                { label: 'Street', key: 'billing_address' },
-                { label: 'City', key: 'billing_city' },
-                { label: 'State', key: 'billing_state' },
-                { label: 'ZIP', key: 'billing_zip' },
-              ].map(({ label, key }) => (
-                <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
-                  <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
+            {/* Billing address — collapsed by default when empty */}
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6">
+              <button
+                type="button"
+                onClick={() => setShowBilling(s => !s)}
+                className="w-full flex items-center justify-between text-left"
+                data-testid="client-billing-toggle"
+              >
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Billing Address</div>
+                  {!showBilling && (
+                    <p className="text-xs text-zinc-400 mt-1">Same as service address on invoices</p>
+                  )}
                 </div>
-              ))}
+                <ChevronRight className={`w-4 h-4 text-zinc-400 transition-transform ${showBilling ? 'rotate-90' : ''}`} />
+              </button>
+              {showBilling && (
+                <div className="space-y-3 mt-4">
+                  {[
+                    { label: 'Street', key: 'billing_address' },
+                    { label: 'City', key: 'billing_city' },
+                    { label: 'State', key: 'billing_state' },
+                    { label: 'ZIP', key: 'billing_zip' },
+                  ].map(({ label, key }) => (
+                    <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
+                      <span className="text-xs text-zinc-500 sm:w-24 sm:shrink-0 mb-1 sm:mb-0">{label}</span>
+                      <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                        className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 sm:py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <button onClick={save} disabled={saving}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+              data-testid="client-save-changes"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-5 py-2.5 sm:py-2 rounded-lg text-sm font-medium transition-colors">
               <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>

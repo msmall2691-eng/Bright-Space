@@ -538,6 +538,32 @@ def sync_property(db: Session, prop: Property) -> dict:
 
     # Update property sync timestamp
     prop.ical_last_synced_at = datetime.utcnow()
+
+    # Safety-net: backfill scheduled_date for any Job that ended up null
+    # despite being linked to an ICalEvent with a known checkout date.
+    # _sync_ical_url sometimes lands jobs with null scheduled_date (under
+    # investigation); this catches them so the Schedule view does not show
+    # "Invalid Date".
+    broken_jobs = (
+        db.query(Job)
+        .filter(
+            Job.property_id == prop.id,
+            Job.ical_event_id.isnot(None),
+            Job.scheduled_date.is_(None),
+            Job.status.notin_(("cancelled", "completed")),
+        )
+        .all()
+    )
+    backfilled_count = 0
+    for j in broken_jobs:
+        ev = db.query(ICalEvent).filter_by(id=j.ical_event_id).first()
+        if ev and ev.checkout_date:
+            j.scheduled_date = ev.checkout_date
+            if not j.start_time:
+                j.start_time = prop.check_out_time or "10:00"
+            backfilled_count += 1
+    if backfilled_count > 0:
+        log.info(f"[sync_property] safety-net backfilled scheduled_date on {backfilled_count} jobs for {prop.name}")
     db.commit()
 
     return {

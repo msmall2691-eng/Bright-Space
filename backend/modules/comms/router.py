@@ -217,6 +217,25 @@ def _sla_state(conv: Conversation) -> str:
     return "on_track"
 
 
+def _iso_utc(dt) -> Optional[str]:
+    """Serialize a naive UTC datetime with an explicit ``Z`` suffix.
+
+    Model rows are written via ``datetime.utcnow()``, so the stored value
+    is the correct UTC instant but the datetime object carries no
+    tzinfo. Calling ``.isoformat()`` on it produces e.g.
+    ``"2026-05-14T15:30:45.123456"`` — a string with no timezone marker.
+    Browsers' ``new Date(iso)`` then interpret that as **local time**, not
+    UTC, so SMS timestamps render 4–5 hours off (the user's reported bug).
+
+    Returning ``...Z`` makes the FE parse it as UTC and apply the
+    operator's local-zone conversion correctly. Returns None for None
+    inputs so the caller's conditional can stay identical.
+    """
+    if dt is None:
+        return None
+    return dt.isoformat() + "Z"
+
+
 def conv_to_dict(c: Conversation, *, include_client: bool = True) -> dict:
     last = c.messages[-1] if c.messages else None
     preview = None
@@ -233,16 +252,16 @@ def conv_to_dict(c: Conversation, *, include_client: bool = True) -> dict:
         "assignee": c.assignee,
         "tags": c.tags or [],
         "unread_count": c.unread_count,
-        "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,
-        "last_inbound_at": c.last_inbound_at.isoformat() if c.last_inbound_at else None,
-        "last_outbound_at": c.last_outbound_at.isoformat() if c.last_outbound_at else None,
-        "first_response_at": c.first_response_at.isoformat() if c.first_response_at else None,
+        "last_message_at": _iso_utc(c.last_message_at),
+        "last_inbound_at": _iso_utc(c.last_inbound_at),
+        "last_outbound_at": _iso_utc(c.last_outbound_at),
+        "first_response_at": _iso_utc(c.first_response_at),
         "sla_response_minutes": c.sla_response_minutes,
-        "sla_deadline": c.sla_deadline.isoformat() if c.sla_deadline else None,
+        "sla_deadline": _iso_utc(c.sla_deadline),
         "sla_state": _sla_state(c),
-        "snoozed_until": c.snoozed_until.isoformat() if c.snoozed_until else None,
-        "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
-        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "snoozed_until": _iso_utc(c.snoozed_until),
+        "resolved_at": _iso_utc(c.resolved_at),
+        "created_at": _iso_utc(c.created_at),
         "preview": preview,
     }
     if include_client and c.client:
@@ -271,7 +290,7 @@ def msg_to_dict(m: Message) -> dict:
         "is_internal_note": bool(m.is_internal_note),
         "author": m.author,
         "external_id": m.external_id,
-        "created_at": m.created_at.isoformat() if m.created_at else None,
+        "created_at": _iso_utc(m.created_at),
     }
 
 

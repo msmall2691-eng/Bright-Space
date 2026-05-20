@@ -180,6 +180,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
 @router.get("", response_model=List[JobResponse], dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_jobs(
     client_id: Optional[int] = None,
+    property_id: Optional[int] = None,
     status: Optional[str] = None,
     date: Optional[str] = None,
     date_from: Optional[str] = None,
@@ -205,6 +206,8 @@ def get_jobs(
 
     if client_id:
         q = q.filter(Job.client_id == client_id)
+    if property_id:
+        q = q.filter(Job.property_id == property_id)
     if status:
         q = q.filter(Job.status == status)
     if date:
@@ -436,6 +439,46 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     if job.status != prev_status:
         log_job_status_change(db, job, prev_status)
         db.commit()
+
+    # Auto-create a draft Invoice the first time a job lands on "completed".
+    # Idempotent: skip if an Invoice already exists for this Job. Uses the
+    # source Quote's items when available; otherwise emits a placeholder line.
+    if job.status == "completed" and prev_status != "completed":
+        try:
+            from database.models import Invoice, Quote
+            from datetime import datetime, timedelta
+            existing_inv = db.query(Invoice).filter(Invoice.job_id == job.id).first()
+            if not existing_inv:
+                quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
+                items = (quote.items if (quote and quote.items) else [{
+                    "name": job.title or "Cleaning",
+                    "qty": 1,
+                    "unit_price": 0,
+                    "description": "",
+                }])
+                subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
+                tax_rate = float(quote.tax_rate) if quote else 5.5
+                tax = round(subtotal * (tax_rate / 100), 2)
+                total = round(subtotal + tax, 2)
+                due_date = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+                invoice = Invoice(
+                    client_id=job.client_id,
+                    job_id=job.id,
+                    opportunity_id=job.opportunity_id,
+                    items=items,
+                    subtotal=round(subtotal, 2),
+                    tax_rate=tax_rate,
+                    tax=tax,
+                    total=total,
+                    status="draft",
+                    due_date=due_date,
+                    notes=job.notes or "",
+                )
+                db.add(invoice)
+                db.commit()
+                logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
+        except Exception as e:
+            logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
     # Sync update to Google Calendar if event exists
     if job.gcal_event_id:
         try:

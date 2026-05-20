@@ -5,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from config import env_flag, env_int
 from database.db import SessionLocal
-from database.models import AppSetting, Property
+from database.models import AppSetting, Property, RecurringSchedule
 from integrations.ical_sync import sync_property
 from integrations.gcal_sync import sync_calendar
 
@@ -105,6 +105,41 @@ def sync_all_ical_feeds_tick() -> dict:
         db.close()
 
 
+
+
+def recurring_jobs_tick() -> dict:
+    """Background job to materialize jobs from active RecurringSchedules.
+
+    Calls the same generate_jobs function used by /api/recurring/generate-all,
+    so recurring residential/commercial cleanings get jobs auto-created on the
+    schedule going forward. Idempotent — generate_jobs already skips dates
+    that already have a Job or a cancelled Visit.
+    """
+    from modules.recurring.router import generate_jobs
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "recurring_auto_generate_enabled", env_flag("RECURRING_AUTO_GENERATE_ENABLED", True)):
+            log.debug("Recurring auto-generate disabled via app_settings; skipping tick")
+            return {"skipped": True, "reason": "disabled"}
+        schedules = db.query(RecurringSchedule).filter(RecurringSchedule.active == True).all()
+        total_jobs = 0
+        per_schedule = []
+        for s in schedules:
+            try:
+                created = generate_jobs(db, s)
+                total_jobs += created
+                per_schedule.append({"schedule_id": s.id, "jobs_created": created})
+            except Exception as e:
+                log.warning(f"Recurring generate failed for schedule {s.id}: {e}")
+                per_schedule.append({"schedule_id": s.id, "error": str(e)})
+        log.info(f"Recurring auto-generate: {len(schedules)} schedules, {total_jobs} jobs created")
+        return {"schedules_processed": len(schedules), "jobs_created": total_jobs, "per_schedule": per_schedule}
+    except Exception as e:
+        log.error(f"Recurring auto-generate failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
 def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
@@ -138,6 +173,21 @@ def start_scheduler():
         log.info(f"Google Calendar auto-sync enabled (interval: {gcal_interval_minutes} min)")
     else:
         log.info("Google Calendar auto-sync disabled via GCAL_AUTO_SYNC_ENABLED=0")
+
+
+    # Recurring residential/commercial job generation (runs daily)
+    if env_flag("RECURRING_AUTO_GENERATE_ENABLED", True):
+        recurring_interval_hours = env_int("RECURRING_AUTO_GENERATE_INTERVAL_HOURS", 24)
+        _scheduler.add_job(
+            recurring_jobs_tick,
+            IntervalTrigger(hours=recurring_interval_hours),
+            id="recurring_jobs",
+            name="Recurring jobs auto-generate",
+            replace_existing=True,
+        )
+        log.info(f"Recurring auto-generate enabled (interval: {recurring_interval_hours} hr)")
+    else:
+        log.info("Recurring auto-generate disabled via RECURRING_AUTO_GENERATE_ENABLED=0")
 
     _scheduler.start()
     return _scheduler

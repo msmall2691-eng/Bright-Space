@@ -22,6 +22,23 @@ const LEAD_STATUS_COLORS = {
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
+const QUOTE_TEMPLATES = [
+  { id: 'biweekly_residential', label: 'Biweekly Residential', service_type: 'residential',
+    items: [{ name: 'Biweekly home clean', description: 'Recurring biweekly residential cleaning', qty: 1, unit_price: 185 }] },
+  { id: 'weekly_residential', label: 'Weekly Residential', service_type: 'residential',
+    items: [{ name: 'Weekly home clean', description: 'Recurring weekly residential cleaning', qty: 1, unit_price: 165 }] },
+  { id: 'str_turnover', label: 'STR Turnover', service_type: 'str',
+    items: [{ name: 'Airbnb / VRBO turnover', description: 'Strip beds, clean kitchen + baths, restock linens between guests', qty: 1, unit_price: 145 }] },
+  { id: 'one_time_deep', label: 'One-Time Deep Clean', service_type: 'residential',
+    items: [{ name: 'Deep clean (one-time)', description: 'Full top-to-bottom deep clean of the home', qty: 1, unit_price: 425 }] },
+  { id: 'move_in_out', label: 'Move-In / Move-Out', service_type: 'residential',
+    items: [
+      { name: 'Move-in / move-out clean', description: 'Empty-home top-to-bottom clean, inside cabinets, appliances, baseboards', qty: 1, unit_price: 525 },
+    ] },
+  { id: 'office_clean', label: 'Commercial / Office', service_type: 'commercial',
+    items: [{ name: 'Office clean', description: 'Recurring office cleaning - trash, restrooms, vacuum, kitchen', qty: 1, unit_price: 295 }] },
+]
+
 function Toast({ msg }) {
   return (
     <div className="fixed bottom-6 right-6 bg-white border border-zinc-200 text-zinc-900 text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 z-50">
@@ -149,7 +166,8 @@ export default function Quoting() {
   }
 
   const save = async () => {
-    if (!form.client_id) return
+    if (!form.client_id) { showToast('Please select a client first'); return }
+    if (!form.items.length || form.items.every(i => !i.name || !i.name.trim())) { showToast('Add at least one line item with a name'); return }
     setSaving(true)
     try {
       const body = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
@@ -408,6 +426,27 @@ export default function Quoting() {
                 className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>
 
+            {/* Templates */}
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1">Start from template</label>
+              <select
+                value=""
+                onChange={e => {
+                  const tpl = QUOTE_TEMPLATES.find(t => t.id === e.target.value)
+                  if (!tpl) return
+                  setForm(f => ({ ...f, service_type: tpl.service_type, items: tpl.items.map(it => ({ ...it })) }))
+                  e.target.value = ''
+                }}
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white text-sm"
+              >
+                <option value="">Custom (build from scratch)</option>
+                {QUOTE_TEMPLATES.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-zinc-500 mt-1">Pick a template to pre-fill the line items. You can still edit everything.</p>
+            </div>
+
             {/* Line items */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -423,7 +462,7 @@ export default function Quoting() {
                     <div className="flex gap-2">
                       <input value={item.name} onChange={e => updateItem(i, 'name', e.target.value)}
                         placeholder="e.g. Standard Home Clean"
-                        className="flex-1 bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400" />
+                        className="flex-1 bg-zinc-200 border border-zinc-300 rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none focus:border-blue-400" />
                       <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
                         className="text-zinc-500 hover:text-red-400 shrink-0"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -433,13 +472,13 @@ export default function Quoting() {
                     <div className="flex gap-2">
                       <div className="w-20">
                         <label className="text-xs text-zinc-500">Qty</label>
-                        <input type="number" min="0" step="0.5" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
-                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
+                        <input type="number" inputMode="decimal" min="0" step="0.5" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
+                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                       </div>
                       <div className="flex-1">
                         <label className="text-xs text-zinc-500">Unit Price ($)</label>
-                        <input type="number" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
-                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-1.5 text-sm focus:outline-none mt-0.5" />
+                        <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                          className="w-full bg-zinc-200 border border-zinc-300 rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                       </div>
                       <div className="flex-1 flex flex-col justify-end">
                         <label className="text-xs text-zinc-500">Line Total</label>

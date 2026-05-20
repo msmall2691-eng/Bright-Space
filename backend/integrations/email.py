@@ -15,16 +15,55 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
+def _load_smtp_creds() -> dict:
+    """Read SMTP credentials from DB first (Settings -> Email tab), env fallback.
+
+    The Settings UI persists smtp_user / smtp_pass / etc into AppSetting rows
+    via /api/settings/email. Without this DB lookup, every send_email call
+    silently fell back to whatever was in Railway env vars even after the
+    user saved a Gmail App Password in BrightBase.
+    """
+    s = {}
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            rows = db.query(AppSetting).filter(AppSetting.key.in_([
+                "smtp_user", "smtp_pass", "smtp_host", "smtp_port",
+                "from_name", "from_email",
+            ])).all()
+            for r in rows:
+                if r.value:
+                    s[r.key] = r.value
+        finally:
+            db.close()
+    except Exception:
+        pass
+    smtp_user = s.get("smtp_user") or os.getenv("SMTP_USER")
+    smtp_pass = s.get("smtp_pass") or os.getenv("SMTP_PASS")
+    smtp_host = s.get("smtp_host") or os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port_raw = s.get("smtp_port") or os.getenv("SMTP_PORT", "587")
+    from_name = s.get("from_name") or os.getenv("FROM_NAME", "Maine Cleaning Co")
+    from_email = s.get("from_email") or os.getenv("FROM_EMAIL") or smtp_user
+    return {
+        "smtp_user": smtp_user, "smtp_pass": smtp_pass,
+        "smtp_host": smtp_host, "smtp_port": int(smtp_port_raw or 587),
+        "from_name": from_name, "from_email": from_email,
+    }
+
+
 def send_email(to: str, subject: str, html_body: str, text_body: str = "") -> dict:
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_pass = os.getenv("SMTP_PASS")
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    from_name = os.getenv("FROM_NAME", "Maine Cleaning Co")
-    from_email = os.getenv("FROM_EMAIL", smtp_user)
+    creds = _load_smtp_creds()
+    smtp_user = creds["smtp_user"]
+    smtp_pass = creds["smtp_pass"]
+    smtp_host = creds["smtp_host"]
+    smtp_port = creds["smtp_port"]
+    from_name = creds["from_name"]
+    from_email = creds["from_email"]
 
     if not smtp_user or not smtp_pass:
-        raise ValueError("SMTP_USER and SMTP_PASS are not configured in .env")
+        raise ValueError("SMTP credentials missing. Add them in BrightBase → Settings → Email, or set SMTP_USER + SMTP_PASS env vars.")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

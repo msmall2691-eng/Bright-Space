@@ -289,7 +289,7 @@ export default function Clients() {
           <div className="space-y-1.5 overflow-y-auto flex-1">
             {filtered.map(c => (
               <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                className={`flex items-center gap-4 bg-white border rounded-xl p-3.5 cursor-pointer transition-all group ${selectedIds.has(c.id) ? 'border-blue-400 bg-blue-50/40' : 'border-zinc-200 hover:border-zinc-300'}`}>
+                className={`flex items-center gap-3 sm:gap-4 bg-white border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selectedIds.has(c.id) ? 'border-blue-400 bg-blue-50/40' : 'border-zinc-200 hover:border-zinc-300'}`}>
                 <input
                   type="checkbox"
                   checked={selectedIds.has(c.id)}
@@ -303,15 +303,18 @@ export default function Clients() {
                   <span className="text-[12px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-zinc-900">{displayContactName(c)}</div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    {c.phone && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
-                    {c.email && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>}
-                    {c.city && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><MapPin className="w-3 h-3" />{c.city}</span>}
+                  <div className="flex items-center gap-2">
+                    <div className="text-[13px] font-medium text-zinc-900 truncate">{displayContactName(c)}</div>
+                    <span className={`sm:hidden text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                  </div>
+                  <div className="flex items-center gap-x-3 gap-y-0.5 mt-0.5 flex-wrap">
+                    {c.phone && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Phone className="w-3 h-3 shrink-0" />{c.phone}</span>}
+                    {c.email && <span className="text-[11px] text-zinc-400 flex items-center gap-1 min-w-0 max-w-full"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{c.email}</span></span>}
+                    {c.city && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{c.city}</span>}
                   </div>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
-                <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-400 transition-colors" />
+                <span className={`hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-400 transition-colors shrink-0" />
               </div>
             ))}
             {filtered.length === 0 && (
@@ -406,6 +409,7 @@ export default function Clients() {
             </div>
             {[
               { label: 'Email', key: 'email' },
+              { label: 'Phone', key: 'phone' },
               { label: 'Source', key: 'source' },
             ].map(({ label, key }) => (
               <div key={key}>

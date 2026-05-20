@@ -675,8 +675,8 @@ export default function Properties() {
             <button onClick={() => setShowForm(false)} className="text-zinc-500 hover:text-zinc-500"><X className="w-5 h-5" /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
-            {/* Type selector (for new properties) */}
-            {!selected && (
+            {/* Type selector — for new or existing properties */}
+            {(
               <div>
                 <label className="block text-xs text-zinc-400 mb-3 font-semibold">Property Type *</label>
                 <div className="flex gap-2">
