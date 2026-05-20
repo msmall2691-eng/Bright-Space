@@ -115,6 +115,11 @@ export default function ClientProfile() {
   const [smsText, setSmsText] = useState('')
   const [sending, setSending] = useState(false)
   const [showBilling, setShowBilling] = useState(false)
+  // Quick-add contact (banner expands inline so phone/email can be saved
+  // without leaving the current tab — particularly important on mobile).
+  const [quickContactOpen, setQuickContactOpen] = useState(false)
+  const [quickContact, setQuickContact] = useState({ phone: '', email: '' })
+  const [quickContactSaving, setQuickContactSaving] = useState(false)
   // Property form state
   const [showPropForm, setShowPropForm] = useState(false)
   const [propForm, setPropForm] = useState({})
@@ -225,6 +230,28 @@ export default function ClientProfile() {
     if (!confirm('Remove this property?')) return
     await del(`/api/properties/${propId}`)
     await load()
+  }
+
+  const openQuickContact = () => {
+    setQuickContact({ phone: client?.phone || '', email: client?.email || '' })
+    setQuickContactOpen(true)
+  }
+
+  const saveQuickContact = async () => {
+    const payload = {}
+    if (!client?.phone && quickContact.phone.trim()) payload.phone = quickContact.phone.trim()
+    if (!client?.email && quickContact.email.trim()) payload.email = quickContact.email.trim()
+    if (Object.keys(payload).length === 0) { setQuickContactOpen(false); return }
+    setQuickContactSaving(true)
+    try {
+      await patch(`/api/clients/${id}`, payload)
+      await load()
+      setQuickContactOpen(false)
+    } catch (e) {
+      console.error('[saveQuickContact]', e)
+      alert('Could not save contact: ' + (e?.message || 'unknown error'))
+    }
+    setQuickContactSaving(false)
   }
 
   const addIcal = async (propId) => {
@@ -442,14 +469,73 @@ export default function ClientProfile() {
         </div>
 
 
-        {/* Missing contact info notice */}
+        {/* Missing contact info — tappable quick-add (mobile-friendly) */}
         {(!client.phone || !client.email) && (
-          <div className="mt-4 pt-4 border-t border-amber-200 bg-amber-50 rounded-lg p-3 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-amber-900">Missing contact info</div>
-              <p className="text-xs text-amber-700 mt-1">Add {!client.phone && !client.email ? 'phone and email' : !client.phone ? 'phone' : 'email'} in the Overview tab.</p>
-            </div>
+          <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg overflow-hidden" data-testid="missing-contact-banner">
+            {!quickContactOpen ? (
+              <button
+                type="button"
+                onClick={openQuickContact}
+                data-testid="missing-contact-open"
+                className="w-full flex items-center gap-2.5 p-3 text-left hover:bg-amber-100/60 transition-colors">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-amber-900">Add {!client.phone && !client.email ? 'phone and email' : !client.phone ? 'phone number' : 'email'}</div>
+                  <p className="text-xs text-amber-700 mt-0.5">Tap to add now</p>
+                </div>
+                <span className="text-xs font-semibold text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-md shrink-0">
+                  Add
+                </span>
+              </button>
+            ) : (
+              <div className="p-3 space-y-2.5">
+                {!client.phone && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-amber-900 mb-1">Phone</label>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoFocus
+                      value={quickContact.phone}
+                      onChange={e => setQuickContact(q => ({ ...q, phone: e.target.value }))}
+                      placeholder="+1 (555) 123-4567"
+                      data-testid="missing-contact-phone"
+                      className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30" />
+                  </div>
+                )}
+                {!client.email && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-amber-900 mb-1">Email</label>
+                    <input
+                      type="email"
+                      inputMode="email"
+                      autoFocus={!!client.phone}
+                      value={quickContact.email}
+                      onChange={e => setQuickContact(q => ({ ...q, email: e.target.value }))}
+                      placeholder="client@example.com"
+                      data-testid="missing-contact-email"
+                      className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30" />
+                  </div>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setQuickContactOpen(false)}
+                    className="px-3 py-2 text-sm text-amber-900 hover:bg-amber-100 rounded-lg transition-colors">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveQuickContact}
+                    disabled={quickContactSaving || (!quickContact.phone.trim() && !quickContact.email.trim())}
+                    data-testid="missing-contact-save"
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <Save className="w-3.5 h-3.5" />
+                    {quickContactSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
