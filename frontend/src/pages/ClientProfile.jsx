@@ -850,7 +850,16 @@ export default function ClientProfile() {
                           </button>
                         )}
                       </div>
-                      <p className="text-xs text-zinc-500 mb-3">Paste an iCal URL from Airbnb, VRBO, or any booking platform. Turnover jobs are auto-created on each checkout.</p>
+                      <p className="text-xs text-zinc-500 mb-2">Paste an iCal URL from Airbnb, VRBO, or any booking platform. Turnover jobs are auto-created on each checkout.</p>
+                      {editingProp && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/properties/${editingProp.id}/icals`)}
+                          data-testid="open-bulk-icals"
+                          className="text-[11px] text-blue-600 hover:text-blue-700 mb-3">
+                          Paste multiple URLs at once →
+                        </button>
+                      )}
 
                       {!editingProp ? (
                         <p className="text-xs text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2">

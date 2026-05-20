@@ -580,10 +580,16 @@ export default function Properties() {
                             </div>
                           </div>
                         ) : (
-                          <button onClick={() => setShowIcalForm(p.id)}
-                            className="w-full text-xs text-blue-600 hover:text-blue-700 border border-blue-600/20 bg-blue-50/50 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors">
-                            + Add Calendar URL
-                          </button>
+                          <>
+                            <button onClick={() => setShowIcalForm(p.id)}
+                              className="w-full text-xs text-blue-600 hover:text-blue-700 border border-blue-600/20 bg-blue-50/50 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors">
+                              + Add Calendar URL
+                            </button>
+                            <button onClick={() => navigate(`/properties/${p.id}/icals`)}
+                              className="w-full text-[11px] text-zinc-500 hover:text-zinc-700 mt-1.5">
+                              Or paste multiple URLs at once →
+                            </button>
+                          </>
                         )}
                       </div>
                     )}

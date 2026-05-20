@@ -53,6 +53,7 @@ const Payroll = lazy(() => import('./pages/Payroll'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
+const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Settings = lazy(() => import('./pages/Settings'))
 
 export default function App() {
@@ -134,6 +135,7 @@ export default function App() {
               <Route path="/comms" element={<Comms />} />
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:propertyId" element={<PropertyDetail />} />
+              <Route path="/properties/:propertyId/icals" element={<PropertyIcalsBulk />} />
               <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
