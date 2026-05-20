@@ -237,6 +237,11 @@ export default function JobCreateModal({
                 </button>
               ))}
             </div>
+            {form.job_type === 'str_turnover' && (
+              <p className="text-[11px] text-zinc-500 mt-1.5 leading-snug">
+                Tip: STR turnovers can auto-schedule from an Airbnb/VRBO iCal feed. Set the property's type to STR on the client's Properties tab to add a feed.
+              </p>
+            )}
           </div>
 
           {/* Repeat toggle — drives the rest of the form. */}
