@@ -464,3 +464,4 @@ psql bright_space < bright_space_backup_YYYYMMDD_HHMMSS.sql
 **Approved By**: [To be filled in]
 
 <!-- 2026-05-20: redeploy trigger after GCP outage recovery -->
+<!-- 2026-05-20: redeploy trigger to pick up #96 (tappable contact-info banner) and #97 (mobile scroll fix + iCal hint) -->
