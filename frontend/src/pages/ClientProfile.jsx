@@ -114,6 +114,7 @@ export default function ClientProfile() {
   const [saving, setSaving] = useState(false)
   const [smsText, setSmsText] = useState('')
   const [sending, setSending] = useState(false)
+  const [showBilling, setShowBilling] = useState(false)
   // Property form state
   const [showPropForm, setShowPropForm] = useState(false)
   const [propForm, setPropForm] = useState({})
@@ -146,6 +147,8 @@ export default function ClientProfile() {
         formFill.last_name = parts.slice(1).join(' ') || ''
       }
       setForm(formFill)
+      const hasBilling = !!(c.billing_address || c.billing_city || c.billing_state || c.billing_zip)
+      if (hasBilling) setShowBilling(true)
       if (profile?.visit_stats) setVisitStats(profile.visit_stats)
       if (profile?.upcoming_visits || profile?.past_visits) {
         setProfileVisits({
@@ -317,18 +320,23 @@ export default function ClientProfile() {
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Clients
         </button>
 
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
-              <span className="text-blue-500 font-bold text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
+              <span className="text-blue-500 font-bold text-lg sm:text-xl">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-zinc-900">{client.name}</h1>
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
-                {client.phone && <span className="flex items-center gap-1 text-sm text-zinc-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
-                {client.email && <span className="flex items-center gap-1 text-sm text-zinc-400"><Mail className="w-3.5 h-3.5" />{client.email}</span>}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-bold text-zinc-900 truncate">{client.name}</h1>
+                <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
+                  {client.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap">
+                {client.phone && <span className="flex items-center gap-1 text-xs sm:text-sm text-zinc-400"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
+                {client.email && <span className="flex items-center gap-1 text-xs sm:text-sm text-zinc-400 truncate max-w-full"><Mail className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{client.email}</span></span>}
                 {(client.city || client.address) && (
-                  <span className="flex items-center gap-1 text-sm text-zinc-400">
+                  <span className="flex items-center gap-1 text-xs sm:text-sm text-zinc-400">
                     <MapPin className="w-3.5 h-3.5" />{client.city || client.address}
                   </span>
                 )}
@@ -336,15 +344,11 @@ export default function ClientProfile() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className={`text-xs px-2.5 py-1 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
-              {client.status}
-            </span>
-            <button onClick={() => setTab('details')}
-              className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors">
-              <Edit2 className="w-3.5 h-3.5" /> Edit
-            </button>
-          </div>
+          <button onClick={() => setTab('details')}
+            data-testid="client-header-edit"
+            className="flex items-center justify-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0 self-start">
+            <Edit2 className="w-3.5 h-3.5" /> Edit Info
+          </button>
         </div>
 
         {/* Stats bar — compact on mobile, normal on desktop */}
@@ -410,7 +414,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tabs — Overview, Properties, Schedule, Activity, Messages, Money */}
-      <div className="flex border-b border-zinc-200 px-6 bg-white/30 shrink-0 overflow-x-auto" data-testid="client-profile-tabs">
+      <div className="flex border-b border-zinc-200 px-4 sm:px-6 bg-white/30 shrink-0 overflow-x-auto" data-testid="client-profile-tabs">
         <Tab label="Overview" icon={Edit2} active={['details', 'crm'].includes(tab)} count={0} onClick={() => setTab('details')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
@@ -1023,7 +1027,7 @@ export default function ClientProfile() {
             )}
 
             {/* Contact info */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 space-y-4" data-testid="client-edit-contact">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Contact Info</div>
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1">
@@ -1078,42 +1082,59 @@ export default function ClientProfile() {
             </div>
 
             {/* Service address */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Service Address</div>
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 space-y-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Service Address</div>
               {[
                 { label: 'Street', key: 'address' },
                 { label: 'City', key: 'city' },
                 { label: 'State', key: 'state' },
                 { label: 'ZIP', key: 'zip_code' },
               ].map(({ label, key }) => (
-                <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
+                <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
+                  <span className="text-xs text-zinc-500 sm:w-24 sm:shrink-0 mb-1 sm:mb-0">{label}</span>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
+                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 sm:py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
                 </div>
               ))}
             </div>
 
-            {/* Billing address */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 space-y-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-1">Billing Address</div>
-              <p className="text-xs text-zinc-400 -mt-2">Leave blank to use service address on invoices</p>
-              {[
-                { label: 'Street', key: 'billing_address' },
-                { label: 'City', key: 'billing_city' },
-                { label: 'State', key: 'billing_state' },
-                { label: 'ZIP', key: 'billing_zip' },
-              ].map(({ label, key }) => (
-                <div key={key} className="flex items-center gap-4">
-                  <span className="text-xs text-zinc-500 w-24 shrink-0">{label}</span>
-                  <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-gray-400" />
+            {/* Billing address — collapsed by default when empty */}
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6">
+              <button
+                type="button"
+                onClick={() => setShowBilling(s => !s)}
+                className="w-full flex items-center justify-between text-left"
+                data-testid="client-billing-toggle"
+              >
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Billing Address</div>
+                  {!showBilling && (
+                    <p className="text-xs text-zinc-400 mt-1">Same as service address on invoices</p>
+                  )}
                 </div>
-              ))}
+                <ChevronRight className={`w-4 h-4 text-zinc-400 transition-transform ${showBilling ? 'rotate-90' : ''}`} />
+              </button>
+              {showBilling && (
+                <div className="space-y-3 mt-4">
+                  {[
+                    { label: 'Street', key: 'billing_address' },
+                    { label: 'City', key: 'billing_city' },
+                    { label: 'State', key: 'billing_state' },
+                    { label: 'ZIP', key: 'billing_zip' },
+                  ].map(({ label, key }) => (
+                    <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
+                      <span className="text-xs text-zinc-500 sm:w-24 sm:shrink-0 mb-1 sm:mb-0">{label}</span>
+                      <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                        className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 sm:py-1.5 text-sm text-zinc-900 focus:outline-none focus:border-blue-400" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <button onClick={save} disabled={saving}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+              data-testid="client-save-changes"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-200 px-5 py-2.5 sm:py-2 rounded-lg text-sm font-medium transition-colors">
               <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
