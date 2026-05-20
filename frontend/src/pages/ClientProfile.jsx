@@ -402,7 +402,7 @@ export default function ClientProfile() {
     : allActivity.filter(activeFilter.match)
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-y-auto sm:overflow-hidden" data-testid="client-profile-root">
       {/* Header */}
       <div className="bg-white border-b border-zinc-200 px-4 sm:px-6 py-4 shrink-0">
         <button onClick={() => navigate('/clients')}
@@ -434,7 +434,12 @@ export default function ClientProfile() {
             </div>
           </div>
 
-          <button onClick={() => setTab('details')}
+          <button onClick={() => {
+              setTab('details')
+              setTimeout(() => {
+                document.querySelector('[data-testid="client-edit-contact"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }, 50)
+            }}
             data-testid="client-header-edit"
             className="flex items-center justify-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0 self-start">
             <Edit2 className="w-3.5 h-3.5" /> Edit Info
@@ -563,7 +568,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tabs — Overview, Properties, Schedule, Activity, Messages, Money */}
-      <div className="flex border-b border-zinc-200 px-4 sm:px-6 bg-white/30 shrink-0 overflow-x-auto" data-testid="client-profile-tabs">
+      <div className="flex border-b border-zinc-200 px-4 sm:px-6 bg-white/95 backdrop-blur shrink-0 overflow-x-auto sticky top-0 z-20 sm:static sm:bg-white/30 sm:backdrop-blur-0" data-testid="client-profile-tabs">
         <Tab label="Overview" icon={Edit2} active={['details', 'crm'].includes(tab)} count={0} onClick={() => setTab('details')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
@@ -573,7 +578,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin">
+      <div className="p-4 sm:p-6 pb-28 sm:pb-6 sm:flex-1 sm:overflow-y-auto sm:scrollbar-thin">
 
         {/* CRM Summary */}
         {tab === 'crm' && (
