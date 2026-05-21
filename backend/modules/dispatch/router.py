@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List
 
 from database.db import get_db
+from modules.auth.router import require_role
 from database.models import Job
 from integrations.connecteam import create_shift, delete_shift, get_employees
 
@@ -42,7 +43,7 @@ async def list_employees():
         raise HTTPException(status_code=502, detail=f"Connecteam error: {str(e)}")
 
 
-@router.post("/jobs/{job_id}/dispatch", response_model=DispatchResponse)
+@router.post("/jobs/{job_id}/dispatch", response_model=DispatchResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
     """Push a job as shifts to Connecteam for all assigned cleaners."""
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -86,7 +87,7 @@ async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.delete("/jobs/{job_id}/dispatch", response_model=UndispatchResponse)
+@router.delete("/jobs/{job_id}/dispatch", response_model=UndispatchResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def undispatch_job(job_id: int, db: Session = Depends(get_db)):
     """Remove Connecteam shifts for a job."""
     job = db.query(Job).filter(Job.id == job_id).first()

@@ -10,6 +10,7 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 from database.db import get_db
+from modules.auth.router import require_role
 from database.models import RecurringSchedule, Job, Visit, RecurrenceException
 from utils.activity_logger import log_job_created, log_calendar_event
 
@@ -355,7 +356,7 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
     return out
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
     payload = data.model_dump()
     # Normalise: if days_of_week not set, derive from day_of_week
@@ -417,7 +418,7 @@ def get_schedule(schedule_id: int, db: Session = Depends(get_db)):
     return sched_to_dict(sched)
 
 
-@router.patch("/{schedule_id}")
+@router.patch("/{schedule_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depends(get_db)):
     sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
     if not sched:
@@ -440,7 +441,7 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
     return sched_to_dict(sched)
 
 
-@router.post("/generate-all")
+@router.post("/generate-all", dependencies=[Depends(require_role("admin", "manager"))])
 def generate_all(db: Session = Depends(get_db)):
     """Generate jobs for all active recurring schedules."""
     schedules = db.query(RecurringSchedule).filter(RecurringSchedule.active == True).all()
@@ -448,7 +449,7 @@ def generate_all(db: Session = Depends(get_db)):
     return {"schedules_processed": len(schedules), "jobs_created": total}
 
 
-@router.post("/{schedule_id}/generate")
+@router.post("/{schedule_id}/generate", dependencies=[Depends(require_role("admin", "manager"))])
 def generate(schedule_id: int, db: Session = Depends(get_db)):
     """Manually trigger job generation for a single schedule."""
     sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
@@ -458,7 +459,7 @@ def generate(schedule_id: int, db: Session = Depends(get_db)):
     return {"schedule_id": schedule_id, "jobs_created": count}
 
 
-@router.delete("/{schedule_id}", status_code=204)
+@router.delete("/{schedule_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
     sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == schedule_id).first()
     if not sched:
@@ -510,7 +511,7 @@ def _cancel_existing_job_and_visit(db: Session, sched_id: int, target_date: date
                 v.notes = (v.notes or "") + f"\n[Skipped via exception: {reason}]"
 
 
-@router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead)
+@router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
 def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
     """Skip a single occurrence of a recurring schedule.
 
@@ -553,7 +554,7 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
     return _ex_to_dict(ex)
 
 
-@router.post("/{schedule_id}/reschedule", status_code=201, response_model=RecurrenceExceptionRead)
+@router.post("/{schedule_id}/reschedule", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
 def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
     """Reschedule a single occurrence to a different date (and optionally time).
 
@@ -618,7 +619,7 @@ def list_exceptions(schedule_id: int, db: Session = Depends(get_db)):
     return [_ex_to_dict(e) for e in exceptions]
 
 
-@router.delete("/{schedule_id}/exceptions/{exception_id}", status_code=204)
+@router.delete("/{schedule_id}/exceptions/{exception_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_exception(schedule_id: int, exception_id: int, db: Session = Depends(get_db)):
     """Undo a skip or reschedule. The next generate_jobs call will recreate
     the Job for the original date if it falls within generate_weeks_ahead.

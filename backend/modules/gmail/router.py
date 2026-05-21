@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.db import get_db
+from modules.auth.router import require_role
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
 from integrations.email_filter import should_create_client_from_email
@@ -227,7 +228,7 @@ def gmail_message(email_id: str, db: Session = Depends(get_db)):
     return em
 
 
-@router.post("/create-lead")
+@router.post("/create-lead", dependencies=[Depends(require_role("admin", "manager"))])
 def create_lead_from_email(
     from_name: str = Query(...),
     from_email: str = Query(...),
@@ -267,7 +268,7 @@ def create_lead_from_email(
     return {"status": "created", "client": {"id": new_client.id, "name": new_client.name}}
 
 
-@router.post("/link-client")
+@router.post("/link-client", dependencies=[Depends(require_role("admin", "manager"))])
 def link_email_to_client(
     from_email: str = Query(...),
     client_id: int = Query(...),
@@ -288,7 +289,7 @@ def _get_app_setting(db: Session, key: str):
     return row.value if row else None
 
 
-@router.post("/send-reply")
+@router.post("/send-reply", dependencies=[Depends(require_role("admin", "manager"))])
 def send_email_reply(
     to_email: str = Query(...),
     subject: str = Query(...),

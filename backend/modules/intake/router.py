@@ -7,6 +7,7 @@ from typing import Optional
 from datetime import datetime
 
 from database.db import get_db
+from modules.auth.router import require_role
 from database.models import LeadIntake, Client, Opportunity, Activity
 from utils.contacts import find_client_by_contact, normalize_phone
 
@@ -77,7 +78,7 @@ def intake_to_dict(i: LeadIntake) -> dict:
     }
 
 
-@router.post("/submit", status_code=201)
+@router.post("/submit", status_code=201)  # PUBLIC: leads from maineclean.co contact form
 def submit_intake(data: IntakeSubmit, db: Session = Depends(get_db)):
     """Public endpoint — called from maineclean.co contact/quote form."""
     normalized_phone = normalize_phone(data.phone)
@@ -167,7 +168,7 @@ def get_intake_stats(db: Session = Depends(get_db)):
     }
 
 
-@router.patch("/{intake_id}")
+@router.patch("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db)):
     intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
     if not intake:
@@ -186,7 +187,7 @@ def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_
     return intake_to_dict(intake)
 
 
-@router.delete("/{intake_id}")
+@router.delete("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def delete_intake(intake_id: int, db: Session = Depends(get_db)):
     intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
     if not intake:
@@ -196,7 +197,7 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
-@router.post("/{intake_id}/convert-to-quote", status_code=201)
+@router.post("/{intake_id}/convert-to-quote", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
     """Convert an intake to a quote with sensible defaults."""
     from database.models import Quote
@@ -294,7 +295,7 @@ SERVICE_TYPE_MAP = {
 }
 
 
-@router.post("/webhook", status_code=201)
+@router.post("/webhook", status_code=201)  # PUBLIC: maineclean.co InstantEstimate webhook posts here
 def webhook_intake(data: WebhookPayload, db: Session = Depends(get_db)):
     """
     Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
