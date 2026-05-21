@@ -135,33 +135,35 @@ def register(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Register a new user.
-    - First user: self-register (no auth needed)
-    - Subsequent users: admin-only (requires JWT with admin role)
-    """
-    # Check if any users exist
-    user_count = db.query(User).count()
+    Register a new user. Admin-only at all times.
 
-    if user_count > 0:
-        # Only admins can create new users after the first one
-        if not current_user or current_user.role != "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Only administrators can create new users. Contact your admin."
-            )
+    BB-SEC-07: previously, when the User table was empty, this endpoint
+    self-promoted the caller to role="admin" with no challenge — a
+    fresh deploy, a wiped database, or a Railway preview environment
+    became a land-grab for whoever sent the first POST. Recovery from
+    an empty user table is now via _bootstrap_admin_user (ADMIN_BOOTSTRAP_*
+    env vars), not via this endpoint.
+    """
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators can create new users. Contact your admin."
+        )
 
     # Check if email already exists
     existing = db.query(User).filter(User.email == data.email).first()
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # Create new user (first user is always admin)
+    # New users default to the lowest-privilege role; admins can promote
+    # later via an authenticated PATCH. Promotion-on-create would re-open
+    # the BB-SEC-07 escalation path through the register UI.
     password_hash = hash_password(data.password)
     new_user = User(
         email=data.email,
         password_hash=password_hash,
         full_name=data.full_name or data.email.split("@")[0],
-        role="admin",  # First user is always admin
+        role="client",
         active=True,
     )
 

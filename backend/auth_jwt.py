@@ -5,11 +5,35 @@ Uses bcrypt with 72-byte truncation (bcrypt's hard limit).
 
 import bcrypt
 import jwt
+import logging
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
-SECRET_KEY = os.getenv("JWT_SECRET", "change-me-in-production")
+logger = logging.getLogger(__name__)
+
+# BB-SEC-03: previously defaulted to the literal "change-me-in-production",
+# which silently signed JWTs with a public, attacker-known value any time
+# JWT_SECRET wasn't set (new deploys, preview environments, forgotten staging
+# branches). With that value, an attacker could forge tokens for any user_id
+# and role, including role="admin".
+#
+# Now: if JWT_SECRET isn't set we mint a random per-process secret. Tokens
+# signed with it become invalid on every restart, which is correct for an
+# unconfigured environment — it nudges the operator to set JWT_SECRET if
+# they want stable sessions, and the public default literal never escapes.
+_env_secret = os.getenv("JWT_SECRET", "").strip()
+if _env_secret:
+    SECRET_KEY = _env_secret
+else:
+    SECRET_KEY = secrets.token_urlsafe(48)
+    logger.critical(
+        "[auth_jwt] JWT_SECRET is not set. Generated a random per-process "
+        "secret; all JWT sessions will be invalidated on every restart. "
+        "Set JWT_SECRET in the environment for stable sessions."
+    )
+
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 

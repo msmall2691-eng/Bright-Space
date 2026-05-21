@@ -43,7 +43,11 @@ def _normalize_phone(phone_str: str) -> Optional[str]:
     return normalize_e164(phone_str)
 
 
-@router.post("/import/clients", response_model=dict)
+@router.post(
+    "/import/clients",
+    response_model=dict,
+    dependencies=[Depends(require_role("admin"))],
+)
 async def import_clients(
     file: UploadFile = File(...),
     dry_run: bool = True,
