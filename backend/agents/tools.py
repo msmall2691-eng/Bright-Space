@@ -165,9 +165,32 @@ TOOLS_PIXEL = TOOLS_BUSINESS + [
 ]
 
 
+# BB-SEC-08: previously this returned TOOLS_PIXEL (which includes write_file,
+# edit_file, and run_command with shell=True) for every agent, regardless of
+# name. Combined with the now-fixed BB-SEC-02, this gave anyone reaching the
+# WebSocket arbitrary code execution inside the container. Even with the WS
+# now authenticated, shipping shell tools to every operator agent is wrong.
+#
+# Policy:
+#   - Default (prod): every agent gets TOOLS_BUSINESS — read-only queries
+#     against business data, no filesystem, no shell.
+#   - Dev:           when BRIGHTBASE_AGENT_DEV_TOOLS=true is set in the env,
+#                    AND the agent is "pixel" (the engineering helper), the
+#                    full TOOLS_PIXEL set is enabled.
+#
+# `execute_tool` mirrors this — even if a tool name slips through, it refuses
+# to run write_file/edit_file/run_command without the same env flag.
+_DEV_TOOL_NAMES = frozenset({"read_file", "write_file", "edit_file", "run_command", "list_files"})
+
+
+def _dev_tools_enabled() -> bool:
+    return os.getenv("BRIGHTBASE_AGENT_DEV_TOOLS", "").strip().lower() in ("1", "true", "yes")
+
+
 def get_tools_for_agent(agent_name: str) -> list:
-    # All agents get the full toolset — business data + codebase read/write
-    return TOOLS_PIXEL
+    if _dev_tools_enabled() and agent_name == "pixel":
+        return TOOLS_PIXEL
+    return TOOLS_BUSINESS
 
 
 # ── Tool execution ─────────────────────────────────────────────────────────────
@@ -175,6 +198,13 @@ def get_tools_for_agent(agent_name: str) -> list:
 def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
     from database.db import SessionLocal
     from database.models import Client, Job, RecurringSchedule, Property, Invoice, ICalEvent
+
+    # Defense-in-depth: even if a dev tool somehow shows up in a tool_use
+    # block (e.g. an older deployment of the agent UI, or a future bug in
+    # get_tools_for_agent), refuse to execute it unless the env flag is on
+    # and the calling agent is the engineering helper.
+    if name in _DEV_TOOL_NAMES and not (_dev_tools_enabled() and agent_name == "pixel"):
+        return {"error": f"Tool '{name}' is disabled in this environment."}
 
     db = SessionLocal()
     try:

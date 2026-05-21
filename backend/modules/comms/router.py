@@ -770,6 +770,41 @@ def send_email_message(data: EmailRequest, db: Session = Depends(get_db)):
 async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     """Receive inbound SMS from Twilio webhook. Groups into a conversation."""
     form = await request.form()
+
+    # BB-SEC-06: validate X-Twilio-Signature. Without this anyone can POST a
+    # forged payload to /api/comms/twilio/webhook with arbitrary From/Body
+    # and inject SMS records, optionally with a real client's phone — which
+    # also triggers FORWARD_INBOUND_SMS_TO outbound SMS, turning Twilio
+    # into a free open relay against the on-call line.
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+    if auth_token:
+        from twilio.request_validator import RequestValidator
+        validator = RequestValidator(auth_token)
+        signature = request.headers.get("X-Twilio-Signature", "")
+        # Twilio signs the full public URL it POSTed to. Behind Railway's
+        # proxy, request.url may show the internal scheme/host; prefer the
+        # X-Forwarded-* headers when present so the signed string matches
+        # what Twilio actually used.
+        fwd_proto = request.headers.get("X-Forwarded-Proto")
+        fwd_host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+        if fwd_proto and fwd_host:
+            url = f"{fwd_proto}://{fwd_host}{request.url.path}"
+            if request.url.query:
+                url = f"{url}?{request.url.query}"
+        else:
+            url = str(request.url)
+        params = {k: v for k, v in form.items()}
+        if not validator.validate(url, params, signature):
+            logger.warning(
+                f"[twilio] rejected webhook with bad signature from {request.client.host if request.client else 'unknown'}"
+            )
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+    else:
+        logger.warning(
+            "[twilio] TWILIO_AUTH_TOKEN not set — accepting webhook without signature check. "
+            "Set TWILIO_AUTH_TOKEN to enable signature validation."
+        )
+
     from_number = form.get("From", "")
     to_number = form.get("To", "")
     body = form.get("Body", "")
