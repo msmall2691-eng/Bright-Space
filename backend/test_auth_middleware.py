@@ -50,7 +50,6 @@ async def _ok(request: Request) -> JSONResponse:
 def _make_app() -> Starlette:
     app = Starlette(routes=[
         Route("/api/health", _ok),         # public
-        Route("/api/config", _ok),         # public
         Route("/api/jobs", _ok),           # gated
         Route("/api/properties", _ok),     # gated
         Route("/api/admin/foo", _ok),      # gated
@@ -66,13 +65,11 @@ def _make_app() -> Starlette:
 
 @pytest.mark.parametrize("path", [
     "/api/health",
-    "/api/config",
     "/api/intake/submit",
     "/api/comms/twilio/webhook",
     "/api/booking",
     "/api/booking/anything",
     "/api/agents",
-    "/ws/agent/foo",
     "/assets/main.js",
     "/",
     "/dashboard",
@@ -88,6 +85,12 @@ def test_is_public_allows(path: str) -> None:
     "/api/properties",
     "/api/admin/ical-sync-now",
     "/api/scheduling",
+    # BB-SEC-01: /api/config used to leak BRIGHTBASE_API_KEY unauthenticated.
+    "/api/config",
+    # BB-SEC-02: /ws/agent/* did its own (missing) auth; the prefix is no
+    # longer in the allow-list. Auth now happens inside the WS handler,
+    # but _is_public() must not whitelist it.
+    "/ws/agent/foo",
 ])
 def test_is_public_rejects(path: str) -> None:
     assert _is_public(path) is False, f"{path!r} should require auth"
