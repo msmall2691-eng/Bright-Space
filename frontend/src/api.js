@@ -148,5 +148,11 @@ export function wsUrl(path) {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const base = `${proto}//${window.location.host}`;
   const sep = path.includes("?") ? "&" : "?";
-  return API_KEY ? `${base}${path}${sep}api_key=${API_KEY}` : `${base}${path}`;
+  // Browsers can't set headers on WebSocket connects, so JWT and API key
+  // both flow through query params. Backend (/ws/agent/*) checks JWT first,
+  // falls back to API key (matches the HTTP middleware).
+  const token = getJWT();
+  if (token) return `${base}${path}${sep}token=${encodeURIComponent(token)}`;
+  if (API_KEY) return `${base}${path}${sep}api_key=${encodeURIComponent(API_KEY)}`;
+  return `${base}${path}`;
 }

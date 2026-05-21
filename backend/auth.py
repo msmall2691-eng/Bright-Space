@@ -21,10 +21,13 @@ from auth_jwt import verify_jwt
 
 logger = logging.getLogger(__name__)
 
-# Paths that never require an API key or JWT
+# Paths that never require an API key or JWT.
+# /api/config used to live here and served BRIGHTBASE_API_KEY to anyone
+# unauthenticated (BB-SEC-01). The endpoint was removed; do not re-add.
+# /ws/ is not listed because BaseHTTPMiddleware does not intercept
+# WebSocket connections — auth for /ws/agent/* happens inside the handler.
 _PUBLIC_PREFIXES = (
     "/api/health",
-    "/api/config",
     "/api/auth/login",
     "/api/auth/register",
     "/api/intake/submit",
@@ -33,7 +36,6 @@ _PUBLIC_PREFIXES = (
     "/api/booking",
     "/api/agents",
     "/api/quotes/public/",
-    "/ws/",
     "/assets/",
 )
 

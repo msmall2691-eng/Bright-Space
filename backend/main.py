@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import yaml
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from fastapi.responses import FileResponse
 from agents.tools import get_tools_for_agent, execute_tool
 
 from auth import APIKeyMiddleware
+from auth_jwt import verify_jwt
 from database.db import init_db
 from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
 from modules.clients.router import router as clients_router
@@ -155,12 +157,6 @@ async def health():
     return {"status": "ok", "service": "BrightBase"}
 
 
-@app.get("/api/config")
-async def get_config():
-    """Public endpoint that provides the API key to the SPA frontend."""
-    return {"api_key": os.getenv("BRIGHTBASE_API_KEY", "")}
-
-
 @app.get("/api/agents")
 async def list_agents():
     agents_dir = Path(__file__).parent / "agents"
@@ -181,6 +177,21 @@ async def list_agents():
 
 @app.websocket("/ws/agent/{agent_name}")
 async def agent_websocket(websocket: WebSocket, agent_name: str):
+    # BaseHTTPMiddleware does not see WebSocket connections, so the
+    # APIKeyMiddleware can't gate this route — auth has to happen here.
+    # Browsers can't set headers on WS connects, so JWT and API key both
+    # come in via query params (?token=... or ?api_key=...).
+    expected_key = os.getenv("BRIGHTBASE_API_KEY", "")
+    if expected_key:
+        token = websocket.query_params.get("token", "")
+        provided_key = websocket.query_params.get("api_key", "")
+        authed = bool(token and verify_jwt(token)) or (
+            bool(provided_key) and secrets.compare_digest(provided_key, expected_key)
+        )
+        if not authed:
+            await websocket.close(code=1008, reason="unauthorized")
+            return
+
     await websocket.accept()
     conn_key = f"{id(websocket)}_{agent_name}"
 
