@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, Plus, Edit2, Trash2, MoreVertical, MapPin, Home, Building2, Wind,
-  Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2
+  Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2, ClipboardList, X
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import Button from '../components/ui/Button'
@@ -26,10 +26,190 @@ const JOB_STATUS_CONFIG = {
   cancelled: { label: 'Cancelled', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700' },
 }
 
+// Inline checklist editor. Areas + tasks per property.
+function ChecklistEditor({ template, onSave }) {
+  const [areas, setAreas] = useState(template || [])
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [newArea, setNewArea] = useState('')
+  const [newTasks, setNewTasks] = useState({})
+
+  const addArea = () => {
+    if (!newArea.trim()) return
+    setAreas(prev => [...prev, { area: newArea.trim(), tasks: [] }])
+    setNewArea('')
+    setDirty(true)
+  }
+  const removeArea = (i) => { setAreas(prev => prev.filter((_, j) => j !== i)); setDirty(true) }
+  const addTask = (areaIdx) => {
+    const text = (newTasks[areaIdx] || '').trim()
+    if (!text) return
+    setAreas(prev => prev.map((a, i) => i === areaIdx ? { ...a, tasks: [...a.tasks, text] } : a))
+    setNewTasks(prev => ({ ...prev, [areaIdx]: '' }))
+    setDirty(true)
+  }
+  const removeTask = (areaIdx, taskIdx) => {
+    setAreas(prev => prev.map((a, i) => i === areaIdx ? { ...a, tasks: a.tasks.filter((_, j) => j !== taskIdx) } : a))
+    setDirty(true)
+  }
+  const save = async () => {
+    setSaving(true)
+    await onSave(areas)
+    setSaving(false)
+    setDirty(false)
+  }
+
+  return (
+    <div className="bg-white border border-neutral-200 rounded-lg p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="w-4 h-4 text-blue-600" />
+          <h3 className="text-sm font-semibold text-neutral-900">Cleaning Checklist</h3>
+        </div>
+        {dirty && (
+          <button onClick={save} disabled={saving}
+            className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        )}
+      </div>
+
+      {areas.length === 0 && (
+        <p className="text-xs text-neutral-500 mb-3">No checklist yet. Add areas and tasks below.</p>
+      )}
+
+      {areas.map((area, ai) => (
+        <div key={ai} className="mb-3 bg-neutral-50 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-neutral-700 uppercase tracking-wide">{area.area}</span>
+            <button onClick={() => removeArea(ai)} className="text-red-400 hover:text-red-600 p-0.5"><X className="w-3 h-3" /></button>
+          </div>
+          <ul className="space-y-1 mb-2">
+            {area.tasks.map((task, ti) => (
+              <li key={ti} className="flex items-center justify-between text-xs text-neutral-700 pl-2">
+                <span>• {task}</span>
+                <button onClick={() => removeTask(ai, ti)} className="text-red-400 hover:text-red-600 p-0.5"><X className="w-2.5 h-2.5" /></button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-1">
+            <input
+              value={newTasks[ai] || ''}
+              onChange={e => setNewTasks(prev => ({ ...prev, [ai]: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && addTask(ai)}
+              placeholder="Add task..."
+              className="flex-1 bg-white border border-neutral-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+            />
+            <button onClick={() => addTask(ai)} className="text-xs text-blue-600 font-semibold px-2">Add</button>
+          </div>
+        </div>
+      ))}
+
+      <div className="flex gap-1">
+        <input
+          value={newArea}
+          onChange={e => setNewArea(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addArea()}
+          placeholder="New area (e.g. Kitchen, Bathrooms)..."
+          className="flex-1 bg-white border border-neutral-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400"
+        />
+        <button onClick={addArea} className="text-xs text-blue-600 font-semibold px-2 shrink-0">+ Area</button>
+      </div>
+    </div>
+  )
+}
+
+
+// Visit row with optional checklist completion flow. If the property has
+// a checklist_template, the visit row shows a "Complete" button that
+// expands into a task-by-task checklist with checkboxes. Results save
+// to Visit.checklist_results and transition the visit to 'completed'.
+function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
+  const [open, setOpen] = useState(false)
+  const [results, setResults] = useState(visit.checklist_results || {})
+  const [saving, setSaving] = useState(false)
+
+  const template = checklistTemplate || []
+  const totalTasks = template.reduce((n, a) => n + (a.tasks?.length || 0), 0)
+  const doneTasks = Object.values(results).filter(v => v === 'done').length
+  const isCompleted = visit.status === 'completed'
+
+  const toggle = (key) => {
+    setResults(prev => ({
+      ...prev,
+      [key]: prev[key] === 'done' ? 'pending' : 'done',
+    }))
+  }
+
+  const handleComplete = async () => {
+    setSaving(true)
+    await onComplete(results)
+    setSaving(false)
+    setOpen(false)
+  }
+
+  return (
+    <div className="bg-neutral-50 rounded-lg p-3 text-xs">
+      <div className="flex items-center justify-between mb-1">
+        <div>
+          <span className="font-medium text-neutral-900">Visit #{visit.id}</span>
+          <span className="text-neutral-500 ml-2">{visit.status} • {visit.scheduled_date}</span>
+        </div>
+        {!isCompleted && totalTasks > 0 && (
+          <button
+            onClick={() => setOpen(!open)}
+            className="text-blue-600 font-semibold hover:text-blue-700"
+          >
+            {open ? 'Close' : `Complete (${doneTasks}/${totalTasks})`}
+          </button>
+        )}
+        {isCompleted && totalTasks > 0 && (
+          <span className="text-emerald-600 font-semibold flex items-center gap-1">
+            <CheckCircle className="w-3 h-3" /> {doneTasks}/{totalTasks}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          {template.map((area, ai) => (
+            <div key={ai}>
+              <div className="text-[11px] font-semibold text-neutral-600 uppercase tracking-wide mb-1">{area.area}</div>
+              {(area.tasks || []).map((task, ti) => {
+                const key = `${area.area}::${task}`
+                const done = results[key] === 'done'
+                return (
+                  <label key={ti} className="flex items-center gap-2 py-0.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={done}
+                      onChange={() => toggle(key)}
+                      className="w-3.5 h-3.5 rounded border-neutral-300"
+                    />
+                    <span className={done ? 'line-through text-neutral-400' : 'text-neutral-700'}>{task}</span>
+                  </label>
+                )
+              })}
+            </div>
+          ))}
+          <button
+            onClick={handleComplete}
+            disabled={saving}
+            className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-lg transition-colors"
+          >
+            {saving ? 'Saving...' : 'Mark Visit Complete'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 export default function PropertyDetail() {
   const { propertyId } = useParams()
   const navigate = useNavigate()
-  
+
   const [property, setProperty] = useState(null)
   const [jobs, setJobs] = useState([])
   const [visits, setVisits] = useState([])
@@ -164,6 +344,15 @@ export default function PropertyDetail() {
               {error}
             </div>
           )}
+
+          {/* Cleaning Checklist — editable template per property */}
+          <ChecklistEditor
+            template={property.checklist_template}
+            onSave={async (areas) => {
+              await patch(`/api/properties/${propertyId}`, { checklist_template: areas })
+              setProperty(prev => ({ ...prev, checklist_template: areas }))
+            }}
+          />
 
           {sortedJobs.length === 0 ? (
             <GlassCard>
@@ -310,10 +499,22 @@ export default function PropertyDetail() {
                   <label className="text-xs font-semibold text-neutral-600 uppercase mb-2 block">Associated Visits</label>
                   <div className="space-y-2">
                     {getJobVisits(selectedJob.id).map((visit) => (
-                      <div key={visit.id} className="bg-neutral-50 rounded p-2 text-xs">
-                        <p className="font-medium text-neutral-900">Visit #{visit.id}</p>
-                        <p className="text-neutral-600">{visit.status} • {visit.scheduled_date}</p>
-                      </div>
+                      <VisitChecklistRow
+                        key={visit.id}
+                        visit={visit}
+                        checklistTemplate={property?.checklist_template}
+                        onComplete={async (results) => {
+                          await patch(`/api/visits/${visit.id}`, {
+                            checklist_results: results,
+                            status: 'completed',
+                            completed_at: new Date().toISOString(),
+                          })
+                          setVisits(prev => prev.map(v => v.id === visit.id
+                            ? { ...v, checklist_results: results, status: 'completed', completed_at: new Date().toISOString() }
+                            : v
+                          ))
+                        }}
+                      />
                     ))}
                   </div>
                 </div>
