@@ -208,6 +208,12 @@ class Property(Base):
     site_contact_phone = Column(String, nullable=True)
     site_contact_email = Column(String, nullable=True)
 
+    # Per-property cleaning checklist template. JSON array of areas, each
+    # containing a list of tasks. Used to populate the "Complete Visit"
+    # flow — cleaners check off tasks, results get saved to Visit.checklist_results.
+    # Shape: [{"area": "Kitchen", "tasks": ["Wipe counters", "Clean sink", "Mop floor"]}, ...]
+    checklist_template = Column(JSON, nullable=True)
+
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
