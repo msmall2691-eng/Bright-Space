@@ -7,6 +7,7 @@ python-dotenv==1.2.2
 pyyaml==6.0.2
 twilio==9.3.7
 httpx==0.27.2
+supabase>=0.3.0
 websockets==13.1
 python-multipart==0.0.27
 icalendar==6.1.0
