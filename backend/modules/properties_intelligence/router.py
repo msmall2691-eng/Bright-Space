@@ -13,7 +13,7 @@ from sqlalchemy import func, avg
 from uuid import UUID
 from typing import List, Optional
 from datetime import datetime, timedelta
-import boto3
+from supabase import create_client, Client as SupabaseClient
 import os
 
 from database.db import get_db
@@ -21,14 +21,11 @@ from database.models import PropertyProfile, PropertyPhoto, TimeEstimateHistory,
 
 router = APIRouter()
 
-# S3 client for photo uploads
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    region_name=os.getenv("AWS_REGION", "us-east-1")
-)
-S3_BUCKET = os.getenv("S3_BUCKET_NAME", "brightbase-properties")
+# Supabase client for photo uploads
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+supabase: SupabaseClient = create_client(supabase_url, supabase_key)
+STORAGE_BUCKET = "property-photos"
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -200,17 +197,18 @@ async def upload_property_photo(
         raise HTTPException(status_code=404, detail="Property not found")
 
     try:
-        # Upload to S3
-        file_key = f"properties/{property_id}/{datetime.now().isoformat()}_{file.filename}"
-        s3_client.upload_fileobj(
-            file.file,
-            S3_BUCKET,
-            file_key,
-            ExtraArgs={'ContentType': file.content_type}
-        )
+    # Upload to Supabase Storage
+                file_key = f"properties/{property_id}/{datetime.now().isoformat()}_{file.filename}"
+                file_content = await file.read()
 
-        # Generate S3 URL
-        photo_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{file_key}"
+            response = supabase.storage.from_(STORAGE_BUCKET).upload(
+                            file_key,
+                            file_content,
+                            file_options={"content-type": file.content_type}
+            )
+
+        # Generate public Supabase URL
+        photo_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(file_key)
 
         # Save to database
         photo = PropertyPhoto(
