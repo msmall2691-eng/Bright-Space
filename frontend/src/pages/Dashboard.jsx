@@ -61,12 +61,12 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 active:bg-zinc-100 transition-colors border-b border-zinc-100 last:border-b-0"
+      className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
     >
       <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-zinc-900 truncate">{title}</div>
-        {sub && <div className="text-[11px] text-zinc-500 mt-0.5 truncate">{sub}</div>}
+        <div className="text-[13px] font-medium text-ink truncate">{title}</div>
+        {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
       </div>
       {action && (
         <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{action}</span>
@@ -77,16 +77,16 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
 
 
 /* ── Money stat — compact horizontal cell ─────────────────────────── */
-function MoneyStat({ label, value, sub, accent = 'text-zinc-900', onClick }) {
+function MoneyStat({ label, value, sub, accent = 'text-ink', onClick }) {
   return (
     <button
       onClick={onClick}
-      className="text-left p-4 rounded-xl hover:bg-zinc-50 active:bg-zinc-100 transition-colors disabled:opacity-100"
+      className="text-left p-4 rounded-xl hover:bg-bg active:bg-bg-2 transition-colors disabled:opacity-100"
       disabled={!onClick}
     >
-      <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-[0.14em]">{label}</div>
+      <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-[0.14em]">{label}</div>
       <div className={`text-xl sm:text-2xl font-bold mt-1.5 ${accent}`}>{value}</div>
-      {sub && <div className="text-[11px] text-zinc-500 mt-1">{sub}</div>}
+      {sub && <div className="text-[11px] text-ink-3 mt-1">{sub}</div>}
     </button>
   )
 }
@@ -95,11 +95,11 @@ function MoneyStat({ label, value, sub, accent = 'text-zinc-900', onClick }) {
 /* ── Tile shell ────────────────────────────────────────────────────── */
 function Tile({ icon: Ic, iconColor, title, badge, action, onAction, children }) {
   return (
-    <section className="bg-white border border-zinc-200 rounded-2xl flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+    <section className="bg-panel border border-hairline rounded-2xl flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-hairline">
         <div className="flex items-center gap-2">
           {Ic && <Ic className={`w-4 h-4 ${iconColor}`} />}
-          <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
+          <h2 className="text-sm font-semibold text-ink">{title}</h2>
           {badge}
         </div>
         {action && (
@@ -172,6 +172,25 @@ export default function Dashboard() {
     .filter(q => ['sent', 'draft'].includes(q.status))
     .reduce((s, q) => s + (q.total || 0), 0), [quotes])
   const overdueInvoiceCount = invoices.filter(i => i.status === 'overdue').length
+
+  // AR aging buckets — so the operator knows WHO to call this morning.
+  // Groups overdue invoices by age: 0-30, 30-60, 60-90, 90+ days.
+  const arAging = useMemo(() => {
+    const now = Date.now()
+    const buckets = { current: [], '30': [], '60': [], '90': [] }
+    invoices
+      .filter(i => ['sent', 'overdue'].includes(i.status))
+      .forEach(i => {
+        const due = i.due_date ? new Date(i.due_date).getTime() : null
+        if (!due) { buckets.current.push(i); return }
+        const daysOverdue = Math.max(0, Math.floor((now - due) / 86400000))
+        if (daysOverdue >= 90) buckets['90'].push(i)
+        else if (daysOverdue >= 60) buckets['60'].push(i)
+        else if (daysOverdue >= 30) buckets['30'].push(i)
+        else buckets.current.push(i)
+      })
+    return buckets
+  }, [invoices])
 
   /* ── Unified attention list. Each category is capped before pushing
         so a flood of overdue replies can't crowd out late visits or
@@ -250,16 +269,16 @@ export default function Dashboard() {
   const weekCount = weekJobs.length
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-bg">
       {/* Header */}
       <div className="px-4 sm:px-6 pt-5 sm:pt-6 pb-4">
         <div className="text-[10px] sm:text-[11px] font-semibold text-indigo-500 uppercase tracking-[0.14em]">
           Command Center
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 mt-0.5">
+        <h1 className="text-2xl sm:text-3xl font-bold text-ink mt-0.5">
           {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
         </h1>
-        <p className="text-[12px] text-zinc-500 mt-1">
+        <p className="text-[12px] text-ink-3 mt-1">
           {todayCount === 0 ? 'No jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
           {' · '}
           {weekCount} this week
@@ -276,7 +295,7 @@ export default function Dashboard() {
           iconColor="text-blue-500"
           title="Inbox needs attention"
           badge={attention.length > 0 && (
-            <span className="text-[10px] font-bold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded-full">
               {attention.length}
             </span>
           )}
@@ -284,11 +303,11 @@ export default function Dashboard() {
           onAction={() => navigate('/comms')}
         >
           {loading ? (
-            <div className="py-8 text-center text-[12px] text-zinc-400">Loading…</div>
+            <div className="py-8 text-center text-[12px] text-ink-3">Loading…</div>
           ) : attention.length === 0 ? (
             <div className="py-10 text-center">
               <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-              <p className="text-[13px] text-zinc-500">All clear · nothing urgent</p>
+              <p className="text-[13px] text-ink-3">All clear · nothing urgent</p>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto max-h-[380px]">
@@ -302,7 +321,7 @@ export default function Dashboard() {
               {(hiddenOverdueConvs + hiddenUnassignedConvs > 0) && (
                 <button
                   onClick={() => navigate('/comms')}
-                  className="w-full text-left px-4 py-2 text-[10px] text-zinc-500 hover:text-blue-600 hover:bg-zinc-50 transition-colors"
+                  className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
                 >
                   +{hiddenOverdueConvs + hiddenUnassignedConvs} more in inbox · Open Comms →
                 </button>
@@ -310,7 +329,7 @@ export default function Dashboard() {
               {hiddenLateVisits > 0 && (
                 <button
                   onClick={() => navigate('/schedule')}
-                  className="w-full text-left px-4 py-2 text-[10px] text-zinc-500 hover:text-blue-600 hover:bg-zinc-50 transition-colors"
+                  className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
                 >
                   +{hiddenLateVisits} more late {hiddenLateVisits === 1 ? 'visit' : 'visits'} · Open Schedule →
                 </button>
@@ -318,7 +337,7 @@ export default function Dashboard() {
               {hiddenInvoices > 0 && (
                 <button
                   onClick={() => navigate('/invoicing')}
-                  className="w-full text-left px-4 py-2 text-[10px] text-zinc-500 hover:text-blue-600 hover:bg-zinc-50 transition-colors"
+                  className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
                 >
                   +{hiddenInvoices} more past-due {hiddenInvoices === 1 ? 'invoice' : 'invoices'} · Open Invoicing →
                 </button>
@@ -341,13 +360,13 @@ export default function Dashboard() {
           onAction={() => navigate('/schedule')}
         >
           {loading ? (
-            <div className="py-8 text-center text-[12px] text-zinc-400">Loading…</div>
+            <div className="py-8 text-center text-[12px] text-ink-3">Loading…</div>
           ) : todayJobs.length === 0 ? (
             <div className="py-10 text-center">
               <Calendar className="w-6 h-6 text-zinc-300 mx-auto mb-2" />
-              <p className="text-[13px] text-zinc-500">Nothing scheduled today</p>
+              <p className="text-[13px] text-ink-3">Nothing scheduled today</p>
               {weekCount > 0 && (
-                <p className="text-[11px] text-zinc-400 mt-1">{weekCount} jobs later this week</p>
+                <p className="text-[11px] text-ink-3 mt-1">{weekCount} jobs later this week</p>
               )}
             </div>
           ) : (
@@ -356,15 +375,15 @@ export default function Dashboard() {
                 <button
                   key={j.id}
                   onClick={() => navigate('/schedule')}
-                  className="w-full text-left flex items-baseline gap-3 px-4 py-3 hover:bg-zinc-50 active:bg-zinc-100 transition-colors border-b border-zinc-100 last:border-b-0"
+                  className="w-full text-left flex items-baseline gap-3 px-4 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
                 >
-                  <span className="text-[12px] font-semibold text-zinc-900 tabular-nums shrink-0 w-12">
+                  <span className="text-[12px] font-semibold text-ink tabular-nums shrink-0 w-12">
                     {(j.start_time || '').slice(0, 5) || '—'}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] text-zinc-900 truncate">{j.title}</span>
+                    <span className="block text-[13px] text-ink truncate">{j.title}</span>
                     {j.address && (
-                      <span className="block text-[11px] text-zinc-500 truncate mt-0.5">{j.address}</span>
+                      <span className="block text-[11px] text-ink-3 truncate mt-0.5">{j.address}</span>
                     )}
                   </span>
                 </button>
@@ -382,7 +401,7 @@ export default function Dashboard() {
           action="Open Invoicing"
           onAction={() => navigate('/invoicing')}
         >
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-zinc-100">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-bg-2">
             <div className="bg-white">
               <MoneyStat
                 label="Today"
@@ -402,7 +421,7 @@ export default function Dashboard() {
                 label="Outstanding"
                 value={fmtMoney(outstanding)}
                 sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
-                accent={overdueInvoiceCount > 0 ? 'text-amber-600' : 'text-zinc-900'}
+                accent={overdueInvoiceCount > 0 ? 'text-amber-600' : 'text-ink'}
                 onClick={() => navigate('/invoicing')}
               />
             </div>
@@ -416,6 +435,33 @@ export default function Dashboard() {
               />
             </div>
           </div>
+
+          {/* AR Aging — who to call this morning */}
+          {(arAging['30'].length + arAging['60'].length + arAging['90'].length) > 0 && (
+            <div className="border-t border-hairline px-4 py-3">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Aging receivables</div>
+              <div className="flex gap-3 text-[12px]">
+                {arAging['30'].length > 0 && (
+                  <button onClick={() => navigate('/invoicing')} className="flex items-baseline gap-1 hover:text-amber-700 transition-colors">
+                    <span className="text-amber-600 font-bold">{fmtMoney(arAging['30'].reduce((s, i) => s + (i.total || 0), 0))}</span>
+                    <span className="text-ink-3">30-60d</span>
+                  </button>
+                )}
+                {arAging['60'].length > 0 && (
+                  <button onClick={() => navigate('/invoicing')} className="flex items-baseline gap-1 hover:text-orange-700 transition-colors">
+                    <span className="text-orange-600 font-bold">{fmtMoney(arAging['60'].reduce((s, i) => s + (i.total || 0), 0))}</span>
+                    <span className="text-ink-3">60-90d</span>
+                  </button>
+                )}
+                {arAging['90'].length > 0 && (
+                  <button onClick={() => navigate('/invoicing')} className="flex items-baseline gap-1 hover:text-red-700 transition-colors">
+                    <span className="text-red-600 font-bold">{fmtMoney(arAging['90'].reduce((s, i) => s + (i.total || 0), 0))}</span>
+                    <span className="text-ink-3">90d+</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </Tile>
         </div>
 

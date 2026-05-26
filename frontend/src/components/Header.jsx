@@ -24,7 +24,7 @@ export default function Header({ onMenuToggle }) {
   const title = PAGE_TITLES[path] || 'BrightBase'
 
   return (
-    <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-white/10 bg-white/80 backdrop-blur-lg shrink-0 shadow-sm">
+    <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-hairline bg-panel/80 backdrop-blur-lg shrink-0 shadow-sm">
       <div className="flex items-center gap-3 flex-1">
         <button
           onClick={onMenuToggle}
@@ -47,7 +47,7 @@ export default function Header({ onMenuToggle }) {
             const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
             window.dispatchEvent(event)
           }}
-          className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 transition-all text-neutral-500 hover:text-neutral-700 shadow-sm"
+          className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-hairline bg-panel/50 hover:bg-panel/70 transition-all text-ink-3 hover:text-ink-2 shadow-sm"
         >
           <Search className="w-4 h-4" />
           <span className="text-xs font-medium">Ask AI</span>
