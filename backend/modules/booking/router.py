@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -7,6 +7,7 @@ from database.db import get_db
 from database.models import LeadIntake, Client
 from utils.contacts import find_client_by_contact, normalize_phone
 from modules.booking.pricing import estimate_price
+from ratelimit import limiter
 
 router = APIRouter()
 
@@ -96,7 +97,8 @@ class InstantQuoteResponse(BaseModel):
 
 
 @router.post("/submit", status_code=201, response_model=BookingResponse)
-def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
+@limiter.limit("20/hour")
+def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(get_db)):
     """
     Public endpoint — called from maineclean.co booking/quote request form.
     Creates a LeadIntake + Client record and returns a booking confirmation.
@@ -181,7 +183,8 @@ def submit_booking(data: BookingSubmit, db: Session = Depends(get_db)):
 
 
 @router.post("/validate-address", response_model=AddressValidateResponse)
-def validate_address(data: AddressValidate):
+@limiter.limit("20/hour")
+def validate_address(request: Request, data: AddressValidate):
     """
     Validates whether an address is within the Maine Cleaning Co. service area.
     Simple distance-based check — Maine-based addresses are eligible.
@@ -214,7 +217,8 @@ def validate_address(data: AddressValidate):
 
 
 @router.post("/instant-quote", response_model=InstantQuoteResponse)
-def instant_quote(data: InstantQuoteRequest):
+@limiter.limit("20/hour")
+def instant_quote(request: Request, data: InstantQuoteRequest):
     """Public — called from the maineclean.co booking form to show a live
     price range as the customer fills it in. Stateless: doesn't write
     anything to the DB. The actual quote is finalized by the operator

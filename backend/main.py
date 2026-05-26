@@ -15,6 +15,7 @@ from agents.tools import get_tools_for_agent, execute_tool
 
 from auth import APIKeyMiddleware
 from auth_jwt import verify_jwt
+from ratelimit import limiter
 from database.db import init_db
 from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
 from modules.clients.router import router as clients_router
@@ -43,6 +44,12 @@ load_dotenv()
 
 app = FastAPI(title="BrightBase API", version="1.0.0")
 
+# BB-OPS-01: wire rate limiter so @limiter.limit() decorators fire.
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 _default_origins = (
     "http://localhost:5173,http://localhost:3000,"
     "https://www.maineclean.co,https://maineclean.co,"
@@ -54,8 +61,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*", "X-API-Key"],
+    # BB-CODE-02: was ["*"] / ["*", "X-API-Key"] which paired with
+    # allow_credentials=True is permissive enough to bite the moment a new
+    # origin is added. Explicit lists match what the SPA actually sends.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
 
 # API key authentication â must be added AFTER CORS middleware
@@ -85,7 +95,25 @@ app.include_router(work_router, prefix="/api/work", tags=["work"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 
 # Per-connection conversation histories: {connection_key: [messages]}
+# BB-CODE-03: bounded so a long chat doesn't accumulate megabytes per session
+# (Anthropic's context window is the real ceiling, but we don't need to
+# carry the entire transcript every turn). Older messages are dropped from
+# the front of the list when the cap is exceeded; system prompt is sent
+# fresh every turn via config["system_prompt"] so trimming user/assistant
+# pairs is safe.
+AGENT_HISTORY_MAX_MESSAGES = int(os.getenv("AGENT_HISTORY_MAX_MESSAGES", "40"))
 agent_histories: dict[str, list] = {}
+
+
+def _trim_history(conn_key: str) -> None:
+    h = agent_histories.get(conn_key)
+    if not h or len(h) <= AGENT_HISTORY_MAX_MESSAGES:
+        return
+    # Keep the tail. If the trim point lands mid-tool-use (assistant message
+    # whose next entry was a tool_result), shave one more so we don't leave
+    # an orphaned tool_use without its result.
+    overflow = len(h) - AGENT_HISTORY_MAX_MESSAGES
+    agent_histories[conn_key] = h[overflow:]
 
 
 def load_agent_config(agent_name: str) -> dict:
@@ -228,6 +256,7 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                 continue
 
             agent_histories[conn_key].append({"role": "user", "content": message})
+            _trim_history(conn_key)
 
             # Agentic tool-use loop
             loop_messages = list(agent_histories[conn_key])
@@ -285,6 +314,7 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                     break
 
             agent_histories[conn_key].append({"role": "assistant", "content": final_text})
+            _trim_history(conn_key)
             await websocket.send_json({"type": "done"})
 
     except WebSocketDisconnect:

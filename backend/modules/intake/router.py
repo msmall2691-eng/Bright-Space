@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,6 +10,7 @@ from database.db import get_db
 from modules.auth.router import require_role
 from database.models import LeadIntake, Client, Opportunity, Activity
 from utils.contacts import find_client_by_contact, normalize_phone
+from ratelimit import limiter
 
 router = APIRouter()
 
@@ -79,7 +80,8 @@ def intake_to_dict(i: LeadIntake) -> dict:
 
 
 @router.post("/submit", status_code=201)  # PUBLIC: leads from maineclean.co contact form
-def submit_intake(data: IntakeSubmit, db: Session = Depends(get_db)):
+@limiter.limit("30/hour")
+def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(get_db)):
     """Public endpoint — called from maineclean.co contact/quote form."""
     normalized_phone = normalize_phone(data.phone)
     # Fuzzy phone lookup falls back to last-10 digits so legacy rows match.
@@ -296,7 +298,8 @@ SERVICE_TYPE_MAP = {
 
 
 @router.post("/webhook", status_code=201)  # PUBLIC: maineclean.co InstantEstimate webhook posts here
-def webhook_intake(data: WebhookPayload, db: Session = Depends(get_db)):
+@limiter.limit("30/hour")
+def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends(get_db)):
     """
     Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
     """

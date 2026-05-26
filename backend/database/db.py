@@ -6,7 +6,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./brightbase.db")
+# BB-INFRA-01: DATABASE_URL is now required.
+#
+# Was: defaulted to "sqlite:///./brightbase.db". A deploy that ever lost the
+# env var (a Railway service rebuild, a forked environment) would silently
+# start a local SQLite at /data/brightbase.db on the brightbase-volume,
+# apply the boot-time migration system there, and accept writes — diverging
+# from the canonical Postgres DB with no alarm. The orphan brightbase-volume
+# on Railway is a remnant of exactly that era.
+#
+# Now: missing env → RuntimeError at import. Tests that need SQLite still
+# set DATABASE_URL=sqlite:///./test_*.db explicitly (test_pipeline.py etc.).
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Set it to a Postgres URL in production "
+        "(or to sqlite:///./local.db for local dev / tests)."
+    )
 
 # Railway sometimes provides postgres:// but SQLAlchemy requires postgresql://
 if DATABASE_URL.startswith("postgres://"):
