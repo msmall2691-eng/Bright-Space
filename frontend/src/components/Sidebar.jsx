@@ -46,13 +46,13 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
 
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-[260px]
-        bg-white/90 backdrop-blur-lg border-r border-white/20
+        bg-panel/95 backdrop-blur-lg border-r border-hairline
         flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out
         lg:static lg:translate-x-0 lg:w-[260px]
         ${open ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Logo area */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-white/10">
+        <div className="h-16 flex items-center justify-between px-4 border-b border-hairline">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-md">
               <Zap className="w-4 h-4 text-white" />
@@ -112,7 +112,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
         </nav>
 
         {/* Footer / user */}
-        <div className="px-3 py-3 border-t border-white/10">
+        <div className="px-3 py-3 border-t border-hairline">
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
@@ -135,7 +135,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
             </button>
 
             {showUserMenu && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white/95 backdrop-blur-lg border border-white/20 rounded-lg shadow-glass py-1 z-50">
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white/95 backdrop-blur-lg border border-hairline rounded-lg shadow-glass py-1 z-50">
                 <button
                   onClick={() => {
                     setShowUserMenu(false)

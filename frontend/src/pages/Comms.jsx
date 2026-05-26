@@ -1215,6 +1215,25 @@ export default function Comms() {
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
               )}
 
+              {/* Canned responses — one-tap fills the reply box */}
+              {!noteMode && (
+                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
+                  {[
+                    "On our way!",
+                    "Running 10 min late",
+                    "All done!",
+                    "Can we reschedule?",
+                    "Thanks for your business!",
+                    "Your access code is ",
+                  ].map(t => (
+                    <button key={t} onClick={() => setReply(prev => prev ? prev + ' ' + t : t)}
+                      className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors whitespace-nowrap">
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Reply input */}
               <div className="flex gap-2">
                 <textarea ref={replyRef} value={reply} onChange={e => setReply(e.target.value)} rows={2}

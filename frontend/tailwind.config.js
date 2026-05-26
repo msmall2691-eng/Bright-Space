@@ -4,6 +4,19 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Design tokens from index.css — use these instead of zinc/blue literals
+        // so the app respects the paper/dark theme toggle.
+        bg:        'var(--bg)',
+        'bg-2':    'var(--bg-2)',
+        'bg-3':    'var(--bg-3)',
+        panel:     'var(--panel)',
+        ink:       'var(--ink)',
+        'ink-2':   'var(--ink-2)',
+        'ink-3':   'var(--ink-3)',
+        hairline:  'var(--hairline)',
+        'hairline-2': 'var(--hairline-2)',
+        accent:    'var(--accent)',
+        'accent-ink': 'var(--accent-ink)',
         // Primary brand colors
         brand: {
           50:  '#f0f9ff',
