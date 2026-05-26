@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '012_add_property_profiles'
-down_revision = '011_property_checklist_template'
+down_revision = None
 branch_labels = None
 depends_on = None
 
