@@ -22,7 +22,10 @@ const LEAD_STATUS_COLORS = {
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
-const QUOTE_TEMPLATES = [
+// Hardcoded defaults — used as fallback when the admin hasn't customized
+// templates yet. Once they edit via the template manager, these are
+// replaced by the API-stored version from /api/settings/quote-templates.
+const DEFAULT_QUOTE_TEMPLATES = [
   { id: 'biweekly_residential', label: 'Biweekly Residential', service_type: 'residential',
     items: [{ name: 'Biweekly home clean', description: 'Recurring biweekly residential cleaning', qty: 1, unit_price: 185 }] },
   { id: 'weekly_residential', label: 'Weekly Residential', service_type: 'residential',
@@ -54,7 +57,8 @@ export default function Quoting() {
   const [quotes, setQuotes] = useState([])
   const [intakes, setIntakes] = useState([])
   const [clients, setClients] = useState([])
-  const [panel, setPanel] = useState(null) // 'quote' | 'send' | null
+  const [quoteTemplates, setQuoteTemplates] = useState(DEFAULT_QUOTE_TEMPLATES)
+  const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
   const [form, setForm] = useState({
@@ -78,6 +82,9 @@ export default function Quoting() {
     loadQuotes()
     loadIntakes()
     get('/api/clients').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+    get('/api/settings/quote-templates').then(d => {
+      if (d?.templates?.length) setQuoteTemplates(d.templates)
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -432,7 +439,7 @@ export default function Quoting() {
               <select
                 value=""
                 onChange={e => {
-                  const tpl = QUOTE_TEMPLATES.find(t => t.id === e.target.value)
+                  const tpl = quoteTemplates.find(t => t.id === e.target.value)
                   if (!tpl) return
                   setForm(f => ({ ...f, service_type: tpl.service_type, items: tpl.items.map(it => ({ ...it })) }))
                   e.target.value = ''
@@ -440,7 +447,7 @@ export default function Quoting() {
                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white text-sm"
               >
                 <option value="">Custom (build from scratch)</option>
-                {QUOTE_TEMPLATES.map(t => (
+                {quoteTemplates.map(t => (
                   <option key={t.id} value={t.id}>{t.label}</option>
                 ))}
               </select>

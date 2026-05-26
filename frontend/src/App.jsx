@@ -112,11 +112,11 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-[#FCFCFC]">
+    <div className="flex h-[100dvh] overflow-hidden bg-bg">
       <SidebarWithUnread open={sidebarOpen} onClose={closeSidebar} user={user} />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-auto bg-[#FCFCFC] pb-bottomnav lg:pb-0 scroll-smooth-mobile">
+        <main className="flex-1 overflow-auto bg-bg pb-bottomnav lg:pb-0 scroll-smooth-mobile">
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
