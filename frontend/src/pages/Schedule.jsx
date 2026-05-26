@@ -27,7 +27,7 @@ const VISIT_STATUS_CONFIG = {
   in_progress: { label: 'In Progress', dot: 'bg-amber-500',   badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700' },
   completed:   { label: 'Completed',   dot: 'bg-green-600',   badge: 'success', pillMobile: 'bg-emerald-50 text-emerald-700' },
   no_show:     { label: 'No Show',     dot: 'bg-red-500',     badge: 'danger',  pillMobile: 'bg-red-50 text-red-700' },
-  cancelled:   { label: 'Cancelled',   dot: 'bg-neutral-500', badge: 'danger',  pillMobile: 'bg-zinc-100 text-zinc-600' },
+  cancelled:   { label: 'Cancelled',   dot: 'bg-bg0', badge: 'danger',  pillMobile: 'bg-zinc-100 text-zinc-600' },
 }
 
 // Single-day mobile-first view. Renders the day's visits as full-width
@@ -48,16 +48,16 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
       <div className="max-w-2xl mx-auto px-3 pt-3 pb-6">
         {/* Day header */}
         <div className="mb-3 px-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
             {isToday ? 'Today' : ''}
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-neutral-900">
+          <h2 className="text-xl sm:text-2xl font-bold text-ink">
             {new Date(`${currentDate.toISOString().split('T')[0]}T00:00`).toLocaleDateString('en-US', {
               weekday: 'long', month: 'long', day: 'numeric',
             })}
           </h2>
           {sorted.length > 0 && (
-            <p className="text-[12px] text-neutral-500 mt-0.5">
+            <p className="text-[12px] text-ink-3 mt-0.5">
               {sorted.length} job{sorted.length === 1 ? '' : 's'}
               {completed > 0 && ` · ${completed} done`}
             </p>
@@ -65,9 +65,9 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
         </div>
 
         {sorted.length === 0 ? (
-          <div className="bg-white border border-neutral-200 rounded-2xl p-10 text-center">
+          <div className="bg-panel border border-hairline rounded-2xl p-10 text-center">
             <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
-            <p className="text-[13px] text-neutral-500">Nothing scheduled for this day</p>
+            <p className="text-[13px] text-ink-3">Nothing scheduled for this day</p>
           </div>
         ) : (
           <ul className="space-y-2.5">
@@ -87,10 +87,10 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                 <li key={v.id}>
                   <button
                     onClick={() => onSelect(v, job, property)}
-                    className={`group w-full text-left flex items-stretch rounded-2xl border bg-white overflow-hidden transition-all active:scale-[0.99] ${
+                    className={`group w-full text-left flex items-stretch rounded-2xl border bg-panel overflow-hidden transition-all active:scale-[0.99] ${
                       isCancelled
-                        ? 'border-neutral-200 opacity-60'
-                        : 'border-neutral-200 hover:border-neutral-300 hover:shadow-sm'
+                        ? 'border-hairline opacity-60'
+                        : 'border-hairline hover:border-neutral-300 hover:shadow-sm'
                     }`}
                   >
                     {/* Color bar — job type signal */}
@@ -102,9 +102,9 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                     <div className="flex-1 min-w-0 p-3">
                       {/* Time row */}
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[14px] font-bold text-neutral-900 tabular-nums">
+                        <span className="text-[14px] font-bold text-ink tabular-nums">
                           {startHHMM || '—'}
-                          {endHHMM && <span className="text-neutral-400 font-medium"> – {endHHMM}</span>}
+                          {endHHMM && <span className="text-ink-3 font-medium"> – {endHHMM}</span>}
                         </span>
                         <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.pillMobile}`}>
                           {statusCfg.label}
@@ -117,7 +117,7 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`text-[14px] font-semibold text-neutral-900 ${isCancelled ? 'line-through' : ''}`}>
+                            <span className={`text-[14px] font-semibold text-ink ${isCancelled ? 'line-through' : ''}`}>
                               {job?.title || `Visit ${v.id}`}
                             </span>
                             {v.ical_source && (
@@ -130,14 +130,14 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                             )}
                           </div>
                           {property?.address && (
-                            <div className="text-[12px] text-neutral-500 mt-0.5">
+                            <div className="text-[12px] text-ink-3 mt-0.5">
                               {property.address}
                             </div>
                           )}
                         </div>
                       </div>
                       {/* Meta footer */}
-                      <div className="flex items-center gap-3 mt-2 text-[11px] text-neutral-500">
+                      <div className="flex items-center gap-3 mt-2 text-[11px] text-ink-3">
                         {client?.name && (
                           <span className="truncate">{client.name}</span>
                         )}
@@ -181,8 +181,8 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
   return (
     <div
       className={`group flex items-center gap-3 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg transition-colors cursor-pointer ${
-        selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-white hover:bg-neutral-50'
-      } border border-neutral-200`}
+        selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-panel hover:bg-bg'
+      } border border-hairline`}
       onClick={() => onEdit(visit, job, property)}
     >
       <input
@@ -196,7 +196,7 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
       />
 
       {/* Start time — fixed width column */}
-      <div className="text-[12px] font-semibold text-neutral-900 tabular-nums w-12 shrink-0">
+      <div className="text-[12px] font-semibold text-ink tabular-nums w-12 shrink-0">
         {visit.start_time?.slice(0, 5) || '—'}
       </div>
 
@@ -208,15 +208,15 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
       {/* Title + property + client on one stacked line */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[13px] font-semibold text-neutral-900 truncate">
+          <span className="text-[13px] font-semibold text-ink truncate">
             {job?.title || `Visit ${visit.id}`}
           </span>
           {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
         </div>
-        <div className="text-[11px] text-neutral-500 truncate">
+        <div className="text-[11px] text-ink-3 truncate">
           {property?.name || ''}
-          {property?.address && <span className="text-neutral-400"> · {property.address}</span>}
-          {client?.name && <span className="text-neutral-400"> · {client.name}</span>}
+          {property?.address && <span className="text-ink-3"> · {property.address}</span>}
+          {client?.name && <span className="text-ink-3"> · {client.name}</span>}
         </div>
       </div>
 
@@ -246,14 +246,14 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
       <div className="hidden sm:flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(visit, job, property) }}
-          className="p-1.5 rounded hover:bg-blue-100 text-neutral-400 hover:text-blue-600"
+          className="p-1.5 rounded hover:bg-blue-100 text-ink-3 hover:text-blue-600"
           title="Edit"
         >
           <Edit2 className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(visit.id) }}
-          className="p-1.5 rounded hover:bg-red-100 text-neutral-400 hover:text-red-600"
+          className="p-1.5 rounded hover:bg-red-100 text-ink-3 hover:text-red-600"
           title="Delete"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -332,7 +332,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
   }
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
-      <div className="w-full sm:max-w-2xl bg-white rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]">
+      <div className="w-full sm:max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]">
         <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
           <h2 className="text-xl sm:text-2xl font-bold">New recurring schedule</h2>
           <button onClick={onClose} className="p-2 hover:bg-blue-400 rounded"><X className="w-5 h-5" /></button>
@@ -392,7 +392,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
                   const dayNum = (i + 6) % 7
                   const sel = form.days_of_week.includes(dayNum)
                   return (
-                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-neutral-700 border-neutral-300')}>
+                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-neutral-700 border-neutral-300')}>
                       {label}
                     </button>
                   )
@@ -413,7 +413,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           <div>
             <label className="block text-sm font-semibold mb-1">Generate weeks ahead</label>
             <input type="number" min="1" max="52" value={form.generate_weeks_ahead} onChange={e => setForm(f => ({...f, generate_weeks_ahead: e.target.value}))} className="w-32 px-3 py-2 border border-neutral-300 rounded-lg" />
-            <p className="text-xs text-neutral-500 mt-1">How many weeks of future jobs to materialize.</p>
+            <p className="text-xs text-ink-3 mt-1">How many weeks of future jobs to materialize.</p>
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1">Notes</label>
@@ -421,7 +421,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           </div>
           {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
         </div>
-        <div className="border-t border-neutral-200 bg-neutral-50 p-4 flex justify-end gap-3">
+        <div className="border-t border-hairline bg-bg p-4 flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={submit} disabled={saving}>{saving ? 'Creating...' : 'Create schedule'}</Button>
         </div>
@@ -492,8 +492,8 @@ function RecurringPanel() {
       <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-neutral-900">Recurring schedules</h1>
-            <p className="text-sm text-neutral-500 mt-1">Auto-generates jobs daily. Manual trigger available per schedule.</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-ink">Recurring schedules</h1>
+            <p className="text-sm text-ink-3 mt-1">Auto-generates jobs daily. Manual trigger available per schedule.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={load}><RefreshCw className="w-4 h-4 mr-1" />Refresh</Button>
@@ -502,11 +502,11 @@ function RecurringPanel() {
         </div>
         {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
         {loading ? (
-          <div className="text-center text-neutral-400 py-12">Loading...</div>
+          <div className="text-center text-ink-3 py-12">Loading...</div>
         ) : schedules.length === 0 ? (
-          <div className="bg-white border border-neutral-200 rounded-2xl p-10 text-center">
+          <div className="bg-panel border border-hairline rounded-2xl p-10 text-center">
             <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
-            <p className="text-[13px] text-neutral-500">No recurring schedules yet</p>
+            <p className="text-[13px] text-ink-3">No recurring schedules yet</p>
           </div>
         ) : (
           <ul className="space-y-3">
@@ -515,17 +515,17 @@ function RecurringPanel() {
               const days = s.days_of_week || [s.day_of_week]
               const dayStr = days.map(d => dayNames[(d + 1) % 7]).join(', ')
               return (
-                <li key={s.id} className="bg-white border border-neutral-200 rounded-2xl p-4">
+                <li key={s.id} className="bg-panel border border-hairline rounded-2xl p-4">
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-base font-semibold text-neutral-900">{s.title || 'Untitled'}</h3>
+                        <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.active ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
                           {s.active ? 'Active' : 'Paused'}
                         </span>
                       </div>
                       <p className="text-[13px] text-neutral-600">{client?.name || 'Unknown client'} · {s.address}</p>
-                      <p className="text-[12px] text-neutral-500 mt-1">
+                      <p className="text-[12px] text-ink-3 mt-1">
                         {s.frequency} · {dayStr} · {s.upcoming_job_count || 0} upcoming job{s.upcoming_job_count === 1 ? '' : 's'} · generates {s.generate_weeks_ahead} weeks ahead
                       </p>
                     </div>
@@ -847,22 +847,22 @@ export default function Schedule() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50">
+    <div className="flex flex-col h-screen bg-bg">
       {/* Header */}
-      <div className="bg-white border-b border-neutral-200 sticky top-0 z-10 safe-top">
+      <div className="bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
           {/* Single compact row: title · date nav · view toggle · New Job */}
           <div className="flex items-center gap-2 sm:gap-3">
-            <h1 className="text-base sm:text-lg font-bold text-neutral-900 shrink-0">Schedule</h1>
+            <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
 
             <div className="hidden sm:flex items-center gap-1 ml-1">
-              <button onClick={prevWeek} className="p-1 hover:bg-neutral-100 rounded text-neutral-500" aria-label="Previous week">
+              <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="text-xs font-semibold text-neutral-700 whitespace-nowrap min-w-[64px] text-center">
                 {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
-              <button onClick={nextWeek} className="p-1 hover:bg-neutral-100 rounded text-neutral-500" aria-label="Next week">
+              <button onClick={nextWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Next week">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -871,11 +871,11 @@ export default function Schedule() {
 
             {/* Agenda / List / Month view toggle. URL-driven via ?view=.
                 Agenda is the mobile default; List/Month are desktop-leaning. */}
-            <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
+            <div className="inline-flex rounded-lg border border-hairline bg-panel p-0.5">
               <button
                 onClick={() => setViewMode('agenda')}
                 className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'agenda' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
+                  viewMode === 'agenda' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
                 }`}
                 aria-pressed={viewMode === 'agenda'}
                 title="Agenda — single day"
@@ -886,7 +886,7 @@ export default function Schedule() {
               <button
                 onClick={() => setViewMode('list')}
                 className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
+                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
                 }`}
                 aria-pressed={viewMode === 'list'}
                 title="List — week grouped by day"
@@ -897,7 +897,7 @@ export default function Schedule() {
               <button
                 onClick={() => setViewMode('month')}
                 className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'month' ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:bg-neutral-50'
+                  viewMode === 'month' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
                 }`}
                 aria-pressed={viewMode === 'month'}
                 title="Month — calendar grid"
@@ -915,13 +915,13 @@ export default function Schedule() {
 
           {/* Mobile-only date nav — desktop has it inline above */}
           <div className="sm:hidden flex items-center gap-2 mt-2">
-            <button onClick={prevWeek} className="p-1.5 hover:bg-neutral-100 rounded text-neutral-500">
+            <button onClick={prevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-xs font-semibold text-neutral-700 flex-1 text-center">
               {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
-            <button onClick={nextWeek} className="p-1.5 hover:bg-neutral-100 rounded text-neutral-500">
+            <button onClick={nextWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -933,7 +933,7 @@ export default function Schedule() {
               onChange={(e) => setSelectedPropertyType(e.target.value)}
               className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
                 selectedPropertyType === 'all'
-                  ? 'bg-white text-neutral-500 border-neutral-200'
+                  ? 'bg-panel text-ink-3 border-hairline'
                   : 'bg-blue-50 text-blue-700 border-blue-200'
               }`}
             >
@@ -947,7 +947,7 @@ export default function Schedule() {
               onChange={(e) => setSelectedStatus(e.target.value)}
               className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
                 selectedStatus === 'all'
-                  ? 'bg-white text-neutral-500 border-neutral-200'
+                  ? 'bg-panel text-ink-3 border-hairline'
                   : 'bg-blue-50 text-blue-700 border-blue-200'
               }`}
             >
@@ -987,7 +987,7 @@ export default function Schedule() {
       )}
 
       {/* Selection / bulk-action bar */}
-      <div className="bg-white border-b border-neutral-200 px-4 py-2">
+      <div className="bg-panel border-b border-hairline px-4 py-2">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer select-none">
             <input
@@ -1009,7 +1009,7 @@ export default function Schedule() {
                 Hard delete
               </label>
               <button onClick={clearVisitSelection}
-                className="text-xs text-neutral-500 hover:text-neutral-700 px-2 py-1 rounded">
+                className="text-xs text-ink-3 hover:text-neutral-700 px-2 py-1 rounded">
                 Clear
               </button>
               <button onClick={bulkDeleteVisits} disabled={bulkDeleting}
@@ -1064,7 +1064,7 @@ export default function Schedule() {
                 .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
                 .map(([date, dateVisits]) => (
                   <div key={date}>
-                    <h2 className="text-base sm:text-lg font-bold text-neutral-900 mb-2 sm:mb-3">
+                    <h2 className="text-base sm:text-lg font-bold text-ink mb-2 sm:mb-3">
                       {new Date(`${date}T00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </h2>
                     <div className="space-y-2 sm:space-y-3">
@@ -1098,10 +1098,10 @@ export default function Schedule() {
           <GlassCard className="w-full sm:w-96 h-[95vh] sm:h-auto rounded-t-2xl sm:rounded-lg m-0 sm:m-4 overflow-y-auto safe-bottom">
             <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <h2 className="text-lg sm:text-xl font-bold text-neutral-900">Visit Details</h2>
+                <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
                 <button
                   onClick={() => setShowDetails(false)}
-                  className="p-2 sm:p-1 hover:bg-neutral-100 rounded active:bg-neutral-200 -mr-2 sm:mr-0"
+                  className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-neutral-200 -mr-2 sm:mr-0"
                 >
                   <X className="w-5 sm:w-5 h-5 sm:h-5" />
                 </button>
@@ -1111,7 +1111,7 @@ export default function Schedule() {
               <div className="space-y-3 sm:space-y-4">
                 <div>
                   <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Date & Time</p>
-                  <p className="text-sm sm:text-base text-neutral-900">
+                  <p className="text-sm sm:text-base text-ink">
                     {new Date(`${selectedVisit.visit.scheduled_date}T${selectedVisit.visit.start_time}`).toLocaleDateString('en-US', {
                       weekday: 'short', month: 'short', day: 'numeric'
                     })} @ {selectedVisit.visit.start_time?.slice(0, 5)}
@@ -1120,17 +1120,17 @@ export default function Schedule() {
 
                 <div>
                   <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Property</p>
-                  <p className="text-sm sm:text-base text-neutral-900">{selectedVisit.property?.name}</p>
+                  <p className="text-sm sm:text-base text-ink">{selectedVisit.property?.name}</p>
                 </div>
 
                 <div>
                   <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Address</p>
-                  <p className="text-sm sm:text-base text-neutral-900 break-words">{selectedVisit.property?.address}</p>
+                  <p className="text-sm sm:text-base text-ink break-words">{selectedVisit.property?.address}</p>
                 </div>
 
                 <div>
                   <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Client</p>
-                  <p className="text-sm sm:text-base text-neutral-900">{selectedVisit.job?.client_name}</p>
+                  <p className="text-sm sm:text-base text-ink">{selectedVisit.job?.client_name}</p>
                 </div>
 
                 <div>
@@ -1143,7 +1143,7 @@ export default function Schedule() {
                 {selectedVisit.visit.cleaner_ids?.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Assigned Cleaners</p>
-                    <p className="text-sm sm:text-base text-neutral-900">{selectedVisit.visit.cleaner_ids.length} cleaner(s)</p>
+                    <p className="text-sm sm:text-base text-ink">{selectedVisit.visit.cleaner_ids.length} cleaner(s)</p>
                   </div>
                 )}
 
@@ -1154,7 +1154,7 @@ export default function Schedule() {
                   </div>
                 )}
 
-                <div className="border-t border-neutral-200 pt-4 flex flex-col-reverse sm:flex-row gap-2">
+                <div className="border-t border-hairline pt-4 flex flex-col-reverse sm:flex-row gap-2">
                   <Button
                     variant="secondary"
                     size="sm"
