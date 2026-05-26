@@ -816,11 +816,15 @@ export default function Schedule() {
     setBackfilling(true)
     try {
       const result = await post('/api/visits/admin/backfill-visits-from-jobs', {})
-      // Reload coverage check after backfill
+      // Reload everything so new visits appear immediately
       const newCoverage = await get('/api/visits/admin/coverage-check')
       setCoverage(newCoverage)
+      // Re-run the main schedule loader to pick up new visits
+      setCurrentDate(new Date(currentDate))
+      alert(`Backfill complete: ${result.created} visits created, ${result.skipped} already had visits, ${result.skipped_no_date || 0} skipped (no date).${result.errors?.length ? ` ${result.errors.length} errors.` : ''}`)
     } catch (err) {
       console.error('[Schedule] Backfill failed:', err)
+      alert('Backfill failed: ' + (err?.message || 'unknown error'))
     } finally {
       setBackfilling(false)
     }

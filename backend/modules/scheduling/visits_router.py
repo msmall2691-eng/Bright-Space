@@ -199,10 +199,14 @@ def report_drift_check(db: Session = Depends(get_db)):
 
 @router.post("/admin/backfill-visits-from-jobs", dependencies=[Depends(require_role("admin", "manager"))])
 def backfill_visits_from_jobs(db: Session = Depends(get_db)):
-    """Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids."""
+    """Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids.
+    Jobs with missing dates are skipped. Missing start/end times default to
+    10:00–13:00 so the visit can be created (operator can adjust later)."""
+    from datetime import time as dt_time
     jobs = db.query(Job).all()
     created_count = 0
     skipped_count = 0
+    skipped_no_date = 0
     errors = []
 
     for job in jobs:
@@ -212,14 +216,22 @@ def backfill_visits_from_jobs(db: Session = Depends(get_db)):
                 skipped_count += 1
                 continue
 
+            if not job.scheduled_date:
+                skipped_no_date += 1
+                continue
+
+            start = job.start_time or dt_time(10, 0)
+            end = job.end_time or dt_time(13, 0)
+
             visit = Visit(
                 job_id=job.id,
                 scheduled_date=job.scheduled_date,
-                start_time=job.start_time,
-                end_time=job.end_time,
+                start_time=start,
+                end_time=end,
                 status=job.status or "scheduled",
                 cleaner_ids=job.cleaner_ids or [],
                 gcal_event_id=job.gcal_event_id,
+                ical_source=getattr(job, 'ical_source', None),
                 notes=job.notes,
             )
             db.add(visit)
@@ -237,9 +249,10 @@ def backfill_visits_from_jobs(db: Session = Depends(get_db)):
     return {
         "created": created_count,
         "skipped": skipped_count,
+        "skipped_no_date": skipped_no_date,
         "errors": errors,
         "total_jobs": len(jobs),
-        "message": f"Backfill complete: created {created_count} visits, skipped {skipped_count} existing"
+        "message": f"Backfill complete: created {created_count} visits, skipped {skipped_count} existing, {skipped_no_date} undated"
     }
 
 
