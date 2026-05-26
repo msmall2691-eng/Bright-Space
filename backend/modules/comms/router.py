@@ -21,6 +21,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
+from modules.auth.router import require_role
 from database.models import Message, Conversation, Client, LeadIntake, ContactPhone
 from integrations.twilio_client import send_sms
 from integrations.email import send_email as _send_email
@@ -485,7 +486,7 @@ def get_conversation(conv_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/conversations/{conv_id}/messages")
+@router.post("/conversations/{conv_id}/messages", dependencies=[Depends(require_role("admin", "manager"))])
 def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_db)):
     """Send an outbound message on this conversation via its channel."""
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
@@ -549,7 +550,7 @@ def send_reply(conv_id: int, data: SendReplyRequest, db: Session = Depends(get_d
     return msg_to_dict(msg)
 
 
-@router.post("/conversations/{conv_id}/notes")
+@router.post("/conversations/{conv_id}/notes", dependencies=[Depends(require_role("admin", "manager"))])
 def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Depends(get_db)):
     """Attach an internal-only note to this conversation."""
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
@@ -571,7 +572,7 @@ def add_internal_note(conv_id: int, data: InternalNoteRequest, db: Session = Dep
     return msg_to_dict(msg)
 
 
-@router.post("/conversations/{conv_id}/assign")
+@router.post("/conversations/{conv_id}/assign", dependencies=[Depends(require_role("admin", "manager"))])
 def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
@@ -582,7 +583,7 @@ def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends
     return conv_to_dict(conv)
 
 
-@router.post("/conversations/{conv_id}/status")
+@router.post("/conversations/{conv_id}/status", dependencies=[Depends(require_role("admin", "manager"))])
 def set_status(conv_id: int, data: StatusRequest, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
@@ -602,7 +603,7 @@ def set_status(conv_id: int, data: StatusRequest, db: Session = Depends(get_db))
     return conv_to_dict(conv)
 
 
-@router.post("/conversations/{conv_id}/priority")
+@router.post("/conversations/{conv_id}/priority", dependencies=[Depends(require_role("admin", "manager"))])
 def set_priority(conv_id: int, data: PriorityRequest, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
@@ -620,7 +621,7 @@ def set_priority(conv_id: int, data: PriorityRequest, db: Session = Depends(get_
     return conv_to_dict(conv)
 
 
-@router.post("/conversations/{conv_id}/tags")
+@router.post("/conversations/{conv_id}/tags", dependencies=[Depends(require_role("admin", "manager"))])
 def set_tags(conv_id: int, data: TagsRequest, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
@@ -631,7 +632,7 @@ def set_tags(conv_id: int, data: TagsRequest, db: Session = Depends(get_db)):
     return conv_to_dict(conv)
 
 
-@router.post("/conversations/{conv_id}/read")
+@router.post("/conversations/{conv_id}/read", dependencies=[Depends(require_role("admin", "manager"))])
 def mark_read(conv_id: int, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
@@ -661,7 +662,7 @@ def get_messages(
     return [msg_to_dict(m) for m in q.order_by(Message.created_at.desc()).limit(200).all()]
 
 
-@router.post("/sms", response_model=Union[MessageRead, SMSPersistenceError])
+@router.post("/sms", response_model=Union[MessageRead, SMSPersistenceError], dependencies=[Depends(require_role("admin", "manager"))])
 def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
     """Send an SMS via Twilio — attaches to a conversation automatically.
     If no client_id provided, tries to match the destination phone to an existing client.
@@ -733,7 +734,7 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
         }
 
 
-@router.post("/email", response_model=MessageRead)
+@router.post("/email", response_model=MessageRead, dependencies=[Depends(require_role("admin", "manager"))])
 def send_email_message(data: EmailRequest, db: Session = Depends(get_db)):
     """Send an email via SMTP — attaches to a conversation automatically."""
     try:
@@ -766,7 +767,7 @@ def send_email_message(data: EmailRequest, db: Session = Depends(get_db)):
     return msg_to_dict(msg)
 
 
-@router.post("/twilio/webhook")
+@router.post("/twilio/webhook")  # PUBLIC: Twilio posts here; signature is validated inside the handler (BB-SEC-06)
 async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     """Receive inbound SMS from Twilio webhook. Groups into a conversation."""
     form = await request.form()

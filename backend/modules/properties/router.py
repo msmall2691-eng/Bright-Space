@@ -178,7 +178,7 @@ def get_property(property_id: int, db: Session = Depends(get_db)):
     return prop_to_dict(prop)
 
 
-@router.patch("/{property_id}")
+@router.patch("/{property_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_property(property_id: int, data: PropertyUpdate, db: Session = Depends(get_db)):
     prop = db.query(Property).filter(Property.id == property_id).first()
     if not prop:
@@ -190,7 +190,7 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     return prop_to_dict(prop)
 
 
-@router.post("/{property_id}/sync")
+@router.post("/{property_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_ical(property_id: int, db: Session = Depends(get_db)):
     """Fetch the iCal feed and auto-create turnover jobs."""
     prop = db.query(Property).filter(Property.id == property_id).first()
@@ -202,7 +202,7 @@ def sync_ical(property_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/sync-all")
+@router.post("/sync-all", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_all_ical(db: Session = Depends(get_db)):
     """Sync all active properties that have an iCal URL."""
     props = db.query(Property).filter(
@@ -270,7 +270,7 @@ def get_all_ical_events(
     return results
 
 
-@router.delete("/{property_id}", status_code=204)
+@router.delete("/{property_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_property(property_id: int, db: Session = Depends(get_db)):
     prop = db.query(Property).filter(Property.id == property_id).first()
     if not prop:
@@ -281,7 +281,7 @@ def delete_property(property_id: int, db: Session = Depends(get_db)):
 
 # Multiple iCal management endpoints
 
-@router.post("/{property_id}/icals", status_code=201)
+@router.post("/{property_id}/icals", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
     """Add another iCal URL to a property (Airbnb, VRBO, etc)"""
     prop = db.query(Property).filter(Property.id == property_id).first()
@@ -316,7 +316,7 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
     }
 
 
-@router.patch("/{property_id}/icals/{ical_id}")
+@router.patch("/{property_id}/icals/{ical_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db: Session = Depends(get_db)):
     """Update an iCal URL"""
     ical = db.query(PropertyIcal).filter(
@@ -360,7 +360,7 @@ def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db
     }
 
 
-@router.delete("/{property_id}/icals/{ical_id}", status_code=204)
+@router.delete("/{property_id}/icals/{ical_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def remove_ical_url(property_id: int, ical_id: int, db: Session = Depends(get_db)):
     """Remove an iCal URL from a property"""
     ical = db.query(PropertyIcal).filter(

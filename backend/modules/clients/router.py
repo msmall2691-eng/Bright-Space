@@ -656,7 +656,7 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
     return base
 
 
-@router.patch("/{client_id}")
+@router.patch("/{client_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -713,7 +713,7 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     return client_to_dict(client)
 
 
-@router.delete("/{client_id}", status_code=204)
+@router.delete("/{client_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_client(client_id: int, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -731,7 +731,7 @@ def get_client_phones(client_id: int, db: Session = Depends(get_db)):
     return [_phone_to_dict(p) for p in phones]
 
 
-@router.post("/{client_id}/phones", response_model=ContactPhoneCreateResponse)
+@router.post("/{client_id}/phones", response_model=ContactPhoneCreateResponse, dependencies=[Depends(require_role("admin", "manager"))])
 def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -766,7 +766,7 @@ def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Dep
     return {**_phone_to_dict(phone), "linked": link_report}
 
 
-@router.post("/{client_id}/relink-conversations")
+@router.post("/{client_id}/relink-conversations", dependencies=[Depends(require_role("admin", "manager"))])
 def relink_conversations(client_id: int, db: Session = Depends(get_db)):
     """
     Re-run linking/merging of SMS threads for this client based on all their phone numbers.
@@ -790,7 +790,7 @@ def relink_conversations(client_id: int, db: Session = Depends(get_db)):
     return combined_report
 
 
-@router.patch("/{client_id}/phones/{phone_id}", response_model=ContactPhoneRead)
+@router.patch("/{client_id}/phones/{phone_id}", response_model=ContactPhoneRead, dependencies=[Depends(require_role("admin", "manager"))])
 def update_client_phone(client_id: int, phone_id: int, data: ContactPhoneUpdate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -829,7 +829,7 @@ def update_client_phone(client_id: int, phone_id: int, data: ContactPhoneUpdate,
     return _phone_to_dict(phone)
 
 
-@router.delete("/{client_id}/phones/{phone_id}", status_code=204)
+@router.delete("/{client_id}/phones/{phone_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_client_phone(client_id: int, phone_id: int, db: Session = Depends(get_db)):
     phone = db.query(ContactPhone).filter(
         ContactPhone.id == phone_id,
@@ -863,7 +863,7 @@ def _parse_address(raw: str):
     return {"address": parts[0], "city": "", "state": state, "zip_code": zip_code}
 
 
-@router.post("/cleanup")
+@router.post("/cleanup", dependencies=[Depends(require_role("admin", "manager"))])
 def cleanup_clients(db: Session = Depends(get_db)):
     """
     Data cleanup endpoint: audit clients, backfill first/last names,
@@ -923,7 +923,7 @@ def cleanup_clients(db: Session = Depends(get_db)):
     return report
 
 
-@router.post("/import-xlsx")
+@router.post("/import-xlsx", dependencies=[Depends(require_role("admin", "manager"))])
 async def import_clients_xlsx(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Import clients from an Excel (.xlsx) file exported from Connecteam or similar."""
     try:
