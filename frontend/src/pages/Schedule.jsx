@@ -708,19 +708,26 @@ export default function Schedule() {
         return true
       })
       .sort((a, b) => {
-        // Sort by date, then by time
-        const aDate = new Date(`${a.scheduled_date}T${a.start_time}`)
-        const bDate = new Date(`${b.scheduled_date}T${b.start_time}`)
+        // Null/empty dates sort last (Unscheduled bucket).
+        const aHasDate = !!(a.scheduled_date && String(a.scheduled_date).trim())
+        const bHasDate = !!(b.scheduled_date && String(b.scheduled_date).trim())
+        if (!aHasDate && !bHasDate) return 0
+        if (!aHasDate) return 1
+        if (!bHasDate) return -1
+        const aDate = new Date(`${a.scheduled_date}T${a.start_time || '09:00'}`)
+        const bDate = new Date(`${b.scheduled_date}T${b.start_time || '09:00'}`)
         return aDate - bDate
       })
   }, [visits, selectedPropertyType, selectedStatus, jobs, properties])
 
-  // Group by date
+  // Group by date - null/empty scheduled_date bucket as "unscheduled" so the
+  // UI no longer renders "Invalid Date" headers for jobs without a real date.
   const visitsByDate = useMemo(() => {
     const grouped = {}
     filteredVisits.forEach(v => {
-      if (!grouped[v.scheduled_date]) grouped[v.scheduled_date] = []
-      grouped[v.scheduled_date].push(v)
+      const key = (v.scheduled_date && String(v.scheduled_date).trim()) ? v.scheduled_date : 'unscheduled'
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(v)
     })
     return grouped
   }, [filteredVisits])
@@ -1065,11 +1072,19 @@ export default function Schedule() {
           ) : (
             <div className="space-y-4 sm:space-y-6">
               {Object.entries(visitsByDate)
-                .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+                .sort(([dateA], [dateB]) => {
+                  // "unscheduled" bucket sorts to the bottom.
+                  if (dateA === 'unscheduled') return 1
+                  if (dateB === 'unscheduled') return -1
+                  return dateA.localeCompare(dateB)
+                })
                 .map(([date, dateVisits]) => (
                   <div key={date}>
                     <h2 className="text-base sm:text-lg font-bold text-ink mb-2 sm:mb-3">
-                      {new Date(`${date}T00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {date === 'unscheduled'
+                        ? `Unscheduled — pick a date in Edit Job (${dateVisits.length})`
+                        : new Date(`${date}T00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                      }
                     </h2>
                     <div className="space-y-2 sm:space-y-3">
                       {dateVisits.map((visit) => (
@@ -1116,9 +1131,10 @@ export default function Schedule() {
                 <div>
                   <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Date & Time</p>
                   <p className="text-sm sm:text-base text-ink">
-                    {new Date(`${selectedVisit.visit.scheduled_date}T${selectedVisit.visit.start_time}`).toLocaleDateString('en-US', {
-                      weekday: 'short', month: 'short', day: 'numeric'
-                    })} @ {selectedVisit.visit.start_time?.slice(0, 5)}
+                    {selectedVisit.visit.scheduled_date && String(selectedVisit.visit.scheduled_date).trim()
+                      ? `${new Date(`${selectedVisit.visit.scheduled_date}T${selectedVisit.visit.start_time || '09:00'}`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ ${(selectedVisit.visit.start_time || '09:00').slice(0, 5)}`
+                      : 'Unscheduled — pick a date in Edit Job'
+                    }
                   </p>
                 </div>
 

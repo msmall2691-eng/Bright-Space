@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+import logging
+import re
 
 from database.db import get_db
 from modules.auth.router import require_role
@@ -13,6 +15,33 @@ from utils.contacts import find_client_by_contact, normalize_phone
 from ratelimit import limiter
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+# Names we treat as placeholders that should be overwritten when a real
+# website lead lands on the same client record. Without this, every fresh
+# lead whose email matches a generic test/import client keeps that client's
+# old name in the Quoting dropdown.
+_PLACEHOLDER_NAMES = (
+    "brightbase webhook test",
+    "test client",
+    "unknown",
+    "(unknown)",
+    "n/a",
+    "",
+)
+
+
+def _looks_placeholder_name(name: Optional[str]) -> bool:
+    if not name:
+        return True
+    n = name.strip().lower()
+    if n in _PLACEHOLDER_NAMES:
+        return True
+    # All-digits / phone-only "names" (e.g. "+12075551234")
+    if re.fullmatch(r"\+?\d[\d\s().-]{5,}", n):
+        return True
+    return False
 
 
 class IntakeSubmit(BaseModel):
@@ -82,16 +111,63 @@ def intake_to_dict(i: LeadIntake) -> dict:
 @router.post("/submit", status_code=201)  # PUBLIC: leads from maineclean.co contact form
 @limiter.limit("30/hour")
 def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(get_db)):
-    """Public endpoint — called from maineclean.co contact/quote form."""
-    normalized_phone = normalize_phone(data.phone)
-    # Fuzzy phone lookup falls back to last-10 digits so legacy rows match.
-    client = find_client_by_contact(db, email=data.email, phone=normalized_phone)
+    """Public endpoint — called from maineclean.co contact/quote form.
 
-    # Create client if new
+    Idempotency: if the same email/phone submitted an intake within the
+    last 5 minutes, return that intake instead of creating a duplicate.
+    The maineclean.co site is observed to call both /submit and /webhook
+    in rapid succession for a single user click.
+    """
+    normalized_phone = normalize_phone(data.phone)
+    name_in = (data.name or "").strip()
+    email_in = (data.email or "").strip() or None
+
+    # --- Idempotency window ---------------------------------------------------
+    if email_in or normalized_phone:
+        cutoff = datetime.utcnow() - timedelta(minutes=5)
+        dup_q = db.query(LeadIntake).filter(LeadIntake.created_at >= cutoff)
+        dup_filters = []
+        if email_in:
+            dup_filters.append(LeadIntake.email.ilike(email_in))
+        if normalized_phone:
+            dup_filters.append(LeadIntake.phone == normalized_phone)
+        if dup_filters:
+            recent = dup_q.filter(or_(*dup_filters)).order_by(LeadIntake.created_at.desc()).first()
+            if recent:
+                changed = False
+                merge_fields = [
+                    ("address", data.address),
+                    ("city", data.city),
+                    ("zip_code", data.zip_code),
+                    ("service_type", data.service_type),
+                    ("bedrooms", data.bedrooms),
+                    ("square_footage", data.square_footage),
+                    ("preferred_date", data.preferred_date),
+                ]
+                for field, val in merge_fields:
+                    if val and not getattr(recent, field, None):
+                        setattr(recent, field, val)
+                        changed = True
+                if data.message and (not recent.message or len(data.message) > len(recent.message or "")):
+                    recent.message = data.message
+                    changed = True
+                if changed:
+                    db.commit()
+                    db.refresh(recent)
+                return {
+                    "success": True,
+                    "intake_id": recent.id,
+                    "client_id": recent.client_id,
+                    "deduped": True,
+                }
+
+    # --- Client match / create -----------------------------------------------
+    client = find_client_by_contact(db, email=email_in, phone=normalized_phone)
+
     if not client:
         client = Client(
-            name=data.name,
-            email=data.email,
+            name=name_in or "Unknown",
+            email=email_in,
             phone=normalized_phone,
             address=data.address,
             city=data.city,
@@ -102,10 +178,24 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
         )
         db.add(client)
         db.flush()  # get client.id without committing
+    else:
+        # We matched an existing client. If the existing record looks like a
+        # placeholder (e.g. "BrightBase Webhook Test", a bare phone number,
+        # "Unknown"), overwrite the name with the real lead's name so the
+        # Quoting dropdown and Send Quote modal show the right person.
+        if name_in and _looks_placeholder_name(client.name):
+            client.name = name_in
+        # Backfill missing contact fields so future lookups still match.
+        if email_in and not client.email:
+            client.email = email_in
+        if normalized_phone and not client.phone:
+            client.phone = normalized_phone
+        if data.address and not client.address:
+            client.address = data.address
 
     intake = LeadIntake(
-        name=data.name,
-        email=data.email,
+        name=name_in or client.name,
+        email=email_in,
         phone=normalized_phone,
         address=data.address,
         city=data.city,
@@ -199,6 +289,7 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
+
 @router.post("/{intake_id}/convert-to-quote", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
     """Convert an intake to a quote with sensible defaults."""
@@ -255,18 +346,16 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# Webhook endpoint — accepts the maineclean.co InstantEstimate payload format
+# Webhook endpoint - accepts the maineclean.co InstantEstimate payload format
 # Set CRM_WEBHOOK_URL=https://your-brightbase-backend.com/api/intake/webhook
 # ---------------------------------------------------------------------------
 
 class WebhookPayload(BaseModel):
-    # Contact
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     zip: Optional[str] = None
-    # Service details (website InstantEstimate format)
     serviceType: Optional[str] = None
     frequency: Optional[str] = None
     sqft: Optional[int] = None
@@ -277,7 +366,6 @@ class WebhookPayload(BaseModel):
     estimateMax: Optional[float] = None
     notes: Optional[str] = None
     source: Optional[str] = "website"
-    # CRM-forward format
     service: Optional[str] = None
     squareFeet: Optional[int] = None
     message: Optional[str] = None
@@ -302,6 +390,8 @@ SERVICE_TYPE_MAP = {
 def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends(get_db)):
     """
     Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
+    Computes the canonical backend estimate so ops always sees the
+    authoritative number, and flags any drift from the site's reported value.
     """
     if not data.name and not data.email and not data.phone:
         return {"success": False, "error": "No contact info provided"}
@@ -324,8 +414,35 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
         parts.append(f"Pet hair: {data.petHair}")
     if data.condition:
         parts.append(f"Condition: {data.condition}")
-    if data.estimateMin and data.estimateMax:
-        parts.append(f"Estimate: ${data.estimateMin:.0f}-${data.estimateMax:.0f}")
+
+    # Compute the canonical backend estimate so ops always sees the authoritative
+    # number - even if the maineclean.co site's pricing math has drifted.
+    canonical_min = canonical_max = None
+    try:
+        from modules.booking.pricing import estimate_price
+        canonical_min, canonical_max = estimate_price(
+            service_type=service_key or "residential",
+            sqft=sqft,
+            bathrooms=data.bathrooms,
+            frequency=data.frequency,
+            pet_hair=data.petHair,
+            condition=data.condition,
+        )
+    except Exception as e:
+        logger.warning("Canonical estimate computation failed: %s", e)
+        canonical_min = canonical_max = None
+
+    site_min, site_max = data.estimateMin, data.estimateMax
+    if canonical_min is not None and canonical_max is not None:
+        parts.append(f"Canonical estimate: ${canonical_min:.0f}-${canonical_max:.0f}")
+        if site_min and site_max and (
+            abs(float(site_min) - float(canonical_min)) > 10
+            or abs(float(site_max) - float(canonical_max)) > 10
+        ):
+            parts.append(f"Site reported: ${site_min:.0f}-${site_max:.0f} (review pricing)")
+    elif site_min and site_max:
+        parts.append(f"Estimate: ${site_min:.0f}-${site_max:.0f}")
+
     if notes_text:
         parts.append(f"Notes: {notes_text}")
     message = " | ".join(parts) if parts else notes_text

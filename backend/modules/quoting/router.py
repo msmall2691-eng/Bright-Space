@@ -2,14 +2,148 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
 import os
 import secrets
+import logging
 
 from database.db import get_db
 from database.models import Quote, Job, LeadIntake, Client, Message, Activity, ActivityType, Property
 from modules.auth.router import require_role
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+# Hosts that must NEVER be used as the customer-facing quote link host.
+# maineclean.co is the marketing site (Squarespace) — it 404s on /quote/<token>.
+_REFUSED_PUBLIC_HOSTS = {"maineclean.co", "www.maineclean.co"}
+
+
+def _get_public_app_url(request: Optional[Request] = None) -> str:
+    """Return the base URL the customer should hit for the public quote page.
+
+    Precedence:
+      1. PUBLIC_APP_URL env var (preferred — set this on Railway)
+      2. APP_URL env var, *unless* it points to a known marketing host
+      3. The incoming request's scheme + host (works on any deploy)
+      4. Hard-coded Railway URL as a last resort
+
+    The marketing-host refuse-list is important: an older deploy had
+    APP_URL=https://maineclean.co and that's what was producing the 404
+    in the customer-facing accept email.
+    """
+    def _safe(url: Optional[str]) -> Optional[str]:
+        if not url:
+            return None
+        try:
+            host = urlparse(url).hostname or ""
+        except Exception:
+            return None
+        if host.lower() in _REFUSED_PUBLIC_HOSTS:
+            return None
+        return url.rstrip("/")
+
+    candidate = _safe(os.getenv("PUBLIC_APP_URL"))
+    if candidate:
+        return candidate
+
+    candidate = _safe(os.getenv("APP_URL"))
+    if candidate:
+        return candidate
+
+    if request is not None:
+        try:
+            host = request.headers.get("x-forwarded-host") or request.url.hostname
+            scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+            if host and host.lower() not in _REFUSED_PUBLIC_HOSTS:
+                return f"{scheme}://{host}".rstrip("/")
+        except Exception:
+            pass
+
+    return "https://brightbase-production.up.railway.app"
+
+
+def _notify_quote_accepted(db: Session, quote: Quote, job: Optional[Job], scheduled_for: Optional[str]) -> None:
+    """Best-effort: email the customer a confirmation and email ops a heads-up.
+
+    Never raises — quote acceptance must succeed even if SMTP is down.
+    """
+    try:
+        from integrations.email import send_email
+    except Exception:
+        return
+
+    q_num = quote.quote_number or f"QT-{quote.id}"
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    customer_name = (client.name if client else "there") or "there"
+    customer_email = (client.email if client else None)
+    company_name = os.getenv("FROM_NAME", "Maine Cleaning Co")
+
+    # If the quote came from a website intake, prefer the lead's email (the
+    # auto-matched Client may be a placeholder with the wrong address).
+    if quote.intake_id:
+        intake = db.query(LeadIntake).filter(LeadIntake.id == quote.intake_id).first()
+        if intake and intake.email:
+            customer_email = intake.email
+        if intake and intake.name:
+            customer_name = intake.name
+
+    scheduled_line = ""
+    if scheduled_for:
+        scheduled_line = f"<p>Your service is tentatively scheduled for <b>{scheduled_for}</b>. We will confirm the time with you shortly.</p>"
+
+    # Customer confirmation
+    if customer_email:
+        try:
+            html = (
+                f"<p>Hi {customer_name},</p>"
+                f"<p>Thank you for accepting quote <b>{q_num}</b>. We've received your acceptance and our team has been notified.</p>"
+                f"{scheduled_line}"
+                f"<p>If you need to change anything, just reply to this email.</p>"
+                f"<p>— {company_name}</p>"
+            )
+            sched_plain = (
+                f"Your service is tentatively scheduled for {scheduled_for}. We will confirm the time with you shortly.\n\n"
+                if scheduled_for else ""
+            )
+            plain = (
+                f"Hi {customer_name},\n\n"
+                f"Thank you for accepting quote {q_num}. We've received your acceptance and our team has been notified.\n\n"
+                f"{sched_plain}"
+                f"If you need to change anything, just reply to this email.\n\n— {company_name}"
+            )
+            send_email(to=customer_email, subject=f"Thanks — Quote {q_num} accepted",
+                       html_body=html, text_body=plain)
+            db.add(Message(client_id=quote.client_id, channel="email", direction="outbound",
+                           from_addr=os.getenv("SMTP_USER", ""), to_addr=customer_email,
+                           subject=f"Quote {q_num} accepted", body=plain, status="sent"))
+        except Exception as e:
+            logger.warning("Customer confirmation email failed for quote %s: %s", q_num, e)
+
+    # Ops notification
+    notify_to = os.getenv("NOTIFY_EMAIL") or os.getenv("SMTP_USER")
+    if notify_to:
+        try:
+            html = (
+                f"<p><b>{customer_name}</b> accepted quote <b>{q_num}</b>.</p>"
+                f"<p>Total: ${quote.total or 0:.2f}<br>"
+                f"Address: {quote.address or '(none on quote)'}<br>"
+                f"Customer email: {customer_email or '(none on file)'}</p>"
+                f"<p>{('Job auto-created (#' + str(job.id) + ') — review and confirm scheduling.') if job else 'No Job created automatically — please create one manually.'}</p>"
+            )
+            plain = (
+                f"{customer_name} accepted quote {q_num}.\n"
+                f"Total: ${quote.total or 0:.2f}\n"
+                f"Address: {quote.address or '(none on quote)'}\n"
+                f"Customer email: {customer_email or '(none on file)'}\n"
+                f"{('Job auto-created (#' + str(job.id) + ') — review and confirm scheduling.') if job else 'No Job created automatically — please create one manually.'}"
+            )
+            send_email(to=notify_to, subject=f"[Quote {q_num}] Customer accepted",
+                       html_body=html, text_body=plain)
+        except Exception as e:
+            logger.warning("Ops accept notification failed for quote %s: %s", q_num, e)
 
 
 def _resolve_property_for_quote(db: Session, quote: Quote) -> int | None:
@@ -204,7 +338,7 @@ class SendQuoteRequest(BaseModel):
 
 
 @router.post("/{quote_id}/send")
-def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_db)):
+def send_quote(quote_id: int, data: SendQuoteRequest, request: Request, db: Session = Depends(get_db)):
     """Send a quote to a client via email and/or SMS."""
     from integrations.email import send_email, build_quote_email, build_quote_sms
     from integrations.twilio_client import send_sms
@@ -220,7 +354,9 @@ def send_quote(quote_id: int, data: SendQuoteRequest, db: Session = Depends(get_
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     client_name = client.name if client else "Valued Customer"
     company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
-    app_url = os.getenv("APP_URL", "https://brightbase-production.up.railway.app")
+    # Use the safe app URL helper — refuses marketing-site hosts so the
+    # customer link never lands on maineclean.co/quote/<token> (which 404s).
+    app_url = _get_public_app_url(request)
 
     q_dict = quote_to_dict(quote)
     public_url = f"{app_url}/quote/{quote.public_token}"
@@ -276,6 +412,22 @@ def convert_to_job(quote_id: int, db: Session = Depends(get_db)):
     if property_id is None:
         raise HTTPException(status_code=422, detail="Quote has no address and the client has no property. Add an address to the quote or a property to the client first.")
 
+    # Derive a sensible default scheduled_date so the Schedule view doesn't
+    # render "Invalid Date". Prefer the linked intake's preferred_date if set,
+    # otherwise default to one week out (clearly tentative).
+    derived_date = None
+    derived_note = ""
+    if quote.intake_id:
+        intake = db.query(LeadIntake).filter(LeadIntake.id == quote.intake_id).first()
+        if intake and intake.preferred_date:
+            try:
+                derived_date = datetime.fromisoformat(str(intake.preferred_date)).date()
+            except Exception:
+                derived_date = None
+    if derived_date is None:
+        derived_date = (datetime.utcnow() + timedelta(days=7)).date()
+        derived_note = "\n\n(Tentative date — confirm with customer)"
+
     job = Job(
         client_id=quote.client_id,
         property_id=property_id,
@@ -283,11 +435,11 @@ def convert_to_job(quote_id: int, db: Session = Depends(get_db)):
         job_type=quote.service_type or "residential",
         title=f"Clean — {quote.quote_number or f'QT-{quote.id}'}",
         address=quote.address or "",
-        scheduled_date=None,  # user sets this when editing the job
+        scheduled_date=derived_date,
         start_time="09:00",
         end_time="12:00",
         status="scheduled",
-        notes=quote.notes,
+        notes=(quote.notes or "") + derived_note,
     )
     db.add(job)
 
@@ -334,8 +486,6 @@ def generate_public_token(quote_id: int, db: Session = Depends(get_db)):
 @router.get("/public/{token}")
 def get_public_quote(token: str, db: Session = Depends(get_db)):
     """Fetch a quote by public token (no auth required). Tracks first view."""
-    from datetime import datetime
-
     quote = db.query(Quote).filter(Quote.public_token == token).first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
@@ -366,9 +516,9 @@ class RequestChangesBody(BaseModel):
 
 @router.post("/public/{token}/accept")
 def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, db: Session = Depends(get_db)):
-    """Accept a quote via public token (no auth required). Creates a Job."""
-    from datetime import datetime
-
+    """Accept a quote via public token (no auth required). Creates a Job
+    with a sensible scheduled_date and fires confirmation emails to the
+    customer and ops."""
     quote = db.query(Quote).filter(Quote.public_token == token).first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
@@ -385,36 +535,47 @@ def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, 
     quote.accepted_at = datetime.utcnow()
     quote.accepted_ip = client_ip
 
-    # Resolve a Property for the Job — auto-create from quote.address if needed.
-    # Job.property_id is NOT NULL so this is required for the insert to succeed.
     property_id = _resolve_property_for_quote(db, quote)
     if property_id is None:
-        # No address on quote and no existing property to fall back to. We do
-        # not 422 the public endpoint (the customer cannot fix this) — instead
-        # we mark the quote accepted, log it, and let staff create the Job
-        # manually with the right Property.
         activity = Activity(
             client_id=quote.client_id,
             activity_type=ActivityType.QUOTE_ACCEPTED,
-            summary=f"Quote {quote.quote_number or f'QT-{quote.id}'} accepted (manual Job creation needed — no property)",
+            summary=f"Quote {quote.quote_number or f'QT-{quote.id}'} accepted (manual Job creation needed - no property)",
             extra_data={"quote_id": quote.id, "accepted_ip": client_ip, "needs_manual_job": True},
         )
         db.add(activity)
         db.commit()
+        try:
+            _notify_quote_accepted(db, quote, None, None)
+            db.commit()
+        except Exception:
+            db.rollback()
         return {"job_id": None, "scheduled_status": "needs_property"}
+
+    derived_date = None
+    if quote.intake_id:
+        intake = db.query(LeadIntake).filter(LeadIntake.id == quote.intake_id).first()
+        if intake and intake.preferred_date:
+            try:
+                derived_date = datetime.fromisoformat(str(intake.preferred_date)).date()
+            except Exception:
+                derived_date = None
+    tentative = derived_date is None
+    if derived_date is None:
+        derived_date = (datetime.utcnow() + timedelta(days=7)).date()
 
     job = Job(
         client_id=quote.client_id,
         property_id=property_id,
         quote_id=quote.id,
         job_type=quote.service_type or "residential",
-        title=f"Clean — {quote.quote_number or f'QT-{quote.id}'}",
+        title=f"Clean - {quote.quote_number or f'QT-{quote.id}'}",
         address=quote.address or "",
-        scheduled_date=None,
+        scheduled_date=derived_date,
         start_time="09:00",
         end_time="12:00",
         status="scheduled",
-        notes=quote.notes,
+        notes=(quote.notes or "") + ("\n\n(Tentative date - confirm with customer)" if tentative else ""),
     )
     db.add(job)
 
@@ -422,17 +583,27 @@ def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, 
         client_id=quote.client_id,
         activity_type=ActivityType.QUOTE_ACCEPTED,
         summary=f"Quote {quote.quote_number or f'QT-{quote.id}'} accepted via public link",
-        extra_data={"quote_id": quote.id, "accepted_ip": client_ip},
+        extra_data={"quote_id": quote.id, "accepted_ip": client_ip, "tentative_date": tentative},
     )
     db.add(activity)
 
     db.commit()
     db.refresh(job)
 
+    logger.info("Quote %s accepted via public link (job %s, scheduled %s, tentative=%s)",
+                quote.quote_number or quote.id, job.id, derived_date, tentative)
+    try:
+        _notify_quote_accepted(db, quote, job, derived_date.isoformat() if derived_date else None)
+        db.commit()
+    except Exception as e:
+        logger.warning("Accept notifications failed for quote %s: %s", quote.quote_number or quote.id, e)
+        db.rollback()
+
     from modules.scheduling.router import job_to_dict
     return {
         "job_id": job.id,
-        "scheduled_status": "needs_date",
+        "scheduled_status": "tentative" if tentative else "scheduled",
+        "scheduled_date": derived_date.isoformat() if derived_date else None,
         "job": job_to_dict(job),
     }
 
@@ -441,7 +612,6 @@ def accept_public_quote(token: str, data: AcceptQuoteRequest, request: Request, 
 def request_quote_changes(token: str, body: RequestChangesBody, request: Request, db: Session = Depends(get_db)):
     """Customer asks for changes via the public quote link. Records an
     Activity and emails the company so staff can edit + resend the quote."""
-    from datetime import datetime
     from integrations.email import send_email
 
     quote = db.query(Quote).filter(Quote.public_token == token).first()
@@ -459,12 +629,11 @@ def request_quote_changes(token: str, body: RequestChangesBody, request: Request
     customer_name = (body.customer_name or (client.name if client else "Customer")).strip()
     customer_email = (body.customer_email or (client.email if client else "")).strip()
 
-    # Move quote back to "viewed" so the dashboard surfaces it for follow-up
     quote.status = "viewed"
 
     activity = Activity(
         client_id=quote.client_id,
-        activity_type=ActivityType.QUOTE_ACCEPTED,  # reusing the enum (no QUOTE_CHANGES yet)
+        activity_type=ActivityType.QUOTE_ACCEPTED,
         summary=f"Customer requested changes on quote {quote.quote_number or f'QT-{quote.id}'}",
         extra_data={
             "quote_id": quote.id,
@@ -477,7 +646,6 @@ def request_quote_changes(token: str, body: RequestChangesBody, request: Request
     )
     db.add(activity)
 
-    # Drop a message into the comms thread so it shows up in the inbox.
     inbound = Message(
         client_id=quote.client_id,
         channel="email",
@@ -490,7 +658,6 @@ def request_quote_changes(token: str, body: RequestChangesBody, request: Request
     )
     db.add(inbound)
 
-    # Notify staff via email (best-effort — never block customer response).
     try:
         notify_to = os.getenv("NOTIFY_EMAIL") or os.getenv("SMTP_USER")
         if notify_to:

@@ -162,10 +162,16 @@ export default function Quoting() {
 
   const openSendPanel = (q) => {
     const client = clientFor(q.client_id)
+    // Prefer the linked intake's contact info — when the lead auto-matched to
+    // a placeholder client (e.g. "BrightBase Webhook Test"), the client.email
+    // is the wrong address. The intake has the real lead's email.
+    const intake = q.intake_id ? intakes.find(i => i.id === q.intake_id) : null
+    const preferEmail = intake?.email || client?.email || ''
+    const preferPhone = intake?.phone || client?.phone || ''
     setSendForm({
-      channel: client?.email ? 'email' : 'sms',
-      email: client?.email || '',
-      phone: client?.phone || '',
+      channel: preferEmail ? 'email' : 'sms',
+      email: preferEmail,
+      phone: preferPhone,
       custom_message: ''
     })
     setSelected(q)
@@ -408,7 +414,28 @@ export default function Quoting() {
               <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
                 className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
                 <option value="">Select client...</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {(() => {
+                  // Dedupe + sort: real names first, placeholders last w/ marker.
+                  // Surfaces email/phone so two same-name clients are distinguishable.
+                  const PLACEHOLDER_RE = /^(unknown|brightbase webhook test|webhook test|test client|n\/a|\+?[\d\s().-]+)$/i
+                  const isPlaceholder = (n) => !n || !n.trim() || PLACEHOLDER_RE.test(n.trim())
+                  const seen = new Set()
+                  const sorted = [...clients].filter(c => {
+                    if (seen.has(c.id)) return false
+                    seen.add(c.id); return true
+                  }).sort((a, b) => {
+                    const ap = isPlaceholder(a.name) ? 1 : 0
+                    const bp = isPlaceholder(b.name) ? 1 : 0
+                    if (ap !== bp) return ap - bp
+                    return (a.name || '').localeCompare(b.name || '')
+                  })
+                  return sorted.map(c => {
+                    const tag = isPlaceholder(c.name) ? ' (placeholder)' : ''
+                    const contact = [c.email, c.phone].filter(Boolean).join(' · ')
+                    const label = `${c.name || '(no name)'}${tag}${contact ? ' — ' + contact : ''}`
+                    return <option key={c.id} value={c.id}>{label}</option>
+                  })
+                })()}
               </select>
             </div>
 
