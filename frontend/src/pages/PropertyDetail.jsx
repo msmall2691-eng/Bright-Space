@@ -144,11 +144,11 @@ export default function PropertyDetail() {
 
           {/* Action Buttons */}
           <div className="flex gap-2">
-            <Button variant="primary" size="sm">
+            <Button variant="primary" size="sm" onClick={() => navigate(`/schedule?newJob=1&property_id=${propertyId}`)}>
               <Plus className="w-4 h-4 mr-2" />
               New Job
             </Button>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => navigate(`/properties?edit=${propertyId}`)}>
               <Edit2 className="w-4 h-4 mr-2" />
               Edit Property
             </Button>

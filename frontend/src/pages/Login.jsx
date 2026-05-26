@@ -161,7 +161,19 @@ export default function Login({ onLoginSuccess }) {
               <div className="text-right">
                 <button
                   type="button"
-                  onClick={() => alert('Contact your administrator to reset your password')}
+                  onClick={(e) => {
+                    const btn = e.currentTarget
+                    btn.textContent = 'Email msmall2691@gmail.com to reset'
+                    btn.disabled = true
+                    btn.classList.add('text-zinc-500')
+                    btn.classList.remove('text-blue-600', 'hover:text-blue-700')
+                    setTimeout(() => {
+                      btn.textContent = 'Forgot password?'
+                      btn.disabled = false
+                      btn.classList.remove('text-zinc-500')
+                      btn.classList.add('text-blue-600', 'hover:text-blue-700')
+                    }, 5000)
+                  }}
                   className="text-xs text-blue-600 hover:text-blue-700 font-semibold"
                 >
                   Forgot password?
