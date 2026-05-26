@@ -15,6 +15,7 @@ from agents.tools import get_tools_for_agent, execute_tool
 
 from auth import APIKeyMiddleware
 from auth_jwt import verify_jwt
+from ratelimit import limiter
 from database.db import init_db
 from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
 from modules.clients.router import router as clients_router
@@ -42,6 +43,12 @@ from modules.admin.router import router as admin_router
 load_dotenv()
 
 app = FastAPI(title="BrightBase API", version="1.0.0")
+
+# BB-OPS-01: wire rate limiter so @limiter.limit() decorators fire.
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _default_origins = (
     "http://localhost:5173,http://localhost:3000,"

@@ -7,6 +7,7 @@ from typing import Optional
 from database.db import get_db
 from database.models import User
 from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt
+from ratelimit import limiter
 
 security = HTTPBearer()
 
@@ -104,7 +105,8 @@ def require_role(*allowed_roles):
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password, returns JWT token."""
     user = db.query(User).filter(User.email == data.email).first()
 
@@ -129,7 +131,9 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/register", response_model=RegisterResponse)
+@limiter.limit("5/minute")
 def register(
+    request: Request,
     data: RegisterRequest,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
