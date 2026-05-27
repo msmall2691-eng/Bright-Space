@@ -787,3 +787,176 @@ event.listen(Client, "before_insert", _sync_phone_tail)
 event.listen(Client, "before_update", _sync_phone_tail)
 event.listen(ContactPhone, "before_insert", _sync_phone_tail)
 event.listen(ContactPhone, "before_update", _sync_phone_tail)
+
+"""SQLAlchemy models for Quotes system."""
+
+from uuid import UUID
+from datetime import datetime, date
+from decimal import Decimal
+from enum import Enum
+from typing import Optional, List
+
+from sqlalchemy import Column, String, Text, Numeric, DateTime, Integer, Date, ForeignKey, CheckConstraint, UniqueConstraint, JSON
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import relationship
+
+from database.db import Base
+
+
+class QuoteStatus(str, Enum):
+    """Quote lifecycle status."""
+    DRAFT = "draft"
+    SENT = "sent"
+    VIEWED = "viewed"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+    ARCHIVED = "archived"
+
+
+class QuoteRequestStatus(str, Enum):
+    """Quote request status."""
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    QUOTED = "quoted"
+    ARCHIVED = "archived"
+
+
+class Quote(Base):
+    """Main quote record."""
+    __tablename__ = "quotes"
+
+    # Primary Key
+    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=lambda: UUID(int=0).hex)  # gen_random_uuid handled by DB
+
+    # Relationships
+    client_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by: UUID = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    workspace_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Quote Metadata
+    quote_number: str = Column(String(50), nullable=False, unique=True)
+    title: Optional[str] = Column(String(255), nullable=True)
+    description: Optional[str] = Column(Text(), nullable=True)
+    notes: Optional[str] = Column(Text(), nullable=True)
+
+    # Pricing
+    subtotal: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
+    tax_amount: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
+    discount_amount: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
+    total_amount: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
+
+    # Status & Workflow
+    status: str = Column(String(50), nullable=False, default=QuoteStatus.DRAFT)
+    sent_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    viewed_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    accepted_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    declined_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    expires_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+
+    # Client Preferences for Scheduling
+    preferred_day: Optional[int] = Column(Integer(), nullable=True)  # 0-6 for day of week
+    preferred_time: Optional[str] = Column(String(50), nullable=True)  # e.g., "09:00-12:00"
+
+    # Acceptance/Signature
+    signature_data: Optional[dict] = Column(JSON(), nullable=True)  # E-signature data if needed
+    accepted_by_name: Optional[str] = Column(String(255), nullable=True)
+    accepted_by_email: Optional[str] = Column(String(255), nullable=True)
+
+    # Timestamps
+    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+
+    # Relationships
+    client = relationship("Client", foreign_keys=[client_id])
+    property = relationship("Property", foreign_keys=[property_id])
+    created_by_user = relationship("User", foreign_keys=[created_by])
+    line_items = relationship("QuoteLineItem", back_populates="quote", cascade="all, delete-orphan")
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ('{QuoteStatus.DRAFT}', '{QuoteStatus.SENT}', '{QuoteStatus.VIEWED}', "
+            f"'{QuoteStatus.ACCEPTED}', '{QuoteStatus.DECLINED}', '{QuoteStatus.EXPIRED}', '{QuoteStatus.ARCHIVED}')",
+            name="check_quote_status"
+        ),
+        UniqueConstraint("quote_number", name="uq_quote_number"),
+    )
+
+
+class QuoteLineItem(Base):
+    """Line item within a quote."""
+    __tablename__ = "quote_line_items"
+
+    # Primary Key
+    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=lambda: UUID(int=0).hex)
+
+    # Relationship
+    quote_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Item Details
+    description: str = Column(String(500), nullable=False)
+    service_type: Optional[str] = Column(String(100), nullable=True)  # e.g., "cleaning", "labor", "supplies"
+    quantity: Decimal = Column(Numeric(precision=10, scale=2), nullable=False, default=Decimal("1"))
+    unit: Optional[str] = Column(String(50), nullable=True)  # e.g., "hour", "sqft", "room"
+
+    # Pricing
+    unit_price: Decimal = Column(Numeric(precision=12, scale=2), nullable=False)
+    line_total: Decimal = Column(Numeric(precision=12, scale=2), nullable=False)
+
+    # Display Order
+    display_order: int = Column(Integer(), nullable=False, default=0)
+
+    # Timestamps
+    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+
+    # Relationship
+    quote = relationship("Quote", back_populates="line_items")
+
+
+class QuoteRequest(Base):
+    """Customer quote request via web form."""
+    __tablename__ = "quote_requests"
+
+    # Primary Key
+    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=lambda: UUID(int=0).hex)
+
+    # Requestor Info
+    client_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    requester_name: str = Column(String(255), nullable=False)
+    requester_email: str = Column(String(255), nullable=False)
+    requester_phone: Optional[str] = Column(String(20), nullable=True)
+
+    # Request Details
+    property_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
+    service_type: Optional[str] = Column(String(100), nullable=True)
+    description: Optional[str] = Column(Text(), nullable=True)
+    preferred_date: Optional[date] = Column(Date(), nullable=True)
+    preferred_time: Optional[str] = Column(String(50), nullable=True)
+
+    # Status & Link to Quote
+    status: str = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
+    quote_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Workspace
+    workspace_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+
+    # Timestamps
+    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+
+    # Relationships
+    client = relationship("Client", foreign_keys=[client_id])
+    property = relationship("Property", foreign_keys=[property_id])
+    quote = relationship("Quote", foreign_keys=[quote_id])
+
+    # Constraints
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ('{QuoteRequestStatus.PENDING}', '{QuoteRequestStatus.ASSIGNED}', "
+            f"'{QuoteRequestStatus.QUOTED}', '{QuoteRequestStatus.ARCHIVED}')",
+            name="check_quote_request_status"
+        ),
+    )
