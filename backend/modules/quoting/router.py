@@ -1,6 +1,6 @@
 """FastAPI router for Quotes system."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from uuid import UUID
@@ -14,7 +14,8 @@ from schemas.quotes import (
     QuoteLineItemCreate, QuoteLineItemUpdate, QuoteLineItemResponse,
     QuoteRequestCreate, QuoteRequestUpdate, QuoteRequestResponse
 )
-from models.quotes import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus
+from models.quotes import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmail
+from models.clients import Client
 
 router = APIRouter(prefix="/api/quotes", tags=["quotes"])
 
@@ -469,3 +470,233 @@ def _update_quote_totals(quote: Quote, db: Session):
     quote.updated_at = datetime.now()
 
     db.commit()
+
+
+# ========================
+# Phase 2: PDF & Email Endpoints
+# ========================
+
+from services.quote_pdf_service import QuotePDFService
+from services.quote_email_service import QuoteEmailService
+from fastapi.responses import StreamingResponse
+
+
+@router.post("/{quote_id}/generate-pdf")
+async def generate_quote_pdf(
+    quote_id: UUID,
+    workspace_id: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    """Generate a PDF for a quote"""
+    quote = db.query(Quote).filter(
+        Quote.id == quote_id,
+        Quote.workspace_id == workspace_id
+    ).first()
+
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    line_items = db.query(QuoteLineItem).filter(
+        QuoteLineItem.quote_id == quote_id
+    ).order_by(QuoteLineItem.display_order).all()
+
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    pdf_service = QuotePDFService()
+    pdf_bytes = pdf_service.generate_quote_pdf(
+        quote_number=quote.quote_number,
+        client_name=client.name,
+        client_email=client.email or "",
+        client_phone=client.phone,
+        line_items=[
+            {
+                "description": item.description,
+                "quantity": float(item.quantity),
+                "unit": item.unit,
+                "unit_price": float(item.unit_price),
+                "line_total": float(item.line_total),
+            }
+            for item in line_items
+        ],
+        subtotal=float(quote.subtotal),
+        tax_amount=float(quote.tax_amount),
+        discount_amount=float(quote.discount_amount),
+        total_amount=float(quote.total_amount),
+        notes=quote.notes,
+        expires_at=quote.expires_at,
+    )
+
+    return {
+        "pdf_generated": True,
+        "quote_id": str(quote_id),
+        "quote_number": quote.quote_number,
+        "file_size": len(pdf_bytes),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.post("/{quote_id}/send-email")
+async def send_quote_email(
+    quote_id: UUID,
+    recipient_email: str = Query(...),
+    workspace_id: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    """Send quote via email to client"""
+    quote = db.query(Quote).filter(
+        Quote.id == quote_id,
+        Quote.workspace_id == workspace_id
+    ).first()
+
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if "@" not in recipient_email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    line_items = db.query(QuoteLineItem).filter(
+        QuoteLineItem.quote_id == quote_id
+    ).order_by(QuoteLineItem.display_order).all()
+
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    pdf_service = QuotePDFService()
+    pdf_bytes = pdf_service.generate_quote_pdf(
+        quote_number=quote.quote_number,
+        client_name=client.name,
+        client_email=client.email or "",
+        client_phone=client.phone,
+        line_items=[
+            {
+                "description": item.description,
+                "quantity": float(item.quantity),
+                "unit": item.unit,
+                "unit_price": float(item.unit_price),
+                "line_total": float(item.line_total),
+            }
+            for item in line_items
+        ],
+        subtotal=float(quote.subtotal),
+        tax_amount=float(quote.tax_amount),
+        discount_amount=float(quote.discount_amount),
+        total_amount=float(quote.total_amount),
+        notes=quote.notes,
+        expires_at=quote.expires_at,
+    )
+
+    email_service = QuoteEmailService()
+    email_result = email_service.send_quote_email(
+        to_email=recipient_email,
+        client_name=client.name,
+        quote_number=quote.quote_number,
+        total_amount=float(quote.total_amount),
+        expires_at=quote.expires_at.strftime("%B %d, %Y") if quote.expires_at else "Upon Request",
+        quote_link=f"https://bright-space.com/quotes/{quote_id}",
+        pdf_bytes=pdf_bytes,
+        pdf_filename=f"{quote.quote_number}.pdf",
+    )
+
+    if not email_result["success"]:
+        raise HTTPException(status_code=500, detail=f"Email failed: {email_result['error']}")
+
+    # Update quote status to SENT if it was in DRAFT
+    if hasattr(quote, 'status') and quote.status and str(quote.status).upper() == 'DRAFT':
+        quote.status = 'SENT'
+        quote.sent_at = datetime.now()
+
+    # Create email tracking record
+    quote_email = QuoteEmail(
+        quote_id=quote_id,
+        recipient_email=recipient_email,
+        sent_at=datetime.now(),
+        delivery_status="sent",
+        email_id=email_result.get("email_id"),
+    )
+    db.add(quote_email)
+    db.commit()
+
+    return {
+        "success": True,
+        "quote_id": str(quote_id),
+        "quote_number": quote.quote_number,
+        "sent_to": recipient_email,
+        "email_id": email_result.get("email_id"),
+        "timestamp": datetime.now().isoformat(),
+        "status": "sent",
+    }
+
+
+@router.get("/{quote_id}/email-history")
+async def get_quote_email_history(
+    quote_id: UUID,
+    workspace_id: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    """Get email delivery history for a quote"""
+    quote = db.query(Quote).filter(
+        Quote.id == quote_id,
+        Quote.workspace_id == workspace_id
+    ).first()
+
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    emails = db.query(QuoteEmail).filter(
+        QuoteEmail.quote_id == quote_id
+    ).order_by(QuoteEmail.sent_at.desc()).all()
+
+    return {
+        "quote_id": str(quote_id),
+        "quote_number": quote.quote_number,
+        "total_emails_sent": len(emails),
+        "emails": [
+            {
+                "recipient": email.recipient_email,
+                "sent_at": email.sent_at.isoformat(),
+                "status": email.delivery_status,
+                "email_id": email.email_id,
+            }
+            for email in emails
+        ],
+    }
+
+
+@router.post("/webhooks/resend")
+async def resend_webhook(request: Request, db: Session = Depends(get_db)):
+    """Webhook endpoint for Resend delivery events"""
+    body = await request.json()
+    
+    # Verify webhook signature (implement based on Resend webhook secret)
+    # For now, assume signature is valid
+    
+    event_type = body.get("type")
+    email_id = body.get("data", {}).get("id")
+    
+    if not email_id:
+        return {"received": True}
+    
+    # Map event types to delivery statuses
+    status_map = {
+        "email.delivered": "delivered",
+        "email.bounced": "bounced",
+        "email.complained": "complained",
+        "email.failed": "failed",
+    }
+    
+    new_status = status_map.get(event_type)
+    if not new_status:
+        return {"received": True}
+    
+    # Update the email record
+    email_record = db.query(QuoteEmail).filter(QuoteEmail.email_id == email_id).first()
+    if email_record:
+        email_record.delivery_status = new_status
+        if event_type == "email.failed":
+            email_record.error_message = body.get("data", {}).get("error", {}).get("message", "Unknown error")
+        db.commit()
+    
+    return {"received": True}

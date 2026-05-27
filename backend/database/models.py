@@ -4,6 +4,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
+from uuid import uuid4
 from enum import Enum
 
 Base = declarative_base()
@@ -508,36 +509,7 @@ class LeadIntake(Base):
     opportunity = relationship("Opportunity", back_populates="intake", uselist=False)
 
 
-class Quote(Base):
-    """Service quote linked to client and opportunity."""
-    __tablename__ = "quotes"
 
-    id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), index=True)
-    intake_id = Column(Integer, ForeignKey("lead_intakes.id"), nullable=True)
-    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
-
-    quote_number = Column(String, unique=True, nullable=True)
-    address = Column(String, nullable=True)
-    service_type = Column(String, nullable=True)  # residential/commercial/str
-    items = Column(JSON, default=list)
-    subtotal = Column(Float, default=0)
-    tax_rate = Column(Float, default=0)
-    tax = Column(Float, default=0)
-    total = Column(Float, default=0)
-    status = Column(String, default="draft")  # draft | sent | viewed | accepted | declined | expired | converted
-    notes = Column(Text)
-    custom_fields = Column(JSON, default=dict)
-    valid_until = Column(String)
-    public_token = Column(String(48), nullable=True, index=True)  # Token for public accept link
-    viewed_at = Column(DateTime, nullable=True)  # Timestamp when quote was first viewed by client
-    accepted_at = Column(DateTime, nullable=True)  # Timestamp when quote was accepted
-    accepted_ip = Column(String, nullable=True)  # IP address of acceptor (audit trail)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    client = relationship("Client", back_populates="quotes")
-    opportunity = relationship("Opportunity", back_populates="quotes")
 
 
 class Invoice(Base):
@@ -792,12 +764,14 @@ event.listen(ContactPhone, "before_update", _sync_phone_tail)
 
 from uuid import UUID
 from datetime import datetime, date
+from uuid import uuid4
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, List
 
 from sqlalchemy import Column, String, Text, Numeric, DateTime, Integer, Date, ForeignKey, CheckConstraint, UniqueConstraint, JSON
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import func
 from sqlalchemy.orm import relationship
 
 from database.db import Base
@@ -873,6 +847,7 @@ class Quote(Base):
     property = relationship("Property", foreign_keys=[property_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
     line_items = relationship("QuoteLineItem", back_populates="quote", cascade="all, delete-orphan")
+    emails = relationship("QuoteEmail", back_populates="quote", cascade="all, delete-orphan")
 
     # Constraints
     __table_args__ = (
@@ -960,3 +935,47 @@ class QuoteRequest(Base):
             name="check_quote_request_status"
         ),
     )
+
+
+# ============================================
+# Quote Email Models (Phase 2)
+# ============================================
+
+class QuoteEmailStatus(str, Enum):
+    """Email delivery status enum"""
+    SENT = "sent"
+    DELIVERED = "delivered"
+    BOUNCED = "bounced"
+    COMPLAINED = "complained"
+    FAILED = "failed"
+
+
+class QuoteEmail(Base):
+    """
+    Tracks email deliveries for quotes
+    Records when quotes are sent via email and delivery status
+    """
+    __tablename__ = "quote_emails"
+
+    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    quote_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False)
+    recipient_email: str = Column(String(255), nullable=False)
+    sent_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    delivery_status: str = Column(String(50), nullable=False, default=QuoteEmailStatus.SENT)
+    email_id: str = Column(String(255), nullable=True, unique=True)
+    error_message: str = Column(Text(), nullable=True)
+    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    quote = relationship("Quote", back_populates="emails")
+
+    __table_args__ = (
+        CheckConstraint(
+            "delivery_status IN ('sent', 'delivered', 'bounced', 'complained', 'failed')",
+            name="check_quote_emails_status"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<QuoteEmail(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_email}, status={self.delivery_status})>"
