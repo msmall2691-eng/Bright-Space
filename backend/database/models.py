@@ -2,12 +2,12 @@ from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
     JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from uuid import uuid4
 from enum import Enum
+from database.base import Base
 
-Base = declarative_base()
 
 
 class ActivityType(str, Enum):
@@ -774,7 +774,6 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy import func
 from sqlalchemy.orm import relationship
 
-from database.db import Base
 
 
 class QuoteStatus(str, Enum):
