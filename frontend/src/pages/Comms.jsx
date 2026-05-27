@@ -21,12 +21,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Send, MessageSquare, Mail, Phone, Search, User, Clock,
-  CheckCircle2, AlertTriangle, Circle, StickyNote, Tag as TagIcon,
-  UserPlus, ChevronRight, Inbox, Archive, Pause, Flag, X,
-  MoreHorizontal, ArrowLeft, Paperclip, Smile, Hash, Bell,
-  Filter, Star, ChevronDown, ExternalLink, Building2, MapPin,
-  PhoneCall, AtSign, Plus, Edit3, ArrowUpRight, Calendar,
-  Zap, Eye, MailPlus, MessageCircle, PenLine, Sparkles,
+  CheckCircle2, AlertTriangle, StickyNote,
+  UserPlus, Inbox, X,
+  ArrowLeft, Hash, Bell,
+  Filter, MapPin,
+  Plus, MessageCircle, PenLine,
 } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import GmailInbox from '../components/GmailInbox'

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, joinedload, selectinload
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime, date
 import io
 import re
@@ -338,7 +338,7 @@ class ClientUpdate(BaseModel):
     billing_city: Optional[str] = None
     billing_state: Optional[str] = None
     billing_zip: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["lead", "active", "inactive"]] = None
     notes: Optional[str] = None
     source: Optional[str] = None
     custom_fields: Optional[dict] = None

@@ -40,7 +40,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     items: Optional[List[InvoiceItem]] = None
     tax_rate: Optional[float] = None
-    status: Optional[str] = None
+    status: Optional[Literal["draft", "sent", "paid", "overdue", "void"]] = None
     due_date: Optional[str] = None
     notes: Optional[str] = None
     paid_at: Optional[str] = None
