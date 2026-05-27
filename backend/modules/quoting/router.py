@@ -14,8 +14,7 @@ from schemas.quotes import (
     QuoteLineItemCreate, QuoteLineItemUpdate, QuoteLineItemResponse,
     QuoteRequestCreate, QuoteRequestUpdate, QuoteRequestResponse
 )
-from models.quotes import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmail
-from models.clients import Client
+from database.models import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmailfrom models.clients import Client
 
 router = APIRouter(prefix="/api/quotes", tags=["quotes"])
 
