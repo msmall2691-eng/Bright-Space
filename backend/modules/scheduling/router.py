@@ -460,7 +460,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 tax_rate = float(quote.tax_rate) if quote else 5.5
                 tax = round(subtotal * (tax_rate / 100), 2)
                 total = round(subtotal + tax, 2)
-                due_date = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+                due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
                 invoice = Invoice(
                     client_id=job.client_id,
                     job_id=job.id,
@@ -607,7 +607,7 @@ def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
     tax_rate = float(quote.tax_rate) if quote else 5.5
     tax = round(subtotal * (tax_rate / 100), 2)
     total = round(subtotal + tax, 2)
-    due_date = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+    due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
 
     invoice = Invoice(
         client_id=job.client_id,

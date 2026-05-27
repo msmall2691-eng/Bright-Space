@@ -290,7 +290,7 @@ def send_reply(to_email: str, from_email: str, subject: str, body: str, in_reply
             server.send_message(msg)
 
         logger.info(f"Reply sent from {from_email} to {to_email}")
-        return {"status": "sent", "to": to_email, "subject": subject, "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "sent", "to": to_email, "subject": subject, "timestamp": datetime.now(timezone.utc).isoformat()}
 
     except smtplib.SMTPException as e:
         logger.error(f"SMTP error sending reply: {e}")

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, joinedload, selectinload
 from pydantic import BaseModel
 from typing import Optional, List
@@ -431,11 +431,16 @@ def client_to_dict(c: Client) -> dict:
 
 
 @router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
-def get_clients(status: Optional[str] = None, db: Session = Depends(get_db)):
+def get_clients(
+    status: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
     q = db.query(Client)
     if status:
         q = q.filter(Client.status == status)
-    return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).all()]
+    return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])

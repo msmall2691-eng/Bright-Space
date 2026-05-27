@@ -8,7 +8,7 @@ Chat/WhatsApp stubs are ready to plug in.
 Legacy endpoints (/messages, /sms, /email) are preserved for backward
 compatibility — they now auto-attach to a Conversation behind the scenes.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Union
 import logging
 import os
@@ -210,7 +210,7 @@ def _sla_state(conv: Conversation) -> str:
     # If teammate already responded within deadline, SLA met.
     if conv.first_response_at and conv.first_response_at <= conv.sla_deadline:
         return "met"
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if now > conv.sla_deadline:
         return "breached"
     if (conv.sla_deadline - now).total_seconds() < 30 * 60:
@@ -221,7 +221,7 @@ def _sla_state(conv: Conversation) -> str:
 def _iso_utc(dt) -> Optional[str]:
     """Serialize a naive UTC datetime with an explicit ``Z`` suffix.
 
-    Model rows are written via ``datetime.utcnow()``, so the stored value
+    Model rows are written via ``datetime.now(timezone.utc)``, so the stored value
     is the correct UTC instant but the datetime object carries no
     tzinfo. Calling ``.isoformat()`` on it produces e.g.
     ``"2026-05-14T15:30:45.123456"`` — a string with no timezone marker.
@@ -342,7 +342,7 @@ def find_or_create_conversation(
 
 def _apply_inbound(conv: Conversation, msg: Message):
     """Update conversation aggregates + SLA when an inbound message arrives."""
-    now = msg.created_at or datetime.utcnow()
+    now = msg.created_at or datetime.now(timezone.utc)
     conv.last_message_at = now
     conv.last_inbound_at = now
     conv.unread_count = (conv.unread_count or 0) + 1
@@ -358,7 +358,7 @@ def _apply_inbound(conv: Conversation, msg: Message):
 
 
 def _apply_outbound(conv: Conversation, msg: Message):
-    now = msg.created_at or datetime.utcnow()
+    now = msg.created_at or datetime.now(timezone.utc)
     conv.last_message_at = now
     conv.last_outbound_at = now
     # First reply after an inbound? Record it for SLA
@@ -592,7 +592,7 @@ def set_status(conv_id: int, data: StatusRequest, db: Session = Depends(get_db))
         raise HTTPException(400, "Invalid status")
     conv.status = data.status
     if data.status == "resolved":
-        conv.resolved_at = datetime.utcnow()
+        conv.resolved_at = datetime.now(timezone.utc)
     elif data.status == "snoozed":
         conv.snoozed_until = data.snoozed_until
     elif data.status == "open":

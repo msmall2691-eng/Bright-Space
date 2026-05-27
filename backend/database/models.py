@@ -3,7 +3,10 @@ from sqlalchemy import (
     JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 from uuid import uuid4
 from enum import Enum
 
@@ -87,7 +90,7 @@ class FieldDefinition(Base):
     required = Column(Boolean, default=False)
     is_system = Column(Boolean, default=False)      # True for built-in fields, False for custom
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("entity_type", "key", name="uq_field_entity_key"),
@@ -108,7 +111,7 @@ class User(Base):
     phone = Column(String, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="user")
     jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
@@ -142,7 +145,7 @@ class Client(Base):
     notes = Column(Text)
     source = Column(String)
     custom_fields = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     # client_type column removed by migration 007 — duplicated property_type
     # semantically. The CRM summary endpoint now derives it from
@@ -216,7 +219,7 @@ class Property(Base):
     checklist_template = Column(JSON, nullable=True)
 
     active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="properties")
     ical_events = relationship("ICalEvent", back_populates="property", cascade="all, delete-orphan")
@@ -247,7 +250,7 @@ class PropertyIcal(Base):
     last_sync_error = Column(Text, nullable=True)     # Error message from last failed sync
     sync_retry_count = Column(Integer, default=0)     # How many times we've retried after failure
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     property = relationship("Property", back_populates="property_icals")
 
@@ -268,7 +271,7 @@ class ICalEvent(Base):
     raw_event = Column(JSON, nullable=True)         # Full parsed event dict
 
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, unique=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("property_id", "uid", name="uq_ical_property_uid"),
@@ -304,7 +307,7 @@ class RecurringSchedule(Base):
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="recurring_schedules")
     jobs = relationship("Job", back_populates="recurring_schedule")
@@ -343,7 +346,7 @@ class RecurrenceException(Base):
     rescheduled_end_time = Column(Time, nullable=True)
     reason = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
     recurring_schedule = relationship(
         "RecurringSchedule", back_populates="exceptions"
@@ -395,8 +398,8 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     connecteam_shift_ids = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     client = relationship("Client", back_populates="jobs")
     opportunity = relationship("Opportunity", back_populates="jobs")
@@ -453,8 +456,8 @@ class Visit(Base):
     photos = Column(JSON, default=list)  # [{"url": "...", "timestamp": "...", "label": "before"}, ...]
 
     # Audit trail
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
     # Constraints
     __table_args__ = (
@@ -503,7 +506,7 @@ class LeadIntake(Base):
     internal_notes = Column(Text, nullable=True)
     custom_fields = Column(JSON, default=dict)
     followed_up_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="lead_intakes")
     opportunity = relationship("Opportunity", back_populates="intake", uselist=False)
@@ -532,8 +535,8 @@ class Invoice(Base):
     paid_at = Column(DateTime, nullable=True)
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")
@@ -585,8 +588,8 @@ class Conversation(Base):
     snoozed_until = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     client = relationship("Client", back_populates="conversations")
     opportunity = relationship("Opportunity", back_populates="conversations")
@@ -629,7 +632,7 @@ class Message(Base):
     # never sent to the customer.
     is_internal_note = Column(Boolean, default=False, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="messages")
     job = relationship("Job")
@@ -660,8 +663,8 @@ class Opportunity(Base):
     notes = Column(Text, nullable=True)
     custom_fields = Column(JSON, default=dict)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     # Relationships
     client = relationship("Client", back_populates="opportunities")
@@ -684,7 +687,7 @@ class ContactEmail(Base):
     is_primary = Column(Boolean, default=False)
     source = Column(String, nullable=True)             # website | gmail_sync | manual
     verified_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="contact_emails")
 
@@ -700,7 +703,7 @@ class ContactPhone(Base):
     is_primary = Column(Boolean, default=False)
     phone_type = Column(String, nullable=True)         # mobile | office | home
     source = Column(String, nullable=True)             # website | twilio | manual
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="contact_phones")
 
@@ -724,7 +727,7 @@ class Activity(Base):
     summary = Column(String, nullable=True)
     extra_data = Column(JSON, default=dict)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="activities")
     opportunity = relationship("Opportunity", back_populates="activities")
@@ -737,7 +740,7 @@ class AppSetting(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, nullable=False, unique=True, index=True)
     value = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ─────────────────────────────────────────────────────────────────

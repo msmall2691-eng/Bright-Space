@@ -1,11 +1,11 @@
 import hashlib
 import hmac
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Literal
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from database.db import get_db
 from database.models import Invoice, Client, Message
@@ -85,6 +85,8 @@ def invoice_to_dict(inv: Invoice) -> dict:
 def get_invoices(
     client_id: Optional[int] = None,
     status: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     q = db.query(Invoice)
@@ -92,7 +94,7 @@ def get_invoices(
         q = q.filter(Invoice.client_id == client_id)
     if status:
         q = q.filter(Invoice.status == status)
-    return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).all()]
+    return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).offset(offset).limit(limit).all()]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
@@ -258,7 +260,7 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
     # In production, verify payment with Stripe API before marking as paid
     # For now, accept the payment and mark invoice as paid
     inv.status = "paid"
-    inv.paid_at = datetime.utcnow()
+    inv.paid_at = datetime.now(timezone.utc)
 
     # Create a payment message record
     msg = Message(

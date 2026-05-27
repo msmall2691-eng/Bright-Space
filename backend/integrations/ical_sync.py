@@ -19,7 +19,7 @@ RFC 5545 rule: DTEND is EXCLUSIVE for all-day events.
 import httpx
 import re
 from icalendar import Calendar
-from datetime import datetime, date, timedelta, time as time_type
+from datetime import datetime, date, timedelta, time as time_type, timezone
 from pytz import timezone as pytz_timezone
 from sqlalchemy.orm import Session
 from database.models import Property, ICalEvent, Job, Client, PropertyIcal
@@ -518,7 +518,7 @@ def sync_property(db: Session, prop: Property) -> dict:
         # an accurate status pill — last_synced_at alone with no status
         # left the FE unable to distinguish "successful" from "never run"
         # (Codex P1 on #93).
-        prop_ical.last_synced_at = datetime.utcnow()
+        prop_ical.last_synced_at = datetime.now(timezone.utc)
         if "error" in result:
             prop_ical.last_sync_status = "failed"
             prop_ical.last_sync_error = str(result.get("error", ""))[:500]
@@ -537,7 +537,7 @@ def sync_property(db: Session, prop: Property) -> dict:
             sources_synced.append(prop_ical.source or "unknown")
 
     # Update property sync timestamp
-    prop.ical_last_synced_at = datetime.utcnow()
+    prop.ical_last_synced_at = datetime.now(timezone.utc)
 
     # Safety-net: backfill scheduled_date for any Job that ended up null
     # despite being linked to an ICalEvent with a known checkout date.

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from database.db import get_db
 from database.models import LeadIntake, Quote, Job, Invoice, Client
@@ -11,7 +11,7 @@ router = APIRouter()
 @router.get("/board")
 def get_work_board(db: Session = Depends(get_db)):
     """Get unified work board with all active pipeline stages."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Pre-load all clients to avoid N+1 queries
     all_clients = {c.id: c for c in db.query(Client).all()}

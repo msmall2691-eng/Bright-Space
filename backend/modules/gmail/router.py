@@ -20,7 +20,7 @@ from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
 from integrations.email_filter import should_create_client_from_email
 from utils.activity_logger import log_email
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ def gmail_inbox(
             c = _match_email_to_client(addr, db)
             if c:
                 _ensure_contact_email(c.id, addr, "gmail_sync", db)
-                c.last_contacted_at = datetime.utcnow()
+                c.last_contacted_at = datetime.now(timezone.utc)
                 c.email_verified = True
             elif auto_enrich and addr:
                 # Defer to the spam/intent filter before auto-creating a Client.
@@ -322,7 +322,7 @@ def send_email_reply(
 
     client = _match_email_to_client(data.to_email, db)
     if client:
-        client.last_contacted_at = datetime.utcnow()
+        client.last_contacted_at = datetime.now(timezone.utc)
 
         message = Message(
             client_id=client.id,

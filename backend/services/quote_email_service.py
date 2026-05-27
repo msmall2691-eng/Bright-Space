@@ -7,7 +7,7 @@ import os
 import smtplib
 import uuid
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -144,7 +144,7 @@ class QuoteEmailService:
             return {
                 "success": True,
                 "email_id": email_id,
-                "sent_at": datetime.utcnow().isoformat(),
+                "sent_at": datetime.now(timezone.utc).isoformat(),
                 "to_email": to_email,
                 "quote_number": quote_number,
             }

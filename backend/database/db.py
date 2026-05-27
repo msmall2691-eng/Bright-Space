@@ -574,7 +574,7 @@ def _fix_str_turnover_dates():
     as a string. It's idempotent - safe to run on every boot.
     """
     from database.models import Job, ICalEvent
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     db = SessionLocal()
     try:
@@ -669,7 +669,7 @@ def update_ical_feed_status(
         error_message: Optional error details for 'failed' status
     """
     from database.models import PropertyIcal
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     db = SessionLocal()
     try:
@@ -679,7 +679,7 @@ def update_ical_feed_status(
             return
 
         feed.last_sync_status = status
-        feed.last_synced_at = datetime.utcnow()
+        feed.last_synced_at = datetime.now(timezone.utc)
 
         if status == "failed":
             feed.last_sync_error = error_message

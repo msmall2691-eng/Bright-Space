@@ -15,7 +15,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
-import { displayContactName } from '../utils/display'
+import { displayContactName, formatPhone } from '../utils/display'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
   CheckCircle2, Clock, ArrowRight, Zap,
@@ -26,18 +26,6 @@ const monthStart = () => {
   const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
 }
 const fmtMoney = (n) => `$${Math.round(n || 0).toLocaleString()}`
-
-// Format a phone number so the dashboard doesn't show "+16178492813"
-// raw. Falls through if the input isn't phone-shaped.
-function formatPhone(p) {
-  if (!p) return ''
-  const digits = p.replace(/\D/g, '')
-  if (digits.length === 11 && digits[0] === '1')
-    return `(${digits.slice(1,4)}) ${digits.slice(4,7)}-${digits.slice(7)}`
-  if (digits.length === 10)
-    return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
-  return p
-}
 
 // Same fallback chain as displayContactName but prefers a friendlier
 // "(617) 849-2813" over "Lead +16178492813" when the contact is just a phone.

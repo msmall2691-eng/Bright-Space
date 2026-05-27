@@ -8,7 +8,7 @@ import jwt
 import logging
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_jwt(user_id: int, email: str, role: str) -> str:
     """Create a JWT token with user info and 24-hour expiration."""
-    expires = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    expires = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)
     payload = {
         "user_id": user_id,
         "email": email,

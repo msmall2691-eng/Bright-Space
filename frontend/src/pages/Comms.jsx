@@ -31,6 +31,7 @@ import {
 import AgentWidget from '../components/AgentWidget'
 import GmailInbox from '../components/GmailInbox'
 import { get, post } from "../api"
+import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
 
 
@@ -74,16 +75,6 @@ const TEAM_ASSIGNEES = ['Megan', 'Unassigned']
 /* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
    UTILITY FUNCTIONS
    âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
-
-function formatPhone(p) {
-  if (!p) return ''
-  const digits = p.replace(/\D/g, '')
-  if (digits.length === 11 && digits[0] === '1')
-    return `(${digits.slice(1,4)}) ${digits.slice(4,7)}-${digits.slice(7)}`
-  if (digits.length === 10)
-    return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
-  return p
-}
 
 function relTime(iso) {
   if (!iso) return ''
