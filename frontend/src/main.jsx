@@ -8,7 +8,9 @@ import './index.css'
 const _origFetch = window.fetch
 const API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || ""
 window.fetch = function (url, opts = {}) {
-  if (API_KEY) {
+  const reqUrl = typeof url === 'string' ? url : url?.url || ''
+  const isSameOrigin = reqUrl.startsWith('/') || reqUrl.startsWith(window.location.origin)
+  if (API_KEY && isSameOrigin) {
     opts.headers = opts.headers || {}
     if (opts.headers instanceof Headers) {
       if (!opts.headers.has("X-API-Key")) opts.headers.set("X-API-Key", API_KEY)

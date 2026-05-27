@@ -6,7 +6,7 @@ from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -37,7 +37,7 @@ from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
 from modules.settings.router import router as settings_router
 from modules.work import router as work_router
-from modules.auth.router import router as auth_router
+from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
 
 load_dotenv()
@@ -174,7 +174,7 @@ async def shutdown():
     print("BrightBase backend shutdown")
 
 
-@app.post("/api/admin/ical-sync-now")
+@app.post("/api/admin/ical-sync-now", dependencies=[Depends(require_role("admin", "manager"))])
 async def manual_ical_sync():
     """Manually trigger iCal sync for all properties."""
     return sync_all_ical_feeds_tick()

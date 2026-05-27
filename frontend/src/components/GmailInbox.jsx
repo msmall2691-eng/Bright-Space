@@ -54,9 +54,12 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
     setError(null)
 
     try {
-      const res = await post(
-        `/api/gmail/send-reply?to_email=${encodeURIComponent(email.from_email)}&subject=${encodeURIComponent('Re: ' + email.subject)}&body=${encodeURIComponent(body)}&in_reply_to_message_id=${encodeURIComponent(email.message_id)}`
-      )
+      const res = await post('/api/gmail/send-reply', {
+        to_email: email.from_email,
+        subject: 'Re: ' + email.subject,
+        body,
+        in_reply_to_message_id: email.message_id,
+      })
       if (res.status === 'sent') {
         setBody('')
         onSent(res.message)

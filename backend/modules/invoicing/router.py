@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +10,11 @@ from datetime import datetime, date
 from database.db import get_db
 from database.models import Invoice, Client, Message
 from modules.auth.router import require_role
+
+
+def _invoice_public_token(invoice_id: int) -> str:
+    secret = os.getenv("JWT_SECRET", "fallback-for-dev-only")
+    return hmac.new(secret.encode(), f"inv-{invoice_id}".encode(), hashlib.sha256).hexdigest()[:16]
 
 router = APIRouter()
 
@@ -216,16 +223,11 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
     return {"invoice_id": invoice_id, "results": results}
 
 
-@router.get("/public/{token}")
-def get_public_invoice(token: str, db: Session = Depends(get_db)):
-    """Get invoice details for public payment portal (via payment token).
-
-    Token format: base64(invoice_id:secret_key) for security.
-    For now, accepting the invoice ID directly as a simplified token.
-    """
-    try:
-        invoice_id = int(token)
-    except ValueError:
+@router.get("/public/{invoice_id}/{token}")
+def get_public_invoice(invoice_id: int, token: str, db: Session = Depends(get_db)):
+    """Get invoice details for public payment portal (via HMAC token)."""
+    expected = _invoice_public_token(invoice_id)
+    if not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=404, detail="Invalid invoice token")
 
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
@@ -242,12 +244,11 @@ def get_public_invoice(token: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{invoice_id}/pay")
+@router.post("/{invoice_id}/pay", dependencies=[Depends(require_role("admin", "manager"))])
 def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
-    """Record a payment for an invoice (payment processing via Stripe should be done client-side).
+    """Record a payment for an invoice. Requires admin/manager auth.
 
-    In production, Stripe Checkout or Elements should be used on the client for PCI compliance.
-    This endpoint records the successful payment and updates invoice status.
+    In production, Stripe webhooks should confirm payment server-side.
     """
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:

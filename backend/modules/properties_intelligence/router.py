@@ -21,11 +21,19 @@ from database.models import PropertyProfile, PropertyPhoto, TimeEstimateHistory,
 
 router = APIRouter()
 
-# Supabase client for photo uploads
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase: SupabaseClient = create_client(supabase_url, supabase_key)
+# Supabase client for photo uploads (lazy init to avoid crash when env vars missing)
 STORAGE_BUCKET = "property-photos"
+_supabase: Optional[SupabaseClient] = None
+
+def _get_supabase() -> SupabaseClient:
+    global _supabase
+    if _supabase is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+        _supabase = create_client(url, key)
+    return _supabase
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -197,18 +205,17 @@ async def upload_property_photo(
         raise HTTPException(status_code=404, detail="Property not found")
 
     try:
-    # Upload to Supabase Storage
-                file_key = f"properties/{property_id}/{datetime.now().isoformat()}_{file.filename}"
-                file_content = await file.read()
+        file_key = f"properties/{property_id}/{datetime.now().isoformat()}_{file.filename}"
+        file_content = await file.read()
 
-            response = supabase.storage.from_(STORAGE_BUCKET).upload(
-                            file_key,
-                            file_content,
-                            file_options={"content-type": file.content_type}
-            )
+        sb = _get_supabase()
+        response = sb.storage.from_(STORAGE_BUCKET).upload(
+            file_key,
+            file_content,
+            file_options={"content-type": file.content_type}
+        )
 
-        # Generate public Supabase URL
-        photo_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(file_key)
+        photo_url = sb.storage.from_(STORAGE_BUCKET).get_public_url(file_key)
 
         # Save to database
         photo = PropertyPhoto(

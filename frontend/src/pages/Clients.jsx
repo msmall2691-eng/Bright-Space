@@ -54,7 +54,7 @@ export default function Clients() {
   useEffect(() => { clearSelection() }, [statusFilter, search])
 
   const filtered = clients.filter(c =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
+    !search || (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.phone || '').includes(search) || (c.email || '').toLowerCase().includes(search.toLowerCase())
   )
 

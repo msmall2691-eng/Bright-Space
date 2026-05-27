@@ -748,7 +748,9 @@ export default function Comms() {
     // backend stay as 'open'/'resolved' for API compat; UI renames them.
     if (folder === 'mine') {
       params.set('status', 'open')
-      params.set('assignee', 'Megan') // TODO: derive from JWT once portal_user lookup is wired
+      const stored = localStorage.getItem('brightbase_user')
+      const currentUser = stored ? JSON.parse(stored) : null
+      params.set('assignee', currentUser?.email?.split('@')[0] || 'Me')
     } else if (folder === 'done') {
       params.set('status', 'resolved')
     } else {
@@ -818,12 +820,12 @@ export default function Comms() {
     setSending(true); setFlash(null)
     try {
       if (noteMode) {
-        await post(`/api/comms/conversations/${detail.id}/notes`, { body: reply, author: 'Megan' })
+        await post(`/api/comms/conversations/${detail.id}/notes`, { body: reply, author: JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Unknown' })
       } else {
         await post(`/api/comms/conversations/${detail.id}/messages`, {
           body: reply,
           subject: detail.channel === 'email' ? (replySubject || detail.subject) : undefined,
-          author: 'Megan',
+          author: JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Unknown',
         })
       }
       setReply(''); setReplySubject('')
