@@ -323,7 +323,10 @@ export default function ClientProfile() {
     setSending(true)
     try {
       await post('/api/comms/sms', { to: client.phone, body: smsText, client_id: parseInt(id) })
-    } catch {}
+    } catch (e) {
+      console.error('[ClientProfile] sendSms error:', e)
+      alert('Failed to send SMS')
+    }
     setSmsText('')
     await load()
     setSending(false)

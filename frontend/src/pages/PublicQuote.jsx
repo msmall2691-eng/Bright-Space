@@ -15,7 +15,7 @@ export default function PublicQuote() {
   const [requested, setRequested] = useState(false)
 
   useEffect(() => {
-    const fetch = async () => {
+    const loadQuote = async () => {
       try {
         const res = await window.fetch(`/api/quotes/public/${token}`)
         if (!res.ok) {
@@ -31,7 +31,7 @@ export default function PublicQuote() {
         setLoading(false)
       }
     }
-    fetch()
+    loadQuote()
   }, [token])
 
   const handleAccept = async () => {

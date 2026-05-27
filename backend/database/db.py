@@ -397,21 +397,18 @@ def _bootstrap_admin_user():
         logger.info("[bootstrap] Skipping admin user creation (no ADMIN_BOOTSTRAP_EMAIL/PASSWORD env vars)")
         return
 
-    try:
-        from database.models import User
-        from auth_jwt import hash_password
+    from database.models import User
+    from auth_jwt import hash_password
 
-        db = SessionLocal()
+    db = SessionLocal()
+    try:
         existing = db.query(User).filter(User.email == admin_email).first()
         if existing:
             logger.info(f"[bootstrap] Admin user {admin_email} already exists, skipping")
-            db.close()
             return
 
-        # Hash the password using bcrypt with 72-byte truncation
         password_hash = hash_password(admin_password)
 
-        # Create the admin user
         admin = User(
             email=admin_email,
             password_hash=password_hash,
@@ -422,9 +419,10 @@ def _bootstrap_admin_user():
         db.add(admin)
         db.commit()
         logger.info(f"[bootstrap] Created admin user: {admin_email}")
-        db.close()
     except Exception as exc:
         logger.warning(f"[bootstrap] Failed to create admin user: {exc}")
+    finally:
+        db.close()
 
 
 def _backfill_visits_from_jobs():

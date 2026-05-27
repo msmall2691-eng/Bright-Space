@@ -799,7 +799,7 @@ export default function Comms() {
 
   // ââââââââ Effects ââââââââ
 
-  useEffect(() => { loadList(); loadSummary(); loadClients() }, [loadList, loadSummary, loadClients])
+  useEffect(() => { loadSummary(); loadClients() }, [loadSummary, loadClients])
   useEffect(() => { const t = setTimeout(() => loadList(), 300); return () => clearTimeout(t) }, [search])
   useEffect(() => { loadDetail(selectedId) }, [selectedId, loadDetail])
   useEffect(() => {

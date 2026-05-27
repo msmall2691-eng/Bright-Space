@@ -32,7 +32,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
   useEffect(() => {
     onClose()
     setShowUserMenu(false)
-  }, [location.pathname])
+  }, [location.pathname, onClose])
 
   return (
     <>
