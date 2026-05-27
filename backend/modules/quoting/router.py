@@ -1,6 +1,6 @@
 """FastAPI router for Quotes system."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from uuid import UUID
@@ -14,10 +14,9 @@ from schemas.quotes import (
     QuoteLineItemCreate, QuoteLineItemUpdate, QuoteLineItemResponse,
     QuoteRequestCreate, QuoteRequestUpdate, QuoteRequestResponse
 )
-from models.quotes import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmail
-from models.clients import Client
+from database.models import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmail, Client
 
-router = APIRouter(prefix="/api/quotes", tags=["quotes"])
+router = APIRouter(tags=["quotes"])
 
 
 # ========================
@@ -28,21 +27,11 @@ router = APIRouter(prefix="/api/quotes", tags=["quotes"])
 async def create_quote(
     quote_data: QuoteCreate,
     db: Session = Depends(get_db),
-    workspace_id: UUID = Header(None)
 ):
-    """Create a new quote.
-
-    Admin creates a quote for a client and optional property.
-    """
-    if not workspace_id:
-        raise HTTPException(status_code=400, detail="workspace_id required")
-
-    # Generate quote number (simple sequential for now)
-    # Format: QT-YYYY-0001, QT-YYYY-0002, etc.
+    """Create a new quote."""
     year = datetime.now().year
     last_quote = (
         db.query(Quote)
-        .filter(Quote.workspace_id == workspace_id)
         .order_by(Quote.created_at.desc())
         .first()
     )
@@ -64,8 +53,7 @@ async def create_quote(
         quote_number=quote_number,
         client_id=quote_data.client_id,
         property_id=quote_data.property_id,
-        created_by=UUID("00000000-0000-0000-0000-000000000000"),  # TODO: Get from auth
-        workspace_id=workspace_id,
+        created_by=UUID("00000000-0000-0000-0000-000000000000"),
         title=quote_data.title,
         description=quote_data.description,
         notes=quote_data.notes,
@@ -112,17 +100,13 @@ async def get_quote(
 @router.get("/", response_model=List[QuoteSummary])
 async def list_quotes(
     db: Session = Depends(get_db),
-    workspace_id: UUID = Header(None),
     client_id: Optional[UUID] = Query(None),
     status: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
     """List quotes with optional filters."""
-    if not workspace_id:
-        raise HTTPException(status_code=400, detail="workspace_id required")
-
-    query = db.query(Quote).filter(Quote.workspace_id == workspace_id)
+    query = db.query(Quote)
 
     if client_id:
         query = query.filter(Quote.client_id == client_id)
@@ -378,14 +362,9 @@ async def decline_quote(
 async def create_quote_request(
     request_data: QuoteRequestCreate,
     db: Session = Depends(get_db),
-    workspace_id: UUID = Header(None)
 ):
     """Create a quote request from customer form."""
-    if not workspace_id:
-        raise HTTPException(status_code=400, detail="workspace_id required")
-
     quote_request = QuoteRequest(
-        workspace_id=workspace_id,
         **request_data.dict()
     )
 
@@ -402,16 +381,12 @@ async def create_quote_request(
 @router.get("/requests/", response_model=List[QuoteRequestResponse])
 async def list_quote_requests(
     db: Session = Depends(get_db),
-    workspace_id: UUID = Header(None),
     status: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
     """List quote requests."""
-    if not workspace_id:
-        raise HTTPException(status_code=400, detail="workspace_id required")
-
-    query = db.query(QuoteRequest).filter(QuoteRequest.workspace_id == workspace_id)
+    query = db.query(QuoteRequest)
 
     if status:
         query = query.filter(QuoteRequest.status == status)
@@ -484,13 +459,11 @@ from fastapi.responses import StreamingResponse
 @router.post("/{quote_id}/generate-pdf")
 async def generate_quote_pdf(
     quote_id: UUID,
-    workspace_id: str = Header(...),
     db: Session = Depends(get_db),
 ):
     """Generate a PDF for a quote"""
     quote = db.query(Quote).filter(
         Quote.id == quote_id,
-        Quote.workspace_id == workspace_id
     ).first()
 
     if not quote:
@@ -541,13 +514,11 @@ async def generate_quote_pdf(
 async def send_quote_email(
     quote_id: UUID,
     recipient_email: str = Query(...),
-    workspace_id: str = Header(...),
     db: Session = Depends(get_db),
 ):
     """Send quote via email to client"""
     quote = db.query(Quote).filter(
         Quote.id == quote_id,
-        Quote.workspace_id == workspace_id
     ).first()
 
     if not quote:
@@ -633,13 +604,11 @@ async def send_quote_email(
 @router.get("/{quote_id}/email-history")
 async def get_quote_email_history(
     quote_id: UUID,
-    workspace_id: str = Header(...),
     db: Session = Depends(get_db),
 ):
     """Get email delivery history for a quote"""
     quote = db.query(Quote).filter(
         Quote.id == quote_id,
-        Quote.workspace_id == workspace_id
     ).first()
 
     if not quote:

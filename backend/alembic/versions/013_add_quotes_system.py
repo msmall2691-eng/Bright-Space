@@ -45,12 +45,10 @@ def upgrade() -> None:
         sa.Column('accepted_by_email', sa.String(255), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.CheckConstraint("status IN ('draft', 'sent', 'viewed', 'accepted', 'declined', 'expired', 'archived')", name='check_quote_status'),
         sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='RESTRICT'),
-        sa.ForeignKeyConstraint(['workspace_id'], ['organizations.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('quote_number', name='uq_quote_number')
     )
@@ -58,7 +56,6 @@ def upgrade() -> None:
     op.create_index('idx_quotes_property_id', 'quotes', ['property_id'])
     op.create_index('idx_quotes_status', 'quotes', ['status'])
     op.create_index('idx_quotes_created_by', 'quotes', ['created_by'])
-    op.create_index('idx_quotes_workspace_id', 'quotes', ['workspace_id'])
     op.create_index('idx_quotes_created_at', 'quotes', ['created_at'], postgresql_order_by='created_at DESC')
 
     # Create quote_line_items table
@@ -98,12 +95,10 @@ def upgrade() -> None:
         sa.Column('quote_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.CheckConstraint("status IN ('pending', 'assigned', 'quoted', 'archived')", name='check_quote_request_status'),
         sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['quote_id'], ['quotes.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['workspace_id'], ['organizations.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_quote_requests_client_id', 'quote_requests', ['client_id'])
@@ -122,7 +117,6 @@ def downgrade() -> None:
     op.drop_table('quote_line_items')
 
     op.drop_index('idx_quotes_created_at', table_name='quotes')
-    op.drop_index('idx_quotes_workspace_id', table_name='quotes')
     op.drop_index('idx_quotes_created_by', table_name='quotes')
     op.drop_index('idx_quotes_status', table_name='quotes')
     op.drop_index('idx_quotes_property_id', table_name='quotes')

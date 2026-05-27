@@ -225,7 +225,7 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
     return opp_to_dict(o)
 
 
-@router.patch("/{opp_id}")
+@router.patch("/{opp_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depends(get_db)):
     o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not o:
@@ -263,7 +263,7 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
     return opp_to_dict(o)
 
 
-@router.delete("/{opp_id}", status_code=204)
+@router.delete("/{opp_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_opportunity(opp_id: int, db: Session = Depends(get_db)):
     o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not o:

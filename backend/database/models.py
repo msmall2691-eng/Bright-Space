@@ -760,21 +760,9 @@ event.listen(Client, "before_update", _sync_phone_tail)
 event.listen(ContactPhone, "before_insert", _sync_phone_tail)
 event.listen(ContactPhone, "before_update", _sync_phone_tail)
 
-"""SQLAlchemy models for Quotes system."""
 
-from uuid import UUID
-from datetime import datetime, date
-from uuid import uuid4
-from decimal import Decimal
-from enum import Enum
-from typing import Optional, List
-
-from sqlalchemy import Column, String, Text, Numeric, DateTime, Integer, Date, ForeignKey, CheckConstraint, UniqueConstraint, JSON
+# ── Quote Models ──────────────────────────────────────────────────────
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy import func
-from sqlalchemy.orm import relationship
-
-from database.db import Base
 
 
 class QuoteStatus(str, Enum):
@@ -807,8 +795,6 @@ class Quote(Base):
     client_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     property_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by: UUID = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
-    workspace_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
-
     # Quote Metadata
     quote_number: str = Column(String(50), nullable=False, unique=True)
     title: Optional[str] = Column(String(255), nullable=True)
@@ -914,9 +900,6 @@ class QuoteRequest(Base):
     # Status & Link to Quote
     status: str = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
     quote_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    # Workspace
-    workspace_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
 
     # Timestamps
     created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)

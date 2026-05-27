@@ -48,8 +48,9 @@ class InvoiceUpdate(BaseModel):
 
 
 def next_invoice_number(db: Session) -> str:
-    count = db.query(Invoice).count()
-    return f"INV-{str(count + 1).zfill(4)}"
+    from sqlalchemy import func, text
+    max_id = db.query(func.max(Invoice.id)).scalar() or 0
+    return f"INV-{str(max_id + 1).zfill(4)}"
 
 
 def calc_totals(items: list, tax_rate: float) -> tuple:
@@ -118,7 +119,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     return invoice_to_dict(inv)
 
 
-@router.get("/{invoice_id}")
+@router.get("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -126,7 +127,7 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     return invoice_to_dict(inv)
 
 
-@router.patch("/{invoice_id}")
+@router.patch("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -151,7 +152,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     return invoice_to_dict(inv)
 
 
-@router.delete("/{invoice_id}", status_code=204)
+@router.delete("/{invoice_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -167,7 +168,7 @@ class SendInvoiceRequest(BaseModel):
     custom_message: Optional[str] = None
 
 
-@router.post("/{invoice_id}/send")
+@router.post("/{invoice_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
 def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depends(get_db)):
     """Send an invoice to a client via email and/or SMS."""
     from integrations.email import send_email, build_invoice_email, build_invoice_sms
