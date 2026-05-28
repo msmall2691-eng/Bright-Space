@@ -6,7 +6,7 @@ from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -37,7 +37,7 @@ from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
 from modules.settings.router import router as settings_router
 from modules.work import router as work_router
-from modules.auth.router import router as auth_router
+from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
 
 load_dotenv()
@@ -153,7 +153,8 @@ async def startup():
     init_db()
     start_scheduler()
 
-    # Check for visits/jobs drift
+    # Check for visits/jobs drift. Wrapped so a missing table (fresh DB,
+    # mid-migration) doesn't take down the whole app at startup.
     from database.db import SessionLocal
     db = SessionLocal()
     try:
@@ -162,6 +163,8 @@ async def startup():
             print(f"⚠️  VISITS COVERAGE DRIFT: {coverage['jobs_without_visits']}/{coverage['total_jobs']} jobs missing visits")
         else:
             print(f"✓ Visits coverage healthy: {coverage['total_jobs']} jobs, {coverage['total_visits']} visits")
+    except Exception as e:
+        print(f"⚠️  Visits coverage check skipped: {e}")
     finally:
         db.close()
 
@@ -174,7 +177,7 @@ async def shutdown():
     print("BrightBase backend shutdown")
 
 
-@app.post("/api/admin/ical-sync-now")
+@app.post("/api/admin/ical-sync-now", dependencies=[Depends(require_role("admin", "manager"))])
 async def manual_ical_sync():
     """Manually trigger iCal sync for all properties."""
     return sync_all_ical_feeds_tick()
@@ -334,4 +337,6 @@ if _dist.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            raise HTTPException(status_code=404, detail="Not found")
         return FileResponse(_dist / "index.html")

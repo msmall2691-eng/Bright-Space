@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import re
 
@@ -124,7 +124,7 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
 
     # --- Idempotency window ---------------------------------------------------
     if email_in or normalized_phone:
-        cutoff = datetime.utcnow() - timedelta(minutes=5)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
         dup_q = db.query(LeadIntake).filter(LeadIntake.created_at >= cutoff)
         dup_filters = []
         if email_in:
@@ -221,7 +221,9 @@ def get_intakes(
     source: Optional[str] = None,
     service_type: Optional[str] = None,
     priority: Optional[str] = None,
-    db: Session = Depends(get_db)
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
 ):
     """List intakes with filtering by status, source, service_type, priority."""
     q = db.query(LeadIntake)
@@ -233,7 +235,7 @@ def get_intakes(
         q = q.filter(LeadIntake.service_type == service_type)
     if priority:
         q = q.filter(LeadIntake.priority == priority)
-    return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).all()]
+    return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()]
 
 
 @router.get("/stats")
@@ -271,7 +273,7 @@ def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_
         try:
             updates["followed_up_at"] = datetime.fromisoformat(updates["followed_up_at"])
         except (ValueError, TypeError):
-            updates["followed_up_at"] = datetime.utcnow()
+            updates["followed_up_at"] = datetime.now(timezone.utc)
     for field, value in updates.items():
         setattr(intake, field, value)
     db.commit()

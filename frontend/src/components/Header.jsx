@@ -8,6 +8,7 @@ const PAGE_TITLES = {
   '/requests': 'Leads',
   '/pipeline': 'Pipeline',
   '/quoting': 'Quoting',
+  '/schedule': 'Schedule',
   '/scheduling': 'Schedule',
   '/invoicing': 'Invoicing',
   '/dispatch': 'Dispatch',

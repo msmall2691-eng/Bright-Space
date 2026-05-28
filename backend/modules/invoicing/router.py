@@ -1,13 +1,20 @@
+import hashlib
+import hmac
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Literal
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from database.db import get_db
 from database.models import Invoice, Client, Message
 from modules.auth.router import require_role
+
+
+def _invoice_public_token(invoice_id: int) -> str:
+    secret = os.getenv("JWT_SECRET", "fallback-for-dev-only")
+    return hmac.new(secret.encode(), f"inv-{invoice_id}".encode(), hashlib.sha256).hexdigest()[:16]
 
 router = APIRouter()
 
@@ -33,7 +40,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     items: Optional[List[InvoiceItem]] = None
     tax_rate: Optional[float] = None
-    status: Optional[str] = None
+    status: Optional[Literal["draft", "sent", "paid", "overdue", "void"]] = None
     due_date: Optional[str] = None
     notes: Optional[str] = None
     paid_at: Optional[str] = None
@@ -41,8 +48,9 @@ class InvoiceUpdate(BaseModel):
 
 
 def next_invoice_number(db: Session) -> str:
-    count = db.query(Invoice).count()
-    return f"INV-{str(count + 1).zfill(4)}"
+    from sqlalchemy import func, text
+    max_id = db.query(func.max(Invoice.id)).scalar() or 0
+    return f"INV-{str(max_id + 1).zfill(4)}"
 
 
 def calc_totals(items: list, tax_rate: float) -> tuple:
@@ -77,6 +85,8 @@ def invoice_to_dict(inv: Invoice) -> dict:
 def get_invoices(
     client_id: Optional[int] = None,
     status: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     q = db.query(Invoice)
@@ -84,7 +94,7 @@ def get_invoices(
         q = q.filter(Invoice.client_id == client_id)
     if status:
         q = q.filter(Invoice.status == status)
-    return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).all()]
+    return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).offset(offset).limit(limit).all()]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
@@ -111,7 +121,7 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     return invoice_to_dict(inv)
 
 
-@router.get("/{invoice_id}")
+@router.get("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -119,7 +129,7 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     return invoice_to_dict(inv)
 
 
-@router.patch("/{invoice_id}")
+@router.patch("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -144,7 +154,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     return invoice_to_dict(inv)
 
 
-@router.delete("/{invoice_id}", status_code=204)
+@router.delete("/{invoice_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -160,7 +170,7 @@ class SendInvoiceRequest(BaseModel):
     custom_message: Optional[str] = None
 
 
-@router.post("/{invoice_id}/send")
+@router.post("/{invoice_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
 def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depends(get_db)):
     """Send an invoice to a client via email and/or SMS."""
     from integrations.email import send_email, build_invoice_email, build_invoice_sms
@@ -216,16 +226,11 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
     return {"invoice_id": invoice_id, "results": results}
 
 
-@router.get("/public/{token}")
-def get_public_invoice(token: str, db: Session = Depends(get_db)):
-    """Get invoice details for public payment portal (via payment token).
-
-    Token format: base64(invoice_id:secret_key) for security.
-    For now, accepting the invoice ID directly as a simplified token.
-    """
-    try:
-        invoice_id = int(token)
-    except ValueError:
+@router.get("/public/{invoice_id}/{token}")
+def get_public_invoice(invoice_id: int, token: str, db: Session = Depends(get_db)):
+    """Get invoice details for public payment portal (via HMAC token)."""
+    expected = _invoice_public_token(invoice_id)
+    if not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=404, detail="Invalid invoice token")
 
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
@@ -242,12 +247,11 @@ def get_public_invoice(token: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{invoice_id}/pay")
+@router.post("/{invoice_id}/pay", dependencies=[Depends(require_role("admin", "manager"))])
 def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
-    """Record a payment for an invoice (payment processing via Stripe should be done client-side).
+    """Record a payment for an invoice. Requires admin/manager auth.
 
-    In production, Stripe Checkout or Elements should be used on the client for PCI compliance.
-    This endpoint records the successful payment and updates invoice status.
+    In production, Stripe webhooks should confirm payment server-side.
     """
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -256,7 +260,7 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
     # In production, verify payment with Stripe API before marking as paid
     # For now, accept the payment and mark invoice as paid
     inv.status = "paid"
-    inv.paid_at = datetime.utcnow()
+    inv.paid_at = datetime.now(timezone.utc)
 
     # Create a payment message record
     msg = Message(

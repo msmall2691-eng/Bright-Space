@@ -6,6 +6,7 @@ import ActivityTimeline from '../components/ActivityTimeline'
 import OpportunityLinker from '../components/OpportunityLinker'
 import JobCreateModal from '../components/JobCreateModal'
 import { del, get, post, patch } from "../api"
+import { useToast } from '../components/ui/Toast'
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
@@ -76,6 +77,7 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
 export default function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { toast, ToastContainer } = useToast()
 
   // Tab redirect for backward compatibility (legacy hash names → current tab keys).
   // 'properties' is its own tab again (PR 1) — no redirect.
@@ -249,7 +251,7 @@ export default function ClientProfile() {
       setQuickContactOpen(false)
     } catch (e) {
       console.error('[saveQuickContact]', e)
-      alert('Could not save contact: ' + (e?.message || 'unknown error'))
+      toast.error('Could not save contact: ' + (e?.message || 'unknown error'))
     }
     setQuickContactSaving(false)
   }
@@ -268,7 +270,7 @@ export default function ClientProfile() {
       setIcalForm(EMPTY_ICAL); setShowIcalForm(false)
     } catch (e) {
       console.error('[addIcal]', e)
-      alert('Could not add iCal: ' + (e?.message || 'unknown error'))
+      toast.error('Could not add iCal: ' + (e?.message || 'unknown error'))
     }
   }
 
@@ -313,7 +315,7 @@ export default function ClientProfile() {
       await load(); setEditing(false)
     } catch (e) {
       console.error('[ClientProfile save error]', e)
-      alert('Failed to save changes. Please try again.')
+      toast.error('Failed to save changes. Please try again.')
     }
     setSaving(false)
   }
@@ -323,7 +325,10 @@ export default function ClientProfile() {
     setSending(true)
     try {
       await post('/api/comms/sms', { to: client.phone, body: smsText, client_id: parseInt(id) })
-    } catch {}
+    } catch (e) {
+      console.error('[ClientProfile] sendSms error:', e)
+      toast.error('Failed to send SMS')
+    }
     setSmsText('')
     await load()
     setSending(false)
@@ -1536,6 +1541,7 @@ export default function ClientProfile() {
         />
       )}
 
+      <ToastContainer />
     </div>
   )
 }

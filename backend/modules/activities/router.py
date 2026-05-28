@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from database.db import get_db
 from database.models import Activity
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -22,12 +23,13 @@ def activity_to_dict(a):
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def list_activities(
     client_id: Optional[int] = None,
     opportunity_id: Optional[int] = None,
     activity_type: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     q = db.query(Activity)
@@ -37,4 +39,4 @@ def list_activities(
         q = q.filter(Activity.opportunity_id == opportunity_id)
     if activity_type:
         q = q.filter(Activity.activity_type == activity_type)
-    return [activity_to_dict(a) for a in q.order_by(Activity.created_at.desc()).limit(limit).all()]
+    return [activity_to_dict(a) for a in q.order_by(Activity.created_at.desc()).offset(offset).limit(limit).all()]

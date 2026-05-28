@@ -163,7 +163,7 @@ export default function Login({ onLoginSuccess }) {
                   type="button"
                   onClick={(e) => {
                     const btn = e.currentTarget
-                    btn.textContent = 'Email msmall2691@gmail.com to reset'
+                    btn.textContent = 'Contact your administrator to reset'
                     btn.disabled = true
                     btn.classList.add('text-zinc-500')
                     btn.classList.remove('text-blue-600', 'hover:text-blue-700')

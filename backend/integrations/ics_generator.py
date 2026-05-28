@@ -5,7 +5,7 @@ Google Calendar, Apple Calendar, Outlook — anything.
 """
 
 from icalendar import Calendar, Event, vText
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import uuid
 import os
 
@@ -57,7 +57,7 @@ def generate_job_ics(job: dict, client: dict, organizer_email: str = None) -> by
 
     event.add("dtstart", start_dt)
     event.add("dtend",   end_dt)
-    event.add("dtstamp", datetime.utcnow())
+    event.add("dtstamp", datetime.now(timezone.utc))
 
     # Organizer (the cleaning company)
     org_email = organizer_email or os.getenv("SMTP_USER") or "office@mainecleaningco.com"

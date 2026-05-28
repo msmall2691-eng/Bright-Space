@@ -348,7 +348,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     return job_to_dict(job)
 
 
-@router.post("/push-to-gcal")
+@router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_to_gcal(db: Session = Depends(get_db)):
     """Push any BrightBase jobs that don't yet have a GCal event."""
     try:
@@ -389,7 +389,7 @@ def push_to_gcal(db: Session = Depends(get_db)):
     return {"pushed": created_count, "errors": errors, "message": f"Pushed {created_count} job(s) to Google Calendar"}
 
 
-@router.post("/sync-gcal")
+@router.post("/sync-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_from_gcal(db: Session = Depends(get_db)):
     """
     Full two-way sync with Google Calendar.
@@ -409,7 +409,7 @@ def sync_from_gcal(db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/sync-gcal-cancellations")
+@router.post("/sync-gcal-cancellations", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_gcal_cancellations_endpoint(db: Session = Depends(get_db)):
     """Manual trigger for the GCal-cancellation reverse linkage check.
     Useful for testing without waiting for the scheduler tick."""
@@ -460,7 +460,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 tax_rate = float(quote.tax_rate) if quote else 5.5
                 tax = round(subtotal * (tax_rate / 100), 2)
                 total = round(subtotal + tax, 2)
-                due_date = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+                due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
                 invoice = Invoice(
                     client_id=job.client_id,
                     job_id=job.id,
@@ -497,7 +497,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     return job_to_dict(job)
 
 
-@router.delete("/{job_id}", status_code=204)
+@router.delete("/{job_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -520,7 +520,7 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-@router.post("/{job_id}/invite-client")
+@router.post("/{job_id}/invite-client", dependencies=[Depends(require_role("admin", "manager"))])
 def invite_client(job_id: int, db: Session = Depends(get_db)):
     """
     Send the Google Calendar invite to the client for this job.
@@ -577,7 +577,7 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"GCal error: {e}")
 
 
-@router.post("/{job_id}/convert-to-invoice", status_code=201)
+@router.post("/{job_id}/convert-to-invoice", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
     """Convert a completed job to an invoice."""
     from database.models import Invoice, Quote
@@ -607,7 +607,7 @@ def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
     tax_rate = float(quote.tax_rate) if quote else 5.5
     tax = round(subtotal * (tax_rate / 100), 2)
     total = round(subtotal + tax, 2)
-    due_date = (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d")
+    due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
 
     invoice = Invoice(
         client_id=job.client_id,

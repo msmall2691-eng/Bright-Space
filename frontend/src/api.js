@@ -122,6 +122,12 @@ export async function upload(url, formData) {
     body: formData,
   });
 
+  if (res.status === 401) {
+    clearJWT()
+    window.location.href = '/login'
+    return
+  }
+
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     const raw = await res.text().catch(() => '');

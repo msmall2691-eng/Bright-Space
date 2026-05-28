@@ -12,6 +12,7 @@ import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import JobEditModal from '../components/JobEditModal'
 import CalendarView from '../components/CalendarView'
+import { useToast } from '../components/ui/Toast'
 
 // Property type colors (STR = amber, residential = blue, commercial = purple)
 const PROPERTY_TYPE_CONFIG = {
@@ -431,6 +432,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
 }
 
 function RecurringPanel() {
+  const { toast, ToastContainer } = useToast()
   const [schedules, setSchedules] = useState([])
   const [clients, setClients] = useState({})
   const [propertiesList, setPropertiesList] = useState([])
@@ -468,9 +470,9 @@ function RecurringPanel() {
     try {
       const r = await post(`/api/recurring/${id}/generate`, {})
       await load()
-      alert(`Generated ${r.jobs_created || 0} new jobs.`)
+      toast.success(`Generated ${r.jobs_created || 0} new jobs.`)
     } catch (e) {
-      alert(`Generation failed: ${e.message || e}`)
+      toast.error(`Generation failed: ${e.message || e}`)
     } finally {
       setGenerating(null)
     }
@@ -481,7 +483,7 @@ function RecurringPanel() {
       await put(`/api/recurring/${s.id}`, { active: !s.active })
       await load()
     } catch (e) {
-      alert(`Update failed: ${e.message || e}`)
+      toast.error(`Update failed: ${e.message || e}`)
     }
   }
 
@@ -552,11 +554,13 @@ function RecurringPanel() {
           onCreated={load}
         />
       )}
+      <ToastContainer />
     </div>
   )
 }
 
 export default function Schedule() {
+  const { toast, ToastContainer } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   if (searchParams.get('tab') === 'recurring') return <RecurringPanel />
   // Three view modes today:
@@ -744,7 +748,7 @@ export default function Schedule() {
       await setVisits(visits.filter(v => v.id !== visitId))
       setShowDetails(false)
     } catch (err) {
-      alert('Error deleting visit: ' + err.message)
+      toast.error('Error deleting visit: ' + err.message)
     }
   }
 
@@ -789,12 +793,12 @@ export default function Schedule() {
           ids.map(id => put(`/api/visits/${id}`, { status: 'cancelled' }))
         )
         const failed = results.filter(r => r.status === 'rejected').length
-        if (failed > 0) alert(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+        if (failed > 0) toast.error(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       }
       setVisits(visits.filter(v => !selectedVisitIds.has(v.id)))
       clearVisitSelection()
     } catch (e) {
-      alert('Bulk action failed: ' + (e?.message || 'unknown'))
+      toast.error('Bulk action failed: ' + (e?.message || 'unknown'))
     } finally {
       setBulkDeleting(false)
     }
@@ -828,10 +832,10 @@ export default function Schedule() {
       setCoverage(newCoverage)
       // Re-run the main schedule loader to pick up new visits
       setCurrentDate(new Date(currentDate))
-      alert(`Backfill complete: ${result.created} visits created, ${result.skipped} already had visits, ${result.skipped_no_date || 0} skipped (no date).${result.errors?.length ? ` ${result.errors.length} errors.` : ''}`)
+      toast.success(`Backfill complete: ${result.created} visits created, ${result.skipped} already had visits, ${result.skipped_no_date || 0} skipped (no date).${result.errors?.length ? ` ${result.errors.length} errors.` : ''}`)
     } catch (err) {
       console.error('[Schedule] Backfill failed:', err)
-      alert('Backfill failed: ' + (err?.message || 'unknown error'))
+      toast.error('Backfill failed: ' + (err?.message || 'unknown error'))
     } finally {
       setBackfilling(false)
     }
@@ -1210,6 +1214,7 @@ export default function Schedule() {
           onSave={handleJobSave}
         />
       )}
+      <ToastContainer />
     </div>
   )
 }

@@ -14,11 +14,16 @@ export default function TweaksPanel() {
     // Load saved preferences
     const saved = localStorage.getItem('tweaks-panel-prefs')
     if (saved) {
-      const prefs = JSON.parse(saved)
-      setTheme(prefs.theme)
-      setDensity(prefs.density)
-      setSidebarCollapsed(prefs.sidebarCollapsed)
-      applyTheme(prefs.theme, prefs.density, prefs.sidebarCollapsed)
+      try {
+        const prefs = JSON.parse(saved)
+        setTheme(prefs.theme)
+        setDensity(prefs.density)
+        setSidebarCollapsed(prefs.sidebarCollapsed)
+        applyTheme(prefs.theme, prefs.density, prefs.sidebarCollapsed)
+      } catch (e) {
+        console.error('[TweaksPanel] Failed to parse saved prefs:', e)
+        localStorage.removeItem('tweaks-panel-prefs')
+      }
     }
   }, [])
 

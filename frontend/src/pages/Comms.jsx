@@ -21,16 +21,16 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Send, MessageSquare, Mail, Phone, Search, User, Clock,
-  CheckCircle2, AlertTriangle, Circle, StickyNote, Tag as TagIcon,
-  UserPlus, ChevronRight, Inbox, Archive, Pause, Flag, X,
-  MoreHorizontal, ArrowLeft, Paperclip, Smile, Hash, Bell,
-  Filter, Star, ChevronDown, ExternalLink, Building2, MapPin,
-  PhoneCall, AtSign, Plus, Edit3, ArrowUpRight, Calendar,
-  Zap, Eye, MailPlus, MessageCircle, PenLine, Sparkles,
+  CheckCircle2, AlertTriangle, StickyNote,
+  UserPlus, Inbox, X,
+  ArrowLeft, Hash, Bell,
+  Filter, MapPin,
+  Plus, MessageCircle, PenLine,
 } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import GmailInbox from '../components/GmailInbox'
 import { get, post } from "../api"
+import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
 
 
@@ -74,16 +74,6 @@ const TEAM_ASSIGNEES = ['Megan', 'Unassigned']
 /* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
    UTILITY FUNCTIONS
    âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
-
-function formatPhone(p) {
-  if (!p) return ''
-  const digits = p.replace(/\D/g, '')
-  if (digits.length === 11 && digits[0] === '1')
-    return `(${digits.slice(1,4)}) ${digits.slice(4,7)}-${digits.slice(7)}`
-  if (digits.length === 10)
-    return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
-  return p
-}
 
 function relTime(iso) {
   if (!iso) return ''
@@ -748,7 +738,9 @@ export default function Comms() {
     // backend stay as 'open'/'resolved' for API compat; UI renames them.
     if (folder === 'mine') {
       params.set('status', 'open')
-      params.set('assignee', 'Megan') // TODO: derive from JWT once portal_user lookup is wired
+      const stored = localStorage.getItem('brightbase_user')
+      const currentUser = stored ? JSON.parse(stored) : null
+      params.set('assignee', currentUser?.email?.split('@')[0] || 'Me')
     } else if (folder === 'done') {
       params.set('status', 'resolved')
     } else {
@@ -797,7 +789,7 @@ export default function Comms() {
 
   // ââââââââ Effects ââââââââ
 
-  useEffect(() => { loadList(); loadSummary(); loadClients() }, [loadList, loadSummary, loadClients])
+  useEffect(() => { loadSummary(); loadClients() }, [loadSummary, loadClients])
   useEffect(() => { const t = setTimeout(() => loadList(), 300); return () => clearTimeout(t) }, [search])
   useEffect(() => { loadDetail(selectedId) }, [selectedId, loadDetail])
   useEffect(() => {
@@ -818,12 +810,12 @@ export default function Comms() {
     setSending(true); setFlash(null)
     try {
       if (noteMode) {
-        await post(`/api/comms/conversations/${detail.id}/notes`, { body: reply, author: 'Megan' })
+        await post(`/api/comms/conversations/${detail.id}/notes`, { body: reply, author: JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Unknown' })
       } else {
         await post(`/api/comms/conversations/${detail.id}/messages`, {
           body: reply,
           subject: detail.channel === 'email' ? (replySubject || detail.subject) : undefined,
-          author: 'Megan',
+          author: JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Unknown',
         })
       }
       setReply(''); setReplySubject('')

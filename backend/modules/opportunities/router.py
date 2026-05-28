@@ -79,6 +79,8 @@ def list_opportunities(
     client_id: Optional[int] = None,
     owner: Optional[str] = None,
     service_type: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     q = db.query(Opportunity)
@@ -90,7 +92,7 @@ def list_opportunities(
         q = q.filter(Opportunity.owner == owner)
     if service_type:
         q = q.filter(Opportunity.service_type == service_type)
-    return [opp_to_dict(o) for o in q.order_by(Opportunity.created_at.desc()).all()]
+    return [opp_to_dict(o) for o in q.order_by(Opportunity.created_at.desc()).offset(offset).limit(limit).all()]
 
 
 @router.get("/summary")
@@ -225,7 +227,7 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
     return opp_to_dict(o)
 
 
-@router.patch("/{opp_id}")
+@router.patch("/{opp_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depends(get_db)):
     o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not o:
@@ -263,7 +265,7 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
     return opp_to_dict(o)
 
 
-@router.delete("/{opp_id}", status_code=204)
+@router.delete("/{opp_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 def delete_opportunity(opp_id: int, db: Session = Depends(get_db)):
     o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     if not o:

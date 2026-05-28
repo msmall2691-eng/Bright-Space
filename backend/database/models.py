@@ -3,7 +3,10 @@ from sqlalchemy import (
     JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone, date
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 from uuid import uuid4
 from enum import Enum
 from database.base import Base
@@ -87,7 +90,7 @@ class FieldDefinition(Base):
     required = Column(Boolean, default=False)
     is_system = Column(Boolean, default=False)      # True for built-in fields, False for custom
     sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("entity_type", "key", name="uq_field_entity_key"),
@@ -108,7 +111,7 @@ class User(Base):
     phone = Column(String, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="user")
     jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
@@ -142,7 +145,7 @@ class Client(Base):
     notes = Column(Text)
     source = Column(String)
     custom_fields = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     # client_type column removed by migration 007 — duplicated property_type
     # semantically. The CRM summary endpoint now derives it from
@@ -155,7 +158,10 @@ class Client(Base):
 
     # Relationships - all cascade delete with client
     user = relationship("User", back_populates="client", uselist=False)  # One client per user (for role=client users)
-    quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan")
+    # NOTE: Quote uses UUID FKs that don't map cleanly to Integer Client.id.
+    # Removed Client.quotes back_populates to keep the SQLAlchemy mapper happy.
+    # The actual quotes table has an Integer client_id column added via boot
+    # migrations; query it directly via raw SQL or a properly aligned model.
     jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="client", cascade="all, delete-orphan")
@@ -216,7 +222,7 @@ class Property(Base):
     checklist_template = Column(JSON, nullable=True)
 
     active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="properties")
     ical_events = relationship("ICalEvent", back_populates="property", cascade="all, delete-orphan")
@@ -247,7 +253,7 @@ class PropertyIcal(Base):
     last_sync_error = Column(Text, nullable=True)     # Error message from last failed sync
     sync_retry_count = Column(Integer, default=0)     # How many times we've retried after failure
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     property = relationship("Property", back_populates="property_icals")
 
@@ -268,7 +274,7 @@ class ICalEvent(Base):
     raw_event = Column(JSON, nullable=True)         # Full parsed event dict
 
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, unique=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("property_id", "uid", name="uq_ical_property_uid"),
@@ -304,7 +310,7 @@ class RecurringSchedule(Base):
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="recurring_schedules")
     jobs = relationship("Job", back_populates="recurring_schedule")
@@ -343,7 +349,7 @@ class RecurrenceException(Base):
     rescheduled_end_time = Column(Time, nullable=True)
     reason = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
     recurring_schedule = relationship(
         "RecurringSchedule", back_populates="exceptions"
@@ -395,8 +401,8 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     connecteam_shift_ids = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     client = relationship("Client", back_populates="jobs")
     opportunity = relationship("Opportunity", back_populates="jobs")
@@ -453,8 +459,8 @@ class Visit(Base):
     photos = Column(JSON, default=list)  # [{"url": "...", "timestamp": "...", "label": "before"}, ...]
 
     # Audit trail
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
     # Constraints
     __table_args__ = (
@@ -503,7 +509,7 @@ class LeadIntake(Base):
     internal_notes = Column(Text, nullable=True)
     custom_fields = Column(JSON, default=dict)
     followed_up_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="lead_intakes")
     opportunity = relationship("Opportunity", back_populates="intake", uselist=False)
@@ -532,8 +538,8 @@ class Invoice(Base):
     paid_at = Column(DateTime, nullable=True)
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")
@@ -585,8 +591,8 @@ class Conversation(Base):
     snoozed_until = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     client = relationship("Client", back_populates="conversations")
     opportunity = relationship("Opportunity", back_populates="conversations")
@@ -629,7 +635,7 @@ class Message(Base):
     # never sent to the customer.
     is_internal_note = Column(Boolean, default=False, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="messages")
     job = relationship("Job")
@@ -660,13 +666,14 @@ class Opportunity(Base):
     notes = Column(Text, nullable=True)
     custom_fields = Column(JSON, default=dict)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     # Relationships
     client = relationship("Client", back_populates="opportunities")
     intake = relationship("LeadIntake", back_populates="opportunity", uselist=False)
-    quotes = relationship("Quote", back_populates="opportunity")
+    # NOTE: Quote uses UUID FKs and doesn't map cleanly to Integer Opportunity.id.
+    # Removed Opportunity.quotes back_populates — broke mapper init.
     invoices = relationship("Invoice", back_populates="opportunity")
     jobs = relationship("Job", back_populates="opportunity")
     conversations = relationship("Conversation", back_populates="opportunity")
@@ -684,7 +691,7 @@ class ContactEmail(Base):
     is_primary = Column(Boolean, default=False)
     source = Column(String, nullable=True)             # website | gmail_sync | manual
     verified_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="contact_emails")
 
@@ -700,7 +707,7 @@ class ContactPhone(Base):
     is_primary = Column(Boolean, default=False)
     phone_type = Column(String, nullable=True)         # mobile | office | home
     source = Column(String, nullable=True)             # website | twilio | manual
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="contact_phones")
 
@@ -724,7 +731,7 @@ class Activity(Base):
     summary = Column(String, nullable=True)
     extra_data = Column(JSON, default=dict)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="activities")
     opportunity = relationship("Opportunity", back_populates="activities")
@@ -737,7 +744,7 @@ class AppSetting(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, nullable=False, unique=True, index=True)
     value = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -760,19 +767,13 @@ event.listen(Client, "before_update", _sync_phone_tail)
 event.listen(ContactPhone, "before_insert", _sync_phone_tail)
 event.listen(ContactPhone, "before_update", _sync_phone_tail)
 
-"""SQLAlchemy models for Quotes system."""
 
-from uuid import UUID
-from datetime import datetime, date
-from uuid import uuid4
+# ── Quote Models ──────────────────────────────────────────────────────
 from decimal import Decimal
-from enum import Enum
-from typing import Optional, List
-
-from sqlalchemy import Column, String, Text, Numeric, DateTime, Integer, Date, ForeignKey, CheckConstraint, UniqueConstraint, JSON
+from typing import Optional
+from uuid import UUID
+from sqlalchemy import Numeric, CheckConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy import func
-from sqlalchemy.orm import relationship
 
 
 
@@ -806,8 +807,6 @@ class Quote(Base):
     client_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     property_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by: UUID = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
-    workspace_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
-
     # Quote Metadata
     quote_number: str = Column(String(50), nullable=False, unique=True)
     title: Optional[str] = Column(String(255), nullable=True)
@@ -913,9 +912,6 @@ class QuoteRequest(Base):
     # Status & Link to Quote
     status: str = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
     quote_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    # Workspace
-    workspace_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
 
     # Timestamps
     created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)

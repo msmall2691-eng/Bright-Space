@@ -17,6 +17,7 @@ from database.models import Job, Client
 from integrations.ics_generator import generate_job_ics
 from integrations.twilio_client import send_sms
 from integrations.google_calendar import create_event, update_event
+from modules.auth.router import require_role
 
 router = APIRouter()
 
@@ -37,7 +38,7 @@ def _client_dict(c: Client) -> dict:
 
 # ── .ics download ──────────────────────────────────────────────────────────
 
-@router.get("/jobs/{job_id}/invite.ics")
+@router.get("/jobs/{job_id}/invite.ics", dependencies=[Depends(require_role("admin", "manager"))])
 def download_ics(job_id: int, db: Session = Depends(get_db)):
     """Download the .ics calendar invite for a job."""
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -57,7 +58,7 @@ def download_ics(job_id: int, db: Session = Depends(get_db)):
 
 # ── SMS reminder ───────────────────────────────────────────────────────────
 
-@router.post("/jobs/{job_id}/sms-reminder")
+@router.post("/jobs/{job_id}/sms-reminder", dependencies=[Depends(require_role("admin", "manager"))])
 def send_job_reminder(job_id: int, db: Session = Depends(get_db)):
     """Send a 24hr SMS reminder to the client for a specific job."""
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -82,7 +83,7 @@ def send_job_reminder(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=f"Twilio error: {e}")
 
 
-@router.post("/send-daily-reminders")
+@router.post("/send-daily-reminders", dependencies=[Depends(require_role("admin", "manager"))])
 def send_daily_reminders(db: Session = Depends(get_db)):
     """
     Send SMS reminders for all jobs scheduled tomorrow that haven't been reminded yet.
@@ -119,7 +120,7 @@ def send_daily_reminders(db: Session = Depends(get_db)):
 
 # ── Google Calendar ────────────────────────────────────────────────────────
 
-@router.post("/jobs/{job_id}/gcal")
+@router.post("/jobs/{job_id}/gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_to_gcal(job_id: int, db: Session = Depends(get_db)):
     """Create or update this job's Google Calendar event."""
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -138,7 +139,7 @@ def push_to_gcal(job_id: int, db: Session = Depends(get_db)):
     return {"job_id": job_id, "gcal_event_id": event_id, "client_invited": bool(client.email)}
 
 
-@router.post("/push-upcoming-to-gcal")
+@router.post("/push-upcoming-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_upcoming_to_gcal(db: Session = Depends(get_db)):
     """Push all upcoming scheduled jobs that don't have a calendar invite yet."""
     today = date.today().isoformat()

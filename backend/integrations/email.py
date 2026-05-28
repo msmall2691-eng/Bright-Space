@@ -9,10 +9,14 @@ Required env vars:
   FROM_NAME     — display name, default "Maine Cleaning Co"
 """
 
+import html as html_mod
 import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+def _esc(val: str) -> str:
+    return html_mod.escape(str(val)) if val else ""
 
 
 def _load_smtp_creds() -> dict:
@@ -85,12 +89,13 @@ def send_email(to: str, subject: str, html_body: str, text_body: str = "") -> di
 
 def build_quote_email(quote: dict, client_name: str, company_phone: str = "", public_url: str = "") -> tuple[str, str]:
     """Returns (html, plain_text) for a quote email."""
-    q_num = quote.get("quote_number") or f"QT-{quote['id']}"
+    q_num = _esc(quote.get("quote_number") or f"QT-{quote['id']}")
     items = quote.get("items") or []
-    valid_until = quote.get("valid_until") or "30 days from issue"
-    address = quote.get("address") or ""
-    service_type = (quote.get("service_type") or "residential").title()
-    notes = quote.get("notes") or ""
+    valid_until = _esc(quote.get("valid_until") or "30 days from issue")
+    address = _esc(quote.get("address") or "")
+    service_type = _esc((quote.get("service_type") or "residential").title())
+    notes = _esc(quote.get("notes") or "")
+    client_name = _esc(client_name)
     from_email = os.getenv("SMTP_USER", "")
     from_name = os.getenv("FROM_NAME", "Maine Cleaning Co")
 
@@ -102,8 +107,8 @@ def build_quote_email(quote: dict, client_name: str, company_phone: str = "", pu
         rows += f"""
         <tr>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">
-            <div style="font-weight:600;color:#111;">{item.get('name','')}</div>
-            {f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{item["description"]}</div>' if item.get('description') else ''}
+            <div style="font-weight:600;color:#111;">{_esc(item.get('name',''))}</div>
+            {f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{_esc(item["description"])}</div>' if item.get('description') else ''}
           </td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;">{qty:.0f}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#4b5563;">${price:.2f}</td>
@@ -222,11 +227,12 @@ Thank you,
 
 def build_invoice_email(invoice: dict, client_name: str, company_phone: str = "") -> tuple[str, str]:
     """Returns (html, plain_text) for an invoice email."""
-    inv_num = invoice.get("invoice_number") or f"INV-{invoice['id']}"
+    inv_num = _esc(invoice.get("invoice_number") or f"INV-{invoice['id']}")
     items = invoice.get("items") or []
-    due_date = invoice.get("due_date") or "Upon receipt"
-    notes = invoice.get("notes") or ""
+    due_date = _esc(invoice.get("due_date") or "Upon receipt")
+    notes = _esc(invoice.get("notes") or "")
     status = invoice.get("status", "sent")
+    client_name = _esc(client_name)
     from_email = os.getenv("SMTP_USER", "")
     from_name = os.getenv("FROM_NAME", "Maine Cleaning Co")
 
@@ -238,8 +244,8 @@ def build_invoice_email(invoice: dict, client_name: str, company_phone: str = ""
         rows += f"""
         <tr>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">
-            <div style="font-weight:600;color:#111;">{item.get('name','')}</div>
-            {f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{item["description"]}</div>' if item.get('description') else ''}
+            <div style="font-weight:600;color:#111;">{_esc(item.get('name',''))}</div>
+            {f'<div style="font-size:12px;color:#6b7280;margin-top:2px;">{_esc(item["description"])}</div>' if item.get('description') else ''}
           </td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;">{qty:.0f}</td>
           <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#4b5563;">${price:.2f}</td>

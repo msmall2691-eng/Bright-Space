@@ -15,7 +15,7 @@ You work in Google Calendar. BrightBase just watches and adds the business layer
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from database.models import Job, Client, Property
 
@@ -205,7 +205,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             calendar_ids = ["primary"]
 
     # Time range: 30 days back, 90 days forward
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     time_min = (now - timedelta(days=30)).isoformat() + "Z"
     time_max = (now + timedelta(days=90)).isoformat() + "Z"
 

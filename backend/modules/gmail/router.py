@@ -10,15 +10,17 @@ no-reply / marketing senders and only creates clients for senders whose
 message looks like an actual cleaning-service inquiry.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from typing import Optional
 from database.db import get_db
 from modules.auth.router import require_role
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
 from integrations.email_filter import should_create_client_from_email
 from utils.activity_logger import log_email
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -108,7 +110,7 @@ def gmail_inbox(
             c = _match_email_to_client(addr, db)
             if c:
                 _ensure_contact_email(c.id, addr, "gmail_sync", db)
-                c.last_contacted_at = datetime.utcnow()
+                c.last_contacted_at = datetime.now(timezone.utc)
                 c.email_verified = True
             elif auto_enrich and addr:
                 # Defer to the spam/intent filter before auto-creating a Client.
@@ -289,12 +291,15 @@ def _get_app_setting(db: Session, key: str):
     return row.value if row else None
 
 
+class EmailReplyRequest(BaseModel):
+    to_email: str
+    subject: str
+    body: str
+    in_reply_to_message_id: Optional[str] = None
+
 @router.post("/send-reply", dependencies=[Depends(require_role("admin", "manager"))])
 def send_email_reply(
-    to_email: str = Query(...),
-    subject: str = Query(...),
-    body: str = Query(...),
-    in_reply_to_message_id: str = Query(None),
+    data: EmailReplyRequest,
     db: Session = Depends(get_db),
 ):
     from_email = _get_app_setting(db, "from_email")
@@ -303,11 +308,11 @@ def send_email_reply(
 
     try:
         result = send_reply(
-            to_email=to_email,
+            to_email=data.to_email,
             from_email=from_email,
-            subject=subject,
-            body=body,
-            in_reply_to_message_id=in_reply_to_message_id,
+            subject=data.subject,
+            body=data.body,
+            in_reply_to_message_id=data.in_reply_to_message_id,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -315,9 +320,9 @@ def send_email_reply(
         logger.error(f"Unexpected error sending reply: {e}")
         raise HTTPException(500, "Failed to send email reply")
 
-    client = _match_email_to_client(to_email, db)
+    client = _match_email_to_client(data.to_email, db)
     if client:
-        client.last_contacted_at = datetime.utcnow()
+        client.last_contacted_at = datetime.now(timezone.utc)
 
         message = Message(
             client_id=client.id,

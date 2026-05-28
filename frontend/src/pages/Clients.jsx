@@ -4,6 +4,7 @@ import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid,
 import { CustomFieldsForm } from '../components/CustomFields'
 import { del, get, post, patch, upload } from "../api"
 import { displayContactName } from '../utils/display'
+import { useToast } from '../components/ui/Toast'
 
 const STATUS_COLORS = {
   lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
@@ -28,6 +29,7 @@ const EMPTY = { first_name: '', last_name: '', email: '', phone: '', address: ''
 
 export default function Clients() {
   const navigate = useNavigate()
+  const { toast, ToastContainer } = useToast()
   const [clients, setClients] = useState([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -54,7 +56,7 @@ export default function Clients() {
   useEffect(() => { clearSelection() }, [statusFilter, search])
 
   const filtered = clients.filter(c =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
+    !search || (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.phone || '').includes(search) || (c.email || '').toLowerCase().includes(search.toLowerCase())
   )
 
@@ -165,7 +167,7 @@ export default function Clients() {
     try {
       const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))
       const failed = results.filter(r => r.status === 'rejected').length
-      if (failed > 0) alert(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      if (failed > 0) toast.error(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       clearSelection()
       await load()
     } finally {
@@ -544,6 +546,7 @@ export default function Clients() {
           </div>
         </div>
       )}
+      <ToastContainer />
     </div>
   )
 }

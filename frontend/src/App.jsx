@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, Suspense, lazy } from 'react'
+import { Component, useState, useCallback, useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
@@ -15,6 +15,26 @@ import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
 
 const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
+
+class ErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+  static getDerivedStateFromError(error) { return { hasError: true, error } }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8 text-center">
+          <h1 className="text-xl font-semibold text-zinc-900">Something went wrong</h1>
+          <p className="text-sm text-zinc-500 max-w-md">{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button
+            onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          >Reload page</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // Wraps Sidebar with the global unread poller. Lives inline in App so the
 // poll only runs when the user is actually inside the authenticated shell
@@ -117,6 +137,7 @@ export default function App() {
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto bg-bg pb-bottomnav lg:pb-0 scroll-smooth-mobile">
+          <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -141,6 +162,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <BottomNav />

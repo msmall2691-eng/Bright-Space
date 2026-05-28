@@ -18,14 +18,23 @@ import os
 
 from database.db import get_db
 from database.models import PropertyProfile, PropertyPhoto, TimeEstimateHistory, Client
+from modules.auth.router import require_role
 
 router = APIRouter()
 
-# Supabase client for photo uploads
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase: SupabaseClient = create_client(supabase_url, supabase_key)
+# Supabase client for photo uploads (lazy init to avoid crash when env vars missing)
 STORAGE_BUCKET = "property-photos"
+_supabase: Optional[SupabaseClient] = None
+
+def _get_supabase() -> SupabaseClient:
+    global _supabase
+    if _supabase is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            raise HTTPException(status_code=503, detail="Supabase not configured")
+        _supabase = create_client(url, key)
+    return _supabase
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -113,7 +122,7 @@ class PropertyPhotoResponse(BaseModel):
 # Create Property
 # ────────────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=PropertyProfileResponse, tags=["property-intelligence"])
+@router.post("/", response_model=PropertyProfileResponse, tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def create_property(
     property_data: PropertyProfileCreate,
     db: Session = Depends(get_db)
@@ -142,7 +151,7 @@ async def create_property(
 # Get Property Details
 # ────────────────────────────────────────────────────────────────────
 
-@router.get("/{property_id}", response_model=PropertyProfileResponse, tags=["property-intelligence"])
+@router.get("/{property_id}", response_model=PropertyProfileResponse, tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def get_property(property_id: UUID, db: Session = Depends(get_db)):
     """Get detailed property profile with time estimates and photos."""
     property_profile = db.query(PropertyProfile).filter(PropertyProfile.id == property_id).first()
@@ -155,7 +164,7 @@ async def get_property(property_id: UUID, db: Session = Depends(get_db)):
 # Update Property
 # ────────────────────────────────────────────────────────────────────
 
-@router.put("/{property_id}", response_model=PropertyProfileResponse, tags=["property-intelligence"])
+@router.put("/{property_id}", response_model=PropertyProfileResponse, tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def update_property(
     property_id: UUID,
     property_data: PropertyProfileUpdate,
@@ -182,7 +191,7 @@ async def update_property(
 # Upload Property Photos
 # ────────────────────────────────────────────────────────────────────
 
-@router.post("/{property_id}/upload-photo", response_model=PropertyPhotoResponse, tags=["property-intelligence"])
+@router.post("/{property_id}/upload-photo", response_model=PropertyPhotoResponse, tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def upload_property_photo(
     property_id: UUID,
     file: UploadFile = File(...),
@@ -197,18 +206,17 @@ async def upload_property_photo(
         raise HTTPException(status_code=404, detail="Property not found")
 
     try:
-    # Upload to Supabase Storage
-                file_key = f"properties/{property_id}/{datetime.now().isoformat()}_{file.filename}"
-                file_content = await file.read()
+        file_key = f"properties/{property_id}/{datetime.now().isoformat()}_{file.filename}"
+        file_content = await file.read()
 
-            response = supabase.storage.from_(STORAGE_BUCKET).upload(
-                            file_key,
-                            file_content,
-                            file_options={"content-type": file.content_type}
-            )
+        sb = _get_supabase()
+        response = sb.storage.from_(STORAGE_BUCKET).upload(
+            file_key,
+            file_content,
+            file_options={"content-type": file.content_type}
+        )
 
-        # Generate public Supabase URL
-        photo_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(file_key)
+        photo_url = sb.storage.from_(STORAGE_BUCKET).get_public_url(file_key)
 
         # Save to database
         photo = PropertyPhoto(
@@ -235,7 +243,7 @@ async def upload_property_photo(
 # Get Property Photos
 # ────────────────────────────────────────────────────────────────────
 
-@router.get("/{property_id}/photos", response_model=List[PropertyPhotoResponse], tags=["property-intelligence"])
+@router.get("/{property_id}/photos", response_model=List[PropertyPhotoResponse], tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def get_property_photos(
     property_id: UUID,
     photo_type: Optional[str] = None,
@@ -265,7 +273,7 @@ class TimeEstimateResponse(BaseModel):
     sample_size: int
 
 
-@router.get("/{property_id}/estimate-time", response_model=TimeEstimateResponse, tags=["property-intelligence"])
+@router.get("/{property_id}/estimate-time", response_model=TimeEstimateResponse, tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def estimate_clean_time(property_id: UUID, db: Session = Depends(get_db)):
     """Get intelligent time estimate for property based on historical data + complexity."""
 
@@ -310,7 +318,7 @@ class TimeEstimateRecordRequest(BaseModel):
     notes: Optional[str] = None
 
 
-@router.post("/{property_id}/record-time", tags=["property-intelligence"])
+@router.post("/{property_id}/record-time", tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def record_job_time(
     property_id: UUID,
     time_data: TimeEstimateRecordRequest,
@@ -348,7 +356,7 @@ async def record_job_time(
 # List Client Properties
 # ────────────────────────────────────────────────────────────────────
 
-@router.get("/client/{client_id}/all", response_model=List[PropertyProfileResponse], tags=["property-intelligence"])
+@router.get("/client/{client_id}/all", response_model=List[PropertyProfileResponse], tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def list_client_properties(
     client_id: UUID,
     property_type: Optional[str] = None,
@@ -368,7 +376,7 @@ async def list_client_properties(
 # Analytics: Property Complexity Distribution
 # ────────────────────────────────────────────────────────────────────
 
-@router.get("/analytics/complexity-distribution", tags=["property-intelligence"])
+@router.get("/analytics/complexity-distribution", tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def complexity_distribution(db: Session = Depends(get_db)):
     """Analytics: How are properties distributed by complexity?"""
 
@@ -396,7 +404,7 @@ async def complexity_distribution(db: Session = Depends(get_db)):
 # Analytics: Time Estimation Accuracy
 # ────────────────────────────────────────────────────────────────────
 
-@router.get("/analytics/estimation-accuracy", tags=["property-intelligence"])
+@router.get("/analytics/estimation-accuracy", tags=["property-intelligence"], dependencies=[Depends(require_role("admin", "manager"))])
 async def estimation_accuracy(
     days_back: int = Query(30, ge=7, le=365),
     db: Session = Depends(get_db)
