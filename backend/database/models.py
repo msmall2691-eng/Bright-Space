@@ -2,15 +2,15 @@ from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
     JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 from datetime import datetime, timezone, date
 
 def _utcnow():
     return datetime.now(timezone.utc)
 from uuid import uuid4
 from enum import Enum
+from database.base import Base
 
-Base = declarative_base()
 
 
 class ActivityType(str, Enum):
@@ -774,6 +774,7 @@ from typing import Optional
 from uuid import UUID
 from sqlalchemy import Numeric, CheckConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+
 
 
 class QuoteStatus(str, Enum):

@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from database.models import Base
+from database.base import Base
 import os
 import logging
 
