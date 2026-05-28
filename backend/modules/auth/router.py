@@ -48,29 +48,49 @@ class UserResponse(BaseModel):
     active: bool
 
 
+_optional_security = HTTPBearer(auto_error=False)
+
+
 def get_current_user(
+    request: Request,
     db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_security),
 ) -> User:
     """
-    Dependency to extract and verify JWT token from Authorization header.
-    Used by protected endpoints. Raises 401 if token is missing or invalid.
+    Dependency to extract the authenticated user.
+
+    The APIKeyMiddleware has already gated the request — it accepts either
+    a JWT Bearer token or an X-API-Key header. By the time we get here:
+      • If a valid JWT was used, credentials is set and we resolve the user
+        from its payload (preferred; carries real identity).
+      • If a valid API key was used (no JWT), credentials may be None.
+        We mint a synthetic admin User so role checks pass — the API key
+        is the integration's master credential and grants full access.
     """
-    token = credentials.credentials
-    payload = verify_jwt(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if credentials:
+        payload = verify_jwt(credentials.credentials)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    user_id = payload.get("user_id")
-    user = db.query(User).filter(User.id == user_id).first()
+        user_id = payload.get("user_id")
+        user = db.query(User).filter(User.id == user_id).first()
 
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
 
-    if not user.active:
-        raise HTTPException(status_code=403, detail="Account disabled")
+        if not user.active:
+            raise HTTPException(status_code=403, detail="Account disabled")
 
-    return user
+        return user
+
+    # No Bearer — middleware must have admitted us via API key.
+    # Surface a synthetic admin user (not persisted) for role checks.
+    import os as _os
+    if _os.getenv("BRIGHTBASE_API_KEY", ""):
+        synthetic = User(id=0, email="api-key@internal", full_name="API Key", role="admin", active=True)
+        return synthetic
+
+    raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 def get_current_user_optional(

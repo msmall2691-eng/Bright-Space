@@ -3,7 +3,7 @@ from sqlalchemy import (
     JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 def _utcnow():
     return datetime.now(timezone.utc)
@@ -158,7 +158,10 @@ class Client(Base):
 
     # Relationships - all cascade delete with client
     user = relationship("User", back_populates="client", uselist=False)  # One client per user (for role=client users)
-    quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan")
+    # NOTE: Quote uses UUID FKs that don't map cleanly to Integer Client.id.
+    # Removed Client.quotes back_populates to keep the SQLAlchemy mapper happy.
+    # The actual quotes table has an Integer client_id column added via boot
+    # migrations; query it directly via raw SQL or a properly aligned model.
     jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="client", cascade="all, delete-orphan")
@@ -669,7 +672,8 @@ class Opportunity(Base):
     # Relationships
     client = relationship("Client", back_populates="opportunities")
     intake = relationship("LeadIntake", back_populates="opportunity", uselist=False)
-    quotes = relationship("Quote", back_populates="opportunity")
+    # NOTE: Quote uses UUID FKs and doesn't map cleanly to Integer Opportunity.id.
+    # Removed Opportunity.quotes back_populates — broke mapper init.
     invoices = relationship("Invoice", back_populates="opportunity")
     jobs = relationship("Job", back_populates="opportunity")
     conversations = relationship("Conversation", back_populates="opportunity")
@@ -765,6 +769,10 @@ event.listen(ContactPhone, "before_update", _sync_phone_tail)
 
 
 # ── Quote Models ──────────────────────────────────────────────────────
+from decimal import Decimal
+from typing import Optional
+from uuid import UUID
+from sqlalchemy import Numeric, CheckConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
 

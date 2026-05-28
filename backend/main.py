@@ -153,7 +153,8 @@ async def startup():
     init_db()
     start_scheduler()
 
-    # Check for visits/jobs drift
+    # Check for visits/jobs drift. Wrapped so a missing table (fresh DB,
+    # mid-migration) doesn't take down the whole app at startup.
     from database.db import SessionLocal
     db = SessionLocal()
     try:
@@ -162,6 +163,8 @@ async def startup():
             print(f"⚠️  VISITS COVERAGE DRIFT: {coverage['jobs_without_visits']}/{coverage['total_jobs']} jobs missing visits")
         else:
             print(f"✓ Visits coverage healthy: {coverage['total_jobs']} jobs, {coverage['total_visits']} visits")
+    except Exception as e:
+        print(f"⚠️  Visits coverage check skipped: {e}")
     finally:
         db.close()
 
