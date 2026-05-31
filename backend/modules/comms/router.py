@@ -416,6 +416,7 @@ def list_conversations(
     assignee: Optional[str] = None,
     channel: Optional[str] = None,
     unread_only: bool = False,
+    sla_state: Optional[str] = Query(None, description="none|met|on_track|at_risk|breached"),
     q: Optional[str] = None,
     tag: Optional[str] = None,
     limit: int = Query(100, le=500),
@@ -450,29 +451,45 @@ def list_conversations(
     # Tag filter (JSON contains — easier in Python than cross-dialect SQL)
     if tag:
         convs = [c for c in convs if tag in (c.tags or [])]
+    # SLA state is derived at read-time (not a column), so filter in Python.
+    if sla_state:
+        convs = [c for c in convs if _sla_state(c) == sla_state]
     return [conv_to_dict(c) for c in convs]
 
 
 @router.get("/conversations/summary")
 def conversations_summary(db: Session = Depends(get_db)):
-    """Quick counts for inbox filter badges."""
-    base = db.query(Conversation)
-    # Sum total unread messages across all conversations. Used by the global
-    # unread badge / chime poller — strictly monotonic in 'new arrivals' so
-    # the FE can detect increases between polls and chime on actual deltas.
-    unread_messages = (
-        db.query(func.coalesce(func.sum(Conversation.unread_count), 0)).scalar() or 0
-    )
-    return {
-        "open":             base.filter(Conversation.status == "open").count(),
-        "pending":          base.filter(Conversation.status == "pending").count(),
-        "snoozed":          base.filter(Conversation.status == "snoozed").count(),
-        "resolved":         base.filter(Conversation.status == "resolved").count(),
-        "unassigned":       base.filter(Conversation.assignee.is_(None),
-                                         Conversation.status == "open").count(),
-        "unread":           base.filter(Conversation.unread_count > 0).count(),
-        "unread_messages":  int(unread_messages),
-    }
+    """Quick counts for inbox filter badges.
+
+    Returns global totals (back-compat for the unread chime poller) PLUS a
+    ``by_channel`` breakdown so the inbox can show per-channel counts and keep
+    the folder/chip badges in sync with whichever channel tab is selected.
+    Computed in one pass over the (small) conversation set — derived fields
+    like ``breached`` aren't columns, so a single Python scan is simplest and
+    avoids a fan-out of COUNT queries.
+    """
+    def _blank():
+        return {"open": 0, "pending": 0, "snoozed": 0, "resolved": 0,
+                "unassigned": 0, "unread": 0, "breached": 0, "unread_messages": 0}
+
+    total = _blank()
+    by_channel: dict[str, dict] = {}
+
+    for c in db.query(Conversation).all():
+        ch = c.channel or "other"
+        for b in (total, by_channel.setdefault(ch, _blank())):
+            if c.status in ("open", "pending", "snoozed", "resolved"):
+                b[c.status] += 1
+            if c.status == "open" and c.assignee is None:
+                b["unassigned"] += 1
+            if (c.unread_count or 0) > 0:
+                b["unread"] += 1
+            b["unread_messages"] += int(c.unread_count or 0)
+            if c.status == "open" and _sla_state(c) == "breached":
+                b["breached"] += 1
+
+    total["by_channel"] = by_channel
+    return total
 
 
 @router.get("/conversations/{conv_id}")
