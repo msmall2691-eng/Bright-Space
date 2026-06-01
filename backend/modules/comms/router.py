@@ -444,16 +444,25 @@ def list_conversations(
                           func.lower(Client.email).like(needle),
                           func.lower(Client.phone).like(needle),
                       )))
-    convs = (query.order_by(Conversation.last_message_at.desc().nulls_last()
-                            if hasattr(Conversation.last_message_at.desc(), "nullslast")
-                            else Conversation.last_message_at.desc())
-                  .limit(limit).all())
-    # Tag filter (JSON contains — easier in Python than cross-dialect SQL)
-    if tag:
-        convs = [c for c in convs if tag in (c.tags or [])]
-    # SLA state is derived at read-time (not a column), so filter in Python.
-    if sla_state:
-        convs = [c for c in convs if _sla_state(c) == sla_state]
+    query = query.order_by(Conversation.last_message_at.desc().nulls_last()
+                           if hasattr(Conversation.last_message_at.desc(), "nullslast")
+                           else Conversation.last_message_at.desc())
+    # `tag` and `sla_state` are derived/JSON fields filtered in Python (easier
+    # than cross-dialect SQL). They must be applied BEFORE truncating to
+    # `limit`, otherwise a matching row past the first `limit` ordered rows
+    # would be dropped — e.g. the Overdue chip returning empty while
+    # /conversations/summary still reports breached items. When such a filter
+    # is active we stream the full ordered set and slice after filtering;
+    # otherwise we keep the cheap DB-side LIMIT.
+    if tag or sla_state:
+        convs = query.all()
+        if tag:
+            convs = [c for c in convs if tag in (c.tags or [])]
+        if sla_state:
+            convs = [c for c in convs if _sla_state(c) == sla_state]
+        convs = convs[:limit]
+    else:
+        convs = query.limit(limit).all()
     return [conv_to_dict(c) for c in convs]
 
 
