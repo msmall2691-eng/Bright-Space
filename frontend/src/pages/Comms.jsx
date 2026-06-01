@@ -790,7 +790,12 @@ export default function Comms() {
   // ââââââââ Effects ââââââââ
 
   useEffect(() => { loadSummary(); loadClients() }, [loadSummary, loadClients])
-  useEffect(() => { const t = setTimeout(() => loadList(), 300); return () => clearTimeout(t) }, [search])
+  // Refresh the list whenever ANY filter changes (folder / channel / chips /
+  // search). loadList is rebuilt by useCallback on each of those, so depending
+  // on it covers them all — previously this watched only `search`, so tapping
+  // a channel/folder/chip didn't refresh until the 15s poller fired. The small
+  // debounce keeps typing in the search box smooth.
+  useEffect(() => { const t = setTimeout(() => loadList(), 250); return () => clearTimeout(t) }, [loadList])
   useEffect(() => { loadDetail(selectedId) }, [selectedId, loadDetail])
   useEffect(() => {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight
@@ -852,17 +857,34 @@ export default function Comms() {
   // Phase 8 IA: 3 folders + 3 additive filter chips. The chips can stack
   // (e.g. "Active + Overdue" or "Mine + Unread"). 'Unassigned' chip is
   // hidden when the active folder is 'Mine' since they're contradictory.
+  // When a channel tab (SMS/Email) is active, scope the folder + chip badge
+  // counts to that channel so the numbers match the list actually shown.
+  // 'All' (channelFilter === '') uses the global totals. This fixes the
+  // confusing case where "Active 15" showed above an empty SMS list because
+  // all 15 conversations were on the email channel.
+  const scoped = useMemo(
+    () => (channelFilter ? (summary.by_channel?.[channelFilter] || {}) : summary),
+    [summary, channelFilter],
+  )
+
+  // open+resolved per channel, for the All/SMS/Email tab badges — so the user
+  // can see at a glance where their messages live (e.g. "Email 34").
+  const channelCount = useCallback((ch) => {
+    const src = ch ? (summary.by_channel?.[ch] || {}) : summary
+    return (src.open || 0) + (src.resolved || 0)
+  }, [summary])
+
   const FOLDERS = useMemo(() => ([
-    { key: 'active', label: 'Active', count: summary.open },
+    { key: 'active', label: 'Active', count: scoped.open },
     { key: 'mine',   label: 'Mine',   count: null },
-    { key: 'done',   label: 'Done',   count: summary.resolved },
-  ]), [summary])
+    { key: 'done',   label: 'Done',   count: scoped.resolved },
+  ]), [scoped])
 
   const CHIPS = useMemo(() => ([
-    { key: 'overdue',    label: 'Overdue',    icon: Clock,    count: summary.breached },
-    { key: 'unassigned', label: 'Unassigned', icon: UserPlus, count: summary.unassigned, hideOn: 'mine' },
-    { key: 'unread',     label: 'Unread',     icon: Bell,     count: summary.unread },
-  ]), [summary])
+    { key: 'overdue',    label: 'Overdue',    icon: Clock,    count: scoped.breached },
+    { key: 'unassigned', label: 'Unassigned', icon: UserPlus, count: scoped.unassigned, hideOn: 'mine' },
+    { key: 'unread',     label: 'Unread',     icon: Bell,     count: scoped.unread },
+  ]), [scoped])
 
   const toggleChip = (key) => {
     setChipFilters(prev => {
@@ -971,11 +993,12 @@ export default function Comms() {
         <div className="px-4 pb-3">
           <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
             {[
-              { key: '', label: 'All', count: (summary.open || 0) + (summary.resolved || 0) },
+              { key: '', label: 'All' },
               { key: 'sms', label: 'SMS', icon: Phone },
               { key: 'email', label: 'Email', icon: Mail },
             ].map(ch => {
               const Icon = ch.icon
+              const count = channelCount(ch.key)
               return (
                 <button key={ch.key} onClick={() => setChannelFilter(ch.key)}
                   className={`flex-1 flex items-center justify-center gap-1 text-[12px] font-semibold px-2 py-2 rounded-lg transition-all ${
@@ -985,6 +1008,11 @@ export default function Comms() {
                   }`}>
                   {Icon && <Icon className="w-3.5 h-3.5" />}
                   {ch.label}
+                  {count > 0 && (
+                    <span className={`text-[10px] font-bold tabular-nums px-1.5 py-px rounded-full ${
+                      channelFilter === ch.key ? 'bg-blue-100 text-blue-700' : 'bg-zinc-200 text-zinc-500'
+                    }`}>{count}</span>
+                  )}
                 </button>
               )
             })}
@@ -1052,10 +1080,22 @@ export default function Comms() {
               <div className="w-14 h-14 rounded-2xl bg-zinc-100 flex items-center justify-center mb-4">
                 <Inbox className="w-7 h-7 text-zinc-300" />
               </div>
-              <div className="text-sm font-semibold text-zinc-500 mb-1">No conversations</div>
+              <div className="text-sm font-semibold text-zinc-500 mb-1">
+                {channelFilter === 'sms' ? 'No SMS conversations'
+                  : channelFilter === 'email' ? 'No email conversations'
+                  : 'No conversations'}
+              </div>
               <p className="text-[12px] text-zinc-400 text-center leading-relaxed">
-                Messages will appear here when they come in, or start a new one.
+                {channelFilter && (channelCount('') - channelCount(channelFilter)) > 0
+                  ? `Nothing here on this channel — but you have ${channelCount('') - channelCount(channelFilter)} on other channels. Tap “All” to see everything.`
+                  : 'Messages will appear here when they come in, or start a new one.'}
               </p>
+              {channelFilter && (channelCount('') - channelCount(channelFilter)) > 0 && (
+                <button onClick={() => setChannelFilter('')}
+                  className="mt-4 text-[12px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
+                  Show all messages
+                </button>
+              )}
               <button onClick={() => setShowCompose(true)}
                 className="mt-4 text-[12px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
                 <Plus className="w-3.5 h-3.5" /> New Message
