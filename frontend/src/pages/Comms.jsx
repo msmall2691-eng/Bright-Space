@@ -28,7 +28,6 @@ import {
   Plus, MessageCircle, PenLine,
 } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import GmailInbox from '../components/GmailInbox'
 import { get, post } from "../api"
 import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
@@ -919,46 +918,9 @@ export default function Comms() {
      RENDER
      âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
 
-  
-  // Gmail inbox mode: when Email tab is selected, render GmailInbox instead
-  if (channelFilter === 'email') {
-    return (
-      <div className="flex h-full bg-zinc-50">
-        <div className="flex flex-col flex-1 h-full">
-          {/* Mini top bar with channel tabs */}
-          <div className="bg-white border-b border-zinc-200 px-4 py-3 flex items-center gap-4 shrink-0">
-            <h1 className="text-lg font-bold text-zinc-900 tracking-tight">Comms</h1>
-            <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
-              {[
-                { key: '', label: 'All' },
-                { key: 'sms', label: 'SMS', icon: Phone },
-                { key: 'email', label: 'Email', icon: Mail },
-              ].map(ch => {
-                const Icon = ch.icon
-                return (
-                  <button key={ch.key} onClick={() => setChannelFilter(ch.key)}
-                    className={`flex items-center gap-1 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                      channelFilter === ch.key
-                        ? 'bg-white text-zinc-900 shadow-sm'
-                        : 'text-zinc-500 hover:text-zinc-700'
-                    }`}>
-                    {Icon && <Icon className="w-3.5 h-3.5" />}
-                    {ch.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          <GmailInbox />
-        </div>
-        <AgentWidget pageContext="comms" prompts={[
-          'Summarize recent emails from clients',
-          'Draft a reply to this email',
-          'Create a lead from this email sender',
-        ]} />
-      </div>
-    )
-  }
+  // Email now threads into the unified inbox (same UI as SMS) — backend
+  // run_inbox_sync attaches inbound Gmail to Conversations. The old separate
+  // GmailInbox view has been retired so All / SMS / Email all use one list.
 
   return (
     <div className="flex h-full bg-zinc-50">

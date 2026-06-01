@@ -140,6 +140,37 @@ def recurring_jobs_tick() -> dict:
     finally:
         db.close()
 
+def sync_gmail_inbox_tick() -> dict:
+    """Background job to pull the Gmail inbox and thread new emails into the
+    unified comms inbox (Conversations), so emails appear alongside SMS without
+    anyone having to open the Email tab. Mirrors the on-demand GET /gmail/inbox.
+
+    Gated behind gmail_auto_sync_enabled (app_settings) / GMAIL_AUTO_SYNC_ENABLED.
+    A missing/invalid Gmail credential is an expected non-error here — the
+    endpoint returns an {"error": ...} envelope rather than raising — so we
+    surface it as a skip, not a failure.
+    """
+    from modules.gmail.router import run_inbox_sync
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "gmail_auto_sync_enabled", env_flag("GMAIL_AUTO_SYNC_ENABLED", True)):
+            log.debug("Gmail auto-sync disabled via app_settings; skipping tick")
+            return {"skipped": True, "reason": "disabled"}
+        result = run_inbox_sync(db, max_results=30, skip_automated=True, auto_enrich=True)
+        if result.get("error"):
+            log.info(f"Gmail auto-sync skipped: {result.get('error')}")
+            return {"skipped": True, "reason": result.get("error")}
+        summary = result.get("summary", {})
+        log.info(f"Gmail auto-sync: {summary.get('threaded', 0)} new emails threaded "
+                 f"({summary.get('total', 0)} fetched)")
+        return summary
+    except Exception as e:
+        log.error(f"Gmail auto-sync failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
@@ -174,6 +205,20 @@ def start_scheduler():
     else:
         log.info("Google Calendar auto-sync disabled via GCAL_AUTO_SYNC_ENABLED=0")
 
+
+    # Gmail inbox auto-sync — thread inbound emails into the unified inbox
+    if env_flag("GMAIL_AUTO_SYNC_ENABLED", True):
+        gmail_interval_minutes = env_int("GMAIL_AUTO_SYNC_INTERVAL_MINUTES", 10)
+        _scheduler.add_job(
+            sync_gmail_inbox_tick,
+            IntervalTrigger(minutes=gmail_interval_minutes),
+            id="gmail_sync",
+            name="Gmail inbox auto-sync",
+            replace_existing=True,
+        )
+        log.info(f"Gmail inbox auto-sync enabled (interval: {gmail_interval_minutes} min)")
+    else:
+        log.info("Gmail inbox auto-sync disabled via GMAIL_AUTO_SYNC_ENABLED=0")
 
     # Recurring residential/commercial job generation (runs daily)
     if env_flag("RECURRING_AUTO_GENERATE_ENABLED", True):
