@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
@@ -88,6 +89,25 @@ class PropertyIcalSchema(BaseModel):
             except (ValueError, TypeError):
                 return None
         return None
+
+
+def _normalize_ical_url(raw: str) -> str:
+    """Validate + normalize an iCal feed URL. Accepts http(s) and webcal
+    (which Airbnb/VRBO hand out); webcal is rewritten to https since that's
+    what httpx fetches. Raises HTTPException(400) on anything unusable so the
+    operator gets a clear message at save time instead of an opaque sync error
+    hours later."""
+    if not raw or not raw.strip():
+        raise HTTPException(status_code=400, detail="iCal URL is required.")
+    url = raw.strip()
+    if url.lower().startswith("webcal://"):
+        url = "https://" + url[len("webcal://"):]
+    if not re.match(r"^https?://.+", url, re.IGNORECASE):
+        raise HTTPException(
+            status_code=400,
+            detail="iCal URL must start with http://, https://, or webcal://.",
+        )
+    return url
 
 
 def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
@@ -202,13 +222,43 @@ def sync_ical(property_id: int, db: Session = Depends(get_db)):
     return result
 
 
+@router.post("/{property_id}/icals/{ical_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
+def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db)):
+    """Re-sync a single iCal feed — lets staff retry one failing feed without
+    re-running every feed on the property."""
+    prop = db.query(Property).filter(Property.id == property_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    ical = db.query(PropertyIcal).filter(
+        PropertyIcal.id == ical_id,
+        PropertyIcal.property_id == property_id,
+    ).first()
+    if not ical:
+        raise HTTPException(status_code=404, detail="iCal not found")
+    result = sync_property(db, prop, only_ical_id=ical_id)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
 @router.post("/sync-all", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_all_ical(db: Session = Depends(get_db)):
-    """Sync all active properties that have an iCal URL."""
-    props = db.query(Property).filter(
-        Property.active == True,
-        Property.ical_url != None,
-    ).all()
+    """Sync all active properties that have a feed (legacy ical_url OR a
+    PropertyIcal row). Previously this matched only ical_url, so properties
+    linked via the multi-feed UI were silently skipped."""
+    props = (
+        db.query(Property)
+        .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
+        .filter(
+            Property.active == True,
+            or_(
+                Property.ical_url.isnot(None),
+                and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
+            ),
+        )
+        .distinct()
+        .all()
+    )
     results = []
     for prop in props:
         results.append(sync_property(db, prop))
@@ -288,9 +338,22 @@ def add_ical_url(property_id: int, data: PropertyIcalSchema, db: Session = Depen
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
+    url = _normalize_ical_url(data.url)
+    # Reject a feed already linked to this property (case-insensitive) so we
+    # don't create redundant rows that double-sync the same bookings.
+    dup = db.query(PropertyIcal).filter(
+        PropertyIcal.property_id == property_id,
+        func.lower(PropertyIcal.url) == url.lower(),
+    ).first()
+    if dup:
+        raise HTTPException(
+            status_code=409,
+            detail="This iCal feed is already linked to this property.",
+        )
+
     ical = PropertyIcal(
         property_id=property_id,
-        url=data.url,
+        url=url,
         source=data.source,
         active=data.active if data.active is not None else True,
         checkout_time=data.checkout_time,
@@ -328,7 +391,7 @@ def update_ical_url(property_id: int, ical_id: int, data: PropertyIcalSchema, db
         raise HTTPException(status_code=404, detail="iCal not found")
 
     if data.url:
-        ical.url = data.url
+        ical.url = _normalize_ical_url(data.url)
     if data.source:
         ical.source = data.source
     if data.active is not None:
