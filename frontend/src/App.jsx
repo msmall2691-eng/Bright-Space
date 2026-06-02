@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import BottomNav from './components/BottomNav'
 import AICommandBar from './components/AICommandBar'
+import GlobalSearch from './components/GlobalSearch'
 import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -167,6 +168,7 @@ export default function App() {
       </div>
       <BottomNav />
       <AICommandBar />
+      <GlobalSearch />
       {import.meta.env.DEV && <TweaksPanel />}
     </div>
   )
