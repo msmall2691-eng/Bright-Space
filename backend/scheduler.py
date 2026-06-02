@@ -140,6 +140,29 @@ def recurring_jobs_tick() -> dict:
     finally:
         db.close()
 
+def job_sms_reminders_tick() -> dict:
+    """Background job: text clients a reminder ahead of their cleaning.
+
+    OFF by default (it texts real customers). Gate: job_sms_reminders_enabled
+    app_setting / JOB_SMS_REMINDERS_ENABLED env. Delegates to the reminder
+    service, which uses Job.sms_reminder_sent for idempotency.
+    """
+    from services.reminder_service import send_due_reminders
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "job_sms_reminders_enabled", env_flag("JOB_SMS_REMINDERS_ENABLED", False)):
+            log.debug("Job SMS reminders disabled; skipping tick")
+            return {"skipped": True, "reason": "disabled"}
+        result = send_due_reminders(db)
+        log.info(f"Job SMS reminders: {result}")
+        return result
+    except Exception as e:
+        log.error(f"Job SMS reminders failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def sync_gmail_inbox_tick() -> dict:
     """Background job to pull the Gmail inbox and thread new emails into the
     unified comms inbox (Conversations), so emails appear alongside SMS without
@@ -219,6 +242,21 @@ def start_scheduler():
         log.info(f"Gmail inbox auto-sync enabled (interval: {gmail_interval_minutes} min)")
     else:
         log.info("Gmail inbox auto-sync disabled via GMAIL_AUTO_SYNC_ENABLED=0")
+
+    # Job SMS reminders — OFF by default (texts real customers). Hourly tick so
+    # each job gets one reminder ~lead_hours before it starts.
+    if env_flag("JOB_SMS_REMINDERS_ENABLED", False):
+        reminder_interval_minutes = env_int("JOB_SMS_REMINDER_INTERVAL_MINUTES", 60)
+        _scheduler.add_job(
+            job_sms_reminders_tick,
+            IntervalTrigger(minutes=reminder_interval_minutes),
+            id="job_sms_reminders",
+            name="Job SMS reminders",
+            replace_existing=True,
+        )
+        log.info(f"Job SMS reminders enabled (interval: {reminder_interval_minutes} min)")
+    else:
+        log.info("Job SMS reminders disabled (set JOB_SMS_REMINDERS_ENABLED=1 to enable)")
 
     # Recurring residential/commercial job generation (runs daily)
     if env_flag("RECURRING_AUTO_GENERATE_ENABLED", True):
