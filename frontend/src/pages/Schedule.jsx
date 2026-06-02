@@ -431,6 +431,106 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
   )
 }
 
+// Default post-clean checklist. Stored per-visit in checklist_results as
+// { task: bool }, so adding/removing tasks here only affects new completions.
+const DEFAULT_CHECKLIST = [
+  'Kitchen cleaned',
+  'Bathrooms cleaned',
+  'Floors vacuumed/mopped',
+  'Trash removed',
+  'Surfaces wiped',
+  'Final walkthrough',
+]
+
+function CompleteVisitModal({ visit, onClose, onComplete }) {
+  // Seed from any prior partial completion so re-opening doesn't lose state.
+  const [checks, setChecks] = useState(() => {
+    const prior = visit.checklist_results || {}
+    const seed = {}
+    DEFAULT_CHECKLIST.forEach(t => { seed[t] = !!prior[t] })
+    // Preserve any custom tasks that were saved previously.
+    Object.keys(prior).forEach(t => { if (!(t in seed)) seed[t] = !!prior[t] })
+    return seed
+  })
+  const [photos, setPhotos] = useState(() => (visit.photos || []).join('\n'))
+  const [saving, setSaving] = useState(false)
+
+  const toggle = (task) => setChecks(c => ({ ...c, [task]: !c[task] }))
+  const doneCount = Object.values(checks).filter(Boolean).length
+  const total = Object.keys(checks).length
+
+  const submit = async () => {
+    setSaving(true)
+    try {
+      const photoUrls = photos.split('\n').map(s => s.trim()).filter(Boolean)
+      await onComplete({ checklist_results: checks, photos: photoUrls })
+    } catch {
+      setSaving(false) // keep modal open on error so work isn't lost
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-hairline sticky top-0 bg-white">
+          <h3 className="text-base font-bold text-ink">Complete visit</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-neutral-100 text-neutral-500">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-neutral-600 uppercase">Checklist</p>
+              <span className="text-xs font-semibold text-neutral-500 tabular-nums">{doneCount}/{total}</span>
+            </div>
+            <div className="space-y-1.5">
+              {Object.keys(checks).map(task => (
+                <button
+                  key={task}
+                  type="button"
+                  onClick={() => toggle(task)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left text-sm transition-colors ${
+                    checks[task]
+                      ? 'bg-green-50 border-green-200 text-green-800'
+                      : 'bg-white border-hairline text-ink hover:bg-neutral-50'
+                  }`}
+                >
+                  <span className={`w-4 h-4 rounded flex items-center justify-center text-[11px] ${
+                    checks[task] ? 'bg-green-500 text-white' : 'border border-neutral-300'
+                  }`}>{checks[task] ? '✓' : ''}</span>
+                  {task}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Photo links (optional)</p>
+            <textarea
+              value={photos}
+              onChange={e => setPhotos(e.target.value)}
+              rows={3}
+              placeholder="One photo URL per line"
+              className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+            />
+            <p className="text-[11px] text-neutral-400 mt-1">Paste links to photos (e.g. from your phone's cloud). Direct upload coming later.</p>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 border-t border-hairline flex gap-2 sticky bottom-0 bg-white">
+          <Button variant="secondary" size="sm" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="primary" size="sm" className="flex-1" onClick={submit} disabled={saving}>
+            <CheckCircle className="w-4 h-4 mr-2" />
+            {saving ? 'Saving…' : 'Mark complete'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RecurringPanel() {
   const { toast, ToastContainer } = useToast()
   const [schedules, setSchedules] = useState([])
@@ -592,8 +692,10 @@ export default function Schedule() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedPropertyType, setSelectedPropertyType] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
+  const [completingVisit, setCompletingVisit] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
   const navigate = useNavigate()
@@ -709,6 +811,13 @@ export default function Schedule() {
           }
         }
 
+        // "Needs assignment" filter: no cleaners on an active visit.
+        if (unassignedOnly) {
+          const unassigned = (v.cleaner_ids?.length || 0) === 0 &&
+            v.status !== 'completed' && v.status !== 'cancelled'
+          if (!unassigned) return false
+        }
+
         return true
       })
       .sort((a, b) => {
@@ -722,7 +831,14 @@ export default function Schedule() {
         const bDate = new Date(`${b.scheduled_date}T${b.start_time || '09:00'}`)
         return aDate - bDate
       })
-  }, [visits, selectedPropertyType, selectedStatus, jobs, properties])
+  }, [visits, selectedPropertyType, selectedStatus, unassignedOnly, jobs, properties])
+
+  // Count of active visits needing a cleaner — drives the "Needs assignment"
+  // badge so the operator can see the queue at a glance regardless of filters.
+  const unassignedCount = useMemo(() => (
+    (visits || []).filter(v => (v.cleaner_ids?.length || 0) === 0 &&
+      v.status !== 'completed' && v.status !== 'cancelled').length
+  ), [visits])
 
   // Group by date - null/empty scheduled_date bucket as "unscheduled" so the
   // UI no longer renders "Invalid Date" headers for jobs without a real date.
@@ -749,6 +865,29 @@ export default function Schedule() {
       setShowDetails(false)
     } catch (err) {
       toast.error('Error deleting visit: ' + err.message)
+    }
+  }
+
+  // Persist a visit completion (checklist + photo URLs + status=completed).
+  // Uses the existing PUT /api/visits/{id} which already accepts these fields.
+  const handleCompleteVisit = async (visitId, { checklist_results, photos }) => {
+    try {
+      const payload = {
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        checklist_results,
+        photos,
+      }
+      const updated = await put(`/api/visits/${visitId}`, payload)
+      setVisits(visits.map(v => v.id === visitId
+        ? { ...v, status: 'completed', checklist_results, photos } : v))
+      setCompletingVisit(null)
+      setShowDetails(false)
+      toast.success('Visit marked complete')
+      return updated
+    } catch (err) {
+      toast.error('Error completing visit: ' + err.message)
+      throw err
     }
   }
 
@@ -973,6 +1112,24 @@ export default function Schedule() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <button
+              type="button"
+              onClick={() => setUnassignedOnly(v => !v)}
+              className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap transition-colors ${
+                unassignedOnly
+                  ? 'bg-amber-50 text-amber-700 border-amber-300'
+                  : 'bg-panel text-ink-3 border-hairline hover:bg-amber-50/40'
+              }`}
+              title="Show only visits with no cleaner assigned"
+            >
+              <AlertCircle className="w-3 h-3" />
+              Needs assignment
+              {unassignedCount > 0 && (
+                <span className="tabular-nums font-bold bg-amber-200 text-amber-800 rounded-full px-1.5">
+                  {unassignedCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -1178,7 +1335,38 @@ export default function Schedule() {
                   </div>
                 )}
 
+                {/* Completion summary, once a visit has been completed */}
+                {selectedVisit.visit.status === 'completed' && (selectedVisit.visit.checklist_results || selectedVisit.visit.photos?.length > 0) && (
+                  <div className="border-t border-hairline pt-3">
+                    <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Completion</p>
+                    {selectedVisit.visit.checklist_results && (
+                      <ul className="text-sm text-ink space-y-0.5">
+                        {Object.entries(selectedVisit.visit.checklist_results).map(([task, done]) => (
+                          <li key={task} className="flex items-center gap-1.5">
+                            <span className={done ? 'text-green-600' : 'text-neutral-400'}>{done ? '✓' : '○'}</span>
+                            {task}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {selectedVisit.visit.photos?.length > 0 && (
+                      <p className="text-sm text-ink mt-1">{selectedVisit.visit.photos.length} photo(s) attached</p>
+                    )}
+                  </div>
+                )}
+
                 <div className="border-t border-hairline pt-4 flex flex-col-reverse sm:flex-row gap-2">
+                  {selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="w-full sm:flex-1"
+                      onClick={() => setCompletingVisit(selectedVisit.visit)}
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Complete
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -1212,6 +1400,15 @@ export default function Schedule() {
           clients={Object.values(clients)}
           onClose={() => setShowJobModal(false)}
           onSave={handleJobSave}
+        />
+      )}
+
+      {/* Complete Visit Modal */}
+      {completingVisit && (
+        <CompleteVisitModal
+          visit={completingVisit}
+          onClose={() => setCompletingVisit(null)}
+          onComplete={(payload) => handleCompleteVisit(completingVisit.id, payload)}
         />
       )}
       <ToastContainer />

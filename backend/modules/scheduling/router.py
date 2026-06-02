@@ -32,6 +32,8 @@ class JobCreate(BaseModel):
     cleaner_ids: Optional[List[str]] = []
     notes: Optional[str] = None
     custom_fields: Optional[dict] = {}
+    # When true, bypass the cleaner double-booking guard (intentional overlap).
+    allow_conflicts: Optional[bool] = False
 
 
 class JobUpdate(BaseModel):
@@ -44,6 +46,7 @@ class JobUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
     custom_fields: Optional[dict] = None
+    allow_conflicts: Optional[bool] = False
 
 
 class BookingInfo(BaseModel):
@@ -126,6 +129,103 @@ def _booking_dict(event: Optional[ICalEvent]) -> Optional[dict]:
     }
 
 
+def _to_date(value):
+    """Parse a 'YYYY-MM-DD' string (or pass through a date) → date | None."""
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_time(value):
+    """Parse a 'HH:MM[:SS]' string (or pass through a time) → time | None."""
+    if value is None or isinstance(value, time):
+        return value
+    try:
+        parts = str(value).split(":")
+        return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except (ValueError, TypeError, IndexError):
+        return None
+
+
+def _validate_job_timing(scheduled_date, start_time, end_time, *, is_new: bool):
+    """Reject obviously-wrong timings before they reach the DB.
+
+    - end before/equal start → invalid window
+    - new jobs scheduled in the past → almost always a typo
+
+    Past-date is only enforced on create: editing an old job (e.g. marking it
+    completed) must stay allowed. Raises HTTPException(400) on failure.
+    """
+    d = _to_date(scheduled_date)
+    st = _to_time(start_time)
+    et = _to_time(end_time)
+    if st is not None and et is not None and et <= st:
+        raise HTTPException(
+            status_code=400,
+            detail=f"End time ({end_time}) must be after start time ({start_time}).",
+        )
+    if is_new and d is not None and d < date.today():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot schedule a job in the past ({d.isoformat()}).",
+        )
+
+
+def _find_cleaner_conflicts(db: Session, *, cleaner_ids, scheduled_date,
+                            start_time, end_time, exclude_job_id=None):
+    """Return [(cleaner_id, conflicting Job)] where a cleaner is already booked
+    on an overlapping job the same day. Two intervals overlap iff
+    start < other_end and end > other_start. Cancelled jobs don't count."""
+    d = _to_date(scheduled_date)
+    st = _to_time(start_time)
+    et = _to_time(end_time)
+    if not cleaner_ids or d is None or st is None or et is None:
+        return []
+    ids = {str(c) for c in cleaner_ids}
+
+    same_day = (
+        db.query(Job)
+        .filter(
+            Job.scheduled_date == d,
+            Job.status.notin_(["cancelled"]),
+            Job.cleaner_ids.isnot(None),
+        )
+    )
+    if exclude_job_id is not None:
+        same_day = same_day.filter(Job.id != exclude_job_id)
+
+    conflicts = []
+    for other in same_day.all():
+        o_st = _to_time(other.start_time)
+        o_et = _to_time(other.end_time)
+        if o_st is None or o_et is None:
+            continue
+        if not (st < o_et and et > o_st):
+            continue  # no time overlap
+        shared = ids.intersection({str(c) for c in (other.cleaner_ids or [])})
+        for cid in shared:
+            conflicts.append((cid, other))
+    return conflicts
+
+
+def _conflict_detail(conflicts):
+    """Human-readable 409 message for a list of (cleaner_id, Job) conflicts."""
+    lines = []
+    for cid, job in conflicts:
+        when = ""
+        if job.start_time and job.end_time:
+            when = f" ({_to_time(job.start_time).strftime('%H:%M')}–{_to_time(job.end_time).strftime('%H:%M')})"
+        lines.append(f"cleaner {cid} is already on Job #{job.id} \"{job.title}\"{when}")
+    joined = "; ".join(lines)
+    return (
+        f"Scheduling conflict: {joined}. "
+        "Re-assign, change the time, or resubmit with allow_conflicts=true to override."
+    )
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None) -> dict:
     # Resolve client name if not passed in
@@ -186,6 +286,7 @@ def get_jobs(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     job_type: Optional[str] = None,
+    unassigned: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
     # Per-job earliest visit date. Used both for filtering AND for the
@@ -229,6 +330,14 @@ def get_jobs(
         q = q.filter(Job.job_type == job_type)
 
     rows = q.order_by(effective_date, Job.start_time).all()
+
+    # Unassigned filter: cleaner_ids is JSON, so filter in Python (cross-dialect
+    # safe). A job "needs assignment" when it has no cleaners and isn't done/
+    # cancelled — that's the actionable queue the Schedule page surfaces.
+    if unassigned is not None:
+        def _is_unassigned(j):
+            return (not (j.cleaner_ids or [])) and j.status in ("scheduled", "in_progress")
+        rows = [(j, eff) for j, eff in rows if _is_unassigned(j) == unassigned]
 
     # Phase 5: build a per-property index of relevant ICalEvent rows so
     # we can attach booking details to str_turnover Jobs that lack a
@@ -278,6 +387,9 @@ def get_jobs(
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_job(data: JobCreate, db: Session = Depends(get_db)):
+    # ── TIMING VALIDATION ── reject past dates / inverted windows up front.
+    _validate_job_timing(data.scheduled_date, data.start_time, data.end_time, is_new=True)
+
     # ── CONFLICT / DUPLICATE CHECK ──
     # Prevent creating duplicate jobs for the same property + date + time
     if data.property_id and data.job_type == "str_turnover":
@@ -293,7 +405,16 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 detail=f"A turnover job already exists for this property on {data.scheduled_date} (Job #{existing.id}: {existing.title}). Edit the existing job or cancel it first."
             )
 
-    job = Job(**data.model_dump())
+    # ── CLEANER DOUBLE-BOOKING CHECK ── overridable via allow_conflicts.
+    if not data.allow_conflicts:
+        conflicts = _find_cleaner_conflicts(
+            db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
+            start_time=data.start_time, end_time=data.end_time,
+        )
+        if conflicts:
+            raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+
+    job = Job(**data.model_dump(exclude={"allow_conflicts"}))
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -431,7 +552,31 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     prev_status = job.status
-    for field, value in data.model_dump(exclude_none=True).items():
+
+    updates = data.model_dump(exclude_none=True)
+    allow_conflicts = updates.pop("allow_conflicts", False)
+
+    # Validate + conflict-check against the RESULTING values (incoming or
+    # existing). Skip both when the edit only cancels the job. is_new=False so
+    # editing a past job (e.g. to mark it completed) stays allowed.
+    eff_date = updates.get("scheduled_date", job.scheduled_date)
+    eff_start = updates.get("start_time", job.start_time)
+    eff_end = updates.get("end_time", job.end_time)
+    eff_cleaners = updates.get("cleaner_ids", job.cleaner_ids)
+    eff_status = updates.get("status", job.status)
+
+    if eff_status != "cancelled":
+        _validate_job_timing(eff_date, eff_start, eff_end, is_new=False)
+        if not allow_conflicts and ("scheduled_date" in updates or "start_time" in updates
+                                    or "end_time" in updates or "cleaner_ids" in updates):
+            conflicts = _find_cleaner_conflicts(
+                db, cleaner_ids=eff_cleaners, scheduled_date=eff_date,
+                start_time=eff_start, end_time=eff_end, exclude_job_id=job.id,
+            )
+            if conflicts:
+                raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+
+    for field, value in updates.items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)

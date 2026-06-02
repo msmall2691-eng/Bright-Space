@@ -256,6 +256,11 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 if event.get("status") == "cancelled":
                     if existing_job.status != "cancelled":
                         existing_job.status = "cancelled"
+                        # Mirror onto the visits the Schedule page renders, so a
+                        # cancel in GCal doesn't leave a stale 'scheduled' visit.
+                        for v in existing_job.visits:
+                            if v.status not in ("cancelled", "completed"):
+                                v.status = "cancelled"
                         results["jobs_cancelled"] += 1
                     continue
 
@@ -291,6 +296,15 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                     changed = True
 
                 if changed:
+                    # Mirror date/time onto the job's visits so the Schedule
+                    # board (which renders Visits, not Jobs) reflects the GCal
+                    # move. Only touch active visits; leave done/cancelled ones.
+                    for v in existing_job.visits:
+                        if v.status in ("cancelled", "completed"):
+                            continue
+                        v.scheduled_date = existing_job.scheduled_date
+                        v.start_time = existing_job.start_time
+                        v.end_time = existing_job.end_time
                     results["jobs_updated"] += 1
                 continue
 
