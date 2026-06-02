@@ -868,6 +868,19 @@ export default function Schedule() {
     }
   }
 
+  // Toggle per-job SMS reminder suppression (hybrid model: on by default).
+  const handleToggleReminder = async (job, skip) => {
+    if (!job?.id) return
+    try {
+      await put(`/api/jobs/${job.id}/reminder-settings`, { skip_reminder: skip })
+      setSelectedVisit(sv => sv ? { ...sv, job: { ...sv.job, skip_sms_reminder: skip } } : sv)
+      setJobs(prev => prev[job.id] ? { ...prev, [job.id]: { ...prev[job.id], skip_sms_reminder: skip } } : prev)
+      toast.success(skip ? '🔕 Reminder disabled for this booking' : '🔔 Reminder enabled for this booking')
+    } catch (err) {
+      toast.error('Failed to update reminder: ' + err.message)
+    }
+  }
+
   // Persist a visit completion (checklist + photo URLs + status=completed).
   // Uses the existing PUT /api/visits/{id} which already accepts these fields.
   const handleCompleteVisit = async (visitId, { checklist_results, photos }) => {
@@ -1332,6 +1345,32 @@ export default function Schedule() {
                   <div>
                     <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Google Calendar</p>
                     <p className="text-sm text-green-700">✅ Synced</p>
+                  </div>
+                )}
+
+                {/* SMS reminder toggle — reminders are on by default; staff can
+                    suppress the 24h text for this booking only. */}
+                {selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
+                  <div className="border-t border-hairline pt-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-600 uppercase mb-0.5">SMS reminder</p>
+                      <p className="text-[12px] text-ink-3">
+                        {selectedVisit.job?.skip_sms_reminder
+                          ? '🔕 Off — no 24h text for this booking'
+                          : '🔔 On — client gets a 24h reminder'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleReminder(selectedVisit.job, !selectedVisit.job?.skip_sms_reminder)}
+                      className={`text-[12px] font-semibold px-3 py-1.5 rounded-lg border whitespace-nowrap transition-colors ${
+                        selectedVisit.job?.skip_sms_reminder
+                          ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                          : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                      }`}
+                    >
+                      {selectedVisit.job?.skip_sms_reminder ? 'Enable' : 'Disable'}
+                    </button>
                   </div>
                 )}
 

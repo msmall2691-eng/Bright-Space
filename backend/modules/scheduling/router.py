@@ -11,7 +11,7 @@ from database.db import get_db
 from database.models import Job, Client, Visit, ICalEvent
 from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import (
-    log_job_created, log_job_status_change, log_calendar_event
+    log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class JobResponse(BaseModel):
     recurring_schedule_id: Optional[int] = None
     calendar_invite_sent: Optional[bool] = None
     sms_reminder_sent: Optional[bool] = None
+    skip_sms_reminder: Optional[bool] = None
     title: str
     scheduled_date: Optional[date] = None
     start_time: Optional[time] = None
@@ -251,6 +252,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "recurring_schedule_id": j.recurring_schedule_id,
         "calendar_invite_sent": j.calendar_invite_sent,
         "sms_reminder_sent": j.sms_reminder_sent,
+        "skip_sms_reminder": bool(j.skip_sms_reminder),
         "title": j.title,
         "scheduled_date": sched,
         "start_time": j.start_time,
@@ -640,6 +642,48 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
     return job_to_dict(job)
+
+
+class ReminderSettings(BaseModel):
+    skip_reminder: bool  # True = suppress the 24h SMS for this job
+
+
+@router.patch("/{job_id}/reminder-settings", dependencies=[Depends(require_role("admin", "manager"))])
+def update_reminder_settings(
+    job_id: int,
+    data: ReminderSettings,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Toggle SMS reminder suppression for a single job (hybrid model).
+
+    Reminders are on by default; setting skip_reminder=true suppresses the 24h
+    SMS for this job only, without disabling the system-wide reminder job.
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job.skip_sms_reminder = bool(data.skip_reminder)
+    db.commit()
+    db.refresh(job)
+
+    actor = getattr(user, "email", None) or getattr(user, "username", None) or "unknown"
+    log_activity(
+        db,
+        "reminder_disabled" if data.skip_reminder else "reminder_enabled",
+        job_id=job.id,
+        client_id=job.client_id,
+        actor=actor,
+        summary=("SMS reminder disabled for this job"
+                 if data.skip_reminder else "SMS reminder re-enabled for this job"),
+        commit=True,
+    )
+    return {
+        "job_id": job.id,
+        "skip_sms_reminder": job.skip_sms_reminder,
+        "message": f"Reminder {'disabled' if data.skip_reminder else 'enabled'} for this job",
+    }
 
 
 @router.delete("/{job_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
