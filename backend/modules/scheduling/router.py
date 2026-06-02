@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
@@ -8,7 +9,7 @@ from datetime import datetime, timezone, date, time
 from zoneinfo import ZoneInfo
 
 from database.db import get_db
-from database.models import Job, Client, Visit, ICalEvent
+from database.models import Job, Client, Visit, ICalEvent, CleanerTimeOff
 from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
@@ -227,6 +228,66 @@ def _conflict_detail(conflicts):
     )
 
 
+def _find_unavailable_cleaners(db: Session, *, cleaner_ids, scheduled_date):
+    """Return [(cleaner_id, CleanerTimeOff)] for any assigned cleaner who has
+    approved time off covering scheduled_date (inclusive range)."""
+    d = _to_date(scheduled_date)
+    if not cleaner_ids or d is None:
+        return []
+    ids = {str(c) for c in cleaner_ids}
+    rows = (
+        db.query(CleanerTimeOff)
+        .filter(
+            CleanerTimeOff.cleaner_id.in_(ids),
+            CleanerTimeOff.start_date <= d,
+            CleanerTimeOff.end_date >= d,
+        )
+        .all()
+    )
+    return [(r.cleaner_id, r) for r in rows]
+
+
+def _unavailable_detail(unavailable):
+    """Human-readable 409 message for time-off conflicts."""
+    lines = []
+    for cid, off in unavailable:
+        who = off.cleaner_name or f"cleaner {cid}"
+        reason = f" ({off.reason})" if off.reason else ""
+        lines.append(f"{who} is off {off.start_date}–{off.end_date}{reason}")
+    return (
+        f"Cleaner unavailable: {'; '.join(lines)}. "
+        "Re-assign, change the date, or resubmit with allow_conflicts=true to override."
+    )
+
+
+CAPACITY_PER_CLEANER_PER_DAY = int(os.getenv("MAX_JOBS_PER_CLEANER_PER_DAY", "0") or 0)
+
+
+def _find_over_capacity(db: Session, *, cleaner_ids, scheduled_date, exclude_job_id=None):
+    """If MAX_JOBS_PER_CLEANER_PER_DAY > 0, return [(cleaner_id, count)] for any
+    assigned cleaner who would exceed that many non-cancelled jobs on the day.
+    Disabled (returns []) when the cap is 0/unset."""
+    if CAPACITY_PER_CLEANER_PER_DAY <= 0:
+        return []
+    d = _to_date(scheduled_date)
+    if not cleaner_ids or d is None:
+        return []
+    ids = {str(c) for c in cleaner_ids}
+    q = db.query(Job).filter(
+        Job.scheduled_date == d,
+        Job.status.notin_(["cancelled"]),
+        Job.cleaner_ids.isnot(None),
+    )
+    if exclude_job_id is not None:
+        q = q.filter(Job.id != exclude_job_id)
+    counts = {cid: 0 for cid in ids}
+    for other in q.all():
+        for cid in ids.intersection({str(c) for c in (other.cleaner_ids or [])}):
+            counts[cid] += 1
+    # +1 for the job being created/updated.
+    return [(cid, counts[cid] + 1) for cid in ids if counts[cid] + 1 > CAPACITY_PER_CLEANER_PER_DAY]
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None) -> dict:
     # Resolve client name if not passed in
@@ -407,7 +468,8 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 detail=f"A turnover job already exists for this property on {data.scheduled_date} (Job #{existing.id}: {existing.title}). Edit the existing job or cancel it first."
             )
 
-    # ── CLEANER DOUBLE-BOOKING CHECK ── overridable via allow_conflicts.
+    # ── CLEANER GUARDS ── double-booking, time-off, capacity. All overridable
+    # via allow_conflicts so an operator can intentionally force an assignment.
     if not data.allow_conflicts:
         conflicts = _find_cleaner_conflicts(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
@@ -415,6 +477,21 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
         )
         if conflicts:
             raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+        unavailable = _find_unavailable_cleaners(
+            db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
+        )
+        if unavailable:
+            raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
+        over = _find_over_capacity(
+            db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
+        )
+        if over:
+            who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Over capacity: {who} would exceed the daily limit of "
+                       f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
+            )
 
     job = Job(**data.model_dump(exclude={"allow_conflicts"}))
     db.add(job)
@@ -540,6 +617,79 @@ def sync_gcal_cancellations_endpoint(db: Session = Depends(get_db)):
     return sync_gcal_cancellations(db)
 
 
+# ---------------------------------------------------------------------------
+# Cleaner availability (time-off)
+# Defined BEFORE /{job_id} so the literal "/time-off" path isn't captured by
+# the int job_id route.
+# ---------------------------------------------------------------------------
+
+class TimeOffCreate(BaseModel):
+    cleaner_id: str
+    cleaner_name: Optional[str] = None
+    start_date: str            # YYYY-MM-DD
+    end_date: str              # YYYY-MM-DD
+    reason: Optional[str] = None
+
+
+def _timeoff_to_dict(t: CleanerTimeOff) -> dict:
+    return {
+        "id": t.id,
+        "cleaner_id": t.cleaner_id,
+        "cleaner_name": t.cleaner_name,
+        "start_date": t.start_date.isoformat() if t.start_date else None,
+        "end_date": t.end_date.isoformat() if t.end_date else None,
+        "reason": t.reason,
+    }
+
+
+@router.get("/time-off", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def list_time_off(
+    cleaner_id: Optional[str] = None,
+    upcoming_only: bool = True,
+    db: Session = Depends(get_db),
+):
+    """List cleaner time-off entries. Defaults to current + future ranges."""
+    q = db.query(CleanerTimeOff)
+    if cleaner_id:
+        q = q.filter(CleanerTimeOff.cleaner_id == str(cleaner_id))
+    if upcoming_only:
+        q = q.filter(CleanerTimeOff.end_date >= date.today())
+    rows = q.order_by(CleanerTimeOff.start_date).all()
+    return [_timeoff_to_dict(t) for t in rows]
+
+
+@router.post("/time-off", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
+    """Mark a cleaner unavailable for a date range (inclusive)."""
+    start = _to_date(data.start_date)
+    end = _to_date(data.end_date)
+    if start is None or end is None:
+        raise HTTPException(status_code=400, detail="start_date and end_date must be YYYY-MM-DD.")
+    if end < start:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date.")
+    row = CleanerTimeOff(
+        cleaner_id=str(data.cleaner_id),
+        cleaner_name=data.cleaner_name,
+        start_date=start,
+        end_date=end,
+        reason=data.reason,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _timeoff_to_dict(row)
+
+
+@router.delete("/time-off/{time_off_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
+def delete_time_off(time_off_id: int, db: Session = Depends(get_db)):
+    """Remove a time-off entry."""
+    row = db.query(CleanerTimeOff).filter(CleanerTimeOff.id == time_off_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Time-off entry not found")
+    db.delete(row)
+    db.commit()
+
+
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
@@ -577,6 +727,21 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
             )
             if conflicts:
                 raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+            unavailable = _find_unavailable_cleaners(
+                db, cleaner_ids=eff_cleaners, scheduled_date=eff_date,
+            )
+            if unavailable:
+                raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
+            over = _find_over_capacity(
+                db, cleaner_ids=eff_cleaners, scheduled_date=eff_date, exclude_job_id=job.id,
+            )
+            if over:
+                who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Over capacity: {who} would exceed the daily limit of "
+                           f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
+                )
 
     for field, value in updates.items():
         setattr(job, field, value)
