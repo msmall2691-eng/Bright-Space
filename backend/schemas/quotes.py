@@ -124,6 +124,7 @@ class QuoteResponse(BaseModel):
     """Quote response with all details."""
     id: UUID
     quote_number: str
+    public_token: Optional[str] = None
     client_id: UUID
     property_id: Optional[UUID]
     created_by: UUID
@@ -165,6 +166,7 @@ class QuoteSummary(BaseModel):
     """Brief quote summary for lists."""
     id: UUID
     quote_number: str
+    public_token: Optional[str] = None
     client_id: UUID
     title: Optional[str]
     status: str

@@ -1,12 +1,57 @@
 """FastAPI router for Quotes system."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
+import logging
+import os
+import secrets
+
+logger = logging.getLogger(__name__)
+
+
+def _ensure_public_token(quote) -> str:
+    """Return the quote's public link token, generating one if missing. Used
+    when sending a quote so the client can open the no-login accept page."""
+    if not quote.public_token:
+        quote.public_token = secrets.token_urlsafe(32)
+    return quote.public_token
+
+
+def _public_quote_dict(quote) -> dict:
+    """Serialize a Quote for the public accept page (PublicQuote.jsx). Maps the
+    DB model to the field names the page expects (items/total/tax/etc.) and
+    deliberately omits anything internal."""
+    items = [
+        {
+            "name": li.description,
+            "description": li.service_type or "",
+            "qty": float(li.quantity or 1),
+            "unit_price": float(li.unit_price or 0),
+        }
+        for li in sorted(quote.line_items, key=lambda x: (x.display_order or 0))
+    ]
+    return {
+        "id": str(quote.id),
+        "quote_number": quote.quote_number,
+        "status": quote.status,
+        "company_name": os.getenv("COMPANY_NAME", "Bright Space"),
+        "company_email": os.getenv("COMPANY_EMAIL") or os.getenv("SMTP_USER"),
+        "company_phone": os.getenv("COMPANY_PHONE"),
+        "address": quote.title or "",
+        "service_type": None,
+        "notes": quote.notes,
+        "items": items,
+        "subtotal": float(quote.subtotal or 0),
+        "tax": float(quote.tax_amount or 0),
+        "total": float(quote.total_amount or 0),
+        "valid_until": quote.expires_at.strftime("%B %d, %Y") if quote.expires_at else None,
+    }
 
 from database.db import get_db
 from schemas.quotes import (
@@ -271,13 +316,30 @@ async def send_quote(
     quote.status = QuoteStatus.SENT
     quote.sent_at = datetime.now()
     quote.updated_at = datetime.now()
+    _ensure_public_token(quote)  # mint the public accept-link token
 
     db.commit()
     db.refresh(quote)
 
-    # TODO: Send email to client here
-
     return quote
+
+
+@router.post("/{quote_id}/generate-token")
+async def generate_quote_token(quote_id: UUID, db: Session = Depends(get_db)):
+    """Ensure the quote has a public accept-link token and return it +
+    the full shareable link. Used by the 'Copy Link' action so staff can share
+    the no-login accept page without sending an email."""
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    token = _ensure_public_token(quote)
+    quote.updated_at = datetime.now()
+    db.commit()
+    app_base = os.getenv("APP_BASE_URL", "").rstrip("/")
+    return {
+        "public_token": token,
+        "quote_link": f"{app_base}/quote/{token}" if app_base else None,
+    }
 
 
 @router.post("/{quote_id}/view", response_model=QuoteResponse)
@@ -352,6 +414,103 @@ async def decline_quote(
     db.refresh(quote)
 
     return quote
+
+
+# ========================
+# Public (no-login) quote endpoints — reached via the tokenized accept link
+# emailed to the client. The /api/quotes/public/ prefix is whitelisted in
+# auth.py so these run without a session.
+# ========================
+
+class PublicAcceptRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class PublicChangeRequest(BaseModel):
+    message: str
+
+
+def _quote_by_token(token: str, db: Session) -> Quote:
+    quote = db.query(Quote).filter(Quote.public_token == token).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return quote
+
+
+def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_type: str):
+    """Best-effort: drop an Activity row so staff see quote events in the
+    client timeline. Never let a logging failure break the public response."""
+    try:
+        from utils.activity_logger import log_activity
+        log_activity(
+            db, activity_type,
+            client_id=quote.client_id,
+            actor="client",
+            summary=summary,
+            extra_data={"quote_id": str(quote.id), "quote_number": quote.quote_number},
+            commit=False,
+        )
+    except Exception as e:
+        logger.warning(f"[quotes] activity log failed for {quote.id}: {e}")
+
+
+@router.get("/public/{token}")
+async def public_view_quote(token: str, db: Session = Depends(get_db)):
+    """Client-facing quote view. Marks the quote VIEWED on first open."""
+    quote = _quote_by_token(token, db)
+    # First view: stamp viewed_at + advance status (only from SENT, so we don't
+    # downgrade an already-accepted/declined quote).
+    if not quote.viewed_at:
+        quote.viewed_at = datetime.now()
+        if quote.status == QuoteStatus.SENT:
+            quote.status = QuoteStatus.VIEWED
+        _notify_staff_quote_event(db, quote, f"Client viewed quote {quote.quote_number}", "quote_viewed")
+        db.commit()
+        db.refresh(quote)
+    return _public_quote_dict(quote)
+
+
+@router.post("/public/{token}/accept")
+async def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
+    """Client accepts the quote from the public link."""
+    quote = _quote_by_token(token, db)
+
+    if quote.status == QuoteStatus.ACCEPTED:
+        # Idempotent: re-accepting is a no-op success, not an error.
+        return {"status": "accepted", "quote_number": quote.quote_number}
+    if quote.status == QuoteStatus.DECLINED:
+        raise HTTPException(status_code=409, detail="This quote was declined and can no longer be accepted.")
+    if quote.expires_at and quote.expires_at < datetime.now(quote.expires_at.tzinfo):
+        quote.status = QuoteStatus.EXPIRED
+        db.commit()
+        raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
+
+    quote.status = QuoteStatus.ACCEPTED
+    quote.accepted_at = datetime.now()
+    quote.updated_at = datetime.now()
+    if data:
+        quote.accepted_by_name = data.name or quote.accepted_by_name
+        quote.accepted_by_email = data.email or quote.accepted_by_email
+    _notify_staff_quote_event(db, quote, f"Client accepted quote {quote.quote_number}", "quote_accepted")
+    db.commit()
+    return {"status": "accepted", "quote_number": quote.quote_number}
+
+
+@router.post("/public/{token}/request-changes")
+async def public_request_changes(token: str, data: PublicChangeRequest, db: Session = Depends(get_db)):
+    """Client asks for changes instead of accepting — logged for staff."""
+    quote = _quote_by_token(token, db)
+    msg = (data.message or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="Please include a message describing the changes.")
+    _notify_staff_quote_event(
+        db, quote,
+        f"Client requested changes to quote {quote.quote_number}: {msg[:500]}",
+        "quote_change_requested",
+    )
+    db.commit()
+    return {"status": "received"}
 
 
 # ========================
@@ -559,6 +718,11 @@ async def send_quote_email(
         expires_at=quote.expires_at,
     )
 
+    # Public accept-link token + base URL (configurable; falls back to prod host).
+    token = _ensure_public_token(quote)
+    app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+    quote_link = f"{app_base}/quote/{token}"
+
     email_service = QuoteEmailService()
     email_result = email_service.send_quote_email(
         to_email=recipient_email,
@@ -566,7 +730,7 @@ async def send_quote_email(
         quote_number=quote.quote_number,
         total_amount=float(quote.total_amount),
         expires_at=quote.expires_at.strftime("%B %d, %Y") if quote.expires_at else "Upon Request",
-        quote_link=f"https://bright-space.com/quotes/{quote_id}",
+        quote_link=quote_link,
         pdf_bytes=pdf_bytes,
         pdf_filename=f"{quote.quote_number}.pdf",
     )
@@ -596,6 +760,8 @@ async def send_quote_email(
         "quote_number": quote.quote_number,
         "sent_to": recipient_email,
         "email_id": email_result.get("email_id"),
+        "public_token": token,
+        "quote_link": quote_link,
         "timestamp": datetime.now().isoformat(),
         "status": "sent",
     }

@@ -812,6 +812,9 @@ class Quote(Base):
     created_by: UUID = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     # Quote Metadata
     quote_number: str = Column(String(50), nullable=False, unique=True)
+    # Opaque token for the public (no-login) accept page link. Generated when
+    # the quote is first sent. Indexed for the public-view lookup.
+    public_token: Optional[str] = Column(String(64), nullable=True, unique=True, index=True)
     title: Optional[str] = Column(String(255), nullable=True)
     description: Optional[str] = Column(Text(), nullable=True)
     notes: Optional[str] = Column(Text(), nullable=True)
