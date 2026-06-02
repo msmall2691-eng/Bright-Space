@@ -122,6 +122,7 @@ def send_due_reminders(db: Session, *, lead_hours: int | None = None, now: datet
         .filter(
             Job.status == "scheduled",
             Job.sms_reminder_sent.is_(False),
+            Job.skip_sms_reminder.is_(False),  # per-job opt-out (hybrid model)
             Job.scheduled_date.isnot(None),
             Job.scheduled_date >= today,
             Job.scheduled_date <= window_end,

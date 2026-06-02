@@ -387,6 +387,9 @@ class Job(Base):
     # Notification tracking
     calendar_invite_sent = Column(Boolean, default=False, nullable=False)
     sms_reminder_sent = Column(Boolean, default=False, nullable=False)
+    # Hybrid reminder opt-out: reminders are sent by default; staff can set this
+    # True to suppress the 24h SMS for a single job without disabling the system.
+    skip_sms_reminder = Column(Boolean, default=False, nullable=False)
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
 
     title = Column(String, nullable=False)
