@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { Menu, Search, Command, Zap } from 'lucide-react'
+import { Menu, Search, Command, Zap, Sparkles } from 'lucide-react'
 
 const PAGE_TITLES = {
   '/dashboard': 'Dashboard',
@@ -42,7 +42,24 @@ export default function Header({ onMenuToggle }) {
         <h1 className="hidden lg:block text-base font-bold text-neutral-900">{title}</h1>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        {/* Global search — jump to any client/property/invoice/job (Cmd+/) */}
+        <button
+          onClick={() => {
+            const event = new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true })
+            window.dispatchEvent(event)
+          }}
+          className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-hairline bg-panel/50 hover:bg-panel/70 transition-all text-ink-3 hover:text-ink-2 shadow-sm"
+          title="Search everything"
+        >
+          <Search className="w-4 h-4" />
+          <span className="hidden sm:inline text-xs font-medium">Search</span>
+          <div className="hidden sm:flex items-center gap-1 text-xs text-neutral-400">
+            <Command className="w-3 h-3" />
+            <span>/</span>
+          </div>
+        </button>
+        {/* AI assistant (Cmd+K) */}
         <button
           onClick={() => {
             const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
@@ -50,7 +67,7 @@ export default function Header({ onMenuToggle }) {
           }}
           className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-hairline bg-panel/50 hover:bg-panel/70 transition-all text-ink-3 hover:text-ink-2 shadow-sm"
         >
-          <Search className="w-4 h-4" />
+          <Sparkles className="w-4 h-4" />
           <span className="text-xs font-medium">Ask AI</span>
           <div className="flex items-center gap-1 text-xs text-neutral-400">
             <Command className="w-3 h-3" />
