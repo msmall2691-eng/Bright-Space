@@ -227,6 +227,8 @@ def _run_migrations():
         # Per-booking SMS reminder suppression (hybrid: reminders on by default,
         # staff can opt a single job out). Default 0/FALSE = still reminded.
         f"ALTER TABLE jobs ADD COLUMN skip_sms_reminder {bool_col}",
+        # Public (no-login) quote accept link token.
+        "ALTER TABLE quotes ADD COLUMN public_token VARCHAR(64)",
     ]
 
     # Dialect-aware backfill migrations
