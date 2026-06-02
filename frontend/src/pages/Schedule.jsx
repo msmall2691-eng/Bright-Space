@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft, ChevronRight, Calendar, MapPin, User, Clock, Plus, AlertCircle,
+  ChevronLeft, ChevronRight, Calendar, MapPin, User, Users, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
-  Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical,
+  Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical, Zap, LogIn,
   List, Grid3x3, AlignLeft
 } from 'lucide-react'
 import { get, post, put, del } from '../api'
@@ -29,6 +29,51 @@ const VISIT_STATUS_CONFIG = {
   completed:   { label: 'Completed',   dot: 'bg-green-600',   badge: 'success', pillMobile: 'bg-emerald-50 text-emerald-700' },
   no_show:     { label: 'No Show',     dot: 'bg-red-500',     badge: 'danger',  pillMobile: 'bg-red-50 text-red-700' },
   cancelled:   { label: 'Cancelled',   dot: 'bg-bg0', badge: 'danger',  pillMobile: 'bg-zinc-100 text-zinc-600' },
+}
+
+// Short "Jun 5" style date label for booking check-in/out.
+const shortDate = (iso) => {
+  if (!iso) return ''
+  try {
+    return new Date(`${String(iso).slice(0, 10)}T00:00`).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric',
+    })
+  } catch { return iso }
+}
+
+// Airbnb/STR turnover context strip. The /api/jobs response enriches
+// str_turnover jobs with `booking` (the reservation that just checked out),
+// `next_arrival` (the next reservation), and `is_immediate_turnover` (next
+// guest checks in the SAME day → clean fast). Surfacing this on the card is
+// what makes the board actually useful for a turnover operation, instead of
+// just a generic "Airbnb" tag. Renders nothing for non-turnover jobs.
+const TurnoverInfo = ({ job, compact = false }) => {
+  if (!job || job.job_type !== 'str_turnover') return null
+  const booking = job.booking
+  const next = job.next_arrival
+  const immediate = job.is_immediate_turnover
+  if (!booking && !next && !immediate) return null
+  return (
+    <div className={`flex items-center gap-2 flex-wrap ${compact ? 'mt-1' : 'mt-2'}`}>
+      {immediate && (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700"
+          title="Next guest checks in today — same-day turnaround">
+          <Zap className="w-2.5 h-2.5" /> Immediate turnover
+        </span>
+      )}
+      {booking?.guest_count > 0 && (
+        <span className="inline-flex items-center gap-1 text-[11px] text-ink-3" title="Guests who just checked out">
+          <Users className="w-3 h-3" /> {booking.guest_count} guest{booking.guest_count === 1 ? '' : 's'}
+        </span>
+      )}
+      {next?.checkin_date && (
+        <span className={`inline-flex items-center gap-1 text-[11px] ${immediate ? 'text-red-600 font-semibold' : 'text-ink-3'}`}
+          title="Next guest check-in">
+          <LogIn className="w-3 h-3" /> Next: {shortDate(next.checkin_date)}
+        </span>
+      )}
+    </div>
+  )
 }
 
 // Single-day mobile-first view. Renders the day's visits as full-width
@@ -152,6 +197,8 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                           </span>
                         )}
                       </div>
+                      {/* Airbnb/STR turnover context (guests, immediate flag, next check-in) */}
+                      <TurnoverInfo job={job} />
                     </div>
                   </button>
                 </li>
@@ -213,6 +260,12 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
             {job?.title || `Visit ${visit.id}`}
           </span>
           {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
+          {job?.is_immediate_turnover && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1 py-px rounded bg-red-100 text-red-700 shrink-0"
+              title="Same-day turnaround — next guest checks in today">
+              <Zap className="w-2.5 h-2.5" /> Immediate
+            </span>
+          )}
         </div>
         <div className="text-[11px] text-ink-3 truncate">
           {property?.name || ''}
@@ -1467,6 +1520,33 @@ export default function Schedule() {
                     {VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.label || selectedVisit.visit.status}
                   </StatusBadge>
                 </div>
+
+                {/* Airbnb/STR turnover details */}
+                {selectedVisit.job?.job_type === 'str_turnover' &&
+                  (selectedVisit.job?.booking || selectedVisit.job?.next_arrival || selectedVisit.job?.is_immediate_turnover) && (
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Turnover</p>
+                    {selectedVisit.job?.is_immediate_turnover && (
+                      <p className="inline-flex items-center gap-1 text-sm font-semibold text-red-700 mb-1">
+                        <Zap className="w-3.5 h-3.5" /> Same-day turnaround — next guest arrives today
+                      </p>
+                    )}
+                    <div className="text-sm text-ink space-y-0.5">
+                      {selectedVisit.job?.booking?.source && (
+                        <p>Source: <span className="capitalize">{selectedVisit.job.booking.source}</span></p>
+                      )}
+                      {selectedVisit.job?.booking?.guest_count > 0 && (
+                        <p>{selectedVisit.job.booking.guest_count} guest(s) checked out</p>
+                      )}
+                      {selectedVisit.job?.booking?.checkout_date && (
+                        <p>Checkout: {shortDate(selectedVisit.job.booking.checkout_date)}</p>
+                      )}
+                      {selectedVisit.job?.next_arrival?.checkin_date && (
+                        <p>Next check-in: {shortDate(selectedVisit.job.next_arrival.checkin_date)}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {selectedVisit.visit.cleaner_ids?.length > 0 && (
                   <div>
