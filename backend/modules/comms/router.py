@@ -203,17 +203,31 @@ def _match_client_by_phone(db: Session, phone: str) -> Optional["Client"]:
     return None
 
 
+def _as_utc(dt):
+    """Coerce a datetime to tz-aware UTC. Stored datetimes are naive UTC
+    (see _utcnow), but some drivers/inputs may carry tzinfo. Normalizing here
+    avoids 'can't compare offset-naive and offset-aware datetimes' TypeErrors
+    in the SLA comparisons below."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _sla_state(conv: Conversation) -> str:
     """Return one of: none | met | on_track | at_risk | breached."""
-    if not conv.sla_deadline:
+    deadline = _as_utc(conv.sla_deadline)
+    if not deadline:
         return "none"
     # If teammate already responded within deadline, SLA met.
-    if conv.first_response_at and conv.first_response_at <= conv.sla_deadline:
+    first_response = _as_utc(conv.first_response_at)
+    if first_response and first_response <= deadline:
         return "met"
     now = datetime.now(timezone.utc)
-    if now > conv.sla_deadline:
+    if now > deadline:
         return "breached"
-    if (conv.sla_deadline - now).total_seconds() < 30 * 60:
+    if (deadline - now).total_seconds() < 30 * 60:
         return "at_risk"
     return "on_track"
 
