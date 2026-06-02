@@ -980,3 +980,28 @@ class QuoteEmail(Base):
 
     def __repr__(self):
         return f"<QuoteEmail(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_email}, status={self.delivery_status})>"
+
+
+class CleanerTimeOff(Base):
+    """A date range a cleaner is unavailable (vacation, sick, etc.).
+
+    cleaner_id matches the string identifiers stored in Job.cleaner_ids (these
+    are Connecteam employee IDs in production). Used by the scheduling guard so
+    a cleaner can't be assigned to a job on a day they're off. Dates are
+    inclusive (start_date..end_date)."""
+    __tablename__ = "cleaner_time_off"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cleaner_id = Column(String, nullable=False, index=True)
+    cleaner_name = Column(String, nullable=True)   # denormalized label for the UI
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    reason = Column(String, nullable=True)         # "vacation" | "sick" | free text
+    created_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_cleaner_timeoff_lookup", "cleaner_id", "start_date", "end_date"),
+    )
+
+    def __repr__(self):
+        return f"<CleanerTimeOff(cleaner_id={self.cleaner_id}, {self.start_date}..{self.end_date})>"

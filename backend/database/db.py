@@ -229,6 +229,20 @@ def _run_migrations():
         f"ALTER TABLE jobs ADD COLUMN skip_sms_reminder {bool_col}",
         # Public (no-login) quote accept link token.
         "ALTER TABLE quotes ADD COLUMN public_token VARCHAR(64)",
+        # Cleaner time-off (availability). New table — created idempotently here
+        # so it exists on boot regardless of alembic state (see migration 017).
+        # id is dialect-aware: SERIAL auto-increments on Postgres, INTEGER PK
+        # auto-increments on SQLite (tests).
+        f"""CREATE TABLE IF NOT EXISTS cleaner_time_off (
+            id {"SERIAL" if is_pg else "INTEGER"} PRIMARY KEY,
+            cleaner_id VARCHAR NOT NULL,
+            cleaner_name VARCHAR,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            reason VARCHAR,
+            created_at TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cleaner_timeoff_lookup ON cleaner_time_off (cleaner_id, start_date, end_date)",
     ]
 
     # Dialect-aware backfill migrations
