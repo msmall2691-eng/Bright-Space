@@ -592,6 +592,7 @@ export default function Schedule() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedPropertyType, setSelectedPropertyType] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
@@ -709,6 +710,13 @@ export default function Schedule() {
           }
         }
 
+        // "Needs assignment" filter: no cleaners on an active visit.
+        if (unassignedOnly) {
+          const unassigned = (v.cleaner_ids?.length || 0) === 0 &&
+            v.status !== 'completed' && v.status !== 'cancelled'
+          if (!unassigned) return false
+        }
+
         return true
       })
       .sort((a, b) => {
@@ -722,7 +730,14 @@ export default function Schedule() {
         const bDate = new Date(`${b.scheduled_date}T${b.start_time || '09:00'}`)
         return aDate - bDate
       })
-  }, [visits, selectedPropertyType, selectedStatus, jobs, properties])
+  }, [visits, selectedPropertyType, selectedStatus, unassignedOnly, jobs, properties])
+
+  // Count of active visits needing a cleaner — drives the "Needs assignment"
+  // badge so the operator can see the queue at a glance regardless of filters.
+  const unassignedCount = useMemo(() => (
+    (visits || []).filter(v => (v.cleaner_ids?.length || 0) === 0 &&
+      v.status !== 'completed' && v.status !== 'cancelled').length
+  ), [visits])
 
   // Group by date - null/empty scheduled_date bucket as "unscheduled" so the
   // UI no longer renders "Invalid Date" headers for jobs without a real date.
@@ -973,6 +988,24 @@ export default function Schedule() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <button
+              type="button"
+              onClick={() => setUnassignedOnly(v => !v)}
+              className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap transition-colors ${
+                unassignedOnly
+                  ? 'bg-amber-50 text-amber-700 border-amber-300'
+                  : 'bg-panel text-ink-3 border-hairline hover:bg-amber-50/40'
+              }`}
+              title="Show only visits with no cleaner assigned"
+            >
+              <AlertCircle className="w-3 h-3" />
+              Needs assignment
+              {unassignedCount > 0 && (
+                <span className="tabular-nums font-bold bg-amber-200 text-amber-800 rounded-full px-1.5">
+                  {unassignedCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </div>

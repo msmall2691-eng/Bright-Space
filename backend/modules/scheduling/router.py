@@ -286,6 +286,7 @@ def get_jobs(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     job_type: Optional[str] = None,
+    unassigned: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
     # Per-job earliest visit date. Used both for filtering AND for the
@@ -329,6 +330,14 @@ def get_jobs(
         q = q.filter(Job.job_type == job_type)
 
     rows = q.order_by(effective_date, Job.start_time).all()
+
+    # Unassigned filter: cleaner_ids is JSON, so filter in Python (cross-dialect
+    # safe). A job "needs assignment" when it has no cleaners and isn't done/
+    # cancelled — that's the actionable queue the Schedule page surfaces.
+    if unassigned is not None:
+        def _is_unassigned(j):
+            return (not (j.cleaner_ids or [])) and j.status in ("scheduled", "in_progress")
+        rows = [(j, eff) for j, eff in rows if _is_unassigned(j) == unassigned]
 
     # Phase 5: build a per-property index of relevant ICalEvent rows so
     # we can attach booking details to str_turnover Jobs that lack a
