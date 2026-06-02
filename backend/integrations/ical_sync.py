@@ -474,11 +474,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     }
 
 
-def sync_property(db: Session, prop: Property) -> dict:
+def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict:
     """
     Sync a property's iCal feeds (both legacy ical_url and PropertyIcal entries).
     Returns summary dict.
     Designed to be called from an API route or background task.
+
+    If ``only_ical_id`` is given, only that PropertyIcal feed is synced (used by
+    the per-feed retry endpoint) — the legacy ical_url and other feeds are
+    skipped.
     """
     if not prop.ical_url and not prop.property_icals:
         return {"error": "No iCal URLs configured for this property"}
@@ -492,8 +496,8 @@ def sync_property(db: Session, prop: Property) -> dict:
     total_skipped_not_reserved = 0
     sources_synced = []
 
-    # Sync legacy ical_url first if it exists
-    if prop.ical_url:
+    # Sync legacy ical_url first if it exists (skipped in single-feed mode)
+    if prop.ical_url and only_ical_id is None:
         result = _sync_ical_url(db, prop, prop.ical_url, ical_source_label="legacy")
         if "error" not in result:
             total_seen += result["events_seen"]
@@ -505,8 +509,10 @@ def sync_property(db: Session, prop: Property) -> dict:
             total_skipped_not_reserved += result["skipped_not_reserved"]
             sources_synced.append("legacy_ical_url")
 
-    # Sync all PropertyIcal entries
+    # Sync all PropertyIcal entries (or just one, in single-feed retry mode)
     for prop_ical in (prop.property_icals or []):
+        if only_ical_id is not None and prop_ical.id != only_ical_id:
+            continue
         if not prop_ical.active:
             continue
         result = _sync_ical_url(

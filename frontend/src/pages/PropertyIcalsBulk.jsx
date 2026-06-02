@@ -124,6 +124,23 @@ export default function PropertyIcalsBulk() {
     setSyncing(false)
   }
 
+  // Retry a single feed without re-syncing the whole property — handy when one
+  // feed is failing (bad URL / outage) but the others are fine.
+  const [syncingFeed, setSyncingFeed] = useState(null)
+  const syncFeed = async (icalId) => {
+    setSyncingFeed(icalId)
+    setSyncResult(null)
+    try {
+      const data = await post(`/api/properties/${propertyId}/icals/${icalId}/sync`)
+      const jobs = data?.jobs_created ?? 0
+      setSyncResult({ ok: true, message: jobs > 0 ? `Feed synced — ${jobs} new turnover${jobs === 1 ? '' : 's'}` : 'Feed synced — no new turnovers' })
+      await load()
+    } catch (e) {
+      setSyncResult({ ok: false, message: e?.message || 'Feed sync failed' })
+    }
+    setSyncingFeed(null)
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-full text-sm text-zinc-500">Loading property…</div>
   }
@@ -209,12 +226,22 @@ export default function PropertyIcalsBulk() {
                         </div>
                       )}
                     </div>
-                    <button onClick={() => removeFeed(ical.id)}
-                      data-testid="existing-feed-remove"
-                      className="text-zinc-400 hover:text-red-500 shrink-0 p-1"
-                      aria-label="Remove feed">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => syncFeed(ical.id)}
+                        disabled={syncingFeed === ical.id}
+                        data-testid="existing-feed-sync"
+                        className="text-zinc-400 hover:text-blue-600 p-1 disabled:opacity-50"
+                        aria-label="Sync this feed"
+                        title="Sync just this feed">
+                        <RefreshCw className={`w-4 h-4 ${syncingFeed === ical.id ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button onClick={() => removeFeed(ical.id)}
+                        data-testid="existing-feed-remove"
+                        className="text-zinc-400 hover:text-red-500 p-1"
+                        aria-label="Remove feed">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </li>
               ))}
