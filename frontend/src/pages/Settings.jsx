@@ -20,18 +20,18 @@ const FIELD_TYPES = [
 ]
 
 const TYPE_BADGE = {
-  text:     'bg-zinc-100 text-zinc-500',
+  text:     'bg-bg-2 text-ink-3',
   number:   'bg-blue-50 text-blue-700',
   date:     'bg-violet-50 text-violet-700',
   select:   'bg-amber-50 text-amber-700',
   checkbox: 'bg-emerald-50 text-emerald-700',
-  textarea: 'bg-zinc-100 text-zinc-500',
+  textarea: 'bg-bg-2 text-ink-3',
 }
 
 const EMPTY_FORM = { name: '', field_type: 'text', options: '', required: false, sort_order: 0 }
 
-const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-1.5'
-const inp = 'w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 transition-colors'
+const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
+const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 transition-colors'
 
 function Toast({ toasts }) {
   return (
@@ -39,7 +39,7 @@ function Toast({ toasts }) {
       {toasts.map(t => (
         <div key={t.id}
           className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium shadow-lg border pointer-events-auto
-            ${t.type === 'success' ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-red-50 border-red-200 text-red-700'}`}>
+            ${t.type === 'success' ? 'bg-panel border-hairline text-ink' : 'bg-red-50 border-red-200 text-red-700'}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${t.type === 'success' ? 'bg-emerald-400' : 'bg-red-400'}`} />
           {t.message}
         </div>
@@ -366,32 +366,32 @@ export default function Settings() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Header */}
-        <div className="px-4 sm:px-8 py-6 border-b border-zinc-200 bg-white">
+        <div className="px-4 sm:px-8 py-6 border-b border-hairline bg-panel">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
-              <p className="text-sm text-zinc-500 mt-1">Manage your account and integrations</p>
+              <h1 className="text-2xl font-bold text-ink">Settings</h1>
+              <p className="text-sm text-ink-3 mt-1">Manage your account and integrations</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setSection('general')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
               <Settings2 className="w-3.5 h-3.5" /> General
             </button>
             <button onClick={() => setSection('integrations')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
               <Plug className="w-3.5 h-3.5" /> Integrations
             </button>
             <button onClick={() => setSection('automation')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
               <RefreshCw className="w-3.5 h-3.5" /> Automation
             </button>
             <button onClick={() => setSection('email')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
               <Mail className="w-3.5 h-3.5" /> Email
             </button>
             <button onClick={() => setSection('fields')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-white text-zinc-600 border border-zinc-200 hover:border-zinc-300'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
               <Settings2 className="w-3.5 h-3.5" /> Custom Fields
             </button>
           </div>
@@ -399,11 +399,11 @@ export default function Settings() {
 
         {/* === GENERAL SETTINGS SECTION === */}
         {section === 'general' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6 space-y-6">
               <div>
-                <h2 className="text-lg font-bold text-zinc-900 mb-4">Company Information</h2>
-                <div className="bg-white rounded-xl border border-zinc-200 p-6">
+                <h2 className="text-lg font-bold text-ink mb-4">Company Information</h2>
+                <div className="bg-panel rounded-xl border border-hairline p-6">
                   <div>
                     <label className={lbl}>Company Name</label>
                     <input type="text" value={generalSettings.company_name}
@@ -415,8 +415,8 @@ export default function Settings() {
               </div>
 
               <div>
-                <h2 className="text-lg font-bold text-zinc-900 mb-4">Regional Settings</h2>
-                <div className="bg-white rounded-xl border border-zinc-200 p-6 space-y-4">
+                <h2 className="text-lg font-bold text-ink mb-4">Regional Settings</h2>
+                <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4">
                   <div>
                     <label className={lbl}>Timezone</label>
                     <select value={generalSettings.timezone}
@@ -456,10 +456,10 @@ export default function Settings() {
                 </h2>
 
                 {/* Pause all syncs (reversible) */}
-                <div className="bg-white rounded-xl border border-amber-200 p-6 space-y-4 mb-4">
+                <div className="bg-panel rounded-xl border border-amber-200 p-6 space-y-4 mb-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-900">Pause all syncs</h3>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <h3 className="text-sm font-semibold text-ink">Pause all syncs</h3>
+                    <p className="text-xs text-ink-3 mt-1">
                       Disables both iCal pull (Airbnb / VRBO → BrightBase) and Google Calendar auto-sync.
                       Reversible — re-enable anytime in <strong>Automation</strong>. Use this before a
                       cleanup so new bookings/events don't repopulate while you're deleting.
@@ -469,7 +469,7 @@ export default function Settings() {
                     onClick={pauseAllSyncs}
                     disabled={pausing || (!automationSettings.ical_auto_sync_enabled && !automationSettings.gcal_auto_sync_enabled)}
                     data-testid="pause-syncs-button"
-                    className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                    className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                   >
                     {pausing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                     {pausing
@@ -481,26 +481,26 @@ export default function Settings() {
                 </div>
 
                 {/* Unlink calendars (irreversible — but data preserved) */}
-                <div className="bg-white rounded-xl border border-orange-200 p-6 space-y-4 mb-4">
+                <div className="bg-panel rounded-xl border border-orange-200 p-6 space-y-4 mb-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-900">Unlink calendars</h3>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <h3 className="text-sm font-semibold text-ink">Unlink calendars</h3>
+                    <p className="text-xs text-ink-3 mt-1">
                       Severs the link between BrightBase records and external calendars without
                       deleting your data. Use this before a wipe so deleting a job here won't try
                       to also delete its event from Google Calendar.
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                    <label className="flex items-center gap-2 text-xs text-ink-2">
                       <input type="checkbox" checked={unlinkClearGcal}
                         onChange={e => setUnlinkClearGcal(e.target.checked)}
-                        className="w-4 h-4 rounded border-zinc-300" />
-                      Clear <code className="text-[10px] bg-zinc-100 px-1 rounded">gcal_event_id</code> on every job and visit
+                        className="w-4 h-4 rounded border-hairline" />
+                      Clear <code className="text-[10px] bg-bg-2 px-1 rounded">gcal_event_id</code> on every job and visit
                     </label>
-                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                    <label className="flex items-center gap-2 text-xs text-ink-2">
                       <input type="checkbox" checked={unlinkDeactivateIcal}
                         onChange={e => setUnlinkDeactivateIcal(e.target.checked)}
-                        className="w-4 h-4 rounded border-zinc-300" />
+                        className="w-4 h-4 rounded border-hairline" />
                       Deactivate every iCal feed on properties
                     </label>
                   </div>
@@ -520,7 +520,7 @@ export default function Settings() {
                     onClick={runUnlinkCalendars}
                     disabled={unlinking || unlinkConfirmText !== 'UNLINK'}
                     data-testid="unlink-button"
-                    className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                    className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                   >
                     {unlinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                     {unlinking ? 'Unlinking...' : 'Unlink calendars'}
@@ -543,10 +543,10 @@ export default function Settings() {
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl border border-red-200 p-6 space-y-4">
+                <div className="bg-panel rounded-xl border border-red-200 p-6 space-y-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-900">Reset all data</h3>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <h3 className="text-sm font-semibold text-ink">Reset all data</h3>
+                    <p className="text-xs text-ink-3 mt-1">
                       Permanently deletes every client, property, job, visit, quote, invoice,
                       conversation, message, lead, opportunity, and activity. Users, custom
                       fields, and app settings are preserved. <strong>This cannot be undone.</strong>
@@ -568,7 +568,7 @@ export default function Settings() {
                     onClick={runResetData}
                     disabled={resetting || resetConfirmText !== 'RESET'}
                     data-testid="reset-data-button"
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                   >
                     {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {resetting ? 'Deleting...' : 'Reset all data'}
@@ -600,35 +600,35 @@ export default function Settings() {
 
         {/* === INTEGRATIONS SECTION === */}
         {section === 'integrations' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6 space-y-8">
 
               {/* iCal Turnover Sync — real, controllable integration */}
               <div>
                 <div className="mb-4">
-                  <h2 className="text-lg font-bold text-zinc-900">iCal Turnover Sync</h2>
-                  <p className="text-sm text-zinc-600 mt-1">
+                  <h2 className="text-lg font-bold text-ink">iCal Turnover Sync</h2>
+                  <p className="text-sm text-ink-2 mt-1">
                     Pulls Airbnb / VRBO reservations and auto-creates turnover visits.
                     Stop the sync to halt all new visits being generated from iCal feeds.
                   </p>
                 </div>
 
-                <div className="bg-white rounded-xl border border-zinc-200 p-5 space-y-4" data-testid="ical-sync-card">
+                <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4" data-testid="ical-sync-card">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
                       <span className="text-2xl leading-none mt-0.5">🔁</span>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-zinc-900">iCal Sync</h3>
+                          <h3 className="font-semibold text-ink">iCal Sync</h3>
                           <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                             automationSettings.ical_auto_sync_enabled
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-zinc-100 text-zinc-500 border border-zinc-200'
+                              : 'bg-bg-2 text-ink-3 border border-hairline'
                           }`}>
                             {automationSettings.ical_auto_sync_enabled ? 'Active' : 'Stopped'}
                           </span>
                         </div>
-                        <p className="text-xs text-zinc-500 mt-1">
+                        <p className="text-xs text-ink-3 mt-1">
                           {automationSettings.ical_auto_sync_enabled
                             ? `Pulling every ${automationSettings.ical_sync_interval} minutes`
                             : 'Auto-sync paused. No new turnover visits will be created from iCal feeds.'}
@@ -658,34 +658,34 @@ export default function Settings() {
                 </div>
 
                 {/* Maintenance — delete all scheduled visits */}
-                <div className="mt-4 bg-white rounded-xl border border-red-200 p-5 space-y-4" data-testid="delete-visits-card">
+                <div className="mt-4 bg-panel rounded-xl border border-red-200 p-5 space-y-4" data-testid="delete-visits-card">
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
                       <Trash2 className="w-4 h-4 text-red-600" /> Delete scheduled visits
                     </h3>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <p className="text-xs text-ink-3 mt-1">
                       Clear out future visits that haven't been completed yet. Useful right after
                       stopping iCal sync to wipe auto-generated turnover visits. Completed,
                       no-show, and cancelled visits are always preserved.
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                    <label className="flex items-center gap-2 text-xs text-ink-2">
                       <input
                         type="checkbox"
                         checked={deleteVisitsOnlyIcal}
                         onChange={e => setDeleteVisitsOnlyIcal(e.target.checked)}
-                        className="w-4 h-4 rounded border-zinc-300"
+                        className="w-4 h-4 rounded border-hairline"
                         data-testid="delete-visits-only-ical"
                       />
                       Only delete visits sourced from iCal feeds
                     </label>
-                    <label className="flex items-center gap-2 text-xs text-zinc-700">
+                    <label className="flex items-center gap-2 text-xs text-ink-2">
                       <input
                         type="checkbox"
                         checked={deleteVisitsIncludeDispatched}
                         onChange={e => setDeleteVisitsIncludeDispatched(e.target.checked)}
-                        className="w-4 h-4 rounded border-zinc-300"
+                        className="w-4 h-4 rounded border-hairline"
                         data-testid="delete-visits-include-dispatched"
                       />
                       Also delete dispatched / en-route / in-progress visits
@@ -707,7 +707,7 @@ export default function Settings() {
                     onClick={deleteScheduledVisits}
                     disabled={deletingVisits || deleteVisitsConfirm !== 'DELETE'}
                     data-testid="delete-visits-button"
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                   >
                     {deletingVisits ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {deletingVisits ? 'Deleting...' : 'Delete scheduled visits'}
@@ -732,8 +732,8 @@ export default function Settings() {
               {/* Other connected services */}
               <div>
                 <div className="mb-4">
-                  <h2 className="text-lg font-bold text-zinc-900">Connected Services</h2>
-                  <p className="text-sm text-zinc-600 mt-1">Connect external tools to enhance your workflow</p>
+                  <h2 className="text-lg font-bold text-ink">Connected Services</h2>
+                  <p className="text-sm text-ink-2 mt-1">Connect external tools to enhance your workflow</p>
                 </div>
 
                 <div className="space-y-3">
@@ -743,12 +743,12 @@ export default function Settings() {
                     { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
                     { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },
                   ].map((integration, idx) => (
-                    <div key={idx} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div key={idx} className="bg-panel rounded-xl border border-hairline p-4 flex items-center justify-between hover:shadow-md transition-shadow">
                       <div className="flex items-center gap-4">
                         <span className="text-2xl">{integration.icon}</span>
                         <div>
-                          <h3 className="font-semibold text-zinc-900">{integration.name}</h3>
-                          <p className="text-xs text-zinc-500">{integration.desc}</p>
+                          <h3 className="font-semibold text-ink">{integration.name}</h3>
+                          <p className="text-xs text-ink-3">{integration.desc}</p>
                         </div>
                       </div>
                       <button className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -768,19 +768,19 @@ export default function Settings() {
 
         {/* === AUTOMATION SECTION === */}
         {section === 'automation' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6">
               <div className="mb-6">
-                <h2 className="text-lg font-bold text-zinc-900">Auto-Sync Settings</h2>
-                <p className="text-sm text-zinc-600 mt-1">Configure how often your calendar and feeds sync automatically</p>
+                <h2 className="text-lg font-bold text-ink">Auto-Sync Settings</h2>
+                <p className="text-sm text-ink-2 mt-1">Configure how often your calendar and feeds sync automatically</p>
               </div>
 
-              <div className="bg-white rounded-xl border border-zinc-200 p-6 space-y-6">
+              <div className="bg-panel rounded-xl border border-hairline p-6 space-y-6">
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="font-semibold text-zinc-900">iCal Auto-Sync</h3>
-                      <p className="text-xs text-zinc-500 mt-1">Sync iCal feeds to your schedule</p>
+                      <h3 className="font-semibold text-ink">iCal Auto-Sync</h3>
+                      <p className="text-xs text-ink-3 mt-1">Sync iCal feeds to your schedule</p>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={automationSettings.ical_auto_sync_enabled}
@@ -794,16 +794,16 @@ export default function Settings() {
                       <input type="number" min="5" max="240" value={automationSettings.ical_sync_interval}
                         onChange={e => setAutomationSettings(s => ({ ...s, ical_sync_interval: parseInt(e.target.value) || 15 }))}
                         className={inp} />
-                      <p className="text-xs text-zinc-400 mt-1">Recommended: 15 minutes</p>
+                      <p className="text-xs text-ink-3 mt-1">Recommended: 15 minutes</p>
                     </div>
                   )}
                 </div>
 
-                <div className="border-t border-zinc-100 pt-6">
+                <div className="border-t border-hairline pt-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="font-semibold text-zinc-900">Google Calendar Auto-Sync</h3>
-                      <p className="text-xs text-zinc-500 mt-1">Sync jobs to your Google Calendar</p>
+                      <h3 className="font-semibold text-ink">Google Calendar Auto-Sync</h3>
+                      <p className="text-xs text-ink-3 mt-1">Sync jobs to your Google Calendar</p>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={automationSettings.gcal_auto_sync_enabled}
@@ -817,16 +817,16 @@ export default function Settings() {
                       <input type="number" min="5" max="240" value={automationSettings.gcal_sync_interval}
                         onChange={e => setAutomationSettings(s => ({ ...s, gcal_sync_interval: parseInt(e.target.value) || 10 }))}
                         className={inp} />
-                      <p className="text-xs text-zinc-400 mt-1">Recommended: 10 minutes</p>
+                      <p className="text-xs text-ink-3 mt-1">Recommended: 10 minutes</p>
                     </div>
                   )}
                 </div>
 
-                <div className="border-t border-zinc-100 pt-6">
+                <div className="border-t border-hairline pt-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="font-semibold text-zinc-900">Recurring Jobs Auto-Generate</h3>
-                      <p className="text-xs text-zinc-500 mt-1">Auto-create scheduled jobs from active recurring schedules every day. Backfills missed dates so you never run out of upcoming jobs.</p>
+                      <h3 className="font-semibold text-ink">Recurring Jobs Auto-Generate</h3>
+                      <p className="text-xs text-ink-3 mt-1">Auto-create scheduled jobs from active recurring schedules every day. Backfills missed dates so you never run out of upcoming jobs.</p>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={automationSettings.recurring_auto_generate_enabled}
@@ -835,7 +835,7 @@ export default function Settings() {
                     </label>
                   </div>
                   {automationSettings.recurring_auto_generate_enabled && (
-                    <p className="text-xs text-zinc-500 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
+                    <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
                   )}
                 </div>
               </div>
@@ -851,11 +851,11 @@ export default function Settings() {
 
         {/* === EMAIL SETTINGS SECTION === */}
         {section === 'email' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-zinc-50">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6">
               <div className="mb-6">
-                <h2 className="text-lg font-bold text-zinc-900">Gmail Connection</h2>
-                <p className="text-sm text-zinc-600 mt-1">
+                <h2 className="text-lg font-bold text-ink">Gmail Connection</h2>
+                <p className="text-sm text-ink-2 mt-1">
                   Connect your Gmail to sync emails in Comms, auto-match senders to clients, and create leads from unknown contacts.
                 </p>
               </div>
@@ -869,8 +869,8 @@ export default function Settings() {
               </div>
 
               {/* Credentials form */}
-              <div className="bg-white border border-zinc-200 rounded-xl p-5 space-y-4 mb-6">
-                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+              <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-6">
+                <div className="flex items-center gap-2 text-sm font-semibold text-ink">
                   <Shield className="w-4 h-4 text-blue-500" /> Credentials
                 </div>
 
@@ -886,7 +886,7 @@ export default function Settings() {
                   <input type="password" value={emailConfig.smtp_pass} onChange={e => setEmailConfig(c => ({ ...c, smtp_pass: e.target.value }))}
                     placeholder="16-character Google App Password"
                     className={inp} />
-                  <p className="text-[11px] text-zinc-400 mt-1">
+                  <p className="text-[11px] text-ink-3 mt-1">
                     Generate at Google Account → Security → 2-Step Verification → App Passwords
                   </p>
                 </div>
@@ -919,8 +919,8 @@ export default function Settings() {
               </div>
 
               {/* Sending identity */}
-              <div className="bg-white border border-zinc-200 rounded-xl p-5 space-y-4 mb-6">
-                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+              <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-6">
+                <div className="flex items-center gap-2 text-sm font-semibold text-ink">
                   <Plug className="w-4 h-4 text-purple-500" /> Sending Identity
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -940,14 +940,14 @@ export default function Settings() {
               </div>
 
               {/* Auto-enrichment toggle */}
-              <div className="bg-white border border-zinc-200 rounded-xl p-5 mb-6">
+              <div className="bg-panel border border-hairline rounded-xl p-5 mb-6">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input type="checkbox" checked={emailConfig.email_auto_enrich === 'true'}
                     onChange={e => setEmailConfig(c => ({ ...c, email_auto_enrich: e.target.checked ? 'true' : 'false' }))}
-                    className="w-4 h-4 rounded border-zinc-300 text-blue-600 focus:ring-0" />
+                    className="w-4 h-4 rounded border-hairline text-blue-600 focus:ring-0" />
                   <div>
-                    <div className="text-sm font-medium text-zinc-900">Auto-create contacts from emails</div>
-                    <div className="text-xs text-zinc-400">When enabled, unknown email senders are automatically added as leads (like Twenty CRM)</div>
+                    <div className="text-sm font-medium text-ink">Auto-create contacts from emails</div>
+                    <div className="text-xs text-ink-3">When enabled, unknown email senders are automatically added as leads (like Twenty CRM)</div>
                   </div>
                 </label>
               </div>
@@ -960,7 +960,7 @@ export default function Settings() {
                   Save Settings
                 </button>
                 <button onClick={testEmailConnection} disabled={testing}
-                  className="flex items-center gap-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors">
+                  className="flex items-center gap-2 bg-panel border border-hairline hover:bg-bg text-ink-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors">
                   {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
                   Test Connection
                 </button>
@@ -968,8 +968,8 @@ export default function Settings() {
 
               {/* Test results */}
               {testResult && (
-                <div className="mt-4 bg-white border border-zinc-200 rounded-xl p-4 space-y-2">
-                  <div className="text-sm font-semibold text-zinc-900">Connection Test Results</div>
+                <div className="mt-4 bg-panel border border-hairline rounded-xl p-4 space-y-2">
+                  <div className="text-sm font-semibold text-ink">Connection Test Results</div>
                   {testResult.error ? (
                     <div className="flex items-center gap-2 text-sm text-red-600">
                       <AlertTriangle className="w-4 h-4" /> {testResult.error}
@@ -1000,10 +1000,10 @@ export default function Settings() {
         {section === 'fields' && <>
 
         {/* Page header */}
-        <div className="flex items-center justify-between px-4 sm:px-8 py-6 bg-white border-b border-zinc-200">
+        <div className="flex items-center justify-between px-4 sm:px-8 py-6 bg-panel border-b border-hairline">
           <div>
-            <h1 className="text-lg font-bold text-zinc-900">Custom Fields</h1>
-            <p className="text-sm text-zinc-600 mt-1">Add extra fields that appear on client, job, and invoice records</p>
+            <h1 className="text-lg font-bold text-ink">Custom Fields</h1>
+            <p className="text-sm text-ink-2 mt-1">Add extra fields that appear on client, job, and invoice records</p>
           </div>
           <button onClick={openNew}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0">
@@ -1016,7 +1016,7 @@ export default function Settings() {
           {ENTITY_TABS.map(tab => (
             <button key={tab.key} onClick={() => { setEntityTab(tab.key); setPanel(null) }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
-                ${entityTab === tab.key ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'}`}>
+                ${entityTab === tab.key ? 'bg-blue-600 text-white' : 'text-ink-3 hover:text-ink hover:bg-bg-2'}`}>
               {tab.label}
             </button>
           ))}
@@ -1026,36 +1026,36 @@ export default function Settings() {
         <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-8 pb-6">
 
           {/* Table */}
-          <div className="rounded-xl border border-zinc-200 overflow-hidden bg-white">
+          <div className="rounded-xl border border-hairline overflow-hidden bg-panel">
             {/* Header */}
-            <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-gray-100 bg-zinc-50">
+            <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-hairline bg-bg">
               {['Field name', 'Type', 'Required', ''].map(h => (
-                <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">{h}</div>
+                <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">{h}</div>
               ))}
             </div>
 
             {fields.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-10 h-10 rounded-xl bg-zinc-50 flex items-center justify-center mb-3">
-                  <Settings2 className="w-5 h-5 text-gray-300" />
+                <div className="w-10 h-10 rounded-xl bg-bg flex items-center justify-center mb-3">
+                  <Settings2 className="w-5 h-5 text-ink-3" />
                 </div>
-                <p className="text-sm text-zinc-400">No {currentEntity?.label.toLowerCase()} fields yet</p>
-                <button onClick={openNew} className="mt-3 text-xs text-zinc-900 font-medium hover:underline">
+                <p className="text-sm text-ink-3">No {currentEntity?.label.toLowerCase()} fields yet</p>
+                <button onClick={openNew} className="mt-3 text-xs text-ink font-medium hover:underline">
                   Add the first one →
                 </button>
               </div>
             ) : fields.map((field, idx) => (
               <div key={field.id}
-                className={`group grid grid-cols-[2fr_1fr_1fr_auto] gap-4 items-center px-5 py-3.5 hover:bg-zinc-50 cursor-pointer transition-colors
-                  ${idx < fields.length - 1 ? 'border-b border-gray-100' : ''}
-                  ${panel === field.id ? 'bg-zinc-50' : ''}`}
+                className={`group grid grid-cols-[2fr_1fr_1fr_auto] gap-4 items-center px-5 py-3.5 hover:bg-bg cursor-pointer transition-colors
+                  ${idx < fields.length - 1 ? 'border-b border-hairline' : ''}
+                  ${panel === field.id ? 'bg-bg' : ''}`}
                 onClick={() => openEdit(field)}>
 
                 <div className="flex items-center gap-2.5">
-                  <GripVertical className="w-3.5 h-3.5 text-gray-300 opacity-0 group-hover:opacity-100" />
-                  <span className="text-sm font-medium text-zinc-900">{field.name}</span>
+                  <GripVertical className="w-3.5 h-3.5 text-ink-3 opacity-0 group-hover:opacity-100" />
+                  <span className="text-sm font-medium text-ink">{field.name}</span>
                   {field.field_type === 'select' && field.options?.length > 0 && (
-                    <span className="text-[10px] text-zinc-400">{field.options.length} options</span>
+                    <span className="text-[10px] text-ink-3">{field.options.length} options</span>
                   )}
                 </div>
 
@@ -1065,20 +1065,20 @@ export default function Settings() {
                   </span>
                 </div>
 
-                <div className="text-xs text-zinc-400">
+                <div className="text-xs text-ink-3">
                   {field.required ? <span className="text-red-500 font-medium">Required</span> : 'Optional'}
                 </div>
 
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={e => { e.stopPropagation(); deleteField(field.id) }}>
-                  <Trash2 className="w-3.5 h-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
+                  <Trash2 className="w-3.5 h-3.5 text-ink-3 hover:text-red-500 transition-colors" />
                 </div>
               </div>
             ))}
           </div>
 
           {fields.length > 0 && (
-            <p className="text-xs text-zinc-400 mt-4 px-1">
+            <p className="text-xs text-ink-3 mt-4 px-1">
               These fields appear in the {currentEntity?.label.toLowerCase()} form and on every {currentEntity?.key} record.
             </p>
           )}
@@ -1088,13 +1088,13 @@ export default function Settings() {
 
       {/* Side panel */}
       {section === 'fields' && panel !== null && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[360px] sm:shrink-0 sm:border-l sm:border-zinc-200">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-zinc-900">
+        <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[360px] sm:shrink-0 sm:border-l sm:border-hairline">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-hairline">
+            <h2 className="text-sm font-semibold text-ink">
               {panel === 'new' ? 'New field' : 'Edit field'}
             </h2>
             <button onClick={closePanel}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-500 hover:bg-zinc-100 transition-colors">
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink-3 hover:bg-bg-2 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -1120,7 +1120,7 @@ export default function Settings() {
 
             {form.field_type === 'select' && (
               <div>
-                <label className={lbl}>Options <span className="normal-case text-zinc-400 font-normal">(one per line)</span></label>
+                <label className={lbl}>Options <span className="normal-case text-ink-3 font-normal">(one per line)</span></label>
                 <textarea
                   value={form.options}
                   onChange={e => setForm(f => ({ ...f, options: e.target.value }))}
@@ -1136,32 +1136,32 @@ export default function Settings() {
               <input type="number" value={form.sort_order}
                 onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))}
                 className={inp} />
-              <p className="text-[11px] text-zinc-400 mt-1">Lower numbers appear first</p>
+              <p className="text-[11px] text-ink-3 mt-1">Lower numbers appear first</p>
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer py-1">
               <input type="checkbox" checked={form.required}
                 onChange={e => setForm(f => ({ ...f, required: e.target.checked }))}
-                className="w-4 h-4 rounded border-zinc-300 text-zinc-900 focus:ring-0" />
+                className="w-4 h-4 rounded border-hairline text-ink focus:ring-0" />
               <div>
-                <div className="text-sm font-medium text-zinc-900">Required</div>
-                <div className="text-xs text-zinc-400">Must be filled in to save a record</div>
+                <div className="text-sm font-medium text-ink">Required</div>
+                <div className="text-xs text-ink-3">Must be filled in to save a record</div>
               </div>
             </label>
 
             {/* Preview */}
-            <div className="rounded-xl border border-gray-100 bg-zinc-50 p-4">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-3">Preview</div>
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-1.5">
+            <div className="rounded-xl border border-hairline bg-bg p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-3">Preview</div>
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5">
                 {form.name || 'Field name'}
               </div>
               <FieldPreview type={form.field_type} options={form.options} />
             </div>
           </div>
 
-          <div className="p-5 border-t border-gray-100">
+          <div className="p-5 border-t border-hairline">
             <button onClick={save} disabled={saving || !form.name.trim()}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
               {saving ? 'Saving…' : (panel === 'new' ? 'Create field' : 'Update field')}
             </button>
           </div>
@@ -1183,7 +1183,7 @@ export default function Settings() {
 }
 
 function FieldPreview({ type, options }) {
-  const cls = 'w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-400 pointer-events-none'
+  const cls = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink-3 pointer-events-none'
   switch (type) {
     case 'textarea':
       return <textarea rows={2} placeholder="Long text…" className={cls + ' resize-none'} readOnly />
@@ -1203,8 +1203,8 @@ function FieldPreview({ type, options }) {
     case 'checkbox':
       return (
         <label className="flex items-center gap-2 pointer-events-none">
-          <input type="checkbox" className="w-4 h-4 rounded border-zinc-300" readOnly />
-          <span className="text-sm text-zinc-400">Yes / No</span>
+          <input type="checkbox" className="w-4 h-4 rounded border-hairline" readOnly />
+          <span className="text-sm text-ink-3">Yes / No</span>
         </label>
       )
     default:
