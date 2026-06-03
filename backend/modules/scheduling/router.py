@@ -9,7 +9,7 @@ from datetime import datetime, timezone, date, time
 from zoneinfo import ZoneInfo
 
 from database.db import get_db
-from database.models import Job, Client, Visit, ICalEvent, CleanerTimeOff
+from database.models import Job, Client, Visit, ICalEvent, CleanerTimeOff, Property
 from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
@@ -793,6 +793,72 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db)):
     """Assign available cleaners to upcoming unassigned STR turnover jobs.
     Pass ?dry_run=true to preview the picks without writing them."""
     return auto_assign_unassigned_turnovers(db, dry_run=dry_run)
+
+
+def _job_source(j: Job) -> str:
+    """Best-effort inference of what created a job, to explain missing times."""
+    if j.ical_event_id is not None:
+        return "ical_sync"
+    if j.gcal_event_id:
+        return "google_calendar"
+    if j.recurring_schedule_id is not None:
+        return "recurring"
+    return "manual_or_legacy"
+
+
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.get("/diagnostics/missing-times", dependencies=[Depends(require_role("admin", "manager"))])
+def diagnose_missing_times(db: Session = Depends(get_db)):
+    """Diagnostic: list jobs with no start_time — the records that render as
+    '– –' on the schedule. Visits can't be null (DB constraint), so a blank time
+    always traces to a Job with start_time IS NULL shown via the job→visit
+    fallback. Each row is tagged with the likely source so we can fix the
+    actual producer rather than guess. Read-only; writes nothing."""
+    today = date.today()
+    missing = (
+        db.query(Job)
+        .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]))
+        .order_by(Job.scheduled_date.desc())
+        .limit(200)
+        .all()
+    )
+    prop_names = {p.id: p.name for p in db.query(Property.id, Property.name).all()} \
+        if missing else {}
+
+    by_source: dict = {}
+    rows = []
+    for j in missing:
+        src = _job_source(j)
+        by_source[src] = by_source.get(src, 0) + 1
+        rows.append({
+            "job_id": j.id,
+            "title": j.title,
+            "job_type": j.job_type,
+            "status": j.status,
+            "scheduled_date": str(j.scheduled_date) if j.scheduled_date else None,
+            "start_time": None,
+            "end_time": str(j.end_time) if j.end_time else None,
+            "property_id": j.property_id,
+            "property_name": prop_names.get(j.property_id),
+            "source": src,
+            "has_ical_event": j.ical_event_id is not None,
+            "has_gcal_event": bool(j.gcal_event_id),
+            "is_recurring": j.recurring_schedule_id is not None,
+            "created_at": str(j.created_at) if j.created_at else None,
+            "upcoming": bool(j.scheduled_date and j.scheduled_date >= today),
+        })
+
+    return {
+        "summary": {
+            "jobs_missing_start_time": len(rows),
+            "upcoming_missing": sum(1 for r in rows if r["upcoming"]),
+            "by_source": by_source,
+            "note": ("Visit.start_time is NOT NULL at the DB level, so blank times "
+                     "come from Jobs with start_time IS NULL rendered via the "
+                     "job→visit fallback. Fix the source(s) listed in by_source."),
+        },
+        "jobs": rows,
+    }
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
