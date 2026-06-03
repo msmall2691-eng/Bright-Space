@@ -39,12 +39,12 @@ const ACTIVITY_COLORS = {
   opportunity_created: 'text-pink-600 bg-pink-50',
   opportunity_won: 'text-emerald-600 bg-emerald-50',
   opportunity_lost: 'text-red-600 bg-red-50',
-  note_added: 'text-gray-600 bg-gray-50',
+  note_added: 'text-ink-2 bg-bg',
 }
 
 function TimelineItem({ activity, isFirst, isLast }) {
   const Icon = ACTIVITY_ICONS[activity.activity_type] || FileText
-  const colorClass = ACTIVITY_COLORS[activity.activity_type] || 'text-gray-600 bg-gray-50'
+  const colorClass = ACTIVITY_COLORS[activity.activity_type] || 'text-ink-2 bg-bg'
   const [bg, fg] = colorClass.split(' ')
 
   const date = new Date(activity.created_at)
@@ -62,7 +62,7 @@ function TimelineItem({ activity, isFirst, isLast }) {
     <div className="relative">
       {/* Timeline line */}
       {!isLast && (
-        <div className="absolute left-6 top-14 bottom-0 w-0.5 bg-gray-200"></div>
+        <div className="absolute left-6 top-14 bottom-0 w-0.5 bg-bg-2"></div>
       )}
 
       {/* Item */}
@@ -74,21 +74,21 @@ function TimelineItem({ activity, isFirst, isLast }) {
 
         {/* Content */}
         <div className="flex-1 pt-2 pb-6 min-w-0">
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <div className="bg-bg rounded-lg p-4 border border-hairline">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 text-sm">{activity.summary}</div>
-                <div className="text-xs text-gray-500 mt-1">
+                <div className="font-medium text-ink text-sm">{activity.summary}</div>
+                <div className="text-xs text-ink-3 mt-1">
                   {activity.activity_type.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()}
                 </div>
               </div>
               {activity.actor && (
-                <div className="text-xs text-gray-500 font-medium shrink-0">{activity.actor}</div>
+                <div className="text-xs text-ink-3 font-medium shrink-0">{activity.actor}</div>
               )}
             </div>
-            <div className="text-xs text-gray-400 flex items-center gap-2">
+            <div className="text-xs text-ink-3 flex items-center gap-2">
               <span>{dateStr}</span>
-              <span className="text-gray-300">·</span>
+              <span className="text-ink-3">·</span>
               <span>{timeStr}</span>
             </div>
           </div>
@@ -138,7 +138,7 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader className="w-6 h-6 animate-spin text-ink-3" />
       </div>
     )
   }
@@ -146,10 +146,10 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
   if (activities.length === 0) {
     return (
       <div className="text-center py-12">
-        <div className="text-gray-400 mb-2">
+        <div className="text-ink-3 mb-2">
           <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
         </div>
-        <p className="text-gray-600 text-sm">No activities yet</p>
+        <p className="text-ink-2 text-sm">No activities yet</p>
       </div>
     )
   }
@@ -169,7 +169,7 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
     <div className="space-y-4">
       {/* Filter */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
-        <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+        <Filter className="w-4 h-4 text-ink-3 flex-shrink-0" />
         {filterOptions.map(option => (
           <button
             key={option.value}
@@ -177,7 +177,7 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
             className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
               filter === option.value
                 ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                : 'bg-bg-2 text-ink-2 hover:bg-bg-2'
             }`}
           >
             {option.label}
@@ -191,7 +191,7 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
           <div key={date}>
             {/* Date divider */}
             {dateIndex === 0 && (
-              <div className="text-xs font-semibold text-gray-500 mb-4 uppercase tracking-wide">
+              <div className="text-xs font-semibold text-ink-3 mb-4 uppercase tracking-wide">
                 {new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
               </div>
             )}
@@ -210,7 +210,7 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
 
             {/* Next day divider */}
             {dateIndex < arr.length - 1 && (
-              <div className="text-xs font-semibold text-gray-500 my-4 uppercase tracking-wide">
+              <div className="text-xs font-semibold text-ink-3 my-4 uppercase tracking-wide">
                 {new Date(Object.keys(groupedActivities).reverse()[dateIndex + 1]).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
               </div>
             )}

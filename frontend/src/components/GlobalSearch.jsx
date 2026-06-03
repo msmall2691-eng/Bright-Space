@@ -76,22 +76,22 @@ export default function GlobalSearch() {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" onClick={() => setOpen(false)}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-xl bg-white rounded-xl shadow-2xl border border-gray-200/80 overflow-hidden"
+        className="relative w-full max-w-xl bg-panel rounded-xl shadow-2xl border border-hairline/80 overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Input */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
-          <Search className="w-5 h-5 text-gray-400 shrink-0" />
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-hairline">
+          <Search className="w-5 h-5 text-ink-3 shrink-0" />
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search clients, properties, invoices, jobs..."
-            className="flex-1 text-sm outline-none placeholder:text-gray-400"
+            className="flex-1 text-sm outline-none placeholder:text-ink-3"
           />
-          {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
-          <button onClick={() => setOpen(false)} className="p-1 text-gray-300 hover:text-gray-600">
+          {loading && <Loader2 className="w-4 h-4 text-ink-3 animate-spin" />}
+          <button onClick={() => setOpen(false)} className="p-1 text-ink-3 hover:text-ink-2">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -99,10 +99,10 @@ export default function GlobalSearch() {
         {/* Results */}
         <div className="max-h-[55vh] overflow-y-auto">
           {query.trim() && !loading && results.length === 0 && (
-            <p className="px-5 py-6 text-sm text-gray-400 text-center">No matches for "{query.trim()}"</p>
+            <p className="px-5 py-6 text-sm text-ink-3 text-center">No matches for "{query.trim()}"</p>
           )}
           {!query.trim() && (
-            <p className="px-5 py-6 text-xs text-gray-400 text-center">
+            <p className="px-5 py-6 text-xs text-ink-3 text-center">
               Type to search across clients, properties, invoices, and jobs.
             </p>
           )}
@@ -115,23 +115,23 @@ export default function GlobalSearch() {
                 onClick={() => choose(r)}
                 onMouseEnter={() => setActive(i)}
                 className={`w-full flex items-center gap-3 px-5 py-2.5 text-left transition-colors ${
-                  i === active ? 'bg-gray-50' : 'hover:bg-gray-50'
+                  i === active ? 'bg-bg' : 'hover:bg-bg'
                 }`}
               >
                 <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.color}`}>
                   <Icon className="w-3.5 h-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-gray-900 truncate">{r.title}</span>
-                  {r.subtitle && <span className="block text-xs text-gray-500 truncate">{r.subtitle}</span>}
+                  <span className="block text-sm font-medium text-ink truncate">{r.title}</span>
+                  {r.subtitle && <span className="block text-xs text-ink-3 truncate">{r.subtitle}</span>}
                 </span>
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 shrink-0">{meta.label}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-3 shrink-0">{meta.label}</span>
               </button>
             )
           })}
         </div>
 
-        <div className="px-5 py-2 border-t border-gray-100 flex items-center gap-3 text-[10px] text-gray-400">
+        <div className="px-5 py-2 border-t border-hairline flex items-center gap-3 text-[10px] text-ink-3">
           <span><kbd className="font-sans">↑↓</kbd> navigate</span>
           <span><kbd className="font-sans">↵</kbd> open</span>
           <span><kbd className="font-sans">esc</kbd> close</span>

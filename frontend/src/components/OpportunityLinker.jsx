@@ -98,37 +98,37 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg max-w-lg w-full mx-4">
+          <div className="bg-panel rounded-xl shadow-lg max-w-lg w-full mx-4">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Link {itemType} to Opportunity</h2>
+            <div className="flex items-center justify-between p-6 border-b border-hairline">
+              <h2 className="text-lg font-semibold text-ink">Link {itemType} to Opportunity</h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1 hover:bg-bg-2 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-400" />
+                <X className="w-5 h-5 text-ink-3" />
               </button>
             </div>
 
             {/* Content */}
             <div className="p-6 space-y-4">
               <div>
-                <div className="text-sm text-gray-600 mb-1">Item</div>
-                <div className="font-medium text-gray-900">{itemName || `${itemType} #${itemId}`}</div>
+                <div className="text-sm text-ink-2 mb-1">Item</div>
+                <div className="font-medium text-ink">{itemName || `${itemType} #${itemId}`}</div>
               </div>
 
               {loading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader className="w-5 h-5 animate-spin text-gray-400" />
+                  <Loader className="w-5 h-5 animate-spin text-ink-3" />
                 </div>
               ) : opportunities.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-ink-3">
                   <p className="text-sm">No opportunities found for this client</p>
                   <p className="text-xs mt-1">Create an opportunity first</p>
                 </div>
               ) : (
                 <div>
-                  <div className="text-sm text-gray-600 mb-3">Select opportunity:</div>
+                  <div className="text-sm text-ink-2 mb-3">Select opportunity:</div>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {opportunities.map((opp) => (
                       <button
@@ -137,18 +137,18 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
                         className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                           selectedOppId === opp.id
                             ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 hover:border-gray-300'
+                            : 'border-hairline hover:border-hairline'
                         }`}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <div className="font-medium text-gray-900">{opp.title}</div>
-                            <div className="text-sm text-gray-600 mt-1">
+                            <div className="font-medium text-ink">{opp.title}</div>
+                            <div className="text-sm text-ink-2 mt-1">
                               {opp.amount && `$${opp.amount.toLocaleString()}`}
                               {opp.probability && ` • ${opp.probability}% prob`}
                             </div>
                           </div>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ml-2 ${STAGE_COLORS[opp.stage] || 'bg-gray-100 text-gray-700'}`}>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ml-2 ${STAGE_COLORS[opp.stage] || 'bg-bg-2 text-ink-2'}`}>
                             {opp.stage}
                           </span>
                         </div>
@@ -171,10 +171,10 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
             </div>
 
             {/* Footer */}
-            <div className="flex gap-2 p-6 border-t border-gray-200 bg-gray-50">
+            <div className="flex gap-2 p-6 border-t border-hairline bg-bg">
               <button
                 onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-100 transition-colors"
+                className="flex-1 px-4 py-2 border border-hairline rounded-lg text-ink-2 font-medium hover:bg-bg-2 transition-colors"
               >
                 Cancel
               </button>
