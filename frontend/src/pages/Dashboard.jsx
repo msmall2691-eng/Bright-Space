@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
 import { Card, StatCard, EmptyState, Skeleton } from '../components/ui'
+import { AIFollowUps } from '../components/AIBriefing'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
   CheckCircle2, Clock, ArrowRight, Zap,
@@ -441,6 +442,9 @@ export default function Dashboard() {
           )}
         </Tile>
         </div>
+
+        {/* AI-computed operational follow-ups — auto-loads, hides when all clear */}
+        <AIFollowUps title="Operations check" className="lg:col-span-2" />
 
       </div>
     </div>

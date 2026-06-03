@@ -114,7 +114,7 @@ export function AIBriefing() {
   )
 }
 
-export function AIFollowUps() {
+export function AIFollowUps({ title, className = '' }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -129,11 +129,11 @@ export function AIFollowUps() {
   if (!data || data.total === 0) return null
 
   return (
-    <div className="bg-panel rounded-xl border border-hairline/60 p-5">
+    <div className={`bg-panel rounded-2xl border border-hairline p-5 ${className}`}>
       <div className="flex items-center gap-2 mb-3">
         <AlertTriangle className="w-4 h-4 text-amber-500" />
         <h3 className="text-sm font-semibold text-ink">
-          {data.total} Item{data.total !== 1 ? 's' : ''} Need Attention
+          {title || `${data.total} Item${data.total !== 1 ? 's' : ''} Need Attention`}
         </h3>
       </div>
       <div className="space-y-2">
