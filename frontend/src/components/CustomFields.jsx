@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { get } from "../api"
 
 
-const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1.5'
-const inp = 'w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-gray-400 transition-colors'
+const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
+const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-hairline transition-colors'
 
 // ── CustomFieldsForm ──────────────────────────────────────────────────────────
 // Renders editable inputs for custom fields in a form panel.
@@ -20,9 +20,9 @@ export function CustomFieldsForm({ entityType, values = {}, onChange }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-gray-100" />
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Custom Fields</span>
-        <div className="h-px flex-1 bg-gray-100" />
+        <div className="h-px flex-1 bg-bg-2" />
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">Custom Fields</span>
+        <div className="h-px flex-1 bg-bg-2" />
       </div>
       {fields.map(field => (
         <div key={field.key}>
@@ -58,8 +58,8 @@ export function CustomFieldsDisplay({ entityType, values = {} }) {
     <div className="space-y-3">
       {populated.map(field => (
         <div key={field.key} className="flex items-start gap-3">
-          <span className="text-xs text-gray-400 w-32 shrink-0 pt-0.5">{field.name}</span>
-          <span className="text-sm text-gray-900 flex-1">
+          <span className="text-xs text-ink-3 w-32 shrink-0 pt-0.5">{field.name}</span>
+          <span className="text-sm text-ink flex-1">
             {field.field_type === 'checkbox'
               ? (values[field.key] ? 'Yes' : 'No')
               : String(values[field.key] || '—')}
@@ -101,8 +101,8 @@ function FieldInput({ field, value, onChange }) {
       return (
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-0 cursor-pointer" />
-          <span className="text-sm text-gray-600">{field.name}</span>
+            className="w-4 h-4 rounded border-hairline text-ink focus:ring-0 cursor-pointer" />
+          <span className="text-sm text-ink-2">{field.name}</span>
         </label>
       )
     default: // text

@@ -26,7 +26,7 @@ export default function PageSettings({ pageName, settings, onSave, children }) {
       {/* Settings button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="p-2 rounded-lg hover:bg-neutral-100 transition-colors text-neutral-500 hover:text-neutral-700"
+        className="p-2 rounded-lg hover:bg-bg-2 transition-colors text-ink-3 hover:text-ink-2"
         title={`${pageName} settings`}
       >
         <Settings className="w-5 h-5" />
@@ -35,14 +35,14 @@ export default function PageSettings({ pageName, settings, onSave, children }) {
       {/* Settings modal */}
       {isOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-auto">
-            <div className="sticky top-0 bg-white border-b border-neutral-200 p-6 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-neutral-900">{pageName} Settings</h2>
+          <div className="bg-panel rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-auto">
+            <div className="sticky top-0 bg-panel border-b border-hairline p-6 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-ink">{pageName} Settings</h2>
               <button
                 onClick={handleClose}
-                className="p-2 rounded-lg hover:bg-neutral-100 transition-colors"
+                className="p-2 rounded-lg hover:bg-bg-2 transition-colors"
               >
-                <X className="w-5 h-5 text-neutral-600" />
+                <X className="w-5 h-5 text-ink-2" />
               </button>
             </div>
 
@@ -50,10 +50,10 @@ export default function PageSettings({ pageName, settings, onSave, children }) {
               {children({ settings: localSettings, setSettings: setLocalSettings })}
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-neutral-200 p-6 flex gap-3">
+            <div className="sticky bottom-0 bg-panel border-t border-hairline p-6 flex gap-3">
               <button
                 onClick={handleClose}
-                className="flex-1 px-4 py-2.5 border border-neutral-200 rounded-lg text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
+                className="flex-1 px-4 py-2.5 border border-hairline rounded-lg text-sm font-semibold text-ink-2 hover:bg-bg transition-colors"
               >
                 Cancel
               </button>

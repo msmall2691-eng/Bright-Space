@@ -186,21 +186,21 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
   };
 
   const getConditionColor = (rating?: number) => {
-    if (!rating) return 'bg-gray-100';
+    if (!rating) return 'bg-bg-2';
     if (rating <= 2) return 'bg-red-100 border-red-300';
     if (rating <= 3) return 'bg-yellow-100 border-yellow-300';
     return 'bg-green-100 border-green-300';
   };
 
   const getComplexityColor = (score?: number) => {
-    if (!score) return 'bg-gray-100';
+    if (!score) return 'bg-bg-2';
     if (score <= 3) return 'bg-green-100 text-green-900';
     if (score <= 6) return 'bg-yellow-100 text-yellow-900';
     return 'bg-red-100 text-red-900';
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">
+    <div className="max-w-4xl mx-auto p-6 bg-panel rounded-lg shadow-lg">
       <h2 className="text-3xl font-bold mb-6 flex items-center gap-2">
         <MapPin className="w-8 h-8 text-blue-600" />
         Property Intelligence Profile
@@ -213,7 +213,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Address *
               </label>
               <input
@@ -228,7 +228,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 City
               </label>
               <input
@@ -242,7 +242,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 State
               </label>
               <input
@@ -257,7 +257,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Zip Code
               </label>
               <input
@@ -271,7 +271,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Property Type
               </label>
               <select
@@ -294,7 +294,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Square Footage
               </label>
               <input
@@ -308,7 +308,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Bedrooms
               </label>
               <input
@@ -321,7 +321,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Bathrooms
               </label>
               <input
@@ -334,7 +334,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Construction Type
               </label>
               <select
@@ -353,7 +353,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Access Type
               </label>
               <select
@@ -372,7 +372,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Condition Rating (1-5)
               </label>
               <div className="flex items-center gap-2">
@@ -396,7 +396,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
           </div>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-2 mb-1">
               Access Instructions
             </label>
             <textarea
@@ -416,7 +416,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Hazard Notes
               </label>
               <textarea
@@ -430,7 +430,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-ink-2 mb-1">
                 Pet Alerts
               </label>
               <textarea
@@ -444,7 +444,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-ink-2 mb-2">
                 Equipment Required
               </label>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -463,7 +463,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
                       onChange={() => handleEquipmentToggle(equipment)}
                       className="w-4 h-4 rounded"
                     />
-                    <span className="text-sm text-gray-700 capitalize">{equipment.replace(/_/g, ' ')}</span>
+                    <span className="text-sm text-ink-2 capitalize">{equipment.replace(/_/g, ' ')}</span>
                   </label>
                 ))}
               </div>
@@ -472,7 +472,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
         </section>
 
         {/* Complexity & Estimates */}
-        <section className="bg-gray-50 p-4 rounded-lg border">
+        <section className="bg-bg p-4 rounded-lg border">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <TrendingUp className="w-5 h-5" />
@@ -486,8 +486,8 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white p-4 rounded border">
-              <p className="text-sm text-gray-600 mb-2">Property Type Impact</p>
+            <div className="bg-panel p-4 rounded border">
+              <p className="text-sm text-ink-2 mb-2">Property Type Impact</p>
               <p className="text-lg font-semibold capitalize">
                 {formData.property_type === 'rental' && '🔴 Rental Turnover (High Complexity)'}
                 {formData.property_type === 'commercial' && '🟡 Commercial (Medium Complexity)'}
@@ -496,7 +496,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
             </div>
 
             {formData.id && (
-              <div className="bg-white p-4 rounded border">
+              <div className="bg-panel p-4 rounded border">
                 <button
                   type="button"
                   onClick={estimateTime}
@@ -511,14 +511,14 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
 
           {timeEstimate && (
             <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
-              <p className="text-sm text-gray-600 mb-1">Estimated Time</p>
+              <p className="text-sm text-ink-2 mb-1">Estimated Time</p>
               <p className="text-2xl font-bold text-blue-900 mb-2">
                 {Math.floor(timeEstimate.estimated_minutes / 60)}h {timeEstimate.estimated_minutes % 60}m
               </p>
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-ink-2">
                 <strong>Confidence:</strong> {timeEstimate.confidence} ({timeEstimate.sample_size} historical jobs)
               </p>
-              <p className="text-sm text-gray-600 mt-1">{timeEstimate.reasoning}</p>
+              <p className="text-sm text-ink-2 mt-1">{timeEstimate.reasoning}</p>
             </div>
           )}
         </section>
@@ -540,9 +540,9 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
               id="photo-upload"
             />
             <label htmlFor="photo-upload" className="cursor-pointer">
-              <Upload className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-              <p className="text-gray-700 font-medium">Drop photos here or click to select</p>
-              <p className="text-sm text-gray-500">Reference photos help with better scheduling</p>
+              <Upload className="w-12 h-12 mx-auto mb-2 text-ink-3" />
+              <p className="text-ink-2 font-medium">Drop photos here or click to select</p>
+              <p className="text-sm text-ink-3">Reference photos help with better scheduling</p>
             </label>
           </div>
 
@@ -568,7 +568,7 @@ export default function PropertyProfileForm({ clientId, onSave, initialData }: P
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 transition flex items-center justify-center gap-2"
+            className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-ink-3 transition flex items-center justify-center gap-2"
           >
             {loading && <Loader className="w-5 h-5 animate-spin" />}
             {loading ? 'Saving...' : 'Save Property Profile'}

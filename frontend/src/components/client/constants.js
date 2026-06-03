@@ -1,7 +1,7 @@
 export const STATUS_COLORS = {
   lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
   active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
-  inactive: 'bg-zinc-100 text-zinc-400 border-zinc-200',
+  inactive: 'bg-bg-2 text-ink-3 border-hairline',
 }
 
 export const JOB_COLORS = {
@@ -12,14 +12,14 @@ export const JOB_COLORS = {
 }
 
 export const INVOICE_COLORS = {
-  draft:   'bg-zinc-500/20 text-zinc-400',
+  draft:   'bg-ink-3/20 text-ink-3',
   sent:    'bg-blue-500/20 text-blue-400',
   paid:    'bg-green-500/20 text-green-400',
   overdue: 'bg-red-500/20 text-red-400',
 }
 
 export const QUOTE_COLORS = {
-  draft:    'bg-zinc-500/20 text-zinc-400',
+  draft:    'bg-ink-3/20 text-ink-3',
   sent:     'bg-blue-500/20 text-blue-400',
   accepted: 'bg-green-500/20 text-green-400',
   declined: 'bg-red-500/20 text-red-400',
@@ -37,7 +37,7 @@ export const PROPERTY_TYPE_LABELS = {
   str: 'STR'
 }
 
-export const INPUT_CLASS = 'w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none'
+export const INPUT_CLASS = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none'
 
 // Tab redirect mapping for backward compatibility
 export const TAB_REDIRECTS = {

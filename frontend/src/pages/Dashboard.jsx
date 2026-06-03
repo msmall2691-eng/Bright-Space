@@ -46,7 +46,7 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
     red: 'bg-red-500',
     amber: 'bg-amber-500',
     rose: 'bg-rose-500',
-  }[tone] || 'bg-zinc-400'
+  }[tone] || 'bg-ink-3'
   return (
     <button
       onClick={onClick}
