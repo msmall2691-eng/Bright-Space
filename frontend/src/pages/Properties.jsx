@@ -62,24 +62,24 @@ function IcalFeedRow({ ical, onRemove, onSync, syncing }) {
     )
   } else {
     statusPill = (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
         <Clock className="w-3 h-3" /> Never synced
       </span>
     )
   }
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-lg p-2.5 mb-2">
+    <div className="bg-panel border border-hairline rounded-lg p-2.5 mb-2">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">{sourceLabel}</span>
+            <span className="text-[11px] font-semibold text-ink-2 uppercase tracking-wide">{sourceLabel}</span>
             {!ical.active && (
-              <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">paused</span>
+              <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">paused</span>
             )}
             {statusPill}
           </div>
-          <div className="text-xs text-zinc-500 truncate font-mono" title={ical.url}>{ical.url}</div>
+          <div className="text-xs text-ink-3 truncate font-mono" title={ical.url}>{ical.url}</div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
@@ -105,10 +105,10 @@ function IcalFeedRow({ ical, onRemove, onSync, syncing }) {
         </div>
       )}
       {(ical.checkout_time || ical.house_code || ical.instructions) && (
-        <div className="text-xs text-zinc-500 bg-zinc-50 rounded p-1.5 space-y-0.5">
+        <div className="text-xs text-ink-3 bg-bg rounded p-1.5 space-y-0.5">
           {ical.checkout_time && <div>Checkout: {ical.checkout_time}</div>}
           {ical.house_code && <div>Code: {ical.house_code}</div>}
-          {ical.instructions && <div className="text-zinc-600">{ical.instructions}</div>}
+          {ical.instructions && <div className="text-ink-2">{ical.instructions}</div>}
         </div>
       )}
     </div>
@@ -331,11 +331,11 @@ export default function Properties() {
     <div className="flex h-full">
       <div className="flex-1 p-6 flex flex-col min-w-0">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-zinc-900">{pageTitle}</h2>
+          <h2 className="text-lg font-semibold text-ink">{pageTitle}</h2>
           <div className="flex items-center gap-2">
             {properties.length > 0 && (
               <button onClick={syncAll} disabled={syncing === 'all'}
-                className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 px-4 py-2 rounded-lg text-sm transition-colors">
+                className="flex items-center gap-2 bg-bg-2 hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm transition-colors">
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing === 'all' ? 'animate-spin' : ''}`} />
                 Sync All
               </button>
@@ -348,7 +348,7 @@ export default function Properties() {
         </div>
 
         {/* Type tabs */}
-        <div className="flex gap-2 mb-5 border-b border-zinc-200">
+        <div className="flex gap-2 mb-5 border-b border-hairline">
           {['all', 'residential', 'commercial', 'str'].map(type => (
             <button
               key={type}
@@ -356,7 +356,7 @@ export default function Properties() {
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 currentType === type
                   ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-zinc-600 hover:text-zinc-900'
+                  : 'border-transparent text-ink-2 hover:text-ink'
               }`}
             >
               {type === 'all' ? `All (${typeCounts.all})` : `${PROPERTY_TYPE_CONFIG[type].label} (${typeCounts[type]})`}
@@ -366,27 +366,27 @@ export default function Properties() {
 
         {/* Selection / bulk-action bar */}
         <div className="flex items-center justify-between mb-3">
-          <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer select-none">
+          <label className="flex items-center gap-2 text-xs text-ink-3 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={filteredProperties.length > 0 && filteredProperties.every(p => selectedIds.has(p.id))}
               onChange={toggleSelectAll}
-              className="w-4 h-4 rounded border-zinc-300 cursor-pointer"
+              className="w-4 h-4 rounded border-hairline cursor-pointer"
               data-testid="properties-select-all"
             />
             <span>Select all ({filteredProperties.length})</span>
           </label>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="properties-bulk-actions">
-              <span className="text-xs text-zinc-600 font-medium">{selectedIds.size} selected</span>
-              <label className="flex items-center gap-1 text-[11px] text-zinc-600 cursor-pointer select-none" title="Permanently remove from database (vs. soft-archive)">
+              <span className="text-xs text-ink-2 font-medium">{selectedIds.size} selected</span>
+              <label className="flex items-center gap-1 text-[11px] text-ink-2 cursor-pointer select-none" title="Permanently remove from database (vs. soft-archive)">
                 <input type="checkbox" checked={hardDelete}
                   onChange={e => setHardDelete(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer" />
+                  className="w-3.5 h-3.5 rounded border-hairline cursor-pointer" />
                 Hard delete
               </label>
               <button onClick={clearSelection}
-                className="text-xs text-zinc-500 hover:text-zinc-700 px-2 py-1 rounded">
+                className="text-xs text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
                 Clear
               </button>
               <button onClick={bulkDelete} disabled={bulkDeleting}
@@ -423,9 +423,9 @@ export default function Properties() {
             const Icon = Config?.icon || Home
 
             return (
-              <div key={p.id} className={`bg-white border rounded-xl ${selectedIds.has(p.id) ? 'border-blue-400' : 'border-zinc-200'}`}>
+              <div key={p.id} className={`bg-panel border rounded-xl ${selectedIds.has(p.id) ? 'border-blue-400' : 'border-hairline'}`}>
                 {/* Property header */}
-                <div className="p-5 cursor-pointer hover:bg-zinc-50 transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
+                <div className="p-5 cursor-pointer hover:bg-bg transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4 flex-1">
                       <input
@@ -433,7 +433,7 @@ export default function Properties() {
                         checked={selectedIds.has(p.id)}
                         onChange={(e) => toggleSelect(p.id, e)}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-4 h-4 rounded border-zinc-300 cursor-pointer mt-3 shrink-0"
+                        className="w-4 h-4 rounded border-hairline cursor-pointer mt-3 shrink-0"
                         data-testid="property-row-checkbox"
                         aria-label={`Select ${p.name}`}
                       />
@@ -442,22 +442,22 @@ export default function Properties() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <div className="font-semibold text-zinc-900">{p.name}</div>
+                          <div className="font-semibold text-ink">{p.name}</div>
                           <span className={`text-xs px-2 py-0.5 rounded ${Config?.badge}`}>{Config?.label}</span>
                         </div>
-                        <div className="text-sm text-zinc-600 flex items-center gap-2 mt-1">
+                        <div className="text-sm text-ink-2 flex items-center gap-2 mt-1">
                           {!clients.find(c => c.id === p.client_id) && (
                             <AlertTriangle className="w-3 h-3 text-red-400" title="Client not found" />
                           )}
                           {clientName(p.client_id)}
                         </div>
-                        <div className="text-sm text-zinc-500 mt-0.5">{p.address}{p.city ? `, ${p.city}` : ''}</div>
+                        <div className="text-sm text-ink-3 mt-0.5">{p.address}{p.city ? `, ${p.city}` : ''}</div>
 
                         {/* Type-specific metadata */}
                         <div className="flex items-center gap-4 mt-2 flex-wrap">
                           {pType === 'str' && (
                             <>
-                              <span className="flex items-center gap-1 text-xs text-zinc-500">
+                              <span className="flex items-center gap-1 text-xs text-ink-3">
                                 <Clock className="w-3 h-3" />{p.default_duration_hours}h turnover
                               </span>
                               {p.house_code && (
@@ -466,7 +466,7 @@ export default function Properties() {
                                 </span>
                               )}
                               {p.check_in_time && (
-                                <span className="text-xs text-zinc-500">
+                                <span className="text-xs text-ink-3">
                                   {p.check_in_time} → {p.check_out_time}
                                 </span>
                               )}
@@ -480,12 +480,12 @@ export default function Properties() {
                           {(pType === 'residential' || pType === 'commercial') && (
                             <>
                               {p.default_duration_hours && (
-                                <span className="flex items-center gap-1 text-xs text-zinc-500">
+                                <span className="flex items-center gap-1 text-xs text-ink-3">
                                   <Clock className="w-3 h-3" />{p.default_duration_hours}h standard
                                 </span>
                               )}
                               {p.default_crew_size && (
-                                <span className="flex items-center gap-1 text-xs text-zinc-500">
+                                <span className="flex items-center gap-1 text-xs text-ink-3">
                                   <Users className="w-3 h-3" />{p.default_crew_size} crew
                                 </span>
                               )}
@@ -509,7 +509,7 @@ export default function Properties() {
                         Jobs
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); openEdit(p) }}
-                        className="text-xs text-zinc-500 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-lg transition-colors">
+                        className="text-xs text-ink-3 hover:text-ink bg-bg-2 hover:bg-bg-2 px-3 py-1.5 rounded-lg transition-colors">
                         Edit
                       </button>
                     </div>
@@ -518,11 +518,11 @@ export default function Properties() {
 
                 {/* Expanded details */}
                 {expandedPropId === p.id && (
-                  <div className="border-t border-zinc-200 p-5 space-y-4 bg-zinc-50">
+                  <div className="border-t border-hairline p-5 space-y-4 bg-bg">
                     {/* STR: iCal URLs */}
                     {pType === 'str' && (
                       <div data-testid="ical-feeds-section">
-                        <div className="text-sm font-semibold text-zinc-700 mb-2">Calendar Feeds</div>
+                        <div className="text-sm font-semibold text-ink-2 mb-2">Calendar Feeds</div>
                         {(p.icals || []).map(ical => (
                           <IcalFeedRow
                             key={ical.id}
@@ -534,38 +534,38 @@ export default function Properties() {
                         ))}
 
                         {showIcalForm === p.id ? (
-                          <div className="bg-white border border-zinc-200 rounded-lg p-3 space-y-2">
+                          <div className="bg-panel border border-hairline rounded-lg p-3 space-y-2">
                             <input value={icalForm.url} onChange={e => setIcalForm(f => ({ ...f, url: e.target.value }))}
                               placeholder="https://www.airbnb.com/calendar/ical/..."
-                              className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                              className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none" />
                             <select value={icalForm.source} onChange={e => setIcalForm(f => ({ ...f, source: e.target.value }))}
-                              className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none">
+                              className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none">
                               <option value="">Source (Airbnb / VRBO / …)</option>
                               {ICAL_SOURCES.map(s => (
                                 <option key={s.value} value={s.value}>{s.label}</option>
                               ))}
                             </select>
 
-                            <div className="border-t border-zinc-100 pt-2 mt-2">
-                              <div className="text-xs font-semibold text-zinc-600 mb-2">Turnover Settings</div>
+                            <div className="border-t border-hairline pt-2 mt-2">
+                              <div className="text-xs font-semibold text-ink-2 mb-2">Turnover Settings</div>
                               <div className="grid grid-cols-2 gap-2">
                                 <input value={icalForm.checkout_time} onChange={e => setIcalForm(f => ({ ...f, checkout_time: e.target.value }))}
                                   placeholder="Checkout (e.g., 11:00)"
                                   type="time"
-                                  className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                                  className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none" />
                                 <input value={icalForm.duration_hours} onChange={e => setIcalForm(f => ({ ...f, duration_hours: e.target.value }))}
                                   placeholder="Duration (hrs)"
                                   type="number"
                                   step="0.5"
-                                  className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                                  className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none" />
                               </div>
                               <input value={icalForm.house_code} onChange={e => setIcalForm(f => ({ ...f, house_code: e.target.value }))}
                                 placeholder="Access code"
-                                className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
+                                className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
                               <textarea value={icalForm.instructions} onChange={e => setIcalForm(f => ({ ...f, instructions: e.target.value }))}
                                 placeholder="Special turnover instructions..."
                                 rows="2"
-                                className="w-full bg-white border border-zinc-200 rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
+                                className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
                             </div>
 
                             <div className="flex gap-2 pt-2">
@@ -574,7 +574,7 @@ export default function Properties() {
                                 Add Calendar
                               </button>
                               <button onClick={() => setShowIcalForm(null)}
-                                className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-2 py-1.5 rounded text-xs">
+                                className="flex-1 bg-bg-2 hover:bg-bg-2 text-ink-2 px-2 py-1.5 rounded text-xs">
                                 Cancel
                               </button>
                             </div>
@@ -586,7 +586,7 @@ export default function Properties() {
                               + Add Calendar URL
                             </button>
                             <button onClick={() => navigate(`/properties/${p.id}/icals`)}
-                              className="w-full text-[11px] text-zinc-500 hover:text-zinc-700 mt-1.5">
+                              className="w-full text-[11px] text-ink-3 hover:text-ink-2 mt-1.5">
                               Or paste multiple URLs at once →
                             </button>
                           </>
@@ -596,8 +596,8 @@ export default function Properties() {
 
                     {p.notes && (
                       <div>
-                        <div className="text-xs text-zinc-500 font-semibold mb-1">Notes</div>
-                        <div className="text-sm text-zinc-600 bg-white rounded p-2 border border-zinc-200">{p.notes}</div>
+                        <div className="text-xs text-ink-3 font-semibold mb-1">Notes</div>
+                        <div className="text-sm text-ink-2 bg-panel rounded p-2 border border-hairline">{p.notes}</div>
                       </div>
                     )}
                   </div>
@@ -608,9 +608,9 @@ export default function Properties() {
 
           {filteredProperties.length === 0 && (
             <div className="text-center py-16">
-              <Home className="w-12 h-12 mx-auto mb-3 text-zinc-600" />
-              <div className="text-zinc-400 font-medium mb-1">No {currentType === 'all' ? '' : PROPERTY_TYPE_CONFIG[currentType]?.label.toLowerCase()} properties yet</div>
-              <div className="text-zinc-500 text-sm mb-4">
+              <Home className="w-12 h-12 mx-auto mb-3 text-ink-2" />
+              <div className="text-ink-3 font-medium mb-1">No {currentType === 'all' ? '' : PROPERTY_TYPE_CONFIG[currentType]?.label.toLowerCase()} properties yet</div>
+              <div className="text-ink-3 text-sm mb-4">
                 {currentType === 'str'
                   ? 'Add an Airbnb or VRBO property to auto-create turnover jobs.'
                   : 'Create a property to organize jobs and services.'}
@@ -635,9 +635,9 @@ export default function Properties() {
       {/* Type selector modal for new property */}
       {showTypeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4">
+          <div className="bg-panel rounded-xl shadow-xl max-w-sm w-full mx-4">
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-zinc-900 mb-4">What kind of property?</h2>
+              <h2 className="text-lg font-semibold text-ink mb-4">What kind of property?</h2>
               <div className="space-y-2">
                 {['residential', 'commercial', 'str'].map(type => (
                   <button
@@ -646,11 +646,11 @@ export default function Properties() {
                     className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
                       newPropertyType === type
                         ? `border-blue-600 bg-blue-50`
-                        : 'border-zinc-200 hover:border-zinc-300'
+                        : 'border-hairline hover:border-hairline'
                     }`}
                   >
-                    <div className="font-medium text-zinc-900">{PROPERTY_TYPE_CONFIG[type].label}</div>
-                    <div className="text-sm text-zinc-500 mt-1">
+                    <div className="font-medium text-ink">{PROPERTY_TYPE_CONFIG[type].label}</div>
+                    <div className="text-sm text-ink-3 mt-1">
                       {type === 'residential' && 'Home or apartment'}
                       {type === 'commercial' && 'Business or office space'}
                       {type === 'str' && 'Airbnb, VRBO, or vacation rental'}
@@ -660,7 +660,7 @@ export default function Properties() {
               </div>
               <div className="flex gap-2 mt-6">
                 <button onClick={() => setShowTypeModal(false)}
-                  className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  className="flex-1 bg-bg-2 hover:bg-bg-2 text-ink px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                   Cancel
                 </button>
                 <button onClick={confirmNewProperty}
@@ -675,16 +675,16 @@ export default function Properties() {
 
       {/* Edit/Create Form */}
       {showForm && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-zinc-200 sm:shrink-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 shrink-0">
-            <h2 className="font-semibold text-zinc-900">{selected ? 'Edit Property' : 'Add Property'}</h2>
-            <button onClick={() => setShowForm(false)} className="text-zinc-500 hover:text-zinc-500"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-hairline sm:shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
+            <h2 className="font-semibold text-ink">{selected ? 'Edit Property' : 'Add Property'}</h2>
+            <button onClick={() => setShowForm(false)} className="text-ink-3 hover:text-ink-3"><X className="w-5 h-5" /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
             {/* Type selector — for new or existing properties */}
             {(
               <div>
-                <label className="block text-xs text-zinc-400 mb-3 font-semibold">Property Type *</label>
+                <label className="block text-xs text-ink-3 mb-3 font-semibold">Property Type *</label>
                 <div className="flex gap-2">
                   {['residential', 'commercial', 'str'].map(type => (
                     <button
@@ -693,7 +693,7 @@ export default function Properties() {
                       className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
                         form.property_type === type
                           ? 'border-blue-600 bg-blue-50 text-blue-700'
-                          : 'border-zinc-200 text-zinc-600 hover:border-zinc-300'
+                          : 'border-hairline text-ink-2 hover:border-hairline'
                       }`}
                     >
                       {PROPERTY_TYPE_CONFIG[type].label}
@@ -704,9 +704,9 @@ export default function Properties() {
             )}
 
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Client *</label>
+              <label className="block text-xs text-ink-3 mb-1">Client *</label>
               <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none">
                 <option value="">Select client...</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -721,107 +721,107 @@ export default function Properties() {
               { label: 'ZIP', key: 'zip_code' },
             ].map(({ label, key, placeholder }) => (
               <div key={key}>
-                <label className="block text-xs text-zinc-400 mb-1">{label}</label>
+                <label className="block text-xs text-ink-3 mb-1">{label}</label>
                 <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                   placeholder={placeholder}
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
               </div>
             ))}
 
             {/* Common fields */}
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Access Notes</label>
+              <label className="block text-xs text-ink-3 mb-1">Access Notes</label>
               <textarea value={form.access_notes || ''} onChange={e => setForm(f => ({ ...f, access_notes: e.target.value }))} rows={2}
                 placeholder="e.g. Side door, lockbox 4251"
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
 
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Parking Notes</label>
+              <label className="block text-xs text-ink-3 mb-1">Parking Notes</label>
               <input value={form.parking_notes || ''} onChange={e => setForm(f => ({ ...f, parking_notes: e.target.value }))}
                 placeholder="Where to park"
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Default Duration (hrs)</label>
+                <label className="block text-xs text-ink-3 mb-1">Default Duration (hrs)</label>
                 <input type="number" step="0.5" value={form.default_duration_hours || 3}
                   onChange={e => setForm(f => ({ ...f, default_duration_hours: e.target.value }))}
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Crew Size</label>
+                <label className="block text-xs text-ink-3 mb-1">Crew Size</label>
                 <input type="number" value={form.default_crew_size || ''}
                   onChange={e => setForm(f => ({ ...f, default_crew_size: e.target.value }))}
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
             </div>
 
             {/* STR-specific fields */}
             {form.property_type === 'str' && (
-              <div className="border-t border-zinc-200 pt-4">
-                <h3 className="text-xs font-semibold text-zinc-600 uppercase mb-3">STR Settings</h3>
+              <div className="border-t border-hairline pt-4">
+                <h3 className="text-xs font-semibold text-ink-2 uppercase mb-3">STR Settings</h3>
 
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Check-in Time</label>
+                    <label className="block text-xs text-ink-3 mb-1">Check-in Time</label>
                     <input type="time" value={form.check_in_time || '14:00'} onChange={e => setForm(f => ({ ...f, check_in_time: e.target.value }))}
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
                   </div>
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Check-out Time</label>
+                    <label className="block text-xs text-ink-3 mb-1">Check-out Time</label>
                     <input type="time" value={form.check_out_time || '10:00'} onChange={e => setForm(f => ({ ...f, check_out_time: e.target.value }))}
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">House Code</label>
+                  <label className="block text-xs text-ink-3 mb-1">House Code</label>
                   <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
                     placeholder="e.g. 1234 or Front door code"
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-xs text-zinc-400 mb-1">Timezone</label>
+                  <label className="block text-xs text-ink-3 mb-1">Timezone</label>
                   <input value={form.timezone || ''} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}
                     placeholder="e.g. America/New_York"
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 </div>
               </div>
             )}
 
             {/* Commercial-specific fields */}
             {form.property_type === 'commercial' && (
-              <div className="border-t border-zinc-200 pt-4">
-                <h3 className="text-xs font-semibold text-zinc-600 uppercase mb-3">Commercial Details</h3>
+              <div className="border-t border-hairline pt-4">
+                <h3 className="text-xs font-semibold text-ink-2 uppercase mb-3">Commercial Details</h3>
 
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Business Name</label>
+                  <label className="block text-xs text-ink-3 mb-1">Business Name</label>
                   <input value={form.business_name || ''} onChange={e => setForm(f => ({ ...f, business_name: e.target.value }))}
                     placeholder="If different from Client name"
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-xs text-zinc-400 mb-1">Hours of Operation</label>
+                  <label className="block text-xs text-ink-3 mb-1">Hours of Operation</label>
                   <input value={form.hours_of_operation || ''} onChange={e => setForm(f => ({ ...f, hours_of_operation: e.target.value }))}
                     placeholder="e.g. Mon-Fri 9am-5pm"
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 </div>
               </div>
             )}
 
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Notes</label>
+              <label className="block text-xs text-ink-3 mb-1">Notes</label>
               <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
           </div>
-          <div className="p-6 border-t border-zinc-200 shrink-0">
+          <div className="p-6 border-t border-hairline shrink-0">
             <button onClick={save} disabled={saving || !form.client_id || !form.name || !form.address}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               {saving ? 'Saving...' : 'Save Property'}
             </button>
           </div>
