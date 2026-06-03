@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Users, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
   Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical, Zap, LogIn,
-  List, Grid3x3, AlignLeft
+  List, Grid3x3, AlignLeft, Wand2
 } from 'lucide-react'
 import { get, post, put, del } from '../api'
 import Button from '../components/ui/Button'
@@ -891,6 +891,10 @@ export default function Schedule() {
   const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [hardDelete, setHardDelete] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  // Auto-assign turnovers: null | { loading } | { preview:{assigned,unassignable} } | { running }
+  const [autoAssign, setAutoAssign] = useState(null)
+  const refresh = () => setRefreshKey(k => k + 1)
 
   const dateStr = currentDate.toISOString().split('T')[0]
 
@@ -973,7 +977,37 @@ export default function Schedule() {
     }
 
     loadSchedule()
-  }, [currentDate])
+  }, [currentDate, refreshKey])
+
+  // Auto-assign: preview (dry-run) the picks, then confirm to apply.
+  const previewAutoAssign = async () => {
+    setAutoAssign({ loading: true })
+    try {
+      const res = await post('/api/jobs/auto-assign-turnovers?dry_run=true', {})
+      if (!res?.assigned?.length && !res?.unassignable?.length) {
+        setAutoAssign(null)
+        toast.info('No unassigned turnovers to fill')
+        return
+      }
+      setAutoAssign({ preview: res })
+    } catch (e) {
+      setAutoAssign(null)
+      toast.error(e.message || 'Could not preview auto-assign')
+    }
+  }
+
+  const runAutoAssign = async () => {
+    setAutoAssign(a => ({ ...a, running: true }))
+    try {
+      const res = await post('/api/jobs/auto-assign-turnovers', {})
+      toast.success(`Assigned ${res?.assigned?.length || 0} turnover${(res?.assigned?.length || 0) === 1 ? '' : 's'}`)
+      setAutoAssign(null)
+      refresh()
+    } catch (e) {
+      toast.error(e.message || 'Auto-assign failed')
+      setAutoAssign(a => ({ ...a, running: false }))
+    }
+  }
 
   // Filter visits
   const filteredVisits = useMemo(() => {
@@ -1260,6 +1294,12 @@ export default function Schedule() {
                 <span className="hidden sm:inline">Month</span>
               </button>
             </div>
+
+            <Button onClick={previewAutoAssign} variant="secondary" size="sm" className="whitespace-nowrap"
+              title="Auto-assign available cleaners to unassigned turnovers">
+              <Wand2 className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1.5">Auto-assign</span>
+            </Button>
 
             <Button onClick={() => { setEditingJob(null); setShowJobModal(true) }} variant="primary" size="sm" className="whitespace-nowrap">
               <Plus className="w-4 h-4" />
@@ -1654,6 +1694,73 @@ export default function Schedule() {
           onClose={() => setShowJobModal(false)}
           onSave={handleJobSave}
         />
+      )}
+
+      {/* Auto-assign turnovers — preview then confirm */}
+      {autoAssign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => !autoAssign.running && setAutoAssign(null)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative w-full max-w-lg max-h-[85vh] bg-panel rounded-2xl shadow-2xl border border-hairline flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Wand2 className="w-5 h-5 text-blue-600 shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-ink">Auto-assign turnovers</h2>
+                  <p className="text-[12px] text-ink-3 mt-0.5">Available cleaners, balanced by daily load. Review before applying.</p>
+                </div>
+              </div>
+              <button onClick={() => !autoAssign.running && setAutoAssign(null)} className="p-1 text-ink-3 hover:text-ink-2 shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-3">
+              {autoAssign.loading ? (
+                <div className="py-12 text-center text-[13px] text-ink-3">Finding available cleaners…</div>
+              ) : (
+                <>
+                  {autoAssign.preview?.assigned?.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {autoAssign.preview.assigned.map(a => (
+                        <div key={a.job_id} className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-medium text-ink truncate">{a.title}</div>
+                            <div className="text-[11px] text-ink-3">{a.date}</div>
+                          </div>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded shrink-0">
+                            <User className="w-3 h-3" /> {a.cleaner_id}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-6 text-center text-[13px] text-ink-3">No turnovers could be auto-assigned.</div>
+                  )}
+                  {autoAssign.preview?.unassignable?.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div className="text-[11px] font-semibold text-amber-700 mb-1">
+                        {autoAssign.preview.unassignable.length} couldn’t be filled (no available cleaner)
+                      </div>
+                      {autoAssign.preview.unassignable.map(u => (
+                        <div key={u.job_id} className="text-[11px] text-amber-700/90">{u.title} · {u.date}</div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-hairline flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setAutoAssign(null)} disabled={autoAssign.running}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={runAutoAssign}
+                disabled={autoAssign.loading || autoAssign.running || !autoAssign.preview?.assigned?.length}>
+                {autoAssign.running ? 'Assigning…' : `Assign ${autoAssign.preview?.assigned?.length || 0}`}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Complete Visit Modal */}
