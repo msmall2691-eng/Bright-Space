@@ -29,7 +29,7 @@ export default function Header({ onMenuToggle }) {
       <div className="flex items-center gap-3 flex-1">
         <button
           onClick={onMenuToggle}
-          className="lg:hidden p-2 -ml-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 active:bg-neutral-200 transition-colors"
+          className="lg:hidden p-2 -ml-2 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 active:bg-bg-2 transition-colors"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -37,9 +37,9 @@ export default function Header({ onMenuToggle }) {
           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-md">
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="text-sm font-bold text-neutral-900 tracking-tight">{title}</span>
+          <span className="text-sm font-bold text-ink tracking-tight">{title}</span>
         </div>
-        <h1 className="hidden lg:block text-base font-bold text-neutral-900">{title}</h1>
+        <h1 className="hidden lg:block text-base font-bold text-ink">{title}</h1>
       </div>
 
       <div className="flex items-center gap-2">
@@ -54,7 +54,7 @@ export default function Header({ onMenuToggle }) {
         >
           <Search className="w-4 h-4" />
           <span className="hidden sm:inline text-xs font-medium">Search</span>
-          <div className="hidden sm:flex items-center gap-1 text-xs text-neutral-400">
+          <div className="hidden sm:flex items-center gap-1 text-xs text-ink-3">
             <Command className="w-3 h-3" />
             <span>/</span>
           </div>
@@ -69,7 +69,7 @@ export default function Header({ onMenuToggle }) {
         >
           <Sparkles className="w-4 h-4" />
           <span className="text-xs font-medium">Ask AI</span>
-          <div className="flex items-center gap-1 text-xs text-neutral-400">
+          <div className="flex items-center gap-1 text-xs text-ink-3">
             <Command className="w-3 h-3" />
             <span>K</span>
           </div>

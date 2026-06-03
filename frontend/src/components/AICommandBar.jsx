@@ -49,12 +49,12 @@ export default function AICommandBar() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 bg-white text-gray-600 rounded-xl shadow-lg border border-gray-200 hover:border-gray-300 hover:shadow-xl transition-all group"
+        className="fixed bottom-[4.75rem] right-4 lg:bottom-6 lg:right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 bg-panel text-ink-2 rounded-xl shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
         title="AI Assistant (Ctrl+K)"
       >
-        <Sparkles className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
-        <span className="text-[12px] font-medium hidden sm:inline text-gray-500">Ask AI</span>
-        <kbd className="hidden sm:inline text-[10px] text-gray-300 bg-gray-100 px-1.5 py-0.5 rounded ml-1">&#x2318;K</kbd>
+        <Sparkles className="w-4 h-4 text-ink-3 group-hover:text-ink-2" />
+        <span className="text-[12px] font-medium hidden sm:inline text-ink-3">Ask AI</span>
+        <kbd className="hidden sm:inline text-[10px] text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded ml-1">&#x2318;K</kbd>
       </button>
     )
   }
