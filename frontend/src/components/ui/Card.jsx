@@ -12,6 +12,7 @@
  *
  * Props:
  *  - title / subtitle / icon / iconColor — optional header row (with divider)
+ *  - badge — small node rendered right after the title (e.g. a count pill)
  *  - action — node rendered right-aligned in the header row
  *  - padded — pad the body (default true); set false for edge-to-edge lists
  *  - as — element/component to render as (default "div"); use "section" etc.
@@ -21,6 +22,7 @@ export default function Card({
   subtitle,
   icon: Icon,
   iconColor = 'text-ink-3',
+  badge,
   action,
   padded = true,
   as: Tag = 'div',
@@ -36,7 +38,12 @@ export default function Card({
           <div className="flex items-center gap-2 min-w-0">
             {Icon && <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} />}
             <div className="min-w-0">
-              {title && <h2 className="text-sm font-semibold text-ink truncate">{title}</h2>}
+              {title && (
+                <h2 className="text-sm font-semibold text-ink truncate flex items-center gap-2">
+                  {title}
+                  {badge}
+                </h2>
+              )}
               {subtitle && <p className="text-[11px] text-ink-3 mt-0.5 truncate">{subtitle}</p>}
             </div>
           </div>
