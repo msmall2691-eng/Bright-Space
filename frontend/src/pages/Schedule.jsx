@@ -80,7 +80,7 @@ const TurnoverInfo = ({ job, compact = false }) => {
 // cards stacked vertically — no grid, no truncation, no horizontal scroll.
 // Tap a card to open the existing detail drawer via onSelect (same handler
 // the list view's cards use, so detail-panel behavior is identical).
-const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, isToday }) => {
+const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, isToday, empName }) => {
   // Sort by start_time so the day reads top-down chronologically. Visits
   // without a start_time sink to the bottom.
   const sorted = [...(visits || [])].sort((a, b) => {
@@ -188,8 +188,11 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                           <span className="truncate">{client.name}</span>
                         )}
                         {cleanerCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-700">
-                            <User className="w-3 h-3" /> {cleanerCount} cleaner{cleanerCount === 1 ? '' : 's'}
+                          <span className="inline-flex items-center gap-1 text-emerald-700 truncate">
+                            <User className="w-3 h-3 shrink-0" />
+                            {cleanerCount === 1 && empName
+                              ? empName(v.cleaner_ids[0])
+                              : `${cleanerCount} cleaners`}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-amber-700">
@@ -896,6 +899,15 @@ export default function Schedule() {
   const [autoAssign, setAutoAssign] = useState(null)
   const refresh = () => setRefreshKey(k => k + 1)
 
+  // Connecteam roster, so cleaner IDs can be shown as names. Fails to [] silently.
+  const [employees, setEmployees] = useState([])
+  useEffect(() => {
+    get('/api/dispatch/employees').then(r => setEmployees(Array.isArray(r) ? r : [])).catch(() => {})
+  }, [])
+  const empName = (id) =>
+    employees.find(e => String(e.id) === String(id) || String(e.userId) === String(id))?.name
+    || `Cleaner ${id}`
+
   const dateStr = currentDate.toISOString().split('T')[0]
 
   // Load visits for current week
@@ -1447,6 +1459,7 @@ export default function Schedule() {
           clients={clients}
           onSelect={handleEdit}
           isToday={dateStr === new Date().toISOString().split('T')[0]}
+          empName={empName}
         />
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
@@ -1730,7 +1743,7 @@ export default function Schedule() {
                             <div className="text-[11px] text-ink-3">{a.date}</div>
                           </div>
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded shrink-0">
-                            <User className="w-3 h-3" /> {a.cleaner_id}
+                            <User className="w-3 h-3" /> {empName(a.cleaner_id)}
                           </span>
                         </div>
                       ))}
