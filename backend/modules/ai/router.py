@@ -198,6 +198,86 @@ def _fallback_briefing(name, snapshot, followups):
     }
 
 
+# ── POST /api/ai/draft-invoice-reminder/{invoice_id} ────────────────────────
+
+def _days_overdue(inv: Invoice) -> Optional[int]:
+    if not inv.due_date or inv.status == "paid":
+        return None
+    try:
+        due = date.fromisoformat(str(inv.due_date)[:10])
+    except (ValueError, TypeError):
+        return None
+    d = (date.today() - due).days
+    return d if d > 0 else None
+
+
+@router.post("/draft-invoice-reminder/{invoice_id}")
+def draft_invoice_reminder(invoice_id: int, db: Session = Depends(get_db),
+                           user=Depends(get_current_user)):
+    """Draft a friendly payment-reminder note for one invoice. Review-first:
+    this only writes a draft, it does not send anything. Returns
+    {subject, message}. The message is meant to drop into the invoice send
+    panel's note field, so it works for email or SMS."""
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        return {"subject": "", "message": "", "error": "Invoice not found"}
+    client = db.query(Client).filter(Client.id == inv.client_id).first()
+    name = (client.name if client else "there").split()[0] if client and client.name else "there"
+    amount = inv.total or 0
+    od = _days_overdue(inv)
+    facts = {
+        "client_first_name": name,
+        "invoice_number": inv.invoice_number,
+        "amount_due": f"${amount:,.2f}",
+        "due_date": str(inv.due_date) if inv.due_date else None,
+        "days_overdue": od,
+        "status": inv.status,
+    }
+
+    client_ai = _anthropic_client()
+    if client_ai is None:
+        return _fallback_reminder(name, inv, od)
+
+    tone = ("firm but polite (the invoice is past due)" if od
+            else "warm and light (a gentle nudge, not yet overdue)")
+    system = (
+        "You write short, professional payment-reminder messages for a cleaning "
+        "business (Maine Cleaning Co). Tone: " + tone + ". 2-4 sentences, no "
+        "subject line in the body, address the client by first name, state the "
+        "invoice number and amount, and give a clear, friendly call to pay. "
+        "Respond with ONLY a JSON object: {\"subject\": string, \"message\": string}."
+    )
+    try:
+        text = _run_tool_loop(client_ai, system, json.dumps(facts, default=str),
+                              max_tokens=400, max_iters=1)
+        data = json.loads(_strip_json(text))
+        msg = (data.get("message") or "").strip()
+        if not msg:
+            return _fallback_reminder(name, inv, od)
+        return {
+            "subject": (data.get("subject") or f"Reminder: invoice {inv.invoice_number}").strip(),
+            "message": msg,
+        }
+    except Exception:
+        logger.exception("ai/draft-invoice-reminder failed; using fallback")
+        return _fallback_reminder(name, inv, od)
+
+
+def _fallback_reminder(name, inv: Invoice, od: Optional[int]) -> dict:
+    amount = f"${(inv.total or 0):,.2f}"
+    if od:
+        body = (f"Hi {name}, just a friendly reminder that invoice "
+                f"{inv.invoice_number} for {amount} is now {od} day(s) past due. "
+                f"When you have a moment, please send payment at your earliest "
+                f"convenience — and let us know if you have any questions. Thank you!")
+    else:
+        body = (f"Hi {name}, a quick reminder about invoice {inv.invoice_number} "
+                f"for {amount}"
+                + (f", due {inv.due_date}" if inv.due_date else "")
+                + ". Thanks so much for your business!")
+    return {"subject": f"Reminder: invoice {inv.invoice_number}", "message": body}
+
+
 # ── GET /api/ai/followup-check ──────────────────────────────────────────────
 
 @router.get("/followup-check")

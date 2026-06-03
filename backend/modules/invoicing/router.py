@@ -192,6 +192,16 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
         if not to_email:
             raise HTTPException(status_code=400, detail="No email address available")
         html, plain = build_invoice_email(inv_dict, client_name, company_phone)
+        # A custom note (e.g. an AI-drafted payment reminder) is prepended to
+        # both the HTML and plain-text bodies, mirroring the SMS path below.
+        if data.custom_message:
+            from html import escape as _esc
+            note_html = "".join(
+                f"<p style=\"margin:0 0 12px\">{_esc(line)}</p>"
+                for line in data.custom_message.split("\n") if line.strip()
+            )
+            html = note_html + html
+            plain = data.custom_message + "\n\n" + plain
         try:
             send_email(to=to_email, subject=f"Invoice {inv_num} — Maine Cleaning Co", html_body=html, text_body=plain)
             results["email"] = "sent"

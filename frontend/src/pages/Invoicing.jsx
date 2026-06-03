@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { CustomFieldsForm } from '../components/CustomFields'
-import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText } from 'lucide-react'
+import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText, Sparkles } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { PageHeader, StatCard, EmptyState } from '../components/ui'
 import { del, get, post, patch } from "../api"
@@ -67,6 +67,7 @@ export default function Invoicing() {
   const [sendForm, setSendForm]   = useState({ channel: 'email', email: '', phone: '', custom_message: '' })
   const [saving, setSaving]       = useState(false)
   const [sending, setSending]     = useState(false)
+  const [drafting, setDrafting]   = useState(false)
   const [deleting, setDeleting]   = useState(false)
   const [toasts, setToasts]       = useState([])
 
@@ -139,6 +140,21 @@ export default function Invoicing() {
       toast(`Invoice sent — ${parts}`); setPanel(null)
     } catch (e) { toast(e.message || 'Failed to send invoice', 'error') }
     setSending(false)
+  }
+
+  const draftReminder = async () => {
+    if (!selected || drafting) return
+    setDrafting(true)
+    try {
+      const res = await post(`/api/ai/draft-invoice-reminder/${selected.id}`, {})
+      if (res?.message) {
+        setSendForm(f => ({ ...f, custom_message: res.message }))
+        toast('Draft ready — review before sending')
+      } else {
+        toast(res?.error || 'Could not draft a reminder', 'error')
+      }
+    } catch (e) { toast(e.message || 'Could not draft a reminder', 'error') }
+    setDrafting(false)
   }
 
   const openEdit = (inv) => {
@@ -527,14 +543,19 @@ export default function Invoicing() {
               </div>
             )}
 
-            {sendForm.channel !== 'email' && (
-              <div>
-                <label className={lbl}>Custom message <span className="normal-case text-ink-3 font-normal">(optional)</span></label>
-                <textarea value={sendForm.custom_message} onChange={e => setSendForm(f => ({ ...f, custom_message: e.target.value }))}
-                  rows={3} placeholder="Prepended to the SMS…"
-                  className={inp + ' bg-bg resize-none'} />
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className={lbl + ' mb-0'}>Message <span className="normal-case text-ink-3 font-normal">(optional)</span></label>
+                <button onClick={draftReminder} disabled={drafting}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 transition-colors">
+                  <Sparkles className="w-3 h-3" />
+                  {drafting ? 'Drafting…' : 'Draft reminder'}
+                </button>
               </div>
-            )}
+              <textarea value={sendForm.custom_message} onChange={e => setSendForm(f => ({ ...f, custom_message: e.target.value }))}
+                rows={4} placeholder="Add a personal note — or let AI draft a payment reminder. Included with the email and SMS."
+                className={inp + ' bg-bg resize-none'} />
+            </div>
 
             {/* Preview card */}
             <div className="rounded-xl border border-hairline bg-bg p-4">
