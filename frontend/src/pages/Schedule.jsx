@@ -28,7 +28,7 @@ const VISIT_STATUS_CONFIG = {
   in_progress: { label: 'In Progress', dot: 'bg-amber-500',   badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700' },
   completed:   { label: 'Completed',   dot: 'bg-green-600',   badge: 'success', pillMobile: 'bg-emerald-50 text-emerald-700' },
   no_show:     { label: 'No Show',     dot: 'bg-red-500',     badge: 'danger',  pillMobile: 'bg-red-50 text-red-700' },
-  cancelled:   { label: 'Cancelled',   dot: 'bg-bg0', badge: 'danger',  pillMobile: 'bg-zinc-100 text-zinc-600' },
+  cancelled:   { label: 'Cancelled',   dot: 'bg-ink-3', badge: 'danger',  pillMobile: 'bg-bg-2 text-ink-2' },
 }
 
 // Short "Jun 5" style date label for booking check-in/out.
@@ -112,7 +112,7 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
 
         {sorted.length === 0 ? (
           <div className="bg-panel border border-hairline rounded-2xl p-10 text-center">
-            <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+            <Calendar className="w-8 h-8 text-ink-3 mx-auto mb-2" />
             <p className="text-[13px] text-ink-3">Nothing scheduled for this day</p>
           </div>
         ) : (
@@ -136,7 +136,7 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                     className={`group w-full text-left flex items-stretch rounded-2xl border bg-panel overflow-hidden transition-all active:scale-[0.99] ${
                       isCancelled
                         ? 'border-hairline opacity-60'
-                        : 'border-hairline hover:border-neutral-300 hover:shadow-sm'
+                        : 'border-hairline hover:border-hairline hover:shadow-sm'
                     }`}
                   >
                     {/* Color bar — job type signal */}
@@ -238,7 +238,7 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
         checked={selected}
         onChange={(e) => onToggleSelect?.(visit.id, e)}
         onClick={(e) => e.stopPropagation()}
-        className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer shrink-0"
+        className="w-3.5 h-3.5 rounded border-hairline cursor-pointer shrink-0"
         data-testid="visit-row-checkbox"
         aria-label="Select visit"
       />
@@ -290,7 +290,7 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
 
       {/* Mobile-only status pill — replaces the bare dot so the status
           is actually legible at a glance. */}
-      <span className={`sm:hidden inline-flex items-center text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${statusConfig.pillMobile || 'bg-zinc-100 text-zinc-700'}`}>
+      <span className={`sm:hidden inline-flex items-center text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${statusConfig.pillMobile || 'bg-bg-2 text-ink-2'}`}>
         {statusConfig.label}
       </span>
 
@@ -395,14 +395,14 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-semibold mb-1">Client *</label>
-              <select value={form.client_id} onChange={e => setForm(f => ({...f, client_id: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+              <select value={form.client_id} onChange={e => setForm(f => ({...f, client_id: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg">
                 <option value="">Select a client...</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Property (optional)</label>
-              <select value={form.property_id} onChange={e => handlePropertyChange(e.target.value)} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+              <select value={form.property_id} onChange={e => handlePropertyChange(e.target.value)} className="w-full px-3 py-2 border border-hairline rounded-lg">
                 <option value="">None</option>
                 {filteredProps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
@@ -410,16 +410,16 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1">Title *</label>
-            <input type="text" value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder="Weekly home clean" className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+            <input type="text" value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder="Weekly home clean" className="w-full px-3 py-2 border border-hairline rounded-lg" />
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1">Address *</label>
-            <input type="text" value={form.address} onChange={e => setForm(f => ({...f, address: e.target.value}))} placeholder="123 Main St, Portland, ME" className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+            <input type="text" value={form.address} onChange={e => setForm(f => ({...f, address: e.target.value}))} placeholder="123 Main St, Portland, ME" className="w-full px-3 py-2 border border-hairline rounded-lg" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-semibold mb-1">Frequency</label>
-              <select value={form.frequency} onChange={e => setForm(f => ({...f, frequency: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+              <select value={form.frequency} onChange={e => setForm(f => ({...f, frequency: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg">
                 <option value="weekly">Weekly</option>
                 <option value="biweekly">Biweekly (every 2 weeks)</option>
                 <option value="monthly">Monthly</option>
@@ -427,7 +427,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">Type</label>
-              <select value={form.job_type} onChange={e => setForm(f => ({...f, job_type: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg">
+              <select value={form.job_type} onChange={e => setForm(f => ({...f, job_type: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg">
                 <option value="residential">Residential</option>
                 <option value="commercial">Commercial</option>
               </select>
@@ -436,7 +436,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           {form.frequency === 'monthly' ? (
             <div>
               <label className="block text-sm font-semibold mb-1">Day of month (1-28)</label>
-              <input type="number" min="1" max="28" value={form.day_of_month} onChange={e => setForm(f => ({...f, day_of_month: e.target.value}))} className="w-32 px-3 py-2 border border-neutral-300 rounded-lg" />
+              <input type="number" min="1" max="28" value={form.day_of_month} onChange={e => setForm(f => ({...f, day_of_month: e.target.value}))} className="w-32 px-3 py-2 border border-hairline rounded-lg" />
             </div>
           ) : (
             <div>
@@ -446,7 +446,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
                   const dayNum = (i + 6) % 7
                   const sel = form.days_of_week.includes(dayNum)
                   return (
-                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-neutral-700 border-neutral-300')}>
+                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline')}>
                       {label}
                     </button>
                   )
@@ -457,21 +457,21 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-semibold mb-1">Start time</label>
-              <input type="time" value={form.start_time} onChange={e => setForm(f => ({...f, start_time: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+              <input type="time" value={form.start_time} onChange={e => setForm(f => ({...f, start_time: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg" />
             </div>
             <div>
               <label className="block text-sm font-semibold mb-1">End time</label>
-              <input type="time" value={form.end_time} onChange={e => setForm(f => ({...f, end_time: e.target.value}))} className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+              <input type="time" value={form.end_time} onChange={e => setForm(f => ({...f, end_time: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg" />
             </div>
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1">Generate weeks ahead</label>
-            <input type="number" min="1" max="52" value={form.generate_weeks_ahead} onChange={e => setForm(f => ({...f, generate_weeks_ahead: e.target.value}))} className="w-32 px-3 py-2 border border-neutral-300 rounded-lg" />
+            <input type="number" min="1" max="52" value={form.generate_weeks_ahead} onChange={e => setForm(f => ({...f, generate_weeks_ahead: e.target.value}))} className="w-32 px-3 py-2 border border-hairline rounded-lg" />
             <p className="text-xs text-ink-3 mt-1">How many weeks of future jobs to materialize.</p>
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1">Notes</label>
-            <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} className="w-full px-3 py-2 border border-neutral-300 rounded-lg" />
+            <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} className="w-full px-3 py-2 border border-hairline rounded-lg" />
           </div>
           {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
         </div>
@@ -524,10 +524,10 @@ function CompleteVisitModal({ visit, onClose, onComplete }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-hairline sticky top-0 bg-white">
+      <div className="bg-panel w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-hairline sticky top-0 bg-panel">
           <h3 className="text-base font-bold text-ink">Complete visit</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-neutral-100 text-neutral-500">
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-bg-2 text-ink-3">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -535,8 +535,8 @@ function CompleteVisitModal({ visit, onClose, onComplete }) {
         <div className="p-4 space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-neutral-600 uppercase">Checklist</p>
-              <span className="text-xs font-semibold text-neutral-500 tabular-nums">{doneCount}/{total}</span>
+              <p className="text-xs font-semibold text-ink-2 uppercase">Checklist</p>
+              <span className="text-xs font-semibold text-ink-3 tabular-nums">{doneCount}/{total}</span>
             </div>
             <div className="space-y-1.5">
               {Object.keys(checks).map(task => (
@@ -547,11 +547,11 @@ function CompleteVisitModal({ visit, onClose, onComplete }) {
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left text-sm transition-colors ${
                     checks[task]
                       ? 'bg-green-50 border-green-200 text-green-800'
-                      : 'bg-white border-hairline text-ink hover:bg-neutral-50'
+                      : 'bg-panel border-hairline text-ink hover:bg-bg'
                   }`}
                 >
                   <span className={`w-4 h-4 rounded flex items-center justify-center text-[11px] ${
-                    checks[task] ? 'bg-green-500 text-white' : 'border border-neutral-300'
+                    checks[task] ? 'bg-green-500 text-white' : 'border border-hairline'
                   }`}>{checks[task] ? '✓' : ''}</span>
                   {task}
                 </button>
@@ -560,19 +560,19 @@ function CompleteVisitModal({ visit, onClose, onComplete }) {
           </div>
 
           <div>
-            <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Photo links (optional)</p>
+            <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Photo links (optional)</p>
             <textarea
               value={photos}
               onChange={e => setPhotos(e.target.value)}
               rows={3}
               placeholder="One photo URL per line"
-              className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              className="w-full px-3 py-2 border border-hairline rounded-lg text-sm placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             />
-            <p className="text-[11px] text-neutral-400 mt-1">Paste links to photos (e.g. from your phone's cloud). Direct upload coming later.</p>
+            <p className="text-[11px] text-ink-3 mt-1">Paste links to photos (e.g. from your phone's cloud). Direct upload coming later.</p>
           </div>
         </div>
 
-        <div className="px-4 py-3 border-t border-hairline flex gap-2 sticky bottom-0 bg-white">
+        <div className="px-4 py-3 border-t border-hairline flex gap-2 sticky bottom-0 bg-panel">
           <Button variant="secondary" size="sm" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button variant="primary" size="sm" className="flex-1" onClick={submit} disabled={saving}>
             <CheckCircle className="w-4 h-4 mr-2" />
@@ -658,7 +658,7 @@ function AvailabilityPanel() {
           <div>
             <label className="block text-xs font-semibold text-ink-3 mb-1">Cleaner</label>
             <select value={form.cleaner_id} onChange={e => setForm(f => ({ ...f, cleaner_id: e.target.value }))}
-              className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-sm">
+              className="w-full px-3 py-2 border border-hairline rounded-lg text-sm">
               <option value="">Select…</option>
               {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
@@ -666,7 +666,7 @@ function AvailabilityPanel() {
           <div>
             <label className="block text-xs font-semibold text-ink-3 mb-1">Reason</label>
             <select value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-              className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-sm">
+              className="w-full px-3 py-2 border border-hairline rounded-lg text-sm">
               <option value="vacation">Vacation</option>
               <option value="sick">Sick</option>
               <option value="personal">Personal</option>
@@ -676,12 +676,12 @@ function AvailabilityPanel() {
           <div>
             <label className="block text-xs font-semibold text-ink-3 mb-1">From</label>
             <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-              className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-sm" />
+              className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-ink-3 mb-1">To</label>
             <input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
-              className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-sm" />
+              className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
           </div>
         </div>
         <div className="mt-3 flex justify-end">
@@ -699,13 +699,13 @@ function AvailabilityPanel() {
       ) : (
         <ul className="space-y-2">
           {entries.map(e => (
-            <li key={e.id} className="flex items-center justify-between bg-white border border-hairline rounded-lg px-3 py-2.5">
+            <li key={e.id} className="flex items-center justify-between bg-panel border border-hairline rounded-lg px-3 py-2.5">
               <div>
                 <span className="text-sm font-semibold text-ink">{e.cleaner_name || empName(e.cleaner_id)}</span>
                 <span className="text-xs text-ink-3 ml-2">{e.start_date} → {e.end_date}</span>
                 {e.reason && <span className="text-[11px] text-ink-3 ml-2 capitalize">· {e.reason}</span>}
               </div>
-              <button onClick={() => remove(e.id)} className="text-zinc-400 hover:text-red-500 p-1" aria-label="Remove">
+              <button onClick={() => remove(e.id)} className="text-ink-3 hover:text-red-500 p-1" aria-label="Remove">
                 <Trash2 className="w-4 h-4" />
               </button>
             </li>
@@ -793,7 +793,7 @@ function RecurringPanel() {
           <div className="text-center text-ink-3 py-12">Loading...</div>
         ) : schedules.length === 0 ? (
           <div className="bg-panel border border-hairline rounded-2xl p-10 text-center">
-            <Calendar className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+            <Calendar className="w-8 h-8 text-ink-3 mx-auto mb-2" />
             <p className="text-[13px] text-ink-3">No recurring schedules yet</p>
           </div>
         ) : (
@@ -808,11 +808,11 @@ function RecurringPanel() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.active ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.active ? 'bg-emerald-100 text-emerald-700' : 'bg-bg-2 text-ink-3'}`}>
                           {s.active ? 'Active' : 'Paused'}
                         </span>
                       </div>
-                      <p className="text-[13px] text-neutral-600">{client?.name || 'Unknown client'} · {s.address}</p>
+                      <p className="text-[13px] text-ink-2">{client?.name || 'Unknown client'} · {s.address}</p>
                       <p className="text-[12px] text-ink-3 mt-1">
                         {s.frequency} · {dayStr} · {s.upcoming_job_count || 0} upcoming job{s.upcoming_job_count === 1 ? '' : 's'} · generates {s.generate_weeks_ahead} weeks ahead
                       </p>
@@ -1195,7 +1195,7 @@ export default function Schedule() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <p className="text-neutral-600">Loading schedule...</p>
+        <p className="text-ink-2">Loading schedule...</p>
       </div>
     )
   }
@@ -1213,7 +1213,7 @@ export default function Schedule() {
               <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-xs font-semibold text-neutral-700 whitespace-nowrap min-w-[64px] text-center">
+              <span className="text-xs font-semibold text-ink-2 whitespace-nowrap min-w-[64px] text-center">
                 {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
               <button onClick={nextWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Next week">
@@ -1272,7 +1272,7 @@ export default function Schedule() {
             <button onClick={prevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs font-semibold text-neutral-700 flex-1 text-center">
+            <span className="text-xs font-semibold text-ink-2 flex-1 text-center">
               {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </span>
             <button onClick={nextWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
@@ -1361,27 +1361,27 @@ export default function Schedule() {
       {/* Selection / bulk-action bar */}
       <div className="bg-panel border-b border-hairline px-4 py-2">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <label className="flex items-center gap-2 text-xs text-neutral-600 cursor-pointer select-none">
+          <label className="flex items-center gap-2 text-xs text-ink-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
               onChange={selectAllVisible}
-              className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer"
+              className="w-3.5 h-3.5 rounded border-hairline cursor-pointer"
               data-testid="visits-select-all"
             />
             <span>Select all visible ({currentlyVisibleVisits.length})</span>
           </label>
           {selectedVisitIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
-              <span className="text-xs text-neutral-700 font-medium">{selectedVisitIds.size} selected</span>
-              <label className="flex items-center gap-1 text-[11px] text-neutral-600 cursor-pointer select-none" title="Permanently remove from database (vs. mark cancelled)">
+              <span className="text-xs text-ink-2 font-medium">{selectedVisitIds.size} selected</span>
+              <label className="flex items-center gap-1 text-[11px] text-ink-2 cursor-pointer select-none" title="Permanently remove from database (vs. mark cancelled)">
                 <input type="checkbox" checked={hardDelete}
                   onChange={e => setHardDelete(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-neutral-300 cursor-pointer" />
+                  className="w-3.5 h-3.5 rounded border-hairline cursor-pointer" />
                 Hard delete
               </label>
               <button onClick={clearVisitSelection}
-                className="text-xs text-ink-3 hover:text-neutral-700 px-2 py-1 rounded">
+                className="text-xs text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
                 Clear
               </button>
               <button onClick={bulkDeleteVisits} disabled={bulkDeleting}
@@ -1426,8 +1426,8 @@ export default function Schedule() {
           {Object.keys(visitsByDate).length === 0 ? (
             <GlassCard>
               <div className="text-center py-12">
-                <CalendarIcon className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
-                <p className="text-neutral-600">No visits scheduled for this week</p>
+                <CalendarIcon className="w-12 h-12 text-ink-3 mx-auto mb-3" />
+                <p className="text-ink-2">No visits scheduled for this week</p>
               </div>
             </GlassCard>
           ) : (
@@ -1481,7 +1481,7 @@ export default function Schedule() {
                 <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
                 <button
                   onClick={() => setShowDetails(false)}
-                  className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-neutral-200 -mr-2 sm:mr-0"
+                  className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-bg-2 -mr-2 sm:mr-0"
                 >
                   <X className="w-5 sm:w-5 h-5 sm:h-5" />
                 </button>
@@ -1490,7 +1490,7 @@ export default function Schedule() {
               {/* Details */}
               <div className="space-y-3 sm:space-y-4">
                 <div>
-                  <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Date & Time</p>
+                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Date & Time</p>
                   <p className="text-sm sm:text-base text-ink">
                     {selectedVisit.visit.scheduled_date && String(selectedVisit.visit.scheduled_date).trim()
                       ? `${new Date(`${selectedVisit.visit.scheduled_date}T${selectedVisit.visit.start_time || '09:00'}`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ ${(selectedVisit.visit.start_time || '09:00').slice(0, 5)}`
@@ -1500,22 +1500,22 @@ export default function Schedule() {
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Property</p>
+                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Property</p>
                   <p className="text-sm sm:text-base text-ink">{selectedVisit.property?.name}</p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Address</p>
+                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
                   <p className="text-sm sm:text-base text-ink break-words">{selectedVisit.property?.address}</p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Client</p>
+                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Client</p>
                   <p className="text-sm sm:text-base text-ink">{selectedVisit.job?.client_name}</p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Status</p>
+                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Status</p>
                   <StatusBadge status={VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.badge || 'info'}>
                     {VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.label || selectedVisit.visit.status}
                   </StatusBadge>
@@ -1525,7 +1525,7 @@ export default function Schedule() {
                 {selectedVisit.job?.job_type === 'str_turnover' &&
                   (selectedVisit.job?.booking || selectedVisit.job?.next_arrival || selectedVisit.job?.is_immediate_turnover) && (
                   <div>
-                    <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Turnover</p>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Turnover</p>
                     {selectedVisit.job?.is_immediate_turnover && (
                       <p className="inline-flex items-center gap-1 text-sm font-semibold text-red-700 mb-1">
                         <Zap className="w-3.5 h-3.5" /> Same-day turnaround — next guest arrives today
@@ -1550,14 +1550,14 @@ export default function Schedule() {
 
                 {selectedVisit.visit.cleaner_ids?.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Assigned Cleaners</p>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Assigned Cleaners</p>
                     <p className="text-sm sm:text-base text-ink">{selectedVisit.visit.cleaner_ids.length} cleaner(s)</p>
                   </div>
                 )}
 
                 {selectedVisit.visit.gcal_event_id && (
                   <div>
-                    <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Google Calendar</p>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Google Calendar</p>
                     <p className="text-sm text-green-700">✅ Synced</p>
                   </div>
                 )}
@@ -1567,7 +1567,7 @@ export default function Schedule() {
                 {selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
                   <div className="border-t border-hairline pt-3 flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold text-neutral-600 uppercase mb-0.5">SMS reminder</p>
+                      <p className="text-xs font-semibold text-ink-2 uppercase mb-0.5">SMS reminder</p>
                       <p className="text-[12px] text-ink-3">
                         {selectedVisit.job?.skip_sms_reminder
                           ? '🔕 Off — no 24h text for this booking'
@@ -1591,12 +1591,12 @@ export default function Schedule() {
                 {/* Completion summary, once a visit has been completed */}
                 {selectedVisit.visit.status === 'completed' && (selectedVisit.visit.checklist_results || selectedVisit.visit.photos?.length > 0) && (
                   <div className="border-t border-hairline pt-3">
-                    <p className="text-xs font-semibold text-neutral-600 uppercase mb-1">Completion</p>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Completion</p>
                     {selectedVisit.visit.checklist_results && (
                       <ul className="text-sm text-ink space-y-0.5">
                         {Object.entries(selectedVisit.visit.checklist_results).map(([task, done]) => (
                           <li key={task} className="flex items-center gap-1.5">
-                            <span className={done ? 'text-green-600' : 'text-neutral-400'}>{done ? '✓' : '○'}</span>
+                            <span className={done ? 'text-green-600' : 'text-ink-3'}>{done ? '✓' : '○'}</span>
                             {task}
                           </li>
                         ))}

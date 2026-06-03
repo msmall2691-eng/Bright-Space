@@ -78,10 +78,10 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
   }
 
   return (
-    <div className="border-t border-gray-200 bg-gray-50 p-4">
+    <div className="border-t border-hairline bg-bg p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Quick Reply</h3>
-        <button onClick={onCancel} className="p-1 rounded-md hover:bg-gray-200 text-gray-500">
+        <h3 className="text-sm font-semibold text-ink">Quick Reply</h3>
+        <button onClick={onCancel} className="p-1 rounded-md hover:bg-bg-2 text-ink-3">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -100,7 +100,7 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
             <button
               key={t.label}
               onClick={() => applyTemplate(t)}
-              className="px-2.5 py-1 text-xs font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-2.5 py-1 text-xs font-medium bg-panel border border-hairline text-ink-2 rounded-lg hover:bg-bg transition-colors"
             >
               {t.label}
             </button>
@@ -114,7 +114,7 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
             value={body}
             onChange={e => setBody(e.target.value)}
             placeholder="Type your message..."
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+            className="w-full px-3 py-2 border border-hairline rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
             rows="4"
           />
         </div>
@@ -123,7 +123,7 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
           <button
             onClick={onCancel}
             disabled={sending}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-hairline text-ink-2 hover:bg-bg disabled:opacity-50"
           >
             Cancel
           </button>
@@ -143,9 +143,9 @@ function ReplyPanel({ email, onSent, onCancel, fromEmail }) {
 
 function ContactCard({ email, client, onCreateLead, creating }) {
   return (
-    <div className="bg-white border-l border-gray-200 w-72 flex flex-col">
+    <div className="bg-panel border-l border-hairline w-72 flex flex-col">
       {/* Header */}
-      <div className="px-4 py-4 border-b border-gray-200">
+      <div className="px-4 py-4 border-b border-hairline">
         <div className="flex items-center gap-3 mb-3">
           <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-semibold ${
             client ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
@@ -153,8 +153,8 @@ function ContactCard({ email, client, onCreateLead, creating }) {
             {email.from_name?.charAt(0)?.toUpperCase() || '?'}
           </div>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">{email.from_name}</h3>
-            <p className="text-xs text-gray-500 truncate">{email.from_email}</p>
+            <h3 className="text-sm font-semibold text-ink truncate">{email.from_name}</h3>
+            <p className="text-xs text-ink-3 truncate">{email.from_email}</p>
           </div>
         </div>
 
@@ -178,36 +178,36 @@ function ContactCard({ email, client, onCreateLead, creating }) {
       {/* Contact Info */}
       <div className="px-4 py-4 space-y-3 flex-1">
         <div>
-          <div className="text-xs text-gray-500 font-medium mb-2">Email Address</div>
-          <div className="text-sm text-gray-900 font-medium break-all">{email.from_email}</div>
+          <div className="text-xs text-ink-3 font-medium mb-2">Email Address</div>
+          <div className="text-sm text-ink font-medium break-all">{email.from_email}</div>
         </div>
 
         {client && (
           <>
             {client.phone && (
               <div>
-                <div className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-1.5">
+                <div className="text-xs text-ink-3 font-medium mb-2 flex items-center gap-1.5">
                   <Phone className="w-3 h-3" /> Phone
                 </div>
-                <div className="text-sm text-gray-900 font-medium">{client.phone}</div>
+                <div className="text-sm text-ink font-medium">{client.phone}</div>
               </div>
             )}
 
             {client.address && (
               <div>
-                <div className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-1.5">
+                <div className="text-xs text-ink-3 font-medium mb-2 flex items-center gap-1.5">
                   <MapPin className="w-3 h-3" /> Address
                 </div>
-                <div className="text-sm text-gray-900">{client.address}</div>
+                <div className="text-sm text-ink">{client.address}</div>
               </div>
             )}
 
             <div>
-              <div className="text-xs text-gray-500 font-medium mb-2">Status</div>
+              <div className="text-xs text-ink-3 font-medium mb-2">Status</div>
               <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
                 client.status === 'active' ? 'bg-green-50 text-green-700' :
                 client.status === 'lead' ? 'bg-amber-50 text-amber-700' :
-                'bg-gray-100 text-gray-700'
+                'bg-bg-2 text-ink-2'
               }`}>
                 {client.status}
               </span>
@@ -217,7 +217,7 @@ function ContactCard({ email, client, onCreateLead, creating }) {
       </div>
 
       {/* Quick Actions */}
-      <div className="px-4 py-4 border-t border-gray-200 space-y-2">
+      <div className="px-4 py-4 border-t border-hairline space-y-2">
         <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium">
           <Phone className="w-4 h-4" /> Call
         </button>
@@ -327,9 +327,9 @@ export default function GmailInbox() {
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
+      <div className="flex-1 flex items-center justify-center text-ink-3">
         <div className="text-center">
-          <Mail className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <Mail className="w-12 h-12 mx-auto mb-3 text-ink-3" />
           <p className="text-sm">{error}</p>
           <button onClick={load} className="mt-3 text-sm text-blue-600 hover:underline">Retry</button>
         </div>
@@ -338,17 +338,17 @@ export default function GmailInbox() {
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden bg-gray-50">
+    <div className="flex flex-1 h-full overflow-hidden bg-bg">
       {/* Left pane: Email list */}
-      <div className={`lg:w-96 border-r border-gray-200 flex flex-col bg-white transition-all duration-300 ${
+      <div className={`lg:w-96 border-r border-hairline flex flex-col bg-panel transition-all duration-300 ${
         selected ? 'hidden lg:flex' : 'flex'
       }`}>
         {/* Header */}
-        <div className="px-4 py-4 border-b border-gray-200">
+        <div className="px-4 py-4 border-b border-hairline">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Mail className="w-5 h-5 text-blue-600" />
-              <h1 className="text-lg font-semibold text-gray-900">Inbox</h1>
+              <h1 className="text-lg font-semibold text-ink">Inbox</h1>
               {summary.unread > 0 && (
                 <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
                   {summary.unread}
@@ -358,7 +358,7 @@ export default function GmailInbox() {
             <button
               onClick={load}
               disabled={loading}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 disabled:opacity-50 transition-colors"
+              className="p-2 rounded-lg hover:bg-bg-2 text-ink-3 disabled:opacity-50 transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -366,13 +366,13 @@ export default function GmailInbox() {
 
           {/* Search */}
           <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
             <input
               type="text"
               placeholder="Search..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-hairline rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
@@ -389,7 +389,7 @@ export default function GmailInbox() {
                 className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
                   filter === f.key
                     ? 'bg-blue-100 text-blue-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-bg-2 text-ink-2 hover:bg-bg-2'
                 }`}
               >
                 {f.label}
@@ -401,26 +401,26 @@ export default function GmailInbox() {
         {/* Email list */}
         <div className="flex-1 overflow-y-auto">
           {loading && emails.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+            <div className="flex items-center justify-center h-40 text-ink-3 text-sm">
               <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Loading...
             </div>
           ) : connectionError ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <Mail className="w-10 h-10 text-amber-500 mb-2" />
-              <p className="text-sm font-medium text-gray-700 mb-1">
+              <p className="text-sm font-medium text-ink-2 mb-1">
                 {connectionError.error === 'no_credentials' ? 'Email Not Connected' : 'Connection Error'}
               </p>
-              <p className="text-xs text-gray-500 mb-3">{connectionError.message}</p>
+              <p className="text-xs text-ink-3 mb-3">{connectionError.message}</p>
               <a href="/settings" className="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
                 Configure Email
               </a>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-gray-400">
+            <div className="flex items-center justify-center h-40 text-ink-3">
               <Inbox className="w-5 h-5 mr-2" /> No emails
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-hairline">
               {filtered.map(em => (
                 <div
                   key={em.id}
@@ -429,7 +429,7 @@ export default function GmailInbox() {
                     setShowReplyPanel(false)
                   }}
                   className={`px-4 py-3 cursor-pointer transition-colors ${
-                    selected?.id === em.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                    selected?.id === em.id ? 'bg-blue-50' : 'hover:bg-bg'
                   } ${!em.is_read ? 'bg-blue-50/40' : ''}`}
                 >
                   <div className="flex items-start gap-3">
@@ -440,17 +440,17 @@ export default function GmailInbox() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <span className={`text-sm truncate ${!em.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
+                        <span className={`text-sm truncate ${!em.is_read ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`}>
                           {em.from_name}
                         </span>
-                        <span className="text-xs text-gray-400 shrink-0 ml-2">{timeAgo(em.date)}</span>
+                        <span className="text-xs text-ink-3 shrink-0 ml-2">{timeAgo(em.date)}</span>
                       </div>
-                      <p className={`text-sm truncate mt-1 ${!em.is_read ? 'text-gray-700' : 'text-gray-500'}`}>
+                      <p className={`text-sm truncate mt-1 ${!em.is_read ? 'text-ink-2' : 'text-ink-3'}`}>
                         {em.subject}
                       </p>
-                      <p className="text-xs text-gray-400 truncate mt-0.5">{em.snippet}</p>
+                      <p className="text-xs text-ink-3 truncate mt-0.5">{em.snippet}</p>
                     </div>
-                    {em.has_attachments && <Paperclip className="w-3 h-3 text-gray-400 shrink-0" />}
+                    {em.has_attachments && <Paperclip className="w-3 h-3 text-ink-3 shrink-0" />}
                   </div>
                 </div>
               ))}
@@ -460,27 +460,27 @@ export default function GmailInbox() {
       </div>
 
       {/* Middle pane: Email detail */}
-      <div className={`flex-1 flex flex-col bg-white overflow-hidden transition-all duration-300 ${
+      <div className={`flex-1 flex flex-col bg-panel overflow-hidden transition-all duration-300 ${
         selected ? 'flex' : 'hidden lg:flex'
       }`}>
         {selected ? (
           <>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 shrink-0">
+            <div className="px-6 py-4 border-b border-hairline shrink-0">
               <button
                 onClick={() => {
                   setSelected(null)
                   setShowReplyPanel(false)
                 }}
-                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 lg:hidden mb-3"
+                className="flex items-center gap-1.5 text-sm text-ink-3 hover:text-ink-2 lg:hidden mb-3"
               >
                 <ArrowLeft className="w-4 h-4" /> Back
               </button>
 
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900 mb-2">{selected.subject}</h2>
-                  <p className="text-xs text-gray-500">{formatDate(selected.date)}</p>
+                  <h2 className="text-lg font-semibold text-ink mb-2">{selected.subject}</h2>
+                  <p className="text-xs text-ink-3">{formatDate(selected.date)}</p>
                 </div>
                 {selected.direction !== 'outbound' && (
                   <button
@@ -495,7 +495,7 @@ export default function GmailInbox() {
 
             {/* Email body */}
             <div ref={detailRef} className="flex-1 overflow-y-auto px-6 py-5">
-              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
+              <div className="prose prose-sm max-w-none text-ink-2 whitespace-pre-wrap leading-relaxed">
                 {selected.body || selected.snippet || '(No content)'}
               </div>
             </div>
@@ -513,8 +513,8 @@ export default function GmailInbox() {
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <Mail className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm text-gray-500">Select an email to read</p>
+              <Mail className="w-12 h-12 mx-auto mb-3 text-ink-3" />
+              <p className="text-sm text-ink-3">Select an email to read</p>
             </div>
           </div>
         )}

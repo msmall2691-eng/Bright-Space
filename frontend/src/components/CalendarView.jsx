@@ -272,15 +272,15 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
 
   const dayDetail = (
     <>
-      <div className="px-4 py-3 border-b border-gray-200 flex items-start justify-between gap-2">
+      <div className="px-4 py-3 border-b border-hairline flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-gray-900">
+          <div className="text-sm font-semibold text-ink">
             {selected
               ? new Date(selected + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
               : 'Select a day'}
           </div>
           {selected && (
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-ink-3 mt-0.5">
               {selectedJobs.length} job{selectedJobs.length !== 1 ? 's' : ''}
               {selectedBookings.length > 0 && ` · ${selectedBookings.length} Airbnb booking${selectedBookings.length !== 1 ? 's' : ''}`}
               {selectedSkips.length + selectedReschedFrom.length + selectedReschedTo.length > 0 && (
@@ -296,7 +296,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
         {isMobile && selected && (
           <button
             onClick={() => setSelected(null)}
-            className="p-1 -mr-1 text-gray-400 hover:text-gray-600 active:text-gray-800"
+            className="p-1 -mr-1 text-ink-3 hover:text-ink-2 active:text-ink-2"
             aria-label="Close day details"
           >
             <X className="w-5 h-5" />
@@ -315,7 +315,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                     <Ban className="w-3 h-3 text-purple-500 shrink-0" />
                     <span className="text-xs font-medium text-purple-700 line-through">Skipped from recurring schedule</span>
                   </div>
-                  {ex.reason && <div className="text-[10px] text-gray-500 mt-1">{ex.reason}</div>}
+                  {ex.reason && <div className="text-[10px] text-ink-3 mt-1">{ex.reason}</div>}
                 </div>
               ))}
             </div>
@@ -332,7 +332,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                     <ArrowRight className="w-3 h-3 text-purple-500 shrink-0" />
                     <span className="text-xs font-medium text-purple-700">Rescheduled to {ex.rescheduled_date}</span>
                   </div>
-                  {ex.reason && <div className="text-[10px] text-gray-500 mt-1">{ex.reason}</div>}
+                  {ex.reason && <div className="text-[10px] text-ink-3 mt-1">{ex.reason}</div>}
                 </div>
               ))}
             </div>
@@ -349,7 +349,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                     <ArrowLeft className="w-3 h-3 text-purple-500 shrink-0" />
                     <span className="text-xs font-medium text-purple-700">Moved from {ex.exception_date}</span>
                   </div>
-                  {ex.reason && <div className="text-[10px] text-gray-500 mt-1">{ex.reason}</div>}
+                  {ex.reason && <div className="text-[10px] text-ink-3 mt-1">{ex.reason}</div>}
                 </div>
               ))}
             </div>
@@ -367,7 +367,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                     <span className="text-xs font-medium text-orange-700">{b.property_name}</span>
                   </div>
                   <div className="text-[10px] text-orange-600/70">{b.summary || 'Reserved'}</div>
-                  <div className="text-[10px] text-gray-500 mt-1">
+                  <div className="text-[10px] text-ink-3 mt-1">
                     {b.checkin_date} – {b.checkout_date}
                     {b.checkout_date === selected && <span className="text-orange-600 ml-1 font-medium">checkout today</span>}
                   </div>
@@ -379,7 +379,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
 
         {selectedJobs.length > 0 && (
           <div>
-            <p className="text-[10px] text-gray-400 font-medium mb-2 uppercase tracking-wide">Jobs</p>
+            <p className="text-[10px] text-ink-3 font-medium mb-2 uppercase tracking-wide">Jobs</p>
             <div className="space-y-2">
               {selectedJobs.map(j => {
                 const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
@@ -388,11 +388,11 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                   <div
                     key={j.id}
                     onClick={() => onJobClick?.(j)}
-                    className="bg-white hover:bg-gray-50 active:bg-gray-100 border border-gray-200 rounded-lg p-3 cursor-pointer transition-colors"
+                    className="bg-panel hover:bg-bg active:bg-bg-2 border border-hairline rounded-lg p-3 cursor-pointer transition-colors"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900 truncate flex items-center gap-1">
+                        <div className="text-sm font-medium text-ink truncate flex items-center gap-1">
                           {j.recurring_schedule_id && <RotateCw className="w-3 h-3 text-purple-500 shrink-0" title="Recurring" />}
                           {j.is_immediate_turnover && (
                             <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700 bg-red-100 border border-red-200 px-1 rounded shrink-0" title="Same-day check-out and check-in — tight cleaning window">
@@ -401,12 +401,12 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                           )}
                           {j.title}
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>
-                        {j.address && <div className="text-xs text-gray-400 truncate mt-0.5">{j.address}</div>}
+                        <div className="text-xs text-ink-3 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>
+                        {j.address && <div className="text-xs text-ink-3 truncate mt-0.5">{j.address}</div>}
                         {cleanerInits.length > 0 && (
                           <div className="flex items-center gap-1 mt-1">
                             {cleanerInits.map((ci, idx) => (
-                              <span key={idx} className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                              <span key={idx} className="text-[10px] font-semibold bg-bg-2 text-ink-2 px-1.5 py-0.5 rounded">
                                 {ci}
                               </span>
                             ))}
@@ -414,15 +414,15 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                         )}
                         {/* Phase 5: booking enrichment for STR turnovers. */}
                         {j.booking && (
-                          <div className="mt-2 pt-2 border-t border-gray-100 space-y-0.5">
+                          <div className="mt-2 pt-2 border-t border-hairline space-y-0.5">
                             <div className="flex items-center gap-1 text-[10px]">
-                              <ExternalLink className="w-2.5 h-2.5 text-gray-400 shrink-0" />
-                              <span className="font-medium text-gray-700">{j.booking.source}</span>
+                              <ExternalLink className="w-2.5 h-2.5 text-ink-3 shrink-0" />
+                              <span className="font-medium text-ink-2">{j.booking.source}</span>
                               {j.booking.summary && (
-                                <span className="text-gray-500 truncate">· {j.booking.summary}</span>
+                                <span className="text-ink-3 truncate">· {j.booking.summary}</span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                            <div className="flex items-center gap-2 text-[10px] text-ink-3">
                               {j.booking.guest_count && (
                                 <span className="inline-flex items-center gap-0.5">
                                   <Users className="w-2.5 h-2.5" /> {j.booking.guest_count} guest{j.booking.guest_count !== 1 ? 's' : ''}
@@ -439,7 +439,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                               <div className="flex items-center gap-1 text-[10px] text-emerald-700 mt-1">
                                 <span>→ next: {j.next_arrival.checkin_date}</span>
                                 {j.next_arrival.guest_count && (
-                                  <span className="text-gray-500">· {j.next_arrival.guest_count} guest{j.next_arrival.guest_count !== 1 ? 's' : ''}</span>
+                                  <span className="text-ink-3">· {j.next_arrival.guest_count} guest{j.next_arrival.guest_count !== 1 ? 's' : ''}</span>
                                 )}
                               </div>
                             )}
@@ -462,11 +462,11 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
 
         {selected && selectedJobs.length === 0 && selectedBookings.length === 0
           && selectedSkips.length === 0 && selectedReschedFrom.length === 0 && selectedReschedTo.length === 0 && (
-          <div className="text-center py-8 text-gray-400 text-sm">Nothing scheduled</div>
+          <div className="text-center py-8 text-ink-3 text-sm">Nothing scheduled</div>
         )}
 
         {!selected && !isMobile && (
-          <div className="text-center py-8 text-gray-400 text-sm">Click a day to see details</div>
+          <div className="text-center py-8 text-ink-3 text-sm">Click a day to see details</div>
         )}
       </div>
     </>
@@ -477,13 +477,13 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
       <div className="flex-1 flex flex-col min-w-0 p-2 sm:p-4">
         <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 sm:gap-3">
-            <button onClick={prev} className="p-1.5 hover:bg-gray-100 active:bg-gray-200 rounded-lg text-gray-500 hover:text-gray-700 transition-colors" aria-label="Previous month">
+            <button onClick={prev} className="p-1.5 hover:bg-bg-2 active:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-2 transition-colors" aria-label="Previous month">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-sm sm:text-lg font-bold text-gray-900 w-32 sm:w-48 text-center">
+            <h2 className="text-sm sm:text-lg font-bold text-ink w-32 sm:w-48 text-center">
               {MONTHS[month]} {year}
             </h2>
-            <button onClick={next} className="p-1.5 hover:bg-gray-100 active:bg-gray-200 rounded-lg text-gray-500 hover:text-gray-700 transition-colors" aria-label="Next month">
+            <button onClick={next} className="p-1.5 hover:bg-bg-2 active:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-2 transition-colors" aria-label="Next month">
               <ChevronRight className="w-5 h-5" />
             </button>
             <button onClick={goToday} className="text-xs text-blue-600 hover:text-blue-700 active:text-blue-800 px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 rounded-lg transition-colors font-medium">
@@ -491,7 +491,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
             </button>
           </div>
 
-          <div className="hidden sm:flex items-center gap-3 lg:gap-4 text-xs text-gray-500">
+          <div className="hidden sm:flex items-center gap-3 lg:gap-4 text-xs text-ink-3">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" />Residential</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" />Commercial</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" />Turnover</span>
@@ -501,13 +501,13 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
 
         <div className="grid grid-cols-7 mb-1">
           {(isMobile ? DAYS_SHORT : DAYS).map((d, i) => (
-            <div key={i} className="text-center text-[10px] sm:text-xs font-semibold text-gray-500 py-1.5 sm:py-2">{d}</div>
+            <div key={i} className="text-center text-[10px] sm:text-xs font-semibold text-ink-3 py-1.5 sm:py-2">{d}</div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 flex-1 gap-px bg-gray-200 rounded-xl overflow-hidden border border-gray-200">
+        <div className="grid grid-cols-7 flex-1 gap-px bg-bg-2 rounded-xl overflow-hidden border border-hairline">
           {cells.map((date, i) => {
-            if (!date) return <div key={i} className="bg-gray-50" />
+            if (!date) return <div key={i} className="bg-bg" />
 
             const dayJobs = jobsByDay[date] || []
             const dayBookings = bookingsByDay[date] || []
@@ -533,13 +533,13 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                   isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
                   isSelected ? 'bg-blue-50/60' :
                   dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
-                  'bg-white hover:bg-gray-50'
+                  'bg-panel hover:bg-bg'
                 }`}
               >
                 <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full mb-0.5 sm:mb-1 ${
                   isToday ? 'bg-blue-500 text-white' :
                   isSelected ? 'text-blue-600' :
-                  'text-gray-600'
+                  'text-ink-2'
                 }`}>
                   {parseInt(date.slice(8))}
                 </div>
@@ -611,7 +611,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
                           onJobClick?.(j)
                         }}
                         className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-0.5 sm:px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${
-                          isCancelled ? 'bg-zinc-100 text-zinc-400 border-zinc-200 line-through' :
+                          isCancelled ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
                           isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
                           `${tc.pill} ${tc.pillHover}`
                         }`}
@@ -646,7 +646,7 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
       </div>
 
       {!isMobile && (
-        <div className="w-72 bg-gray-50 border-l border-gray-200 flex flex-col shrink-0">
+        <div className="w-72 bg-bg border-l border-hairline flex flex-col shrink-0">
           {dayDetail}
         </div>
       )}
@@ -657,11 +657,11 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
           onClick={() => setSelected(null)}
         >
           <div
-            className="bg-white rounded-t-2xl w-full max-h-[75vh] flex flex-col shadow-glass-lg"
+            className="bg-panel rounded-t-2xl w-full max-h-[75vh] flex flex-col shadow-glass-lg"
             onClick={e => e.stopPropagation()}
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
-            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto my-2 shrink-0" />
+            <div className="w-12 h-1 bg-bg-2 rounded-full mx-auto my-2 shrink-0" />
             {dayDetail}
           </div>
         </div>
