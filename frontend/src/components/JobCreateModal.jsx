@@ -167,31 +167,31 @@ export default function JobCreateModal({
       className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center sm:justify-end"
       data-testid="job-create-modal"
     >
-      <div className="w-full sm:w-[420px] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-          <h2 className="font-semibold text-zinc-900">
+      <div className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-hairline">
+          <h2 className="font-semibold text-ink">
             {recurring ? 'Recurring Schedule' : 'Schedule Job'}
           </h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
+          <button onClick={onClose} className="text-ink-3 hover:text-ink" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
           {clientName && (
-            <div className="text-xs text-zinc-500">
-              For client <span className="font-medium text-zinc-700">{clientName}</span>
+            <div className="text-xs text-ink-3">
+              For client <span className="font-medium text-ink-2">{clientName}</span>
             </div>
           )}
 
           {/* Property picker (filtered by client) */}
           <div>
-            <label className="block text-xs text-zinc-700 font-medium mb-1">Property</label>
+            <label className="block text-xs text-ink-2 font-medium mb-1">Property</label>
             <select
               value={form.property_id}
               onChange={onPropertyChange}
               data-testid="job-create-property-select"
-              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
               disabled={loadingProps}
             >
               <option value="">
@@ -210,17 +210,17 @@ export default function JobCreateModal({
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-700 font-medium mb-1">Title *</label>
+            <label className="block text-xs text-ink-2 font-medium mb-1">Title *</label>
             <input
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder={recurring ? 'e.g. Biweekly Home Clean' : 'e.g. Smith Residence — Deep Clean'}
-              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-700 font-medium mb-1">Service Type</label>
+            <label className="block text-xs text-ink-2 font-medium mb-1">Service Type</label>
             <div className="flex gap-2">
               {JOB_TYPES.map(t => (
                 <button
@@ -230,7 +230,7 @@ export default function JobCreateModal({
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
                     form.job_type === t.value
                       ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+                      : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
                   }`}
                 >
                   {t.label}
@@ -238,18 +238,18 @@ export default function JobCreateModal({
               ))}
             </div>
             {form.job_type === 'str_turnover' && (
-              <p className="text-[11px] text-zinc-500 mt-1.5 leading-snug">
+              <p className="text-[11px] text-ink-3 mt-1.5 leading-snug">
                 Tip: STR turnovers can auto-schedule from an Airbnb/VRBO iCal feed. Set the property's type to STR on the client's Properties tab to add a feed.
               </p>
             )}
           </div>
 
           {/* Repeat toggle — drives the rest of the form. */}
-          <div className="flex items-center justify-between bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5">
-            <label className="flex items-center gap-2 text-sm text-zinc-700 font-medium cursor-pointer">
-              <RepeatIcon className="w-4 h-4 text-zinc-500" />
+          <div className="flex items-center justify-between bg-bg border border-hairline rounded-lg px-3 py-2.5">
+            <label className="flex items-center gap-2 text-sm text-ink-2 font-medium cursor-pointer">
+              <RepeatIcon className="w-4 h-4 text-ink-3" />
               Repeat
-              <span className="text-xs text-zinc-400 font-normal">
+              <span className="text-xs text-ink-3 font-normal">
                 {recurring ? '— recurring schedule' : '— one-time job'}
               </span>
             </label>
@@ -260,11 +260,11 @@ export default function JobCreateModal({
               onClick={() => setRecurring(r => !r)}
               data-testid="job-create-repeat-toggle"
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                recurring ? 'bg-blue-600' : 'bg-zinc-300'
+                recurring ? 'bg-blue-600' : 'bg-bg-2'
               }`}
             >
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                className={`inline-block h-4 w-4 transform rounded-full bg-panel transition-transform ${
                   recurring ? 'translate-x-4' : 'translate-x-0.5'
                 }`}
               />
@@ -274,14 +274,14 @@ export default function JobCreateModal({
           {/* One-time mode: single Date */}
           {!recurring && (
             <div>
-              <label className="block text-xs text-zinc-700 font-medium mb-1">
+              <label className="block text-xs text-ink-2 font-medium mb-1">
                 <Calendar className="w-3 h-3 inline mr-1" /> Date *
               </label>
               <input
                 type="date"
                 value={form.scheduled_date}
                 onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
               />
             </div>
           )}
@@ -290,7 +290,7 @@ export default function JobCreateModal({
           {recurring && (
             <>
               <div>
-                <label className="block text-xs text-zinc-700 font-medium mb-1">Frequency</label>
+                <label className="block text-xs text-ink-2 font-medium mb-1">Frequency</label>
                 <div className="grid grid-cols-2 gap-2">
                   {FREQUENCIES.map(opt => (
                     <button
@@ -304,7 +304,7 @@ export default function JobCreateModal({
                       className={`py-2 rounded-lg text-xs font-medium transition-colors border ${
                         form.frequency === opt.value
                           ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+                          : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
                       }`}
                     >
                       {opt.label}
@@ -315,20 +315,20 @@ export default function JobCreateModal({
 
               {form.frequency === 'monthly' ? (
                 <div>
-                  <label className="block text-xs text-zinc-700 font-medium mb-1">Day of Month</label>
+                  <label className="block text-xs text-ink-2 font-medium mb-1">Day of Month</label>
                   <input
                     type="number"
                     min="1"
                     max="28"
                     value={form.day_of_month || 1}
                     onChange={e => setForm(f => ({ ...f, day_of_month: parseInt(e.target.value) }))}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
                   />
-                  <p className="text-[10px] text-zinc-400 mt-1">1-28; months without a 29th/30th/31st are skipped automatically.</p>
+                  <p className="text-[10px] text-ink-3 mt-1">1-28; months without a 29th/30th/31st are skipped automatically.</p>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs text-zinc-700 font-medium mb-1">Days of Week *</label>
+                  <label className="block text-xs text-ink-2 font-medium mb-1">Days of Week *</label>
                   <div className="grid grid-cols-7 gap-1">
                     {WEEK_LABELS.map((d, i) => {
                       const selected = (form.days_of_week || []).includes(i)
@@ -346,7 +346,7 @@ export default function JobCreateModal({
                           className={`py-1.5 rounded-lg text-xs font-medium transition-colors border ${
                             selected
                               ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+                              : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
                           }`}
                         >
                           {d}
@@ -361,61 +361,61 @@ export default function JobCreateModal({
 
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-xs text-zinc-700 font-medium mb-1">
+              <label className="block text-xs text-ink-2 font-medium mb-1">
                 <Clock className="w-3 h-3 inline mr-1" /> Start *
               </label>
               <input
                 type="time"
                 value={form.start_time}
                 onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               />
             </div>
             <div className="flex-1">
-              <label className="block text-xs text-zinc-700 font-medium mb-1">End *</label>
+              <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
               <input
                 type="time"
                 value={form.end_time}
                 onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-700 font-medium mb-1">
+            <label className="block text-xs text-ink-2 font-medium mb-1">
               <MapPin className="w-3 h-3 inline mr-1" /> Address {recurring ? '*' : ''}
             </label>
             <input
               value={form.address}
               onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
               placeholder="123 Main St, Portland, ME"
-              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
 
           {recurring && (
             <div>
-              <label className="block text-xs text-zinc-700 font-medium mb-1">Generate ahead</label>
+              <label className="block text-xs text-ink-2 font-medium mb-1">Generate ahead</label>
               <select
                 value={form.generate_weeks_ahead}
                 onChange={e => setForm(f => ({ ...f, generate_weeks_ahead: parseInt(e.target.value) }))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               >
                 {[4, 6, 8, 12, 16, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
               </select>
-              <p className="text-[10px] text-zinc-400 mt-1">How many weeks of Jobs to materialize from this schedule.</p>
+              <p className="text-[10px] text-ink-3 mt-1">How many weeks of Jobs to materialize from this schedule.</p>
             </div>
           )}
 
           <div>
-            <label className="block text-xs text-zinc-700 font-medium mb-1">Notes</label>
+            <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
             <textarea
               value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               rows={2}
               placeholder="Special instructions, access codes, etc."
-              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none"
+              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none"
             />
           </div>
 
@@ -427,11 +427,11 @@ export default function JobCreateModal({
           )}
         </div>
 
-        <div className="p-6 border-t border-zinc-200">
+        <div className="p-6 border-t border-hairline">
           <button
             onClick={save}
             disabled={saving || !canSave}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
             {saving
               ? 'Creating...'

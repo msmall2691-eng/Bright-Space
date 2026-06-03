@@ -20,7 +20,7 @@ export function AIBriefing() {
   }
 
   return (
-    <div className="bg-white border border-gray-200/60 rounded-xl p-6 relative overflow-hidden">
+    <div className="bg-panel border border-hairline/60 rounded-xl p-6 relative overflow-hidden">
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -30,7 +30,7 @@ export function AIBriefing() {
           <button
             onClick={loadBriefing}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 text-gray-600"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-2 hover:bg-bg-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 text-ink-2"
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             {briefing ? 'Refresh' : 'Generate'}
@@ -40,10 +40,10 @@ export function AIBriefing() {
         {!briefing && !loading && !error && (
           <div className="text-center py-6">
             <Zap className="w-10 h-10 text-amber-400/50 mx-auto mb-3" />
-            <p className="text-gray-900/60 text-sm mb-3">Get your personalized morning briefing</p>
+            <p className="text-ink/60 text-sm mb-3">Get your personalized morning briefing</p>
             <button
               onClick={loadBriefing}
-              className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-[13px] font-medium transition-colors"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-medium transition-colors"
             >
               Generate Briefing
             </button>
@@ -53,7 +53,7 @@ export function AIBriefing() {
         {loading && (
           <div className="flex items-center gap-3 py-8 justify-center">
             <Loader2 className="w-5 h-5 animate-spin text-amber-400" />
-            <span className="text-gray-900/60 text-sm">Analyzing your business data...</span>
+            <span className="text-ink/60 text-sm">Analyzing your business data...</span>
           </div>
         )}
 
@@ -67,10 +67,10 @@ export function AIBriefing() {
         {briefing && !loading && (
           <div className="space-y-4">
             {briefing.greeting && (
-              <p className="text-gray-900/80 text-sm leading-relaxed">{briefing.greeting}</p>
+              <p className="text-ink/80 text-sm leading-relaxed">{briefing.greeting}</p>
             )}
             {briefing.summary && (
-              <p className="text-gray-900/70 text-sm leading-relaxed">{briefing.summary}</p>
+              <p className="text-ink/70 text-sm leading-relaxed">{briefing.summary}</p>
             )}
 
             {briefing.priorities?.length > 0 && (
@@ -78,7 +78,7 @@ export function AIBriefing() {
                 <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2">Priorities</p>
                 <div className="space-y-1.5">
                   {briefing.priorities.map((p, i) => (
-                    <div key={i} className="flex items-start gap-2 text-sm text-gray-900/80">
+                    <div key={i} className="flex items-start gap-2 text-sm text-ink/80">
                       <ChevronRight className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
                       <span>{p}</span>
                     </div>
@@ -100,9 +100,9 @@ export function AIBriefing() {
             )}
 
             {briefing.tip && (
-              <div className="flex items-start gap-2 mt-3 pt-3 border-t border-gray-100">
+              <div className="flex items-start gap-2 mt-3 pt-3 border-t border-hairline">
                 <Lightbulb className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-gray-900/60">{briefing.tip}</p>
+                <p className="text-xs text-ink/60">{briefing.tip}</p>
               </div>
             )}
           </div>
@@ -127,20 +127,20 @@ export function AIFollowUps() {
   if (!data || data.total === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200/60 p-5">
+    <div className="bg-panel rounded-xl border border-hairline/60 p-5">
       <div className="flex items-center gap-2 mb-3">
         <AlertTriangle className="w-4 h-4 text-amber-500" />
-        <h3 className="text-sm font-semibold text-gray-900">
+        <h3 className="text-sm font-semibold text-ink">
           {data.total} Item{data.total !== 1 ? 's' : ''} Need Attention
         </h3>
       </div>
       <div className="space-y-2">
         {data.followups.slice(0, 6).map((f, i) => (
-          <div key={i} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+          <div key={i} className="flex items-start gap-3 p-2 rounded-lg hover:bg-bg transition-colors">
             <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${f.severity === 'high' ? 'bg-red-500' : 'bg-amber-400'}`} />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-800 truncate">{f.title}</p>
-              <p className="text-xs text-gray-500 truncate">{f.action}</p>
+              <p className="text-sm font-medium text-ink-2 truncate">{f.title}</p>
+              <p className="text-xs text-ink-3 truncate">{f.action}</p>
             </div>
           </div>
         ))}

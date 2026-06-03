@@ -14,7 +14,7 @@ const STATUS_PILL = {
   en_route:    'bg-amber-50 text-amber-700 border-amber-200',
   in_progress: 'bg-amber-100 text-amber-800 border-amber-200',
   completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-  cancelled:   'bg-zinc-100 text-zinc-400 border-zinc-200 line-through',
+  cancelled:   'bg-bg-2 text-ink-3 border-hairline line-through',
   no_show:     'bg-rose-50 text-rose-700 border-rose-200',
 }
 
@@ -210,22 +210,22 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white">
+    <div className="flex flex-col h-full min-h-0 bg-panel">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-hairline shrink-0">
         <div className="flex items-center gap-2">
-          <button onClick={goPrev} className="p-1.5 rounded hover:bg-zinc-100 text-zinc-500" aria-label="Previous week">
+          <button onClick={goPrev} className="p-1.5 rounded hover:bg-bg-2 text-ink-3" aria-label="Previous week">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <button onClick={goToday} className="text-xs px-2.5 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-50">
+          <button onClick={goToday} className="text-xs px-2.5 py-1 rounded border border-hairline text-ink-2 hover:bg-bg">
             Today
           </button>
-          <button onClick={goNext} className="p-1.5 rounded hover:bg-zinc-100 text-zinc-500" aria-label="Next week">
+          <button onClick={goNext} className="p-1.5 rounded hover:bg-bg-2 text-ink-3" aria-label="Next week">
             <ChevronRight className="w-4 h-4" />
           </button>
-          <h3 className="ml-2 text-sm font-semibold text-zinc-900">{fmtRange(weekStart)}</h3>
+          <h3 className="ml-2 text-sm font-semibold text-ink">{fmtRange(weekStart)}</h3>
         </div>
-        <div className="text-[11px] text-zinc-400">
+        <div className="text-[11px] text-ink-3">
           {loading ? 'Loading…' : `${filteredVisits.length} visit${filteredVisits.length === 1 ? '' : 's'}`}
         </div>
       </div>
@@ -240,20 +240,20 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
       {/* Scrollable grid */}
       <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full border-collapse text-xs" style={{ minWidth: 900 }}>
-          <thead className="sticky top-0 z-10 bg-white">
+          <thead className="sticky top-0 z-10 bg-panel">
             <tr>
-              <th className="text-left text-[10px] uppercase tracking-wide text-zinc-400 font-medium border-b border-r border-zinc-200 px-3 py-2 sticky left-0 bg-white" style={{ width: 180 }}>
+              <th className="text-left text-[10px] uppercase tracking-wide text-ink-3 font-medium border-b border-r border-hairline px-3 py-2 sticky left-0 bg-panel" style={{ width: 180 }}>
                 Cleaner
               </th>
               {days.map(d => {
                 const isToday = d.iso === todayIso
                 return (
                   <th key={d.iso}
-                    className={`text-left text-[10px] uppercase tracking-wide font-medium border-b border-zinc-200 px-3 py-2 ${
-                      isToday ? 'bg-blue-50 text-blue-700' : 'text-zinc-400'
+                    className={`text-left text-[10px] uppercase tracking-wide font-medium border-b border-hairline px-3 py-2 ${
+                      isToday ? 'bg-blue-50 text-blue-700' : 'text-ink-3'
                     }`}>
                     <div>{DAY_LABELS[d.date.getDay() === 0 ? 6 : d.date.getDay() - 1]}</div>
-                    <div className={`text-base font-semibold ${isToday ? 'text-blue-700' : 'text-zinc-700'}`}>
+                    <div className={`text-base font-semibold ${isToday ? 'text-blue-700' : 'text-ink-2'}`}>
                       {d.date.getDate()}
                     </div>
                   </th>
@@ -269,17 +269,17 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
                 ? 'Unassigned'
                 : (row.employee?.name || row.employee?.displayName || `Cleaner #${row.id}`)
               return (
-                <tr key={row.id} className="border-b border-zinc-100 hover:bg-zinc-50/50">
+                <tr key={row.id} className="border-b border-hairline hover:bg-bg/50">
                   <td
-                    className={`px-3 py-2 border-r border-zinc-200 sticky left-0 ${isUnassigned ? 'bg-amber-50' : 'bg-white'}`}
+                    className={`px-3 py-2 border-r border-hairline sticky left-0 ${isUnassigned ? 'bg-amber-50' : 'bg-panel'}`}
                     style={{ width: 180 }}
                   >
                     <div className="flex items-center gap-2">
                       {isUnassigned
                         ? <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        : <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        : <User className="w-3.5 h-3.5 text-ink-3 shrink-0" />
                       }
-                      <span className={`text-xs font-medium truncate ${isUnassigned ? 'text-amber-800' : 'text-zinc-700'}`}>
+                      <span className={`text-xs font-medium truncate ${isUnassigned ? 'text-amber-800' : 'text-ink-2'}`}>
                         {name}
                       </span>
                     </div>
@@ -291,7 +291,7 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
                     return (
                       <td
                         key={d.iso}
-                        className={`align-top border-r border-zinc-100 p-1.5 transition-colors ${isDropTarget ? 'bg-blue-50' : ''}`}
+                        className={`align-top border-r border-hairline p-1.5 transition-colors ${isDropTarget ? 'bg-blue-50' : ''}`}
                         style={{ minWidth: 130, height: 80 }}
                         onDragOver={onDragOver}
                         onDrop={(e) => { onDrop(e, cleanerId); setDropTarget(null) }}
@@ -339,12 +339,12 @@ function VisitCard({ visit, onClick, onSkip, isDragging, onDragStart }) {
       title={`${title} — ${propName || ''} (drag to reassign)`}
     >
       <div className="flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TYPE_DOT[jobType] || 'bg-zinc-400'}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TYPE_DOT[jobType] || 'bg-ink-3'}`} />
         <span className="text-[11px] font-medium truncate flex-1">{title}</span>
         {!isCancelled && onSkip && (
           <button
             onClick={(e) => { e.stopPropagation(); onSkip() }}
-            className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-rose-600 transition-opacity"
+            className="opacity-0 group-hover:opacity-100 text-ink-3 hover:text-rose-600 transition-opacity"
             title="Skip this visit (recurring rule unchanged)"
           >
             <X className="w-3 h-3" />
