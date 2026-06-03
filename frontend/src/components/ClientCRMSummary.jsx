@@ -25,11 +25,11 @@ function StatCard({ icon: Icon, label, value, subtext, color = 'blue' }) {
   return (
     <div className={`rounded-lg border ${colorMap[color]} p-4`}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-gray-700">{label}</span>
+        <span className="text-sm font-medium text-ink-2">{label}</span>
         <Icon className="w-5 h-5" />
       </div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
-      {subtext && <div className="text-xs text-gray-600 mt-1">{subtext}</div>}
+      <div className="text-2xl font-bold text-ink">{value}</div>
+      {subtext && <div className="text-xs text-ink-2 mt-1">{subtext}</div>}
     </div>
   )
 }
@@ -55,7 +55,7 @@ export default function ClientCRMSummary({ clientId }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader className="w-6 h-6 animate-spin text-ink-3" />
       </div>
     )
   }
@@ -65,27 +65,27 @@ export default function ClientCRMSummary({ clientId }) {
   return (
     <div className="space-y-6">
       {/* Lifecycle Status */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="bg-panel border border-hairline rounded-lg p-6">
+        <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
           <Eye className="w-5 h-5 text-blue-500" />
           Lifecycle Status
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm text-gray-600">Stage</div>
-            <div className="text-lg font-semibold text-gray-900 capitalize">{crm.lifecycle_stage || 'new'}</div>
+          <div className="bg-bg rounded-lg p-4">
+            <div className="text-sm text-ink-2">Stage</div>
+            <div className="text-lg font-semibold text-ink capitalize">{crm.lifecycle_stage || 'new'}</div>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm text-gray-600">Type</div>
-            <div className="text-lg font-semibold text-gray-900 capitalize">{crm.client_type || 'residential'}</div>
+          <div className="bg-bg rounded-lg p-4">
+            <div className="text-sm text-ink-2">Type</div>
+            <div className="text-lg font-semibold text-ink capitalize">{crm.client_type || 'residential'}</div>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm text-gray-600">Source</div>
-            <div className="text-sm font-semibold text-gray-900">{crm.source_detail || crm.source || '—'}</div>
+          <div className="bg-bg rounded-lg p-4">
+            <div className="text-sm text-ink-2">Source</div>
+            <div className="text-sm font-semibold text-ink">{crm.source_detail || crm.source || '—'}</div>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm text-gray-600">Last Contacted</div>
-            <div className="text-sm font-semibold text-gray-900">
+          <div className="bg-bg rounded-lg p-4">
+            <div className="text-sm text-ink-2">Last Contacted</div>
+            <div className="text-sm font-semibold text-ink">
               {crm.last_contacted_at ? new Date(crm.last_contacted_at).toLocaleDateString() : 'Never'}
             </div>
           </div>
@@ -93,14 +93,14 @@ export default function ClientCRMSummary({ clientId }) {
       </div>
 
       {/* Pipeline Summary */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="bg-panel border border-hairline rounded-lg p-6">
+        <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
           <Target className="w-5 h-5 text-purple-500" />
           Pipeline ({crm.pipeline.opportunities_count})
         </h3>
         <div className="mb-4">
-          <div className="text-2xl font-bold text-gray-900">${crm.pipeline.total_value.toLocaleString('en-US', {maximumFractionDigits: 0})}</div>
-          <div className="text-sm text-gray-600">Total pipeline value</div>
+          <div className="text-2xl font-bold text-ink">${crm.pipeline.total_value.toLocaleString('en-US', {maximumFractionDigits: 0})}</div>
+          <div className="text-sm text-ink-2">Total pipeline value</div>
         </div>
         <div className="space-y-2">
           {Object.entries(crm.pipeline.by_stage).map(([stage, data]) => (
@@ -120,8 +120,8 @@ export default function ClientCRMSummary({ clientId }) {
       </div>
 
       {/* Financial Summary */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="bg-panel border border-hairline rounded-lg p-6">
+        <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
           <DollarSign className="w-5 h-5 text-emerald-500" />
           Financial Summary
         </h3>
@@ -141,17 +141,17 @@ export default function ClientCRMSummary({ clientId }) {
             color="emerald"
           />
         </div>
-        <div className="space-y-3 bg-gray-50 rounded-lg p-4">
+        <div className="space-y-3 bg-bg rounded-lg p-4">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">Total Invoiced</span>
-            <span className="font-semibold text-gray-900">${crm.financial.total_invoiced.toLocaleString('en-US', {maximumFractionDigits: 2})}</span>
+            <span className="text-sm text-ink-2">Total Invoiced</span>
+            <span className="font-semibold text-ink">${crm.financial.total_invoiced.toLocaleString('en-US', {maximumFractionDigits: 2})}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">Total Paid</span>
+            <span className="text-sm text-ink-2">Total Paid</span>
             <span className="font-semibold text-emerald-600">${crm.financial.total_paid.toLocaleString('en-US', {maximumFractionDigits: 2})}</span>
           </div>
-          <div className="border-t border-gray-200 pt-3 flex justify-between items-center">
-            <span className="text-sm font-medium text-gray-700">Outstanding</span>
+          <div className="border-t border-hairline pt-3 flex justify-between items-center">
+            <span className="text-sm font-medium text-ink-2">Outstanding</span>
             <span className={`font-bold ${crm.financial.outstanding > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
               ${crm.financial.outstanding.toLocaleString('en-US', {maximumFractionDigits: 2})}
             </span>
@@ -160,8 +160,8 @@ export default function ClientCRMSummary({ clientId }) {
       </div>
 
       {/* Communications Summary */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="bg-panel border border-hairline rounded-lg p-6">
+        <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
           <MessageSquare className="w-5 h-5 text-blue-500" />
           Communications
         </h3>
@@ -183,10 +183,10 @@ export default function ClientCRMSummary({ clientId }) {
         </div>
         {crm.contact_emails.length > 0 && (
           <div className="mb-4">
-            <div className="text-sm font-medium text-gray-700 mb-2">Email Addresses</div>
+            <div className="text-sm font-medium text-ink-2 mb-2">Email Addresses</div>
             <div className="space-y-1">
               {crm.contact_emails.map((email, i) => (
-                <div key={i} className="text-sm text-gray-600 flex items-center gap-2">
+                <div key={i} className="text-sm text-ink-2 flex items-center gap-2">
                   {email.is_primary && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
                   <span>{email.email}</span>
                   {email.verified && <CheckCircle className="w-3 h-3 text-emerald-500" />}
@@ -197,13 +197,13 @@ export default function ClientCRMSummary({ clientId }) {
         )}
         {crm.contact_phones.length > 0 && (
           <div>
-            <div className="text-sm font-medium text-gray-700 mb-2">Phone Numbers</div>
+            <div className="text-sm font-medium text-ink-2 mb-2">Phone Numbers</div>
             <div className="space-y-1">
               {crm.contact_phones.map((phone, i) => (
-                <div key={i} className="text-sm text-gray-600 flex items-center gap-2">
+                <div key={i} className="text-sm text-ink-2 flex items-center gap-2">
                   {phone.is_primary && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
                   <span>{phone.phone}</span>
-                  {phone.type && <span className="text-xs text-gray-500 capitalize">({phone.type})</span>}
+                  {phone.type && <span className="text-xs text-ink-3 capitalize">({phone.type})</span>}
                 </div>
               ))}
             </div>
@@ -213,24 +213,24 @@ export default function ClientCRMSummary({ clientId }) {
 
       {/* Recent Activity */}
       {crm.recent_activity.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-panel border border-hairline rounded-lg p-6">
+          <h3 className="font-semibold text-ink mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5 text-amber-500" />
             Recent Activity
           </h3>
           <div className="space-y-3">
             {crm.recent_activity.map((activity) => (
-              <div key={activity.id} className="flex gap-3 pb-3 border-b border-gray-100 last:border-0 last:pb-0">
-                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 text-xs font-semibold text-gray-600">
+              <div key={activity.id} className="flex gap-3 pb-3 border-b border-hairline last:border-0 last:pb-0">
+                <div className="w-8 h-8 rounded-full bg-bg-2 flex items-center justify-center flex-shrink-0 text-xs font-semibold text-ink-2">
                   {activity.activity_type.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-900">{activity.summary}</div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-sm font-medium text-ink">{activity.summary}</div>
+                  <div className="text-xs text-ink-3 mt-1">
                     {activity.activity_type.replace(/_/g, ' ')} {activity.actor && `by ${activity.actor}`}
                   </div>
                   {activity.created_at && (
-                    <div className="text-xs text-gray-400 mt-0.5">
+                    <div className="text-xs text-ink-3 mt-0.5">
                       {new Date(activity.created_at).toLocaleDateString()} {new Date(activity.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                     </div>
                   )}

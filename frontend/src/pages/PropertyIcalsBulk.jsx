@@ -25,7 +25,7 @@ function normalizeUrl(raw) {
   return u
 }
 
-const INPUT = 'w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400'
+const INPUT = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400'
 
 export default function PropertyIcalsBulk() {
   const { propertyId } = useParams()
@@ -142,11 +142,11 @@ export default function PropertyIcalsBulk() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-full text-sm text-zinc-500">Loading property…</div>
+    return <div className="flex items-center justify-center h-full text-sm text-ink-3">Loading property…</div>
   }
   if (!property) {
     return (
-      <div className="p-6 text-sm text-zinc-500">
+      <div className="p-6 text-sm text-ink-3">
         Property not found. <button onClick={() => navigate('/properties')} className="text-blue-600 underline">Back to Properties</button>
       </div>
     )
@@ -157,15 +157,15 @@ export default function PropertyIcalsBulk() {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto sm:overflow-hidden" data-testid="property-icals-bulk">
-      <div className="bg-white border-b border-zinc-200 px-4 sm:px-6 py-4 shrink-0">
+      <div className="bg-panel border-b border-hairline px-4 sm:px-6 py-4 shrink-0">
         <button onClick={() => navigate(`/properties/${propertyId}`)}
-          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-700 mb-2">
+          className="flex items-center gap-1.5 text-xs text-ink-3 hover:text-ink-2 mb-2">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to property
         </button>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-zinc-900 truncate">{property.name}</h1>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <h1 className="text-lg sm:text-xl font-bold text-ink truncate">{property.name}</h1>
+            <p className="text-xs text-ink-3 mt-0.5">
               {[property.address, property.city, property.state].filter(Boolean).join(', ')}
             </p>
             {!isStr && (
@@ -194,17 +194,17 @@ export default function PropertyIcalsBulk() {
       <div className="p-4 sm:p-6 pb-28 sm:pb-6 sm:flex-1 sm:overflow-y-auto space-y-6 max-w-2xl mx-auto w-full">
         {/* Existing feeds */}
         <section data-testid="existing-feeds">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Current feeds</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">Current feeds</h2>
           {(property.icals?.length || 0) === 0 ? (
-            <p className="text-sm text-zinc-400 italic bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2.5">No calendar feeds yet.</p>
+            <p className="text-sm text-ink-3 italic bg-bg border border-hairline rounded-lg px-3 py-2.5">No calendar feeds yet.</p>
           ) : (
             <ul className="space-y-2">
               {property.icals.map(ical => (
-                <li key={ical.id} className="bg-white border border-zinc-200 rounded-lg p-3" data-testid="existing-feed-row">
+                <li key={ical.id} className="bg-panel border border-hairline rounded-lg p-3" data-testid="existing-feed-row">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-700">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">
                           {SOURCES.find(s => s.value === (ical.source || '').toLowerCase())?.label || ical.source || 'Custom'}
                         </span>
                         {ical.last_sync_status === 'failed' ? (
@@ -216,10 +216,10 @@ export default function PropertyIcalsBulk() {
                             <CheckCircle className="w-2.5 h-2.5" /> Synced
                           </span>
                         ) : (
-                          <span className="text-[10px] font-medium text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">Never synced</span>
+                          <span className="text-[10px] font-medium text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Never synced</span>
                         )}
                       </div>
-                      <div className="text-[11px] font-mono text-zinc-500 break-all">{ical.url}</div>
+                      <div className="text-[11px] font-mono text-ink-3 break-all">{ical.url}</div>
                       {ical.last_sync_error && (
                         <div className="mt-1 text-[11px] text-red-700 bg-red-50 rounded p-1.5 font-mono break-all">
                           {String(ical.last_sync_error).slice(0, 200)}
@@ -230,14 +230,14 @@ export default function PropertyIcalsBulk() {
                       <button onClick={() => syncFeed(ical.id)}
                         disabled={syncingFeed === ical.id}
                         data-testid="existing-feed-sync"
-                        className="text-zinc-400 hover:text-blue-600 p-1 disabled:opacity-50"
+                        className="text-ink-3 hover:text-blue-600 p-1 disabled:opacity-50"
                         aria-label="Sync this feed"
                         title="Sync just this feed">
                         <RefreshCw className={`w-4 h-4 ${syncingFeed === ical.id ? 'animate-spin' : ''}`} />
                       </button>
                       <button onClick={() => removeFeed(ical.id)}
                         data-testid="existing-feed-remove"
-                        className="text-zinc-400 hover:text-red-500 p-1"
+                        className="text-ink-3 hover:text-red-500 p-1"
                         aria-label="Remove feed">
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -251,8 +251,8 @@ export default function PropertyIcalsBulk() {
 
         {/* Bulk add */}
         <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Add feeds</h2>
-          <p className="text-xs text-zinc-500 mb-2">Paste one URL per line. Source is auto-detected from the domain (Airbnb, VRBO, Booking.com).</p>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">Add feeds</h2>
+          <p className="text-xs text-ink-3 mb-2">Paste one URL per line. Source is auto-detected from the domain (Airbnb, VRBO, Booking.com).</p>
           <textarea
             value={paste}
             onChange={e => setPaste(e.target.value)}
@@ -264,20 +264,20 @@ export default function PropertyIcalsBulk() {
           {/* Defaults disclosure */}
           <button type="button"
             onClick={() => setShowDefaults(d => !d)}
-            className="mt-2 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700">
+            className="mt-2 inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink-2">
             <ChevronDown className={`w-3 h-3 transition-transform ${showDefaults ? 'rotate-180' : ''}`} />
             Default checkout time / duration (optional)
           </button>
           {showDefaults && (
             <div className="grid grid-cols-2 gap-2 mt-2">
               <div>
-                <label className="block text-[11px] text-zinc-500 mb-1">Checkout time</label>
+                <label className="block text-[11px] text-ink-3 mb-1">Checkout time</label>
                 <input type="time" value={defaults.checkout_time}
                   onChange={e => setDefaults(d => ({ ...d, checkout_time: e.target.value }))}
                   className={INPUT} />
               </div>
               <div>
-                <label className="block text-[11px] text-zinc-500 mb-1">Duration (hours)</label>
+                <label className="block text-[11px] text-ink-3 mb-1">Duration (hours)</label>
                 <input type="number" step="0.5" min="0.5" value={defaults.duration_hours}
                   onChange={e => setDefaults(d => ({ ...d, duration_hours: e.target.value }))}
                   placeholder={String(property.default_duration_hours || 3)}
@@ -291,22 +291,22 @@ export default function PropertyIcalsBulk() {
             <div className="mt-3 space-y-2">
               {parsedRows.map(row => (
                 <div key={row.idx}
-                  className={`bg-white border rounded-lg p-2.5 ${row.duplicate ? 'border-zinc-200 opacity-60' : !row.valid ? 'border-red-200' : 'border-zinc-200'}`}
+                  className={`bg-panel border rounded-lg p-2.5 ${row.duplicate ? 'border-hairline opacity-60' : !row.valid ? 'border-red-200' : 'border-hairline'}`}
                   data-testid="parsed-feed-row">
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                     <select value={row.source}
                       onChange={e => setPerRowSource(s => ({ ...s, [row.idx]: e.target.value }))}
-                      className="text-[11px] bg-white border border-zinc-200 rounded px-2 py-1 focus:outline-none">
+                      className="text-[11px] bg-panel border border-hairline rounded px-2 py-1 focus:outline-none">
                       {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
                     {row.duplicate && (
-                      <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">Already on this property</span>
+                      <span className="text-[10px] font-semibold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded">Already on this property</span>
                     )}
                     {!row.valid && (
                       <span className="text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded">Not a valid URL</span>
                     )}
                   </div>
-                  <div className="text-[11px] font-mono text-zinc-500 break-all">{row.url || row.raw}</div>
+                  <div className="text-[11px] font-mono text-ink-3 break-all">{row.url || row.raw}</div>
                 </div>
               ))}
             </div>
@@ -316,12 +316,12 @@ export default function PropertyIcalsBulk() {
             <button onClick={addAll}
               disabled={adding || validRows.length === 0}
               data-testid="bulk-add"
-              className="flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 sm:flex-none">
+              className="flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 sm:flex-none">
               <LinkIcon className="w-3.5 h-3.5" />
               {adding ? 'Adding…' : `Add ${validRows.length || ''} feed${validRows.length === 1 ? '' : 's'}`.trim()}
             </button>
             {validRows.length > 0 && (
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-ink-3">
                 {validRows.length} ready · {parsedRows.length - validRows.length} skipped
               </span>
             )}
@@ -349,7 +349,7 @@ export default function PropertyIcalsBulk() {
           )}
         </section>
 
-        <p className="text-[11px] text-zinc-400">
+        <p className="text-[11px] text-ink-3">
           Looking for this property? <Link to={`/properties/${propertyId}`} className="text-blue-600">Open property details</Link>
         </p>
       </div>
