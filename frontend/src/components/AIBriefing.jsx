@@ -11,7 +11,9 @@ export function AIBriefing() {
     setLoading(true)
     setError(null)
     try {
-      const data = await get('/api/ai/daily-briefing')
+      // First load uses the once-a-day cache (instant); the Refresh button
+      // (shown once a briefing exists) forces a fresh generation.
+      const data = await get(`/api/ai/daily-briefing${briefing ? '?refresh=true' : ''}`)
       setBriefing(data)
     } catch (err) {
       setError(err.message || 'Could not load briefing')
