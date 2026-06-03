@@ -88,7 +88,7 @@ export default function Login({ onLoginSuccess }) {
 
       {/* Card */}
       <div className="relative w-full max-w-md">
-        <div className="bg-white/90 backdrop-blur-lg rounded-2xl border border-white/20 shadow-2xl p-8">
+        <div className="bg-panel/90 backdrop-blur-lg rounded-2xl border border-white/20 shadow-2xl p-8">
           {/* Logo and Header */}
           <div className="flex items-center justify-center mb-8">
             <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-lg">
@@ -96,8 +96,8 @@ export default function Login({ onLoginSuccess }) {
             </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-neutral-900 text-center mb-2">BrightBase</h1>
-          <p className="text-center text-neutral-500 mb-8">Maine Cleaning Co.</p>
+          <h1 className="text-3xl font-bold text-ink text-center mb-2">BrightBase</h1>
+          <p className="text-center text-ink-3 mb-8">Maine Cleaning Co.</p>
 
           {/* Error Alert */}
           {error && (
@@ -111,11 +111,11 @@ export default function Login({ onLoginSuccess }) {
           <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-4">
             {/* Email Input */}
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-neutral-700 mb-2">
+              <label htmlFor="email" className="block text-sm font-semibold text-ink-2 mb-2">
                 Email
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 w-5 h-5 text-neutral-400" />
+                <Mail className="absolute left-3 top-3 w-5 h-5 text-ink-3" />
                 <input
                   id="email"
                   type="email"
@@ -124,18 +124,18 @@ export default function Login({ onLoginSuccess }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
                 />
               </div>
             </div>
 
             {/* Password Input */}
             <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-neutral-700 mb-2">
+              <label htmlFor="password" className="block text-sm font-semibold text-ink-2 mb-2">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 w-5 h-5 text-neutral-400" />
+                <Lock className="absolute left-3 top-3 w-5 h-5 text-ink-3" />
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
@@ -144,12 +144,12 @@ export default function Login({ onLoginSuccess }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-neutral-400 hover:text-neutral-600"
+                  className="absolute right-3 top-3 text-ink-3 hover:text-ink-2"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -165,12 +165,12 @@ export default function Login({ onLoginSuccess }) {
                     const btn = e.currentTarget
                     btn.textContent = 'Contact your administrator to reset'
                     btn.disabled = true
-                    btn.classList.add('text-zinc-500')
+                    btn.classList.add('text-ink-3')
                     btn.classList.remove('text-blue-600', 'hover:text-blue-700')
                     setTimeout(() => {
                       btn.textContent = 'Forgot password?'
                       btn.disabled = false
-                      btn.classList.remove('text-zinc-500')
+                      btn.classList.remove('text-ink-3')
                       btn.classList.add('text-blue-600', 'hover:text-blue-700')
                     }, 5000)
                   }}
@@ -184,11 +184,11 @@ export default function Login({ onLoginSuccess }) {
             {/* Confirm Password (Register only) */}
             {mode === 'register' && (
               <div>
-                <label htmlFor="confirm" className="block text-sm font-semibold text-neutral-700 mb-2">
+                <label htmlFor="confirm" className="block text-sm font-semibold text-ink-2 mb-2">
                   Confirm Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 w-5 h-5 text-neutral-400" />
+                  <Lock className="absolute left-3 top-3 w-5 h-5 text-ink-3" />
                   <input
                     id="confirm"
                     type="password"
@@ -197,7 +197,7 @@ export default function Login({ onLoginSuccess }) {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     disabled={loading}
-                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-neutral-200/50 bg-white/50 hover:bg-white/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -221,7 +221,7 @@ export default function Login({ onLoginSuccess }) {
           </form>
 
           {/* Toggle Register/Login */}
-          <div className="text-center text-sm text-neutral-600 mt-6">
+          <div className="text-center text-sm text-ink-2 mt-6">
             {mode === 'login' ? (
               <>
                 No account?{' '}

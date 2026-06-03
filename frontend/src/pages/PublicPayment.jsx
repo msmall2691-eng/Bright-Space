@@ -56,19 +56,19 @@ export default function PublicPayment() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100">
-        <div className="text-zinc-600">Loading invoice...</div>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-bg to-bg-2">
+        <div className="text-ink-2">Loading invoice...</div>
       </div>
     )
   }
 
   if (error || !invoice) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100">
-        <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 text-center">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-bg to-bg-2">
+        <div className="bg-panel rounded-xl p-8 max-w-md w-full mx-4 text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-zinc-900 mb-2">Invoice Not Found</h2>
-          <p className="text-sm text-zinc-600">{error || 'This invoice link is invalid or has expired.'}</p>
+          <h2 className="text-lg font-semibold text-ink mb-2">Invoice Not Found</h2>
+          <p className="text-sm text-ink-2">{error || 'This invoice link is invalid or has expired.'}</p>
         </div>
       </div>
     )
@@ -85,16 +85,16 @@ export default function PublicPayment() {
             className="flex items-center gap-2 text-indigo-600 hover:text-indigo-700 mb-4 text-sm font-medium">
             <ChevronLeft className="w-4 h-4" /> Back
           </button>
-          <h1 className="text-3xl font-bold text-zinc-900">Payment</h1>
-          <p className="text-sm text-zinc-600 mt-1">Invoice {invoice.invoice_number}</p>
+          <h1 className="text-3xl font-bold text-ink">Payment</h1>
+          <p className="text-sm text-ink-2 mt-1">Invoice {invoice.invoice_number}</p>
         </div>
 
         {/* Invoice Summary */}
-        <div className="bg-white rounded-xl border border-zinc-200 p-6 mb-6">
-          <div className="flex justify-between items-start mb-6 pb-6 border-b border-zinc-200">
+        <div className="bg-panel rounded-xl border border-hairline p-6 mb-6">
+          <div className="flex justify-between items-start mb-6 pb-6 border-b border-hairline">
             <div>
-              <p className="text-sm text-zinc-600">Invoice Amount</p>
-              <p className="text-3xl font-bold text-zinc-900">${(invoice.total || 0).toFixed(2)}</p>
+              <p className="text-sm text-ink-2">Invoice Amount</p>
+              <p className="text-3xl font-bold text-ink">${(invoice.total || 0).toFixed(2)}</p>
             </div>
             {isPaid && (
               <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">
@@ -106,25 +106,25 @@ export default function PublicPayment() {
 
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-zinc-600">Subtotal</span>
-              <span className="text-zinc-900 font-medium">${(invoice.subtotal || 0).toFixed(2)}</span>
+              <span className="text-ink-2">Subtotal</span>
+              <span className="text-ink font-medium">${(invoice.subtotal || 0).toFixed(2)}</span>
             </div>
             {invoice.tax_amount > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-zinc-600">Tax</span>
-                <span className="text-zinc-900 font-medium">${(invoice.tax_amount || 0).toFixed(2)}</span>
+                <span className="text-ink-2">Tax</span>
+                <span className="text-ink font-medium">${(invoice.tax_amount || 0).toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between font-semibold pt-3 border-t border-zinc-200">
-              <span className="text-zinc-900">Total Due</span>
+            <div className="flex justify-between font-semibold pt-3 border-t border-hairline">
+              <span className="text-ink">Total Due</span>
               <span className="text-indigo-600">${(invoice.total || 0).toFixed(2)}</span>
             </div>
           </div>
 
           {invoice.notes && (
-            <div className="mt-4 pt-4 border-t border-zinc-200">
-              <p className="text-xs text-zinc-600 mb-1 font-medium">Notes</p>
-              <p className="text-sm text-zinc-700">{invoice.notes}</p>
+            <div className="mt-4 pt-4 border-t border-hairline">
+              <p className="text-xs text-ink-2 mb-1 font-medium">Notes</p>
+              <p className="text-sm text-ink-2">{invoice.notes}</p>
             </div>
           )}
         </div>
@@ -132,15 +132,15 @@ export default function PublicPayment() {
         {!isPaid ? (
           <>
             {/* Payment Methods */}
-            <div className="bg-white rounded-xl border border-zinc-200 p-6 mb-6">
-              <h3 className="text-sm font-semibold text-zinc-900 mb-4">Payment Method</h3>
+            <div className="bg-panel rounded-xl border border-hairline p-6 mb-6">
+              <h3 className="text-sm font-semibold text-ink mb-4">Payment Method</h3>
               <div className="space-y-2 mb-4">
                 {[
                   { value: 'card', label: '💳 Credit Card (Stripe)' },
                   { value: 'ach', label: '🏦 Bank Transfer (ACH)' },
                   { value: 'check', label: '📮 Check by Mail' },
                 ].map(opt => (
-                  <label key={opt.value} className="flex items-center gap-3 p-3 rounded-lg hover:bg-zinc-50 cursor-pointer">
+                  <label key={opt.value} className="flex items-center gap-3 p-3 rounded-lg hover:bg-bg cursor-pointer">
                     <input
                       type="radio"
                       value={opt.value}
@@ -148,48 +148,48 @@ export default function PublicPayment() {
                       onChange={(e) => setPaymentMethod(e.target.value)}
                       className="w-4 h-4"
                     />
-                    <span className="text-sm text-zinc-700">{opt.label}</span>
+                    <span className="text-sm text-ink-2">{opt.label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
             {/* Payment Form */}
-            <form onSubmit={handlePay} className="bg-white rounded-xl border border-zinc-200 p-6 mb-6">
-              <h3 className="text-sm font-semibold text-zinc-900 mb-4">Payment Details</h3>
+            <form onSubmit={handlePay} className="bg-panel rounded-xl border border-hairline p-6 mb-6">
+              <h3 className="text-sm font-semibold text-ink mb-4">Payment Details</h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1.5">Cardholder Name</label>
+                  <label className="block text-xs font-medium text-ink-2 mb-1.5">Cardholder Name</label>
                   <input
                     type="text"
                     required
                     value={formData.cardholderName}
                     onChange={(e) => setFormData(f => ({ ...f, cardholderName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border border-hairline rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     placeholder="John Doe"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1.5">Email</label>
+                  <label className="block text-xs font-medium text-ink-2 mb-1.5">Email</label>
                   <input
                     type="email"
                     required
                     value={formData.email}
                     onChange={(e) => setFormData(f => ({ ...f, email: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border border-hairline rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     placeholder="john@example.com"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1.5">Phone</label>
+                  <label className="block text-xs font-medium text-ink-2 mb-1.5">Phone</label>
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData(f => ({ ...f, phone: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 border border-hairline rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     placeholder="(555) 000-0000"
                   />
                 </div>
@@ -222,13 +222,13 @@ export default function PublicPayment() {
               <button
                 type="submit"
                 disabled={paying}
-                className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2">
+                className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2">
                 <DollarSign className="w-4 h-4" />
                 {paying ? 'Processing...' : `Pay $${(invoice.total || 0).toFixed(2)}`}
               </button>
             </form>
 
-            <p className="text-xs text-zinc-600 text-center">
+            <p className="text-xs text-ink-2 text-center">
               Questions? Contact us for other payment methods.
             </p>
           </>

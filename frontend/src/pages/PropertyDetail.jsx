@@ -60,11 +60,11 @@ function ChecklistEditor({ template, onSave }) {
   }
 
   return (
-    <div className="bg-white border border-neutral-200 rounded-lg p-4 mb-4">
+    <div className="bg-panel border border-hairline rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-blue-600" />
-          <h3 className="text-sm font-semibold text-neutral-900">Cleaning Checklist</h3>
+          <h3 className="text-sm font-semibold text-ink">Cleaning Checklist</h3>
         </div>
         {dirty && (
           <button onClick={save} disabled={saving}
@@ -75,18 +75,18 @@ function ChecklistEditor({ template, onSave }) {
       </div>
 
       {areas.length === 0 && (
-        <p className="text-xs text-neutral-500 mb-3">No checklist yet. Add areas and tasks below.</p>
+        <p className="text-xs text-ink-3 mb-3">No checklist yet. Add areas and tasks below.</p>
       )}
 
       {areas.map((area, ai) => (
-        <div key={ai} className="mb-3 bg-neutral-50 rounded-lg p-3">
+        <div key={ai} className="mb-3 bg-bg rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-neutral-700 uppercase tracking-wide">{area.area}</span>
+            <span className="text-xs font-semibold text-ink-2 uppercase tracking-wide">{area.area}</span>
             <button onClick={() => removeArea(ai)} className="text-red-400 hover:text-red-600 p-0.5"><X className="w-3 h-3" /></button>
           </div>
           <ul className="space-y-1 mb-2">
             {area.tasks.map((task, ti) => (
-              <li key={ti} className="flex items-center justify-between text-xs text-neutral-700 pl-2">
+              <li key={ti} className="flex items-center justify-between text-xs text-ink-2 pl-2">
                 <span>• {task}</span>
                 <button onClick={() => removeTask(ai, ti)} className="text-red-400 hover:text-red-600 p-0.5"><X className="w-2.5 h-2.5" /></button>
               </li>
@@ -98,7 +98,7 @@ function ChecklistEditor({ template, onSave }) {
               onChange={e => setNewTasks(prev => ({ ...prev, [ai]: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && addTask(ai)}
               placeholder="Add task..."
-              className="flex-1 bg-white border border-neutral-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+              className="flex-1 bg-panel border border-hairline rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
             />
             <button onClick={() => addTask(ai)} className="text-xs text-blue-600 font-semibold px-2">Add</button>
           </div>
@@ -111,7 +111,7 @@ function ChecklistEditor({ template, onSave }) {
           onChange={e => setNewArea(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addArea()}
           placeholder="New area (e.g. Kitchen, Bathrooms)..."
-          className="flex-1 bg-white border border-neutral-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400"
+          className="flex-1 bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400"
         />
         <button onClick={addArea} className="text-xs text-blue-600 font-semibold px-2 shrink-0">+ Area</button>
       </div>
@@ -149,11 +149,11 @@ function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
   }
 
   return (
-    <div className="bg-neutral-50 rounded-lg p-3 text-xs">
+    <div className="bg-bg rounded-lg p-3 text-xs">
       <div className="flex items-center justify-between mb-1">
         <div>
-          <span className="font-medium text-neutral-900">Visit #{visit.id}</span>
-          <span className="text-neutral-500 ml-2">{visit.status} • {visit.scheduled_date}</span>
+          <span className="font-medium text-ink">Visit #{visit.id}</span>
+          <span className="text-ink-3 ml-2">{visit.status} • {visit.scheduled_date}</span>
         </div>
         {!isCompleted && totalTasks > 0 && (
           <button
@@ -174,7 +174,7 @@ function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
         <div className="mt-2 space-y-2">
           {template.map((area, ai) => (
             <div key={ai}>
-              <div className="text-[11px] font-semibold text-neutral-600 uppercase tracking-wide mb-1">{area.area}</div>
+              <div className="text-[11px] font-semibold text-ink-2 uppercase tracking-wide mb-1">{area.area}</div>
               {(area.tasks || []).map((task, ti) => {
                 const key = `${area.area}::${task}`
                 const done = results[key] === 'done'
@@ -184,9 +184,9 @@ function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
                       type="checkbox"
                       checked={done}
                       onChange={() => toggle(key)}
-                      className="w-3.5 h-3.5 rounded border-neutral-300"
+                      className="w-3.5 h-3.5 rounded border-hairline"
                     />
-                    <span className={done ? 'line-through text-neutral-400' : 'text-neutral-700'}>{task}</span>
+                    <span className={done ? 'line-through text-ink-3' : 'text-ink-2'}>{task}</span>
                   </label>
                 )
               })}
@@ -244,19 +244,19 @@ export default function PropertyDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-neutral-50">
-        <p className="text-neutral-600">Loading property...</p>
+      <div className="flex items-center justify-center h-screen bg-bg">
+        <p className="text-ink-2">Loading property...</p>
       </div>
     )
   }
 
   if (!property) {
     return (
-      <div className="flex items-center justify-center h-screen bg-neutral-50">
+      <div className="flex items-center justify-center h-screen bg-bg">
         <GlassCard>
           <div className="text-center py-12">
-            <AlertCircle className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
-            <p className="text-neutral-600">Property not found</p>
+            <AlertCircle className="w-12 h-12 text-ink-3 mx-auto mb-3" />
+            <p className="text-ink-2">Property not found</p>
             <Button
               variant="secondary"
               size="sm"
@@ -289,19 +289,19 @@ export default function PropertyDetail() {
   })
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50">
+    <div className="flex flex-col h-screen bg-bg">
       {/* Header */}
-      <div className="bg-white border-b border-neutral-200 p-4 sticky top-0 z-10">
+      <div className="bg-panel border-b border-hairline p-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto">
           {/* Back + Title */}
           <div className="flex items-center gap-3 mb-4">
             <button
               onClick={() => navigate(-1)}
-              className="p-2 hover:bg-neutral-100 rounded transition-colors -ml-2"
+              className="p-2 hover:bg-bg-2 rounded transition-colors -ml-2"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl font-bold text-neutral-900">{property.name}</h1>
+            <h1 className="text-2xl font-bold text-ink">{property.name}</h1>
           </div>
 
           {/* Property Info */}
@@ -315,7 +315,7 @@ export default function PropertyDetail() {
                   {propertyTypeConfig.label}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 text-sm text-neutral-600 mt-1">
+              <div className="flex items-center gap-1.5 text-sm text-ink-2 mt-1">
                 <MapPin className="w-4 h-4 flex-shrink-0" />
                 <span>{property.address}</span>
               </div>
@@ -357,8 +357,8 @@ export default function PropertyDetail() {
           {sortedJobs.length === 0 ? (
             <GlassCard>
               <div className="text-center py-12">
-                <Calendar className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
-                <p className="text-neutral-600">No jobs scheduled for this property</p>
+                <Calendar className="w-12 h-12 text-ink-3 mx-auto mb-3" />
+                <p className="text-ink-2">No jobs scheduled for this property</p>
                 <Button variant="primary" size="sm" className="mt-4">
                   <Plus className="w-4 h-4 mr-2" />
                   Create First Job
@@ -375,7 +375,7 @@ export default function PropertyDetail() {
                 return (
                   <div
                     key={job.id}
-                    className="bg-white rounded-lg border border-neutral-200 p-4 hover:shadow-md transition-all cursor-pointer"
+                    className="bg-panel rounded-lg border border-hairline p-4 hover:shadow-md transition-all cursor-pointer"
                     onClick={() => {
                       setSelectedJob(job)
                       setShowJobDetails(true)
@@ -385,14 +385,14 @@ export default function PropertyDetail() {
                       <div className="flex-1 min-w-0">
                         {/* Title + Status */}
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <h3 className="font-semibold text-neutral-900 truncate">{job.title}</h3>
+                          <h3 className="font-semibold text-ink truncate">{job.title}</h3>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
                             {statusConfig.label}
                           </span>
                         </div>
 
                         {/* Date + Time */}
-                        <div className="flex items-center gap-3 text-sm text-neutral-600 mb-2 flex-wrap">
+                        <div className="flex items-center gap-3 text-sm text-ink-2 mb-2 flex-wrap">
                           <div className="flex items-center gap-1">
                             <Calendar className="w-4 h-4 flex-shrink-0" />
                             <span>{job.scheduled_date}</span>
@@ -404,7 +404,7 @@ export default function PropertyDetail() {
                         </div>
 
                         {/* Cleaners + Visits */}
-                        <div className="flex items-center gap-3 text-xs text-neutral-500">
+                        <div className="flex items-center gap-3 text-xs text-ink-3">
                           {hasCleaners && (
                             <div className="flex items-center gap-1">
                               <Users className="w-3 h-3 flex-shrink-0" />
@@ -426,7 +426,7 @@ export default function PropertyDetail() {
 
                     {/* Job Notes (if any) */}
                     {job.notes && (
-                      <p className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded mt-3 line-clamp-2">
+                      <p className="text-xs text-ink-2 bg-bg p-2 rounded mt-3 line-clamp-2">
                         {job.notes}
                       </p>
                     )}
@@ -441,7 +441,7 @@ export default function PropertyDetail() {
       {/* Job Details Drawer */}
       {showJobDetails && selectedJob && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
-          <div className="w-full sm:w-full max-w-2xl bg-white rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+          <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
             {/* Header */}
             <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white flex items-center justify-between">
               <div>
@@ -460,43 +460,43 @@ export default function PropertyDetail() {
             <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-semibold text-neutral-600 uppercase">Date</label>
-                  <p className="text-sm text-neutral-900">{selectedJob.scheduled_date}</p>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Date</label>
+                  <p className="text-sm text-ink">{selectedJob.scheduled_date}</p>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-neutral-600 uppercase">Time</label>
-                  <p className="text-sm text-neutral-900">{selectedJob.start_time?.slice(0, 5)} - {selectedJob.end_time?.slice(0, 5)}</p>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Time</label>
+                  <p className="text-sm text-ink">{selectedJob.start_time?.slice(0, 5)} - {selectedJob.end_time?.slice(0, 5)}</p>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-neutral-600 uppercase">Status</label>
-                <p className="text-sm text-neutral-900">{JOB_STATUS_CONFIG[selectedJob.status]?.label}</p>
+                <label className="text-xs font-semibold text-ink-2 uppercase">Status</label>
+                <p className="text-sm text-ink">{JOB_STATUS_CONFIG[selectedJob.status]?.label}</p>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-neutral-600 uppercase">Job Type</label>
-                <p className="text-sm text-neutral-900">{selectedJob.job_type || 'Residential'}</p>
+                <label className="text-xs font-semibold text-ink-2 uppercase">Job Type</label>
+                <p className="text-sm text-ink">{selectedJob.job_type || 'Residential'}</p>
               </div>
 
               {selectedJob.cleaner_ids?.length > 0 && (
                 <div>
-                  <label className="text-xs font-semibold text-neutral-600 uppercase">Assigned Cleaners</label>
-                  <p className="text-sm text-neutral-900">{selectedJob.cleaner_ids.length} cleaner{selectedJob.cleaner_ids.length !== 1 ? 's' : ''}</p>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Assigned Cleaners</label>
+                  <p className="text-sm text-ink">{selectedJob.cleaner_ids.length} cleaner{selectedJob.cleaner_ids.length !== 1 ? 's' : ''}</p>
                 </div>
               )}
 
               {selectedJob.notes && (
                 <div>
-                  <label className="text-xs font-semibold text-neutral-600 uppercase">Notes</label>
-                  <p className="text-sm text-neutral-900 whitespace-pre-wrap">{selectedJob.notes}</p>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Notes</label>
+                  <p className="text-sm text-ink whitespace-pre-wrap">{selectedJob.notes}</p>
                 </div>
               )}
 
               {/* Visits for this job */}
               {getJobVisits(selectedJob.id).length > 0 && (
-                <div className="pt-4 border-t border-neutral-200">
-                  <label className="text-xs font-semibold text-neutral-600 uppercase mb-2 block">Associated Visits</label>
+                <div className="pt-4 border-t border-hairline">
+                  <label className="text-xs font-semibold text-ink-2 uppercase mb-2 block">Associated Visits</label>
                   <div className="space-y-2">
                     {getJobVisits(selectedJob.id).map((visit) => (
                       <VisitChecklistRow
@@ -522,7 +522,7 @@ export default function PropertyDetail() {
             </div>
 
             {/* Footer */}
-            <div className="border-t border-neutral-200 bg-neutral-50 p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
+            <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
               <Button variant="secondary" onClick={() => setShowJobDetails(false)} className="w-full sm:w-auto">
                 Close
               </Button>
