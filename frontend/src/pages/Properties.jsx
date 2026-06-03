@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import { EmptyState } from '../components/ui'
 import { get, post, patch, del } from "../api"
 
 
@@ -607,18 +608,20 @@ export default function Properties() {
           })}
 
           {filteredProperties.length === 0 && (
-            <div className="text-center py-16">
-              <Home className="w-12 h-12 mx-auto mb-3 text-ink-2" />
-              <div className="text-ink-3 font-medium mb-1">No {currentType === 'all' ? '' : PROPERTY_TYPE_CONFIG[currentType]?.label.toLowerCase()} properties yet</div>
-              <div className="text-ink-3 text-sm mb-4">
-                {currentType === 'str'
-                  ? 'Add an Airbnb or VRBO property to auto-create turnover jobs.'
-                  : 'Create a property to organize jobs and services.'}
-              </div>
-              <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                Add {currentType === 'all' ? 'Property' : PROPERTY_TYPE_CONFIG[currentType]?.label}
-              </button>
-            </div>
+            <EmptyState
+              icon={Home}
+              title={currentType === 'all'
+                ? 'No properties yet'
+                : `No ${PROPERTY_TYPE_CONFIG[currentType]?.label.toLowerCase()} properties yet`}
+              description={currentType === 'str'
+                ? 'Add an Airbnb or VRBO property to auto-create turnover jobs.'
+                : 'Create a property to organize jobs and services.'}
+              action={
+                <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  Add {currentType === 'all' ? 'Property' : PROPERTY_TYPE_CONFIG[currentType]?.label}
+                </button>
+              }
+            />
           )}
         </div>
       </div>
