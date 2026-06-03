@@ -16,6 +16,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
+import { Card, StatCard, EmptyState, Skeleton } from '../components/ui'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
   CheckCircle2, Clock, ArrowRight, Zap,
@@ -64,40 +65,39 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
 }
 
 
-/* ── Money stat — compact horizontal cell ─────────────────────────── */
-function MoneyStat({ label, value, sub, accent = 'text-ink', onClick }) {
+/* ── Tile shell — the dashboard's calling convention over the shared Card
+      primitive. Card owns the surface (bg-panel / border / radius), header
+      row, icon, title + badge slot. Tile keeps the text+arrow "action" link
+      so the three call sites below stay unchanged. Body is unpadded — each
+      tile's children manage their own spacing (full-bleed lists, the money
+      grid). ── */
+function Tile({ icon, iconColor, title, badge, action, onAction, children }) {
   return (
-    <button
-      onClick={onClick}
-      className="text-left p-4 rounded-xl hover:bg-bg active:bg-bg-2 transition-colors disabled:opacity-100"
-      disabled={!onClick}
+    <Card
+      as="section"
+      icon={icon}
+      iconColor={iconColor}
+      title={title}
+      badge={badge}
+      padded={false}
+      action={action && (
+        <button onClick={onAction} className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5">
+          {action} <ArrowRight className="w-3 h-3" />
+        </button>
+      )}
     >
-      <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-[0.14em]">{label}</div>
-      <div className={`text-xl sm:text-2xl font-bold mt-1.5 ${accent}`}>{value}</div>
-      {sub && <div className="text-[11px] text-ink-3 mt-1">{sub}</div>}
-    </button>
+      {children}
+    </Card>
   )
 }
 
 
-/* ── Tile shell ────────────────────────────────────────────────────── */
-function Tile({ icon: Ic, iconColor, title, badge, action, onAction, children }) {
+/* A few placeholder rows while a tile's data loads. */
+function TileLoading() {
   return (
-    <section className="bg-panel border border-hairline rounded-2xl flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-hairline">
-        <div className="flex items-center gap-2">
-          {Ic && <Ic className={`w-4 h-4 ${iconColor}`} />}
-          <h2 className="text-sm font-semibold text-ink">{title}</h2>
-          {badge}
-        </div>
-        {action && (
-          <button onClick={onAction} className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5">
-            {action} <ArrowRight className="w-3 h-3" />
-          </button>
-        )}
-      </div>
-      {children}
-    </section>
+    <div className="px-4 py-3 space-y-2.5">
+      {[0, 1, 2].map(i => <Skeleton key={i} className="h-11 w-full" />)}
+    </div>
   )
 }
 
@@ -291,12 +291,10 @@ export default function Dashboard() {
           onAction={() => navigate('/comms')}
         >
           {loading ? (
-            <div className="py-8 text-center text-[12px] text-ink-3">Loading…</div>
+            <TileLoading />
           ) : attention.length === 0 ? (
-            <div className="py-10 text-center">
-              <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-              <p className="text-[13px] text-ink-3">All clear · nothing urgent</p>
-            </div>
+            <EmptyState compact icon={CheckCircle2} title="All clear"
+              description="Nothing urgent right now." />
           ) : (
             <div className="flex-1 overflow-y-auto max-h-[380px]">
               {attention.map(p => (
@@ -348,15 +346,10 @@ export default function Dashboard() {
           onAction={() => navigate('/schedule')}
         >
           {loading ? (
-            <div className="py-8 text-center text-[12px] text-ink-3">Loading…</div>
+            <TileLoading />
           ) : todayJobs.length === 0 ? (
-            <div className="py-10 text-center">
-              <Calendar className="w-6 h-6 text-zinc-300 mx-auto mb-2" />
-              <p className="text-[13px] text-ink-3">Nothing scheduled today</p>
-              {weekCount > 0 && (
-                <p className="text-[11px] text-ink-3 mt-1">{weekCount} jobs later this week</p>
-              )}
-            </div>
+            <EmptyState compact icon={Calendar} title="Nothing scheduled today"
+              description={weekCount > 0 ? `${weekCount} jobs later this week` : undefined} />
           ) : (
             <div className="flex-1 overflow-y-auto max-h-[380px]">
               {todayJobs.map(j => (
@@ -390,38 +383,34 @@ export default function Dashboard() {
           onAction={() => navigate('/invoicing')}
         >
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-bg-2">
-            <div className="bg-white">
-              <MoneyStat
-                label="Today"
-                value={fmtMoney(todayRevenue)}
-                sub={todayRevenue > 0 ? 'collected today' : 'nothing collected yet'}
-              />
-            </div>
-            <div className="bg-white">
-              <MoneyStat
-                label="Month to date"
-                value={fmtMoney(mtdRevenue)}
-                sub={`${invoices.filter(i => i.status === 'paid').length} paid`}
-              />
-            </div>
-            <div className="bg-white">
-              <MoneyStat
-                label="Outstanding"
-                value={fmtMoney(outstanding)}
-                sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
-                accent={overdueInvoiceCount > 0 ? 'text-amber-600' : 'text-ink'}
-                onClick={() => navigate('/invoicing')}
-              />
-            </div>
-            <div className="bg-white">
-              <MoneyStat
-                label="Pipeline"
-                value={fmtMoney(pipeline)}
-                sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`}
-                accent="text-emerald-600"
-                onClick={() => navigate('/quoting')}
-              />
-            </div>
+            <StatCard
+              className="bg-panel"
+              label="Today"
+              value={fmtMoney(todayRevenue)}
+              sub={todayRevenue > 0 ? 'collected today' : 'nothing collected yet'}
+            />
+            <StatCard
+              className="bg-panel"
+              label="Month to date"
+              value={fmtMoney(mtdRevenue)}
+              sub={`${invoices.filter(i => i.status === 'paid').length} paid`}
+            />
+            <StatCard
+              className="bg-panel"
+              label="Outstanding"
+              value={fmtMoney(outstanding)}
+              sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
+              accent={overdueInvoiceCount > 0 ? 'text-amber-600' : 'text-ink'}
+              onClick={() => navigate('/invoicing')}
+            />
+            <StatCard
+              className="bg-panel"
+              label="Pipeline"
+              value={fmtMoney(pipeline)}
+              sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`}
+              accent="text-emerald-600"
+              onClick={() => navigate('/quoting')}
+            />
           </div>
 
           {/* AR Aging — who to call this morning */}
