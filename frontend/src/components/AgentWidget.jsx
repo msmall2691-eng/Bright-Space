@@ -188,35 +188,35 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
   }
 
   return (
-    <div className={`fixed z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
+    <div className={`fixed z-50 bg-panel border border-hairline rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
       expanded
         ? 'bottom-4 right-4 left-4 top-4 sm:left-auto sm:top-4 sm:w-[520px] sm:bottom-4'
         : 'bottom-4 right-4 w-[380px] h-[520px]'
     }`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/80">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-hairline bg-bg/80">
         <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={() => setShowAgentPicker(!showAgentPicker)}
-            className="flex items-center gap-2 hover:bg-gray-100 rounded-lg px-2 py-1 transition-colors"
+            className="flex items-center gap-2 hover:bg-bg-2 rounded-lg px-2 py-1 transition-colors"
           >
             <span className="text-xl">{activeAgent.emoji}</span>
             <div className="text-left">
-              <div className="text-sm font-semibold text-gray-900 leading-tight">{activeAgent.name}</div>
-              <div className="text-[10px] text-gray-400">{activeAgent.role}</div>
+              <div className="text-sm font-semibold text-ink leading-tight">{activeAgent.name}</div>
+              <div className="text-[10px] text-ink-3">{activeAgent.role}</div>
             </div>
-            <ChevronDown className="w-3 h-3 text-gray-400" />
+            <ChevronDown className="w-3 h-3 text-ink-3" />
           </button>
-          <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-300'}`} />
+          <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500' : 'bg-ink-3'}`} />
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={clearChat} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" title="Clear chat">
+          <button onClick={clearChat} className="p-1.5 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors" title="Clear chat">
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => setExpanded(!expanded)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors hidden sm:flex" title={expanded ? 'Minimize' : 'Expand'}>
+          <button onClick={() => setExpanded(!expanded)} className="p-1.5 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors hidden sm:flex" title={expanded ? 'Minimize' : 'Expand'}>
             {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
-          <button onClick={() => { setOpen(false); wsRef.current?.close() }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" title="Close">
+          <button onClick={() => { setOpen(false); wsRef.current?.close() }} className="p-1.5 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors" title="Close">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -224,19 +224,19 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
 
       {/* Agent picker dropdown menu */}
       {showAgentPicker && (
-        <div className="absolute top-14 left-3 z-10 bg-white border border-gray-200 rounded-xl shadow-xl p-1.5 w-56">
+        <div className="absolute top-14 left-3 z-10 bg-panel border border-hairline rounded-xl shadow-xl p-1.5 w-56">
           {AGENTS.map(agent => (
             <button
               key={agent.id}
               onClick={() => switchAgent(agent)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
-                activeAgent.id === agent.id ? 'bg-gray-100' : 'hover:bg-gray-50'
+                activeAgent.id === agent.id ? 'bg-bg-2' : 'hover:bg-bg'
               }`}
             >
               <span className="text-lg">{agent.emoji}</span>
               <div>
-                <div className="text-sm font-medium text-gray-900">{agent.name}</div>
-                <div className="text-[10px] text-gray-400">{agent.role}</div>
+                <div className="text-sm font-medium text-ink">{agent.name}</div>
+                <div className="text-[10px] text-ink-3">{agent.role}</div>
               </div>
             </button>
           ))}
@@ -248,15 +248,15 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <span className="text-3xl mb-2">{activeAgent.emoji}</span>
-            <p className="text-sm font-medium text-gray-900 mb-1">Ask {activeAgent.name}</p>
-            <p className="text-xs text-gray-400 mb-4">{activeAgent.role} - ready to help on this page</p>
+            <p className="text-sm font-medium text-ink mb-1">Ask {activeAgent.name}</p>
+            <p className="text-xs text-ink-3 mb-4">{activeAgent.role} - ready to help on this page</p>
             {prompts.length > 0 && (
               <div className="w-full space-y-1.5">
                 {prompts.map(q => (
                   <button
                     key={q}
                     onClick={() => sendMessage(q)}
-                    className="w-full text-left text-xs text-gray-500 bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
+                    className="w-full text-left text-xs text-ink-3 bg-bg hover:bg-bg-2 px-3 py-2 rounded-lg border border-hairline hover:border-hairline transition-colors"
                   >
                     {q}
                   </button>
@@ -269,7 +269,7 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
           if (msg.role === 'tool_call') {
             return (
               <div key={i} className="flex justify-start mb-2">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-[11px] text-gray-400">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-bg border border-hairline text-[11px] text-ink-3">
                   <span className="w-1 h-1 rounded-full bg-amber-400 animate-pulse" />
                   {TOOL_LABELS[msg.name] || `🔧 ${msg.name}...`}
                 </div>
@@ -288,11 +288,11 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
             <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-2.5`}>
               <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${
                 isUser
-                  ? 'bg-gray-900 text-white rounded-br-sm'
-                  : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                  ? 'bg-blue-600 text-white rounded-br-sm'
+                  : 'bg-bg-2 text-ink-2 rounded-bl-sm'
               }`}>
                 {msg.content}
-                {msg.streaming && <span className="inline-block w-1 h-3.5 bg-gray-400 animate-pulse ml-0.5 rounded" />}
+                {msg.streaming && <span className="inline-block w-1 h-3.5 bg-ink-3 animate-pulse ml-0.5 rounded" />}
               </div>
             </div>
           )
@@ -301,7 +301,7 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
       </div>
 
       {/* Input */}
-      <div className="p-3 border-t border-gray-100 bg-white">
+      <div className="p-3 border-t border-hairline bg-panel">
         <div className="flex gap-2 items-end">
           <textarea
             ref={inputRef}
@@ -315,13 +315,13 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
               }
             }}
             placeholder={`Ask ${activeAgent.name}...`}
-            className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 placeholder-gray-400 resize-none focus:outline-none focus:border-gray-300 transition-colors"
+            className="flex-1 bg-bg border border-hairline rounded-xl px-3 py-2 text-sm text-ink-2 placeholder-ink-3 resize-none focus:outline-none focus:border-hairline transition-colors"
             style={{ maxHeight: '80px' }}
           />
           <button
             onClick={() => sendMessage()}
             disabled={!input.trim()}
-            className="p-2 bg-gray-900 hover:bg-gray-800 text-white disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed rounded-xl transition-colors shrink-0"
+            className="p-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed rounded-xl transition-colors shrink-0"
           >
             <Send className="w-3.5 h-3.5" />
           </button>
