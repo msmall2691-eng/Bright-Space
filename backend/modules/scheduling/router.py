@@ -288,6 +288,103 @@ def _find_over_capacity(db: Session, *, cleaner_ids, scheduled_date, exclude_job
     return [(cid, counts[cid] + 1) for cid in ids if counts[cid] + 1 > CAPACITY_PER_CLEANER_PER_DAY]
 
 
+def _cleaner_roster(db: Session) -> list:
+    """The pool of candidate cleaners: every distinct cleaner_id that appears on
+    a non-cancelled job. Derived from real assignments so it needs no external
+    roster call (Connecteam) and reflects who actually works turnovers."""
+    seen = []
+    rows = db.query(Job).filter(
+        Job.status.notin_(["cancelled"]),
+        Job.cleaner_ids.isnot(None),
+    ).all()
+    for j in rows:
+        for cid in (j.cleaner_ids or []):
+            cid = str(cid)
+            if cid and cid not in seen:
+                seen.append(cid)
+    return seen
+
+
+def _day_load(db: Session, cleaner_id: str, d) -> int:
+    """How many non-cancelled jobs the cleaner already has on day d."""
+    n = 0
+    for j in db.query(Job).filter(
+        Job.scheduled_date == d,
+        Job.status.notin_(["cancelled"]),
+        Job.cleaner_ids.isnot(None),
+    ).all():
+        if str(cleaner_id) in {str(c) for c in (j.cleaner_ids or [])}:
+            n += 1
+    return n
+
+
+def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
+                                     limit: int = 100) -> dict:
+    """Assign an available cleaner to upcoming, unassigned str_turnover jobs.
+
+    For each such job, a candidate is eligible when — by the same rules the
+    create/update guard enforces — they have no time-off covering the date, no
+    overlapping job, and aren't over the daily cap. Among eligible candidates
+    the least-loaded that day is chosen (simple load balancing). Jobs with no
+    eligible candidate are left unassigned and reported.
+
+    dry_run=True computes the picks without writing them (for a preview)."""
+    today = date.today()
+    roster = _cleaner_roster(db)
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.job_type == "str_turnover",
+            Job.scheduled_date >= today,
+            Job.status.notin_(["cancelled", "completed"]),
+        )
+        .order_by(Job.scheduled_date, Job.start_time)
+        .all()
+    )
+    jobs = [j for j in jobs if not (j.cleaner_ids or [])][:limit]
+
+    assigned, unassignable = [], []
+    for job in jobs:
+        d = _to_date(job.scheduled_date)
+        best, best_load = None, None
+        for cid in roster:
+            # Reuse the create/update guard rules for eligibility.
+            if _find_unavailable_cleaners(db, cleaner_ids=[cid], scheduled_date=d):
+                continue
+            if _find_cleaner_conflicts(db, cleaner_ids=[cid], scheduled_date=d,
+                                       start_time=job.start_time, end_time=job.end_time,
+                                       exclude_job_id=job.id):
+                continue
+            if _find_over_capacity(db, cleaner_ids=[cid], scheduled_date=d,
+                                   exclude_job_id=job.id):
+                continue
+            load = _day_load(db, cid, d)
+            if best is None or load < best_load:
+                best, best_load = cid, load
+        if best is None:
+            unassignable.append({"job_id": job.id, "title": job.title,
+                                 "date": str(job.scheduled_date)})
+            continue
+        assigned.append({"job_id": job.id, "title": job.title,
+                         "date": str(job.scheduled_date), "cleaner_id": best})
+        if not dry_run:
+            job.cleaner_ids = [best]
+            try:
+                log_activity(db, "job_scheduled", job_id=job.id,
+                             summary=f"Auto-assigned cleaner {best} to turnover {job.title}")
+            except Exception:
+                pass
+    if not dry_run and assigned:
+        db.commit()
+    return {
+        "dry_run": dry_run,
+        "candidates": len(roster),
+        "considered": len(jobs),
+        "assigned": assigned,
+        "unassignable": unassignable,
+    }
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None) -> dict:
     # Resolve client name if not passed in
@@ -688,6 +785,14 @@ def delete_time_off(time_off_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Time-off entry not found")
     db.delete(row)
     db.commit()
+
+
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.post("/auto-assign-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
+def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db)):
+    """Assign available cleaners to upcoming unassigned STR turnover jobs.
+    Pass ?dry_run=true to preview the picks without writing them."""
+    return auto_assign_unassigned_turnovers(db, dry_run=dry_run)
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])

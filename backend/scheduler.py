@@ -210,6 +210,27 @@ def sync_gmail_inbox_tick() -> dict:
         db.close()
 
 
+def str_turnover_autoassign_tick() -> dict:
+    """Auto-assign available cleaners to upcoming unassigned STR turnover jobs.
+    OFF by default (it changes real assignments). Gate:
+    str_turnover_autoassign_enabled (app_settings) / STR_TURNOVER_AUTOASSIGN_ENABLED."""
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "str_turnover_autoassign_enabled",
+                        env_flag("STR_TURNOVER_AUTOASSIGN_ENABLED", False)):
+            return {"skipped": True}
+        from modules.scheduling.router import auto_assign_unassigned_turnovers
+        result = auto_assign_unassigned_turnovers(db)
+        if result.get("assigned"):
+            log.info(f"Turnover auto-assign: assigned {len(result['assigned'])} job(s)")
+        return result
+    except Exception as e:
+        log.error(f"Turnover auto-assign failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def daily_briefing_tick() -> dict:
     """Pre-generate the AI daily briefing and cache it, so the dashboard loads
     it instantly (and it stays consistent through the day). Gated behind
@@ -307,6 +328,21 @@ def start_scheduler():
         log.info(f"Recurring auto-generate enabled (interval: {recurring_interval_hours} hr)")
     else:
         log.info("Recurring auto-generate disabled via RECURRING_AUTO_GENERATE_ENABLED=0")
+
+    # STR turnover auto-assignment — OFF by default (mutates assignments).
+    # When on, periodically assigns available cleaners to unassigned turnovers.
+    if env_flag("STR_TURNOVER_AUTOASSIGN_ENABLED", False):
+        autoassign_interval_minutes = env_int("STR_TURNOVER_AUTOASSIGN_INTERVAL_MINUTES", 30)
+        _scheduler.add_job(
+            str_turnover_autoassign_tick,
+            IntervalTrigger(minutes=autoassign_interval_minutes),
+            id="str_turnover_autoassign",
+            name="STR turnover auto-assign",
+            replace_existing=True,
+        )
+        log.info(f"STR turnover auto-assign enabled (interval: {autoassign_interval_minutes} min)")
+    else:
+        log.info("STR turnover auto-assign disabled (set STR_TURNOVER_AUTOASSIGN_ENABLED=1 to enable)")
 
     # AI daily briefing — pre-generate once each morning so the dashboard
     # briefing is instant and consistent all day. Hour configurable.
