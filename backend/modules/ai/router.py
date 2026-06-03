@@ -222,9 +222,25 @@ def draft_invoice_reminder(invoice_id: int, db: Session = Depends(get_db),
     if not inv:
         return {"subject": "", "message": "", "error": "Invoice not found"}
     client = db.query(Client).filter(Client.id == inv.client_id).first()
-    name = (client.name if client else "there").split()[0] if client and client.name else "there"
-    amount = inv.total or 0
+    return _draft_one(inv, client, _anthropic_client())
+
+
+def _client_first_name(client) -> str:
+    if client and client.name:
+        return client.name.split()[0]
+    return "there"
+
+
+def _draft_one(inv: Invoice, client, client_ai) -> dict:
+    """Draft a reminder for a single invoice. Uses the LLM when available,
+    otherwise a deterministic personalized fallback. Returns {subject, message}.
+    Shared by the single-invoice endpoint and the batch chaser."""
+    name = _client_first_name(client)
     od = _days_overdue(inv)
+    if client_ai is None:
+        return _fallback_reminder(name, inv, od)
+
+    amount = inv.total or 0
     facts = {
         "client_first_name": name,
         "invoice_number": inv.invoice_number,
@@ -233,11 +249,6 @@ def draft_invoice_reminder(invoice_id: int, db: Session = Depends(get_db),
         "days_overdue": od,
         "status": inv.status,
     }
-
-    client_ai = _anthropic_client()
-    if client_ai is None:
-        return _fallback_reminder(name, inv, od)
-
     tone = ("firm but polite (the invoice is past due)" if od
             else "warm and light (a gentle nudge, not yet overdue)")
     system = (
@@ -259,7 +270,7 @@ def draft_invoice_reminder(invoice_id: int, db: Session = Depends(get_db),
             "message": msg,
         }
     except Exception:
-        logger.exception("ai/draft-invoice-reminder failed; using fallback")
+        logger.exception("ai draft failed; using fallback")
         return _fallback_reminder(name, inv, od)
 
 
@@ -276,6 +287,49 @@ def _fallback_reminder(name, inv: Invoice, od: Optional[int]) -> dict:
                 + (f", due {inv.due_date}" if inv.due_date else "")
                 + ". Thanks so much for your business!")
     return {"subject": f"Reminder: invoice {inv.invoice_number}", "message": body}
+
+
+# ── GET /api/ai/overdue-reminders ───────────────────────────────────────────
+
+# Bound the batch so a huge AR backlog can't blow up latency/cost with one call.
+_BATCH_LIMIT = 20
+
+
+@router.get("/overdue-reminders")
+def overdue_reminders(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Batch chaser: draft a reminder for every overdue invoice at once.
+    Review-first — returns drafts only, sends nothing. Each item carries the
+    data the UI needs to review and then send via the existing invoice send
+    endpoint. {total, truncated, reminders:[...]}."""
+    today = date.today().isoformat()
+    candidates = db.query(Invoice).filter(
+        Invoice.status.in_(["sent", "overdue"])
+    ).all()
+    overdue = [i for i in candidates
+               if i.status == "overdue" or (i.due_date and str(i.due_date) < today)]
+    # Oldest first — chase the most delinquent before the rest.
+    overdue.sort(key=lambda i: (_days_overdue(i) or 0), reverse=True)
+    truncated = len(overdue) > _BATCH_LIMIT
+    overdue = overdue[:_BATCH_LIMIT]
+
+    client_ai = _anthropic_client()
+    client_map = {c.id: c for c in db.query(Client).all()}
+    reminders = []
+    for inv in overdue:
+        client = client_map.get(inv.client_id)
+        draft = _draft_one(inv, client, client_ai)
+        reminders.append({
+            "invoice_id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "client_name": (client.name if client else f"Client #{inv.client_id}"),
+            "client_email": (client.email if client else None),
+            "client_phone": (client.phone if client else None),
+            "amount": inv.total or 0,
+            "days_overdue": _days_overdue(inv),
+            "subject": draft["subject"],
+            "message": draft["message"],
+        })
+    return {"total": len(reminders), "truncated": truncated, "reminders": reminders}
 
 
 # ── GET /api/ai/followup-check ──────────────────────────────────────────────
