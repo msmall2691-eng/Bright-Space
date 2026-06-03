@@ -9,7 +9,7 @@ import { useToast } from '../components/ui/Toast'
 const STATUS_COLORS = {
   lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
   active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
-  inactive: 'bg-zinc-100 text-zinc-400 border-zinc-200',
+  inactive: 'bg-bg-2 text-ink-3 border-hairline',
 }
 
 const AVATAR_COLORS = [
@@ -189,13 +189,13 @@ export default function Clients() {
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="relative flex-1 min-w-[180px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
-              className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-4 py-2 text-[13px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 transition-colors" />
+              className="w-full bg-bg border border-hairline rounded-lg pl-9 pr-4 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 transition-colors" />
           </div>
 
           {/* Status pills */}
-          <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-0.5">
             {[
               { key: '', label: 'All' },
               { key: 'lead', label: 'Leads' },
@@ -205,29 +205,29 @@ export default function Clients() {
               <button key={s.key} onClick={() => setStatusFilter(s.key)}
                 className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors ${
                   statusFilter === s.key
-                    ? 'bg-white text-zinc-900 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-700'
+                    ? 'bg-panel text-ink shadow-sm'
+                    : 'text-ink-3 hover:text-ink-2'
                 }`}>
                 {s.label}
-                <span className="ml-1.5 text-[10px] text-zinc-400">{statusCounts[s.key]}</span>
+                <span className="ml-1.5 text-[10px] text-ink-3">{statusCounts[s.key]}</span>
               </button>
             ))}
           </div>
 
           <input ref={fileInputRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleImport} />
           <button onClick={() => fileInputRef.current?.click()} disabled={importing}
-            className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 disabled:opacity-50 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors border border-zinc-200">
+            className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 disabled:opacity-50 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors border border-hairline">
             <Upload className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{importing ? 'Importing...' : 'Import'}</span>
           </button>
           {/* View toggle (Twenty CRM-style) */}
-          <div className="hidden sm:flex items-center bg-zinc-100 rounded-lg p-0.5">
+          <div className="hidden sm:flex items-center bg-bg-2 rounded-lg p-0.5">
             <button onClick={() => setViewMode('cards')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'cards' ? 'bg-white shadow-sm text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'cards' ? 'bg-panel shadow-sm text-ink-2' : 'text-ink-3 hover:text-ink-2'}`}
               title="Card view">
               <LayoutGrid className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-white shadow-sm text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-panel shadow-sm text-ink-2' : 'text-ink-3 hover:text-ink-2'}`}
               title="Table view">
               <TableProperties className="w-3.5 h-3.5" />
             </button>
@@ -256,13 +256,13 @@ export default function Clients() {
 
         {/* Selection / bulk-action bar */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3 text-[11px] text-zinc-400 font-medium">
+          <div className="flex items-center gap-3 text-[11px] text-ink-3 font-medium">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
                 onChange={toggleSelectAll}
-                className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer"
+                className="w-3.5 h-3.5 rounded border-hairline cursor-pointer"
                 data-testid="clients-select-all"
               />
               <span>Select all</span>
@@ -271,9 +271,9 @@ export default function Clients() {
           </div>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="clients-bulk-actions">
-              <span className="text-[11px] text-zinc-600 font-medium">{selectedIds.size} selected</span>
+              <span className="text-[11px] text-ink-2 font-medium">{selectedIds.size} selected</span>
               <button onClick={clearSelection}
-                className="text-[11px] text-zinc-500 hover:text-zinc-700 px-2 py-1 rounded">
+                className="text-[11px] text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
                 Clear
               </button>
               <button onClick={bulkDelete} disabled={bulkDeleting}
@@ -291,13 +291,13 @@ export default function Clients() {
           <div className="space-y-1.5 overflow-y-auto flex-1">
             {filtered.map(c => (
               <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                className={`flex items-center gap-3 sm:gap-4 bg-white border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selectedIds.has(c.id) ? 'border-blue-400 bg-blue-50/40' : 'border-zinc-200 hover:border-zinc-300'}`}>
+                className={`flex items-center gap-3 sm:gap-4 bg-panel border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selectedIds.has(c.id) ? 'border-blue-400 bg-blue-50/40' : 'border-hairline hover:border-hairline'}`}>
                 <input
                   type="checkbox"
                   checked={selectedIds.has(c.id)}
                   onChange={(e) => toggleSelect(c.id, e)}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-4 h-4 rounded border-zinc-300 cursor-pointer shrink-0"
+                  className="w-4 h-4 rounded border-hairline cursor-pointer shrink-0"
                   data-testid="client-row-checkbox"
                   aria-label={`Select ${c.name}`}
                 />
@@ -306,58 +306,58 @@ export default function Clients() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <div className="text-[13px] font-medium text-zinc-900 truncate">{displayContactName(c)}</div>
+                    <div className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</div>
                     <span className={`sm:hidden text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
                   </div>
                   <div className="flex items-center gap-x-3 gap-y-0.5 mt-0.5 flex-wrap">
-                    {c.phone && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><Phone className="w-3 h-3 shrink-0" />{c.phone}</span>}
-                    {c.email && <span className="text-[11px] text-zinc-400 flex items-center gap-1 min-w-0 max-w-full"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{c.email}</span></span>}
-                    {c.city && <span className="text-[11px] text-zinc-400 flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{c.city}</span>}
+                    {c.phone && <span className="text-[11px] text-ink-3 flex items-center gap-1"><Phone className="w-3 h-3 shrink-0" />{c.phone}</span>}
+                    {c.email && <span className="text-[11px] text-ink-3 flex items-center gap-1 min-w-0 max-w-full"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{c.email}</span></span>}
+                    {c.city && <span className="text-[11px] text-ink-3 flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{c.city}</span>}
                   </div>
                 </div>
                 <span className={`hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
-                <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-400 transition-colors shrink-0" />
+                <ChevronRight className="w-4 h-4 text-ink-3 group-hover:text-ink-3 transition-colors shrink-0" />
               </div>
             ))}
             {filtered.length === 0 && (
-              <div className="text-center py-16 text-zinc-400 text-[13px]">No clients found</div>
+              <div className="text-center py-16 text-ink-3 text-[13px]">No clients found</div>
             )}
           </div>
         )}
 
         {/* Client rows â Table view (Twenty CRM-inspired) */}
         {viewMode === 'table' && (
-          <div className="overflow-auto flex-1 border border-zinc-200 rounded-xl bg-white">
+          <div className="overflow-auto flex-1 border border-hairline rounded-xl bg-panel">
             <table className="w-full text-left">
-              <thead className="sticky top-0 bg-zinc-50 z-10">
-                <tr className="border-b border-zinc-200">
+              <thead className="sticky top-0 bg-bg z-10">
+                <tr className="border-b border-hairline">
                   <th className="px-3 py-2.5 w-8">
                     <input
                       type="checkbox"
                       checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
                       onChange={toggleSelectAll}
-                      className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer"
+                      className="w-3.5 h-3.5 rounded border-hairline cursor-pointer"
                       aria-label="Select all rows"
                     />
                   </th>
-                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Name</th>
-                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Phone</th>
-                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Email</th>
-                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">City</th>
-                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Source</th>
-                  <th className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider px-4 py-2.5">Status</th>
+                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Name</th>
+                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Phone</th>
+                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Email</th>
+                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">City</th>
+                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Source</th>
+                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(c => (
                   <tr key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                    className={`border-b border-zinc-100 cursor-pointer transition-colors ${selectedIds.has(c.id) ? 'bg-blue-50/50' : 'hover:bg-blue-50/30'}`}>
+                    className={`border-b border-hairline cursor-pointer transition-colors ${selectedIds.has(c.id) ? 'bg-blue-50/50' : 'hover:bg-blue-50/30'}`}>
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(c.id)}
                         onChange={(e) => toggleSelect(c.id, e)}
-                        className="w-3.5 h-3.5 rounded border-zinc-300 cursor-pointer"
+                        className="w-3.5 h-3.5 rounded border-hairline cursor-pointer"
                         aria-label={`Select ${c.name}`}
                       />
                     </td>
@@ -366,13 +366,13 @@ export default function Clients() {
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
                           <span className="text-[10px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
                         </div>
-                        <span className="text-[13px] font-medium text-zinc-900 truncate">{displayContactName(c)}</span>
+                        <span className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-[12px] text-zinc-500">{c.phone || 'â'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-zinc-500 truncate max-w-[200px]">{c.email || 'â'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-zinc-500">{c.city || 'â'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-zinc-400">{c.source || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.phone || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3 truncate max-w-[200px]">{c.email || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.city || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.source || 'â'}</td>
                     <td className="px-4 py-2.5">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
                     </td>
@@ -381,7 +381,7 @@ export default function Clients() {
               </tbody>
             </table>
             {filtered.length === 0 && (
-              <div className="text-center py-16 text-zinc-400 text-[13px]">No clients found</div>
+              <div className="text-center py-16 text-ink-3 text-[13px]">No clients found</div>
             )}
           </div>
         )}
@@ -389,24 +389,24 @@ export default function Clients() {
 
       {/* Slide-over form */}
       {showForm && (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-zinc-200 sm:shrink-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-            <h2 className="text-[14px] font-semibold text-zinc-900">{selected ? 'Edit Client' : 'New Client'}</h2>
-            <button onClick={() => { setShowForm(false); setPhoneNumbers([]) }} className="text-zinc-400 hover:text-zinc-600 transition-colors">
+        <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-hairline sm:shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-hairline">
+            <h2 className="text-[14px] font-semibold text-ink">{selected ? 'Edit Client' : 'New Client'}</h2>
+            <button onClick={() => { setShowForm(false); setPhoneNumbers([]) }} className="text-ink-3 hover:text-ink-2 transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="block text-[11px] text-zinc-400 mb-1 font-medium">First Name *</label>
+                <label className="block text-[11px] text-ink-3 mb-1 font-medium">First Name *</label>
                 <input value={form.first_name || ''} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               </div>
               <div className="flex-1">
-                <label className="block text-[11px] text-zinc-400 mb-1 font-medium">Last Name</label>
+                <label className="block text-[11px] text-ink-3 mb-1 font-medium">Last Name</label>
                 <input value={form.last_name || ''} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               </div>
             </div>
             {[
@@ -415,41 +415,41 @@ export default function Clients() {
               { label: 'Source', key: 'source' },
             ].map(({ label, key }) => (
               <div key={key}>
-                <label className="block text-[11px] text-zinc-400 mb-1 font-medium">{label}</label>
+                <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
                 <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
               </div>
             ))}
 
             {/* Phone Numbers Management */}
             {selected && (
               <div className="pt-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 mb-2 flex items-center gap-2">
-                  <div className="h-px flex-1 bg-zinc-100" /><span>Phone Numbers</span><div className="h-px flex-1 bg-zinc-100" />
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-2 flex items-center gap-2">
+                  <div className="h-px flex-1 bg-bg-2" /><span>Phone Numbers</span><div className="h-px flex-1 bg-bg-2" />
                 </div>
 
                 {/* Existing phone numbers */}
                 <div className="space-y-1.5 mb-3">
                   {loadingPhones ? (
-                    <div className="text-[11px] text-zinc-400 py-2">Loading...</div>
+                    <div className="text-[11px] text-ink-3 py-2">Loading...</div>
                   ) : phoneNumbers.length === 0 ? (
-                    <div className="text-[11px] text-zinc-400 py-2">No phone numbers yet</div>
+                    <div className="text-[11px] text-ink-3 py-2">No phone numbers yet</div>
                   ) : (
                     phoneNumbers.map(p => (
-                      <div key={p.id} className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2">
+                      <div key={p.id} className="flex items-center gap-2 bg-bg border border-hairline rounded-lg px-3 py-2">
                         <div className="flex-1 min-w-0">
-                          <div className="text-[12px] font-medium text-zinc-900">{p.phone}</div>
-                          <div className="text-[10px] text-zinc-400">{p.phone_type || 'mobile'}</div>
+                          <div className="text-[12px] font-medium text-ink">{p.phone}</div>
+                          <div className="text-[10px] text-ink-3">{p.phone_type || 'mobile'}</div>
                         </div>
                         <div className="flex items-center gap-1">
                           {p.is_primary ? (
                             <span className="text-[10px] font-semibold px-2 py-0.5 bg-blue-100 text-blue-600 rounded-full">Primary</span>
                           ) : (
-                            <button onClick={() => setPhonePrimary(p.id)} className="text-[10px] px-2 py-0.5 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 rounded transition-colors">
+                            <button onClick={() => setPhonePrimary(p.id)} className="text-[10px] px-2 py-0.5 text-ink-3 hover:text-ink-2 hover:bg-bg-2 rounded transition-colors">
                               Set Primary
                             </button>
                           )}
-                          <button onClick={() => deletePhoneNumber(p.id)} className="text-zinc-400 hover:text-red-500 transition-colors">
+                          <button onClick={() => deletePhoneNumber(p.id)} className="text-ink-3 hover:text-red-500 transition-colors">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -461,23 +461,23 @@ export default function Clients() {
                 {/* Add new phone */}
                 <div className="space-y-2">
                   <input value={newPhoneNumber} onChange={e => setNewPhoneNumber(e.target.value)} placeholder="Add phone number"
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
                   <select value={newPhoneType} onChange={e => setNewPhoneType(e.target.value)}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400">
+                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400">
                     <option value="mobile">Mobile</option>
                     <option value="office">Office</option>
                     <option value="home">Home</option>
                   </select>
                   <button onClick={addPhoneNumber} disabled={!newPhoneNumber.trim()}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
                     Add Phone Number
                   </button>
                 </div>
               </div>
             )}
             <div className="pt-1">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 mb-3 flex items-center gap-2">
-                <div className="h-px flex-1 bg-zinc-100" /><span>Service Address</span><div className="h-px flex-1 bg-zinc-100" />
+              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-3 flex items-center gap-2">
+                <div className="h-px flex-1 bg-bg-2" /><span>Service Address</span><div className="h-px flex-1 bg-bg-2" />
               </div>
               {[
                 { label: 'Street', key: 'address' },
@@ -486,15 +486,15 @@ export default function Clients() {
                 { label: 'ZIP', key: 'zip_code' },
               ].map(({ label, key }) => (
                 <div key={key} className="mb-3">
-                  <label className="block text-[11px] text-zinc-400 mb-1 font-medium">{label}</label>
+                  <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
                 </div>
               ))}
             </div>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400 mb-3 flex items-center gap-2">
-                <div className="h-px flex-1 bg-zinc-100" /><span>Billing Address</span><div className="h-px flex-1 bg-zinc-100" />
+              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-3 flex items-center gap-2">
+                <div className="h-px flex-1 bg-bg-2" /><span>Billing Address</span><div className="h-px flex-1 bg-bg-2" />
               </div>
               {[
                 { label: 'Street', key: 'billing_address' },
@@ -503,25 +503,25 @@ export default function Clients() {
                 { label: 'ZIP', key: 'billing_zip' },
               ].map(({ label, key }) => (
                 <div key={key} className="mb-3">
-                  <label className="block text-[11px] text-zinc-400 mb-1 font-medium">{label}</label>
+                  <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
                   <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
                 </div>
               ))}
             </div>
             <div>
-              <label className="block text-[11px] text-zinc-400 mb-1 font-medium">Status</label>
+              <label className="block text-[11px] text-ink-3 mb-1 font-medium">Status</label>
               <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400">
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400">
                 <option value="lead">Lead</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
             </div>
             <div>
-              <label className="block text-[11px] text-zinc-400 mb-1 font-medium">Notes</label>
+              <label className="block text-[11px] text-ink-3 mb-1 font-medium">Notes</label>
               <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-[13px] text-zinc-900 focus:outline-none focus:border-blue-400 resize-none" />
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 resize-none" />
             </div>
             <CustomFieldsForm
               entityType="client"
@@ -532,7 +532,7 @@ export default function Clients() {
           {saveError && (
             <div className="mx-6 mb-2 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</div>
           )}
-          <div className="p-6 border-t border-zinc-200 flex gap-3">
+          <div className="p-6 border-t border-hairline flex gap-3">
             {selected && (
               <button onClick={() => deleteClient(selected.id)}
                 className="px-4 py-2 text-[13px] text-red-500 hover:text-red-600 border border-red-200 hover:border-red-300 rounded-lg transition-colors font-medium">
@@ -540,7 +540,7 @@ export default function Clients() {
               </button>
             )}
             <button onClick={save} disabled={saving || (!form.first_name && !form.last_name)}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
               {saving ? 'Saving...' : 'Save'}
             </button>
           </div>

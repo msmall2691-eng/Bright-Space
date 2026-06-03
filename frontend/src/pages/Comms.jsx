@@ -61,7 +61,7 @@ const CHANNEL_CONFIG = {
 }
 
 const PRIORITY_COLORS = {
-  low:    { active: 'bg-zinc-100 text-zinc-600 ring-zinc-300', dot: 'bg-zinc-400' },
+  low:    { active: 'bg-bg-2 text-ink-2 ring-hairline-2', dot: 'bg-bg-2' },
   normal: { active: 'bg-blue-100 text-blue-700 ring-blue-300', dot: 'bg-blue-500' },
   high:   { active: 'bg-amber-100 text-amber-700 ring-amber-300', dot: 'bg-amber-500' },
   urgent: { active: 'bg-red-100 text-red-700 ring-red-300', dot: 'bg-red-500' },
@@ -117,7 +117,7 @@ function NotifPermissionButton() {
         setPermission(result)
       }}
       title="Enable desktop notifications for new messages"
-      className="w-8 h-8 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-600 flex items-center justify-center transition-colors"
+      className="w-8 h-8 rounded-xl bg-bg-2 hover:bg-bg-2 text-ink-2 flex items-center justify-center transition-colors"
     >
       <Bell className="w-4 h-4" />
     </button>
@@ -206,7 +206,7 @@ function PriorityDot({ priority }) {
 
 function Kbd({ children }) {
   return (
-    <kbd className="inline-flex items-center justify-center h-5 px-1.5 text-[10px] font-medium text-zinc-500 bg-zinc-100 border border-zinc-200 rounded">
+    <kbd className="inline-flex items-center justify-center h-5 px-1.5 text-[10px] font-medium text-ink-3 bg-bg-2 border border-hairline rounded">
       {children}
     </kbd>
   )
@@ -215,9 +215,9 @@ function Kbd({ children }) {
 function DaySeparator({ label }) {
   return (
     <div className="flex items-center gap-3 my-4">
-      <div className="flex-1 h-px bg-zinc-200" />
-      <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">{label}</span>
-      <div className="flex-1 h-px bg-zinc-200" />
+      <div className="flex-1 h-px bg-bg-2" />
+      <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">{label}</span>
+      <div className="flex-1 h-px bg-bg-2" />
     </div>
   )
 }
@@ -237,12 +237,12 @@ function ConvItem({ conv, active, onClick }) {
 
   return (
     <button onClick={onClick}
-      className={`group w-full text-left px-4 py-3 transition-colors border-b border-zinc-100 ${
+      className={`group w-full text-left px-4 py-3 transition-colors border-b border-hairline ${
         active
           ? 'bg-blue-50/60'
           : unread
-            ? 'bg-white hover:bg-zinc-50'
-            : 'bg-white hover:bg-zinc-50/70'
+            ? 'bg-panel hover:bg-bg'
+            : 'bg-panel hover:bg-bg/70'
       }`}>
       <div className="flex items-center gap-3">
         {/* Avatar with channel chip in bottom-right corner */}
@@ -256,16 +256,16 @@ function ConvItem({ conv, active, onClick }) {
         <div className="flex-1 min-w-0">
           {/* Name + time */}
           <div className="flex items-baseline gap-2">
-            <span className={`text-[14px] truncate flex-1 ${unread ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
+            <span className={`text-[14px] truncate flex-1 ${unread ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`}>
               {name}
             </span>
-            <span className="text-[11px] text-zinc-400 shrink-0 tabular-nums">
+            <span className="text-[11px] text-ink-3 shrink-0 tabular-nums">
               {relTime(conv.last_message_at)}
             </span>
           </div>
 
           {/* Preview (single line) */}
-          <p className={`text-[12.5px] truncate mt-0.5 ${unread ? 'text-zinc-600' : 'text-zinc-400'}`}>
+          <p className={`text-[12.5px] truncate mt-0.5 ${unread ? 'text-ink-2' : 'text-ink-3'}`}>
             {conv.preview || 'No messages yet'}
           </p>
 
@@ -327,25 +327,25 @@ function MessageBubble({ m, isFirst, showTime, contactName }) {
       <div className="max-w-[72%]">
         {/* Sender label on first message in group */}
         {isFirst && (
-          <div className={`text-[10px] font-semibold mb-1 px-1 ${outbound ? 'text-right text-zinc-400' : 'text-zinc-500'}`}>
+          <div className={`text-[10px] font-semibold mb-1 px-1 ${outbound ? 'text-right text-ink-3' : 'text-ink-3'}`}>
             {outbound ? (m.author || 'You') : (contactName || 'Customer')}
           </div>
         )}
         <div className={`px-4 py-2.5 text-[13px] leading-relaxed ${
           outbound
             ? 'bg-blue-600 text-white rounded-2xl rounded-br-lg shadow-sm'
-            : 'bg-white text-zinc-800 rounded-2xl rounded-bl-lg shadow-sm border border-zinc-100'
+            : 'bg-panel text-ink rounded-2xl rounded-bl-lg shadow-sm border border-hairline'
         }`}>
           {m.subject && (
             <div className={`text-[11px] font-semibold mb-1 pb-1 border-b ${
-              outbound ? 'border-blue-500/30 text-blue-100' : 'border-zinc-100 text-zinc-500'
+              outbound ? 'border-blue-500/30 text-blue-100' : 'border-hairline text-ink-3'
             }`}>
               {m.channel === 'email' && <Mail className="w-3 h-3 inline mr-1 -mt-0.5" />}
               {m.subject}
             </div>
           )}
           <div className="whitespace-pre-wrap">{m.body}</div>
-          <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-blue-100 justify-end' : 'text-zinc-600'}`}>
+          <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-blue-100 justify-end' : 'text-ink-2'}`}>
             {fullTime(m.created_at)}
             {outbound && m.status === 'delivered' && <CheckCircle2 className="w-3 h-3" />}
             {outbound && m.status === 'failed' && <AlertTriangle className="w-3 h-3 text-red-300" />}
@@ -413,23 +413,23 @@ function ComposeModal({ onClose, onSent, clients }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-panel rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
               <PenLine className="w-4 h-4 text-blue-600" />
             </div>
-            <span className="font-semibold text-zinc-900">New Message</span>
+            <span className="font-semibold text-ink">New Message</span>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-zinc-100 flex items-center justify-center transition-colors">
-            <X className="w-4 h-4 text-zinc-500" />
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-bg-2 flex items-center justify-center transition-colors">
+            <X className="w-4 h-4 text-ink-3" />
           </button>
         </div>
 
         {/* Channel toggle */}
         <div className="px-5 pt-4">
-          <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-bg-2 rounded-xl p-1">
             {[
               { key: 'sms', label: 'SMS', icon: Phone },
               { key: 'email', label: 'Email', icon: Mail },
@@ -439,8 +439,8 @@ function ComposeModal({ onClose, onSent, clients }) {
                 <button key={ch.key} onClick={() => setChannel(ch.key)}
                   className={`flex-1 flex items-center justify-center gap-1.5 text-[13px] font-medium px-3 py-2 rounded-lg transition-all ${
                     channel === ch.key
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-500 hover:text-zinc-700'
+                      ? 'bg-panel text-ink shadow-sm'
+                      : 'text-ink-3 hover:text-ink-2'
                   }`}>
                   <Icon className="w-3.5 h-3.5" />
                   {ch.label}
@@ -453,23 +453,23 @@ function ComposeModal({ onClose, onSent, clients }) {
         {/* Form */}
         <div className="px-5 py-4 space-y-3">
           <div className="relative">
-            <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">
+            <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">
               To
             </label>
             <input value={to} onChange={e => handleToChange(e.target.value)}
               onFocus={() => clientSuggestions.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               placeholder={channel === 'email' ? 'email@example.com' : '+1 (207) 555-1234'}
-              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-[13px] placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
+              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
             {showSuggestions && (
-              <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-xl shadow-lg overflow-hidden">
+              <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-panel border border-hairline rounded-xl shadow-lg overflow-hidden">
                 {clientSuggestions.map(c => (
                   <button key={c.id} onClick={() => selectClient(c)}
-                    className="w-full text-left px-3.5 py-2.5 hover:bg-zinc-50 flex items-center gap-2.5 transition-colors">
+                    className="w-full text-left px-3.5 py-2.5 hover:bg-bg flex items-center gap-2.5 transition-colors">
                     <Avatar name={c.name} size="xs" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-medium text-zinc-900 truncate">{c.name}</div>
-                      <div className="text-[11px] text-zinc-400 truncate">
+                      <div className="text-[13px] font-medium text-ink truncate">{c.name}</div>
+                      <div className="text-[11px] text-ink-3 truncate">
                         {channel === 'email' ? c.email : formatPhone(c.phone)}
                       </div>
                     </div>
@@ -481,21 +481,21 @@ function ComposeModal({ onClose, onSent, clients }) {
 
           {channel === 'email' && (
             <div>
-              <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">Subject</label>
+              <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">Subject</label>
               <input value={subject} onChange={e => setSubject(e.target.value)}
                 placeholder="Subject line"
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-[13px] placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
+                className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
             </div>
           )}
 
           <div>
-            <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1">Message</label>
+            <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">Message</label>
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
               placeholder={channel === 'email' ? 'Write your email...' : 'Type your SMS message...'}
-              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-[13px] placeholder-zinc-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all leading-relaxed"
+              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all leading-relaxed"
               onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend() }} />
             {channel === 'sms' && (
-              <div className="text-[10px] text-zinc-400 mt-1 text-right">{body.length}/160 chars</div>
+              <div className="text-[10px] text-ink-3 mt-1 text-right">{body.length}/160 chars</div>
             )}
           </div>
 
@@ -507,8 +507,8 @@ function ComposeModal({ onClose, onSent, clients }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-zinc-100 flex items-center justify-between">
-          <div className="text-[10px] text-zinc-400 flex items-center gap-1">
+        <div className="px-5 py-4 border-t border-hairline flex items-center justify-between">
+          <div className="text-[10px] text-ink-3 flex items-center gap-1">
             <Kbd>{navigator.platform?.includes('Mac') ? 'â' : 'Ctrl'}</Kbd>
             <span>+</span>
             <Kbd>Enter</Kbd>
@@ -516,7 +516,7 @@ function ComposeModal({ onClose, onSent, clients }) {
           </div>
           <div className="flex gap-2">
             <button onClick={onClose}
-              className="text-[13px] font-medium px-4 py-2 rounded-xl text-zinc-600 hover:bg-zinc-100 transition-all">
+              className="text-[13px] font-medium px-4 py-2 rounded-xl text-ink-2 hover:bg-bg-2 transition-all">
               Cancel
             </button>
             <button onClick={handleSend} disabled={sending || !to.trim() || !body.trim()}
@@ -560,25 +560,25 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
   }, [detail.messages, name])
 
   return (
-    <div className="hidden lg:flex w-[320px] border-l border-zinc-200 bg-white flex-col overflow-hidden">
+    <div className="hidden lg:flex w-[320px] border-l border-hairline bg-panel flex-col overflow-hidden">
       {/* Contact header */}
-      <div className="p-5 bg-gradient-to-b from-zinc-50 to-white border-b border-zinc-100">
+      <div className="p-5 bg-gradient-to-b from-bg to-white border-b border-hairline">
         <div className="flex items-start gap-3">
           <Avatar name={client?.name || detail.external_contact} size="lg" />
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-zinc-900 text-[15px] truncate leading-tight">{name}</h3>
+            <h3 className="font-bold text-ink text-[15px] truncate leading-tight">{name}</h3>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                 client?.status === 'active'
                   ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-zinc-100 text-zinc-500'
+                  : 'bg-bg-2 text-ink-3'
               }`}>
                 {(client?.status || 'new').toUpperCase()}
               </span>
               <ChannelBadge channel={detail.channel} />
             </div>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-zinc-100 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors lg:hidden">
+          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 hover:text-ink-2 transition-colors lg:hidden">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -587,26 +587,26 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
         <div className="mt-3 space-y-1.5">
           {(client?.phone || detail.external_contact) && (
             <a href={`tel:${client?.phone || detail.external_contact}`}
-              className="flex items-center gap-2 text-[12px] text-zinc-600 hover:text-blue-600 transition-colors group">
-              <div className="w-6 h-6 rounded-lg bg-zinc-100 group-hover:bg-blue-50 flex items-center justify-center transition-colors">
-                <Phone className="w-3 h-3 text-zinc-400 group-hover:text-blue-500" />
+              className="flex items-center gap-2 text-[12px] text-ink-2 hover:text-blue-600 transition-colors group">
+              <div className="w-6 h-6 rounded-lg bg-bg-2 group-hover:bg-blue-50 flex items-center justify-center transition-colors">
+                <Phone className="w-3 h-3 text-ink-3 group-hover:text-blue-500" />
               </div>
               {formatPhone(client?.phone || detail.external_contact)}
             </a>
           )}
           {client?.email && (
             <a href={`mailto:${client.email}`}
-              className="flex items-center gap-2 text-[12px] text-zinc-600 hover:text-blue-600 transition-colors group">
-              <div className="w-6 h-6 rounded-lg bg-zinc-100 group-hover:bg-blue-50 flex items-center justify-center transition-colors">
-                <Mail className="w-3 h-3 text-zinc-400 group-hover:text-blue-500" />
+              className="flex items-center gap-2 text-[12px] text-ink-2 hover:text-blue-600 transition-colors group">
+              <div className="w-6 h-6 rounded-lg bg-bg-2 group-hover:bg-blue-50 flex items-center justify-center transition-colors">
+                <Mail className="w-3 h-3 text-ink-3 group-hover:text-blue-500" />
               </div>
               {client.email}
             </a>
           )}
           {client?.address && (
-            <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-              <div className="w-6 h-6 rounded-lg bg-zinc-100 flex items-center justify-center">
-                <MapPin className="w-3 h-3 text-zinc-400" />
+            <div className="flex items-center gap-2 text-[12px] text-ink-3">
+              <div className="w-6 h-6 rounded-lg bg-bg-2 flex items-center justify-center">
+                <MapPin className="w-3 h-3 text-ink-3" />
               </div>
               {client.address}
             </div>
@@ -630,10 +630,10 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
           {/* Tags */}
           {detail.tags?.length > 0 && (
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Tags</label>
+              <label className="text-[10px] font-bold text-ink-3 uppercase tracking-wider block mb-1.5">Tags</label>
               <div className="flex flex-wrap gap-1">
                 {detail.tags.map(t => (
-                  <span key={t} className="inline-flex items-center gap-1 text-[11px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full font-medium">
+                  <span key={t} className="inline-flex items-center gap-1 text-[11px] bg-bg-2 text-ink-2 px-2 py-0.5 rounded-full font-medium">
                     <Hash className="w-2.5 h-2.5" /> {t}
                   </span>
                 ))}
@@ -644,20 +644,20 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
 
         {/* Activity Timeline â Fieldcamp-inspired */}
         <div className="p-4">
-          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-3">
+          <label className="text-[10px] font-bold text-ink-3 uppercase tracking-wider block mb-3">
             Activity Timeline
           </label>
           {timeline.length === 0 ? (
-            <div className="text-[12px] text-zinc-400 text-center py-4">No activity yet</div>
+            <div className="text-[12px] text-ink-3 text-center py-4">No activity yet</div>
           ) : (
             <div className="relative">
               {/* Timeline line */}
-              <div className="absolute left-[11px] top-2 bottom-2 w-px bg-zinc-200" />
+              <div className="absolute left-[11px] top-2 bottom-2 w-px bg-bg-2" />
               <div className="space-y-3">
                 {timeline.map(item => {
                   const iconConfig = {
                     note:     { icon: StickyNote, bg: 'bg-amber-100', text: 'text-amber-600' },
-                    inbound:  { icon: ArrowLeft,  bg: 'bg-zinc-100',  text: 'text-zinc-500' },
+                    inbound:  { icon: ArrowLeft,  bg: 'bg-bg-2',  text: 'text-ink-3' },
                     outbound: { icon: Send,       bg: 'bg-blue-100',  text: 'text-blue-600' },
                   }
                   const cfg = iconConfig[item.type] || iconConfig.inbound
@@ -670,11 +670,11 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
                       </div>
                       <div className="flex-1 min-w-0 pt-0.5">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-semibold text-zinc-700">{item.author}</span>
+                          <span className="text-[11px] font-semibold text-ink-2">{item.author}</span>
                           {item.channel && <ChannelBadge channel={item.channel} compact />}
-                          <span className="text-[10px] text-zinc-400 ml-auto shrink-0">{relTime(item.time)}</span>
+                          <span className="text-[10px] text-ink-3 ml-auto shrink-0">{relTime(item.time)}</span>
                         </div>
-                        <p className="text-[11px] text-zinc-500 mt-0.5 truncate leading-relaxed">{item.body}</p>
+                        <p className="text-[11px] text-ink-3 mt-0.5 truncate leading-relaxed">{item.body}</p>
                       </div>
                     </div>
                   )
@@ -923,16 +923,16 @@ export default function Comms() {
   // GmailInbox view has been retired so All / SMS / Email all use one list.
 
   return (
-    <div className="flex h-full bg-zinc-50">
+    <div className="flex h-full bg-bg">
 
       {/* âââ LEFT PANEL: Filters + Conversation List âââ */}
-      <div className={`w-[340px] border-r border-zinc-200 bg-white flex flex-col shrink-0
+      <div className={`w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
         ${mobileView === 'thread' ? 'hidden lg:flex' : 'flex'}`}>
 
         {/* Header */}
         <div className="px-4 pt-4 pb-3">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-lg font-bold text-zinc-900 tracking-tight">Inbox</h1>
+            <h1 className="text-lg font-bold text-ink tracking-tight">Inbox</h1>
             <div className="flex items-center gap-1.5">
               <NotifPermissionButton />
               <button onClick={() => setShowCompose(true)}
@@ -944,16 +944,16 @@ export default function Comms() {
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search conversations..."
-              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-white transition-all" />
+              className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-panel transition-all" />
           </div>
         </div>
 
         {/* Channel tabs */}
         <div className="px-4 pb-3">
-          <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-bg-2 rounded-xl p-1">
             {[
               { key: '', label: 'All' },
               { key: 'sms', label: 'SMS', icon: Phone },
@@ -965,14 +965,14 @@ export default function Comms() {
                 <button key={ch.key} onClick={() => setChannelFilter(ch.key)}
                   className={`flex-1 flex items-center justify-center gap-1 text-[12px] font-semibold px-2 py-2 rounded-lg transition-all ${
                     channelFilter === ch.key
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-500 hover:text-zinc-700'
+                      ? 'bg-panel text-ink shadow-sm'
+                      : 'text-ink-3 hover:text-ink-2'
                   }`}>
                   {Icon && <Icon className="w-3.5 h-3.5" />}
                   {ch.label}
                   {count > 0 && (
                     <span className={`text-[10px] font-bold tabular-nums px-1.5 py-px rounded-full ${
-                      channelFilter === ch.key ? 'bg-blue-100 text-blue-700' : 'bg-zinc-200 text-zinc-500'
+                      channelFilter === ch.key ? 'bg-blue-100 text-blue-700' : 'bg-bg-2 text-ink-3'
                     }`}>{count}</span>
                   )}
                 </button>
@@ -983,21 +983,21 @@ export default function Comms() {
 
         {/* Phase 8: 3-tab segmented folder selector */}
         <div className="px-4 pb-2">
-          <div className="flex gap-1 bg-zinc-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-bg-2 rounded-xl p-1">
             {FOLDERS.map(f => (
               <button
                 key={f.key}
                 onClick={() => setFolder(f.key)}
                 className={`flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold px-2 py-2 rounded-lg transition-all ${
                   folder === f.key
-                    ? 'bg-white text-zinc-900 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-700'
+                    ? 'bg-panel text-ink shadow-sm'
+                    : 'text-ink-3 hover:text-ink-2'
                 }`}
               >
                 <span>{f.label}</span>
                 {f.count != null && f.count > 0 && (
                   <span className={`text-[10px] font-bold tabular-nums px-1.5 py-px rounded-full ${
-                    folder === f.key ? 'bg-blue-100 text-blue-700' : 'bg-zinc-200 text-zinc-500'
+                    folder === f.key ? 'bg-blue-100 text-blue-700' : 'bg-bg-2 text-ink-3'
                   }`}>
                     {f.count}
                   </span>
@@ -1008,7 +1008,7 @@ export default function Comms() {
         </div>
 
         {/* Phase 8: additive filter chips. Stack on top of the selected folder. */}
-        <div className="px-4 pb-3 flex flex-wrap gap-1.5 border-b border-zinc-100">
+        <div className="px-4 pb-3 flex flex-wrap gap-1.5 border-b border-hairline">
           {CHIPS.map(({ key, label, icon: Ic, count, hideOn }) => {
             if (hideOn === folder) return null
             const active = chipFilters.has(key)
@@ -1022,7 +1022,7 @@ export default function Comms() {
                     ? (isOverdue
                         ? 'bg-red-50 text-red-700 border-red-200'
                         : 'bg-blue-50 text-blue-700 border-blue-200')
-                    : 'bg-white text-zinc-500 border-zinc-200 hover:bg-zinc-50'
+                    : 'bg-panel text-ink-3 border-hairline hover:bg-bg'
                 }`}
               >
                 <Ic className="w-3 h-3" />
@@ -1039,15 +1039,15 @@ export default function Comms() {
         <div className="flex-1 overflow-y-auto">
           {convs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-6">
-              <div className="w-14 h-14 rounded-2xl bg-zinc-100 flex items-center justify-center mb-4">
-                <Inbox className="w-7 h-7 text-zinc-300" />
+              <div className="w-14 h-14 rounded-2xl bg-bg-2 flex items-center justify-center mb-4">
+                <Inbox className="w-7 h-7 text-ink-3" />
               </div>
-              <div className="text-sm font-semibold text-zinc-500 mb-1">
+              <div className="text-sm font-semibold text-ink-3 mb-1">
                 {channelFilter === 'sms' ? 'No SMS conversations'
                   : channelFilter === 'email' ? 'No email conversations'
                   : 'No conversations'}
               </div>
-              <p className="text-[12px] text-zinc-400 text-center leading-relaxed">
+              <p className="text-[12px] text-ink-3 text-center leading-relaxed">
                 {channelFilter && (channelCount('') - channelCount(channelFilter)) > 0
                   ? `Nothing here on this channel — but you have ${channelCount('') - channelCount(channelFilter)} on other channels. Tap “All” to see everything.`
                   : 'Messages will appear here when they come in, or start a new one.'}
@@ -1076,13 +1076,13 @@ export default function Comms() {
       <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}`}>
         {!detail ? (
           /* Empty state */
-          <div className="flex-1 flex items-center justify-center bg-zinc-50/50">
+          <div className="flex-1 flex items-center justify-center bg-bg/50">
             <div className="text-center max-w-xs">
-              <div className="w-20 h-20 rounded-3xl bg-white border border-zinc-200 flex items-center justify-center mx-auto mb-5 shadow-sm">
-                <MessageSquare className="w-10 h-10 text-zinc-300" />
+              <div className="w-20 h-20 rounded-3xl bg-panel border border-hairline flex items-center justify-center mx-auto mb-5 shadow-sm">
+                <MessageSquare className="w-10 h-10 text-ink-3" />
               </div>
-              <h2 className="text-base font-bold text-zinc-700 mb-2">Select a conversation</h2>
-              <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
+              <h2 className="text-base font-bold text-ink-2 mb-2">Select a conversation</h2>
+              <p className="text-[13px] text-ink-3 leading-relaxed mb-4">
                 Choose from the list to read and reply, or start a new conversation.
               </p>
               <button onClick={() => setShowCompose(true)}
@@ -1102,10 +1102,10 @@ export default function Comms() {
             )}
 
             {/* Thread header */}
-            <div className="border-b border-zinc-200 px-5 py-3.5 flex items-center gap-3 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+            <div className="border-b border-hairline px-5 py-3.5 flex items-center gap-3 bg-panel shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               {/* Mobile back button */}
               <button onClick={() => setMobileView('list')}
-                className="w-8 h-8 rounded-lg hover:bg-zinc-100 flex items-center justify-center text-zinc-500 lg:hidden">
+                className="w-8 h-8 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 lg:hidden">
                 <ArrowLeft className="w-4 h-4" />
               </button>
 
@@ -1124,12 +1124,12 @@ export default function Comms() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-zinc-900 text-[15px] truncate">{contactDisplay(detail)}</h2>
+                  <h2 className="font-bold text-ink text-[15px] truncate">{contactDisplay(detail)}</h2>
                   <SlaBadge state={detail.sla_state} />
                 </div>
-                <div className="text-[12px] text-zinc-500 mt-0.5 truncate">
+                <div className="text-[12px] text-ink-3 mt-0.5 truncate">
                   {detail.client?.phone && formatPhone(detail.client.phone)}
-                  {detail.client?.phone && detail.client?.email && <span className="mx-1.5 text-zinc-300">·</span>}
+                  {detail.client?.phone && detail.client?.email && <span className="mx-1.5 text-ink-3">·</span>}
                   {detail.client?.email && detail.client.email}
                   {!detail.client?.phone && !detail.client?.email && detail.external_contact && formatPhone(detail.external_contact)}
                 </div>
@@ -1141,23 +1141,23 @@ export default function Comms() {
                   className={`text-[12px] font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
                     detail.status === 'resolved'
                       ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ring-1 ring-emerald-200'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-emerald-50 hover:text-emerald-700'
+                      : 'bg-bg-2 text-ink-2 hover:bg-emerald-50 hover:text-emerald-700'
                   }`}>
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   {detail.status === 'resolved' ? 'Done' : 'Mark done'}
                 </button>
                 <button onClick={() => setShowContactPanel(!showContactPanel)}
-                  className="w-8 h-8 rounded-lg bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center text-zinc-500 transition-colors hidden lg:flex">
+                  className="w-8 h-8 rounded-lg bg-bg-2 hover:bg-bg-2 flex items-center justify-center text-ink-3 transition-colors hidden lg:flex">
                   <User className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Messages thread */}
-            <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 bg-zinc-50/50">
+            <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 bg-bg/50">
               {loadingDetail && (
                 <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-2 border-zinc-300 border-t-blue-600 rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-hairline border-t-blue-600 rounded-full animate-spin" />
                 </div>
               )}
               {groupedMessages.map(item => {
@@ -1168,27 +1168,27 @@ export default function Comms() {
               })}
               {(!detail.messages || detail.messages.length === 0) && !loadingDetail && (
                 <div className="flex flex-col items-center justify-center py-16">
-                  <div className="w-12 h-12 rounded-2xl bg-white border border-zinc-200 flex items-center justify-center mb-3 shadow-sm">
-                    <MessageCircle className="w-6 h-6 text-zinc-300" />
+                  <div className="w-12 h-12 rounded-2xl bg-panel border border-hairline flex items-center justify-center mb-3 shadow-sm">
+                    <MessageCircle className="w-6 h-6 text-ink-3" />
                   </div>
-                  <p className="text-[13px] text-zinc-400">No messages yet. Start the conversation below.</p>
+                  <p className="text-[13px] text-ink-3">No messages yet. Start the conversation below.</p>
                 </div>
               )}
             </div>
 
             {/* Compose bar */}
-            <div className="border-t border-zinc-200 bg-white p-4">
+            <div className="border-t border-hairline bg-panel p-4">
               {/* Mode toggle */}
               <div className="flex items-center gap-1.5 mb-3">
                 <button onClick={() => setNoteMode(false)}
                   className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                    !noteMode ? 'bg-blue-600 text-white shadow-sm' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                    !noteMode ? 'bg-blue-600 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
                   }`}>
                   <Send className="w-3 h-3" /> Reply
                 </button>
                 <button onClick={() => setNoteMode(true)}
                   className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                    noteMode ? 'bg-amber-500 text-white shadow-sm' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                    noteMode ? 'bg-amber-500 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
                   }`}>
                   <StickyNote className="w-3 h-3" /> Note
                 </button>
@@ -1206,7 +1206,7 @@ export default function Comms() {
               {detail.channel === 'email' && !noteMode && (
                 <input value={replySubject} onChange={e => setReplySubject(e.target.value)}
                   placeholder={detail.subject ? `Re: ${detail.subject}` : 'Subject'}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
+                  className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
               )}
 
               {/* Canned responses — one-tap fills the reply box */}
@@ -1221,7 +1221,7 @@ export default function Comms() {
                     "Your access code is ",
                   ].map(t => (
                     <button key={t} onClick={() => setReply(prev => prev ? prev + ' ' + t : t)}
-                      className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors whitespace-nowrap">
+                      className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-hairline bg-panel text-ink-2 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors whitespace-nowrap">
                       {t}
                     </button>
                   ))}
@@ -1238,7 +1238,7 @@ export default function Comms() {
                   className={`flex-1 border rounded-xl px-4 py-3 text-[13px] resize-none focus:outline-none focus:ring-2 transition-all leading-relaxed ${
                     noteMode
                       ? 'border-amber-200 bg-amber-50/50 focus:ring-amber-500/20 placeholder-amber-400'
-                      : 'border-zinc-200 bg-zinc-50 focus:ring-blue-500/20 focus:bg-white placeholder-zinc-400'
+                      : 'border-hairline bg-bg focus:ring-blue-500/20 focus:bg-panel placeholder-ink-3'
                   }`}
                   onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendReply() }} />
                 <button onClick={sendReply} disabled={sending || !reply.trim()}
@@ -1255,7 +1255,7 @@ export default function Comms() {
               </div>
 
               <div className="flex items-center mt-2">
-                <div className="text-[10px] text-zinc-400 flex items-center gap-1">
+                <div className="text-[10px] text-ink-3 flex items-center gap-1">
                   <Kbd>{navigator.platform?.includes('Mac') ? 'â' : 'Ctrl'}</Kbd>
                   <span>+</span>
                   <Kbd>Enter</Kbd>
@@ -1316,7 +1316,7 @@ export default function Comms() {
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm ${
           toast.ok
-            ? 'bg-white border-zinc-200 text-zinc-900'
+            ? 'bg-panel border-hairline text-ink'
             : 'bg-amber-50 border-amber-200 text-amber-900'
         }`}>
           {toast.ok
