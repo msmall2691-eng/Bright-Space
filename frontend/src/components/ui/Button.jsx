@@ -9,8 +9,8 @@ export default function Button({
 }) {
   const variants = {
     primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg',
-    secondary: 'bg-neutral-200 text-neutral-900 hover:bg-neutral-300',
-    tertiary: 'bg-transparent text-neutral-600 hover:bg-neutral-100',
+    secondary: 'bg-bg-2 text-ink hover:bg-hairline-2',
+    tertiary: 'bg-transparent text-ink-2 hover:bg-bg-2',
     danger: 'bg-red-600 text-white hover:bg-red-700',
     glass: 'bg-white/10 backdrop-blur text-white hover:bg-white/20 border border-white/20',
   }

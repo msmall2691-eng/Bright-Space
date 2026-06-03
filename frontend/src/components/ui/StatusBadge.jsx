@@ -22,8 +22,8 @@ export default function StatusBadge({
       outline: 'border border-blue-200 text-blue-700',
     },
     neutral: {
-      filled: 'bg-neutral-200 text-neutral-700',
-      outline: 'border border-neutral-300 text-neutral-600',
+      filled: 'bg-bg-2 text-ink-2',
+      outline: 'border border-hairline text-ink-3',
     },
   }
 
