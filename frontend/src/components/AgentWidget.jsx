@@ -178,11 +178,11 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg border border-gray-200 bg-white hover:bg-gray-50 transition-all hover:shadow-xl group"
+        className="fixed bottom-[8.5rem] right-4 lg:bottom-5 lg:right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg border border-hairline bg-panel hover:bg-bg transition-all hover:shadow-xl group"
       >
         <span className="text-lg">{activeAgent.emoji}</span>
-        <span className="text-sm font-medium text-gray-700">Ask {activeAgent.name}</span>
-        <Sparkles className="w-3.5 h-3.5 text-gray-400 group-hover:text-amber-500 transition-colors" />
+        <span className="text-sm font-medium text-ink-2">Ask {activeAgent.name}</span>
+        <Sparkles className="w-3.5 h-3.5 text-ink-3 group-hover:text-amber-500 transition-colors" />
       </button>
     )
   }

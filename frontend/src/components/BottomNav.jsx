@@ -18,9 +18,9 @@ export default function BottomNav() {
             key={tab.to}
             to={tab.to}
             className={({ isActive }) => `
-              flex flex-col items-center justify-center gap-0.5 py-2 px-3 flex-1
+              flex flex-col items-center justify-center gap-0.5 py-2.5 px-3 flex-1 min-h-[3.25rem]
               transition-colors touch-none
-              ${isActive ? 'text-blue-600' : 'text-zinc-400 active:text-zinc-600'}
+              ${isActive ? 'text-blue-600' : 'text-ink-3 active:text-ink'}
             `}
           >
             {({ isActive }) => (

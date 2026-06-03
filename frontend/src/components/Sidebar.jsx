@@ -58,13 +58,13 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
               <Zap className="w-4 h-4 text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-[14px] font-bold text-neutral-900 tracking-tight leading-none block">BrightBase</span>
-              <p className="text-[11px] text-neutral-500 leading-none mt-0.5">Maine Cleaning</p>
+              <span className="text-[14px] font-bold text-ink tracking-tight leading-none block">BrightBase</span>
+              <p className="text-[11px] text-ink-3 leading-none mt-0.5">Maine Cleaning</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="lg:hidden p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+            className="lg:hidden p-2 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -75,7 +75,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
           {nav.map((item, i) =>
             item.divider ? (
               <div key={i} className="px-4 pt-6 pb-2">
-                <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">{item.label}</span>
+                <span className="text-[11px] font-bold text-ink-3 uppercase tracking-wider">{item.label}</span>
               </div>
             ) : (
               <NavLink
@@ -85,7 +85,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                   `group flex items-center gap-3 px-3 py-2.5 mx-2 my-0.5 rounded-lg transition-all text-[13px] select-none font-medium ${
                     isActive
                       ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                      : 'text-ink-2 hover:text-ink hover:bg-bg-2'
                   }`
                 }
               >
@@ -93,16 +93,16 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                   const badge = badges[item.to]
                   return (
                     <>
-                      <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-neutral-400 group-hover:text-blue-600'}`} />
+                      <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-ink-3 group-hover:text-blue-600'}`} />
                       <span className="truncate flex-1">{item.label}</span>
                       {badge > 0 && (
                         <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold ${
-                          isActive ? 'bg-white text-blue-700' : 'bg-red-500 text-white'
+                          isActive ? 'bg-panel text-blue-700' : 'bg-red-500 text-white'
                         }`}>
                           {badge > 99 ? '99+' : badge}
                         </span>
                       )}
-                      {isActive && !badge && <div className="w-1.5 h-1.5 rounded-full bg-white"></div>}
+                      {isActive && !badge && <div className="w-1.5 h-1.5 rounded-full bg-panel"></div>}
                     </>
                   )
                 }}
@@ -116,7 +116,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-100 transition-all text-left group"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-bg-2 transition-all text-left group"
             >
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center flex-shrink-0 shadow-md">
                 <span className="text-[12px] font-bold text-white">
@@ -124,24 +124,24 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 </span>
               </div>
               <div className="flex-1 min-w-0">
-                <span className="text-[12px] text-neutral-900 font-semibold truncate block">
+                <span className="text-[12px] text-ink font-semibold truncate block">
                   {user?.email?.split('@')[0] || 'Admin'}
                 </span>
-                <span className="text-[10px] text-neutral-500 truncate block capitalize">
+                <span className="text-[10px] text-ink-3 truncate block capitalize">
                   {user?.role || 'User'}
                 </span>
               </div>
-              <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
             </button>
 
             {showUserMenu && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white/95 backdrop-blur-lg border border-hairline rounded-lg shadow-glass py-1 z-50">
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-panel/95 backdrop-blur-lg border border-hairline rounded-lg shadow-glass py-1 z-50">
                 <button
                   onClick={() => {
                     setShowUserMenu(false)
                     logout()
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-neutral-600 hover:text-red-600 hover:bg-red-50 transition-colors font-medium"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-ink-2 hover:text-red-600 hover:bg-red-50 transition-colors font-medium"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Log out</span>
