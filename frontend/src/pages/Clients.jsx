@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2 } from 'lucide-react'
+import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2, Users } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
+import { EmptyState } from '../components/ui'
 import { del, get, post, patch, upload } from "../api"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
@@ -320,7 +321,11 @@ export default function Clients() {
               </div>
             ))}
             {filtered.length === 0 && (
-              <div className="text-center py-16 text-ink-3 text-[13px]">No clients found</div>
+              <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
+                description={search || statusFilter ? 'Try a different search or filter.' : undefined}
+                action={!search && !statusFilter && (
+                  <button onClick={openNew} className="text-xs font-semibold text-blue-600 hover:text-blue-700">Add your first client →</button>
+                )} />
             )}
           </div>
         )}
@@ -381,7 +386,11 @@ export default function Clients() {
               </tbody>
             </table>
             {filtered.length === 0 && (
-              <div className="text-center py-16 text-ink-3 text-[13px]">No clients found</div>
+              <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
+                description={search || statusFilter ? 'Try a different search or filter.' : undefined}
+                action={!search && !statusFilter && (
+                  <button onClick={openNew} className="text-xs font-semibold text-blue-600 hover:text-blue-700">Add your first client →</button>
+                )} />
             )}
           </div>
         )}
