@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import Client, Job, RecurringSchedule, Property, Invoice
+from database.models import Client, Job, RecurringSchedule, Property, Invoice, AppSetting
 from modules.auth.router import get_current_user
 from agents.tools import get_tools_for_agent, execute_tool
 
@@ -135,16 +135,17 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
 
 # ── GET /api/ai/daily-briefing ──────────────────────────────────────────────
 
-@router.get("/daily-briefing")
-def daily_briefing(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Morning briefing. Returns {greeting, summary, priorities[], alerts[], tip}."""
+BRIEFING_CACHE_KEY = "ai_daily_briefing_cache"
+
+
+def _generate_briefing(db: Session, name: str = "there") -> dict:
+    """Produce the briefing dict from live data + LLM (or deterministic
+    fallback). This is the expensive part; callers cache the result."""
     snapshot = execute_tool("get_business_snapshot", {}, _AGENT)
     followups = _compute_followups(db)
-    name = getattr(user, "full_name", None) or "there"
 
     client = _anthropic_client()
     if client is None:
-        # Deterministic fallback so the dashboard still shows something useful.
         return _fallback_briefing(name, snapshot, followups)
 
     system = (
@@ -174,8 +175,51 @@ def daily_briefing(db: Session = Depends(get_db), user=Depends(get_current_user)
             "tip": data.get("tip", ""),
         }
     except Exception:
-        logger.exception("ai/daily-briefing failed; using fallback")
+        logger.exception("ai/daily-briefing generation failed; using fallback")
         return _fallback_briefing(name, snapshot, followups)
+
+
+def generate_and_cache_briefing(db: Session) -> dict:
+    """(Re)generate today's briefing and persist it in app_settings. Called by
+    the 6am scheduler job and on-demand when the cache is stale/missing."""
+    briefing = _generate_briefing(db)
+    row = db.query(AppSetting).filter(AppSetting.key == BRIEFING_CACHE_KEY).first()
+    value = json.dumps({"date": date.today().isoformat(), "briefing": briefing}, default=str)
+    if row:
+        row.value = value
+    else:
+        db.add(AppSetting(key=BRIEFING_CACHE_KEY, value=value))
+    db.commit()
+    return briefing
+
+
+def _personalize(briefing: dict, name: str) -> dict:
+    """Swap in the requesting user's name so a cached/scheduler-generated
+    greeting still reads personally."""
+    if name and name != "there":
+        return {**briefing, "greeting": f"Good morning, {name}."}
+    return briefing
+
+
+@router.get("/daily-briefing")
+def daily_briefing(refresh: bool = False, db: Session = Depends(get_db),
+                   user=Depends(get_current_user)):
+    """Morning briefing. Returns {greeting, summary, priorities[], alerts[], tip}.
+
+    Served from a once-a-day cache (refreshed by the 6am scheduler job) so the
+    dashboard loads instantly and the briefing stays consistent through the day.
+    Pass ?refresh=true to force a fresh generation."""
+    name = getattr(user, "full_name", None) or "there"
+    if not refresh:
+        row = db.query(AppSetting).filter(AppSetting.key == BRIEFING_CACHE_KEY).first()
+        if row and row.value:
+            try:
+                cached = json.loads(row.value)
+                if cached.get("date") == date.today().isoformat() and cached.get("briefing"):
+                    return _personalize(cached["briefing"], name)
+            except Exception:
+                pass  # fall through and regenerate
+    return _personalize(generate_and_cache_briefing(db), name)
 
 
 def _fallback_briefing(name, snapshot, followups):
