@@ -202,6 +202,83 @@ def connection_status() -> dict:
         }
 
 
+def _event_to_dict(ev: dict, calendar_id: str) -> dict:
+    """Flatten a raw Google event into the shape the client profile renders."""
+    start = ev.get("start", {}) or {}
+    end = ev.get("end", {}) or {}
+    ext = (ev.get("extendedProperties", {}) or {}).get("private", {}) or {}
+    return {
+        "id": ev.get("id"),
+        "calendar_id": calendar_id,
+        "title": ev.get("summary") or "(no title)",
+        "location": ev.get("location"),
+        "description": ev.get("description"),
+        "html_link": ev.get("htmlLink"),
+        "start": start.get("dateTime") or start.get("date"),
+        "end": end.get("dateTime") or end.get("date"),
+        "all_day": "date" in start and "dateTime" not in start,
+        "status": ev.get("status"),
+        "attendees": [
+            {"email": a.get("email"), "responseStatus": a.get("responseStatus")}
+            for a in (ev.get("attendees") or [])
+        ],
+        "job_id": ext.get("brightbase_job_id"),
+        "job_type": ext.get("brightbase_job_type"),
+    }
+
+
+def list_events_for_client(
+    client_id: int | None,
+    client_email: str | None,
+    time_min_iso: str,
+    time_max_iso: str,
+) -> list[dict]:
+    """Live Google Calendar events linked to a client — the Twenty-style
+    "events connected by email" timeline.
+
+    An event matches when the client is an attendee (by email) OR the event
+    carries our brightbase_client_id extended property. Searches every
+    configured calendar and de-dupes by event id. Returns [] when Google isn't
+    connected (the caller surfaces that separately via connection_status)."""
+    service = _get_service()  # raises RuntimeError when not connected
+    cal_ids = {
+        _calendar_id("residential"),
+        _calendar_id("commercial"),
+        _calendar_id("str_turnover"),
+    }
+    email_l = (client_email or "").lower().strip()
+    seen: dict[str, dict] = {}
+    for cal_id in cal_ids:
+        page_token = None
+        try:
+            while True:
+                resp = service.events().list(
+                    calendarId=cal_id,
+                    timeMin=time_min_iso,
+                    timeMax=time_max_iso,
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=250,
+                    pageToken=page_token,
+                ).execute()
+                for ev in resp.get("items", []):
+                    ext = (ev.get("extendedProperties", {}) or {}).get("private", {}) or {}
+                    matched = bool(client_id) and str(ext.get("brightbase_client_id")) == str(client_id)
+                    if not matched and email_l:
+                        for a in ev.get("attendees", []) or []:
+                            if (a.get("email") or "").lower() == email_l:
+                                matched = True
+                                break
+                    if matched and ev.get("id"):
+                        seen[ev["id"]] = _event_to_dict(ev, cal_id)
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+        except HttpError as e:
+            print(f"[GCal] list events failed for calendar {cal_id}: {e}")
+    return sorted(seen.values(), key=lambda e: e.get("start") or "")
+
+
 def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> dict:
     """Build a Google Calendar event dict from a job and client.
 

@@ -5,7 +5,7 @@ from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timezone, date, time
+from datetime import datetime, timezone, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 from database.db import get_db
@@ -658,6 +658,45 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     result = job_to_dict(job)
     result["gcal"] = gcal_status
     return result
+
+
+@router.get("/client/{client_id}/gcal-events")
+def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 180, db: Session = Depends(get_db)):
+    """Live Google Calendar events linked to this client (Twenty-style timeline).
+
+    Matches events by the client's email (attendee) or our brightbase_client_id
+    tag, across every configured calendar. Returns {connected, events} so the
+    profile can show the real linked timeline, or a connect prompt when Google
+    isn't linked yet."""
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    try:
+        from integrations.google_calendar import list_events_for_client, is_configured
+    except ImportError as e:
+        return {"connected": False, "reason": "error", "detail": str(e), "events": []}
+
+    if not is_configured():
+        return {"connected": False, "reason": "not_connected", "events": []}
+
+    now = datetime.now(timezone.utc)
+    time_min = (now - timedelta(days=days_back)).isoformat()
+    time_max = (now + timedelta(days=days_ahead)).isoformat()
+    try:
+        events = list_events_for_client(
+            client_id=client.id,
+            client_email=getattr(client, "email", None),
+            time_min_iso=time_min,
+            time_max_iso=time_max,
+        )
+        return {"connected": True, "events": events, "client_email": getattr(client, "email", None)}
+    except RuntimeError as e:
+        # _get_service raises when the token is missing/expired.
+        return {"connected": False, "reason": "not_authorized", "detail": str(e), "events": []}
+    except Exception as e:
+        logger.warning(f"client_gcal_events failed for client {client_id}: {e}")
+        return {"connected": True, "reason": "error", "detail": str(e), "events": []}
 
 
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
