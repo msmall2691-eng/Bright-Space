@@ -1090,6 +1090,26 @@ export default function Schedule() {
     setGcalSyncing(false)
   }
 
+  // Push BrightBase jobs that don't yet have a Google event up to Google. Fixes
+  // the "blank embed" case where jobs were created before Google was connected
+  // (or otherwise never pushed) — they have no calendar event to show.
+  const [gcalPushing, setGcalPushing] = useState(false)
+  const pushToGoogle = async () => {
+    if (gcalPushing) return
+    setGcalPushing(true)
+    try {
+      const r = await post('/api/jobs/push-to-gcal', {})
+      toast.success(r?.message || `Pushed ${r?.pushed || 0} job(s) to Google`)
+      refresh()
+    } catch (e) {
+      const msg = e?.message || 'Push failed'
+      toast.error(/not configured/i.test(msg)
+        ? 'Google Calendar isn’t connected on the server (credentials missing)'
+        : msg)
+    }
+    setGcalPushing(false)
+  }
+
   // Diagnose + fix jobs that render with no time ("– –"). Preview (dry-run)
   // surfaces the diagnostic by_source so you can see the cause in-app, then
   // confirm to backfill sensible default times.
@@ -1426,6 +1446,12 @@ export default function Schedule() {
               title="Pull the latest changes from Google Calendar now">
               <RefreshCw className={`w-4 h-4 ${gcalSyncing ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline ml-1.5">{gcalSyncing ? 'Syncing…' : 'Sync from Google'}</span>
+            </Button>
+
+            <Button onClick={pushToGoogle} variant="secondary" size="sm" disabled={gcalPushing} className="whitespace-nowrap"
+              title="Push jobs that aren't on Google Calendar yet (e.g. created before it was connected)">
+              <CalendarIcon className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1.5">{gcalPushing ? 'Pushing…' : 'Push to Google'}</span>
             </Button>
 
             <Button onClick={previewAutoAssign} variant="secondary" size="sm" className="whitespace-nowrap"
