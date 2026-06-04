@@ -118,8 +118,10 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
-      <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      {/* Right-side drawer (Twenty-style): full-height, slides over the record */}
+      <div className="relative h-full w-full sm:max-w-lg bg-panel shadow-2xl flex flex-col overflow-hidden animate-fade-in">
         {/* Header */}
         <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
           <h2 className="text-xl sm:text-2xl font-bold">{isNew ? "New Job" : "Edit Job"}</h2>
