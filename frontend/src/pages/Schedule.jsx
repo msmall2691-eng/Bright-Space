@@ -904,21 +904,17 @@ export default function Schedule() {
   // desktop — see the useEffect below.
   const VALID_VIEWS = ['agenda', 'list', 'month', 'google']
   const rawView = searchParams.get('view')
-  // Default order: explicit ?view= → the last view you picked (remembered) →
-  // Google Calendar (the default surface — you can run scheduling straight out
-  // of Google and the app follows). Sticky so your choice persists.
-  const storedView = (typeof window !== 'undefined' && localStorage.getItem('schedule_view')) || ''
-  const viewMode = VALID_VIEWS.includes(rawView)
-    ? rawView
-    : VALID_VIEWS.includes(storedView) ? storedView : 'google'
+  // Schedule is Google-Calendar only: it shows your embedded Google Calendar and
+  // nothing else. The native agenda/list/month views remain reachable via an
+  // explicit ?view= (kept for debugging/backfill), but the UI defaults to — and
+  // stays on — Google. (Note: we intentionally ignore any old localStorage
+  // 'schedule_view' so a previously-stuck Month pick doesn't override this.)
+  const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'google'
+  const isGoogleOnly = viewMode === 'google'
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
-    // Always write the chosen view explicitly. We can't "delete to mean
-    // list" because the unset case falls back to a default, which would
-    // silently revert an explicit pick. Codex caught this on the #92 review.
     params.set('view', next)
     setSearchParams(params, { replace: true })
-    try { localStorage.setItem('schedule_view', next) } catch {}
   }
   const [visits, setVisits] = useState([])
   const [jobs, setJobs] = useState({})
@@ -1380,68 +1376,21 @@ export default function Schedule() {
           <div className="flex items-center gap-2 sm:gap-3">
             <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
 
-            <div className="hidden sm:flex items-center gap-1 ml-1">
-              <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-xs font-semibold text-ink-2 whitespace-nowrap min-w-[64px] text-center">
-                {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </span>
-              <button onClick={nextWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Next week">
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            {!isGoogleOnly && (
+              <div className="hidden sm:flex items-center gap-1 ml-1">
+                <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-semibold text-ink-2 whitespace-nowrap min-w-[64px] text-center">
+                  {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+                <button onClick={nextWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Next week">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             <div className="flex-1" />
-
-            {/* Agenda / List / Month view toggle. URL-driven via ?view=.
-                Agenda is the mobile default; List/Month are desktop-leaning. */}
-            <div className="inline-flex rounded-lg border border-hairline bg-panel p-0.5">
-              <button
-                onClick={() => setViewMode('agenda')}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'agenda' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
-                }`}
-                aria-pressed={viewMode === 'agenda'}
-                title="Agenda — single day"
-              >
-                <AlignLeft className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Agenda</span>
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
-                }`}
-                aria-pressed={viewMode === 'list'}
-                title="List — week grouped by day"
-              >
-                <List className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">List</span>
-              </button>
-              <button
-                onClick={() => setViewMode('month')}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'month' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
-                }`}
-                aria-pressed={viewMode === 'month'}
-                title="Month — calendar grid"
-              >
-                <Grid3x3 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Month</span>
-              </button>
-              <button
-                onClick={() => setViewMode('google')}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  viewMode === 'google' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
-                }`}
-                aria-pressed={viewMode === 'google'}
-                title="Google Calendar — embedded"
-              >
-                <CalendarIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Google</span>
-              </button>
-            </div>
 
             {/* Power tools tucked into one menu to keep the toolbar clean */}
             <div className="relative">
@@ -1484,6 +1433,7 @@ export default function Schedule() {
           </div>
 
           {/* Mobile-only date nav — desktop has it inline above */}
+          {!isGoogleOnly && (
           <div className="sm:hidden flex items-center gap-2 mt-2">
             <button onClick={prevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
               <ChevronLeft className="w-4 h-4" />
@@ -1495,8 +1445,10 @@ export default function Schedule() {
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+          )}
 
           {/* Filter chips — compact, only render when active or hover-reveal */}
+          {!isGoogleOnly && (
           <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
             <select
               value={selectedPropertyType}
@@ -1547,6 +1499,7 @@ export default function Schedule() {
               )}
             </button>
           </div>
+          )}
         </div>
       </div>
 
@@ -1554,7 +1507,7 @@ export default function Schedule() {
           state was triggering a giant warning that operators dismissed and
           ignored, eating prime header real estate. Now: thin pill, only
           renders if coverage drops below 95% AND >2 jobs are unbacked. */}
-      {coverage && !coverage.healthy && coverage.coverage_percent < 95 && coverage.jobs_without_visits > 2 && (
+      {!isGoogleOnly && coverage && !coverage.healthy && coverage.coverage_percent < 95 && coverage.jobs_without_visits > 2 && (
         <div className="max-w-7xl mx-auto px-3 sm:px-4 pt-2">
           <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
             <div className="flex items-center gap-2 min-w-0">
@@ -1575,6 +1528,7 @@ export default function Schedule() {
       )}
 
       {/* Selection / bulk-action bar */}
+      {!isGoogleOnly && (
       <div className="bg-panel border-b border-hairline px-4 py-2">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <label className="flex items-center gap-2 text-xs text-ink-2 cursor-pointer select-none">
@@ -1612,6 +1566,7 @@ export default function Schedule() {
           )}
         </div>
       </div>
+      )}
 
       {/* Render branch: agenda (single-day cards) / list (week, grouped) / month (CalendarView) */}
       {viewMode === 'agenda' ? (
