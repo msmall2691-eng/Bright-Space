@@ -902,18 +902,23 @@ export default function Schedule() {
   // Stored in the URL via ?view= so reload + bookmarks survive. If the
   // URL is unset we default to agenda on phone viewports and list on
   // desktop — see the useEffect below.
+  const VALID_VIEWS = ['agenda', 'list', 'month', 'google']
   const rawView = searchParams.get('view')
-  const viewMode = (rawView === 'agenda' || rawView === 'month' || rawView === 'list' || rawView === 'google')
+  // Default order: explicit ?view= → the last view you picked (remembered) →
+  // Google Calendar (the default surface — you can run scheduling straight out
+  // of Google and the app follows). Sticky so your choice persists.
+  const storedView = (typeof window !== 'undefined' && localStorage.getItem('schedule_view')) || ''
+  const viewMode = VALID_VIEWS.includes(rawView)
     ? rawView
-    : (typeof window !== 'undefined' && window.innerWidth < 768 ? 'agenda' : 'list')
+    : VALID_VIEWS.includes(storedView) ? storedView : 'google'
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
     // Always write the chosen view explicitly. We can't "delete to mean
-    // list" because the unset case falls back to viewport-based default
-    // (agenda on <768px), which would silently revert an explicit list
-    // pick on mobile. Codex caught this on the #92 review.
+    // list" because the unset case falls back to a default, which would
+    // silently revert an explicit pick. Codex caught this on the #92 review.
     params.set('view', next)
     setSearchParams(params, { replace: true })
+    try { localStorage.setItem('schedule_view', next) } catch {}
   }
   const [visits, setVisits] = useState([])
   const [jobs, setJobs] = useState({})
@@ -1062,6 +1067,27 @@ export default function Schedule() {
       toast.error(e.message || 'Auto-assign failed')
       setAutoAssign(a => ({ ...a, running: false }))
     }
+  }
+
+  // Pull the latest from Google Calendar on demand, so edits you make in Google
+  // show up here immediately instead of waiting for the ~10-min scheduler tick.
+  const [gcalSyncing, setGcalSyncing] = useState(false)
+  const syncFromGoogle = async () => {
+    if (gcalSyncing) return
+    setGcalSyncing(true)
+    try {
+      const r = await post('/api/jobs/sync-gcal', {})
+      const c = r?.jobs_created || 0, u = r?.jobs_updated || 0, x = r?.jobs_cancelled || 0
+      const parts = []
+      if (c) parts.push(`${c} new`)
+      if (u) parts.push(`${u} updated`)
+      if (x) parts.push(`${x} cancelled`)
+      toast.success(parts.length ? `Synced from Google — ${parts.join(', ')}` : 'Synced from Google — up to date')
+      refresh()
+    } catch (e) {
+      toast.error(e.message || 'Google sync failed')
+    }
+    setGcalSyncing(false)
   }
 
   // Diagnose + fix jobs that render with no time ("– –"). Preview (dry-run)
@@ -1395,6 +1421,12 @@ export default function Schedule() {
                 <span className="hidden sm:inline">Google</span>
               </button>
             </div>
+
+            <Button onClick={syncFromGoogle} variant="secondary" size="sm" disabled={gcalSyncing} className="whitespace-nowrap"
+              title="Pull the latest changes from Google Calendar now">
+              <RefreshCw className={`w-4 h-4 ${gcalSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline ml-1.5">{gcalSyncing ? 'Syncing…' : 'Sync from Google'}</span>
+            </Button>
 
             <Button onClick={previewAutoAssign} variant="secondary" size="sm" className="whitespace-nowrap"
               title="Auto-assign available cleaners to unassigned turnovers">
