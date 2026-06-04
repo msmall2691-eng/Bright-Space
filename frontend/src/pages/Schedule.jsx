@@ -77,6 +77,47 @@ const TurnoverInfo = ({ job, compact = false }) => {
 }
 
 // Single-day mobile-first view. Renders the day's visits as full-width
+// Embedded Google Calendar view. Shows the real Google Calendar inside the app
+// (the same calendar the two-way sync uses). The embed URL comes from Settings
+// (an explicit embed URL) or is built from GCAL_RESIDENTIAL_ID server-side.
+const GoogleCalendarView = () => {
+  const [state, setState] = useState({ loading: true })
+  useEffect(() => {
+    get('/api/settings/gcal-embed')
+      .then(r => setState({ loading: false, url: r?.embed_url, configured: !!r?.configured }))
+      .catch(() => setState({ loading: false, configured: false }))
+  }, [])
+  if (state.loading) {
+    return <div className="flex-1 flex items-center justify-center text-ink-3 text-sm">Loading Google Calendar…</div>
+  }
+  if (!state.configured || !state.url) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="max-w-sm text-center">
+          <CalendarIcon className="w-10 h-10 text-ink-3 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-ink mb-1">Google Calendar not set up for embedding</p>
+          <p className="text-[13px] text-ink-3">
+            Add your calendar's embed URL in Settings → Integrations (copy it from Google
+            Calendar → Settings → "Integrate calendar"), or set <span className="font-mono">GCAL_RESIDENTIAL_ID</span>.
+            The two-way sync still works regardless of this view.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex-1 bg-panel">
+      <iframe
+        title="Google Calendar"
+        src={state.url}
+        className="w-full h-full border-0"
+        style={{ minHeight: '70vh' }}
+      />
+    </div>
+  )
+}
+
+
 // cards stacked vertically — no grid, no truncation, no horizontal scroll.
 // Tap a card to open the existing detail drawer via onSelect (same handler
 // the list view's cards use, so detail-panel behavior is identical).
@@ -862,7 +903,7 @@ export default function Schedule() {
   // URL is unset we default to agenda on phone viewports and list on
   // desktop — see the useEffect below.
   const rawView = searchParams.get('view')
-  const viewMode = (rawView === 'agenda' || rawView === 'month' || rawView === 'list')
+  const viewMode = (rawView === 'agenda' || rawView === 'month' || rawView === 'list' || rawView === 'google')
     ? rawView
     : (typeof window !== 'undefined' && window.innerWidth < 768 ? 'agenda' : 'list')
   const setViewMode = (next) => {
@@ -1342,6 +1383,17 @@ export default function Schedule() {
                 <Grid3x3 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Month</span>
               </button>
+              <button
+                onClick={() => setViewMode('google')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  viewMode === 'google' ? 'bg-blue-600 text-white' : 'text-ink-3 hover:bg-bg'
+                }`}
+                aria-pressed={viewMode === 'google'}
+                title="Google Calendar — embedded"
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Google</span>
+              </button>
             </div>
 
             <Button onClick={previewAutoAssign} variant="secondary" size="sm" className="whitespace-nowrap"
@@ -1514,6 +1566,8 @@ export default function Schedule() {
             }}
           />
         </div>
+      ) : viewMode === 'google' ? (
+        <GoogleCalendarView />
       ) : (
       <>
       {/* Schedule Grid (list view) */}

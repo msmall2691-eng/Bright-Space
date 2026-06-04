@@ -155,6 +155,50 @@ def get_from_email(db: Session = Depends(get_db)):
     return {"from_email": from_email}
 
 
+# ── Google Calendar embed (in-app "Google" schedule view) ──────────────────
+
+class GcalEmbedConfig(BaseModel):
+    embed_url: Optional[str] = None
+
+
+def _build_gcal_embed_url(db: Session) -> Optional[str]:
+    """An embeddable Google Calendar URL for the in-app Schedule. Prefers an
+    explicit gcal_embed_url app-setting (paste the embed/public URL from Google
+    Calendar settings — works for private calendars you've shared); otherwise
+    builds one from the GCAL_RESIDENTIAL_ID the two-way sync already uses."""
+    import os
+    from urllib.parse import quote
+    override = (get_setting(db, "gcal_embed_url") or "").strip()
+    if override:
+        return override
+    cal_id = os.getenv("GCAL_RESIDENTIAL_ID", "").strip()
+    if cal_id and cal_id != "primary":
+        tz = os.getenv("GCAL_TIMEZONE", "America/New_York")
+        return (f"https://calendar.google.com/calendar/embed?src={quote(cal_id)}"
+                f"&ctz={quote(tz)}&mode=WEEK")
+    return None
+
+
+@router.get("/gcal-embed")
+def get_gcal_embed(db: Session = Depends(get_db)):
+    """Embeddable Google Calendar URL for the Schedule page's 'Google' view."""
+    url = _build_gcal_embed_url(db)
+    return {"embed_url": url, "configured": bool(url)}
+
+
+@router.post("/gcal-embed", dependencies=[Depends(require_role("admin"))])
+def save_gcal_embed(config: GcalEmbedConfig, db: Session = Depends(get_db)):
+    """Set (or clear) the Google Calendar embed URL. Only google.com calendar
+    embed URLs are accepted — it's rendered in an iframe, so we don't allow
+    arbitrary src values."""
+    val = (config.embed_url or "").strip()
+    if val and not val.startswith("https://calendar.google.com/"):
+        raise HTTPException(400, "Must be a https://calendar.google.com/ embed URL")
+    set_setting(db, "gcal_embed_url", val)
+    db.commit()
+    return {"ok": True, "embed_url": _build_gcal_embed_url(db)}
+
+
 # ── Automation settings (iCal / GCal auto-sync flags + intervals) ──────────
 
 class AutomationConfig(BaseModel):
