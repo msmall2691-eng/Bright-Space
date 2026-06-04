@@ -243,7 +243,7 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
         creds = flow.credentials
     except Exception as e:
         logger.warning(f"Google OAuth callback failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Google authorization failed: {e}")
+        raise HTTPException(status_code=400, detail="Google authorization failed. Please try connecting again.")
 
     set_setting(db, "google_token", creds.to_json())
     set_setting(db, "google_oauth_state", "")

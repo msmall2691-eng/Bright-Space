@@ -188,15 +188,19 @@ def connection_status() -> dict:
             "write_targets": write_targets,
             "oauth_available": oauth_available,
         }
-    except RuntimeError as e:
+    except RuntimeError:
         return {
-            "connected": False, "reason": "not_authorized", "detail": str(e),
+            "connected": False, "reason": "not_authorized",
+            "detail": "Google account not connected. Click Connect Google to link "
+                      "your work account, or set GOOGLE_TOKEN_B64 on the server.",
             "calendars": [], "write_targets": write_targets,
             "oauth_available": oauth_available,
         }
     except Exception as e:
+        print(f"[GCal] connection_status check failed: {e}")
         return {
-            "connected": False, "reason": "error", "detail": str(e),
+            "connected": False, "reason": "error",
+            "detail": "Couldn't verify the Google Calendar connection.",
             "calendars": [], "write_targets": write_targets,
             "oauth_available": oauth_available,
         }

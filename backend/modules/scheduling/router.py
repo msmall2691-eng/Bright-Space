@@ -675,7 +675,9 @@ def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 18
     try:
         from integrations.google_calendar import list_events_for_client, is_configured
     except ImportError as e:
-        return {"connected": False, "reason": "error", "detail": str(e), "events": []}
+        logger.warning(f"client_gcal_events import failed: {e}")
+        return {"connected": False, "reason": "error",
+                "detail": "Google Calendar integration unavailable.", "events": []}
 
     if not is_configured():
         return {"connected": False, "reason": "not_connected", "events": []}
@@ -693,10 +695,13 @@ def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 18
         return {"connected": True, "events": events, "client_email": getattr(client, "email", None)}
     except RuntimeError as e:
         # _get_service raises when the token is missing/expired.
-        return {"connected": False, "reason": "not_authorized", "detail": str(e), "events": []}
+        logger.warning(f"client_gcal_events not authorized for client {client_id}: {e}")
+        return {"connected": False, "reason": "not_authorized",
+                "detail": "Google account not connected.", "events": []}
     except Exception as e:
         logger.warning(f"client_gcal_events failed for client {client_id}: {e}")
-        return {"connected": True, "reason": "error", "detail": str(e), "events": []}
+        return {"connected": True, "reason": "error",
+                "detail": "Could not load events from Google.", "events": []}
 
 
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
@@ -705,7 +710,8 @@ def push_to_gcal(db: Session = Depends(get_db)):
     try:
         from integrations.google_calendar import create_event
     except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"GCal not configured: {e}")
+        logger.warning(f"push_to_gcal import failed: {e}")
+        raise HTTPException(status_code=500, detail="Google Calendar integration unavailable.")
 
     jobs = db.query(Job).options(joinedload(Job.client)).filter(
         Job.gcal_event_id.is_(None),
