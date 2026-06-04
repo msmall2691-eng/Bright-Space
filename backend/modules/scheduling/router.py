@@ -897,14 +897,17 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
             "new_start": start_str, "new_end": end_str,
         })
         if not dry_run:
-            j.start_time = _to_time(start_str)
-            j.end_time = _to_time(end_str)
-            # Mirror onto any visits so the Schedule (which reads visits) updates.
+            st, et = _to_time(start_str), _to_time(end_str)
+            j.start_time = st
+            j.end_time = et
+            # Mirror the new time onto the job's visits so the board (which reads
+            # /api/visits whenever visits exist) shows it. Visit.start_time is
+            # NOT NULL, so existing rows already hold a fallback value — overwrite
+            # them (not just None) to keep Job and Visit consistent, since this
+            # backfill is authoritatively setting the job's time.
             for v in db.query(Visit).filter(Visit.job_id == j.id).all():
-                if v.start_time is None:
-                    v.start_time = _to_time(start_str)
-                if v.end_time is None:
-                    v.end_time = _to_time(end_str)
+                v.start_time = st
+                v.end_time = et
     if not dry_run and changes:
         db.commit()
     return {"dry_run": dry_run, "count": len(changes), "jobs": changes}
