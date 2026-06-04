@@ -616,33 +616,48 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to create primary Visit for job {job.id}: {e}")
 
-    # Push to Google Calendar
+    # ── WRITE TO GOOGLE CALENDAR (source of truth) ──
+    # Creating an appointment writes the event straight to Google Calendar.
+    # We surface the outcome on the response so the UI can tell the operator
+    # whether it landed on Google — instead of silently leaving an app-only
+    # appointment that has to be "pushed" later.
+    gcal_status = {"synced": False, "reason": None}
     try:
-        from integrations.google_calendar import create_event
-        client = db.query(Client).filter(Client.id == job.client_id).first()
-        client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
-        job_dict = {
-            "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
-            "scheduled_date": job.scheduled_date, "start_time": job.start_time,
-            "end_time": job.end_time, "address": job.address, "notes": job.notes,
-            "property_id": job.property_id,
-        }
-        event_id = create_event(job_dict, client_dict)
-        if event_id:
-            job.calendar_invite_sent = False  # Not invited until user says so
-            job.gcal_event_id = event_id
-            db.commit()
-            db.refresh(job)
-            log_calendar_event(
-                db, "created",
-                client_id=job.client_id, job_id=job.id,
-                title=job.title, gcal_event_id=event_id,
-                scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
-            )
-            db.commit()
+        from integrations.google_calendar import create_event, is_configured
+        if not is_configured():
+            gcal_status["reason"] = "not_connected"
+        else:
+            client = db.query(Client).filter(Client.id == job.client_id).first()
+            client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
+            job_dict = {
+                "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+                "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+                "end_time": job.end_time, "address": job.address, "notes": job.notes,
+                "property_id": job.property_id,
+            }
+            event_id = create_event(job_dict, client_dict)
+            if event_id:
+                job.calendar_invite_sent = False  # Not invited until user says so
+                job.gcal_event_id = event_id
+                db.commit()
+                db.refresh(job)
+                log_calendar_event(
+                    db, "created",
+                    client_id=job.client_id, job_id=job.id,
+                    title=job.title, gcal_event_id=event_id,
+                    scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                )
+                db.commit()
+                gcal_status["synced"] = True
+            else:
+                gcal_status["reason"] = "error"
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
-    return job_to_dict(job)
+        gcal_status["reason"] = "error"
+
+    result = job_to_dict(job)
+    result["gcal"] = gcal_status
+    return result
 
 
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])

@@ -1548,7 +1548,18 @@ export default function ClientProfile() {
           clientName={client?.name}
           initialPropertyId={jobModal.propertyId || null}
           onClose={() => setJobModal(null)}
-          onCreated={() => { setJobModal(null); load(); setGcalReload(k => k + 1) }}
+          onCreated={(res) => {
+            setJobModal(null); load(); setGcalReload(k => k + 1)
+            if (res?.kind === 'recurring') return
+            const g = res?.gcal
+            if (g?.synced) {
+              toast.success('Added to Google Calendar')
+            } else if (g?.reason === 'not_connected') {
+              toast.error('Saved, but Google Calendar isn’t connected yet — connect it in Settings so events land on your calendar.')
+            } else {
+              toast.error('Saved, but couldn’t reach Google Calendar — try Sync from Google, or check the connection in Settings.')
+            }
+          }}
         />
       )}
 
@@ -1676,7 +1687,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
         ) : !embed.configured ? (
           <div className="p-6 text-center text-[13px] text-ink-3">
             Google Calendar isn't set up for embedding yet (Settings → Integrations).
-            Appointments you add still push to Google regardless.
+            Appointments you add are still saved straight to Google Calendar.
           </div>
         ) : (
           <iframe title="Google Calendar" src={iframeSrc} className="w-full border-0" style={{ height: '440px' }} />

@@ -67,6 +67,20 @@ def _get_service():
     return build("calendar", "v3", credentials=creds)
 
 
+def is_configured() -> bool:
+    """Best-effort check that Google Calendar credentials are present.
+
+    Lets callers distinguish "Google isn't connected at all" from "connected
+    but the API call failed", so the UI can tell the operator whether the
+    event actually landed on Google (the source of truth) or not.
+    """
+    if os.getenv("GOOGLE_TOKEN_B64"):
+        return True
+    base = Path(__file__).parent.parent
+    token_path = base / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")
+    return token_path.exists()
+
+
 def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> dict:
     """Build a Google Calendar event dict from a job and client.
 
