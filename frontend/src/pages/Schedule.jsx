@@ -897,6 +897,8 @@ export default function Schedule() {
   const [refreshKey, setRefreshKey] = useState(0)
   // Auto-assign turnovers: null | { loading } | { preview:{assigned,unassignable} } | { running }
   const [autoAssign, setAutoAssign] = useState(null)
+  // Fix-missing-times tool: null | { loading } | { preview } | { running }
+  const [fixTimes, setFixTimes] = useState(null)
   const refresh = () => setRefreshKey(k => k + 1)
 
   // Connecteam roster, so cleaner IDs can be shown as names. Fails to [] silently.
@@ -1018,6 +1020,41 @@ export default function Schedule() {
     } catch (e) {
       toast.error(e.message || 'Auto-assign failed')
       setAutoAssign(a => ({ ...a, running: false }))
+    }
+  }
+
+  // Diagnose + fix jobs that render with no time ("– –"). Preview (dry-run)
+  // surfaces the diagnostic by_source so you can see the cause in-app, then
+  // confirm to backfill sensible default times.
+  const previewFixTimes = async () => {
+    setFixTimes({ loading: true })
+    try {
+      const [diag, preview] = await Promise.all([
+        get('/api/jobs/diagnostics/missing-times').catch(() => null),
+        post('/api/jobs/backfill-missing-times?dry_run=true', {}),
+      ])
+      if (!preview?.count) {
+        setFixTimes(null)
+        toast.info('All jobs already have times — no fix needed')
+        return
+      }
+      setFixTimes({ preview, bySource: diag?.summary?.by_source || {} })
+    } catch (e) {
+      setFixTimes(null)
+      toast.error(e.message || 'Could not check job times')
+    }
+  }
+
+  const runFixTimes = async () => {
+    setFixTimes(f => ({ ...f, running: true }))
+    try {
+      const res = await post('/api/jobs/backfill-missing-times', {})
+      toast.success(`Set times on ${res?.count || 0} job${(res?.count || 0) === 1 ? '' : 's'}`)
+      setFixTimes(null)
+      refresh()
+    } catch (e) {
+      toast.error(e.message || 'Fix failed')
+      setFixTimes(f => ({ ...f, running: false }))
     }
   }
 
@@ -1311,6 +1348,12 @@ export default function Schedule() {
               title="Auto-assign available cleaners to unassigned turnovers">
               <Wand2 className="w-4 h-4" />
               <span className="hidden sm:inline ml-1.5">Auto-assign</span>
+            </Button>
+
+            <Button onClick={previewFixTimes} variant="secondary" size="sm" className="whitespace-nowrap"
+              title="Find and fix jobs showing no time (– –)">
+              <Clock className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1.5">Fix times</span>
             </Button>
 
             <Button onClick={() => { setEditingJob(null); setShowJobModal(true) }} variant="primary" size="sm" className="whitespace-nowrap">
@@ -1770,6 +1813,67 @@ export default function Schedule() {
               <Button variant="primary" size="sm" onClick={runAutoAssign}
                 disabled={autoAssign.loading || autoAssign.running || !autoAssign.preview?.assigned?.length}>
                 {autoAssign.running ? 'Assigning…' : `Assign ${autoAssign.preview?.assigned?.length || 0}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fix missing times — diagnose (shows source) then backfill */}
+      {fixTimes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => !fixTimes.running && setFixTimes(null)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative w-full max-w-lg max-h-[85vh] bg-panel rounded-2xl shadow-2xl border border-hairline flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Clock className="w-5 h-5 text-blue-600 shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-ink">Fix missing job times</h2>
+                  <p className="text-[12px] text-ink-3 mt-0.5">Jobs showing "– –" get a sensible default (turnovers → property checkout, others → 9:00). Review before applying.</p>
+                </div>
+              </div>
+              <button onClick={() => !fixTimes.running && setFixTimes(null)} className="p-1 text-ink-3 hover:text-ink-2 shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-3">
+              {fixTimes.loading ? (
+                <div className="py-12 text-center text-[13px] text-ink-3">Checking job times…</div>
+              ) : (
+                <>
+                  {/* Source breakdown — the in-app diagnostic result */}
+                  {fixTimes.bySource && Object.keys(fixTimes.bySource).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(fixTimes.bySource).map(([src, n]) => (
+                        <span key={src} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded bg-bg-2 text-ink-2">
+                          {src.replace(/_/g, ' ')}: {n}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(fixTimes.preview?.jobs || []).map(j => (
+                    <div key={j.job_id} className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-bg px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium text-ink truncate">{j.title}</div>
+                        <div className="text-[11px] text-ink-3">{j.scheduled_date} · {j.source.replace(/_/g, ' ')}</div>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded shrink-0 tabular-nums">
+                        {j.new_start}–{(j.new_end || '').slice(0, 5)}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-hairline flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setFixTimes(null)} disabled={fixTimes.running}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={runFixTimes}
+                disabled={fixTimes.loading || fixTimes.running || !fixTimes.preview?.count}>
+                {fixTimes.running ? 'Fixing…' : `Fix ${fixTimes.preview?.count || 0}`}
               </Button>
             </div>
           </div>

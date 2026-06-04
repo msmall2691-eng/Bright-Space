@@ -861,6 +861,55 @@ def diagnose_missing_times(db: Session = Depends(get_db)):
     }
 
 
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.post("/backfill-missing-times", dependencies=[Depends(require_role("admin", "manager"))])
+def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db)):
+    """Fill a sensible time on every non-cancelled job that has no start_time
+    (the records that render as '– –'). Uses the same rule iCal sync uses:
+    turnovers get the property's check-out time (fallback 10:00), other jobs
+    get 09:00; end = start + the property's default duration (fallback 3h).
+    Pass ?dry_run=true to preview without writing. Review-first; mirrors the
+    new time onto the job's visits too so the Schedule reflects it."""
+    from integrations.ical_sync import _make_end_time
+    missing = (
+        db.query(Job)
+        .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]))
+        .order_by(Job.scheduled_date.desc())
+        .limit(500)
+        .all()
+    )
+    prop_map = {p.id: p for p in db.query(Property).all()} if missing else {}
+
+    changes = []
+    for j in missing:
+        prop = prop_map.get(j.property_id)
+        if j.job_type == "str_turnover":
+            start_str = (prop.check_out_time if prop and prop.check_out_time else None) or "10:00"
+        else:
+            start_str = "09:00"
+        dur = (prop.default_duration_hours if prop and prop.default_duration_hours else None) or 3.0
+        end_str = _make_end_time(start_str, dur)
+        changes.append({
+            "job_id": j.id, "title": j.title, "job_type": j.job_type,
+            "scheduled_date": str(j.scheduled_date) if j.scheduled_date else None,
+            "property_name": prop.name if prop else None,
+            "source": _job_source(j),
+            "new_start": start_str, "new_end": end_str,
+        })
+        if not dry_run:
+            j.start_time = _to_time(start_str)
+            j.end_time = _to_time(end_str)
+            # Mirror onto any visits so the Schedule (which reads visits) updates.
+            for v in db.query(Visit).filter(Visit.job_id == j.id).all():
+                if v.start_time is None:
+                    v.start_time = _to_time(start_str)
+                if v.end_time is None:
+                    v.end_time = _to_time(end_str)
+    if not dry_run and changes:
+        db.commit()
+    return {"dry_run": dry_run, "count": len(changes), "jobs": changes}
+
+
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
