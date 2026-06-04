@@ -5,6 +5,7 @@ import ClientCRMSummary from '../components/ClientCRMSummary'
 import ActivityTimeline from '../components/ActivityTimeline'
 import OpportunityLinker from '../components/OpportunityLinker'
 import JobCreateModal from '../components/JobCreateModal'
+import JobEditModal from '../components/JobEditModal'
 import { del, get, post, patch } from "../api"
 import { useToast } from '../components/ui/Toast'
 import {
@@ -143,6 +144,7 @@ export default function ClientProfile() {
   // Bumped after add/edit/cancel/invite to force the embedded Google Calendar
   // iframe to reload (Google's embed caches, so a fresh event needs a nudge).
   const [gcalReload, setGcalReload] = useState(0)
+  const [editJob, setEditJob] = useState(null)  // appointment being edited in the side panel
 
   const [visitStats, setVisitStats] = useState(null)
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
@@ -736,6 +738,7 @@ export default function ClientProfile() {
             visitStats={visitStats}
             gcalReloadKey={gcalReload}
             onAddAppointment={() => setJobModal({})}
+            onEditJob={(j) => setEditJob(j)}
             onChanged={() => { load(); setGcalReload(k => k + 1) }}
             toast={toast}
           />
@@ -1549,6 +1552,18 @@ export default function ClientProfile() {
         />
       )}
 
+      {/* Edit/reschedule/cancel an existing appointment — syncs to Google
+          (PATCH updates the linked event) and reloads the embed. */}
+      {editJob && (
+        <JobEditModal
+          job={editJob}
+          properties={properties}
+          clients={client ? [client] : []}
+          onClose={() => setEditJob(null)}
+          onSave={() => { setEditJob(null); load(); setGcalReload(k => k + 1) }}
+        />
+      )}
+
       <ToastContainer />
     </div>
   )
@@ -1579,7 +1594,7 @@ const STATUS_PILL = {
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
 }
 
-function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, clientEmail, visitStats, gcalReloadKey = 0, onAddAppointment, onChanged, toast }) {
+function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, clientEmail, visitStats, gcalReloadKey = 0, onAddAppointment, onEditJob, onChanged, toast }) {
   const now = new Date()
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -1792,7 +1807,9 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
               const isPast = j.scheduled_date < todayStr
 
               return (
-                <div key={j.id} className={`bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-hairline ${isPast ? 'opacity-60' : ''}`}>
+                <div key={j.id} onClick={() => onEditJob?.(j)}
+                  className={`bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-blue-300 hover:shadow-sm cursor-pointer ${isPast ? 'opacity-60' : ''}`}
+                  title="Click to edit / reschedule / cancel">
                   {/* Color bar */}
                   <div className={`w-1 self-stretch rounded-full shrink-0 ${dotColor}`} />
 
@@ -1841,7 +1858,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
                     </div>
                     {/* Opt-in: email the customer a calendar invite so the event lands on their calendar */}
                     {!isPast && clientEmail && !j.calendar_invite_sent && (
-                      <button onClick={() => inviteCustomer(j.id)} disabled={invitingId === j.id}
+                      <button onClick={(e) => { e.stopPropagation(); inviteCustomer(j.id) }} disabled={invitingId === j.id}
                         className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-blue-200 text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
                         title={`Invite ${clientEmail} to this event`}>
                         <Mail className="w-2.5 h-2.5" /> {invitingId === j.id ? 'Inviting…' : 'Invite'}
