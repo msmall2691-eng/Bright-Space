@@ -165,18 +165,26 @@ def _build_gcal_embed_url(db: Session) -> Optional[str]:
     """An embeddable Google Calendar URL for the in-app Schedule. Prefers an
     explicit gcal_embed_url app-setting (paste the embed/public URL from Google
     Calendar settings — works for private calendars you've shared); otherwise
-    builds one from the GCAL_RESIDENTIAL_ID the two-way sync already uses."""
+    builds one from EVERY configured calendar the two-way sync writes to —
+    residential, commercial, AND STR turnovers — so the view matches the full
+    synced schedule (Airbnb turnovers go to GCAL_STR_ID, see
+    integrations/google_calendar.py:_calendar_id). Multiple src= params overlay
+    all of them in the embed."""
     import os
     from urllib.parse import quote
     override = (get_setting(db, "gcal_embed_url") or "").strip()
     if override:
         return override
-    cal_id = os.getenv("GCAL_RESIDENTIAL_ID", "").strip()
-    if cal_id and cal_id != "primary":
-        tz = os.getenv("GCAL_TIMEZONE", "America/New_York")
-        return (f"https://calendar.google.com/calendar/embed?src={quote(cal_id)}"
-                f"&ctz={quote(tz)}&mode=WEEK")
-    return None
+    ids = []
+    for env_key in ("GCAL_RESIDENTIAL_ID", "GCAL_COMMERCIAL_ID", "GCAL_STR_ID"):
+        cid = os.getenv(env_key, "").strip()
+        if cid and cid != "primary" and cid not in ids:
+            ids.append(cid)
+    if not ids:
+        return None
+    tz = os.getenv("GCAL_TIMEZONE", "America/New_York")
+    src = "".join(f"&src={quote(cid)}" for cid in ids)
+    return f"https://calendar.google.com/calendar/embed?ctz={quote(tz)}&mode=WEEK{src}"
 
 
 @router.get("/gcal-embed")
