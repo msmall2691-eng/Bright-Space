@@ -81,6 +81,61 @@ def is_configured() -> bool:
     return token_path.exists()
 
 
+def connection_status() -> dict:
+    """Live diagnostic of the Google Calendar connection.
+
+    Returns a dict the UI can render directly:
+      - connected: bool — did a real API call succeed?
+      - reason: machine code when not connected (no_credentials / not_authorized / error)
+      - detail: human-readable explanation / next step
+      - calendars: list of calendars this token can see (id, summary, primary)
+      - write_targets: which calendar id the app writes to per job type, so the
+        operator can confirm it matches the calendar they're viewing/embedding.
+
+    This exists because a missing/expired token used to fail silently — the app
+    would report "connected" while every event write quietly returned None.
+    """
+    write_targets = {
+        "residential": _calendar_id("residential"),
+        "commercial":  _calendar_id("commercial"),
+        "str_turnover": _calendar_id("str_turnover"),
+    }
+    if not is_configured():
+        return {
+            "connected": False,
+            "reason": "no_credentials",
+            "detail": "No Google token found on the server. Set GOOGLE_TOKEN_B64 "
+                      "(and GOOGLE_CREDENTIALS_B64) — generate it by running "
+                      "auth_google.py locally, then base64-encode google_token.json.",
+            "calendars": [],
+            "write_targets": write_targets,
+        }
+    try:
+        service = _get_service()
+        cal_list = service.calendarList().list(maxResults=100).execute()
+        calendars = [
+            {"id": c.get("id"), "summary": c.get("summary"), "primary": bool(c.get("primary"))}
+            for c in cal_list.get("items", [])
+        ]
+        return {
+            "connected": True,
+            "reason": None,
+            "detail": "Google Calendar is connected.",
+            "calendars": calendars,
+            "write_targets": write_targets,
+        }
+    except RuntimeError as e:
+        return {
+            "connected": False, "reason": "not_authorized", "detail": str(e),
+            "calendars": [], "write_targets": write_targets,
+        }
+    except Exception as e:
+        return {
+            "connected": False, "reason": "error", "detail": str(e),
+            "calendars": [], "write_targets": write_targets,
+        }
+
+
 def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> dict:
     """Build a Google Calendar event dict from a job and client.
 

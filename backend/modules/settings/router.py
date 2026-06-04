@@ -187,6 +187,16 @@ def _build_gcal_embed_url(db: Session) -> Optional[str]:
     return f"https://calendar.google.com/calendar/embed?ctz={quote(tz)}&mode=WEEK{src}"
 
 
+@router.get("/gcal-status")
+def gcal_status():
+    """Live Google Calendar connection check — tells the operator whether the
+    server's Google credentials actually work, and which calendars the token
+    can see vs. which the app writes to. Replaces the old hardcoded
+    '✓ Connected' badge that lied when no token was present."""
+    from integrations.google_calendar import connection_status
+    return connection_status()
+
+
 @router.get("/gcal-embed")
 def get_gcal_embed(db: Session = Depends(get_db)):
     """Embeddable Google Calendar URL for the Schedule page's 'Google' view.

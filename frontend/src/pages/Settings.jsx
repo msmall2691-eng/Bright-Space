@@ -198,9 +198,15 @@ export default function Settings() {
   // Google Calendar embed override (paste an embed URL or full <iframe>).
   const [gcalEmbed, setGcalEmbed] = useState('')
   const [gcalEmbedSaving, setGcalEmbedSaving] = useState(false)
+  // Live Google Calendar connection status (real check, not a hardcoded badge).
+  const [gcalConn, setGcalConn] = useState({ loading: true })
   useEffect(() => {
     if (section !== 'integrations') return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
+    setGcalConn({ loading: true })
+    get('/api/settings/gcal-status')
+      .then(r => setGcalConn({ loading: false, ...r }))
+      .catch(e => setGcalConn({ loading: false, connected: false, reason: 'error', detail: e?.message || 'Could not check status' }))
   }, [section])
   const saveGcalEmbed = async () => {
     setGcalEmbedSaving(true)
@@ -785,9 +791,46 @@ export default function Settings() {
                   <p className="text-sm text-ink-2 mt-1">Connect external tools to enhance your workflow</p>
                 </div>
 
+                {/* Google Calendar — real, live connection status. The app
+                    writes every appointment to this account's calendar, so if
+                    it isn't truly connected, events silently never appear. */}
+                <div className="bg-panel rounded-xl border border-hairline p-4 mb-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">📅</span>
+                      <div>
+                        <h3 className="font-semibold text-ink">Google Calendar</h3>
+                        <p className="text-xs text-ink-3">The Google account every appointment is written to & synced from</p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                      gcalConn.loading
+                        ? 'bg-bg-2 text-ink-3 border-hairline'
+                        : gcalConn.connected
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      {gcalConn.loading ? 'Checking…' : gcalConn.connected ? '✓ Connected' : '✗ Not connected'}
+                    </span>
+                  </div>
+                  {!gcalConn.loading && !gcalConn.connected && (
+                    <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 leading-relaxed">
+                      <div className="font-semibold mb-1">Appointments aren't reaching Google.</div>
+                      {gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}
+                    </div>
+                  )}
+                  {!gcalConn.loading && gcalConn.connected && Array.isArray(gcalConn.calendars) && (
+                    <div className="mt-3 text-[11px] text-ink-3">
+                      <div className="mb-1">Writing appointments to:&nbsp;
+                        <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.write_targets?.residential || 'primary'}</code>
+                      </div>
+                      <div>Visible calendars on this account: {gcalConn.calendars.map(c => c.summary).filter(Boolean).join(', ') || '—'}</div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-3">
                   {[
-                    { name: 'Google Calendar', icon: '📅', desc: 'Sync jobs with Google Calendar bidirectionally', status: 'connected' },
                     { name: 'Connecteam', icon: '👥', desc: 'Dispatch jobs to your field team', status: 'available' },
                     { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
                     { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },
