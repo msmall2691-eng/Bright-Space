@@ -195,6 +195,24 @@ export default function Settings() {
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
+  // Google Calendar embed override (paste an embed URL or full <iframe>).
+  const [gcalEmbed, setGcalEmbed] = useState('')
+  const [gcalEmbedSaving, setGcalEmbedSaving] = useState(false)
+  useEffect(() => {
+    if (section !== 'integrations') return
+    get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
+  }, [section])
+  const saveGcalEmbed = async () => {
+    setGcalEmbedSaving(true)
+    try {
+      await post('/api/settings/gcal-embed', { embed_url: gcalEmbed })
+      toast('Google Calendar embed saved')
+    } catch (e) {
+      toast(e.message || 'Could not save — must be a Google Calendar embed URL', 'error')
+    }
+    setGcalEmbedSaving(false)
+  }
+
   // Email settings state
   const [emailConfig, setEmailConfig] = useState({
     smtp_user: '', smtp_pass: '', smtp_host: 'smtp.gmail.com', smtp_port: '587',
@@ -602,6 +620,37 @@ export default function Settings() {
         {section === 'integrations' && (
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6 space-y-8">
+
+              {/* Google Calendar embed — powers the in-app "Google" view + each
+                  client's Calendar tab. Paste the embed URL or full <iframe>
+                  from Google Calendar → Settings → "Integrate calendar". */}
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold text-ink">Google Calendar Embed</h2>
+                  <p className="text-sm text-ink-2 mt-1">
+                    Shows your real Google Calendar in the Schedule "Google" view and on each
+                    client's Calendar tab. Paste the embed URL or the full <code className="text-xs">&lt;iframe&gt;</code> from
+                    Google Calendar → Settings → "Integrate calendar". Leave blank to auto-build from your
+                    configured calendar IDs.
+                  </p>
+                </div>
+                <div className="bg-panel rounded-xl border border-hairline p-6 space-y-3">
+                  <textarea
+                    value={gcalEmbed}
+                    onChange={e => setGcalEmbed(e.target.value)}
+                    rows={3}
+                    placeholder='https://calendar.google.com/calendar/embed?src=…   (or paste the whole <iframe …></iframe>)'
+                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400 resize-none"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-ink-3">Only Google Calendar embed URLs are accepted.</span>
+                    <button onClick={saveGcalEmbed} disabled={gcalEmbedSaving}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
+                      {gcalEmbedSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {/* iCal Turnover Sync — real, controllable integration */}
               <div>
