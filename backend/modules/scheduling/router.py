@@ -883,30 +883,46 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
     changes = []
     for j in missing:
         prop = prop_map.get(j.property_id)
-        if j.job_type == "str_turnover":
-            start_str = (prop.check_out_time if prop and prop.check_out_time else None) or "10:00"
+        visits = db.query(Visit).filter(Visit.job_id == j.id).all()
+
+        # If a terminal (completed/cancelled) visit exists, it IS the historical
+        # record — use its real window as the source of truth for the whole job
+        # rather than a generated default. This keeps Job.start_time (read by
+        # /api/jobs + client past-visit views) consistent with /api/visits and
+        # preserves that history everywhere. Otherwise fall back to the property
+        # check-out time (turnovers) / 09:00, + the property default duration.
+        terminal = next((v for v in visits
+                         if v.status in ("completed", "cancelled") and v.start_time is not None), None)
+        if terminal is not None:
+            st, et = terminal.start_time, terminal.end_time
+            new_start, new_end = str(terminal.start_time)[:5], str(terminal.end_time or "")[:5]
+            time_source = "completed/cancelled visit"
         else:
-            start_str = "09:00"
-        dur = (prop.default_duration_hours if prop and prop.default_duration_hours else None) or 3.0
-        end_str = _make_end_time(start_str, dur)
+            if j.job_type == "str_turnover":
+                start_str = (prop.check_out_time if prop and prop.check_out_time else None) or "10:00"
+            else:
+                start_str = "09:00"
+            dur = (prop.default_duration_hours if prop and prop.default_duration_hours else None) or 3.0
+            end_str = _make_end_time(start_str, dur)
+            st, et = _to_time(start_str), _to_time(end_str)
+            new_start, new_end = start_str, end_str
+            time_source = "default"
+
         changes.append({
             "job_id": j.id, "title": j.title, "job_type": j.job_type,
             "scheduled_date": str(j.scheduled_date) if j.scheduled_date else None,
             "property_name": prop.name if prop else None,
             "source": _job_source(j),
-            "new_start": start_str, "new_end": end_str,
+            "time_source": time_source,
+            "new_start": new_start, "new_end": new_end,
         })
         if not dry_run:
-            st, et = _to_time(start_str), _to_time(end_str)
             j.start_time = st
             j.end_time = et
-            # Mirror the new time onto the job's visits so the board (which reads
-            # /api/visits whenever visits exist) shows it. Visit.start_time is
-            # NOT NULL, so existing rows already hold a fallback value — overwrite
-            # them to keep Job and Visit consistent. Skip terminal (completed/
-            # cancelled) visits: their recorded window is history and is treated
-            # as immutable elsewhere (e.g. gcal_sync), so we must not clobber it.
-            for v in db.query(Visit).filter(Visit.job_id == j.id).all():
+            # Mirror onto active visits so the board reflects it; terminal visits
+            # are the immutable historical record and are left untouched (and now
+            # already agree with the job when they were the source).
+            for v in visits:
                 if v.status in ("completed", "cancelled"):
                     continue
                 v.start_time = st
