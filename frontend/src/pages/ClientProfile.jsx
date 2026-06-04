@@ -1548,7 +1548,18 @@ export default function ClientProfile() {
           clientName={client?.name}
           initialPropertyId={jobModal.propertyId || null}
           onClose={() => setJobModal(null)}
-          onCreated={() => { setJobModal(null); load(); setGcalReload(k => k + 1) }}
+          onCreated={(res) => {
+            setJobModal(null); load(); setGcalReload(k => k + 1)
+            if (res?.kind === 'recurring') return
+            const g = res?.gcal
+            if (g?.synced) {
+              toast.success('Added to Google Calendar')
+            } else if (g?.reason === 'not_connected') {
+              toast.error('Saved, but Google Calendar isn’t connected yet — connect it in Settings so events land on your calendar.')
+            } else {
+              toast.error('Saved, but couldn’t reach Google Calendar — try Sync from Google, or check the connection in Settings.')
+            }
+          }}
         />
       )}
 
@@ -1594,6 +1605,57 @@ const STATUS_PILL = {
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
 }
 
+/** A single Google Calendar event row in the client's linked timeline. */
+function GcalEventRow({ ev }) {
+  const start = ev.start ? new Date(ev.start) : null
+  const end = ev.end ? new Date(ev.end) : null
+  const valid = start && !isNaN(start)
+  const dotColor = JOB_TYPE_DOT[ev.job_type] || 'bg-indigo-500'
+  const isPast = valid && end && !isNaN(end) ? end < new Date() : false
+  const timeStr = valid
+    ? (ev.all_day
+        ? 'All day'
+        : start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) +
+          (end && !isNaN(end) ? ` – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''))
+    : ''
+  const invited = (ev.attendees || []).length > 0
+  return (
+    <a
+      href={ev.html_link || undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`block bg-panel border border-hairline rounded-xl p-4 flex items-start gap-3 transition-colors hover:border-indigo-300 hover:shadow-sm ${isPast ? 'opacity-60' : ''}`}
+      title="Open in Google Calendar"
+    >
+      <div className={`w-1 self-stretch rounded-full shrink-0 ${dotColor}`} />
+      <div className="text-center w-12 shrink-0 pt-0.5">
+        <div className="text-xs font-bold text-ink-2">
+          {valid ? start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+        </div>
+        <div className="text-[10px] text-ink-3">
+          {valid ? start.toLocaleDateString('en-US', { weekday: 'short' }) : ''}
+        </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-sm text-ink truncate">{ev.title}</div>
+        <div className="flex items-center gap-2 mt-1 text-xs text-ink-3 flex-wrap">
+          {timeStr && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{timeStr}</span>}
+          {ev.job_type && (<><span className="text-[10px] text-ink-3">|</span><span>{JOB_TYPE_LABEL[ev.job_type] || ev.job_type}</span></>)}
+        </div>
+        {ev.location && (
+          <div className="flex items-center gap-1 mt-0.5 text-[11px] text-ink-3 truncate">
+            <MapPin className="w-3 h-3 shrink-0" />{ev.location}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <span title="On Google Calendar" className="w-3.5 h-3.5 rounded-full bg-indigo-100 flex items-center justify-center text-[8px] text-indigo-500 font-bold">G</span>
+        {invited && <span title="Client is an attendee" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">✓</span>}
+      </div>
+    </a>
+  )
+}
+
 function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, clientEmail, visitStats, gcalReloadKey = 0, onAddAppointment, onEditJob, onChanged, toast }) {
   const now = new Date()
   const [year, setYear]   = useState(now.getFullYear())
@@ -1611,6 +1673,18 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
       .then(r => setEmbed({ loading: false, url: r?.embed_url, configured: !!r?.configured }))
       .catch(() => setEmbed({ loading: false, configured: false }))
   }, [])
+
+  // Twenty-style linked timeline: this client's actual Google Calendar events,
+  // matched by their email (or our brightbase_client_id tag). This is the
+  // source of truth — not local app rows.
+  const [gcalEvents, setGcalEvents] = useState({ loading: true, events: [] })
+  useEffect(() => {
+    if (!clientId) return
+    setGcalEvents(s => ({ ...s, loading: true }))
+    get(`/api/jobs/client/${clientId}/gcal-events`)
+      .then(r => setGcalEvents({ loading: false, ...r, events: r?.events || [] }))
+      .catch(e => setGcalEvents({ loading: false, connected: false, events: [], detail: e?.message }))
+  }, [clientId, gcalReloadKey, localReload])
   const iframeSrc = embed.url ? `${embed.url}&_=${gcalReloadKey}-${localReload}` : null
   const inviteCustomer = async (jobId) => {
     setInvitingId(jobId)
@@ -1676,10 +1750,51 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
         ) : !embed.configured ? (
           <div className="p-6 text-center text-[13px] text-ink-3">
             Google Calendar isn't set up for embedding yet (Settings → Integrations).
-            Appointments you add still push to Google regardless.
+            Appointments you add are still saved straight to Google Calendar.
           </div>
         ) : (
           <iframe title="Google Calendar" src={iframeSrc} className="w-full border-0" style={{ height: '440px' }} />
+        )}
+      </div>
+
+      {/* Linked Google Calendar events — this client's real events, matched by
+          their email (or our brightbase tag). The Twenty-style source of truth. */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wide">Linked Google Calendar events</h3>
+          {gcalEvents.client_email && (
+            <span className="text-[10px] text-ink-3">matched by {gcalEvents.client_email}</span>
+          )}
+        </div>
+        {gcalEvents.loading ? (
+          <div className="text-center py-8 bg-panel border border-hairline rounded-xl text-sm text-ink-3">Loading events from Google…</div>
+        ) : gcalEvents.connected === false ? (
+          <div className="text-center py-8 bg-amber-50 border border-amber-200 rounded-xl px-4">
+            <Calendar className="w-7 h-7 mx-auto mb-2 text-amber-500" />
+            <p className="text-sm text-amber-800 font-medium">Google Calendar isn't connected</p>
+            <p className="text-xs text-amber-700 mt-1 max-w-sm mx-auto">
+              Connect your work Google account in Settings → Integrations so this client's
+              events appear here automatically, linked by their email.
+            </p>
+            <button onClick={() => navigate('/settings?section=integrations')}
+              className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700">Go to Settings →</button>
+          </div>
+        ) : (gcalEvents.events || []).length === 0 ? (
+          <div className="text-center py-8 bg-panel border border-hairline rounded-xl px-4">
+            <Calendar className="w-7 h-7 mx-auto mb-2 text-ink-3" />
+            <p className="text-sm text-ink-3">
+              No Google Calendar events linked to {gcalEvents.client_email || 'this client'} yet.
+            </p>
+            {!gcalEvents.client_email && (
+              <p className="text-[11px] text-ink-3 mt-1">Add an email to this client so their events link automatically.</p>
+            )}
+            <button onClick={onAddAppointment}
+              className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700">+ Add appointment</button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {gcalEvents.events.map(ev => <GcalEventRow key={ev.id} ev={ev} />)}
+          </div>
         )}
       </div>
 
@@ -1700,6 +1815,10 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
         </div>
       )}
 
+      {/* Native fallback — only when Google isn't connected, so the profile is
+          never blank. Once connected, the linked Google events above are the
+          single source of truth (Twenty-style). */}
+      {gcalEvents.connected === false && (<>
       {/* Mini month calendar */}
       <div className="bg-panel border border-hairline rounded-xl p-5">
         {/* Month nav */}
@@ -1871,6 +1990,7 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, c
           </div>
         )}
       </div>
+      </>)}
     </div>
   )
 }

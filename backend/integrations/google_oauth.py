@@ -1,0 +1,86 @@
+"""Self-serve Google OAuth (web flow).
+
+Lets an admin connect their work Google account from inside the app — one click
+in Settings → Integrations instead of running auth_google.py locally and pasting
+a base64 token into Railway.
+
+The resulting token is persisted in the app_settings table (key ``google_token``)
+so it survives Railway's ephemeral filesystem. ``google_calendar._get_service``
+reads it from there first.
+
+Requires a Google Cloud "Web application" OAuth client whose authorized redirect
+URI matches this server's ``/api/settings/google/callback``. Provide it via
+``GOOGLE_CREDENTIALS_B64`` (base64 of the downloaded client-secret JSON) or via
+``GOOGLE_CLIENT_ID`` / ``GOOGLE_CLIENT_SECRET``.
+"""
+
+import os
+import json
+import base64
+from pathlib import Path
+
+from google_auth_oauthlib.flow import Flow
+
+# Calendar is the source of truth for scheduling. (Gmail stays on IMAP.)
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+
+def _client_config() -> dict | None:
+    """Resolve the OAuth client config from env or a local file. Returns a dict
+    shaped like Google's client-secret JSON ({"web": {...}}), or None."""
+    raw = os.getenv("GOOGLE_CREDENTIALS_B64")
+    if raw:
+        try:
+            return json.loads(base64.b64decode(raw))
+        except Exception:
+            pass
+
+    cid = os.getenv("GOOGLE_CLIENT_ID")
+    csec = os.getenv("GOOGLE_CLIENT_SECRET")
+    if cid and csec:
+        return {
+            "web": {
+                "client_id": cid,
+                "client_secret": csec,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        }
+
+    base = Path(__file__).parent.parent
+    p = base / os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            pass
+    return None
+
+
+def is_oauth_available() -> bool:
+    """True when the server has an OAuth client configured, so the in-app
+    'Connect Google' button can work."""
+    return _client_config() is not None
+
+
+def redirect_uri(request) -> str:
+    """The OAuth redirect URI. Prefer an explicit env value (must match the
+    Google Cloud console exactly); otherwise derive it from the request and
+    force https, since Railway terminates TLS at the proxy."""
+    env = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
+    if env:
+        return env
+    base = str(request.base_url).rstrip("/")
+    if base.startswith("http://") and not ("localhost" in base or "127.0.0.1" in base):
+        base = "https://" + base[len("http://"):]
+    return f"{base}/api/settings/google/callback"
+
+
+def build_flow(request, state: str | None = None) -> Flow:
+    cfg = _client_config()
+    if not cfg:
+        raise RuntimeError(
+            "No Google OAuth client configured. Set GOOGLE_CREDENTIALS_B64 "
+            "(a Web OAuth client) on the server."
+        )
+    return Flow.from_client_config(cfg, scopes=SCOPES, redirect_uri=redirect_uri(request), state=state)

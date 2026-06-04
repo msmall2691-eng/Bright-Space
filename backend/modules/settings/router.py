@@ -1,7 +1,7 @@
 """
 App Settings Router - email/IMAP credentials, integrations, etc.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -185,6 +185,74 @@ def _build_gcal_embed_url(db: Session) -> Optional[str]:
     tz = os.getenv("GCAL_TIMEZONE", "America/New_York")
     src = "".join(f"&src={quote(cid)}" for cid in ids)
     return f"https://calendar.google.com/calendar/embed?ctz={quote(tz)}&mode=WEEK{src}"
+
+
+@router.get("/gcal-status")
+def gcal_status():
+    """Live Google Calendar connection check — tells the operator whether the
+    server's Google credentials actually work, and which calendars the token
+    can see vs. which the app writes to. Replaces the old hardcoded
+    '✓ Connected' badge that lied when no token was present."""
+    from integrations.google_calendar import connection_status
+    return connection_status()
+
+
+# ── Self-serve Google OAuth ── connect an admin's work Google account in-app.
+@router.get("/google/connect", dependencies=[Depends(require_role("admin"))])
+def google_connect(request: Request, db: Session = Depends(get_db)):
+    """Start the OAuth web flow. Returns the Google consent URL the browser
+    should navigate to. A one-time state nonce is stored to verify the callback."""
+    import secrets
+    from integrations.google_oauth import build_flow, is_oauth_available
+    if not is_oauth_available():
+        raise HTTPException(
+            status_code=400,
+            detail="Google OAuth client isn't configured on the server. Add a "
+                   "Web OAuth client via GOOGLE_CREDENTIALS_B64 (or GOOGLE_CLIENT_ID/"
+                   "GOOGLE_CLIENT_SECRET) and set the redirect URI to "
+                   "/api/settings/google/callback.",
+        )
+    state = secrets.token_urlsafe(24)
+    set_setting(db, "google_oauth_state", state)
+    # Remember where to send the operator back to (the app origin they came from).
+    set_setting(db, "google_oauth_return", request.headers.get("referer") or "")
+    db.commit()
+    flow = build_flow(request, state=state)
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",          # get a refresh token
+        include_granted_scopes="true",
+        prompt="consent",               # ensure a refresh token is returned
+    )
+    return {"auth_url": auth_url}
+
+
+@router.get("/google/callback")
+def google_callback(request: Request, code: str = "", state: str = "", db: Session = Depends(get_db)):
+    """OAuth redirect target. Verifies the state nonce, exchanges the code for a
+    token, persists it (app_settings 'google_token'), then bounces back to the app."""
+    from fastapi.responses import RedirectResponse
+    from integrations.google_oauth import build_flow
+
+    saved = get_setting(db, "google_oauth_state")
+    if not state or not saved or state != saved:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state.")
+
+    try:
+        flow = build_flow(request, state=state)
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+    except Exception as e:
+        logger.warning(f"Google OAuth callback failed: {e}")
+        raise HTTPException(status_code=400, detail="Google authorization failed. Please try connecting again.")
+
+    set_setting(db, "google_token", creds.to_json())
+    set_setting(db, "google_oauth_state", "")
+    ret = get_setting(db, "google_oauth_return") or "/"
+    db.commit()
+
+    target = ret or "/"
+    sep = "&" if "?" in target else "?"
+    return RedirectResponse(url=f"{target}{sep}gcal=connected", status_code=302)
 
 
 @router.get("/gcal-embed")

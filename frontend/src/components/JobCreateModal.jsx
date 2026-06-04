@@ -153,7 +153,7 @@ export default function JobCreateModal({
         property_id: form.property_id ? parseInt(form.property_id) : null,
       }
       const job = await post('/api/jobs', body)
-      onCreated?.({ kind: 'job', job })
+      onCreated?.({ kind: 'job', job, gcal: job?.gcal })
       onClose?.()
     } catch (e) {
       setError(e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`)

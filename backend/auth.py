@@ -33,6 +33,9 @@ _PUBLIC_PREFIXES = (
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
+    # Google OAuth redirect lands here without an API key; it's protected by a
+    # one-time state nonce verified in the handler instead.
+    "/api/settings/google/callback",
     "/api/booking",
     "/api/agents",
     "/api/quotes/public/",

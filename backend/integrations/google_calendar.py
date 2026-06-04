@@ -33,38 +33,254 @@ def _calendar_id(job_type: str) -> str:
     return mapping.get(job_type, "primary")
 
 
+def _load_db_token() -> str | None:
+    """Read the authorized-user token JSON saved by the in-app 'Connect Google'
+    flow. Stored in app_settings so it survives Railway's ephemeral filesystem."""
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == "google_token").first()
+            return row.value if row and row.value else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _save_db_token(token_json: str) -> None:
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == "google_token").first()
+            if row:
+                row.value = token_json
+            else:
+                db.add(AppSetting(key="google_token", value=token_json))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[GCal] Could not persist refreshed token to DB: {e}")
+
+
 def _get_service():
-    """Build and return an authenticated Google Calendar service."""
-    import base64, tempfile, json as _json
+    """Build and return an authenticated Google Calendar service.
+
+    Token source priority:
+      1. DB (app_settings 'google_token') — written by the in-app Connect Google
+         flow; the only source that survives a Railway redeploy.
+      2. GOOGLE_TOKEN_B64 env / token file — the manual/legacy path.
+    """
+    import base64, json as _json
 
     base = Path(__file__).parent.parent
     token_path = base / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")
 
-    # Support base64-encoded credentials stored in env vars (for Railway/cloud)
-    token_b64 = os.getenv("GOOGLE_TOKEN_B64")
-    if token_b64 and not token_path.exists():
-        token_path.write_bytes(base64.b64decode(token_b64))
+    creds = None
+    from_db = False
 
+    # 1. DB token (self-serve Connect Google)
+    db_token = _load_db_token()
+    if db_token:
+        try:
+            creds = Credentials.from_authorized_user_info(_json.loads(db_token), SCOPES)
+            from_db = True
+        except Exception:
+            creds = None
+
+    # 2. Env / file token (manual path) — also seed the file from base64 env.
+    if creds is None:
+        token_b64 = os.getenv("GOOGLE_TOKEN_B64")
+        if token_b64 and not token_path.exists():
+            token_path.write_bytes(base64.b64decode(token_b64))
+        if token_path.exists():
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+
+    # Client secret file (used for token refresh) from base64 env if present.
     creds_b64 = os.getenv("GOOGLE_CREDENTIALS_B64")
     creds_path = base / os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
     if creds_b64 and not creds_path.exists():
         creds_path.write_bytes(base64.b64decode(creds_b64))
 
-    creds = None
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            with open(token_path, "w") as f:
-                f.write(creds.to_json())
+            if from_db:
+                _save_db_token(creds.to_json())
+            else:
+                with open(token_path, "w") as f:
+                    f.write(creds.to_json())
         else:
             raise RuntimeError(
-                "Google Calendar not authorized. Set GOOGLE_TOKEN_B64 env var or run: python auth_google.py"
+                "Google Calendar not authorized. Connect your Google account in "
+                "Settings → Integrations, or set GOOGLE_TOKEN_B64."
             )
 
     return build("calendar", "v3", credentials=creds)
+
+
+def is_configured() -> bool:
+    """Best-effort check that Google Calendar credentials are present.
+
+    Lets callers distinguish "Google isn't connected at all" from "connected
+    but the API call failed", so the UI can tell the operator whether the
+    event actually landed on Google (the source of truth) or not.
+    """
+    if _load_db_token():
+        return True
+    if os.getenv("GOOGLE_TOKEN_B64"):
+        return True
+    base = Path(__file__).parent.parent
+    token_path = base / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")
+    return token_path.exists()
+
+
+def connection_status() -> dict:
+    """Live diagnostic of the Google Calendar connection.
+
+    Returns a dict the UI can render directly:
+      - connected: bool — did a real API call succeed?
+      - reason: machine code when not connected (no_credentials / not_authorized / error)
+      - detail: human-readable explanation / next step
+      - calendars: list of calendars this token can see (id, summary, primary)
+      - write_targets: which calendar id the app writes to per job type, so the
+        operator can confirm it matches the calendar they're viewing/embedding.
+
+    This exists because a missing/expired token used to fail silently — the app
+    would report "connected" while every event write quietly returned None.
+    """
+    write_targets = {
+        "residential": _calendar_id("residential"),
+        "commercial":  _calendar_id("commercial"),
+        "str_turnover": _calendar_id("str_turnover"),
+    }
+    try:
+        from integrations.google_oauth import is_oauth_available
+        oauth_available = is_oauth_available()
+    except Exception:
+        oauth_available = False
+    if not is_configured():
+        return {
+            "connected": False,
+            "reason": "no_credentials",
+            "detail": "Google account not connected. Click Connect Google to "
+                      "link your work account, or set GOOGLE_TOKEN_B64 on the server.",
+            "calendars": [],
+            "write_targets": write_targets,
+            "oauth_available": oauth_available,
+        }
+    try:
+        service = _get_service()
+        cal_list = service.calendarList().list(maxResults=100).execute()
+        calendars = [
+            {"id": c.get("id"), "summary": c.get("summary"), "primary": bool(c.get("primary"))}
+            for c in cal_list.get("items", [])
+        ]
+        return {
+            "connected": True,
+            "reason": None,
+            "detail": "Google Calendar is connected.",
+            "calendars": calendars,
+            "write_targets": write_targets,
+            "oauth_available": oauth_available,
+        }
+    except RuntimeError:
+        return {
+            "connected": False, "reason": "not_authorized",
+            "detail": "Google account not connected. Click Connect Google to link "
+                      "your work account, or set GOOGLE_TOKEN_B64 on the server.",
+            "calendars": [], "write_targets": write_targets,
+            "oauth_available": oauth_available,
+        }
+    except Exception as e:
+        print(f"[GCal] connection_status check failed: {e}")
+        return {
+            "connected": False, "reason": "error",
+            "detail": "Couldn't verify the Google Calendar connection.",
+            "calendars": [], "write_targets": write_targets,
+            "oauth_available": oauth_available,
+        }
+
+
+def _event_to_dict(ev: dict, calendar_id: str) -> dict:
+    """Flatten a raw Google event into the shape the client profile renders."""
+    start = ev.get("start", {}) or {}
+    end = ev.get("end", {}) or {}
+    ext = (ev.get("extendedProperties", {}) or {}).get("private", {}) or {}
+    return {
+        "id": ev.get("id"),
+        "calendar_id": calendar_id,
+        "title": ev.get("summary") or "(no title)",
+        "location": ev.get("location"),
+        "description": ev.get("description"),
+        "html_link": ev.get("htmlLink"),
+        "start": start.get("dateTime") or start.get("date"),
+        "end": end.get("dateTime") or end.get("date"),
+        "all_day": "date" in start and "dateTime" not in start,
+        "status": ev.get("status"),
+        "attendees": [
+            {"email": a.get("email"), "responseStatus": a.get("responseStatus")}
+            for a in (ev.get("attendees") or [])
+        ],
+        "job_id": ext.get("brightbase_job_id"),
+        "job_type": ext.get("brightbase_job_type"),
+    }
+
+
+def list_events_for_client(
+    client_id: int | None,
+    client_email: str | None,
+    time_min_iso: str,
+    time_max_iso: str,
+) -> list[dict]:
+    """Live Google Calendar events linked to a client — the Twenty-style
+    "events connected by email" timeline.
+
+    An event matches when the client is an attendee (by email) OR the event
+    carries our brightbase_client_id extended property. Searches every
+    configured calendar and de-dupes by event id. Returns [] when Google isn't
+    connected (the caller surfaces that separately via connection_status)."""
+    service = _get_service()  # raises RuntimeError when not connected
+    cal_ids = {
+        _calendar_id("residential"),
+        _calendar_id("commercial"),
+        _calendar_id("str_turnover"),
+    }
+    email_l = (client_email or "").lower().strip()
+    seen: dict[str, dict] = {}
+    for cal_id in cal_ids:
+        page_token = None
+        try:
+            while True:
+                resp = service.events().list(
+                    calendarId=cal_id,
+                    timeMin=time_min_iso,
+                    timeMax=time_max_iso,
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=250,
+                    pageToken=page_token,
+                ).execute()
+                for ev in resp.get("items", []):
+                    ext = (ev.get("extendedProperties", {}) or {}).get("private", {}) or {}
+                    matched = bool(client_id) and str(ext.get("brightbase_client_id")) == str(client_id)
+                    if not matched and email_l:
+                        for a in ev.get("attendees", []) or []:
+                            if (a.get("email") or "").lower() == email_l:
+                                matched = True
+                                break
+                    if matched and ev.get("id"):
+                        seen[ev["id"]] = _event_to_dict(ev, cal_id)
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+        except HttpError as e:
+            print(f"[GCal] list events failed for calendar {cal_id}: {e}")
+    return sorted(seen.values(), key=lambda e: e.get("start") or "")
 
 
 def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> dict:

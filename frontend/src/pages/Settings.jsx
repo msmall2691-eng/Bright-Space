@@ -198,10 +198,43 @@ export default function Settings() {
   // Google Calendar embed override (paste an embed URL or full <iframe>).
   const [gcalEmbed, setGcalEmbed] = useState('')
   const [gcalEmbedSaving, setGcalEmbedSaving] = useState(false)
+  // Live Google Calendar connection status (real check, not a hardcoded badge).
+  const [gcalConn, setGcalConn] = useState({ loading: true })
+  const [gcalConnecting, setGcalConnecting] = useState(false)
+  const refreshGcalStatus = () => {
+    setGcalConn({ loading: true })
+    return get('/api/settings/gcal-status')
+      .then(r => setGcalConn({ loading: false, ...r }))
+      .catch(e => setGcalConn({ loading: false, connected: false, reason: 'error', detail: e?.message || 'Could not check status' }))
+  }
   useEffect(() => {
     if (section !== 'integrations') return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
+    refreshGcalStatus()
   }, [section])
+  // Returning from Google's consent screen lands here with ?gcal=connected.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('gcal') === 'connected') {
+      toast('Google account connected')
+      params.delete('gcal')
+      const qs = params.toString()
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+      refreshGcalStatus()
+    }
+  }, [])
+  const connectGoogle = async () => {
+    setGcalConnecting(true)
+    try {
+      const r = await get('/api/settings/google/connect')
+      if (r?.auth_url) window.location.href = r.auth_url
+      else toast('Could not start Google connect', 'error')
+    } catch (e) {
+      toast(e?.message || 'Could not start Google connect', 'error')
+    } finally {
+      setGcalConnecting(false)
+    }
+  }
   const saveGcalEmbed = async () => {
     setGcalEmbedSaving(true)
     try {
@@ -785,9 +818,60 @@ export default function Settings() {
                   <p className="text-sm text-ink-2 mt-1">Connect external tools to enhance your workflow</p>
                 </div>
 
+                {/* Google Calendar — real, live connection status. The app
+                    writes every appointment to this account's calendar, so if
+                    it isn't truly connected, events silently never appear. */}
+                <div className="bg-panel rounded-xl border border-hairline p-4 mb-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">📅</span>
+                      <div>
+                        <h3 className="font-semibold text-ink">Google Calendar</h3>
+                        <p className="text-xs text-ink-3">The Google account every appointment is written to & synced from</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                        gcalConn.loading
+                          ? 'bg-bg-2 text-ink-3 border-hairline'
+                          : gcalConn.connected
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-red-50 text-red-700 border-red-200'
+                      }`}>
+                        {gcalConn.loading ? 'Checking…' : gcalConn.connected ? '✓ Connected' : '✗ Not connected'}
+                      </span>
+                      {!gcalConn.loading && !gcalConn.connected && gcalConn.oauth_available && (
+                        <button onClick={connectGoogle} disabled={gcalConnecting}
+                          className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60 transition-colors">
+                          {gcalConnecting ? 'Opening…' : 'Connect Google'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {!gcalConn.loading && !gcalConn.connected && (
+                    <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 leading-relaxed">
+                      <div className="font-semibold mb-1">Appointments aren't reaching Google.</div>
+                      {gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}
+                      {!gcalConn.oauth_available && (
+                        <div className="mt-1 text-[11px]">
+                          To enable one-click connect, add a Google "Web" OAuth client on the server
+                          (GOOGLE_CREDENTIALS_B64) with redirect URI <code className="bg-red-100 px-1 rounded">/api/settings/google/callback</code>.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {!gcalConn.loading && gcalConn.connected && Array.isArray(gcalConn.calendars) && (
+                    <div className="mt-3 text-[11px] text-ink-3">
+                      <div className="mb-1">Writing appointments to:&nbsp;
+                        <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.write_targets?.residential || 'primary'}</code>
+                      </div>
+                      <div>Visible calendars on this account: {gcalConn.calendars.map(c => c.summary).filter(Boolean).join(', ') || '—'}</div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-3">
                   {[
-                    { name: 'Google Calendar', icon: '📅', desc: 'Sync jobs with Google Calendar bidirectionally', status: 'connected' },
                     { name: 'Connecteam', icon: '👥', desc: 'Dispatch jobs to your field team', status: 'available' },
                     { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
                     { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },

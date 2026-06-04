@@ -5,7 +5,7 @@ from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timezone, date, time
+from datetime import datetime, timezone, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 from database.db import get_db
@@ -616,33 +616,92 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to create primary Visit for job {job.id}: {e}")
 
-    # Push to Google Calendar
+    # ── WRITE TO GOOGLE CALENDAR (source of truth) ──
+    # Creating an appointment writes the event straight to Google Calendar.
+    # We surface the outcome on the response so the UI can tell the operator
+    # whether it landed on Google — instead of silently leaving an app-only
+    # appointment that has to be "pushed" later.
+    gcal_status = {"synced": False, "reason": None}
     try:
-        from integrations.google_calendar import create_event
-        client = db.query(Client).filter(Client.id == job.client_id).first()
-        client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
-        job_dict = {
-            "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
-            "scheduled_date": job.scheduled_date, "start_time": job.start_time,
-            "end_time": job.end_time, "address": job.address, "notes": job.notes,
-            "property_id": job.property_id,
-        }
-        event_id = create_event(job_dict, client_dict)
-        if event_id:
-            job.calendar_invite_sent = False  # Not invited until user says so
-            job.gcal_event_id = event_id
-            db.commit()
-            db.refresh(job)
-            log_calendar_event(
-                db, "created",
-                client_id=job.client_id, job_id=job.id,
-                title=job.title, gcal_event_id=event_id,
-                scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
-            )
-            db.commit()
+        from integrations.google_calendar import create_event, is_configured
+        if not is_configured():
+            gcal_status["reason"] = "not_connected"
+        else:
+            client = db.query(Client).filter(Client.id == job.client_id).first()
+            client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
+            job_dict = {
+                "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+                "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+                "end_time": job.end_time, "address": job.address, "notes": job.notes,
+                "property_id": job.property_id,
+            }
+            event_id = create_event(job_dict, client_dict)
+            if event_id:
+                job.calendar_invite_sent = False  # Not invited until user says so
+                job.gcal_event_id = event_id
+                db.commit()
+                db.refresh(job)
+                log_calendar_event(
+                    db, "created",
+                    client_id=job.client_id, job_id=job.id,
+                    title=job.title, gcal_event_id=event_id,
+                    scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                )
+                db.commit()
+                gcal_status["synced"] = True
+            else:
+                gcal_status["reason"] = "error"
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
-    return job_to_dict(job)
+        gcal_status["reason"] = "error"
+
+    result = job_to_dict(job)
+    result["gcal"] = gcal_status
+    return result
+
+
+@router.get("/client/{client_id}/gcal-events")
+def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 180, db: Session = Depends(get_db)):
+    """Live Google Calendar events linked to this client (Twenty-style timeline).
+
+    Matches events by the client's email (attendee) or our brightbase_client_id
+    tag, across every configured calendar. Returns {connected, events} so the
+    profile can show the real linked timeline, or a connect prompt when Google
+    isn't linked yet."""
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    try:
+        from integrations.google_calendar import list_events_for_client, is_configured
+    except ImportError as e:
+        logger.warning(f"client_gcal_events import failed: {e}")
+        return {"connected": False, "reason": "error",
+                "detail": "Google Calendar integration unavailable.", "events": []}
+
+    if not is_configured():
+        return {"connected": False, "reason": "not_connected", "events": []}
+
+    now = datetime.now(timezone.utc)
+    time_min = (now - timedelta(days=days_back)).isoformat()
+    time_max = (now + timedelta(days=days_ahead)).isoformat()
+    try:
+        events = list_events_for_client(
+            client_id=client.id,
+            client_email=getattr(client, "email", None),
+            time_min_iso=time_min,
+            time_max_iso=time_max,
+        )
+        return {"connected": True, "events": events, "client_email": getattr(client, "email", None)}
+    except RuntimeError as e:
+        # _get_service raises when the token is missing/expired.
+        logger.warning(f"client_gcal_events not authorized for client {client_id}: {e}")
+        return {"connected": False, "reason": "not_authorized",
+                "detail": "Google account not connected.", "events": []}
+    except Exception as e:
+        logger.warning(f"client_gcal_events failed for client {client_id}: {e}")
+        return {"connected": True, "reason": "error",
+                "detail": "Could not load events from Google.", "events": []}
 
 
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
@@ -651,7 +710,8 @@ def push_to_gcal(db: Session = Depends(get_db)):
     try:
         from integrations.google_calendar import create_event
     except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"GCal not configured: {e}")
+        logger.warning(f"push_to_gcal import failed: {e}")
+        raise HTTPException(status_code=500, detail="Google Calendar integration unavailable.")
 
     jobs = db.query(Job).options(joinedload(Job.client)).filter(
         Job.gcal_event_id.is_(None),
