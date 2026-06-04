@@ -243,6 +243,30 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             logger.info(f"[recurring] rescued orphan Job {j.id} → scheduled_date={d}")
         db.flush()
 
+    # Self-heal: recurring jobs that kept their date but lost start/end time
+    # (residual damage from the now-disabled VARCHAR→DATE boot migration that
+    # wiped Job.start_time/end_time — see database/db.py). Re-populate from the
+    # schedule so they stop rendering as "– –", without needing the manual
+    # backfill tool. Terminal (completed/cancelled) jobs are left as history.
+    timeless = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched.id,
+            Job.scheduled_date.isnot(None),
+            or_(Job.start_time.is_(None), Job.end_time.is_(None)),
+            Job.status.notin_(("cancelled", "completed")),
+        )
+        .all()
+    )
+    for j in timeless:
+        if not j.start_time:
+            j.start_time = sched.start_time
+        if not j.end_time:
+            j.end_time = sched.end_time
+        logger.info(f"[recurring] healed missing time on Job {j.id} → {sched.start_time}–{sched.end_time}")
+    if timeless:
+        db.flush()
+
     for d in dates:
         if d in cancelled_dates:
             # User cancelled this occurrence already; do not resurrect it.
