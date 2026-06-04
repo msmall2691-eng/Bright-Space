@@ -189,19 +189,36 @@ def _build_gcal_embed_url(db: Session) -> Optional[str]:
 
 @router.get("/gcal-embed")
 def get_gcal_embed(db: Session = Depends(get_db)):
-    """Embeddable Google Calendar URL for the Schedule page's 'Google' view."""
-    url = _build_gcal_embed_url(db)
-    return {"embed_url": url, "configured": bool(url)}
+    """Embeddable Google Calendar URL for the Schedule page's 'Google' view.
+    Returns the computed embed_url plus the raw saved override (so the Settings
+    field can show/edit it)."""
+    return {
+        "embed_url": _build_gcal_embed_url(db),
+        "configured": bool(_build_gcal_embed_url(db)),
+        "override": (get_setting(db, "gcal_embed_url") or ""),
+    }
+
+
+def _extract_embed_src(value: str) -> str:
+    """Accept either a bare embed URL or a full <iframe ...> tag (what Google
+    Calendar's "Integrate calendar" gives you) and return just the embed URL."""
+    import re
+    v = (value or "").strip()
+    if "<iframe" in v.lower():
+        m = re.search(r'src=["\']([^"\']+)["\']', v, re.IGNORECASE)
+        if m:
+            v = m.group(1)
+    return v.strip()
 
 
 @router.post("/gcal-embed", dependencies=[Depends(require_role("admin"))])
 def save_gcal_embed(config: GcalEmbedConfig, db: Session = Depends(get_db)):
-    """Set (or clear) the Google Calendar embed URL. Only google.com calendar
-    embed URLs are accepted — it's rendered in an iframe, so we don't allow
-    arbitrary src values."""
-    val = (config.embed_url or "").strip()
+    """Set (or clear) the Google Calendar embed URL. Accepts a pasted <iframe>
+    tag or a bare URL; only google.com calendar embed URLs are stored (it's
+    rendered in an iframe, so we don't allow arbitrary src values)."""
+    val = _extract_embed_src(config.embed_url)
     if val and not val.startswith("https://calendar.google.com/"):
-        raise HTTPException(400, "Must be a https://calendar.google.com/ embed URL")
+        raise HTTPException(400, "Must be a Google Calendar embed URL (or <iframe> with one)")
     set_setting(db, "gcal_embed_url", val)
     db.commit()
     return {"ok": True, "embed_url": _build_gcal_embed_url(db)}
