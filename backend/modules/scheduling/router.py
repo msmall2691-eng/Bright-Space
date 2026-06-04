@@ -903,9 +903,12 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
             # Mirror the new time onto the job's visits so the board (which reads
             # /api/visits whenever visits exist) shows it. Visit.start_time is
             # NOT NULL, so existing rows already hold a fallback value — overwrite
-            # them (not just None) to keep Job and Visit consistent, since this
-            # backfill is authoritatively setting the job's time.
+            # them to keep Job and Visit consistent. Skip terminal (completed/
+            # cancelled) visits: their recorded window is history and is treated
+            # as immutable elsewhere (e.g. gcal_sync), so we must not clobber it.
             for v in db.query(Visit).filter(Visit.job_id == j.id).all():
+                if v.status in ("completed", "cancelled"):
+                    continue
                 v.start_time = st
                 v.end_time = et
     if not dry_run and changes:
