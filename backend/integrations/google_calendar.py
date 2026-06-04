@@ -33,35 +33,91 @@ def _calendar_id(job_type: str) -> str:
     return mapping.get(job_type, "primary")
 
 
+def _load_db_token() -> str | None:
+    """Read the authorized-user token JSON saved by the in-app 'Connect Google'
+    flow. Stored in app_settings so it survives Railway's ephemeral filesystem."""
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == "google_token").first()
+            return row.value if row and row.value else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def _save_db_token(token_json: str) -> None:
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == "google_token").first()
+            if row:
+                row.value = token_json
+            else:
+                db.add(AppSetting(key="google_token", value=token_json))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[GCal] Could not persist refreshed token to DB: {e}")
+
+
 def _get_service():
-    """Build and return an authenticated Google Calendar service."""
-    import base64, tempfile, json as _json
+    """Build and return an authenticated Google Calendar service.
+
+    Token source priority:
+      1. DB (app_settings 'google_token') — written by the in-app Connect Google
+         flow; the only source that survives a Railway redeploy.
+      2. GOOGLE_TOKEN_B64 env / token file — the manual/legacy path.
+    """
+    import base64, json as _json
 
     base = Path(__file__).parent.parent
     token_path = base / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")
 
-    # Support base64-encoded credentials stored in env vars (for Railway/cloud)
-    token_b64 = os.getenv("GOOGLE_TOKEN_B64")
-    if token_b64 and not token_path.exists():
-        token_path.write_bytes(base64.b64decode(token_b64))
+    creds = None
+    from_db = False
 
+    # 1. DB token (self-serve Connect Google)
+    db_token = _load_db_token()
+    if db_token:
+        try:
+            creds = Credentials.from_authorized_user_info(_json.loads(db_token), SCOPES)
+            from_db = True
+        except Exception:
+            creds = None
+
+    # 2. Env / file token (manual path) — also seed the file from base64 env.
+    if creds is None:
+        token_b64 = os.getenv("GOOGLE_TOKEN_B64")
+        if token_b64 and not token_path.exists():
+            token_path.write_bytes(base64.b64decode(token_b64))
+        if token_path.exists():
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+
+    # Client secret file (used for token refresh) from base64 env if present.
     creds_b64 = os.getenv("GOOGLE_CREDENTIALS_B64")
     creds_path = base / os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
     if creds_b64 and not creds_path.exists():
         creds_path.write_bytes(base64.b64decode(creds_b64))
 
-    creds = None
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            with open(token_path, "w") as f:
-                f.write(creds.to_json())
+            if from_db:
+                _save_db_token(creds.to_json())
+            else:
+                with open(token_path, "w") as f:
+                    f.write(creds.to_json())
         else:
             raise RuntimeError(
-                "Google Calendar not authorized. Set GOOGLE_TOKEN_B64 env var or run: python auth_google.py"
+                "Google Calendar not authorized. Connect your Google account in "
+                "Settings → Integrations, or set GOOGLE_TOKEN_B64."
             )
 
     return build("calendar", "v3", credentials=creds)
@@ -74,6 +130,8 @@ def is_configured() -> bool:
     but the API call failed", so the UI can tell the operator whether the
     event actually landed on Google (the source of truth) or not.
     """
+    if _load_db_token():
+        return True
     if os.getenv("GOOGLE_TOKEN_B64"):
         return True
     base = Path(__file__).parent.parent
@@ -100,15 +158,20 @@ def connection_status() -> dict:
         "commercial":  _calendar_id("commercial"),
         "str_turnover": _calendar_id("str_turnover"),
     }
+    try:
+        from integrations.google_oauth import is_oauth_available
+        oauth_available = is_oauth_available()
+    except Exception:
+        oauth_available = False
     if not is_configured():
         return {
             "connected": False,
             "reason": "no_credentials",
-            "detail": "No Google token found on the server. Set GOOGLE_TOKEN_B64 "
-                      "(and GOOGLE_CREDENTIALS_B64) — generate it by running "
-                      "auth_google.py locally, then base64-encode google_token.json.",
+            "detail": "Google account not connected. Click Connect Google to "
+                      "link your work account, or set GOOGLE_TOKEN_B64 on the server.",
             "calendars": [],
             "write_targets": write_targets,
+            "oauth_available": oauth_available,
         }
     try:
         service = _get_service()
@@ -123,16 +186,19 @@ def connection_status() -> dict:
             "detail": "Google Calendar is connected.",
             "calendars": calendars,
             "write_targets": write_targets,
+            "oauth_available": oauth_available,
         }
     except RuntimeError as e:
         return {
             "connected": False, "reason": "not_authorized", "detail": str(e),
             "calendars": [], "write_targets": write_targets,
+            "oauth_available": oauth_available,
         }
     except Exception as e:
         return {
             "connected": False, "reason": "error", "detail": str(e),
             "calendars": [], "write_targets": write_targets,
+            "oauth_available": oauth_available,
         }
 
 
