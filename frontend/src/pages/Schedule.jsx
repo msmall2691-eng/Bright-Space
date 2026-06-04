@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Users, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
   Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical, Zap, LogIn,
-  List, Grid3x3, AlignLeft, Wand2
+  List, Grid3x3, AlignLeft, Wand2, Wrench, ChevronDown
 } from 'lucide-react'
 import { get, post, put, del } from '../api'
 import Button from '../components/ui/Button'
@@ -1072,6 +1072,7 @@ export default function Schedule() {
   // Pull the latest from Google Calendar on demand, so edits you make in Google
   // show up here immediately instead of waiting for the ~10-min scheduler tick.
   const [gcalSyncing, setGcalSyncing] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(false)  // "Tools" dropdown (declutters the toolbar)
   const syncFromGoogle = async () => {
     if (gcalSyncing) return
     setGcalSyncing(true)
@@ -1442,29 +1443,39 @@ export default function Schedule() {
               </button>
             </div>
 
-            <Button onClick={syncFromGoogle} variant="secondary" size="sm" disabled={gcalSyncing} className="whitespace-nowrap"
-              title="Pull the latest changes from Google Calendar now">
-              <RefreshCw className={`w-4 h-4 ${gcalSyncing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline ml-1.5">{gcalSyncing ? 'Syncing…' : 'Sync from Google'}</span>
-            </Button>
-
-            <Button onClick={pushToGoogle} variant="secondary" size="sm" disabled={gcalPushing} className="whitespace-nowrap"
-              title="Push jobs that aren't on Google Calendar yet (e.g. created before it was connected)">
-              <CalendarIcon className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1.5">{gcalPushing ? 'Pushing…' : 'Push to Google'}</span>
-            </Button>
-
-            <Button onClick={previewAutoAssign} variant="secondary" size="sm" className="whitespace-nowrap"
-              title="Auto-assign available cleaners to unassigned turnovers">
-              <Wand2 className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1.5">Auto-assign</span>
-            </Button>
-
-            <Button onClick={previewFixTimes} variant="secondary" size="sm" className="whitespace-nowrap"
-              title="Find and fix jobs showing no time (– –)">
-              <Clock className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1.5">Fix times</span>
-            </Button>
+            {/* Power tools tucked into one menu to keep the toolbar clean */}
+            <div className="relative">
+              <Button onClick={() => setToolsOpen(o => !o)} variant="secondary" size="sm" className="whitespace-nowrap"
+                title="Calendar sync & maintenance tools">
+                <Wrench className="w-4 h-4" />
+                <span className="hidden sm:inline ml-1.5">Tools</span>
+                <ChevronDown className="w-3 h-3 ml-0.5" />
+              </Button>
+              {toolsOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setToolsOpen(false)} />
+                  <div className="absolute right-0 mt-1 w-56 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
+                    <button onClick={() => { setToolsOpen(false); syncFromGoogle() }} disabled={gcalSyncing}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
+                      <RefreshCw className={`w-4 h-4 ${gcalSyncing ? 'animate-spin' : ''}`} /> {gcalSyncing ? 'Syncing…' : 'Sync from Google'}
+                    </button>
+                    <button onClick={() => { setToolsOpen(false); pushToGoogle() }} disabled={gcalPushing}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
+                      <CalendarIcon className="w-4 h-4" /> {gcalPushing ? 'Pushing…' : 'Push to Google'}
+                    </button>
+                    <div className="my-1 border-t border-hairline" />
+                    <button onClick={() => { setToolsOpen(false); previewAutoAssign() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
+                      <Wand2 className="w-4 h-4" /> Auto-assign turnovers
+                    </button>
+                    <button onClick={() => { setToolsOpen(false); previewFixTimes() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
+                      <Clock className="w-4 h-4" /> Fix missing times
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
 
             <Button onClick={() => { setEditingJob(null); setShowJobModal(true) }} variant="primary" size="sm" className="whitespace-nowrap">
               <Plus className="w-4 h-4" />
