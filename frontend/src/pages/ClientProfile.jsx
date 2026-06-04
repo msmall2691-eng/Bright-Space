@@ -140,6 +140,9 @@ export default function ClientProfile() {
 
   // One-off job creation modal
   const [jobModal, setJobModal] = useState(null)  // null | { propertyId?: number }
+  // Bumped after add/edit/cancel/invite to force the embedded Google Calendar
+  // iframe to reload (Google's embed caches, so a fresh event needs a nudge).
+  const [gcalReload, setGcalReload] = useState(0)
 
   const [visitStats, setVisitStats] = useState(null)
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
@@ -729,7 +732,12 @@ export default function ClientProfile() {
             pastJobs={profileVisits.past.length > 0 ? profileVisits.past : pastJobs}
             navigate={navigate}
             clientId={id}
+            clientEmail={client?.email}
             visitStats={visitStats}
+            gcalReloadKey={gcalReload}
+            onAddAppointment={() => setJobModal({})}
+            onChanged={() => { load(); setGcalReload(k => k + 1) }}
+            toast={toast}
           />
         )}
 
@@ -1537,7 +1545,7 @@ export default function ClientProfile() {
           clientName={client?.name}
           initialPropertyId={jobModal.propertyId || null}
           onClose={() => setJobModal(null)}
-          onCreated={() => { setJobModal(null); load() }}
+          onCreated={() => { setJobModal(null); load(); setGcalReload(k => k + 1) }}
         />
       )}
 
@@ -1571,11 +1579,33 @@ const STATUS_PILL = {
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
 }
 
-function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, visitStats }) {
+function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, clientEmail, visitStats, gcalReloadKey = 0, onAddAppointment, onChanged, toast }) {
   const now = new Date()
   const [year, setYear]   = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
   const [selectedDate, setSelectedDate] = useState(null)
+
+  // Embedded Google Calendar (the business calendar the sync writes to). Editing
+  // happens in the appointment form / Google itself — the embed is read-only by
+  // design. The src carries a reload key so add/edit/cancel/invite re-fetch it.
+  const [embed, setEmbed] = useState({ loading: true })
+  const [localReload, setLocalReload] = useState(0)
+  const [invitingId, setInvitingId] = useState(null)
+  useEffect(() => {
+    get('/api/settings/gcal-embed')
+      .then(r => setEmbed({ loading: false, url: r?.embed_url, configured: !!r?.configured }))
+      .catch(() => setEmbed({ loading: false, configured: false }))
+  }, [])
+  const iframeSrc = embed.url ? `${embed.url}&_=${gcalReloadKey}-${localReload}` : null
+  const inviteCustomer = async (jobId) => {
+    setInvitingId(jobId)
+    try {
+      await post(`/api/jobs/${jobId}/invite-client`, {})
+      toast?.success?.('Customer invited — added to their calendar')
+      onChanged?.()
+    } catch (e) { toast?.error?.(e?.message || 'Could not invite customer') }
+    setInvitingId(null)
+  }
 
   const todayStr = now.toISOString().slice(0, 10)
 
@@ -1610,6 +1640,34 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, v
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Add appointment + embedded Google Calendar */}
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-ink">Google Calendar</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setLocalReload(k => k + 1)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-ink-2 bg-bg-2 hover:bg-hairline transition-colors"
+            title="Reload the embed (Google caches new events for a few seconds)">
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+          <button onClick={onAddAppointment}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Add appointment
+          </button>
+        </div>
+      </div>
+      <div className="bg-panel border border-hairline rounded-xl overflow-hidden">
+        {embed.loading ? (
+          <div className="p-8 text-center text-sm text-ink-3">Loading Google Calendar…</div>
+        ) : !embed.configured ? (
+          <div className="p-6 text-center text-[13px] text-ink-3">
+            Google Calendar isn't set up for embedding yet (Settings → Integrations).
+            Appointments you add still push to Google regardless.
+          </div>
+        ) : (
+          <iframe title="Google Calendar" src={iframeSrc} className="w-full border-0" style={{ height: '440px' }} />
+        )}
+      </div>
+
       {/* GCal sync summary */}
       {visitStats && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center gap-4 flex-wrap">
@@ -1781,6 +1839,14 @@ function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, navigate, clientId, v
                       {j.calendar_invite_sent && <span title="Invite sent" className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] text-emerald-500 font-bold">✓</span>}
                       {j.dispatched && <span title="Dispatched" className="w-3.5 h-3.5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] text-blue-500 font-bold">D</span>}
                     </div>
+                    {/* Opt-in: email the customer a calendar invite so the event lands on their calendar */}
+                    {!isPast && clientEmail && !j.calendar_invite_sent && (
+                      <button onClick={() => inviteCustomer(j.id)} disabled={invitingId === j.id}
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-blue-200 text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                        title={`Invite ${clientEmail} to this event`}>
+                        <Mail className="w-2.5 h-2.5" /> {invitingId === j.id ? 'Inviting…' : 'Invite'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )
