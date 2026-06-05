@@ -905,11 +905,23 @@ export default function Settings() {
                           )}
                         </div>
                       )}
-                      <div>Writing appointments to:&nbsp;
-                        <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.write_targets?.residential || 'primary'}</code>
-                        {gcalConn.write_target_ok === false && (
-                          <span className="ml-1 text-red-600 font-medium">— this calendar isn't on the connected account! Events will fail.</span>
-                        )}
+                      <div className="space-y-0.5">
+                        <div className="text-ink-3">Where each job type is written:</div>
+                        {[
+                          { jt: 'residential', label: 'Residential' },
+                          { jt: 'commercial', label: 'Commercial' },
+                          { jt: 'str_turnover', label: 'Airbnb turnovers' },
+                        ].map(({ jt, label }) => {
+                          const cal = gcalConn.write_targets?.[jt] || 'primary'
+                          const ok = gcalConn.write_targets_ok ? gcalConn.write_targets_ok[jt] !== false : true
+                          return (
+                            <div key={jt} className="flex items-center gap-1.5">
+                              <span className="text-ink-3 w-28 shrink-0">{label}</span>
+                              <code className="bg-bg-2 px-1 rounded text-ink-2">{cal}</code>
+                              {!ok && <span className="text-red-600 font-medium">— not on this account! Events will fail.</span>}
+                            </div>
+                          )
+                        })}
                       </div>
                       <div>Visible calendars on this account: {gcalConn.calendars.map(c => c.summary).filter(Boolean).join(', ') || '—'}</div>
                       <div className="text-ink-3/80">Tip: the account above must match the calendar you embed below. If you embed office@mainecleaningco.com but are connected as a different account, events won't appear.</div>
