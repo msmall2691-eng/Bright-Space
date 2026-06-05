@@ -146,6 +146,7 @@ export default function ClientProfile() {
   const [gcalReload, setGcalReload] = useState(0)
   const [editJob, setEditJob] = useState(null)  // appointment being edited in the side panel
   const [commsFilter, setCommsFilter] = useState('all')  // all | sms | email
+  const [timelineEvents, setTimelineEvents] = useState([])  // linked Google Calendar events for the timeline
 
   const [visitStats, setVisitStats] = useState(null)
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
@@ -193,6 +194,8 @@ export default function ClientProfile() {
         get(`/api/recurring?client_id=${id}`).then(scheds => setSchedules(Array.isArray(scheds) ? scheds : [])).catch(() => {}),
         get(`/api/opportunities?client_id=${id}`).then(opps => setOpportunities(Array.isArray(opps) ? opps : [])).catch(() => {}),
         get(`/api/activities?client_id=${id}&limit=50`).then(acts => setActivities(Array.isArray(acts) ? acts : [])).catch(() => {}),
+        // Linked Google Calendar events — interleaved into the unified timeline.
+        get(`/api/jobs/client/${id}/gcal-events`).then(r => setTimelineEvents(Array.isArray(r?.events) ? r.events : [])).catch(() => {}),
       ])
     } catch (e) {
       console.error('[ClientProfile load error]', e)
@@ -389,14 +392,17 @@ export default function ClientProfile() {
     ...messages.map(m => ({ type: 'message', date: m.created_at, data: m })),
     ...opportunities.map(o => ({ type: 'opportunity', date: o.created_at, data: o })),
     ...activityLogVisible.map(a => ({ type: 'activity_log', date: a.created_at, data: a })),
-    ...emails.map(e => ({ type: 'email', date: e.date, data: e })),
+    ...emails.map(e => ({ type: 'email', date: e.created_at, data: e })),
+    // Real Google Calendar events linked by email. Skip ones that mirror an app
+    // job (they already appear as a 'job' item) to avoid double entries.
+    ...timelineEvents.filter(ev => !ev.job_id).map(ev => ({ type: 'gcal_event', date: ev.start, data: ev })),
   ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
   // Filter chips: All / Email / Calendar / Money / Notes
   const ACTIVITY_FILTERS = [
     { value: 'all',      label: 'All' },
     { value: 'email',    label: 'Emails',   match: i => i.type === 'email' || i.type === 'message' || (i.type === 'activity_log' && i.data.activity_type?.startsWith('email_')) },
-    { value: 'calendar', label: 'Calendar', match: i => i.type === 'job' || (i.type === 'activity_log' && (i.data.activity_type?.startsWith('job_') || i.data.extra_data?.source === 'gcal')) },
+    { value: 'calendar', label: 'Calendar', match: i => i.type === 'job' || i.type === 'gcal_event' || (i.type === 'activity_log' && (i.data.activity_type?.startsWith('job_') || i.data.extra_data?.source === 'gcal')) },
     { value: 'money',    label: 'Money',    match: i => i.type === 'quote' || i.type === 'invoice' || i.type === 'opportunity' },
     { value: 'notes',    label: 'Notes',    match: i => i.type === 'activity_log' && (i.data.activity_type === 'note_added' || !i.data.activity_type?.match(/^(email|job|sms)_/)) },
   ]
@@ -576,7 +582,7 @@ export default function ClientProfile() {
         <Tab label="Overview" icon={Edit2} active={['details', 'crm'].includes(tab)} count={0} onClick={() => setTab('details')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
-        <Tab label="Activity" icon={Clock} active={tab === 'activity'} count={activity.length} onClick={() => setTab('activity')} />
+        <Tab label="Timeline" icon={Clock} active={tab === 'activity'} count={allActivity.length} onClick={() => setTab('activity')} />
         <Tab label="Messages" icon={MessageSquare} active={tab === 'messages'} count={messages.length + emails.length} onClick={() => setTab('messages')} />
         <Tab label="Money" icon={DollarSign} active={['quotes', 'invoices', 'opportunities'].includes(tab)} count={quotes.length + invoices.length} onClick={() => setTab('quotes')} />
       </div>
@@ -619,6 +625,7 @@ export default function ClientProfile() {
                 <div className="flex flex-col items-center">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                     item.type === 'job'          ? 'bg-blue-500/10' :
+                    item.type === 'gcal_event'   ? 'bg-indigo-50' :
                     item.type === 'quote'        ? 'bg-blue-600/20' :
                     item.type === 'invoice'      ? 'bg-green-50' :
                     item.type === 'opportunity'  ? 'bg-amber-50' :
@@ -627,6 +634,7 @@ export default function ClientProfile() {
                                                    'bg-purple-50'
                   }`}>
                     {item.type === 'job'          && <Calendar className="w-3.5 h-3.5 text-blue-500" />}
+                    {item.type === 'gcal_event'   && <Calendar className="w-3.5 h-3.5 text-indigo-500" />}
                     {item.type === 'quote'        && <FileText className="w-3.5 h-3.5 text-blue-400" />}
                     {item.type === 'invoice'      && <Receipt className="w-3.5 h-3.5 text-green-400" />}
                     {item.type === 'message'      && <MessageSquare className="w-3.5 h-3.5 text-purple-400" />}
@@ -649,6 +657,15 @@ export default function ClientProfile() {
                           <>
                             <div className="text-sm font-medium text-ink">{item.data.title}</div>
                             <div className="text-xs text-ink-3 mt-0.5">{item.data.scheduled_date} · {item.data.start_time}–{item.data.end_time}</div>
+                          </>
+                        )}
+                        {item.type === 'gcal_event' && (
+                          <>
+                            <div className="text-sm font-medium text-ink">{item.data.title}</div>
+                            <div className="text-xs text-ink-3 mt-0.5">
+                              {item.data.start ? new Date(item.data.start).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+                              {item.data.location ? ` · ${item.data.location}` : ''}
+                            </div>
                           </>
                         )}
                         {item.type === 'quote' && (
@@ -681,8 +698,10 @@ export default function ClientProfile() {
                         {item.type === 'email' && (
                           <>
                             <div className="text-sm font-medium text-ink">{item.data.subject || '(no subject)'}</div>
-                            <div className="text-xs text-ink-3 mt-0.5">from {item.data.from_name || item.data.from_email}</div>
-                            {item.data.snippet && <div className="text-xs text-ink-3 mt-1 truncate">{item.data.snippet.slice(0, 120)}</div>}
+                            <div className="text-xs text-ink-3 mt-0.5">
+                              {item.data.direction === 'outbound' ? `to ${item.data.to_addr || ''}` : `from ${item.data.from_addr || ''}`}
+                            </div>
+                            {item.data.body && <div className="text-xs text-ink-3 mt-1 truncate">{item.data.body.slice(0, 120)}</div>}
                           </>
                         )}
                         {item.type === 'activity_log' && (
@@ -695,6 +714,7 @@ export default function ClientProfile() {
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
                           item.type === 'job'          ? JOB_COLORS[item.data.status] :
+                          item.type === 'gcal_event'   ? 'bg-indigo-500/20 text-indigo-500' :
                           item.type === 'quote'        ? QUOTE_COLORS[item.data.status] :
                           item.type === 'invoice'      ? INVOICE_COLORS[item.data.status] :
                           item.type === 'opportunity'  ? (OPP_COLORS[item.data.stage] || 'bg-amber-500/20 text-amber-500') :
@@ -703,8 +723,9 @@ export default function ClientProfile() {
                           'bg-purple-500/20 text-purple-400'
                         }`}>
                           {item.type === 'message' ? item.data.direction :
+                           item.type === 'gcal_event' ? 'event' :
                            item.type === 'opportunity' ? item.data.stage :
-                           item.type === 'email' ? 'email' :
+                           item.type === 'email' ? (item.data.direction === 'outbound' ? 'sent' : 'email') :
                            item.type === 'activity_log' ? item.data.activity_type?.split('_')[0] :
                            item.data.status?.replace('_', ' ')}
                         </span>
