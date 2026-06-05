@@ -311,9 +311,21 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_
     """
     # Use property timezone if available, otherwise default to America/New_York
     tz = (property_data or {}).get("timezone") or "America/New_York"
+
+    def _hm(t):
+        """Normalize a time to 'HH:MM' whether it's a string ('10:00' /
+        '10:00:00') or a datetime.time (what the ORM returns from a Time column).
+        Without this, a time object str()'d into the template produced an invalid
+        '...T10:00:00:00' and Google rejected the event."""
+        if t is None:
+            return "00:00"
+        if hasattr(t, "strftime"):
+            return t.strftime("%H:%M")
+        return str(t)[:5]
+
     date = job["scheduled_date"]
-    start_dt = f"{date}T{job['start_time']}:00"
-    end_dt   = f"{date}T{job['end_time']}:00"
+    start_dt = f"{date}T{_hm(job['start_time'])}:00"
+    end_dt   = f"{date}T{_hm(job['end_time'])}:00"
 
     job_type = job.get("job_type", "residential")
     type_label = {"residential": "Residential", "commercial": "Commercial", "str_turnover": "STR Turnover"}.get(job_type, "")

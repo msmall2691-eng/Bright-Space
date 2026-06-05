@@ -112,6 +112,21 @@ def _make_end_time(start_time: str, duration_hours: float) -> str:
     return f"{end_hours:02d}:{end_minutes:02d}:00"
 
 
+def _to_time(s):
+    """Parse an 'HH:MM' or 'HH:MM:SS' string into a datetime.time, so Job's
+    Time columns get a real time object (works the same on Postgres and SQLite
+    instead of relying on Postgres's implicit string->time cast)."""
+    from datetime import datetime as _dt
+    if not s:
+        return None
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return _dt.strptime(s, fmt).time()
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
 async def fetch_ical(url: str) -> bytes:
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(url)
@@ -366,9 +381,9 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 property_id=prop.id,
                 job_type="str_turnover",
                 title=f"Turnover — {prop.name}",
-                scheduled_date=checkout_date,
-                start_time=check_out_time,
-                end_time=end_time,
+                scheduled_date=date.fromisoformat(checkout_date) if isinstance(checkout_date, str) else checkout_date,
+                start_time=_to_time(check_out_time),
+                end_time=_to_time(end_time),
                 address=prop.address,
                 notes=notes_text,
                 status="scheduled",
