@@ -362,12 +362,14 @@ export default function ClientProfile() {
 
   // Upcoming and past cleanings
   const todayStr = new Date().toISOString().slice(0, 10)
+  // Null-safe: some jobs (legacy / unscheduled) have a null scheduled_date —
+  // calling .localeCompare on null crashed the whole profile page.
   const upcomingJobs = jobs
-    .filter(j => j.scheduled_date >= todayStr && j.status !== 'cancelled')
-    .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date) || (a.start_time || '').localeCompare(b.start_time || ''))
+    .filter(j => j.scheduled_date && j.scheduled_date >= todayStr && j.status !== 'cancelled')
+    .sort((a, b) => (a.scheduled_date || '').localeCompare(b.scheduled_date || '') || (a.start_time || '').localeCompare(b.start_time || ''))
   const pastJobs = jobs
-    .filter(j => j.scheduled_date < todayStr || j.status === 'cancelled')
-    .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))
+    .filter(j => (j.scheduled_date && j.scheduled_date < todayStr) || j.status === 'cancelled')
+    .sort((a, b) => (b.scheduled_date || '').localeCompare(a.scheduled_date || ''))
   const nextJob = upcomingJobs[0] || null
 
   const OPP_COLORS = {
