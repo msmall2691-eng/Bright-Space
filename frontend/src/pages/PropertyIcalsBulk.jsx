@@ -41,6 +41,18 @@ export default function PropertyIcalsBulk() {
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
   const [perRowSource, setPerRowSource] = useState({})
+  const [diag, setDiag] = useState(null)        // feed preview result
+  const [diagLoading, setDiagLoading] = useState(false)
+  const runDiagnose = async () => {
+    setDiagLoading(true); setDiag(null)
+    try {
+      const data = await get(`/api/properties/${propertyId}/ical-preview`)
+      setDiag(data)
+    } catch (e) {
+      setDiag({ error: e?.message || 'Could not load feed preview' })
+    }
+    setDiagLoading(false)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -181,12 +193,45 @@ export default function PropertyIcalsBulk() {
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Syncing…' : 'Sync now'}
           </button>
+          <button onClick={runDiagnose}
+            disabled={diagLoading || (property.icals?.length || 0) === 0}
+            title="Show every booking in the feed and what the sync decided (why a turnover is or isn't created)"
+            className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline disabled:opacity-50 text-ink-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
+            <AlertCircle className="w-3.5 h-3.5" />
+            {diagLoading ? 'Checking…' : 'Diagnose feed'}
+          </button>
         </div>
         {syncResult && (
           <div className={`mt-3 flex items-start gap-2 rounded-lg p-2.5 text-xs border ${syncResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
             {syncResult.ok ? <CheckCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
             <span className="flex-1">{syncResult.message}</span>
             <button onClick={() => setSyncResult(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
+          </div>
+        )}
+        {diag && (
+          <div className="mt-3 rounded-lg border border-hairline bg-panel p-3 text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-ink">Feed diagnosis {diag.today ? `(today ${diag.today})` : ''}</span>
+              <button onClick={() => setDiag(null)} className="opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
+            </div>
+            {diag.error && <div className="text-red-600">{diag.error}</div>}
+            {(diag.feeds || []).map((f, i) => (
+              <div key={i} className="mb-3 last:mb-0">
+                <div className="text-[11px] font-medium text-ink-2 mb-1">{f.source} feed</div>
+                {f.error && <div className="text-red-600">{f.error}</div>}
+                {!f.error && (f.events || []).length === 0 && <div className="text-ink-3">No bookings in feed.</div>}
+                {(f.events || []).map((e, j) => {
+                  const made = e.decision?.includes('exists') || e.decision?.includes('would create')
+                  return (
+                    <div key={j} className="flex items-center justify-between gap-2 py-1 border-b border-hairline/60 last:border-0">
+                      <span className="text-ink-2 truncate">{e.checkout || '—'} · {e.summary || '(no title)'}</span>
+                      <span className={`shrink-0 ${made ? 'text-emerald-600' : 'text-ink-3'}`}>{e.decision}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+            <div className="text-[10px] text-ink-3 mt-1">Checkout dates that aren't here aren't in the Airbnb feed (cancelled/modified, or a host block).</div>
           </div>
         )}
       </div>
