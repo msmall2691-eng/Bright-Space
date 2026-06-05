@@ -207,10 +207,15 @@ export default function Settings() {
       .then(r => setGcalConn({ loading: false, ...r }))
       .catch(e => setGcalConn({ loading: false, connected: false, reason: 'error', detail: e?.message || 'Could not check status' }))
   }
+  // Live "are we auto-messaging customers?" state (read-only indicator).
+  const [msgStatus, setMsgStatus] = useState({ loading: true })
   useEffect(() => {
     if (section !== 'integrations') return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
     refreshGcalStatus()
+    get('/api/settings/messaging-status')
+      .then(r => setMsgStatus({ loading: false, ...r }))
+      .catch(() => setMsgStatus({ loading: false, error: true }))
   }, [section])
   // Returning from Google's consent screen lands here with ?gcal=connected.
   useEffect(() => {
@@ -653,6 +658,37 @@ export default function Settings() {
         {section === 'integrations' && (
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6 space-y-8">
+
+              {/* Customer messaging status — at-a-glance "are we auto-texting
+                  customers?". Read-only mirror of the job SMS reminder flag. */}
+              {!msgStatus.loading && !msgStatus.error && (
+                <div className={`rounded-xl border p-4 flex items-center justify-between gap-3 ${
+                  msgStatus.any_automatic_customer_messaging
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-emerald-50 border-emerald-200'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{msgStatus.any_automatic_customer_messaging ? '🔔' : '🔕'}</span>
+                    <div>
+                      <h3 className={`text-sm font-semibold ${msgStatus.any_automatic_customer_messaging ? 'text-amber-800' : 'text-emerald-800'}`}>
+                        Customer messaging: {msgStatus.any_automatic_customer_messaging ? 'ON' : 'OFF'}
+                      </h3>
+                      <p className={`text-xs mt-0.5 ${msgStatus.any_automatic_customer_messaging ? 'text-amber-700' : 'text-emerald-700'}`}>
+                        {msgStatus.any_automatic_customer_messaging
+                          ? 'Automatic SMS reminders to customers are enabled.'
+                          : 'No automatic texts or emails are sent to customers. Invites & invoices are manual only.'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium border shrink-0 ${
+                    msgStatus.any_automatic_customer_messaging
+                      ? 'bg-amber-100 text-amber-700 border-amber-300'
+                      : 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                  }`}>
+                    {msgStatus.any_automatic_customer_messaging ? 'Auto-reminders ON' : 'Auto-reminders OFF'}
+                  </span>
+                </div>
+              )}
 
               {/* Google Calendar embed — powers the in-app "Google" view + each
                   client's Calendar tab. Paste the embed URL or full <iframe>
