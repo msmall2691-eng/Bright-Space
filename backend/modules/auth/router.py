@@ -1,3 +1,6 @@
+import os
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -5,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database.db import get_db
-from database.models import User
+from database.models import User, AppSetting
 from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt
 from ratelimit import limiter
 
@@ -209,14 +212,42 @@ def google_signin(request: Request, data: GoogleSignInRequest, db: Session = Dep
         raise HTTPException(status_code=401, detail="Invalid or unverified Google account.")
 
     email = info["email"].strip().lower()
-    sub = info.get("sub")
-    name = info.get("name") or ""
+    user = _resolve_google_user(db, email, info.get("sub"), info.get("name") or "")
+    db.commit()
+    db.refresh(user)
 
+    token = create_jwt(user.id, user.email, user.role)
+    return LoginResponse(access_token=token, user_id=user.id, email=user.email, role=user.role)
+
+
+# ── shared helpers for Google auth ──────────────────────────────────────────
+def _app_get(db: Session, key: str) -> Optional[str]:
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    return row.value if row else None
+
+
+def _app_set(db: Session, key: str, value: str):
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(AppSetting(key=key, value=value))
+
+
+def _app_del(db: Session, key: str):
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if row:
+        db.delete(row)
+
+
+def _resolve_google_user(db: Session, email: str, sub: Optional[str], name: str) -> User:
+    """Default-deny match/provision for a verified Google email. Existing
+    admin/manager users or allow-listed emails (GOOGLE_ALLOWED_EMAILS /
+    _DOMAINS) are accepted; allow-listed new emails become admins."""
     allowed_emails = [e.strip().lower() for e in os.getenv("GOOGLE_ALLOWED_EMAILS", "").split(",") if e.strip()]
     allowed_domains = [d.strip().lower() for d in os.getenv("GOOGLE_ALLOWED_DOMAINS", "").split(",") if d.strip()]
     domain_ok = email.split("@")[-1] in allowed_domains if allowed_domains else False
 
-    # Match an existing user by Google identity first, then by email.
     user = db.query(User).filter(User.google_sub == sub).first() if sub else None
     if not user:
         user = db.query(User).filter(User.email == email).first()
@@ -224,13 +255,9 @@ def google_signin(request: Request, data: GoogleSignInRequest, db: Session = Dep
     if user:
         if not user.active:
             raise HTTPException(status_code=403, detail="This account is inactive.")
-        # Existing users may use Google sign-in only if they're admin/manager,
-        # or explicitly allow-listed.
         if user.role not in ("admin", "manager") and email not in allowed_emails and not domain_ok:
             raise HTTPException(status_code=403, detail="This Google account isn't authorized for admin access.")
     else:
-        # No user yet — auto-provision an admin ONLY when allow-listed. Never
-        # open registration to arbitrary Google accounts.
         if email not in allowed_emails and not domain_ok:
             raise HTTPException(status_code=403, detail="This Google account isn't authorized. Ask an admin to add it.")
         user = User(email=email, password_hash=None, full_name=name or email,
@@ -243,11 +270,115 @@ def google_signin(request: Request, data: GoogleSignInRequest, db: Session = Dep
     if not user.auth_provider:
         user.auth_provider = "google"
     user.last_login_at = datetime.now(timezone.utc)
+    return user
+
+
+def _is_business_calendar_account(db: Session, email: str) -> bool:
+    """Whether this email is the designated business calendar account — so signing
+    in as them (re)connects the shared calendar, but a different admin signing in
+    never hijacks it."""
+    email = (email or "").strip().lower()
+    candidates = []
+    biz = _app_get(db, "from_email") or os.getenv("GCAL_PRIMARY_ID") or os.getenv("GOOGLE_CALENDAR_ACCOUNT")
+    if biz:
+        candidates.append(biz.strip().lower())
+    allow = [e.strip().lower() for e in os.getenv("GOOGLE_ALLOWED_EMAILS", "").split(",") if e.strip()]
+    if allow:
+        candidates.append(allow[0])
+    return email in candidates
+
+
+# ── Unified "Sign in with Google": identity + calendar in one consent ───────
+class GoogleExchangeRequest(BaseModel):
+    code: str
+
+
+@router.get("/google/login-url")
+def google_login_url(request: Request, db: Session = Depends(get_db)):
+    """Start the unified sign-in: returns the Google consent URL (identity +
+    calendar). A one-time state nonce guards the callback."""
+    import secrets
+    from integrations.google_oauth import build_login_flow, is_oauth_available
+    if not is_oauth_available():
+        return {"enabled": False}
+    state = secrets.token_urlsafe(24)
+    _app_set(db, f"sso_state_{state}", datetime.now(timezone.utc).isoformat())
     db.commit()
-    db.refresh(user)
+    flow = build_login_flow(request, state=state)
+    auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+    return {"enabled": True, "auth_url": auth_url}
+
+
+@router.get("/google/login-callback")
+def google_login_callback(request: Request, code: str = "", state: str = "", db: Session = Depends(get_db)):
+    """OAuth redirect target. Verifies the ID token (login) AND stores the
+    calendar token (connect) in one step, then bounces back with a one-time code."""
+    import secrets
+    from fastapi.responses import RedirectResponse
+    from integrations.google_oauth import build_login_flow, client_id as _google_client_id
+
+    if not state or _app_get(db, f"sso_state_{state}") is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired sign-in state.")
+    _app_del(db, f"sso_state_{state}")
+
+    try:
+        flow = build_login_flow(request, state=state)
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        info = google_id_token.verify_oauth2_token(creds.id_token, google_requests.Request(), _google_client_id())
+    except Exception as e:
+        logger.warning(f"Google login callback failed: {e}")
+        db.commit()
+        return RedirectResponse(url="/login?sso_error=failed", status_code=302)
+
+    if info.get("aud") != _google_client_id() or not info.get("email") or not info.get("email_verified"):
+        db.commit()
+        return RedirectResponse(url="/login?sso_error=unverified", status_code=302)
+
+    email = info["email"].strip().lower()
+    try:
+        user = _resolve_google_user(db, email, info.get("sub"), info.get("name") or "")
+    except HTTPException:
+        db.commit()
+        return RedirectResponse(url="/login?sso_error=not_authorized", status_code=302)
+
+    # Same consent granted calendar access — persist it as the shared calendar
+    # token, but only for the business account (so a second admin can't hijack it).
+    if _is_business_calendar_account(db, email) or not _app_get(db, "google_token"):
+        try:
+            _app_set(db, "google_token", creds.to_json())
+        except Exception as e:
+            logger.warning(f"Could not store calendar token from login: {e}")
 
     token = create_jwt(user.id, user.email, user.role)
-    return LoginResponse(access_token=token, user_id=user.id, email=user.email, role=user.role)
+    sso_code = secrets.token_urlsafe(24)
+    _app_set(db, f"sso_code_{sso_code}", f"{token}|{datetime.now(timezone.utc).isoformat()}")
+    db.commit()
+    return RedirectResponse(url=f"/login?sso_code={sso_code}", status_code=302)
+
+
+@router.post("/google/exchange", response_model=LoginResponse)
+def google_exchange(data: GoogleExchangeRequest, db: Session = Depends(get_db)):
+    """Trade the one-time code from the login redirect for the JWT."""
+    key = f"sso_code_{data.code}"
+    val = _app_get(db, key)
+    if not val:
+        raise HTTPException(status_code=400, detail="Invalid or expired sign-in code.")
+    _app_del(db, key)
+    db.commit()
+    token, _, ts = val.partition("|")
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds()
+    except Exception:
+        age = 1e9
+    if age > 300:
+        raise HTTPException(status_code=400, detail="Sign-in code expired. Try again.")
+    payload = verify_jwt(token)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Invalid session.")
+    return LoginResponse(access_token=token, user_id=payload["user_id"], email=payload["email"], role=payload["role"])
 
 
 @router.post("/register", response_model=RegisterResponse)

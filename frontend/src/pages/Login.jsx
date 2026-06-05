@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mail, Lock, AlertCircle, Zap, Loader, Eye, EyeOff } from 'lucide-react'
 import { post, get, setJWT } from '../api'
@@ -13,63 +13,53 @@ export default function Login({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
-  const googleBtnRef = useRef(null)
 
-  // Sign in with Google (Google Identity Services). The button hands us an ID
-  // token; the backend verifies it and returns the same JWT as password login.
-  const handleGoogleCredential = useCallback(async (response) => {
-    setError('')
-    setLoading(true)
-    try {
-      const res = await post('/api/auth/google', { credential: response.credential })
-      if (res.access_token) {
-        setJWT(res.access_token)
-        onLoginSuccess?.(res)
-        navigate('/dashboard')
-      } else {
-        setError('Google sign-in failed')
-      }
-    } catch (err) {
-      setError(err.message || 'This Google account isn’t authorized')
-    } finally {
-      setLoading(false)
+  // Is unified Google sign-in configured on the server?
+  useEffect(() => {
+    get('/api/auth/google/config').then(cfg => setGoogleEnabled(!!cfg?.enabled)).catch(() => {})
+  }, [])
+
+  // Handle the return from Google's consent screen (one-time code → JWT).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const ssoCode = params.get('sso_code')
+    const ssoError = params.get('sso_error')
+    if (ssoError) {
+      setError(ssoError === 'not_authorized'
+        ? 'This Google account isn’t authorized. Ask an admin to add it (or set it in GOOGLE_ALLOWED_EMAILS).'
+        : 'Google sign-in failed. Please try again.')
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+    if (ssoCode) {
+      window.history.replaceState({}, '', window.location.pathname)
+      setLoading(true)
+      post('/api/auth/google/exchange', { code: ssoCode })
+        .then(res => {
+          if (res.access_token) {
+            setJWT(res.access_token)
+            onLoginSuccess?.(res)
+            navigate('/dashboard')
+          } else {
+            setError('Google sign-in failed')
+          }
+        })
+        .catch(err => setError(err.message || 'Google sign-in failed'))
+        .finally(() => setLoading(false))
     }
   }, [navigate, onLoginSuccess])
 
-  // Load + initialize GSI once, if the server has Google sign-in configured.
-  useEffect(() => {
-    let cancelled = false
-    get('/api/auth/google/config').then(cfg => {
-      if (cancelled || !cfg?.enabled || !cfg?.client_id) return
-      const init = () => {
-        if (!window.google?.accounts?.id) return
-        window.google.accounts.id.initialize({
-          client_id: cfg.client_id,
-          callback: handleGoogleCredential,
-        })
-        setGoogleEnabled(true)
-      }
-      if (window.google?.accounts?.id) { init(); return }
-      const existing = document.getElementById('google-gsi-script')
-      if (existing) { existing.addEventListener('load', init); return }
-      const s = document.createElement('script')
-      s.src = 'https://accounts.google.com/gsi/client'
-      s.async = true; s.defer = true; s.id = 'google-gsi-script'
-      s.onload = init
-      document.body.appendChild(s)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [handleGoogleCredential])
-
-  // Render (or re-render) the button whenever we're on the login tab.
-  useEffect(() => {
-    if (googleEnabled && mode === 'login' && googleBtnRef.current && window.google?.accounts?.id) {
-      googleBtnRef.current.innerHTML = ''
-      window.google.accounts.id.renderButton(googleBtnRef.current, {
-        theme: 'outline', size: 'large', width: 320, text: 'signin_with',
-      })
+  // Start the unified flow: identity + calendar in one consent.
+  const startGoogleSignIn = async () => {
+    setError('')
+    try {
+      const r = await get('/api/auth/google/login-url')
+      if (r?.auth_url) window.location.href = r.auth_url
+      else setError('Google sign-in isn’t configured')
+    } catch (err) {
+      setError(err.message || 'Could not start Google sign-in')
     }
-  }, [googleEnabled, mode])
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -278,7 +268,7 @@ export default function Login({ onLoginSuccess }) {
             </button>
           </form>
 
-          {/* Sign in with Google — only on the login tab, only if configured. */}
+          {/* Sign in with Google — one consent links login + calendar. */}
           {mode === 'login' && googleEnabled && (
             <div className="mt-6">
               <div className="flex items-center gap-3 mb-4">
@@ -286,7 +276,21 @@ export default function Login({ onLoginSuccess }) {
                 <span className="text-xs text-ink-3">or</span>
                 <div className="flex-1 h-px bg-hairline" />
               </div>
-              <div ref={googleBtnRef} className="flex justify-center" />
+              <button
+                type="button"
+                onClick={startGoogleSignIn}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-lg border border-hairline bg-panel hover:bg-bg-2 transition-colors disabled:opacity-50 font-medium text-ink"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38z"/>
+                </svg>
+                Sign in with Google
+              </button>
+              <p className="text-[11px] text-ink-3 text-center mt-2">Links your Google Calendar in the same step.</p>
             </div>
           )}
 

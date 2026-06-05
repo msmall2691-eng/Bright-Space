@@ -19,10 +19,24 @@ import json
 import base64
 from pathlib import Path
 
+# Google reorders/expands scopes (adds 'openid'), which oauthlib treats as a
+# scope-change error on token exchange. Relaxing avoids spurious failures when
+# the login flow requests openid + calendar together.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
 from google_auth_oauthlib.flow import Flow
 
 # Calendar is the source of truth for scheduling. (Gmail stays on IMAP.)
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# Unified "Sign in with Google" — identity AND calendar access in one consent,
+# so logging in also connects the business calendar.
+LOGIN_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/calendar",
+]
 
 
 def _client_config() -> dict | None:
@@ -98,3 +112,23 @@ def build_flow(request, state: str | None = None) -> Flow:
             "(a Web OAuth client) on the server."
         )
     return Flow.from_client_config(cfg, scopes=SCOPES, redirect_uri=redirect_uri(request), state=state)
+
+
+def login_redirect_uri(request) -> str:
+    """Redirect URI for the unified Sign-in-with-Google flow. Must be registered
+    in the Google Cloud OAuth client. Prefer an explicit env value."""
+    env = os.getenv("GOOGLE_LOGIN_REDIRECT_URI")
+    if env:
+        return env
+    base = str(request.base_url).rstrip("/")
+    if base.startswith("http://") and not ("localhost" in base or "127.0.0.1" in base):
+        base = "https://" + base[len("http://"):]
+    return f"{base}/api/auth/google/login-callback"
+
+
+def build_login_flow(request, state: str | None = None) -> Flow:
+    """OAuth flow for unified sign-in: identity + calendar in one consent."""
+    cfg = _client_config()
+    if not cfg:
+        raise RuntimeError("No Google OAuth client configured.")
+    return Flow.from_client_config(cfg, scopes=LOGIN_SCOPES, redirect_uri=login_redirect_uri(request), state=state)
