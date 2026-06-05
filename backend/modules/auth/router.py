@@ -38,6 +38,18 @@ class RegisterResponse(BaseModel):
     email: str
     full_name: str
     role: str
+    # Set when an allow-listed email self-registers, so the UI logs them in.
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+
+
+def _signup_allowlist() -> list[str]:
+    """Emails permitted to self-register (as admins) without an existing admin —
+    reuses the same allow-list as Google sign-in. Lets the owner create their
+    account without opening signup to the whole internet."""
+    import os
+    raw = os.getenv("SIGNUP_ALLOWED_EMAILS") or os.getenv("GOOGLE_ALLOWED_EMAILS", "")
+    return [e.strip().lower() for e in raw.split(",") if e.strip()]
 
 
 class UserResponse(BaseModel):
@@ -247,19 +259,24 @@ def register(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Register a new user. Admin-only at all times.
+    Create a user. Two safe paths only:
+      1. An authenticated admin creates a user (defaults to role=client).
+      2. An allow-listed email (SIGNUP_ALLOWED_EMAILS / GOOGLE_ALLOWED_EMAILS)
+         self-registers as an admin — so the owner can bootstrap their own
+         account without an existing admin.
 
-    BB-SEC-07: previously, when the User table was empty, this endpoint
-    self-promoted the caller to role="admin" with no challenge — a
-    fresh deploy, a wiped database, or a Railway preview environment
-    became a land-grab for whoever sent the first POST. Recovery from
-    an empty user table is now via _bootstrap_admin_user (ADMIN_BOOTSTRAP_*
-    env vars), not via this endpoint.
+    BB-SEC-07: open / empty-table self-registration is still disabled (it let
+    whoever POSTed first on a fresh/wiped DB grab admin). The allow-list keeps
+    self-signup restricted to known emails.
     """
-    if not current_user or current_user.role != "admin":
+    email_l = (data.email or "").strip().lower()
+    is_admin_caller = bool(current_user and current_user.role == "admin")
+    allowlisted = email_l in _signup_allowlist()
+
+    if not is_admin_caller and not allowlisted:
         raise HTTPException(
             status_code=403,
-            detail="Only administrators can create new users. Contact your admin."
+            detail="Sign-up isn't open. Ask an admin to add you, or sign in with an authorized Google account."
         )
 
     # Check if email already exists
@@ -267,15 +284,15 @@ def register(
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # New users default to the lowest-privilege role; admins can promote
-    # later via an authenticated PATCH. Promotion-on-create would re-open
-    # the BB-SEC-07 escalation path through the register UI.
-    password_hash = hash_password(data.password)
+    # Allow-listed self-signups are the owner bootstrapping → admin. Users an
+    # admin creates default to the lowest-privilege role (promote later).
+    role = "admin" if allowlisted else "client"
     new_user = User(
         email=data.email,
-        password_hash=password_hash,
+        password_hash=hash_password(data.password),
         full_name=data.full_name or data.email.split("@")[0],
-        role="client",
+        role=role,
+        auth_provider="password",
         active=True,
     )
 
@@ -283,11 +300,16 @@ def register(
     db.commit()
     db.refresh(new_user)
 
+    # Log allow-listed self-signups straight in; admin-created users don't get a
+    # token (the admin stays signed in as themselves).
+    token = create_jwt(new_user.id, new_user.email, new_user.role) if (allowlisted and not is_admin_caller) else None
+
     return RegisterResponse(
         user_id=new_user.id,
         email=new_user.email,
         full_name=new_user.full_name,
         role=new_user.role,
+        access_token=token,
     )
 
 
