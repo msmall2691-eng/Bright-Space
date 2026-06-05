@@ -145,6 +145,7 @@ export default function ClientProfile() {
   // iframe to reload (Google's embed caches, so a fresh event needs a nudge).
   const [gcalReload, setGcalReload] = useState(0)
   const [editJob, setEditJob] = useState(null)  // appointment being edited in the side panel
+  const [commsFilter, setCommsFilter] = useState('all')  // all | sms | email
 
   const [visitStats, setVisitStats] = useState(null)
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
@@ -181,24 +182,17 @@ export default function ClientProfile() {
         get(`/api/jobs?client_id=${id}`).then(j => setJobs(Array.isArray(j) ? j : [])).catch(() => {}),
         get(`/api/quotes?client_id=${id}`).then(q => setQuotes(Array.isArray(q) ? q : [])).catch(() => {}),
         get(`/api/invoices?client_id=${id}`).then(inv => setInvoices(Array.isArray(inv) ? inv : [])).catch(() => {}),
-        get(`/api/comms/messages?client_id=${id}`).then(msgs => setMessages(Array.isArray(msgs) ? msgs : [])).catch(() => {}),
+        // Unified, contact-linked comms: emails + SMS matched by client_id OR
+        // the client's email/phone (server-side), split by channel here.
+        get(`/api/comms/client/${id}`).then(r => {
+          const all = Array.isArray(r?.messages) ? r.messages : []
+          setMessages(all.filter(m => m.channel === 'sms'))
+          setEmails(all.filter(m => m.channel === 'email').reverse())  // newest first
+        }).catch(() => {}),
         get(`/api/properties?client_id=${id}`).then(props => setProperties(Array.isArray(props) ? props : [])).catch(() => {}),
         get(`/api/recurring?client_id=${id}`).then(scheds => setSchedules(Array.isArray(scheds) ? scheds : [])).catch(() => {}),
         get(`/api/opportunities?client_id=${id}`).then(opps => setOpportunities(Array.isArray(opps) ? opps : [])).catch(() => {}),
         get(`/api/activities?client_id=${id}&limit=50`).then(acts => setActivities(Array.isArray(acts) ? acts : [])).catch(() => {}),
-        get(`/api/gmail/inbox?max_results=20&skip_automated=true`).then(gmailRes => {
-          const allEmails = gmailRes?.emails || []
-          const clientEmail = c?.email?.toLowerCase()
-          const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-          // Filter: only this client's emails, last 30 days, limit 10
-          const filtered = clientEmail
-            ? allEmails
-              .filter(e => (e.from_email?.toLowerCase() === clientEmail || e.client?.id === parseInt(id)))
-              .filter(e => e.date ? new Date(e.date) > thirtyDaysAgo : false)
-              .slice(0, 10)
-            : []
-          setEmails(filtered)
-        }).catch(() => {}),
       ])
     } catch (e) {
       console.error('[ClientProfile load error]', e)
@@ -582,8 +576,8 @@ export default function ClientProfile() {
         <Tab label="Overview" icon={Edit2} active={['details', 'crm'].includes(tab)} count={0} onClick={() => setTab('details')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
-        <Tab label="Activity" icon={Clock} active={['activity', 'emails'].includes(tab)} count={activity.length} onClick={() => setTab('activity')} />
-        <Tab label="Messages" icon={MessageSquare} active={tab === 'messages'} count={messages.length} onClick={() => setTab('messages')} />
+        <Tab label="Activity" icon={Clock} active={tab === 'activity'} count={activity.length} onClick={() => setTab('activity')} />
+        <Tab label="Messages" icon={MessageSquare} active={tab === 'messages'} count={messages.length + emails.length} onClick={() => setTab('messages')} />
         <Tab label="Money" icon={DollarSign} active={['quotes', 'invoices', 'opportunities'].includes(tab)} count={quotes.length + invoices.length} onClick={() => setTab('quotes')} />
       </div>
 
@@ -1263,8 +1257,26 @@ export default function ClientProfile() {
         {/* Messages */}
         {tab === 'messages' && (
           <div className="max-w-2xl">
-            {/* SMS compose */}
-            {client.phone && (
+            {/* Channel filter — all aspects linked by email/phone, in one place. */}
+            <div className="flex items-center gap-2 mb-4">
+              {[
+                { value: 'all',   label: 'All',   count: messages.length + emails.length },
+                { value: 'sms',   label: 'SMS',   count: messages.length },
+                { value: 'email', label: 'Email', count: emails.length },
+              ].map(f => (
+                <button key={f.value} onClick={() => setCommsFilter(f.value)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    commsFilter === f.value
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
+                  }`}>
+                  {f.label} <span className={commsFilter === f.value ? 'text-sky-100' : 'text-ink-3'}>{f.count}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* SMS compose (visible on All + SMS) */}
+            {commsFilter !== 'email' && (client.phone ? (
               <div className="bg-panel border border-hairline rounded-xl p-4 mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <MessageSquare className="w-4 h-4 text-purple-400" />
@@ -1281,30 +1293,50 @@ export default function ClientProfile() {
                   </button>
                 </div>
               </div>
-            )}
-            {!client.phone && (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm rounded-xl p-4 mb-4">
+            ) : (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-sm rounded-xl p-4 mb-4">
                 Add a phone number to this client to enable SMS.
               </div>
-            )}
+            ))}
 
-            <div className="space-y-2">
-              {messages.length === 0 && <p className="text-ink-3 text-sm text-center py-8">No messages yet</p>}
-              {messages.map(m => (
-                <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
-                    m.direction === 'outbound'
-                      ? 'bg-blue-600 text-white rounded-br-sm'
-                      : 'bg-bg-2 text-ink-2 rounded-bl-sm'
-                  }`}>
-                    <div>{m.body}</div>
-                    <div className={`text-xs mt-1 ${m.direction === 'outbound' ? 'text-sky-200' : 'text-ink-3'}`}>
-                      {new Date(m.created_at).toLocaleString()}
-                    </div>
-                  </div>
+            {/* Unified message feed. SMS render as chat bubbles, emails as cards. */}
+            {(() => {
+              let items = commsFilter === 'sms' ? messages
+                        : commsFilter === 'email' ? emails
+                        : [...messages, ...emails]
+              // SMS-only reads as a chat (oldest→newest); everything else newest-first.
+              items = [...items].sort((a, b) =>
+                commsFilter === 'sms'
+                  ? new Date(a.created_at) - new Date(b.created_at)
+                  : new Date(b.created_at) - new Date(a.created_at)
+              )
+              if (items.length === 0) {
+                return <p className="text-ink-3 text-sm text-center py-8">
+                  No {commsFilter === 'all' ? 'messages' : commsFilter === 'sms' ? 'SMS' : 'emails'} linked to this client yet
+                </p>
+              }
+              return (
+                <div className="space-y-2">
+                  {items.map(m => m.channel === 'email'
+                    ? <EmailCard key={`e${m.id}`} em={m} />
+                    : (
+                      <div key={`s${m.id}`} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
+                          m.direction === 'outbound'
+                            ? 'bg-blue-600 text-white rounded-br-sm'
+                            : 'bg-bg-2 text-ink-2 rounded-bl-sm'
+                        }`}>
+                          <div>{m.body}</div>
+                          <div className={`text-xs mt-1 ${m.direction === 'outbound' ? 'text-sky-200' : 'text-ink-3'}`}>
+                            {new Date(m.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
                 </div>
-              ))}
-            </div>
+              )
+            })()}
           </div>
         )}
 
@@ -1490,47 +1522,6 @@ export default function ClientProfile() {
         )}
 
         {/* Emails */}
-        {tab === 'emails' && (
-          <div className="max-w-2xl space-y-3">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-ink-3">{emails.length} email{emails.length !== 1 ? 's' : ''} from this contact</p>
-            </div>
-            {emails.length === 0 && (
-              <div className="text-center py-10">
-                <Mail className="w-10 h-10 text-ink-3 mx-auto mb-3" />
-                <p className="text-sm text-ink-3">No emails found for this client</p>
-                <p className="text-xs text-ink-3 mt-1">Emails will appear here when Gmail syncs match this contact</p>
-              </div>
-            )}
-            {emails.map((em, i) => (
-              <div key={em.message_id || i} className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-sm transition-all">
-                <div className="flex items-start gap-3">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${em.is_read ? 'bg-bg-2' : 'bg-cyan-100'}`}>
-                    <Mail className={`w-4 h-4 ${em.is_read ? 'text-ink-3' : 'text-cyan-600'}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm truncate flex-1 ${em.is_read ? 'text-ink-2' : 'font-semibold text-ink'}`}>
-                        {em.subject || '(no subject)'}
-                      </span>
-                      <span className="text-[10px] text-ink-3 shrink-0">
-                        {em.date ? new Date(em.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
-                      </span>
-                    </div>
-                    <div className="text-xs text-ink-3 mt-0.5">{em.from_name || em.from_email}</div>
-                    {em.snippet && <p className="text-xs text-ink-3 mt-1.5 line-clamp-2">{em.snippet}</p>}
-                    {em.has_attachments && (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-ink-3 mt-1.5 bg-bg px-2 py-0.5 rounded-md">
-                        Attachments
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
       </div>
 
       <AgentWidget
@@ -1603,6 +1594,35 @@ const STATUS_PILL = {
   in_progress: 'bg-amber-50 text-amber-700 border-amber-200',
   completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
+}
+
+/** A single linked email (from the unified comms tables), Twenty-style. */
+function EmailCard({ em }) {
+  const outbound = em.direction === 'outbound'
+  return (
+    <div className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-sm transition-all">
+      <div className="flex items-start gap-3">
+        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${outbound ? 'bg-blue-100' : 'bg-cyan-100'}`}>
+          <Mail className={`w-4 h-4 ${outbound ? 'text-blue-600' : 'text-cyan-600'}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm truncate flex-1 font-medium text-ink">{em.subject || '(no subject)'}</span>
+            <span className="text-[10px] text-ink-3 shrink-0">
+              {em.created_at ? new Date(em.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+            </span>
+          </div>
+          <div className="text-xs text-ink-3 mt-0.5 flex items-center gap-1.5">
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${outbound ? 'bg-blue-50 text-blue-600' : 'bg-cyan-50 text-cyan-600'}`}>
+              {outbound ? 'Sent' : 'Received'}
+            </span>
+            <span className="truncate">{outbound ? `To: ${em.to_addr || ''}` : (em.from_addr || '')}</span>
+          </div>
+          {em.body && <p className="text-xs text-ink-3 mt-1.5 line-clamp-2">{em.body}</p>}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /** A single Google Calendar event row in the client's linked timeline. */
