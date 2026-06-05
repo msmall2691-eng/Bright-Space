@@ -176,16 +176,27 @@ def connection_status() -> dict:
     try:
         service = _get_service()
         cal_list = service.calendarList().list(maxResults=100).execute()
+        items = cal_list.get("items", [])
         calendars = [
             {"id": c.get("id"), "summary": c.get("summary"), "primary": bool(c.get("primary"))}
-            for c in cal_list.get("items", [])
+            for c in items
         ]
+        # The primary calendar id IS the connected Google account's address — the
+        # single most useful fact for spotting "wrong account / wrong calendar".
+        account_email = next((c.get("id") for c in items if c.get("primary")), None)
+        cal_ids = {c.get("id") for c in items}
+        # Does the calendar the app writes residential jobs to actually exist on
+        # this account? "primary" always resolves; a specific id might not.
+        residential_target = write_targets["residential"]
+        write_target_ok = residential_target == "primary" or residential_target in cal_ids
         return {
             "connected": True,
             "reason": None,
-            "detail": "Google Calendar is connected.",
+            "detail": f"Connected as {account_email}." if account_email else "Google Calendar is connected.",
+            "account_email": account_email,
             "calendars": calendars,
             "write_targets": write_targets,
+            "write_target_ok": write_target_ok,
             "oauth_available": oauth_available,
         }
     except RuntimeError:
