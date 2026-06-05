@@ -241,6 +241,21 @@ export default function ClientProfile() {
     setQuickContactOpen(true)
   }
 
+  // Twenty-style inline save: patch a single client field and update locally.
+  const [savingField, setSavingField] = useState(null)
+  const saveField = async (key, value) => {
+    setSavingField(key)
+    try {
+      const updated = await patch(`/api/clients/${id}`, { [key]: value })
+      setClient(c => ({ ...c, ...(updated && typeof updated === 'object' ? updated : {}), [key]: value }))
+      toast.success('Saved')
+    } catch (e) {
+      toast.error('Could not save: ' + (e?.message || 'unknown error'))
+    } finally {
+      setSavingField(null)
+    }
+  }
+
   const saveQuickContact = async () => {
     const payload = {}
     if (!client?.phone && quickContact.phone.trim()) payload.phone = quickContact.phone.trim()
@@ -411,8 +426,6 @@ export default function ClientProfile() {
     ? allActivity
     : allActivity.filter(activeFilter.match)
 
-  const railAddress = [client.address, client.city, client.state].filter(Boolean).join(', ')
-
   return (
     <div className="flex h-full overflow-hidden" data-testid="client-profile-root">
       {/* Twenty-style left record rail (desktop): identity, fields, related. */}
@@ -428,7 +441,17 @@ export default function ClientProfile() {
             </div>
             <div className="min-w-0">
               <h1 className="text-base font-bold text-ink truncate">{client.name}</h1>
-              <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>{client.status}</span>
+              {/* Inline status edit (Twenty-style) */}
+              <select
+                value={client.status || 'lead'}
+                onChange={e => saveField('status', e.target.value)}
+                className={`mt-1 text-[10px] px-2 py-0.5 rounded-full border capitalize cursor-pointer focus:outline-none ${STATUS_COLORS[client.status] || ''}`}
+                title="Change status"
+              >
+                <option value="lead">lead</option>
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+              </select>
             </div>
           </div>
           <button onClick={() => setTab('details')}
@@ -438,10 +461,13 @@ export default function ClientProfile() {
         </div>
 
         <div className="p-4 border-b border-hairline space-y-3">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">Contact</div>
-          <RailField icon={Mail}   label="Email"   value={client.email} href={client.email ? `mailto:${client.email}` : null} />
-          <RailField icon={Phone}  label="Phone"   value={client.phone} />
-          <RailField icon={MapPin} label="Address" value={railAddress} />
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">Contact — click to edit</div>
+          <EditableField icon={Mail}  label="Email" value={client.email} type="email" placeholder="Add email"
+            saving={savingField === 'email'} onSave={v => saveField('email', v)} />
+          <EditableField icon={Phone} label="Phone" value={client.phone} type="tel" placeholder="Add phone"
+            saving={savingField === 'phone'} onSave={v => saveField('phone', v)} />
+          <EditableField icon={MapPin} label="Address" value={client.address} placeholder="Add street address"
+            saving={savingField === 'address'} onSave={v => saveField('address', v)} />
         </div>
 
         <div className="p-4 border-b border-hairline space-y-2">
@@ -1684,6 +1710,49 @@ function RailField({ icon: Icon, label, value, href }) {
         {href
           ? <a href={href} className="text-xs text-blue-600 hover:underline break-words">{value}</a>
           : <div className="text-xs text-ink-2 break-words">{value}</div>}
+      </div>
+    </div>
+  )
+}
+
+/** Twenty-style click-to-edit field for the record rail. Click the value to
+ *  edit in place; Enter or blur saves via onSave, Escape cancels. */
+function EditableField({ icon: Icon, label, value, placeholder = 'Add', type = 'text', saving = false, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value || '')
+  useEffect(() => { setDraft(value || '') }, [value])
+  const commit = () => {
+    setEditing(false)
+    const v = (draft || '').trim()
+    if (v !== (value || '')) onSave(v)
+  }
+  return (
+    <div className="flex items-start gap-2 group">
+      <Icon className="w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] text-ink-3 flex items-center gap-1">
+          {label}{saving && <span className="text-ink-3/70">· saving…</span>}
+        </div>
+        {editing ? (
+          <input
+            autoFocus type={type} value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commit()
+              else if (e.key === 'Escape') { setDraft(value || ''); setEditing(false) }
+            }}
+            className="w-full bg-panel border border-blue-400 rounded px-1.5 py-0.5 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30"
+          />
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            title="Click to edit"
+            className="text-left text-xs text-ink-2 hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 w-full truncate transition-colors"
+          >
+            {value || <span className="text-ink-3 italic">{placeholder}</span>}
+          </button>
+        )}
       </div>
     </div>
   )
