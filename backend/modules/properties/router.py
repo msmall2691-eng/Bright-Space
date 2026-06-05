@@ -246,19 +246,25 @@ def sync_all_ical(db: Session = Depends(get_db)):
     """Sync all active properties that have a feed (legacy ical_url OR a
     PropertyIcal row). Previously this matched only ical_url, so properties
     linked via the multi-feed UI were silently skipped."""
-    props = (
-        db.query(Property)
-        .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
-        .filter(
-            Property.active == True,
-            or_(
-                Property.ical_url.isnot(None),
-                and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
-            ),
+    # Dedupe on Property.id only, then load the rows. A `.distinct()` over full
+    # Property rows fails on Postgres ("could not identify an equality operator
+    # for type json") because Property has JSON columns.
+    prop_ids = [
+        row[0] for row in (
+            db.query(Property.id)
+            .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
+            .filter(
+                Property.active == True,
+                or_(
+                    Property.ical_url.isnot(None),
+                    and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
+                ),
+            )
+            .distinct()
+            .all()
         )
-        .distinct()
-        .all()
-    )
+    ]
+    props = db.query(Property).filter(Property.id.in_(prop_ids)).all() if prop_ids else []
     results = []
     for prop in props:
         results.append(sync_property(db, prop))

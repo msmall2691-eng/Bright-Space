@@ -69,19 +69,26 @@ def sync_all_ical_feeds_tick() -> dict:
         # linking UI writes to). The old query only matched ical_url, so
         # properties linked solely through the newer UI never auto-synced and
         # only updated on a manual "Sync" click.
-        props = (
-            db.query(Property)
-            .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
-            .filter(
-                Property.active == True,
-                or_(
-                    Property.ical_url.isnot(None),
-                    and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
-                ),
+        #
+        # NB: dedupe on Property.id only, then load the rows. A `.distinct()`
+        # over full Property rows fails on Postgres ("could not identify an
+        # equality operator for type json") because Property has JSON columns.
+        prop_ids = [
+            row[0] for row in (
+                db.query(Property.id)
+                .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
+                .filter(
+                    Property.active == True,
+                    or_(
+                        Property.ical_url.isnot(None),
+                        and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
+                    ),
+                )
+                .distinct()
+                .all()
             )
-            .distinct()
-            .all()
-        )
+        ]
+        props = db.query(Property).filter(Property.id.in_(prop_ids)).all() if prop_ids else []
 
         properties_checked = len(props)
         properties_synced = 0
