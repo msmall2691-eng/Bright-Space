@@ -366,14 +366,17 @@ def messaging_status(db: Session = Depends(get_db)):
     "are we texting customers?" indicator.
 
     The ONLY automatic path that can message a customer is the job SMS reminder
-    tick, gated by job_sms_reminders_enabled / JOB_SMS_REMINDERS_ENABLED (off by
-    default). Manual sends (per-appointment invite, invoice, inbox reply) are
-    operator-initiated and intentionally not reflected here."""
+    tick. Crucially, that tick is REGISTERED at boot only when the env flag
+    JOB_SMS_REMINDERS_ENABLED is on (scheduler.start_scheduler); the DB setting
+    job_sms_reminders_enabled can only *further disable* it from inside the tick.
+    So messaging is actually ON iff the env gate is on AND the DB setting hasn't
+    turned it off — we report the real scheduler state, not just intent, so a DB
+    toggle flipped without the env flag/restart doesn't show a false ON. Manual
+    sends (per-appointment invite, invoice, inbox reply) are operator-initiated
+    and intentionally not reflected here."""
     import os
-    sms_reminders = _coerce_bool(
-        get_setting(db, "job_sms_reminders_enabled"),
-        os.getenv("JOB_SMS_REMINDERS_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"},
-    )
+    env_on = os.getenv("JOB_SMS_REMINDERS_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    sms_reminders = env_on and _coerce_bool(get_setting(db, "job_sms_reminders_enabled"), True)
     return {
         "customer_sms_reminders": sms_reminders,
         "any_automatic_customer_messaging": sms_reminders,
