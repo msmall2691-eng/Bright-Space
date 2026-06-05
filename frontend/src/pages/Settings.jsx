@@ -861,11 +861,22 @@ export default function Settings() {
                     </div>
                   )}
                   {!gcalConn.loading && gcalConn.connected && Array.isArray(gcalConn.calendars) && (
-                    <div className="mt-3 text-[11px] text-ink-3">
-                      <div className="mb-1">Writing appointments to:&nbsp;
+                    <div className="mt-3 text-[11px] text-ink-3 space-y-1">
+                      {gcalConn.account_email && (
+                        <div>Connected as <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.account_email}</code>
+                          {!/mainecleaningco/i.test(gcalConn.account_email) && (
+                            <span className="ml-1 text-amber-600 font-medium">— is this your work account?</span>
+                          )}
+                        </div>
+                      )}
+                      <div>Writing appointments to:&nbsp;
                         <code className="bg-bg-2 px-1 rounded text-ink-2">{gcalConn.write_targets?.residential || 'primary'}</code>
+                        {gcalConn.write_target_ok === false && (
+                          <span className="ml-1 text-red-600 font-medium">— this calendar isn't on the connected account! Events will fail.</span>
+                        )}
                       </div>
                       <div>Visible calendars on this account: {gcalConn.calendars.map(c => c.summary).filter(Boolean).join(', ') || '—'}</div>
+                      <div className="text-ink-3/80">Tip: the account above must match the calendar you embed below. If you embed office@mainecleaningco.com but are connected as a different account, events won't appear.</div>
                     </div>
                   )}
                 </div>

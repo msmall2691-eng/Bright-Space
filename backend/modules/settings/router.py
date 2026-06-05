@@ -187,6 +187,30 @@ def _build_gcal_embed_url(db: Session) -> Optional[str]:
     return f"https://calendar.google.com/calendar/embed?ctz={quote(tz)}&mode=WEEK{src}"
 
 
+def _build_gcal_overlay_all(db: Session) -> Optional[str]:
+    """Overlay EVERY known calendar in one embed: the work account's primary
+    calendar plus each configured GCAL_* calendar. Unlike _build_gcal_embed_url,
+    this ignores the single pasted override so the dedicated Calendar page always
+    stacks all calendars. Primary comes from the ``from_email`` app-setting or
+    GCAL_PRIMARY_ID; if nothing is configured we fall back to the standard
+    builder so the page still shows something."""
+    import os
+    from urllib.parse import quote
+    ids = []
+    primary = (get_setting(db, "from_email") or os.getenv("GCAL_PRIMARY_ID", "")).strip()
+    if primary:
+        ids.append(primary)
+    for env_key in ("GCAL_RESIDENTIAL_ID", "GCAL_COMMERCIAL_ID", "GCAL_STR_ID"):
+        cid = os.getenv(env_key, "").strip()
+        if cid and cid != "primary" and cid not in ids:
+            ids.append(cid)
+    if not ids:
+        return _build_gcal_embed_url(db)
+    tz = os.getenv("GCAL_TIMEZONE", "America/New_York")
+    src = "".join(f"&src={quote(cid)}" for cid in ids)
+    return f"https://calendar.google.com/calendar/embed?ctz={quote(tz)}&mode=WEEK{src}"
+
+
 @router.get("/gcal-status")
 def gcal_status():
     """Live Google Calendar connection check — tells the operator whether the
@@ -256,13 +280,18 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
 
 
 @router.get("/gcal-embed")
-def get_gcal_embed(db: Session = Depends(get_db)):
-    """Embeddable Google Calendar URL for the Schedule page's 'Google' view.
+def get_gcal_embed(overlay: str = "", db: Session = Depends(get_db)):
+    """Embeddable Google Calendar URL for the in-app calendar views.
     Returns the computed embed_url plus the raw saved override (so the Settings
-    field can show/edit it)."""
+    field can show/edit it).
+
+    overlay="all" → the dedicated Calendar page wants EVERY calendar stacked
+    (the work account's primary + each configured GCAL_*), ignoring the single
+    pasted override so nothing is hidden."""
+    url = _build_gcal_overlay_all(db) if overlay == "all" else _build_gcal_embed_url(db)
     return {
-        "embed_url": _build_gcal_embed_url(db),
-        "configured": bool(_build_gcal_embed_url(db)),
+        "embed_url": url,
+        "configured": bool(url),
         "override": (get_setting(db, "gcal_embed_url") or ""),
     }
 
