@@ -103,7 +103,11 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, nullable=False, unique=True, index=True)
-    password_hash = Column(String, nullable=False)
+    # Nullable: Google-SSO-only users have no password.
+    password_hash = Column(String, nullable=True)
+    # Google sign-in identity (stable subject id), bound on first Google login.
+    google_sub = Column(String, nullable=True, unique=True, index=True)
+    auth_provider = Column(String, nullable=True)  # 'password' | 'google' (informational)
     full_name = Column(String, nullable=True)
     role = Column(String, nullable=False, default=UserRole.CLIENT)  # admin | cleaner | client
     # FK to Client — only set for role=client users. Admins/cleaners have no client profile.

@@ -243,6 +243,10 @@ def _run_migrations():
             created_at TIMESTAMP
         )""",
         "CREATE INDEX IF NOT EXISTS idx_cleaner_timeoff_lookup ON cleaner_time_off (cleaner_id, start_date, end_date)",
+        # Google sign-in (SSO): per-user Google identity + nullable password.
+        "ALTER TABLE users ADD COLUMN google_sub TEXT",
+        "ALTER TABLE users ADD COLUMN auth_provider TEXT",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)",
     ]
 
     # Dialect-aware backfill migrations
@@ -266,6 +270,8 @@ def _run_migrations():
             # "ALTER TABLE recurring_schedules RENAME COLUMN end_time_new TO end_time",
             # Backfill existing biweekly schedules with interval_weeks=2
             "UPDATE recurring_schedules SET interval_weeks = 2 WHERE frequency = 'biweekly'",
+            # Google SSO: allow passwordless (Google-only) users.
+            "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL",
         ]
     else:
         backfill_migrations = [
