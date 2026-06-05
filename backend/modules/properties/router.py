@@ -11,7 +11,6 @@ from database.models import Property, ICalEvent, PropertyIcal, Client
 from integrations.ical_sync import sync_property
 from modules.auth.router import require_role
 
-logger = logging.getLogger(__name__)
 
 log = logging.getLogger(__name__)
 
@@ -345,7 +344,7 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
                 r.raise_for_status()
                 cal = Calendar.from_ical(r.content)
         except Exception as e:
-            logger.warning(f"ical-preview fetch/parse failed for property {property_id} ({label}): {e}")
+            log.warning(f"ical-preview fetch/parse failed for property {property_id} ({label}): {e}")
             info["error"] = "Could not fetch or parse this feed."
             out["feeds"].append(info)
             continue
