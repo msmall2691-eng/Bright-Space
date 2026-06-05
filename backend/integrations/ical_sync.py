@@ -474,6 +474,69 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     }
 
 
+def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
+    """Self-heal: push any future turnover Jobs for this property that don't yet
+    have a Google Calendar event.
+
+    The per-event push only fires when a Job is first created, so turnovers
+    created while Google was disconnected (or during a transient failure) never
+    reach the calendar. Running this every sync means that the moment Google is
+    connected, all the missing turnovers appear automatically — no manual
+    'Push to Google'. Idempotent: gcal_event_id is set on success, so each event
+    is created exactly once."""
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.property_id == prop.id,
+            Job.job_type == "str_turnover",
+            Job.status.in_(("scheduled", "in_progress")),
+            Job.gcal_event_id.is_(None),
+            Job.scheduled_date.isnot(None),
+            Job.scheduled_date >= datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        )
+        .all()
+    )
+    if not jobs:
+        return 0
+    try:
+        from integrations.google_calendar import create_event
+    except Exception:
+        return 0
+
+    client = db.query(Client).filter_by(id=prop.client_id).first()
+    client_dict = {
+        "id": prop.client_id,
+        "name": client.name if client else "Client",
+        "email": getattr(client, "email", None) if client else None,
+    }
+    property_data = {
+        "timezone": prop.timezone, "house_code": prop.house_code,
+        "access_notes": prop.access_notes, "parking_notes": prop.parking_notes,
+        "site_contact_name": prop.site_contact_name, "site_contact_phone": prop.site_contact_phone,
+    }
+    healed = 0
+    for job in jobs:
+        start_time = job.start_time or prop.check_out_time or "10:00"
+        end_time = job.end_time or _make_end_time(start_time, prop.default_duration_hours or 3.0)
+        job_dict = {
+            "id": job.id, "title": job.title, "job_type": "str_turnover",
+            "scheduled_date": job.scheduled_date, "start_time": start_time,
+            "end_time": end_time, "address": job.address or prop.address,
+            "notes": job.notes, "property_id": prop.id,
+        }
+        try:
+            eid = create_event(job_dict, client_dict, property_data=property_data)
+            if eid:
+                job.gcal_event_id = eid
+                healed += 1
+        except Exception as e:
+            log.warning(f"[turnover self-heal] GCal push failed for job {job.id}: {e}")
+    if healed:
+        db.commit()
+        log.info(f"[turnover self-heal] pushed {healed} missing turnover(s) to GCal for {prop.name}")
+    return healed
+
+
 def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict:
     """
     Sync a property's iCal feeds (both legacy ical_url and PropertyIcal entries).
@@ -572,6 +635,10 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         log.info(f"[sync_property] safety-net backfilled scheduled_date on {backfilled_count} jobs for {prop.name}")
     db.commit()
 
+    # Self-heal: ensure every upcoming turnover has a Google Calendar event
+    # (catches ones created while Google was disconnected).
+    gcal_backfilled = _backfill_turnover_gcal(db, prop)
+
     return {
         "property_id": prop.id,
         "property_name": prop.name,
@@ -582,6 +649,7 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         "jobs_rescheduled": total_rescheduled_jobs,
         "skipped_host_blocks": total_skipped_host_blocks,
         "skipped_not_reserved": total_skipped_not_reserved,
+        "gcal_backfilled": gcal_backfilled,
         "sources_synced": sources_synced,
         "synced_at": prop.ical_last_synced_at.isoformat() if prop.ical_last_synced_at else None,
     }
