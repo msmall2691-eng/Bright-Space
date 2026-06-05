@@ -11,6 +11,7 @@ from database.models import Property, ICalEvent, PropertyIcal, Client
 from integrations.ical_sync import sync_property
 from modules.auth.router import require_role
 
+
 log = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -296,6 +297,80 @@ def get_ical_events(
         }
         for e in q.order_by(ICalEvent.checkin_date).all()
     ]
+
+
+@router.get("/{property_id}/ical-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def ical_preview(property_id: int, db: Session = Depends(get_db)):
+    """Live diagnostic: fetch the property's iCal feed(s) and show, per booking,
+    what the turnover sync would decide — so you can see exactly why a given
+    checkout did or didn't become a turnover (e.g. a missing June 26)."""
+    import httpx
+    from datetime import date
+    from icalendar import Calendar
+    from integrations.ical_sync import _parse_date
+    from database.models import Job
+
+    prop = db.query(Property).filter(Property.id == property_id).first()
+    if not prop:
+        raise HTTPException(404, "Property not found")
+
+    BLOCK_WORDS = ("not available", "blocked", "unavailable", "maintenance", "owner")
+    today = date.today().isoformat()
+    prop_tz = prop.timezone or "America/New_York"
+
+    feeds = []
+    if prop.ical_url:
+        feeds.append(("legacy", prop.ical_url))
+    for pi in (prop.property_icals or []):
+        if pi.active and pi.url:
+            feeds.append((pi.source or "feed", pi.url))
+
+    existing = {
+        (j.scheduled_date.isoformat() if hasattr(j.scheduled_date, "isoformat") else str(j.scheduled_date))
+        for j in db.query(Job).filter(
+            Job.property_id == property_id,
+            Job.job_type == "str_turnover",
+            Job.status != "cancelled",
+        ).all()
+        if j.scheduled_date
+    }
+
+    out = {"property": prop.name, "today": today, "feeds": []}
+    for label, url in feeds:
+        info = {"source": label, "error": None, "events": []}
+        try:
+            with httpx.Client(timeout=15) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                cal = Calendar.from_ical(r.content)
+        except Exception as e:
+            log.warning(f"ical-preview fetch/parse failed for property {property_id} ({label}): {e}")
+            info["error"] = "Could not fetch or parse this feed."
+            out["feeds"].append(info)
+            continue
+        for comp in cal.walk():
+            if comp.name != "VEVENT":
+                continue
+            summary = str(comp.get("SUMMARY", ""))
+            low = summary.lower()
+            checkin = _parse_date(comp.get("DTSTART"), default_tz=prop_tz)
+            checkout = _parse_date(comp.get("DTEND"), default_tz=prop_tz)
+            if any(w in low for w in BLOCK_WORDS):
+                decision = "skipped — host block / not available"
+            elif "reserved" not in low and "airbnb" not in low:
+                decision = "skipped — not a reservation"
+            elif checkout and checkout < today:
+                decision = "past"
+            elif checkout and checkout in existing:
+                decision = "turnover exists ✓"
+            else:
+                decision = "would create turnover"
+            info["events"].append({
+                "summary": summary, "checkin": checkin, "checkout": checkout, "decision": decision,
+            })
+        info["events"].sort(key=lambda e: e.get("checkout") or "")
+        out["feeds"].append(info)
+    return out
 
 
 @router.get("/all-ical-events")
