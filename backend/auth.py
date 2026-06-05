@@ -30,6 +30,8 @@ _PUBLIC_PREFIXES = (
     "/api/health",
     "/api/auth/login",
     "/api/auth/register",
+    # Google sign-in: the login page calls these before a JWT exists.
+    "/api/auth/google",
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
