@@ -702,6 +702,63 @@ def get_messages(
     return [msg_to_dict(m) for m in q.order_by(Message.created_at.desc()).limit(200).all()]
 
 
+@router.get("/client/{client_id}")
+def client_comms(client_id: int, db: Session = Depends(get_db)):
+    """Unified, contact-linked communications for one client (Twenty-style).
+
+    Returns every email + SMS message linked to the client by client_id OR by a
+    matching contact (their email, or any of their phone numbers normalized to
+    E.164) — so messages that were never explicitly tied to the client_id still
+    surface, the same way calendar events link by email. The frontend splits the
+    flat ``messages`` list by channel for the SMS and Email tabs."""
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    # Build the set of contact identifiers this client owns.
+    contacts: set[str] = set()
+    if client.email:
+        contacts.add(client.email.strip().lower())
+    phones = [client.phone] if client.phone else []
+    for cp in db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all():
+        if cp.phone:
+            phones.append(cp.phone)
+    for p in phones:
+        n = _normalize_contact(p)
+        if n:
+            contacts.add(n.lower())
+
+    conds = [Conversation.client_id == client_id]
+    if contacts:
+        conds.append(func.lower(Conversation.external_contact).in_(list(contacts)))
+    convs = (
+        db.query(Conversation)
+        .filter(or_(*conds))
+        .order_by(Conversation.last_message_at.desc().nulls_last())
+        .all()
+    )
+
+    messages: list[dict] = []
+    sms_count = email_count = 0
+    for c in convs:
+        for m in c.messages:
+            if m.is_internal_note:
+                continue
+            messages.append(msg_to_dict(m))
+        if c.channel == "sms":
+            sms_count += 1
+        elif c.channel == "email":
+            email_count += 1
+    messages.sort(key=lambda m: m.get("created_at") or "")
+
+    return {
+        "messages": messages,
+        "counts": {"sms": sms_count, "email": email_count, "total": len(messages)},
+        "client_email": client.email,
+        "client_phone": client.phone,
+    }
+
+
 @router.post("/sms", response_model=Union[MessageRead, SMSPersistenceError], dependencies=[Depends(require_role("admin", "manager"))])
 def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
     """Send an SMS via Twilio — attaches to a conversation automatically.
