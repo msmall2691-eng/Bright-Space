@@ -191,13 +191,21 @@ def _build_gcal_overlay_all(db: Session) -> Optional[str]:
     """Overlay EVERY known calendar in one embed: the work account's primary
     calendar plus each configured GCAL_* calendar. Unlike _build_gcal_embed_url,
     this ignores the single pasted override so the dedicated Calendar page always
-    stacks all calendars. Primary comes from the ``from_email`` app-setting or
-    GCAL_PRIMARY_ID; if nothing is configured we fall back to the standard
-    builder so the page still shows something."""
+    stacks all calendars.
+
+    Primary calendar resolution prefers the explicit GCAL_PRIMARY_ID — that's
+    the real calendar id. ``from_email`` is only a fallback because it may be a
+    *sending alias* (the address you send mail as), not a calendar, so picking it
+    first could overlay the wrong/empty primary even when GCAL_PRIMARY_ID was set
+    specifically for this."""
     import os
     from urllib.parse import quote
     ids = []
-    primary = (get_setting(db, "from_email") or os.getenv("GCAL_PRIMARY_ID", "")).strip()
+    primary = (
+        os.getenv("GCAL_PRIMARY_ID")
+        or get_setting(db, "from_email")
+        or "office@mainecleaningco.com"
+    ).strip()
     if primary:
         ids.append(primary)
     for env_key in ("GCAL_RESIDENTIAL_ID", "GCAL_COMMERCIAL_ID", "GCAL_STR_ID"):
