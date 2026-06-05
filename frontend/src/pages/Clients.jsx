@@ -41,7 +41,8 @@ export default function Clients() {
   const [saveError, setSaveError] = useState('')
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
-  const [viewMode, setViewMode] = useState('cards') // 'cards' | 'table'
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
+  useEffect(() => { localStorage.setItem('clients_view', viewMode) }, [viewMode])
   const fileInputRef = useRef(null)
   const [phoneNumbers, setPhoneNumbers] = useState([])
   const [newPhoneNumber, setNewPhoneNumber] = useState('')
