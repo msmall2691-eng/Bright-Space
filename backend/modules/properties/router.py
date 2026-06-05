@@ -272,6 +272,93 @@ def sync_all_ical(db: Session = Depends(get_db)):
     return {"synced": len(results), "results": results}
 
 
+@router.post("/turnover-sweep", dependencies=[Depends(require_role("admin", "manager"))])
+def turnover_sweep(db: Session = Depends(get_db)):
+    """Re-sync every property that has a feed, then report per-property whether
+    every expected turnover exists and is on Google Calendar — so the whole
+    portfolio can be trusted at a glance, not just one property.
+
+    For each property: expected = future reservation checkouts in the feed
+    (from stored iCal events), scheduled = future turnover jobs, on_google =
+    those with a calendar event. Flags missing dates (booking but no job) and
+    jobs not yet on Google."""
+    from datetime import date
+    from database.models import Job, ICalEvent
+
+    today = date.today().isoformat()
+
+    prop_ids = [
+        row[0] for row in (
+            db.query(Property.id)
+            .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
+            .filter(
+                Property.active == True,
+                or_(
+                    Property.ical_url.isnot(None),
+                    and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
+                ),
+            )
+            .distinct()
+            .all()
+        )
+    ]
+    props = db.query(Property).filter(Property.id.in_(prop_ids)).all() if prop_ids else []
+
+    def _d(x):
+        return x.isoformat() if hasattr(x, "isoformat") else (str(x) if x else None)
+
+    report = []
+    totals = {"properties": 0, "expected": 0, "scheduled": 0, "on_google": 0, "missing": 0, "not_on_google": 0}
+    for prop in props:
+        sync_error = None
+        try:
+            sync_property(db, prop)
+        except Exception as e:
+            log.warning(f"turnover-sweep sync failed for property {prop.id}: {e}")
+            sync_error = "sync failed"
+
+        expected_dates = {
+            _d(e.checkout_date)
+            for e in db.query(ICalEvent).filter(
+                ICalEvent.property_id == prop.id,
+                ICalEvent.checkout_date >= today,
+            ).all()
+            if getattr(e, "event_type", "reservation") == "reservation" and e.checkout_date
+        }
+        jobs = db.query(Job).filter(
+            Job.property_id == prop.id,
+            Job.job_type == "str_turnover",
+            Job.status.notin_(["cancelled"]),
+            Job.scheduled_date.isnot(None),
+            Job.scheduled_date >= today,
+        ).all()
+        scheduled_dates = {_d(j.scheduled_date) for j in jobs}
+        on_google = sum(1 for j in jobs if j.gcal_event_id)
+        missing = sorted(d for d in expected_dates if d not in scheduled_dates)
+        not_on_google = len(jobs) - on_google
+
+        report.append({
+            "property_id": prop.id,
+            "property": prop.name,
+            "expected": len(expected_dates),
+            "scheduled": len(jobs),
+            "on_google": on_google,
+            "missing_dates": missing,
+            "not_on_google": not_on_google,
+            "sync_error": sync_error,
+            "ok": not missing and not_on_google == 0 and not sync_error,
+        })
+        totals["properties"] += 1
+        totals["expected"] += len(expected_dates)
+        totals["scheduled"] += len(jobs)
+        totals["on_google"] += on_google
+        totals["missing"] += len(missing)
+        totals["not_on_google"] += not_on_google
+
+    report.sort(key=lambda r: (r["ok"], r["property"] or ""))  # problems first
+    return {"totals": totals, "properties": report}
+
+
 @router.get("/{property_id}/ical-events")
 def get_ical_events(
     property_id: int,
