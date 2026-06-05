@@ -110,7 +110,7 @@ export default function ClientProfile() {
   const [opportunities, setOpportunities] = useState([])
   const [activities, setActivities] = useState([])
   const [emails, setEmails] = useState([])
-  const [tab, setTab] = useState('details')
+  const [tab, setTab] = useState('activity')  // Twenty leads with the Timeline
   const [activityFilter, setActivityFilter] = useState('all')
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
@@ -411,10 +411,65 @@ export default function ClientProfile() {
     ? allActivity
     : allActivity.filter(activeFilter.match)
 
+  const railAddress = [client.address, client.city, client.state].filter(Boolean).join(', ')
+
   return (
-    <div className="flex flex-col h-full overflow-y-auto sm:overflow-hidden" data-testid="client-profile-root">
-      {/* Header */}
-      <div className="bg-panel border-b border-hairline px-4 sm:px-6 py-4 shrink-0">
+    <div className="flex h-full overflow-hidden" data-testid="client-profile-root">
+      {/* Twenty-style left record rail (desktop): identity, fields, related. */}
+      <aside className="hidden lg:flex lg:flex-col w-80 shrink-0 border-r border-hairline bg-panel overflow-y-auto scrollbar-thin">
+        <div className="p-4 border-b border-hairline">
+          <button onClick={() => navigate('/clients')}
+            className="flex items-center gap-1.5 text-xs text-ink-3 hover:text-ink mb-4 transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" /> Clients
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
+              <span className="text-blue-500 font-bold text-lg">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-ink truncate">{client.name}</h1>
+              <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>{client.status}</span>
+            </div>
+          </div>
+          <button onClick={() => setTab('details')}
+            className="mt-4 w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-hairline border border-hairline px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+            <Edit2 className="w-3.5 h-3.5" /> Edit details
+          </button>
+        </div>
+
+        <div className="p-4 border-b border-hairline space-y-3">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">Contact</div>
+          <RailField icon={Mail}   label="Email"   value={client.email} href={client.email ? `mailto:${client.email}` : null} />
+          <RailField icon={Phone}  label="Phone"   value={client.phone} />
+          <RailField icon={MapPin} label="Address" value={railAddress} />
+        </div>
+
+        <div className="p-4 border-b border-hairline space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Pipeline</div>
+          <div className="flex justify-between text-xs"><span className="text-ink-3">Upcoming</span><span className="font-semibold text-ink">{visitStats?.upcoming ?? upcomingJobs.length}</span></div>
+          <div className="flex justify-between text-xs"><span className="text-ink-3">Revenue</span><span className="font-semibold text-emerald-600">${totalRevenue.toFixed(0)}</span></div>
+          <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? 'text-amber-600' : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
+          <div className="flex justify-between text-xs"><span className="text-ink-3">Google Cal synced</span><span className="font-semibold text-indigo-600">{visitStats?.gcal_synced ?? 0}</span></div>
+        </div>
+
+        <div className="p-4 space-y-1.5">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Properties</div>
+          {properties.length === 0
+            ? <p className="text-xs text-ink-3">No properties yet</p>
+            : properties.map(p => (
+                <button key={p.id} onClick={() => navigate(`/properties/${p.id}`)}
+                  className="w-full flex items-center gap-2 text-left text-xs text-ink-2 hover:text-ink py-1">
+                  <Home className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+                  <span className="truncate">{p.name || p.address}</span>
+                </button>
+              ))}
+        </div>
+      </aside>
+
+      {/* Main column: tabs + Timeline/content */}
+      <div className="flex flex-col flex-1 min-w-0 h-full overflow-y-auto sm:overflow-hidden">
+      {/* Header (mobile only — desktop uses the left rail) */}
+      <div className="bg-panel border-b border-hairline px-4 sm:px-6 py-4 shrink-0 lg:hidden">
         <button onClick={() => navigate('/clients')}
           className="flex items-center gap-1.5 text-xs text-ink-3 hover:text-ink-3 mb-3 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Clients
@@ -1544,6 +1599,7 @@ export default function ClientProfile() {
 
         {/* Emails */}
       </div>
+      </div>
 
       <AgentWidget
         pageContext="clients"
@@ -1615,6 +1671,22 @@ const STATUS_PILL = {
   in_progress: 'bg-amber-50 text-amber-700 border-amber-200',
   completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
+}
+
+/** A labeled field row in the Twenty-style left record rail. */
+function RailField({ icon: Icon, label, value, href }) {
+  if (!value) return null
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0" />
+      <div className="min-w-0">
+        <div className="text-[10px] text-ink-3">{label}</div>
+        {href
+          ? <a href={href} className="text-xs text-blue-600 hover:underline break-words">{value}</a>
+          : <div className="text-xs text-ink-2 break-words">{value}</div>}
+      </div>
+    </div>
+  )
 }
 
 /** A single linked email (from the unified comms tables), Twenty-style. */
