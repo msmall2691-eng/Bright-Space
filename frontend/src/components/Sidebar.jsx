@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Sparkles, Users, FileText, Calendar, Receipt,
+  LayoutDashboard, Sparkles, Users, FileText, Calendar, CalendarDays, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
   ChevronRight, Bell, Building2, LayoutGrid, LogOut, ChevronDown,
 } from 'lucide-react'
@@ -17,6 +17,7 @@ const nav = [
   { divider: true, label: 'Operations' },
   { to: '/clients',     icon: Users,           label: 'Clients' },
   { to: '/schedule',    icon: Calendar,        label: 'Schedule' },
+  { to: '/calendar',    icon: CalendarDays,    label: 'Calendar' },
   { to: '/properties',  icon: Home,            label: 'Properties' },
   { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
   { divider: true, label: 'Team' },

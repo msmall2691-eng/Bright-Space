@@ -76,6 +76,7 @@ const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Calendar = lazy(() => import('./pages/Calendar'))
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -151,6 +152,7 @@ export default function App() {
               <Route path="/quoting" element={<Quoting />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
+              <Route path="/calendar" element={<Calendar />} />
               <Route path="/invoicing" element={<Invoicing />} />
               <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
