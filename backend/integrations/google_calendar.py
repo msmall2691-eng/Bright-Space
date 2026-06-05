@@ -185,10 +185,15 @@ def connection_status() -> dict:
         # single most useful fact for spotting "wrong account / wrong calendar".
         account_email = next((c.get("id") for c in items if c.get("primary")), None)
         cal_ids = {c.get("id") for c in items}
-        # Does the calendar the app writes residential jobs to actually exist on
-        # this account? "primary" always resolves; a specific id might not.
-        residential_target = write_targets["residential"]
-        write_target_ok = residential_target == "primary" or residential_target in cal_ids
+        # Validate EVERY per-job-type write target (residential, commercial, and
+        # — importantly for Airbnb turnovers — str_turnover). "primary" always
+        # resolves; a specific GCAL_*_ID might point at a calendar this account
+        # can't see, which is why those events never appear.
+        write_targets_ok = {
+            jt: (cal == "primary" or cal in cal_ids)
+            for jt, cal in write_targets.items()
+        }
+        write_target_ok = all(write_targets_ok.values())
         return {
             "connected": True,
             "reason": None,
@@ -196,6 +201,7 @@ def connection_status() -> dict:
             "account_email": account_email,
             "calendars": calendars,
             "write_targets": write_targets,
+            "write_targets_ok": write_targets_ok,
             "write_target_ok": write_target_ok,
             "oauth_available": oauth_available,
         }
