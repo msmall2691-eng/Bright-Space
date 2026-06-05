@@ -147,6 +147,18 @@ export default function Properties() {
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(null)
   const [syncResult, setSyncResult] = useState(null)
+  const [sweep, setSweep] = useState(null)
+  const [sweeping, setSweeping] = useState(false)
+  const runSweep = async () => {
+    setSweeping(true); setSweep(null); setSyncResult(null)
+    try {
+      const data = await post('/api/properties/turnover-sweep')
+      setSweep(data)
+    } catch (e) {
+      setSweep({ error: String(e?.message || e) })
+    }
+    setSweeping(false)
+  }
   const [expandedPropId, setExpandedPropId] = useState(null)
   const [icalForm, setIcalForm] = useState({
     url: '', source: '',
@@ -335,10 +347,11 @@ export default function Properties() {
           <h2 className="text-lg font-semibold text-ink">{pageTitle}</h2>
           <div className="flex items-center gap-2">
             {properties.length > 0 && (
-              <button onClick={syncAll} disabled={syncing === 'all'}
+              <button onClick={runSweep} disabled={sweeping}
+                title="Re-sync every feed and report which turnovers are missing or not on Google"
                 className="flex items-center gap-2 bg-bg-2 hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm transition-colors">
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing === 'all' ? 'animate-spin' : ''}`} />
-                Sync All
+                <CheckCircle className={`w-3.5 h-3.5 ${sweeping ? 'animate-spin' : ''}`} />
+                {sweeping ? 'Checking…' : 'Check all turnovers'}
               </button>
             )}
             <button onClick={openNew}
@@ -414,6 +427,44 @@ export default function Properties() {
                 : `Sync failed: ${syncResult.error || syncResult.detail}`}
             </div>
             <button onClick={() => setSyncResult(null)} className="ml-auto opacity-60 hover:opacity-100"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
+
+        {sweep && (
+          <div className="rounded-xl border border-hairline bg-panel p-4 mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-ink">Turnover health</h3>
+              <button onClick={() => setSweep(null)} className="opacity-60 hover:opacity-100"><X className="w-3.5 h-3.5" /></button>
+            </div>
+            {sweep.error && <div className="text-sm text-red-600">{sweep.error}</div>}
+            {sweep.totals && (
+              <div className="text-xs text-ink-3 mb-3">
+                {sweep.totals.properties} propert{sweep.totals.properties === 1 ? 'y' : 'ies'} ·
+                &nbsp;{sweep.totals.scheduled} turnovers scheduled ·
+                &nbsp;{sweep.totals.on_google} on Google
+                {(sweep.totals.missing > 0 || sweep.totals.not_on_google > 0)
+                  ? <span className="text-amber-600 font-medium">&nbsp;· {sweep.totals.missing} missing, {sweep.totals.not_on_google} not on Google</span>
+                  : <span className="text-emerald-600 font-medium">&nbsp;· all good ✓</span>}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              {(sweep.properties || []).map(p => (
+                <div key={p.property_id} className="flex items-start justify-between gap-3 text-xs border-b border-hairline/60 last:border-0 py-1.5">
+                  <div className="min-w-0">
+                    <span className={`mr-1.5 ${p.ok ? 'text-emerald-600' : 'text-amber-600'}`}>{p.ok ? '✓' : '⚠'}</span>
+                    <span className="text-ink font-medium">{p.property}</span>
+                    <span className="text-ink-3"> — {p.scheduled} scheduled, {p.on_google} on Google</span>
+                    {p.sync_error && <span className="text-red-600"> · {p.sync_error}</span>}
+                    {p.missing_dates?.length > 0 && (
+                      <div className="text-amber-600 mt-0.5">Missing turnover: {p.missing_dates.join(', ')}</div>
+                    )}
+                    {p.not_on_google > 0 && (
+                      <div className="text-amber-600 mt-0.5">{p.not_on_google} turnover(s) not on Google — check the connection/calendar.</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
