@@ -55,8 +55,10 @@ export async function api(url, options = {}) {
     headers: headers(options.headers),
   })
 
-  // Handle 401 Unauthorized - redirect to login
-  if (res.status === 401) {
+  // Handle 401 Unauthorized - redirect to login. But NOT for auth endpoints
+  // (login/register/google) — a failed login should show "invalid login" in the
+  // form, not hard-redirect to /login (which looks like an endless loop).
+  if (res.status === 401 && !String(url).includes('/api/auth/')) {
     clearJWT()
     window.location.href = '/login'
     return

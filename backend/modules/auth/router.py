@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -146,7 +147,14 @@ def require_role(*allowed_roles):
 @limiter.limit("5/minute")
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password, returns JWT token."""
-    user = db.query(User).filter(User.email == data.email).first()
+    # Case-insensitive email match — the account may have been created as
+    # "Office@…" while a phone keyboard types "office@…". Exact matching was
+    # rejecting valid logins (looked like an endless redirect on mobile).
+    email_in = (data.email or "").strip()
+    user = (
+        db.query(User).filter(func.lower(User.email) == email_in.lower()).first()
+        or db.query(User).filter(User.email == data.email).first()
+    )
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -410,9 +418,28 @@ def register(
             detail="Sign-up isn't open. Ask an admin to add you, or sign in with an authorized Google account."
         )
 
-    # Check if email already exists
-    existing = db.query(User).filter(User.email == data.email).first()
+    # Check if email already exists (case-insensitive).
+    existing = (
+        db.query(User).filter(func.lower(User.email) == (data.email or "").strip().lower()).first()
+        or db.query(User).filter(User.email == data.email).first()
+    )
     if existing:
+        # Let an allow-listed owner SET a password on their existing passwordless
+        # (Google-created) account, so they can also log in with email/password
+        # (e.g. on mobile). If a password already exists, it's a real duplicate.
+        if allowlisted and not existing.password_hash:
+            existing.password_hash = hash_password(data.password)
+            existing.auth_provider = existing.auth_provider or "password"
+            existing.active = True
+            db.commit()
+            db.refresh(existing)
+            return RegisterResponse(
+                user_id=existing.id,
+                email=existing.email,
+                full_name=existing.full_name or existing.email.split("@")[0],
+                role=existing.role,
+                access_token=create_jwt(existing.id, existing.email, existing.role),
+            )
         raise HTTPException(status_code=409, detail="Email already registered")
 
     # Allow-listed self-signups are the owner bootstrapping → admin. Users an
