@@ -88,9 +88,39 @@ def run():
     print("PASS: iCal feed -> turnover job -> valid Google Calendar event")
 
 
+def run_stale_jobid():
+    """A booking whose iCal event still points at a deleted Job (stale job_id)
+    must be recreated, not skipped forever ('Synced — no new turnovers')."""
+    from database.models import ICalEvent
+    Base.metadata.create_all(engine)
+    import httpx
+    httpx.Client = _Client
+    calls = []
+    gc.create_event = lambda job, client, **kw: (calls.append(job) or "evt")
+
+    db = SessionLocal()
+    c = Client(name="Host2", email="h2@example.com"); db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name="Pier House", address="74 Central",
+                 property_type="str", check_out_time="10:00"); db.add(p); db.commit(); db.refresh(p)
+    co = (date.today() + timedelta(days=6))
+    ev = ICalEvent(uid="regression-uid-1@airbnb.com", property_id=p.id, summary="Reserved",
+                   checkin_date=(date.today() + timedelta(days=3)).isoformat(),
+                   checkout_date=co.isoformat(), job_id=999999, event_type="reservation")
+    db.add(ev); db.commit()
+
+    res = ics._sync_ical_url(db, p, "http://fake/ical", ical_source_label="airbnb")
+    assert res.get("jobs_created") == 1, ("stale job_id not recreated", res)
+    db.refresh(ev)
+    job = db.query(Job).filter(Job.property_id == p.id, Job.job_type == "str_turnover").first()
+    assert job and ev.job_id == job.id, "event not repointed to the new job"
+    assert len(calls) == 1, "recreated turnover not pushed to Google"
+    print("PASS: stale job_id -> turnover recreated + pushed")
+
+
 if __name__ == "__main__":
     try:
         run()
+        run_stale_jobid()
     finally:
         try:
             os.remove("test_ical_to_gcal.db")

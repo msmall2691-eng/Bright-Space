@@ -320,7 +320,16 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                             except Exception as e:
                                 log.warning(f"Failed to update GCal for rescheduled turnover: {e}")
 
-        # Create a Job if: no job yet + checkout is today or future
+        # A stale event.job_id (its Job was deleted by a data reset / "Delete
+        # scheduled visits") used to make the sync skip recreation forever —
+        # "no new turnovers" while the calendar stayed empty. Treat a missing
+        # linked Job as "no job" and clear the dangling pointer so we recreate.
+        if event.job_id:
+            _linked = db.query(Job).filter(Job.id == event.job_id).first()
+            if _linked is None:
+                event.job_id = None
+
+        # Create a Job if: no live job yet + checkout is today or future
         if event.job_id is None and checkout_date >= today:
             # Check for existing job on this date
             existing_job = db.query(Job).filter(
