@@ -383,6 +383,23 @@ def messaging_status(db: Session = Depends(get_db)):
     }
 
 
+class MessagingConfig(BaseModel):
+    customer_sms_reminders: bool
+
+
+@router.post("/messaging", dependencies=[Depends(require_role("admin"))])
+def set_messaging(config: MessagingConfig, db: Session = Depends(get_db)):
+    """Turn automatic customer SMS reminders on/off from the UI.
+
+    Writes the job_sms_reminders_enabled app-setting, which the reminder tick
+    checks every run — so setting it false stops reminders immediately, even if
+    the JOB_SMS_REMINDERS_ENABLED env flag is on (no redeploy needed). This is
+    the in-app kill switch for customer messaging."""
+    set_setting(db, "job_sms_reminders_enabled", "true" if config.customer_sms_reminders else "false")
+    db.commit()
+    return messaging_status(db)
+
+
 @router.get("/automation")
 def get_automation_settings(db: Session = Depends(get_db)):
     """Read iCal / GCal auto-sync flags from app_settings, with env fallbacks."""

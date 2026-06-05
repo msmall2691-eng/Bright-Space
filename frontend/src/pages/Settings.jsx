@@ -209,6 +209,19 @@ export default function Settings() {
   }
   // Live "are we auto-messaging customers?" state (read-only indicator).
   const [msgStatus, setMsgStatus] = useState({ loading: true })
+  const [msgSaving, setMsgSaving] = useState(false)
+  const setMessaging = async (on) => {
+    setMsgSaving(true)
+    try {
+      const r = await post('/api/settings/messaging', { customer_sms_reminders: on })
+      setMsgStatus({ loading: false, ...r })
+      toast(on ? 'Automatic SMS reminders enabled' : 'Automatic customer messaging turned OFF')
+    } catch (e) {
+      toast(e?.message || 'Could not update messaging', 'error')
+    } finally {
+      setMsgSaving(false)
+    }
+  }
   useEffect(() => {
     if (section !== 'integrations') return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
@@ -680,13 +693,16 @@ export default function Settings() {
                       </p>
                     </div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium border shrink-0 ${
-                    msgStatus.any_automatic_customer_messaging
-                      ? 'bg-amber-100 text-amber-700 border-amber-300'
-                      : 'bg-emerald-100 text-emerald-700 border-emerald-300'
-                  }`}>
-                    {msgStatus.any_automatic_customer_messaging ? 'Auto-reminders ON' : 'Auto-reminders OFF'}
-                  </span>
+                  {msgStatus.any_automatic_customer_messaging ? (
+                    <button onClick={() => setMessaging(false)} disabled={msgSaving}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-60 shrink-0">
+                      {msgSaving ? 'Turning off…' : 'Turn off'}
+                    </button>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-300 shrink-0">
+                      Auto-reminders OFF
+                    </span>
+                  )}
                 </div>
               )}
 
