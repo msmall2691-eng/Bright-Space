@@ -57,6 +57,20 @@ def _client_config() -> dict | None:
     return None
 
 
+def client_id() -> str | None:
+    """The OAuth client id — needed to verify Google ID tokens (sign-in) and to
+    hand to the frontend's Google Identity Services button."""
+    cid = os.getenv("GOOGLE_CLIENT_ID")
+    if cid:
+        return cid.strip()
+    cfg = _client_config()
+    if cfg:
+        for key in ("web", "installed"):
+            if isinstance(cfg.get(key), dict) and cfg[key].get("client_id"):
+                return cfg[key]["client_id"]
+    return None
+
+
 def is_oauth_available() -> bool:
     """True when the server has an OAuth client configured, so the in-app
     'Connect Google' button can work."""

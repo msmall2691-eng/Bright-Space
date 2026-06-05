@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mail, Lock, AlertCircle, Zap, Loader, Eye, EyeOff } from 'lucide-react'
-import { post, setJWT } from '../api'
+import { post, get, setJWT } from '../api'
 
 export default function Login({ onLoginSuccess }) {
   const navigate = useNavigate()
@@ -12,6 +12,64 @@ export default function Login({ onLoginSuccess }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [googleEnabled, setGoogleEnabled] = useState(false)
+  const googleBtnRef = useRef(null)
+
+  // Sign in with Google (Google Identity Services). The button hands us an ID
+  // token; the backend verifies it and returns the same JWT as password login.
+  const handleGoogleCredential = useCallback(async (response) => {
+    setError('')
+    setLoading(true)
+    try {
+      const res = await post('/api/auth/google', { credential: response.credential })
+      if (res.access_token) {
+        setJWT(res.access_token)
+        onLoginSuccess?.(res)
+        navigate('/dashboard')
+      } else {
+        setError('Google sign-in failed')
+      }
+    } catch (err) {
+      setError(err.message || 'This Google account isn’t authorized')
+    } finally {
+      setLoading(false)
+    }
+  }, [navigate, onLoginSuccess])
+
+  // Load + initialize GSI once, if the server has Google sign-in configured.
+  useEffect(() => {
+    let cancelled = false
+    get('/api/auth/google/config').then(cfg => {
+      if (cancelled || !cfg?.enabled || !cfg?.client_id) return
+      const init = () => {
+        if (!window.google?.accounts?.id) return
+        window.google.accounts.id.initialize({
+          client_id: cfg.client_id,
+          callback: handleGoogleCredential,
+        })
+        setGoogleEnabled(true)
+      }
+      if (window.google?.accounts?.id) { init(); return }
+      const existing = document.getElementById('google-gsi-script')
+      if (existing) { existing.addEventListener('load', init); return }
+      const s = document.createElement('script')
+      s.src = 'https://accounts.google.com/gsi/client'
+      s.async = true; s.defer = true; s.id = 'google-gsi-script'
+      s.onload = init
+      document.body.appendChild(s)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [handleGoogleCredential])
+
+  // Render (or re-render) the button whenever we're on the login tab.
+  useEffect(() => {
+    if (googleEnabled && mode === 'login' && googleBtnRef.current && window.google?.accounts?.id) {
+      googleBtnRef.current.innerHTML = ''
+      window.google.accounts.id.renderButton(googleBtnRef.current, {
+        theme: 'outline', size: 'large', width: 320, text: 'signin_with',
+      })
+    }
+  }, [googleEnabled, mode])
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -219,6 +277,18 @@ export default function Login({ onLoginSuccess }) {
               )}
             </button>
           </form>
+
+          {/* Sign in with Google — only on the login tab, only if configured. */}
+          {mode === 'login' && googleEnabled && (
+            <div className="mt-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px bg-hairline" />
+                <span className="text-xs text-ink-3">or</span>
+                <div className="flex-1 h-px bg-hairline" />
+              </div>
+              <div ref={googleBtnRef} className="flex justify-center" />
+            </div>
+          )}
 
           {/* Toggle Register/Login */}
           <div className="text-center text-sm text-ink-2 mt-6">

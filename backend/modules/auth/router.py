@@ -139,6 +139,10 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     if not user.active:
         raise HTTPException(status_code=403, detail="User account is inactive")
 
+    # Google-SSO-only accounts have no password — don't let them be brute-forced.
+    if not user.password_hash:
+        raise HTTPException(status_code=403, detail="This account uses Sign in with Google.")
+
     if not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -151,6 +155,87 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
         email=user.email,
         role=user.role,
     )
+
+
+class GoogleSignInRequest(BaseModel):
+    credential: str  # Google ID token (JWT) from Google Identity Services
+
+
+@router.get("/google/config")
+def google_signin_config():
+    """Public: tells the login page whether Google sign-in is available and the
+    client id to initialize the Google button with. The client id is not secret."""
+    from integrations.google_oauth import client_id as _google_client_id
+    cid = _google_client_id()
+    return {"enabled": bool(cid), "client_id": cid}
+
+
+@router.post("/google", response_model=LoginResponse)
+@limiter.limit("10/minute")
+def google_signin(request: Request, data: GoogleSignInRequest, db: Session = Depends(get_db)):
+    """Sign in with Google. Verifies the Google ID token, then matches a known
+    user (default-deny): existing admin/manager users, or emails/domains on the
+    allow-list (GOOGLE_ALLOWED_EMAILS / GOOGLE_ALLOWED_DOMAINS) which are
+    auto-provisioned as admins. Returns the same JWT as password login."""
+    import os
+    from datetime import datetime, timezone
+    from integrations.google_oauth import client_id as _google_client_id
+
+    cid = _google_client_id()
+    if not cid:
+        raise HTTPException(status_code=503, detail="Google sign-in isn't configured on the server.")
+
+    # Verify the ID token's signature + audience against our OAuth client.
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        info = google_id_token.verify_oauth2_token(data.credential, google_requests.Request(), cid)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google sign-in.")
+
+    if info.get("aud") != cid or not info.get("email") or not info.get("email_verified"):
+        raise HTTPException(status_code=401, detail="Invalid or unverified Google account.")
+
+    email = info["email"].strip().lower()
+    sub = info.get("sub")
+    name = info.get("name") or ""
+
+    allowed_emails = [e.strip().lower() for e in os.getenv("GOOGLE_ALLOWED_EMAILS", "").split(",") if e.strip()]
+    allowed_domains = [d.strip().lower() for d in os.getenv("GOOGLE_ALLOWED_DOMAINS", "").split(",") if d.strip()]
+    domain_ok = email.split("@")[-1] in allowed_domains if allowed_domains else False
+
+    # Match an existing user by Google identity first, then by email.
+    user = db.query(User).filter(User.google_sub == sub).first() if sub else None
+    if not user:
+        user = db.query(User).filter(User.email == email).first()
+
+    if user:
+        if not user.active:
+            raise HTTPException(status_code=403, detail="This account is inactive.")
+        # Existing users may use Google sign-in only if they're admin/manager,
+        # or explicitly allow-listed.
+        if user.role not in ("admin", "manager") and email not in allowed_emails and not domain_ok:
+            raise HTTPException(status_code=403, detail="This Google account isn't authorized for admin access.")
+    else:
+        # No user yet — auto-provision an admin ONLY when allow-listed. Never
+        # open registration to arbitrary Google accounts.
+        if email not in allowed_emails and not domain_ok:
+            raise HTTPException(status_code=403, detail="This Google account isn't authorized. Ask an admin to add it.")
+        user = User(email=email, password_hash=None, full_name=name or email,
+                    role="admin", auth_provider="google", active=True)
+        db.add(user)
+        db.flush()
+
+    if sub and not user.google_sub:
+        user.google_sub = sub
+    if not user.auth_provider:
+        user.auth_provider = "google"
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    token = create_jwt(user.id, user.email, user.role)
+    return LoginResponse(access_token=token, user_id=user.id, email=user.email, role=user.role)
 
 
 @router.post("/register", response_model=RegisterResponse)
