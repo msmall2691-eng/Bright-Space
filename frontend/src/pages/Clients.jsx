@@ -341,7 +341,7 @@ export default function Clients() {
           )}
         </div>
 
-        {/* Client rows â Card view */}
+        {/* Client rows — Card view */}
         {viewMode === 'cards' && (
           <div className="space-y-1.5 overflow-y-auto flex-1">
             {filtered.map(c => (
@@ -384,7 +384,7 @@ export default function Clients() {
           </div>
         )}
 
-        {/* Client rows â Table view (Twenty CRM-inspired) */}
+        {/* Client rows — Table view (Twenty CRM-inspired) */}
         {viewMode === 'table' && (
           <div className="overflow-auto flex-1 border border-hairline rounded-xl bg-panel">
             <table className="w-full text-left">
@@ -428,10 +428,10 @@ export default function Clients() {
                         <span className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.phone || 'â'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3 truncate max-w-[200px]">{c.email || 'â'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.city || 'â'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.source || 'â'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.phone || '—'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3 truncate max-w-[200px]">{c.email || '—'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.city || '—'}</td>
+                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.source || '—'}</td>
                     <td className="px-4 py-2.5">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
                     </td>
