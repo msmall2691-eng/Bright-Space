@@ -51,7 +51,7 @@ function SourceChip({ source }) {
   )
 }
 
-const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
+const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected, onToggleSelect }) => {
   const serviceConfig = SERVICE_TYPE_CONFIG[intake.service_type] || SERVICE_TYPE_CONFIG.residential
   const statusConfig = STATUS_CONFIG[intake.status] || STATUS_CONFIG.new
   const priorityConfig = PRIORITY_CONFIG[intake.priority] || PRIORITY_CONFIG.normal
@@ -60,9 +60,18 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive }) => {
   const [showMenu, setShowMenu] = useState(false)
 
   return (
-    <div className="bg-panel rounded-lg border border-hairline p-4 hover:shadow-md transition-all">
+    <div className={`bg-panel rounded-lg border p-4 hover:shadow-md transition-all ${selected ? 'border-blue-400 bg-blue-50/30' : 'border-hairline'}`}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
+          {/* Bulk-select checkbox */}
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={() => onToggleSelect?.(intake.id)}
+            onClick={e => e.stopPropagation()}
+            className="mt-2.5 w-3.5 h-3.5 rounded border-hairline cursor-pointer shrink-0"
+            aria-label="Select lead"
+          />
           {/* Service Type Icon */}
           <div className={`p-2 rounded ${serviceConfig.badge}`}>
             <ServiceIcon className="w-4 h-4" />
@@ -244,6 +253,8 @@ export default function Requests() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false)
+  const [selectedIntakes, setSelectedIntakes] = useState(() => new Set()) // bulk-archive selection
+  const [bulkArchiving, setBulkArchiving] = useState(false)
 
   // Load both intakes AND open conversations belonging to clients still
   // marked 'lead' — so SMS/email replies from people who aren't customers
@@ -342,6 +353,33 @@ export default function Requests() {
     }
   }
 
+  const toggleSelectIntake = (id) => {
+    setSelectedIntakes(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const clearIntakeSelection = () => setSelectedIntakes(new Set())
+  const bulkArchive = async () => {
+    const ids = Array.from(selectedIntakes)
+    if (ids.length === 0) return
+    if (!confirm(`Archive ${ids.length} lead${ids.length === 1 ? '' : 's'}? You can still find them under the Archived filter.`)) return
+    setBulkArchiving(true)
+    try {
+      const results = await Promise.allSettled(
+        ids.map(id => patch(`/api/intake/${id}`, { status: 'archived' }))
+      )
+      const failed = results.filter(r => r.status === 'rejected').length
+      const archived = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'))
+      setRequests(requests.filter(r => !archived.has(r.id)))
+      clearIntakeSelection()
+      if (failed > 0) alert(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+    } finally {
+      setBulkArchiving(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-bg">
       {/* Header */}
@@ -411,6 +449,20 @@ export default function Requests() {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto p-4">
+          {selectedIntakes.size > 0 && (
+            <div className="flex items-center justify-between gap-3 mb-3 bg-panel border border-hairline rounded-lg px-3 py-2 sticky top-0 z-10">
+              <span className="text-[12px] text-ink-2 font-medium">{selectedIntakes.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button onClick={clearIntakeSelection}
+                  className="text-[12px] text-ink-3 hover:text-ink-2 px-2 py-1 rounded">Clear</button>
+                <button onClick={bulkArchive} disabled={bulkArchiving}
+                  className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-50">
+                  <Archive className="w-3.5 h-3.5" />
+                  {bulkArchiving ? 'Archiving...' : `Archive ${selectedIntakes.size}`}
+                </button>
+              </div>
+            </div>
+          )}
           {loading ? (
             <p className="text-center text-ink-2">Loading leads...</p>
           ) : feed.length === 0 ? (
@@ -434,6 +486,8 @@ export default function Requests() {
                     onViewDetails={handleViewDetails}
                     onCreateQuote={handleCreateQuote}
                     onArchive={handleArchive}
+                    selected={selectedIntakes.has(data.id)}
+                    onToggleSelect={toggleSelectIntake}
                   />
                 ) : (
                   <ConversationLeadCard
