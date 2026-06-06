@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { del, get, post, patch } from "../api"
+import { applyTheme, getTheme } from '../theme'
 
 
 const ENTITY_TABS = [
@@ -50,6 +51,7 @@ function Toast({ toasts }) {
 
 export default function Settings() {
   const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations'
+  const [themeChoice, setThemeChoice] = useState(getTheme())
   const [entityTab, setEntityTab] = useState('client')
   const [fields, setFields] = useState([])
   const [panel, setPanel] = useState(null)
@@ -470,6 +472,30 @@ export default function Settings() {
         {section === 'general' && (
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6 space-y-6">
+              <div>
+                <h2 className="text-lg font-bold text-ink mb-4">Appearance</h2>
+                <div className="bg-panel rounded-xl border border-hairline p-6">
+                  <label className={lbl}>Theme</label>
+                  <div className="flex gap-2 mt-1">
+                    {[
+                      { value: 'light', label: 'Light' },
+                      { value: 'dark', label: 'Dark' },
+                    ].map(opt => (
+                      <button key={opt.value} type="button"
+                        onClick={() => setThemeChoice(applyTheme(opt.value))}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                          themeChoice === opt.value
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-bg-2 text-ink-2 border-hairline hover:border-hairline-2'
+                        }`}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-ink-3 mt-2">Applies instantly and is remembered on this device.</p>
+                </div>
+              </div>
+
               <div>
                 <h2 className="text-lg font-bold text-ink mb-4">Company Information</h2>
                 <div className="bg-panel rounded-xl border border-hairline p-6">
