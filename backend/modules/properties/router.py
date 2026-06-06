@@ -312,10 +312,30 @@ def turnover_sweep(db: Session = Depends(get_db)):
     for prop in props:
         sync_error = None
         try:
-            sync_property(db, prop)
+            result = sync_property(db, prop)
+            # sync_property fails *soft*: when a feed is unreachable/unparsable it
+            # records a failed status on the PropertyIcal row and returns instead
+            # of throwing. If we only trusted the try/except we'd declare the
+            # property healthy off stale ICalEvent rows even though its feed never
+            # refreshed (Codex review). So check both the returned error and the
+            # per-feed sync status.
+            if isinstance(result, dict) and result.get("error"):
+                sync_error = str(result["error"])[:200]
         except Exception as e:
             log.warning(f"turnover-sweep sync failed for property {prop.id}: {e}")
             sync_error = "sync failed"
+
+        if not sync_error:
+            failed_feeds = [
+                pi for pi in (prop.property_icals or [])
+                if getattr(pi, "active", True) and pi.last_sync_status in ("failed", "retrying")
+            ]
+            if failed_feeds:
+                detail = "; ".join(
+                    f"{pi.source or 'feed'}: {pi.last_sync_error or pi.last_sync_status}"
+                    for pi in failed_feeds[:3]
+                )
+                sync_error = f"feed sync failed ({detail})"
 
         expected_dates = {
             _d(e.checkout_date)

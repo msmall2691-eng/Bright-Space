@@ -751,26 +751,39 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     # it throws, the save still stands; we log and move on rather than 500.
     if new_phone:
         try:
-            existing_cp = db.query(ContactPhone).filter(
-                ContactPhone.client_id == client_id,
-                ContactPhone.phone == new_phone
-            ).first()
-            if not existing_cp:
-                db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
-                cp = ContactPhone(
-                    client_id=client_id,
-                    phone=new_phone,
-                    is_primary=True,
-                    phone_type="mobile",
-                    source="manual",
+            # Guard against a stale side-effect. The core update committed in its
+            # own transaction above, so a concurrent request could have committed
+            # a *different* phone in between. Re-read the client and only promote
+            # new_phone to primary if it's still the canonical phone — otherwise
+            # client.phone and the primary ContactPhone would diverge (Codex
+            # review on overlapping phone updates).
+            db.refresh(client)
+            if client.phone != new_phone:
+                logger.info(
+                    "[update_client %s] phone changed before side-effect ran (canonical=%r, expected=%r); skipping primary promotion",
+                    client_id, client.phone, new_phone,
                 )
-                db.add(cp)
             else:
-                db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
-                existing_cp.is_primary = True
-            db.flush()
-            _link_and_merge_conversations(db, client_id, new_phone)
-            db.commit()
+                existing_cp = db.query(ContactPhone).filter(
+                    ContactPhone.client_id == client_id,
+                    ContactPhone.phone == new_phone
+                ).first()
+                if not existing_cp:
+                    db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+                    cp = ContactPhone(
+                        client_id=client_id,
+                        phone=new_phone,
+                        is_primary=True,
+                        phone_type="mobile",
+                        source="manual",
+                    )
+                    db.add(cp)
+                else:
+                    db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+                    existing_cp.is_primary = True
+                db.flush()
+                _link_and_merge_conversations(db, client_id, new_phone)
+                db.commit()
         except Exception:
             logger.exception("[update_client %s] phone link/merge side-effect failed; phone saved, threads not relinked", client_id)
             db.rollback()
