@@ -37,6 +37,7 @@ from modules.gmail.router import router as gmail_router
 from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
 from modules.search import router as search_router
+from modules.geo.router import router as geo_router
 from modules.settings.router import router as settings_router
 from modules.work import router as work_router
 from modules.auth.router import router as auth_router, require_role
@@ -94,6 +95,7 @@ app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
 app.include_router(activities_router, prefix="/api/activities", tags=["activities"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
+app.include_router(geo_router, prefix="/api/geo", tags=["geo"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(work_router, prefix="/api/work", tags=["work"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
