@@ -130,26 +130,35 @@ def load_agent_config(agent_name: str) -> dict:
 
 
 def check_visits_coverage(db_session):
-    """Check if all jobs have corresponding visits. Logs discrepancies."""
+    """Check whether UPCOMING jobs have corresponding visits, and log gaps.
+
+    Future-only: past jobs missing visits are not actionable (we don't backfill
+    history) so they're excluded — the warning only fires for upcoming jobs,
+    which is the only drift worth a human's attention. The startup backfill
+    self-heals these, so a non-zero count here is genuinely unexpected."""
+    from datetime import date
     from database.models import Job, Visit
 
-    total_jobs = db_session.query(Job).count()
-    total_visits = db_session.query(Visit).count()
-    jobs_without_visits = db_session.query(Job).outerjoin(Visit).filter(Visit.id.is_(None)).count()
+    today = date.today()
+    upcoming_jobs = db_session.query(Job).filter(Job.scheduled_date >= today).count()
+    jobs_without_visits = (
+        db_session.query(Job)
+        .outerjoin(Visit)
+        .filter(Visit.id.is_(None), Job.scheduled_date >= today)
+        .count()
+    )
 
     if jobs_without_visits > 0:
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(
-            f"VISITS COVERAGE DRIFT: {jobs_without_visits}/{total_jobs} jobs missing visits. "
-            f"Total jobs={total_jobs}, Total visits={total_visits}. "
+            f"VISITS COVERAGE DRIFT: {jobs_without_visits}/{upcoming_jobs} UPCOMING jobs missing visits. "
             f"Run POST /api/visits/admin/backfill-visits-from-jobs to fix."
         )
     return {
-        "total_jobs": total_jobs,
-        "total_visits": total_visits,
+        "total_jobs": upcoming_jobs,
         "jobs_without_visits": jobs_without_visits,
-        "healthy": jobs_without_visits == 0
+        "healthy": jobs_without_visits == 0,
     }
 
 
@@ -165,9 +174,9 @@ async def startup():
     try:
         coverage = check_visits_coverage(db)
         if not coverage["healthy"]:
-            print(f"⚠️  VISITS COVERAGE DRIFT: {coverage['jobs_without_visits']}/{coverage['total_jobs']} jobs missing visits")
+            print(f"⚠️  VISITS COVERAGE DRIFT: {coverage['jobs_without_visits']}/{coverage['total_jobs']} upcoming jobs missing visits")
         else:
-            print(f"✓ Visits coverage healthy: {coverage['total_jobs']} jobs, {coverage['total_visits']} visits")
+            print(f"✓ Visits coverage healthy: {coverage['total_jobs']} upcoming jobs all have visits")
     except Exception as e:
         print(f"⚠️  Visits coverage check skipped: {e}")
     finally:

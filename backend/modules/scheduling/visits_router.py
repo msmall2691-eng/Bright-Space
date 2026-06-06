@@ -153,30 +153,46 @@ def debug_all_visits(db: Session = Depends(get_db)):
 
 @router.get("/admin/coverage-check", dependencies=[Depends(require_role("admin", "manager"))])
 def check_visits_coverage(db: Session = Depends(get_db)):
-    """Check if all jobs have corresponding visits."""
-    from sqlalchemy import func
+    """Check whether UPCOMING jobs have corresponding visits.
 
-    total_jobs = db.query(Job).count()
-    total_visits = db.query(Visit).count()
-    jobs_without_visits = db.query(Job).outerjoin(Visit, Job.id == Visit.job_id).filter(Visit.id.is_(None)).count()
+    Future-only: past jobs missing visits aren't actionable (we don't backfill
+    history), so they're excluded from the health signal."""
+    from datetime import date
+
+    today = date.today()
+    upcoming_jobs = db.query(Job).filter(Job.scheduled_date >= today).count()
+    jobs_without_visits = (
+        db.query(Job)
+        .outerjoin(Visit, Job.id == Visit.job_id)
+        .filter(Visit.id.is_(None), Job.scheduled_date >= today)
+        .count()
+    )
 
     return {
-        "total_jobs": total_jobs,
-        "total_visits": total_visits,
+        "total_jobs": upcoming_jobs,
         "jobs_without_visits": jobs_without_visits,
-        "coverage_percent": int((total_visits / total_jobs * 100) if total_jobs > 0 else 100),
-        "healthy": jobs_without_visits == 0
+        "coverage_percent": int(((upcoming_jobs - jobs_without_visits) / upcoming_jobs * 100) if upcoming_jobs > 0 else 100),
+        "healthy": jobs_without_visits == 0,
     }
 
 
 @router.post("/telemetry/drift-check")
 def report_drift_check(db: Session = Depends(get_db)):
-    """Report visits/jobs drift metrics for monitoring/alerting systems."""
-    from datetime import datetime, timezone
+    """Report visits/jobs drift metrics for monitoring/alerting systems.
 
-    total_jobs = db.query(Job).count()
-    total_visits = db.query(Visit).count()
-    jobs_without_visits = db.query(Job).outerjoin(Visit, Job.id == Visit.job_id).filter(Visit.id.is_(None)).count()
+    Future-only: drift is measured against upcoming jobs (past gaps aren't
+    actionable since we don't backfill history)."""
+    from datetime import datetime, timezone, date
+
+    today = date.today()
+    total_jobs = db.query(Job).filter(Job.scheduled_date >= today).count()
+    jobs_without_visits = (
+        db.query(Job)
+        .outerjoin(Visit, Job.id == Visit.job_id)
+        .filter(Visit.id.is_(None), Job.scheduled_date >= today)
+        .count()
+    )
+    total_visits = total_jobs - jobs_without_visits
 
     coverage_percent = int((total_visits / total_jobs * 100) if total_jobs > 0 else 100)
     healthy = jobs_without_visits == 0
@@ -198,12 +214,19 @@ def report_drift_check(db: Session = Depends(get_db)):
 
 
 @router.post("/admin/backfill-visits-from-jobs", dependencies=[Depends(require_role("admin", "manager"))])
-def backfill_visits_from_jobs(db: Session = Depends(get_db)):
+def backfill_visits_from_jobs(include_past: bool = False, db: Session = Depends(get_db)):
     """Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids.
     Jobs with missing dates are skipped. Missing start/end times default to
-    10:00–13:00 so the visit can be created (operator can adjust later)."""
-    from datetime import time as dt_time
-    jobs = db.query(Job).all()
+    10:00–13:00 so the visit can be created (operator can adjust later).
+
+    Future-only by default: only upcoming jobs (scheduled_date >= today) are
+    backfilled, so no historical visits are created. Pass ?include_past=true to
+    also cover past jobs (rarely needed)."""
+    from datetime import time as dt_time, date
+    q = db.query(Job)
+    if not include_past:
+        q = q.filter(Job.scheduled_date >= date.today())
+    jobs = q.all()
     created_count = 0
     skipped_count = 0
     skipped_no_date = 0
@@ -252,7 +275,11 @@ def backfill_visits_from_jobs(db: Session = Depends(get_db)):
         "skipped_no_date": skipped_no_date,
         "errors": errors,
         "total_jobs": len(jobs),
-        "message": f"Backfill complete: created {created_count} visits, skipped {skipped_count} existing, {skipped_no_date} undated"
+        "scope": "all" if include_past else "future_only",
+        "message": (
+            f"Backfill complete ({'all dates' if include_past else 'upcoming only'}): "
+            f"created {created_count} visits, skipped {skipped_count} existing, {skipped_no_date} undated"
+        ),
     }
 
 
