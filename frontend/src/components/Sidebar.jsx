@@ -82,10 +82,10 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `group flex items-center gap-3 px-3 py-2.5 mx-2 my-0.5 rounded-lg transition-all text-[13px] select-none font-medium ${
+                  `group relative flex items-center gap-3 px-3 py-2 mx-2 my-0.5 rounded-md transition-colors text-[13px] select-none ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-ink-2 hover:text-ink hover:bg-bg-2'
+                      ? 'bg-bg-2 text-ink font-semibold'
+                      : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/60'
                   }`
                 }
               >
@@ -93,16 +93,16 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                   const badge = badges[item.to]
                   return (
                     <>
-                      <item.icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-ink-3 group-hover:text-blue-600'}`} />
+                      {/* Twenty-style: a thin accent rail marks the active item
+                          instead of a saturated blue fill. */}
+                      {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-blue-600" />}
+                      <item.icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-blue-600' : 'text-ink-3 group-hover:text-ink-2'}`} />
                       <span className="truncate flex-1">{item.label}</span>
                       {badge > 0 && (
-                        <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold ${
-                          isActive ? 'bg-panel text-blue-700' : 'bg-red-500 text-white'
-                        }`}>
+                        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold bg-red-500 text-white">
                           {badge > 99 ? '99+' : badge}
                         </span>
                       )}
-                      {isActive && !badge && <div className="w-1.5 h-1.5 rounded-full bg-panel"></div>}
                     </>
                   )
                 }}

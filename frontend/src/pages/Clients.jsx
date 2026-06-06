@@ -357,7 +357,7 @@ export default function Clients() {
               <tbody>
                 {filtered.map(c => (
                   <tr key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                    className={`border-b border-hairline cursor-pointer transition-colors ${selectedIds.has(c.id) ? 'bg-blue-50/50' : 'hover:bg-blue-50/30'}`}>
+                    className={`border-b border-hairline cursor-pointer transition-colors ${selectedIds.has(c.id) ? 'bg-bg-2' : 'hover:bg-bg-2/60'}`}>
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
