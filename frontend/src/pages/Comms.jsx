@@ -1,22 +1,22 @@
 /**
- * Comms â Phase 3: Modern unified inbox.
+ * Comms — Phase 3: Modern unified inbox.
  *
  * Design references: Twenty CRM (clean panels, record detail, timeline),
  * Fieldcamp.io (unified profile, single-screen visibility, command center).
  *
  * Three-pane layout:
- *   Left   â filter tabs + conversation list (searchable, channel-filtered)
- *   Center â thread view with day separators + compose bar
- *   Right  â contact detail + activity timeline + quick actions
+ *   Left   — filter tabs + conversation list (searchable, channel-filtered)
+ *   Center — thread view with day separators + compose bar
+ *   Right  — contact detail + activity timeline + quick actions
  *
  * New in Phase 3:
- *   â¢ New conversation compose (SMS + Email)
- *   â¢ Day separators in thread view
- *   â¢ Activity timeline in contact panel (all channels in one feed)
- *   â¢ Refined visual design (Twenty/Fieldcamp-inspired)
- *   â¢ Keyboard shortcuts panel
- *   â¢ Empty states with illustrations
- *   â¢ Mobile-responsive layout
+ *   • New conversation compose (SMS + Email)
+ *   • Day separators in thread view
+ *   • Activity timeline in contact panel (all channels in one feed)
+ *   • Refined visual design (Twenty/Fieldcamp-inspired)
+ *   • Keyboard shortcuts panel
+ *   • Empty states with illustrations
+ *   • Mobile-responsive layout
  */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
@@ -33,9 +33,9 @@ import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+/* ═══════════════════════════════════════════════════════════════════════════
    DESIGN TOKENS
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 const COLORS = {
   primary: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
@@ -70,9 +70,9 @@ const PRIORITY_COLORS = {
 const TEAM_ASSIGNEES = ['Megan', 'Unassigned']
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+/* ═══════════════════════════════════════════════════════════════════════════
    UTILITY FUNCTIONS
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function relTime(iso) {
   if (!iso) return ''
@@ -130,9 +130,9 @@ function contactDisplay(conv) {
 }
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+/* ═══════════════════════════════════════════════════════════════════════════
    SHARED UI PRIMITIVES
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function Avatar({ name, size = 'md', className = '', online }) {
   const sizes = {
@@ -223,9 +223,9 @@ function DaySeparator({ label }) {
 }
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-   CONVERSATION LIST ITEM â Twenty CRM style
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONVERSATION LIST ITEM — Twenty CRM style
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function ConvItem({ conv, active, onClick }) {
   const name = contactDisplay(conv)
@@ -298,9 +298,9 @@ function ConvItem({ conv, active, onClick }) {
 }
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-   MESSAGE BUBBLE â refined with delivery status + timestamps
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   MESSAGE BUBBLE — refined with delivery status + timestamps
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function MessageBubble({ m, isFirst, showTime, contactName }) {
   // Internal note
@@ -311,7 +311,7 @@ function MessageBubble({ m, isFirst, showTime, contactName }) {
           <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 mb-1">
             <StickyNote className="w-3 h-3" />
             Internal note
-            {m.author && <span className="font-normal text-amber-500">â {m.author}</span>}
+            {m.author && <span className="font-normal text-amber-500">— {m.author}</span>}
             <span className="ml-auto font-normal text-amber-400">{fullTime(m.created_at)}</span>
           </div>
           <div className="whitespace-pre-wrap leading-relaxed">{m.body}</div>
@@ -358,9 +358,9 @@ function MessageBubble({ m, isFirst, showTime, contactName }) {
 }
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-   COMPOSE MODAL â New message (SMS or Email)
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSE MODAL — New message (SMS or Email)
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function ComposeModal({ onClose, onSent, clients }) {
   const [channel, setChannel] = useState('sms')
@@ -509,7 +509,7 @@ function ComposeModal({ onClose, onSent, clients }) {
         {/* Footer */}
         <div className="px-5 py-4 border-t border-hairline flex items-center justify-between">
           <div className="text-[10px] text-ink-3 flex items-center gap-1">
-            <Kbd>{navigator.platform?.includes('Mac') ? 'â' : 'Ctrl'}</Kbd>
+            <Kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</Kbd>
             <span>+</span>
             <Kbd>Enter</Kbd>
             <span className="ml-1">to send</span>
@@ -534,9 +534,9 @@ function ComposeModal({ onClose, onSent, clients }) {
 }
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-   CONTACT PANEL â Twenty CRM record-detail + Fieldcamp unified profile
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONTACT PANEL — Twenty CRM record-detail + Fieldcamp unified profile
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
   if (!detail) return null
@@ -642,7 +642,7 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
           )}
         </div>
 
-        {/* Activity Timeline â Fieldcamp-inspired */}
+        {/* Activity Timeline — Fieldcamp-inspired */}
         <div className="p-4">
           <label className="text-[10px] font-bold text-ink-3 uppercase tracking-wider block mb-3">
             Activity Timeline
@@ -689,9 +689,9 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
 }
 
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN COMMS PAGE
-   âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function Comms() {
   // State
@@ -729,7 +729,7 @@ export default function Comms() {
   const threadRef = useRef(null)
   const replyRef = useRef(null)
 
-  // ââââââââ Data fetching ââââââââ
+  // ──────── Data fetching ────────
 
   const loadList = useCallback(async () => {
     const params = new URLSearchParams()
@@ -786,7 +786,7 @@ export default function Comms() {
     catch (e) { console.error('[Comms] loadClients:', e) }
   }, [])
 
-  // ââââââââ Effects ââââââââ
+  // ──────── Effects ────────
 
   useEffect(() => { loadSummary(); loadClients() }, [loadSummary, loadClients])
   // Refresh the list whenever ANY filter changes (folder / channel / chips /
@@ -807,7 +807,7 @@ export default function Comms() {
     return () => clearInterval(iv)
   }, [selectedId, loadList, loadSummary, loadDetail])
 
-  // ââââââââ Actions ââââââââ
+  // ──────── Actions ────────
 
   const sendReply = async () => {
     if (!reply.trim() || !detail) return
@@ -851,7 +851,7 @@ export default function Comms() {
     setMobileView('thread')
   }
 
-  // ââââââââ Filter config ââââââââ
+  // ──────── Filter config ────────
 
   // Phase 8 IA: 3 folders + 3 additive filter chips. The chips can stack
   // (e.g. "Active + Overdue" or "Mine + Unread"). 'Unassigned' chip is
@@ -893,7 +893,7 @@ export default function Comms() {
     })
   }
 
-  // ââââââââ Message grouping with day separators ââââââââ
+  // ──────── Message grouping with day separators ────────
 
   const groupedMessages = useMemo(() => {
     if (!detail?.messages) return []
@@ -914,9 +914,9 @@ export default function Comms() {
   }, [detail?.messages])
 
 
-  /* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  /* ═══════════════════════════════════════════════════════════════════════
      RENDER
-     âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
+     ═══════════════════════════════════════════════════════════════════════ */
 
   // Email now threads into the unified inbox (same UI as SMS) — backend
   // run_inbox_sync attaches inbound Gmail to Conversations. The old separate
@@ -925,7 +925,7 @@ export default function Comms() {
   return (
     <div className="flex h-full bg-bg">
 
-      {/* âââ LEFT PANEL: Filters + Conversation List âââ */}
+      {/* ═══ LEFT PANEL: Filters + Conversation List ═══ */}
       <div className={`w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
         ${mobileView === 'thread' ? 'hidden lg:flex' : 'flex'}`}>
 
@@ -1072,7 +1072,7 @@ export default function Comms() {
       </div>
 
 
-      {/* âââ CENTER PANEL: Thread View âââ */}
+      {/* ═══ CENTER PANEL: Thread View ═══ */}
       <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}`}>
         {!detail ? (
           /* Empty state */
@@ -1256,7 +1256,7 @@ export default function Comms() {
 
               <div className="flex items-center mt-2">
                 <div className="text-[10px] text-ink-3 flex items-center gap-1">
-                  <Kbd>{navigator.platform?.includes('Mac') ? 'â' : 'Ctrl'}</Kbd>
+                  <Kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</Kbd>
                   <span>+</span>
                   <Kbd>Enter</Kbd>
                   <span className="ml-1">to send</span>
@@ -1268,7 +1268,7 @@ export default function Comms() {
       </div>
 
 
-      {/* âââ RIGHT PANEL: Contact Detail âââ */}
+      {/* ═══ RIGHT PANEL: Contact Detail ═══ */}
       {detail && showContactPanel && (
         <ContactPanel
           detail={detail}
@@ -1280,7 +1280,7 @@ export default function Comms() {
       )}
 
 
-      {/* âââ Compose Modal âââ */}
+      {/* ═══ Compose Modal ═══ */}
       {showCompose && (
         <ComposeModal
           clients={clients}
@@ -1306,7 +1306,7 @@ export default function Comms() {
       )}
 
 
-      {/* âââ Agent Widget âââ */}
+      {/* ═══ Agent Widget ═══ */}
       <AgentWidget pageContext="comms" prompts={[
         'Draft a follow-up SMS for my recent leads',
         'Summarize the selected conversation',

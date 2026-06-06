@@ -58,6 +58,7 @@ export default function Quoting() {
   const [intakes, setIntakes] = useState([])
   const [clients, setClients] = useState([])
   const [quoteTemplates, setQuoteTemplates] = useState(DEFAULT_QUOTE_TEMPLATES)
+  const [companyName, setCompanyName] = useState('Maine Cleaning Co')
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
@@ -85,6 +86,9 @@ export default function Quoting() {
     get('/api/settings/quote-templates').then(d => {
       if (d?.templates?.length) setQuoteTemplates(d.templates)
     }).catch(() => {})
+    // Use the configured company name in the customer-facing SMS instead of a
+    // hardcoded brand. Falls back to the default if unset/unavailable.
+    get('/api/settings').then(d => { if (d?.company_name) setCompanyName(d.company_name) }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -192,7 +196,7 @@ export default function Quoting() {
       await loadQuotes(); await loadIntakes()
       setPanel(null)
       showToast(selected ? 'Quote updated' : 'Quote created')
-    } catch { showToast('Error saving quote') }
+    } catch (e) { showToast(e.message || 'Error saving quote') }
     setSaving(false)
   }
 
@@ -227,7 +231,7 @@ export default function Quoting() {
       const job = await post(`/api/quotes/${quoteId}/convert-to-job`)
       showToast('Job created — set the date in Scheduling')
       navigate(`/scheduling`)
-    } catch { showToast('Error converting to job') }
+    } catch (e) { showToast(e.message || 'Error converting to job') }
     setConverting(null)
   }
 
@@ -254,7 +258,7 @@ export default function Quoting() {
     if (!selected) return ''
     const q = selected
     const st = (q.service_type || 'residential').charAt(0).toUpperCase() + (q.service_type || 'residential').slice(1)
-    return `Maine Cleaning Co — Quote ${q.quote_number || `QT-${q.id}`}\n${st} clean${q.address ? ` at ${q.address}` : ''}\nTotal: $${parseFloat(q.total || 0).toFixed(2)}${q.valid_until ? `\nValid until: ${q.valid_until}` : ''}\n\nReply YES to accept or ask any questions.`
+    return `${companyName} — Quote ${q.quote_number || `QT-${q.id}`}\n${st} clean${q.address ? ` at ${q.address}` : ''}\nTotal: $${parseFloat(q.total || 0).toFixed(2)}${q.valid_until ? `\nValid until: ${q.valid_until}` : ''}\n\nReply YES to accept or ask any questions.`
   }
 
   const newLeads = intakes.filter(i => i.status === 'new').length

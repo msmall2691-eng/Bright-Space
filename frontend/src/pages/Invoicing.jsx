@@ -110,7 +110,7 @@ export default function Invoicing() {
       const body   = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
       selected ? await patch(url, body) : await post(url, body)
       await load(); toast(selected ? 'Invoice updated' : 'Invoice created'); setPanel(null)
-    } catch { toast('Failed to save invoice', 'error') }
+    } catch (e) { toast(e.message || 'Failed to save invoice', 'error') }
     setSaving(false)
   }
 
