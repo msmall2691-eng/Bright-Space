@@ -809,7 +809,16 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
             # between our re-read and our writes, leaving a stale number primary
             # (Codex review follow-up). On SQLite with_for_update is a no-op, which
             # is fine since it isn't concurrent.
-            locked = db.query(Client).filter(Client.id == client_id).with_for_update().first()
+            # populate_existing() is essential: without it the query returns the
+            # already-loaded `client` instance from the session identity map
+            # WITHOUT overwriting its attributes, so locked.phone would still hold
+            # this request's (possibly stale) value rather than the freshly-locked
+            # row's. populate_existing() forces the row's committed values into the
+            # instance so the canonical-phone check is real (Codex review).
+            locked = (
+                db.query(Client).filter(Client.id == client_id)
+                .populate_existing().with_for_update().first()
+            )
             if locked and locked.phone != new_phone:
                 logger.info(
                     "[update_client %s] phone changed before side-effect ran (canonical=%r, expected=%r); skipping primary promotion",
