@@ -1059,19 +1059,23 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     # source Quote's items when available; otherwise emits a placeholder line.
     if job.status == "completed" and prev_status != "completed":
         try:
-            from database.models import Invoice, Quote
+            from database.models import Invoice
             from datetime import datetime, timedelta
             existing_inv = db.query(Invoice).filter(Invoice.job_id == job.id).first()
             if not existing_inv:
-                quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
-                items = (quote.items if (quote and quote.items) else [{
+                # NOTE: quotes are UUID-keyed and don't link to the integer
+                # Job.quote_id, so we can't pull line items from the originating
+                # quote. The old lookup (Quote.id == job.quote_id) compared a UUID
+                # to an int and threw, silently skipping invoicing for completed
+                # jobs. Build a default single-line invoice from the job instead.
+                items = [{
                     "name": job.title or "Cleaning",
                     "qty": 1,
                     "unit_price": 0,
                     "description": "",
-                }])
+                }]
                 subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
-                tax_rate = float(quote.tax_rate) if quote else 5.5
+                tax_rate = 5.5
                 tax = round(subtotal * (tax_rate / 100), 2)
                 total = round(subtotal + tax, 2)
                 due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
@@ -1236,7 +1240,7 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
 @router.post("/{job_id}/convert-to-invoice", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
     """Convert a completed job to an invoice."""
-    from database.models import Invoice, Quote
+    from database.models import Invoice
     from datetime import datetime, timedelta
 
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -1246,21 +1250,19 @@ def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
     if job.status != "completed":
         raise HTTPException(status_code=409, detail="Only completed jobs can be converted to invoices")
 
-    quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
-
-    items = []
-    if quote and quote.items:
-        items = quote.items
-    else:
-        items = [{
-            "name": job.title,
-            "qty": 1,
-            "unit_price": 0,
-            "description": ""
-        }]
+    # NOTE: quotes are UUID-keyed and don't link to the integer Job.quote_id, so
+    # the originating quote's line items can't be pulled here (the old
+    # Quote.id == job.quote_id lookup compared a UUID to an int and threw). Build
+    # a default single-line invoice from the job.
+    items = [{
+        "name": job.title,
+        "qty": 1,
+        "unit_price": 0,
+        "description": ""
+    }]
 
     subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
-    tax_rate = float(quote.tax_rate) if quote else 5.5
+    tax_rate = 5.5
     tax = round(subtotal * (tax_rate / 100), 2)
     total = round(subtotal + tax, 2)
     due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
