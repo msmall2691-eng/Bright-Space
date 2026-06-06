@@ -215,7 +215,7 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
     return {"success": True, "intake_id": intake.id, "client_id": client.id}
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager"))])
 def get_intakes(
     status: Optional[str] = None,
     source: Optional[str] = None,
@@ -238,7 +238,7 @@ def get_intakes(
     return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()]
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(require_role("admin", "manager"))])
 def get_intake_stats(db: Session = Depends(get_db)):
     """Quick counts for the requests dashboard."""
     total = db.query(func.count(LeadIntake.id)).scalar()

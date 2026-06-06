@@ -424,7 +424,7 @@ def comms_health(db: Session = Depends(get_db)):
 # Conversation endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/conversations")
+@router.get("/conversations", dependencies=[Depends(require_role("admin", "manager"))])
 def list_conversations(
     status: Optional[str] = Query(None, description="open|pending|snoozed|resolved"),
     assignee: Optional[str] = None,
@@ -480,7 +480,7 @@ def list_conversations(
     return [conv_to_dict(c) for c in convs]
 
 
-@router.get("/conversations/summary")
+@router.get("/conversations/summary", dependencies=[Depends(require_role("admin", "manager"))])
 def conversations_summary(db: Session = Depends(get_db)):
     """Quick counts for inbox filter badges.
 
@@ -515,7 +515,7 @@ def conversations_summary(db: Session = Depends(get_db)):
     return total
 
 
-@router.get("/conversations/{conv_id}")
+@router.get("/conversations/{conv_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def get_conversation(conv_id: int, db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
@@ -687,7 +687,7 @@ def mark_read(conv_id: int, db: Session = Depends(get_db)):
 # Legacy endpoints (backward-compatible)
 # ---------------------------------------------------------------------------
 
-@router.get("/messages")
+@router.get("/messages", dependencies=[Depends(require_role("admin", "manager"))])
 def get_messages(
     client_id: Optional[int] = None,
     channel: Optional[str] = None,
@@ -702,7 +702,7 @@ def get_messages(
     return [msg_to_dict(m) for m in q.order_by(Message.created_at.desc()).limit(200).all()]
 
 
-@router.get("/client/{client_id}")
+@router.get("/client/{client_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def client_comms(client_id: int, db: Session = Depends(get_db)):
     """Unified, contact-linked communications for one client (Twenty-style).
 
