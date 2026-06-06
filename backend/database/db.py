@@ -459,13 +459,23 @@ def _backfill_visits_from_jobs():
     Visit-centric scheduling.
 
     Idempotent — safe to run every boot.
+
+    FUTURE-ONLY: only upcoming jobs (scheduled_date >= today) get visits
+    backfilled. Past jobs are intentionally left alone — the operator only cares
+    about future turnovers and doesn't want a historical backlog created.
     """
+    from datetime import date
     from database.models import Job, Visit
 
     db = SessionLocal()
     try:
-        # Find jobs without corresponding visits
-        jobs_without_visits = db.query(Job).filter(~Job.visits.any()).all()
+        # Find UPCOMING jobs without corresponding visits.
+        today = date.today()
+        jobs_without_visits = (
+            db.query(Job)
+            .filter(~Job.visits.any(), Job.scheduled_date.isnot(None), Job.scheduled_date >= today)
+            .all()
+        )
 
         if not jobs_without_visits:
             db.close()
@@ -500,7 +510,7 @@ def _backfill_visits_from_jobs():
 
         if created_visits > 0:
             db.commit()
-            logger.info(f"[backfill_visits] Created {created_visits} visits from existing jobs")
+            logger.info(f"[backfill_visits] Created {created_visits} visits for upcoming jobs")
 
     except Exception as exc:
         logger.warning(f"[backfill_visits] Error during backfill: {exc}")
