@@ -18,6 +18,47 @@ from modules.auth.router import get_current_user, require_role
 
 router = APIRouter()
 
+_STATE_CODE_RE = re.compile(r'^[A-Za-z]{2}$')
+
+
+def _normalize_client_fields(data: dict, existing_city: Optional[str] = None) -> dict:
+    """Server-side normalization applied on every client entry path (create,
+    update, import) so the data is clean no matter how it got in:
+
+      - trim whitespace on all string values
+      - phone -> E.164 (+1XXXXXXXXXX)
+      - 2-letter state codes -> uppercase (state, billing_state)
+      - strip a trailing city that an import appended onto the street address,
+        e.g. street "116 E Shore Beach Road Naples" + city "Naples" -> street
+        "116 E Shore Beach Road". Only runs when the city is known and the
+        street actually ends with it, so a correctly-set city is never lost and
+        a legitimate street is never truncated.
+
+    Mutates and returns `data` in place.
+    """
+    for k, v in list(data.items()):
+        if isinstance(v, str):
+            data[k] = v.strip()
+
+    if data.get("phone"):
+        data["phone"] = normalize_phone(data["phone"])
+
+    for sk in ("state", "billing_state"):
+        v = data.get(sk)
+        if v and _STATE_CODE_RE.match(v):
+            data[sk] = v.upper()
+
+    city = data.get("city") or existing_city
+    addr = data.get("address")
+    if city and addr:
+        # Strip the city when it trails the street (optionally after a comma).
+        stripped = re.sub(r'[,\s]+' + re.escape(city) + r'\s*$', '', addr, flags=re.IGNORECASE)
+        stripped = stripped.strip().rstrip(',').strip()
+        if stripped and stripped != addr:
+            data["address"] = stripped
+
+    return data
+
 
 def _derive_name(first: Optional[str], last: Optional[str], fallback: str) -> str:
     """Return 'First Last' when both parts are set, else fallback to existing name."""
@@ -449,8 +490,7 @@ def get_clients(
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     payload = data.model_dump()
-    if "phone" in payload:
-        payload["phone"] = normalize_phone(payload.get("phone"))
+    _normalize_client_fields(payload)
     # Enrich with extracted data from email, name, etc.
     payload = enrich_client_data(payload)
     payload["name"] = _derive_name(payload.get("first_name"), payload.get("last_name"), payload.get("name") or "")
@@ -670,8 +710,7 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     updates = data.model_dump(exclude_none=True)
-    if "phone" in updates:
-        updates["phone"] = normalize_phone(updates.get("phone"))
+    _normalize_client_fields(updates, existing_city=client.city)
     phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
     new_phone = updates.get("phone") if phone_changed else None
 

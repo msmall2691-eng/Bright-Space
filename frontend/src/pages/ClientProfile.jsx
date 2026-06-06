@@ -332,7 +332,7 @@ export default function ClientProfile() {
       await load(); setEditing(false)
     } catch (e) {
       console.error('[ClientProfile save error]', e)
-      toast.error('Failed to save changes. Please try again.')
+      toast.error('Could not save: ' + (e?.message || 'unknown error'))
     }
     setSaving(false)
   }
@@ -1489,14 +1489,14 @@ export default function ClientProfile() {
               </div>
 
               <div>
-                <label className="block text-xs text-ink-3 mb-1">Phone *</label>
+                <label className="block text-xs text-ink-3 mb-1">Phone</label>
                 <input type="tel" value={form.phone || ''} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="+1 (555) 123-4567"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
               </div>
 
               <div>
-                <label className="block text-xs text-ink-3 mb-1">Email *</label>
+                <label className="block text-xs text-ink-3 mb-1">Email</label>
                 <input type="email" value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="client@example.com"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400" />
