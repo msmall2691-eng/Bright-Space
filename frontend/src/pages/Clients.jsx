@@ -40,6 +40,10 @@ export default function Clients() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [dupes, setDupes] = useState([]) // possible duplicates surfaced on create (non-blocking)
+  // Invalidate the duplicate warning whenever a match-relevant field changes, so
+  // editing the name/phone/email after a warning re-runs the check on next save
+  // instead of "Create anyway" slipping through with the new values (Codex review).
+  useEffect(() => { setDupes([]) }, [form.first_name, form.last_name, form.phone, form.email])
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first

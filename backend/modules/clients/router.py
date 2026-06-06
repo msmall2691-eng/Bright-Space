@@ -526,6 +526,16 @@ def check_duplicate(
     if tail:
         for c in q.filter(Client.phone_tail == tail).all():
             matches[c.id] = c
+        # Also match secondary numbers stored as ContactPhone rows — the UI
+        # supports multiple phones per client, so a new client carrying an
+        # existing client's non-primary number should still warn (Codex review).
+        secondary_ids = {cp.client_id for cp in db.query(ContactPhone).filter(ContactPhone.phone_tail == tail).all()}
+        secondary_ids -= set(matches)
+        if exclude_id:
+            secondary_ids.discard(exclude_id)
+        if secondary_ids:
+            for c in db.query(Client).filter(Client.id.in_(secondary_ids)).all():
+                matches[c.id] = c
     if email:
         em = email.strip().lower()
         if em:
@@ -857,6 +867,25 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
     derived = _derive_name(winner.first_name, winner.last_name, winner.name)
     if derived:
         winner.name = derived
+
+    # 1b. Preserve the loser's CONFLICTING phone/email. The backfill above only
+    # fills fields the winner left empty, so when both records have different
+    # values the loser's would be lost when it's deleted (create_client stores
+    # contact details only on Client, not as ContactPhone/ContactEmail rows, so
+    # the relationship-moving loops below can't rescue them). Keep them as the
+    # winner's secondary contact rows (Codex review).
+    if loser.phone and loser.phone != winner.phone:
+        if loser.phone not in {cp.phone for cp in winner.contact_phones}:
+            db.add(ContactPhone(
+                client_id=winner_id, phone=loser.phone,
+                phone_tail=getattr(loser, "phone_tail", None) or _phone_tail(loser.phone),
+                is_primary=False, phone_type="mobile", source="merge",
+            ))
+    if loser.email and (loser.email or "").lower() != (winner.email or "").lower():
+        if loser.email.lower() not in {(ce.email or "").lower() for ce in winner.contact_emails}:
+            db.add(ContactEmail(
+                client_id=winner_id, email=loser.email, is_primary=False, source="merge",
+            ))
 
     # 2. Conversations — fold respecting the (client_id, channel) unique index.
     keepers_by_channel = {
