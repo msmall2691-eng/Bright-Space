@@ -52,6 +52,7 @@ const PAGE_AGENTS = {
  */
 export default function AgentWidget({ pageContext = 'dashboard', prompts = [], contextData }) {
   const [open, setOpen] = useState(false)
+  const [hidden, setHidden] = useState(() => localStorage.getItem('brightbase_hide_scout') === '1')
   const [expanded, setExpanded] = useState(false)
   const [activeAgent, setActiveAgent] = useState(null)
   const [showAgentPicker, setShowAgentPicker] = useState(false)
@@ -61,6 +62,13 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
   const wsRef = useRef(null)
   const pendingRef = useRef([])
   const bottomRef = useRef(null)
+
+  // React to the Settings → General visibility toggle (same-tab custom event).
+  useEffect(() => {
+    const onVis = () => setHidden(localStorage.getItem('brightbase_hide_scout') === '1')
+    window.addEventListener('scout-visibility', onVis)
+    return () => window.removeEventListener('scout-visibility', onVis)
+  }, [])
   const inputRef = useRef(null)
 
   // Set default agent based on page
@@ -173,17 +181,37 @@ export default function AgentWidget({ pageContext = 'dashboard', prompts = [], c
 
   if (!activeAgent) return null
 
-  // Floating trigger button
+  // Dismissed by the user (re-enable in Settings → General).
+  if (hidden) return null
+
+  const hideScout = () => {
+    localStorage.setItem('brightbase_hide_scout', '1')
+    setHidden(true)
+    window.dispatchEvent(new Event('scout-visibility'))
+  }
+
+  // Floating trigger button. Icon-only on mobile so it doesn't sit on top of the
+  // page content; a small × dismisses it entirely.
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-[8.5rem] right-4 lg:bottom-5 lg:right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl shadow-lg border border-hairline bg-panel hover:bg-bg transition-all hover:shadow-xl group"
-      >
-        <span className="text-lg">{activeAgent.emoji}</span>
-        <span className="text-sm font-medium text-ink-2">Ask {activeAgent.name}</span>
-        <Sparkles className="w-3.5 h-3.5 text-ink-3 group-hover:text-amber-500 transition-colors" />
-      </button>
+      <div className="fixed bottom-[6.5rem] right-4 lg:bottom-5 lg:right-5 z-40 group/scout">
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2 px-3 sm:px-4 py-3 rounded-2xl shadow-lg border border-hairline bg-panel hover:bg-bg transition-all hover:shadow-xl group"
+        >
+          <span className="text-lg">{activeAgent.emoji}</span>
+          <span className="hidden sm:inline text-sm font-medium text-ink-2">Ask {activeAgent.name}</span>
+          <Sparkles className="w-3.5 h-3.5 text-ink-3 group-hover:text-amber-500 transition-colors" />
+        </button>
+        <button
+          onClick={hideScout}
+          title="Hide assistant (turn back on in Settings → General)"
+          aria-label="Hide assistant"
+          className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-bg-2 border border-hairline text-ink-3 hover:text-ink flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover/scout:opacity-100 transition-opacity"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
     )
   }
 

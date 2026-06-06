@@ -52,6 +52,7 @@ function Toast({ toasts }) {
 export default function Settings() {
   const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations'
   const [themeChoice, setThemeChoice] = useState(getTheme())
+  const [showScout, setShowScout] = useState(() => localStorage.getItem('brightbase_hide_scout') !== '1')
   const [entityTab, setEntityTab] = useState('client')
   const [fields, setFields] = useState([])
   const [panel, setPanel] = useState(null)
@@ -493,6 +494,24 @@ export default function Settings() {
                     ))}
                   </div>
                   <p className="text-xs text-ink-3 mt-2">Applies instantly and is remembered on this device.</p>
+
+                  <div className="border-t border-hairline mt-5 pt-5">
+                    <label className="flex items-center justify-between gap-3 cursor-pointer">
+                      <span>
+                        <span className={lbl}>AI assistant</span>
+                        <span className="block text-xs text-ink-3 mt-0.5">Show the floating "Ask Scout" button on every page.</span>
+                      </span>
+                      <input type="checkbox" checked={showScout}
+                        onChange={e => {
+                          const show = e.target.checked
+                          setShowScout(show)
+                          if (show) localStorage.removeItem('brightbase_hide_scout')
+                          else localStorage.setItem('brightbase_hide_scout', '1')
+                          window.dispatchEvent(new Event('scout-visibility'))
+                        }}
+                        className="w-4 h-4 shrink-0 cursor-pointer" />
+                    </label>
+                  </div>
                 </div>
               </div>
 
