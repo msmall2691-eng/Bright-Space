@@ -18,7 +18,35 @@ RFC 5545 rule: DTEND is EXCLUSIVE for all-day events.
 
 import httpx
 import re
+import socket
+import ipaddress
+from urllib.parse import urlparse
 from icalendar import Calendar
+
+
+def _assert_public_url(url: str) -> None:
+    """SSRF guard for operator-supplied iCal feed URLs. Only allow http(s) to a
+    publicly-routable host; reject anything that resolves to a private, loopback,
+    link-local (incl. the 169.254.169.254 cloud-metadata endpoint), reserved, or
+    multicast address. Without this, an admin (or a leaked API key) could point a
+    feed at internal services and have the scheduler fetch them every cycle.
+    Raises ValueError on a disallowed URL."""
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported scheme {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("missing host")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        raise ValueError(f"cannot resolve host ({e})")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                or ip.is_multicast or ip.is_unspecified):
+            raise ValueError(f"resolves to non-public address {ip}")
+
 from datetime import datetime, date, timedelta, time as time_type, timezone
 from pytz import timezone as pytz_timezone
 from sqlalchemy.orm import Session
@@ -128,7 +156,8 @@ def _to_time(s):
 
 
 async def fetch_ical(url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=15) as client:
+    _assert_public_url(url)
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
         r = await client.get(url)
         r.raise_for_status()
         return r.content
@@ -146,7 +175,12 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     # Fetch feed
     import httpx as _httpx
     try:
-        with _httpx.Client(timeout=15) as client:
+        _assert_public_url(ical_url)
+    except ValueError as e:
+        log.warning(f"Refusing to fetch unsafe iCal URL {ical_url}: {e}")
+        return {"error": f"Refusing unsafe iCal URL: {e}"}
+    try:
+        with _httpx.Client(timeout=15, follow_redirects=False) as client:
             r = client.get(ical_url)
             r.raise_for_status()
             raw = r.content
