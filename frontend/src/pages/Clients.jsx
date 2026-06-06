@@ -39,6 +39,11 @@ export default function Clients() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [dupes, setDupes] = useState([]) // possible duplicates surfaced on create (non-blocking)
+  // Invalidate the duplicate warning whenever a match-relevant field changes, so
+  // editing the name/phone/email after a warning re-runs the check on next save
+  // instead of "Create anyway" slipping through with the new values (Codex review).
+  useEffect(() => { setDupes([]) }, [form.first_name, form.last_name, form.phone, form.email])
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
@@ -50,6 +55,9 @@ export default function Clients() {
   const [loadingPhones, setLoadingPhones] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [mergeModal, setMergeModal] = useState(null) // { a, b } the two clients being merged
+  const [mergeWinner, setMergeWinner] = useState(null) // id of the surviving record
+  const [merging, setMerging] = useState(false)
 
   const load = () =>
     get(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`).then(setClients).catch(err => console.error("[Clients]", err))
@@ -65,17 +73,31 @@ export default function Clients() {
   const save = async () => {
     setSaving(true); setSaveError('')
     try {
+      // Dupe check on create — non-blocking. First save surfaces any matches;
+      // saving again (dupes already shown) creates anyway.
+      if (!selected && dupes.length === 0) {
+        const q = new URLSearchParams()
+        const nm = `${form.first_name || ''} ${form.last_name || ''}`.trim()
+        if (nm) q.set('name', nm)
+        if (form.phone) q.set('phone', form.phone)
+        if (form.email) q.set('email', form.email)
+        if ([...q.keys()].length) {
+          const res = await get(`/api/clients/check-duplicate?${q.toString()}`).catch(() => null)
+          if (res?.duplicates?.length) { setDupes(res.duplicates); setSaving(false); return }
+        }
+      }
       const url = selected ? `/api/clients/${selected.id}` : '/api/clients'
       selected ? await patch(url, form) : await post(url, form)
-      await load(); setShowForm(false); setSelected(null); setForm(EMPTY); setPhoneNumbers([])
+      await load(); setShowForm(false); setSelected(null); setForm(EMPTY); setPhoneNumbers([]); setDupes([])
     } catch (e) { setSaveError(e.message || 'Failed to save') }
     setSaving(false)
   }
 
-  const openNew = () => { setForm(EMPTY); setSelected(null); setPhoneNumbers([]); setShowForm(true) }
+  const openNew = () => { setForm(EMPTY); setSelected(null); setPhoneNumbers([]); setDupes([]); setShowForm(true) }
   const openEdit = (c) => {
     setForm({ ...c });
     setSelected(c);
+    setDupes([])
     loadPhones(c.id)
     setShowForm(true)
   }
@@ -175,6 +197,29 @@ export default function Clients() {
     } finally {
       setBulkDeleting(false)
     }
+  }
+
+  const openMerge = () => {
+    const [a, b] = Array.from(selectedIds).map(id => clients.find(c => c.id === id)).filter(Boolean)
+    if (!a || !b) return
+    setMergeModal({ a, b })
+    // Default the survivor to the more-complete / active record.
+    const score = c => (c.status === 'active' ? 2 : 0) + (c.email ? 1 : 0) + (c.phone ? 1 : 0)
+    setMergeWinner(score(b) > score(a) ? b.id : a.id)
+  }
+  const doMerge = async () => {
+    if (!mergeModal || !mergeWinner) return
+    const winner = mergeWinner
+    const loser = mergeModal.a.id === winner ? mergeModal.b.id : mergeModal.a.id
+    setMerging(true)
+    try {
+      await post(`/api/clients/${winner}/merge`, { loser_id: loser })
+      toast.success('Clients merged')
+      setMergeModal(null); clearSelection(); await load()
+    } catch (e) {
+      toast.error('Could not merge: ' + (e?.message || 'unknown error'))
+    }
+    setMerging(false)
   }
 
   const statusCounts = {
@@ -278,6 +323,14 @@ export default function Clients() {
                 className="text-[11px] text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
                 Clear
               </button>
+              {selectedIds.size === 2 && (
+                <button onClick={openMerge}
+                  data-testid="clients-bulk-merge"
+                  className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
+                  <Users className="w-3.5 h-3.5" />
+                  Merge
+                </button>
+              )}
               <button onClick={bulkDelete} disabled={bulkDeleting}
                 data-testid="clients-bulk-delete"
                 className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
@@ -539,6 +592,21 @@ export default function Clients() {
               onChange={(key, val) => setForm(f => ({ ...f, custom_fields: { ...(f.custom_fields || {}), [key]: val } }))}
             />
           </div>
+          {dupes.length > 0 && (
+            <div className="mx-6 mb-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <div className="font-semibold mb-1">Possible duplicate{dupes.length > 1 ? 's' : ''} found:</div>
+              <ul className="space-y-0.5">
+                {dupes.map(d => (
+                  <li key={d.id} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{d.name}{d.phone ? ` · ${d.phone}` : ''}{d.email ? ` · ${d.email}` : ''}</span>
+                    <button type="button" onClick={() => navigate(`/clients/${d.id}`)}
+                      className="shrink-0 text-blue-600 hover:text-blue-700 font-medium">Open</button>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-1 text-amber-600">Save again to create anyway.</div>
+            </div>
+          )}
           {saveError && (
             <div className="mx-6 mb-2 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</div>
           )}
@@ -551,8 +619,50 @@ export default function Clients() {
             )}
             <button onClick={save} disabled={saving || (!form.first_name && !form.last_name)}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : (dupes.length > 0 ? 'Create anyway' : 'Save')}
             </button>
+          </div>
+        </div>
+      )}
+      {mergeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+          onClick={() => !merging && setMergeModal(null)}>
+          <div className="bg-panel border border-hairline rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-ink mb-1">Merge clients</h3>
+            <p className="text-[12px] text-ink-3 mb-4">
+              Pick the record to keep. The other is deleted and all its jobs, invoices, properties,
+              messages and contact info move onto the survivor. This can't be undone.
+            </p>
+            <div className="space-y-2">
+              {[mergeModal.a, mergeModal.b].map(c => (
+                <label key={c.id}
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${mergeWinner === c.id ? 'border-blue-400 bg-blue-50/40' : 'border-hairline hover:bg-bg-2'}`}>
+                  <input type="radio" name="merge-winner" checked={mergeWinner === c.id}
+                    onChange={() => setMergeWinner(c.id)} className="mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold text-ink truncate">{c.name}
+                      <span className="ml-2 text-[10px] font-medium text-ink-3 uppercase">{c.status}</span>
+                    </div>
+                    <div className="text-[11px] text-ink-3 truncate">
+                      {[c.phone, c.email, c.city].filter(Boolean).join(' · ') || 'No contact info'}
+                    </div>
+                  </div>
+                  <span className="ml-auto text-[10px] font-medium text-ink-3 shrink-0">
+                    {mergeWinner === c.id ? 'Keep' : 'Remove'}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setMergeModal(null)} disabled={merging}
+                className="flex-1 px-4 py-2 text-[13px] text-ink-2 border border-hairline rounded-lg hover:bg-bg-2 transition-colors font-medium">
+                Cancel
+              </button>
+              <button onClick={doMerge} disabled={merging || !mergeWinner}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
+                {merging ? 'Merging...' : 'Merge'}
+              </button>
+            </div>
           </div>
         </div>
       )}
