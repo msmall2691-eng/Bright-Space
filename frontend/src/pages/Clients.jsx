@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2, Users } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { EmptyState } from '../components/ui'
+import AddressAutocomplete from '../components/AddressAutocomplete'
 import { del, get, post, patch, upload } from "../api"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
@@ -550,8 +551,18 @@ export default function Clients() {
               ].map(({ label, key }) => (
                 <div key={key} className="mb-3">
                   <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
-                  <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  {key === 'address' ? (
+                    <AddressAutocomplete
+                      value={form.address || ''}
+                      onChange={v => setForm(f => ({ ...f, address: v }))}
+                      onSelect={p => setForm(f => ({ ...f, address: p.address || f.address, city: p.city || f.city, state: p.state || f.state, zip_code: p.zip_code || f.zip_code }))}
+                      placeholder="Start typing an address…"
+                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20"
+                    />
+                  ) : (
+                    <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  )}
                 </div>
               ))}
             </div>
