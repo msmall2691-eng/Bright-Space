@@ -98,7 +98,8 @@ def _is_placeholder_candidate(client: Client) -> bool:
     name = (client.name or "").strip()
     if name and not _PLACEHOLDER_NAME_PATTERN.match(name):
         return False
-    if client.quotes: return False
+    # (Quotes intentionally not checked: they're UUID-keyed and don't link to the
+    # integer Client.id, so client.quotes doesn't exist — see the model note.)
     if client.invoices: return False
     if client.jobs: return False
     if client.properties: return False
@@ -655,7 +656,6 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
     """
     client = db.query(Client).options(
         joinedload(Client.opportunities),
-        joinedload(Client.quotes),
         joinedload(Client.invoices),
         joinedload(Client.messages),
         joinedload(Client.activities),
@@ -695,9 +695,13 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
         "opportunities_count": len(client.opportunities),
     }
 
-    # Financial summary
-    quotes_sent = sum(1 for q in client.quotes if q.status in ("sent", "accepted"))
-    quotes_accepted = sum(1 for q in client.quotes if q.status == "accepted")
+    # Financial summary.
+    # NOTE: quotes use UUID keys that don't map to the integer Client.id (see the
+    # model note on Client), so there's no working per-client quote linkage to
+    # count here. Referencing client.quotes used to AttributeError and 500 this
+    # whole endpoint; report 0 until the quote data model is reconciled.
+    quotes_sent = 0
+    quotes_accepted = 0
     invoices_issued = len(client.invoices)
     invoices_paid = sum(1 for i in client.invoices if i.status == "paid")
     total_invoiced = sum(i.total for i in client.invoices)
