@@ -31,7 +31,7 @@ export default function Payroll() {
   return (
     <div className="p-4 sm:p-6 max-w-4xl">
       <div className="mb-6">
-        <h2 className="text-lg font-semibold text-ink mb-1">Payroll</h2>
+        <h2 className="text-xl font-bold text-ink tracking-tight mb-1">Payroll</h2>
         <p className="text-sm text-ink-3">Pull timesheet and mileage data from Connecteam for a pay period.</p>
       </div>
 

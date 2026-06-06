@@ -301,7 +301,7 @@ export default function PropertyDetail() {
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl font-bold text-ink">{property.name}</h1>
+            <h1 className="text-xl font-bold text-ink tracking-tight">{property.name}</h1>
           </div>
 
           {/* Property Info */}

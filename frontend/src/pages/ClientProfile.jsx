@@ -510,7 +510,7 @@ export default function ClientProfile() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg sm:text-xl font-bold text-ink truncate">{client.name}</h1>
+                <h1 className="text-lg sm:text-xl font-bold text-ink tracking-tight truncate">{client.name}</h1>
                 <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
                   {client.status}
                 </span>

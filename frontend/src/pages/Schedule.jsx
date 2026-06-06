@@ -138,7 +138,7 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
           <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
             {isToday ? 'Today' : ''}
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-ink">
+          <h2 className="text-xl font-bold text-ink tracking-tight">
             {new Date(`${currentDate.toISOString().split('T')[0]}T00:00`).toLocaleDateString('en-US', {
               weekday: 'long', month: 'long', day: 'numeric',
             })}
