@@ -78,8 +78,15 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # Fall back to API key
         expected_key = os.getenv("BRIGHTBASE_API_KEY", "")
         if not expected_key:
-            logger.warning("[auth] BRIGHTBASE_API_KEY not set — all requests allowed.")
-            return await call_next(request)
+            # Fail CLOSED. This previously allowed EVERY request through when the
+            # key was unset, so a misconfigured deploy served all data with no
+            # auth. A valid JWT is already handled above, so logged-in traffic is
+            # unaffected; only unauthenticated requests are rejected now. Ensure
+            # BRIGHTBASE_API_KEY is set in production.
+            logger.error("[auth] BRIGHTBASE_API_KEY not set and no valid JWT — rejecting request.")
+            return JSONResponse(
+                {"detail": "Server authentication is not configured."}, status_code=401
+            )
 
         # Accept key from header or query param (WebSocket)
         provided_key = request.headers.get("X-API-Key", "")

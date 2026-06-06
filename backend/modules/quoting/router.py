@@ -60,6 +60,7 @@ from schemas.quotes import (
     QuoteRequestCreate, QuoteRequestUpdate, QuoteRequestResponse
 )
 from database.models import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmail, Client
+from modules.auth.router import require_role
 
 router = APIRouter(tags=["quotes"])
 
@@ -80,7 +81,7 @@ def _app_base() -> str:
 # Quote CRUD Endpoints
 # ========================
 
-@router.post("/", response_model=QuoteResponse, status_code=201)
+@router.post("/", response_model=QuoteResponse, status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 async def create_quote(
     quote_data: QuoteCreate,
     db: Session = Depends(get_db),
@@ -142,7 +143,7 @@ async def create_quote(
     return quote
 
 
-@router.get("/{quote_id}", response_model=QuoteResponse)
+@router.get("/{quote_id}", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def get_quote(
     quote_id: UUID,
     db: Session = Depends(get_db)
@@ -154,7 +155,7 @@ async def get_quote(
     return quote
 
 
-@router.get("/", response_model=List[QuoteSummary])
+@router.get("/", response_model=List[QuoteSummary], dependencies=[Depends(require_role("admin", "manager"))])
 async def list_quotes(
     db: Session = Depends(get_db),
     client_id: Optional[UUID] = Query(None),
@@ -175,7 +176,7 @@ async def list_quotes(
     return quotes
 
 
-@router.put("/{quote_id}", response_model=QuoteResponse)
+@router.put("/{quote_id}", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def update_quote(
     quote_id: UUID,
     quote_data: QuoteUpdate,
@@ -213,7 +214,7 @@ async def update_quote(
 # Quote Line Items Endpoints
 # ========================
 
-@router.post("/{quote_id}/line-items", response_model=QuoteLineItemResponse, status_code=201)
+@router.post("/{quote_id}/line-items", response_model=QuoteLineItemResponse, status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 async def add_line_item(
     quote_id: UUID,
     item_data: QuoteLineItemCreate,
@@ -242,7 +243,7 @@ async def add_line_item(
     return line_item
 
 
-@router.get("/{quote_id}/line-items", response_model=List[QuoteLineItemResponse])
+@router.get("/{quote_id}/line-items", response_model=List[QuoteLineItemResponse], dependencies=[Depends(require_role("admin", "manager"))])
 async def get_line_items(
     quote_id: UUID,
     db: Session = Depends(get_db)
@@ -257,7 +258,7 @@ async def get_line_items(
     return items
 
 
-@router.put("/line-items/{item_id}", response_model=QuoteLineItemResponse)
+@router.put("/line-items/{item_id}", response_model=QuoteLineItemResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def update_line_item(
     item_id: UUID,
     item_data: QuoteLineItemUpdate,
@@ -287,7 +288,7 @@ async def update_line_item(
     return item
 
 
-@router.delete("/line-items/{item_id}", status_code=204)
+@router.delete("/line-items/{item_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
 async def delete_line_item(
     item_id: UUID,
     db: Session = Depends(get_db)
@@ -312,7 +313,7 @@ async def delete_line_item(
 # Quote Status Endpoints
 # ========================
 
-@router.post("/{quote_id}/send", response_model=QuoteResponse)
+@router.post("/{quote_id}/send", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def send_quote(
     quote_id: UUID,
     db: Session = Depends(get_db)
@@ -336,7 +337,7 @@ async def send_quote(
     return quote
 
 
-@router.post("/{quote_id}/generate-token")
+@router.post("/{quote_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
 async def generate_quote_token(quote_id: UUID, db: Session = Depends(get_db)):
     """Ensure the quote has a public accept-link token and return it +
     the full shareable link. Used by the 'Copy Link' action so staff can share
@@ -354,7 +355,7 @@ async def generate_quote_token(quote_id: UUID, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{quote_id}/view", response_model=QuoteResponse)
+@router.post("/{quote_id}/view", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def mark_quote_viewed(
     quote_id: UUID,
     db: Session = Depends(get_db)
@@ -373,7 +374,7 @@ async def mark_quote_viewed(
     return quote
 
 
-@router.post("/{quote_id}/accept", response_model=QuoteResponse)
+@router.post("/{quote_id}/accept", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def accept_quote(
     quote_id: UUID,
     db: Session = Depends(get_db)
@@ -402,7 +403,7 @@ async def accept_quote(
     return quote
 
 
-@router.post("/{quote_id}/decline", response_model=QuoteResponse)
+@router.post("/{quote_id}/decline", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def decline_quote(
     quote_id: UUID,
     db: Session = Depends(get_db)
@@ -529,7 +530,7 @@ async def public_request_changes(token: str, data: PublicChangeRequest, db: Sess
 # Quote Request Endpoints
 # ========================
 
-@router.post("/requests/", response_model=QuoteRequestResponse, status_code=201)
+@router.post("/requests/", response_model=QuoteRequestResponse, status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 async def create_quote_request(
     request_data: QuoteRequestCreate,
     db: Session = Depends(get_db),
@@ -549,7 +550,7 @@ async def create_quote_request(
     return quote_request
 
 
-@router.get("/requests/", response_model=List[QuoteRequestResponse])
+@router.get("/requests/", response_model=List[QuoteRequestResponse], dependencies=[Depends(require_role("admin", "manager"))])
 async def list_quote_requests(
     db: Session = Depends(get_db),
     status: Optional[str] = Query(None),
@@ -566,7 +567,7 @@ async def list_quote_requests(
     return requests
 
 
-@router.get("/requests/{request_id}", response_model=QuoteRequestResponse)
+@router.get("/requests/{request_id}", response_model=QuoteRequestResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def get_quote_request(
     request_id: UUID,
     db: Session = Depends(get_db)
@@ -578,7 +579,7 @@ async def get_quote_request(
     return quote_request
 
 
-@router.put("/requests/{request_id}", response_model=QuoteRequestResponse)
+@router.put("/requests/{request_id}", response_model=QuoteRequestResponse, dependencies=[Depends(require_role("admin", "manager"))])
 async def update_quote_request(
     request_id: UUID,
     request_data: QuoteRequestUpdate,
@@ -627,7 +628,7 @@ from services.quote_email_service import QuoteEmailService
 from fastapi.responses import StreamingResponse
 
 
-@router.post("/{quote_id}/generate-pdf")
+@router.post("/{quote_id}/generate-pdf", dependencies=[Depends(require_role("admin", "manager"))])
 async def generate_quote_pdf(
     quote_id: UUID,
     db: Session = Depends(get_db),
@@ -681,7 +682,7 @@ async def generate_quote_pdf(
     }
 
 
-@router.post("/{quote_id}/send-email")
+@router.post("/{quote_id}/send-email", dependencies=[Depends(require_role("admin", "manager"))])
 async def send_quote_email(
     quote_id: UUID,
     recipient_email: str = Query(...),
@@ -779,7 +780,7 @@ async def send_quote_email(
     }
 
 
-@router.get("/{quote_id}/email-history")
+@router.get("/{quote_id}/email-history", dependencies=[Depends(require_role("admin", "manager"))])
 async def get_quote_email_history(
     quote_id: UUID,
     db: Session = Depends(get_db),

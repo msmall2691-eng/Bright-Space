@@ -8,6 +8,7 @@ from typing import Optional
 from database.db import get_db
 from database.models import AppSetting
 from modules.auth.router import require_role
+import re
 import imaplib
 import smtplib
 import logging
@@ -16,6 +17,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 SENSITIVE_KEYS = {"smtp_pass", "imap_pass"}
+# Any setting whose key matches this is a secret (OAuth tokens, SSO nonces, API
+# keys, passwords) and must never be returned in full. get_all_settings used to
+# return google_token (a full Google OAuth refresh token) and the sso_* nonces
+# in cleartext to any caller.
+_SECRET_KEY_RE = re.compile(r'(pass|secret|token|credential|api_key|sso_|client_secret)', re.IGNORECASE)
 EMAIL_SETTING_KEYS = [
     "smtp_user", "smtp_pass", "smtp_host", "smtp_port",
     "imap_host", "imap_port",
@@ -131,13 +137,14 @@ def test_email_connection(db: Session = Depends(get_db)):
     return results
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role("admin", "manager"))])
 def get_all_settings(db: Session = Depends(get_db)):
     rows = db.query(AppSetting).all()
     result = {}
     for row in rows:
-        if row.key in SENSITIVE_KEYS:
-            result[row.key] = "****" + row.value[-4:] if row.value and len(row.value) > 4 else "****"
+        if row.key in SENSITIVE_KEYS or _SECRET_KEY_RE.search(row.key or ""):
+            v = row.value or ""
+            result[row.key] = ("****" + v[-4:]) if len(v) > 4 else "****"
         else:
             result[row.key] = row.value
     return result
