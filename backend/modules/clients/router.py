@@ -802,17 +802,21 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
         try:
             # Guard against a stale side-effect. The core update committed in its
             # own transaction above, so a concurrent request could have committed
-            # a *different* phone in between. Re-read the client and only promote
-            # new_phone to primary if it's still the canonical phone — otherwise
-            # client.phone and the primary ContactPhone would diverge (Codex
-            # review on overlapping phone updates).
-            db.refresh(client)
-            if client.phone != new_phone:
+            # a *different* phone in between. Lock the client row FOR UPDATE and
+            # hold it through the promotion + commit, so the canonical-phone check
+            # and the is_primary writes are ATOMIC w.r.t. another phone update —
+            # otherwise a newer request could promote its phone in the window
+            # between our re-read and our writes, leaving a stale number primary
+            # (Codex review follow-up). On SQLite with_for_update is a no-op, which
+            # is fine since it isn't concurrent.
+            locked = db.query(Client).filter(Client.id == client_id).with_for_update().first()
+            if locked and locked.phone != new_phone:
                 logger.info(
                     "[update_client %s] phone changed before side-effect ran (canonical=%r, expected=%r); skipping primary promotion",
-                    client_id, client.phone, new_phone,
+                    client_id, locked.phone, new_phone,
                 )
-            else:
+                db.commit()  # release the row lock; nothing to change
+            elif locked:
                 existing_cp = db.query(ContactPhone).filter(
                     ContactPhone.client_id == client_id,
                     ContactPhone.phone == new_phone
