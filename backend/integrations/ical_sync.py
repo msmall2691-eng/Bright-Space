@@ -582,6 +582,11 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     total_skipped_host_blocks = 0
     total_skipped_not_reserved = 0
     sources_synced = []
+    # Per-source failures. The legacy ical_url has no PropertyIcal row to record
+    # its status on, so a failed legacy feed would otherwise be invisible to
+    # callers (e.g. the turnover sweep) and the property could be reported
+    # healthy off stale events. Collect every source's error here and expose it.
+    sync_errors = []
 
     # Sync legacy ical_url first if it exists (skipped in single-feed mode)
     if prop.ical_url and only_ical_id is None:
@@ -595,6 +600,8 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
             sources_synced.append("legacy_ical_url")
+        else:
+            sync_errors.append({"source": "legacy_ical_url", "error": str(result.get("error", ""))[:200]})
 
     # Sync all PropertyIcal entries (or just one, in single-feed retry mode)
     for prop_ical in (prop.property_icals or []):
@@ -616,6 +623,7 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
             prop_ical.last_sync_status = "failed"
             prop_ical.last_sync_error = str(result.get("error", ""))[:500]
             prop_ical.sync_retry_count = (prop_ical.sync_retry_count or 0) + 1
+            sync_errors.append({"source": prop_ical.source or "feed", "error": str(result.get("error", ""))[:200]})
         else:
             prop_ical.last_sync_status = "ok"
             prop_ical.last_sync_error = None
@@ -675,6 +683,7 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         "skipped_not_reserved": total_skipped_not_reserved,
         "gcal_backfilled": gcal_backfilled,
         "sources_synced": sources_synced,
+        "sync_errors": sync_errors,
         "synced_at": prop.ical_last_synced_at.isoformat() if prop.ical_last_synced_at else None,
     }
 

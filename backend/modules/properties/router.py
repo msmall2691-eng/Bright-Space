@@ -321,6 +321,13 @@ def turnover_sweep(db: Session = Depends(get_db)):
             # per-feed sync status.
             if isinstance(result, dict) and result.get("error"):
                 sync_error = str(result["error"])[:200]
+            elif isinstance(result, dict) and result.get("sync_errors"):
+                # Per-source failures — notably the legacy ical_url, which has no
+                # PropertyIcal row for the feed-status check below to inspect
+                # (Codex review follow-up).
+                errs = result["sync_errors"]
+                detail = "; ".join(f"{e.get('source', 'feed')}: {e.get('error', '')}" for e in errs[:3])
+                sync_error = f"feed sync failed ({detail})"
         except Exception as e:
             log.warning(f"turnover-sweep sync failed for property {prop.id}: {e}")
             sync_error = "sync failed"
