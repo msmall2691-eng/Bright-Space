@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
+import { applyTheme } from './theme'
+
+// Apply the saved theme (default: clean light) before first paint.
+applyTheme()
+
 
 // ── Global fetch interceptor: inject API key into every request ──
 const _origFetch = window.fetch
