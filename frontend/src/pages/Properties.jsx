@@ -344,7 +344,7 @@ export default function Properties() {
     <div className="flex h-full">
       <div className="flex-1 p-6 flex flex-col min-w-0">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-ink">{pageTitle}</h2>
+          <h2 className="text-xl font-bold text-ink tracking-tight">{pageTitle}</h2>
           <div className="flex items-center gap-2">
             {properties.length > 0 && (
               <button onClick={runSweep} disabled={sweeping}
