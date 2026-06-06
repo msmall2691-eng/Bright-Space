@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from database.db import get_db
-from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation, User
+from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation, User, RecurringSchedule, LeadIntake
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 from utils.contacts import normalize_phone
 from utils.enrichment import enrich_client_data
@@ -503,6 +503,45 @@ def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     return client_to_dict(client)
 
 
+@router.get("/check-duplicate", dependencies=[Depends(require_role("admin", "manager"))])
+def check_duplicate(
+    name: Optional[str] = None,
+    phone: Optional[str] = None,
+    email: Optional[str] = None,
+    exclude_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Find existing clients that look like duplicates of the given details —
+    same phone (by last-10 tail), same email (case-insensitive), or same name.
+    Used by the new-client form to warn (non-blocking) before creating a dup.
+
+    NB: declared before GET /{client_id} so the literal path isn't swallowed by
+    the int path-param route."""
+    q = db.query(Client)
+    if exclude_id:
+        q = q.filter(Client.id != exclude_id)
+
+    matches: dict[int, Client] = {}
+    tail = _phone_tail(normalize_phone(phone)) if phone else None
+    if tail:
+        for c in q.filter(Client.phone_tail == tail).all():
+            matches[c.id] = c
+    if email:
+        em = email.strip().lower()
+        if em:
+            from sqlalchemy import func as _func
+            for c in q.filter(_func.lower(Client.email) == em).all():
+                matches[c.id] = c
+    if name:
+        nm = name.strip().lower()
+        if nm:
+            from sqlalchemy import func as _func
+            for c in q.filter(_func.lower(Client.name) == nm).all():
+                matches[c.id] = c
+
+    return {"duplicates": [client_to_dict(c) for c in matches.values()]}
+
+
 @router.get("/{client_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_client(client_id: int, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()
@@ -777,6 +816,109 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
 
     db.refresh(client)
     return client_to_dict(client)
+
+
+class ClientMergeRequest(BaseModel):
+    loser_id: int
+
+
+@router.post("/{winner_id}/merge", dependencies=[Depends(require_role("admin", "manager"))])
+def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depends(get_db)):
+    """Collapse a duplicate: merge `loser_id` INTO `winner_id`.
+
+    Re-parents every record the loser owns onto the winner — jobs, invoices,
+    properties, recurring schedules, opportunities, lead intakes, activities,
+    messages, SMS conversations (folded so the (client_id, channel) unique index
+    can't blow up), and contact phones/emails (deduped) — backfills the winner's
+    empty contact fields from the loser, then deletes the loser.
+
+    Quotes are intentionally NOT touched: that table's client_id is a UUID column
+    (the quoting system is UUID-based and decoupled from the integer Client
+    table), so it never references an integer client id.
+    """
+    loser_id = body.loser_id
+    if loser_id == winner_id:
+        raise HTTPException(status_code=400, detail="Cannot merge a client into itself")
+    winner = db.query(Client).filter(Client.id == winner_id).first()
+    loser = db.query(Client).filter(Client.id == loser_id).first()
+    if not winner:
+        raise HTTPException(status_code=404, detail="Winner client not found")
+    if not loser:
+        raise HTTPException(status_code=404, detail="Loser client not found")
+
+    report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
+
+    # 1. Backfill the winner's empty contact fields from the loser.
+    for f in ("first_name", "last_name", "email", "phone", "phone_tail", "address",
+              "city", "state", "zip_code", "billing_address", "billing_city",
+              "billing_state", "billing_zip", "notes", "source"):
+        if not getattr(winner, f, None) and getattr(loser, f, None):
+            setattr(winner, f, getattr(loser, f))
+    derived = _derive_name(winner.first_name, winner.last_name, winner.name)
+    if derived:
+        winner.name = derived
+
+    # 2. Conversations — fold respecting the (client_id, channel) unique index.
+    keepers_by_channel = {
+        c.channel: c for c in db.query(Conversation).filter(Conversation.client_id == winner_id).all()
+    }
+    for conv in list(loser.conversations):
+        _attach_conv_to_client(db, conv, winner, keepers_by_channel, report)
+
+    # 3. Messages tied directly to the loser.
+    for msg in list(loser.messages):
+        msg.client = winner
+        report["linked_messages"] += 1
+
+    # 4. Contact phones / emails — move, deduping on the literal value.
+    existing_phones = {cp.phone for cp in winner.contact_phones}
+    for cp in list(loser.contact_phones):
+        if cp.phone in existing_phones:
+            db.delete(cp)
+        else:
+            cp.client = winner
+            existing_phones.add(cp.phone)
+    existing_emails = {ce.email for ce in winner.contact_emails}
+    for ce in list(loser.contact_emails):
+        if ce.email in existing_emails:
+            db.delete(ce)
+        else:
+            ce.client = winner
+            existing_emails.add(ce.email)
+
+    # 5. A client-user link (rare) — move to the winner if free, else detach so
+    #    deleting the loser can't trip the FK / one-user-per-client uniqueness.
+    loser_user = db.query(User).filter(User.client_id == loser_id).first()
+    if loser_user:
+        winner_has_user = db.query(User).filter(User.client_id == winner_id).first() is not None
+        loser_user.client_id = None if winner_has_user else winner_id
+
+    db.flush()
+
+    # 6. Bulk re-parent the unconstrained integer-FK tables (direct UPDATE — no
+    #    ORM cascade, so the rows move rather than getting delete-orphaned).
+    for Model in (Job, Invoice, Property, RecurringSchedule, Opportunity, Activity, LeadIntake):
+        db.query(Model).filter(Model.client_id == loser_id).update(
+            {Model.client_id: winner_id}, synchronize_session=False
+        )
+
+    db.commit()
+
+    # 7. Delete the now-empty loser. Re-fetch fresh first so no stale in-session
+    #    collection makes the cascade delete a row we just moved.
+    db.expire_all()
+    loser = db.query(Client).filter(Client.id == loser_id).first()
+    if loser:
+        db.delete(loser)
+        db.commit()
+
+    winner = db.query(Client).filter(Client.id == winner_id).first()
+    return {
+        "merged_into": winner_id,
+        "deleted_client": loser_id,
+        **report,
+        "client": client_to_dict(winner),
+    }
 
 
 @router.delete("/{client_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
