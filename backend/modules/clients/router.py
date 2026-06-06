@@ -5,6 +5,9 @@ from typing import Literal, Optional, List
 from datetime import datetime, date
 import io
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database.db import get_db
 from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote, Invoice, Message, Activity, ContactPhone, ContactEmail, Conversation, User
@@ -672,16 +675,21 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
     phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
     new_phone = updates.get("phone") if phone_changed else None
 
-    # Enrich with extracted data if email changed
+    # Enrich with extracted data if email changed. Best-effort: enrichment is a
+    # convenience (suggest name / source from the email domain) and must never
+    # block the user's save — a hiccup here used to surface as a 500.
     email_changed = "email" in updates and updates["email"] != client.email
     if email_changed:
-        client_data = client_to_dict(client)
-        client_data.update(updates)
-        enriched = enrich_client_data(client_data)
-        # Add enriched data to updates (name, first_name, last_name, source_detail)
-        for key in ['name', 'first_name', 'last_name', 'source_detail']:
-            if key in enriched and enriched[key] != client_data.get(key):
-                updates[key] = enriched[key]
+        try:
+            client_data = client_to_dict(client)
+            client_data.update(updates)
+            enriched = enrich_client_data(client_data)
+            # Add enriched data to updates (name, first_name, last_name, source_detail)
+            for key in ['name', 'first_name', 'last_name', 'source_detail']:
+                if key in enriched and enriched[key] != client_data.get(key):
+                    updates[key] = enriched[key]
+        except Exception:
+            logger.exception("[update_client %s] email enrichment failed; saving without it", client_id)
 
     for field, value in updates.items():
         setattr(client, field, value)
@@ -691,29 +699,43 @@ def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_
         if derived:
             client.name = derived
 
-    # If primary phone changed, mirror it in ContactPhone and backfill conversations
-    if new_phone:
-        existing_cp = db.query(ContactPhone).filter(
-            ContactPhone.client_id == client_id,
-            ContactPhone.phone == new_phone
-        ).first()
-        if not existing_cp:
-            db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
-            cp = ContactPhone(
-                client_id=client_id,
-                phone=new_phone,
-                is_primary=True,
-                phone_type="mobile",
-                source="manual",
-            )
-            db.add(cp)
-        else:
-            db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
-            existing_cp.is_primary = True
-        db.flush()
-        _link_and_merge_conversations(db, client_id, new_phone)
-
+    # Persist the field changes FIRST, in their own transaction. The phone /
+    # SMS-thread linking below is a side-effect that touches many other tables
+    # and has historically been the source of edge-case failures (e.g. the
+    # (client_id, channel) unique index during a merge). It must not be able to
+    # lose the user's edit — so we commit the core update before attempting it.
     db.commit()
+    db.refresh(client)
+
+    # Side-effect: mirror the primary phone into ContactPhone and link/merge any
+    # existing SMS threads for this number. Best-effort and fully isolated — if
+    # it throws, the save still stands; we log and move on rather than 500.
+    if new_phone:
+        try:
+            existing_cp = db.query(ContactPhone).filter(
+                ContactPhone.client_id == client_id,
+                ContactPhone.phone == new_phone
+            ).first()
+            if not existing_cp:
+                db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+                cp = ContactPhone(
+                    client_id=client_id,
+                    phone=new_phone,
+                    is_primary=True,
+                    phone_type="mobile",
+                    source="manual",
+                )
+                db.add(cp)
+            else:
+                db.query(ContactPhone).filter(ContactPhone.client_id == client_id).update({"is_primary": False})
+                existing_cp.is_primary = True
+            db.flush()
+            _link_and_merge_conversations(db, client_id, new_phone)
+            db.commit()
+        except Exception:
+            logger.exception("[update_client %s] phone link/merge side-effect failed; phone saved, threads not relinked", client_id)
+            db.rollback()
+
     db.refresh(client)
     return client_to_dict(client)
 
