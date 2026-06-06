@@ -64,6 +64,18 @@ from database.models import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, Quo
 router = APIRouter(tags=["quotes"])
 
 
+def _app_base() -> str:
+    """Public base URL for customer-facing links (quote accept pages, etc.).
+
+    Set APP_BASE_URL to your real host. Falls back to the Railway deployment —
+    NOT a custom domain, since the obvious one (bright-space.com) belongs to an
+    unrelated company and would send customers to a stranger's site."""
+    return os.getenv(
+        "APP_BASE_URL", "https://brightbase-production.up.railway.app"
+    ).rstrip("/")
+
+
+
 # ========================
 # Quote CRUD Endpoints
 # ========================
@@ -335,10 +347,10 @@ async def generate_quote_token(quote_id: UUID, db: Session = Depends(get_db)):
     token = _ensure_public_token(quote)
     quote.updated_at = datetime.now()
     db.commit()
-    app_base = os.getenv("APP_BASE_URL", "").rstrip("/")
+    app_base = _app_base()
     return {
         "public_token": token,
-        "quote_link": f"{app_base}/quote/{token}" if app_base else None,
+        "quote_link": f"{app_base}/quote/{token}",
     }
 
 
@@ -720,7 +732,7 @@ async def send_quote_email(
 
     # Public accept-link token + base URL (configurable; falls back to prod host).
     token = _ensure_public_token(quote)
-    app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+    app_base = _app_base()
     quote_link = f"{app_base}/quote/{token}"
 
     email_service = QuoteEmailService()
