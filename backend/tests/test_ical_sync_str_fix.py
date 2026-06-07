@@ -592,6 +592,70 @@ END:VCALENDAR""".encode()
             db.close()
 
 
+class TestRebuildTurnovers:
+    """The per-property 'Rebuild from sources' safety net: force-reconcile and
+    report before→after, recovering stuck turnovers."""
+
+    def test_rebuild_recovers_a_stuck_property(self):
+        from integrations.ical_sync import _sync_ical_url
+        from modules.properties.router import rebuild_turnovers
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="t@example.com")
+            db.add(client); db.commit(); db.refresh(client)
+            prop = Property(client_id=client.id, name="Pier House",
+                            address="1 Pier Rd", property_type="str",
+                            ical_url="https://www.airbnb.com/calendar/ical/9.ics?s=abc")
+            db.add(prop); db.commit(); db.refresh(prop)
+
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:stay-rebuild@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:Reserved
+END:VEVENT
+END:VCALENDAR""".encode()
+
+            from contextlib import contextmanager
+            @contextmanager
+            def _mock_feed():
+                with patch("integrations.ical_sync._httpx.Client") as mc, \
+                     patch("integrations.google_calendar.create_event", return_value=None), \
+                     patch("integrations.google_calendar.update_event", return_value=None):
+                    resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
+                    mc.return_value.__enter__.return_value.get.return_value = resp
+                    yield
+
+            # Seed a turnover, then cancel it (the stuck state).
+            with _mock_feed():
+                _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+            job = db.query(Job).filter_by(property_id=prop.id).first()
+            job.status = "cancelled"; db.commit()
+
+            # Rebuild from sources should recover it and report before→after.
+            with _mock_feed():
+                out = rebuild_turnovers(prop.id, db=db)
+
+            assert out["turnovers_before"] == 0
+            assert out["turnovers_after"] == 1
+            assert out["recovered_dates"] == [checkout.isoformat()]
+            assert out["still_missing"] == []
+            assert out["ok"] is True
+        finally:
+            db.rollback()
+            db.query(Job).filter(Job.property_id == prop.id).delete(synchronize_session=False)
+            from database.models import ICalEvent
+            db.query(ICalEvent).filter(ICalEvent.property_id == prop.id).delete(synchronize_session=False)
+            db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)
+            db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+            db.commit()
+            db.close()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

@@ -226,6 +226,61 @@ def sync_ical(property_id: int, db: Session = Depends(get_db)):
     return result
 
 
+def _active_turnover_dates(db: Session, property_id: int) -> set:
+    """ISO checkout dates of this property's active (non-cancelled), future,
+    dated turnover jobs. Used for the rebuild before/after report."""
+    from datetime import date as _date
+    from database.models import Job
+    today = _date.today().isoformat()
+    out = set()
+    for j in db.query(Job).filter(
+        Job.property_id == property_id,
+        Job.job_type == "str_turnover",
+        Job.status.notin_(["cancelled"]),
+        Job.scheduled_date.isnot(None),
+    ).all():
+        d = j.scheduled_date.isoformat() if hasattr(j.scheduled_date, "isoformat") else str(j.scheduled_date)
+        if d >= today:
+            out.add(d)
+    return out
+
+
+@router.post("/{property_id}/rebuild-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
+def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
+    """Rebuild this property's turnovers from its calendar feeds — the safety net.
+
+    Force-reconciles against the feeds (Google/iCal are the source of truth):
+    recreates cancelled/deleted turnovers for still-active bookings, fixes
+    stale/empty dates, and pushes changes to Google. Returns a clear before→after
+    so you can trust nothing was missed. `still_missing` should be empty; if not,
+    it lists the exact checkouts that couldn't be rebuilt (e.g. a failing feed).
+    """
+    from database.models import Job  # local import: keep module import surface small
+    prop = db.query(Property).filter(Property.id == property_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    before = _active_turnover_dates(db, property_id)
+    result = sync_property(db, prop)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    after = _active_turnover_dates(db, property_id)
+
+    recovered = sorted(after - before)
+    missing = result.get("missing_turnovers", [])
+    return {
+        "property_id": prop.id,
+        "property_name": prop.name,
+        "turnovers_before": len(before),
+        "turnovers_after": len(after),
+        "recovered_dates": recovered,
+        "future_bookings": result.get("future_bookings", 0),
+        "still_missing": missing,
+        "ok": not missing and "error" not in result and not result.get("sync_errors"),
+        "sync_errors": result.get("sync_errors", []),
+    }
+
+
 @router.post("/{property_id}/icals/{ical_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db)):
     """Re-sync a single iCal feed — lets staff retry one failing feed without
