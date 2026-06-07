@@ -462,6 +462,58 @@ END:VCALENDAR""".encode()
         finally:
             db.close()
 
+    def test_active_turnover_with_lost_date_is_reconciled(self):
+        """A linked turnover that's still active but lost its scheduled_date (old
+        data reset / VARCHAR→DATE migration) is reconciled to the feed checkout on
+        the next sync, instead of staying invisible on the calendar."""
+        from integrations.ical_sync import _sync_ical_url
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="t@example.com")
+            db.add(client); db.commit(); db.refresh(client)
+            prop = Property(client_id=client.id, name="Pier House",
+                            address="1 Pier Rd", property_type="str",
+                            ical_url="https://www.airbnb.com/calendar/ical/6.ics?s=abc")
+            db.add(prop); db.commit(); db.refresh(prop)
+
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:stay-2@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:Reserved
+END:VEVENT
+END:VCALENDAR""".encode()
+
+            def run_sync():
+                with patch("integrations.ical_sync._httpx.Client") as mc:
+                    resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
+                    mc.return_value.__enter__.return_value.get.return_value = resp
+                    with patch("integrations.google_calendar.create_event") as gc:
+                        gc.return_value = None
+                        return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+
+            run_sync()
+            job = db.query(Job).filter_by(property_id=prop.id).first()
+            assert job.scheduled_date == checkout
+
+            # Simulate the lost-date corruption while the job stays active/linked.
+            job.scheduled_date = None
+            db.commit()
+
+            # Next sync reconciles it back to the booking's checkout date — no
+            # duplicate job, the same row is fixed in place.
+            r2 = run_sync()
+            assert r2["jobs_created"] == 0
+            db.refresh(job)
+            assert job.scheduled_date == checkout
+            assert db.query(Job).filter_by(property_id=prop.id).count() == 1
+        finally:
+            db.close()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -464,21 +464,42 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
         for comp in cal.walk():
             if comp.name != "VEVENT":
                 continue
+            uid = str(comp.get("UID", ""))
             summary = str(comp.get("SUMMARY", ""))
             checkin = _parse_date(comp.get("DTSTART"), default_tz=prop_tz)
             checkout = _parse_date(comp.get("DTEND"), default_tz=prop_tz)
-            # Same rule as the real sync: a booking is anything that isn't a
-            # clearly-marked host block (no "reserved"/"airbnb" allowlist).
+            # Same booking rule as the real sync (no "reserved"/"airbnb" allowlist).
             if _is_host_block(summary):
                 decision = "skipped — host block / not available"
             elif not checkout:
                 decision = "skipped — no checkout (DTEND) date"
             elif checkout and checkout < today:
                 decision = "past"
-            elif checkout and checkout in existing:
-                decision = "turnover exists ✓"
             else:
-                decision = "would create turnover"
+                # Ground truth: report what's actually stored for this booking so a
+                # missing turnover is explained in the decision the operator sees.
+                stored = db.query(ICalEvent).filter_by(property_id=property_id, uid=uid).first()
+                linked = None
+                if stored and stored.job_id:
+                    linked = db.query(Job).filter_by(id=stored.job_id).first()
+                if stored and stored.job_id and linked is None:
+                    decision = "linked turnover was DELETED — sync will recreate"
+                elif linked and linked.status == "cancelled":
+                    decision = "linked turnover is CANCELLED — sync will recreate"
+                elif linked and linked.status == "completed":
+                    decision = "turnover completed ✓"
+                elif linked:
+                    lj_date = (linked.scheduled_date.isoformat()
+                               if hasattr(linked.scheduled_date, "isoformat")
+                               else str(linked.scheduled_date)) if linked.scheduled_date else None
+                    if lj_date != checkout:
+                        decision = f"linked turnover dated {lj_date or 'EMPTY'} ≠ checkout — sync will fix"
+                    else:
+                        decision = "turnover exists ✓"
+                elif checkout in existing:
+                    decision = "turnover exists ✓"
+                else:
+                    decision = "would create turnover"
             info["events"].append({
                 "summary": summary, "checkin": checkin, "checkout": checkout, "decision": decision,
             })
