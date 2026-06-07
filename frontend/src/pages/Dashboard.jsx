@@ -115,6 +115,7 @@ export default function Dashboard() {
   const [unassignedConvs, setUnassignedConvs] = useState([])
   const [leads, setLeads] = useState([])
   const [svcRevenue, setSvcRevenue] = useState([])
+  const [commsSummary, setCommsSummary] = useState({})
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -125,7 +126,7 @@ export default function Dashboard() {
       try {
         const [
           jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp,
+          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
@@ -136,6 +137,7 @@ export default function Dashboard() {
           get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
           get('/api/intake?limit=200').catch(() => []),
           get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
+          get('/api/comms/conversations/summary').catch(() => ({})),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
@@ -147,6 +149,7 @@ export default function Dashboard() {
         setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
         setLeads(Array.isArray(leadsAll) ? leadsAll : (leadsAll?.items || []))
         setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
+        setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
@@ -176,15 +179,20 @@ export default function Dashboard() {
     newLeads: leads.filter(l => !l.status || ['new', 'received'].includes(l.status)).length,
   }), [quotes, leads])
 
-  // STR turnover coverage for the next 7 days (a turnover is "covered" once a
-  // cleaner is assigned). Built from the week's jobs already loaded.
+  // STR turnover coverage for the next 7 calendar days (today + 6; weekJobs is
+  // fetched with an inclusive +7 end, so clamp here). "Covered" = a cleaner is
+  // assigned.
   const turnover = useMemo(() => {
-    const str = weekJobs.filter(j => j.job_type === 'str_turnover' && j.status !== 'cancelled')
+    const sixOut = new Date(Date.now() + 6 * 864e5).toISOString().slice(0, 10)
+    const str = weekJobs.filter(j =>
+      j.job_type === 'str_turnover' && j.status !== 'cancelled' &&
+      (j.scheduled_date || '').slice(0, 10) <= sixOut)
     const needCrew = str.filter(j => !(j.cleaner_ids && j.cleaner_ids.length > 0))
     return { total: str.length, needCrew: needCrew.length }
   }, [weekJobs])
 
-  const slaBreached = overdueConvs.length
+  // Uncapped breached count from the summary endpoint (the list is limit=20).
+  const slaBreached = commsSummary.breached ?? overdueConvs.length
 
   // AR aging buckets — so the operator knows WHO to call this morning.
   // Groups overdue invoices by age: 0-30, 30-60, 60-90, 90+ days.
