@@ -66,6 +66,11 @@ export default function JobCreateModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  // Inline "new property" quick-add (a client may have none yet).
+  const [addingProp, setAddingProp] = useState(false)
+  const [newProp, setNewProp] = useState({ name: '', address: '' })
+  const [creatingProp, setCreatingProp] = useState(false)
+  const [propErr, setPropErr] = useState('')
 
   useEffect(() => {
     if (!clientId) return
@@ -103,6 +108,27 @@ export default function JobCreateModal({
     }
     const prop = properties.find(p => String(p.id) === propId)
     if (prop) applyProperty(prop)
+  }
+
+  // Create a property for this client without leaving the job form, then select it.
+  const createInlineProperty = async () => {
+    if (!newProp.name.trim()) { setPropErr('Property name is required'); return }
+    setCreatingProp(true); setPropErr('')
+    try {
+      const created = await post('/api/properties', {
+        client_id: parseInt(clientId),
+        name: newProp.name.trim(),
+        address: newProp.address.trim() || '',
+        property_type: form.job_type === 'str' ? 'str' : form.job_type || 'residential',
+      })
+      setProperties(ps => [created, ...ps])
+      applyProperty(created)
+      setAddingProp(false)
+      setNewProp({ name: '', address: '' })
+    } catch (e) {
+      setPropErr(e.message || 'Failed to create property')
+    }
+    setCreatingProp(false)
   }
 
   // Validation differs by mode.
@@ -186,27 +212,50 @@ export default function JobCreateModal({
 
           {/* Property picker (filtered by client) */}
           <div>
-            <label className="block text-xs text-ink-2 font-medium mb-1">Property</label>
-            <select
-              value={form.property_id}
-              onChange={onPropertyChange}
-              data-testid="job-create-property-select"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-              disabled={loadingProps}
-            >
-              <option value="">
-                {loadingProps
-                  ? 'Loading properties...'
-                  : properties.length === 0
-                    ? 'No properties for this client'
-                    : 'Select a property (optional)'}
-              </option>
-              {properties.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name}{p.address ? ` — ${p.address}` : ''}
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-ink-2 font-medium">Property</label>
+              <button type="button"
+                onClick={() => { setAddingProp(a => !a); setPropErr('') }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                {addingProp ? 'Cancel' : '+ New property'}
+              </button>
+            </div>
+            {!addingProp ? (
+              <select
+                value={form.property_id}
+                onChange={onPropertyChange}
+                data-testid="job-create-property-select"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                disabled={loadingProps}
+              >
+                <option value="">
+                  {loadingProps
+                    ? 'Loading properties...'
+                    : properties.length === 0
+                      ? 'No properties for this client'
+                      : 'Select a property (optional)'}
                 </option>
-              ))}
-            </select>
+                {properties.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.address ? ` — ${p.address}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+                <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
+                  placeholder="Property name * (e.g. 4 Red Barn Circle)"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                <input value={newProp.address} onChange={e => setNewProp(n => ({ ...n, address: e.target.value }))}
+                  placeholder="Address"
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                {propErr && <div className="text-xs text-red-600">{propErr}</div>}
+                <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  {creatingProp ? 'Creating…' : 'Create & select property'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
