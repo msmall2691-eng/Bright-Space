@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, date
 
 import pytest
 from sqlalchemy.orm import Session
@@ -37,11 +37,16 @@ _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 if os.path.exists(_db_path):
     os.remove(_db_path)
 
-from database.db import init_db, SessionLocal  # noqa: E402
+from database.db import init_db, SessionLocal, engine  # noqa: E402
+from database.models import Base as _Base  # noqa: E402
+# App schema now comes from Alembic, so init_db() no longer creates tables via
+# create_all. Run init_db() first (its backfill step drops/rebuilds a few
+# tables), then create_all so every model-defined table is guaranteed present.
 init_db()
+_Base.metadata.create_all(engine)
 
 from database.models import (  # noqa: E402
-    Client, ContactPhone, Conversation, Message, LeadIntake, Job, Quote,
+    Client, ContactPhone, Conversation, Message, LeadIntake, Job, Quote, Property,
 )
 from modules.clients.router import (  # noqa: E402
     _is_placeholder_candidate,
@@ -67,6 +72,7 @@ def db() -> Session:
         s.query(ContactPhone).delete()
         s.query(Job).delete()
         s.query(Quote).delete()
+        s.query(Property).delete()
         s.query(Client).delete()
         s.commit()
         yield s
@@ -101,6 +107,14 @@ def make_real_client(db: Session, name: str, **extra) -> Client:
     })
     db.add(c); db.commit(); db.refresh(c)
     return c
+
+
+def make_property(db: Session, client_id: int) -> Property:
+    """A minimal valid Property (every Job requires a non-null property_id)."""
+    pr = Property(client_id=client_id, name="Test", address="123 Test St",
+                  property_type="residential", active=True)
+    db.add(pr); db.flush()
+    return pr
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -149,7 +163,7 @@ def test_placeholder_check_rejects_with_billing_address(db):
 
 def test_placeholder_check_rejects_with_quote(db):
     p = make_placeholder(db, "+12075559007")
-    db.add(Quote(client_id=p.id, address="x", subtotal=100, total=100))
+    db.add(Quote(client_id=p.id, quote_number="QT-TEST-0001", address="x", subtotal=100, total=100))
     db.commit()
     db.refresh(p)
     assert _is_placeholder_candidate(p) is False
@@ -157,7 +171,8 @@ def test_placeholder_check_rejects_with_quote(db):
 
 def test_placeholder_check_rejects_with_job(db):
     p = make_placeholder(db, "+12075559008")
-    db.add(Job(client_id=p.id, title="t", scheduled_date="2030-01-01"))
+    prop = make_property(db, p.id)
+    db.add(Job(client_id=p.id, property_id=prop.id, title="t", scheduled_date=date(2030, 1, 1)))
     db.commit()
     db.refresh(p)
     assert _is_placeholder_candidate(p) is False
@@ -215,8 +230,9 @@ def test_absorb_with_format_difference(db):
 def test_absorb_does_not_touch_real_client_with_jobs(db):
     """If a candidate has any jobs, refuse absorption — it's not a placeholder."""
     not_a_placeholder = make_placeholder(db, "+12075550303")
-    db.add(Job(client_id=not_a_placeholder.id, title="t",
-               scheduled_date="2030-01-01"))
+    prop = make_property(db, not_a_placeholder.id)
+    db.add(Job(client_id=not_a_placeholder.id, property_id=prop.id, title="t",
+               scheduled_date=date(2030, 1, 1)))
     db.commit()
 
     real = make_real_client(db, "Jack Distinct")
@@ -279,10 +295,12 @@ def test_absorbs_multiple_placeholders(db):
     assert db.query(Client).filter(Client.id == p1.id).first() is None
     assert db.query(Client).filter(Client.id == p2.id).first() is None
     assert report["absorbed_clients"] == 2
-    # Both conversations now on the real client (will be merged at the next
-    # step inside _link_and_merge_conversations, not here)
+    # Both placeholders' SMS conversations land on the real client and are
+    # eagerly folded into a single thread, respecting the (client_id, channel)
+    # unique index — absorption now merges during re-parenting rather than
+    # leaving two rows for a later step.
     convs = db.query(Conversation).filter(Conversation.client_id == real.id).all()
-    assert len(convs) == 2
+    assert len(convs) == 1
 
 
 # ──────────────────────────────────────────────────────────────────────

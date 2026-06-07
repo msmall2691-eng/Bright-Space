@@ -100,13 +100,16 @@ def test_is_public_rejects(path: str) -> None:
 # End-to-end tests through the middleware.
 # ──────────────────────────────────────────────────────────────────────
 
-def test_no_api_key_set_allows_everything():
-    """Dev mode: BRIGHTBASE_API_KEY unset → all requests allowed."""
+def test_no_api_key_set_rejects_unauthenticated():
+    """Fail-closed: BRIGHTBASE_API_KEY unset + no valid JWT → 401.
+
+    This previously allowed EVERY request through (a fail-open hole); the
+    security hardening in PR #193 made it reject instead. Asserting 401 here
+    locks that behavior in so it can't silently regress."""
     with patch.dict(os.environ, {"BRIGHTBASE_API_KEY": ""}, clear=False):
         client = TestClient(_make_app())
         r = client.get("/api/jobs")
-        assert r.status_code == 200, r.text
-        assert r.json() == {"ok": True}
+        assert r.status_code == 401, r.text
 
 
 def test_public_path_works_even_with_key_set():
