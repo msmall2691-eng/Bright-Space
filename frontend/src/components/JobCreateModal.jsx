@@ -82,10 +82,12 @@ export default function JobCreateModal({
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
 
-  // In standalone mode, load the client list for the picker.
+  // In standalone mode, load the client list for the picker. Raise the limit
+  // well above the API's default 50 so orgs with many clients can still pick an
+  // existing one (rather than being pushed into creating a duplicate).
   useEffect(() => {
     if (!standalone) return
-    get('/api/clients?status=active')
+    get('/api/clients?status=active&limit=1000')
       .then(d => setClients(Array.isArray(d) ? d : []))
       .catch(() => setClients([]))
   }, [standalone])
@@ -112,14 +114,20 @@ export default function JobCreateModal({
 
   const selectClient = (idStr) => {
     setActiveClientId(idStr)
+    // Reset everything tied to the *previous* client's property — otherwise a
+    // stale property_id/address/job_type could save a job for the new client
+    // pointing at the old client's property (the endpoints don't cross-check).
+    setProperties([])
+    setAddingProp(false)
     const c = clients.find(c => String(c.id) === String(idStr))
-    if (c) {
-      setForm(f => ({
-        ...f,
-        title: f.title || `${c.name} — Clean`,
-        address: f.address || [c.address, c.city, c.state].filter(Boolean).join(', '),
-      }))
-    }
+    setForm(f => ({
+      ...f,
+      property_id: '',
+      job_type: 'residential',
+      address: c ? [c.address, c.city, c.state].filter(Boolean).join(', ') : '',
+      // Keep a user-typed title; otherwise default to the client's name.
+      title: (!f.title || /—\s*Clean$/.test(f.title)) && c ? `${c.name} — Clean` : f.title,
+    }))
   }
 
   const createInlineClient = async () => {
