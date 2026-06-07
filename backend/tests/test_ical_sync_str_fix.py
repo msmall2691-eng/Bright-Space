@@ -356,57 +356,52 @@ END:VCALENDAR""".encode()
             db.close()
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestPreviewDiagnostic:
+    """The ical-preview 'Diagnose feed' endpoint must use the same booking rule
+    as the real sync — a guest-name booking is 'would create', not 'skipped'."""
 
-
-class TestFeedInspection:
-    """The read-only ical-inspect diagnostic classifies events and surfaces
-    future bookings that have no live turnover."""
-
-    def test_inspect_reports_booking_block_and_missing(self):
-        from integrations.ical_sync import inspect_property_feeds
+    def test_preview_matches_sync_classification(self):
+        from modules.properties.router import ical_preview
         db = SessionLocal()
         try:
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
                             address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/9.ics?s=abc")
+                            ical_url="https://www.airbnb.com/calendar/ical/7.ics?s=abc")
             db.add(prop); db.commit(); db.refresh(prop)
 
-            checkin = date.today() + timedelta(days=20)
-            checkout = date.today() + timedelta(days=22)
+            checkin = date.today() + timedelta(days=18)
+            checkout = date.today() + timedelta(days=20)
             ics = f"""BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
-UID:book-1@feed
+UID:guest@feed
 DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
 DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
 SUMMARY:John Smith
 END:VEVENT
 BEGIN:VEVENT
-UID:block-1@feed
+UID:block@feed
 DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
 DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
 SUMMARY:Airbnb (Not available)
 END:VEVENT
 END:VCALENDAR""".encode()
 
-            with patch("integrations.ical_sync._httpx.Client") as mc:
+            with patch("httpx.Client") as mc:
                 resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
                 mc.return_value.__enter__.return_value.get.return_value = resp
-                result = inspect_property_feeds(db, prop)
+                result = ical_preview(prop.id, db)
 
-            feed = result["feeds"][0]
-            assert "error" not in feed
-            byuid = {e["uid"]: e for e in feed["events"]}
-            assert byuid["book-1@feed"]["classification"] == "booking"
-            assert byuid["block-1@feed"]["classification"] == "host_block"
-            assert byuid["book-1@feed"]["would_create_turnover"] is True
-            assert byuid["block-1@feed"]["would_create_turnover"] is False
-            assert byuid["book-1@feed"]["checkout"] == checkout.isoformat()
-            missing = [e["uid"] for e in feed["bookings_missing_turnover"]]
-            assert "book-1@feed" in missing and "block-1@feed" not in missing
+            events = {e["summary"]: e["decision"] for e in result["feeds"][0]["events"]}
+            # Guest-name booking is recognized (old code said "not a reservation").
+            assert events["John Smith"] == "would create turnover"
+            assert "host block" in events["Airbnb (Not available)"]
         finally:
             db.close()
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+

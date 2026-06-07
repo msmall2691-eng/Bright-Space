@@ -8,7 +8,7 @@ import logging
 
 from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal, Client
-from integrations.ical_sync import sync_property, inspect_property_feeds
+from integrations.ical_sync import sync_property
 from modules.auth.router import require_role
 
 
@@ -223,23 +223,6 @@ def sync_ical(property_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.get("/{property_id}/ical-inspect", dependencies=[Depends(require_role("admin", "manager"))])
-def ical_inspect(property_id: int, db: Session = Depends(get_db)):
-    """Read-only diagnostic for missing/incorrect turnovers. Fetches the
-    property's iCal feed(s) and reports how each event resolves — booking vs
-    host block, computed checkout date, whether it's in the past, the job linked
-    to its UID, and whether a turnover would be created — without writing
-    anything. `bookings_missing_turnover` lists future guest checkouts that have
-    no live cleaning, which is usually the answer to "where did <date> go?"."""
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
-    result = inspect_property_feeds(db, prop)
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    return result
-
-
 @router.post("/{property_id}/icals/{ical_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_db)):
     """Re-sync a single iCal feed — lets staff retry one failing feed without
@@ -438,14 +421,13 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
     import httpx
     from datetime import date
     from icalendar import Calendar
-    from integrations.ical_sync import _parse_date
+    from integrations.ical_sync import _parse_date, _is_host_block
     from database.models import Job
 
     prop = db.query(Property).filter(Property.id == property_id).first()
     if not prop:
         raise HTTPException(404, "Property not found")
 
-    BLOCK_WORDS = ("not available", "blocked", "unavailable", "maintenance", "owner")
     today = date.today().isoformat()
     prop_tz = prop.timezone or "America/New_York"
 
@@ -483,13 +465,14 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
             if comp.name != "VEVENT":
                 continue
             summary = str(comp.get("SUMMARY", ""))
-            low = summary.lower()
             checkin = _parse_date(comp.get("DTSTART"), default_tz=prop_tz)
             checkout = _parse_date(comp.get("DTEND"), default_tz=prop_tz)
-            if any(w in low for w in BLOCK_WORDS):
+            # Same rule as the real sync: a booking is anything that isn't a
+            # clearly-marked host block (no "reserved"/"airbnb" allowlist).
+            if _is_host_block(summary):
                 decision = "skipped — host block / not available"
-            elif "reserved" not in low and "airbnb" not in low:
-                decision = "skipped — not a reservation"
+            elif not checkout:
+                decision = "skipped — no checkout (DTEND) date"
             elif checkout and checkout < today:
                 decision = "past"
             elif checkout and checkout in existing:
