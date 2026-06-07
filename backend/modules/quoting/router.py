@@ -438,6 +438,10 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
         notes=quote.notes,
     )
     db.add(job)
+    # Mark the quote converted so it stops showing as "accepted — ready to
+    # schedule" and the Schedule-Job action can't create a second job for it.
+    quote.status = "converted"
+    quote.updated_at = datetime.now()
     db.commit()
     db.refresh(job)
     return {

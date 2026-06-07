@@ -11,6 +11,7 @@ const QUOTE_STATUS_COLORS = {
   viewed:   'bg-indigo-50 text-indigo-700 border-indigo-200',
   changes_requested: 'bg-amber-50 text-amber-700 border-amber-200',
   accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  converted: 'bg-teal-50 text-teal-700 border-teal-200',
   declined: 'bg-red-50 text-red-700 border-red-200',
 }
 
@@ -168,6 +169,12 @@ export default function Quoting() {
     } catch (e) { showToast(e.message || 'Could not save templates') }
     setSavingTemplates(false)
   }
+
+  // Honor ?tab=quotes|leads (e.g. from the dashboard's Quotes & leads tile).
+  useEffect(() => {
+    const t = new URLSearchParams(location.search).get('tab')
+    if (t === 'quotes' || t === 'leads') setTab(t)
+  }, [location.search])
 
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))

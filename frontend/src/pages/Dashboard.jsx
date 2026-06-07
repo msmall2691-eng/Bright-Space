@@ -20,7 +20,7 @@ import { Card, StatCard, EmptyState, Skeleton } from '../components/ui'
 import { AIFollowUps } from '../components/AIBriefing'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
-  CheckCircle2, Clock, ArrowRight, Zap,
+  CheckCircle2, Clock, ArrowRight, Zap, FileText,
 } from 'lucide-react'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -113,6 +113,7 @@ export default function Dashboard() {
   const [todayVisits, setTodayVisits] = useState([])
   const [overdueConvs, setOverdueConvs] = useState([])
   const [unassignedConvs, setUnassignedConvs] = useState([])
+  const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -123,15 +124,16 @@ export default function Dashboard() {
       try {
         const [
           jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned,
+          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
-          get('/api/invoices').catch(() => []),
-          get('/api/quotes').catch(() => []),
+          get('/api/invoices?limit=200').catch(() => []),
+          get('/api/quotes?limit=500').catch(() => []),
           get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`).catch(() => ({ items: [] })),
           get('/api/comms/conversations?sla_state=breached&status=open&limit=20').catch(() => ({ items: [] })),
           get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
+          get('/api/intake?limit=200').catch(() => []),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
@@ -141,6 +143,7 @@ export default function Dashboard() {
         setTodayVisits(tv)
         setOverdueConvs(Array.isArray(conversationsOverdue) ? conversationsOverdue : (conversationsOverdue?.items || []))
         setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
+        setLeads(Array.isArray(leadsAll) ? leadsAll : (leadsAll?.items || []))
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
@@ -161,6 +164,14 @@ export default function Dashboard() {
     .filter(q => ['sent', 'draft'].includes(q.status))
     .reduce((s, q) => s + (q.total || 0), 0), [quotes])
   const overdueInvoiceCount = invoices.filter(i => i.status === 'overdue').length
+
+  // Quotes & leads that need the owner to do something next.
+  const quoteActions = useMemo(() => ({
+    awaiting: quotes.filter(q => ['sent', 'viewed'].includes(q.status)).length,
+    changes: quotes.filter(q => q.status === 'changes_requested').length,
+    toSchedule: quotes.filter(q => q.status === 'accepted').length,
+    newLeads: leads.filter(l => !l.status || ['new', 'received'].includes(l.status)).length,
+  }), [quotes, leads])
 
   // AR aging buckets — so the operator knows WHO to call this morning.
   // Groups overdue invoices by age: 0-30, 30-60, 60-90, 90+ days.
@@ -368,6 +379,42 @@ export default function Dashboard() {
                       <span className="block text-[11px] text-ink-3 truncate mt-0.5">{j.address}</span>
                     )}
                   </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </Tile>
+
+        {/* QUOTES & LEADS — what's in the funnel needing action */}
+        <Tile
+          icon={FileText}
+          iconColor="text-purple-500"
+          title="Quotes & leads"
+          badge={(quoteActions.changes + quoteActions.newLeads) > 0 && (
+            <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
+              {quoteActions.changes + quoteActions.newLeads}
+            </span>
+          )}
+          action="Open Quoting"
+          onAction={() => navigate('/quoting?tab=quotes')}
+        >
+          {loading ? (
+            <TileLoading />
+          ) : (quoteActions.awaiting + quoteActions.changes + quoteActions.toSchedule + quoteActions.newLeads) === 0 ? (
+            <EmptyState compact icon={CheckCircle2} title="Funnel clear"
+              description="No quotes or leads waiting on you." />
+          ) : (
+            <div className="flex-1 space-y-1.5">
+              {[
+                { n: quoteActions.changes, label: 'Changes requested', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/quoting?tab=quotes') },
+                { n: quoteActions.awaiting, label: 'Awaiting customer response', tone: 'text-blue-700 bg-blue-50 border-blue-200', go: () => navigate('/quoting?tab=quotes') },
+                { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', go: () => navigate('/quoting?tab=quotes') },
+                { n: quoteActions.newLeads, label: 'New leads to quote', tone: 'text-purple-700 bg-purple-50 border-purple-200', go: () => navigate('/quoting?tab=leads') },
+              ].filter(r => r.n > 0).map((r, i) => (
+                <button key={i} onClick={r.go}
+                  className={`w-full flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm hover:opacity-90 transition-opacity ${r.tone}`}>
+                  <span className="truncate">{r.label}</span>
+                  <span className="font-bold shrink-0 flex items-center gap-1">{r.n} <ArrowRight className="w-3.5 h-3.5" /></span>
                 </button>
               ))}
             </div>
