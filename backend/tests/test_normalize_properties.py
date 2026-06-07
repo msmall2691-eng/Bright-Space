@@ -86,8 +86,10 @@ class TestNormalizePropertiesEndpoint:
         finally:
             db.close()
 
-    def test_infer_str_from_check_in_time(self):
-        """Should infer property_type='str' from check_in_time."""
+    def test_check_in_time_does_not_infer_str(self):
+        """check_in_time is STR-only DATA, not a classification signal: a
+        residential property with a stray check_in_time stays residential and
+        has the STR field cleaned up instead of being reclassified."""
         db = SessionLocal()
         try:
             client = Client(name="Test Client", email="test@example.com")
@@ -109,9 +111,13 @@ class TestNormalizePropertiesEndpoint:
             from modules.properties.router import normalize_properties
             result = normalize_properties(dry_run=True, db=db)
 
+            # NOT reclassified as STR…
             change = next((c for c in result["would_change_type"] if c["id"] == prop.id), None)
-            assert change is not None
-            assert change["new"] == "str"
+            assert change is None
+            # …and its STR-only field is flagged for null-out instead.
+            null_out = next((n for n in result["would_null_str_fields"] if n["id"] == prop.id), None)
+            assert null_out is not None
+            assert "check_in_time" in null_out["fields"]
 
         finally:
             db.close()
@@ -243,7 +249,10 @@ class TestNormalizePropertiesEndpoint:
 
             # Verify changes were applied
             db.refresh(prop)
-            assert prop.property_type == "str"  # Inferred from check_in_time
+            # Stays residential — check_in_time doesn't reclassify it — and the
+            # stray STR-only field is cleaned up instead.
+            assert prop.property_type == "residential"
+            assert prop.check_in_time is None
             assert prop.name == "666 Maple Ave"  # Renamed
             assert prop.city == "South Portland"  # Title cased
             assert prop.state == "ME"  # Uppercased
@@ -306,7 +315,7 @@ class TestNormalizePropertiesEndpoint:
 
             flag = next((f for f in result["flagged_for_review"] if f["id"] == prop.id), None)
             assert flag is not None
-            assert "missing client_id" in flag["reason"]
+            assert "client_id" in flag["reason"]
 
         finally:
             db.close()

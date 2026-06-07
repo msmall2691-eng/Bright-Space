@@ -653,16 +653,19 @@ STATE_ABBREVIATIONS = {
 
 
 def _infer_property_type(prop: Property, db: Session) -> str:
-    """Infer correct property_type based on iCal, check-in time, client notes."""
+    """Infer correct property_type from STR-specific signals only.
+
+    STR is inferred from an iCal feed (ical_url or an active PropertyIcal) — that
+    is the booking/turnover model. check_in_time/check_out_time are STR-only
+    DATA, not a classification signal: residential and commercial properties use
+    normal recurring scheduling, so a stray check_in_time on a non-STR property
+    is cleaned up elsewhere (see the null-out step) rather than reclassifying it.
+    """
     # If has ical_url or PropertyIcal entries → definitely STR
     if prop.ical_url:
         return 'str'
 
     if prop.property_icals and any(p.active for p in prop.property_icals):
-        return 'str'
-
-    # If check_in_time is set → STR
-    if prop.check_in_time:
         return 'str'
 
     # Check client notes for business indicators
@@ -748,7 +751,9 @@ def normalize_properties(
 
     for prop in props:
         # Check 1: Infer property_type
-        # Guard: never auto-change commercial → anything else (commercial is human-only classification)
+        # Default to the current type so check 4 has a value even when we skip
+        # inference (commercial is a human-only classification we never auto-change).
+        inferred_type = prop.property_type
         if prop.property_type != 'commercial':
             inferred_type = _infer_property_type(prop, db)
             if inferred_type != prop.property_type:
@@ -757,7 +762,7 @@ def normalize_properties(
                     'name': prop.name,
                     'old': prop.property_type,
                     'new': inferred_type,
-                    'reason': 'inferred from ical_url, PropertyIcal, or check_in_time'
+                    'reason': 'inferred from ical_url or PropertyIcal feed'
                 })
 
         # Check 2: Normalize property name
@@ -798,12 +803,16 @@ def normalize_properties(
                     'fields': str_fields
                 })
 
-        # Check 5: Flag properties without clients
-        if not prop.client_id:
+        # Check 5: Flag properties without a real client — either no client_id at
+        # all, or a dangling reference to a client row that no longer exists.
+        client_exists = prop.client_id and db.query(Client.id).filter(
+            Client.id == prop.client_id
+        ).first()
+        if not client_exists:
             flagged_for_review.append({
                 'id': prop.id,
                 'name': prop.name,
-                'reason': 'missing client_id'
+                'reason': 'missing or dangling client_id'
             })
 
     # If not dry run, apply the changes
