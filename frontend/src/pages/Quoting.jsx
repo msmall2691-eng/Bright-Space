@@ -8,6 +8,8 @@ import { get, post, patch } from "../api"
 const QUOTE_STATUS_COLORS = {
   draft:    'bg-bg-2 text-ink-3 border-hairline',
   sent:     'bg-blue-50 text-blue-700 border-blue-200',
+  viewed:   'bg-indigo-50 text-indigo-700 border-indigo-200',
+  changes_requested: 'bg-amber-50 text-amber-700 border-amber-200',
   accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   declined: 'bg-red-50 text-red-700 border-red-200',
 }
@@ -394,7 +396,8 @@ export default function Quoting() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink">{clientName(q.client_id)}</span>
                       <span className="text-xs text-ink-3">{q.quote_number}</span>
-                      <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status]}`}>{q.status}</span>
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+                      {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
                     </div>
                     <div className="text-xs text-ink-3 mt-0.5">
                       {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address, `${q.items?.length || 0} items`, new Date(q.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
@@ -454,6 +457,28 @@ export default function Quoting() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+
+            {/* Customer response banner — what the customer did with this quote */}
+            {selected && selected.requested_changes_message && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                <div className="font-semibold text-amber-800 mb-1">Customer requested changes</div>
+                <div className="text-amber-900 whitespace-pre-wrap">“{selected.requested_changes_message}”</div>
+                {selected.requested_changes_at && <div className="text-[11px] text-amber-700 mt-1">{new Date(selected.requested_changes_at).toLocaleString()}</div>}
+              </div>
+            )}
+            {selected && selected.status === 'accepted' && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                <div className="font-semibold text-emerald-800">Accepted{selected.accepted_by_name ? ` by ${selected.accepted_by_name}` : ''} ✓</div>
+                {selected.accepted_at && <div className="text-[11px] text-emerald-700 mt-0.5">{new Date(selected.accepted_at).toLocaleString()}</div>}
+              </div>
+            )}
+            {selected && selected.status === 'declined' && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+                <div className="font-semibold text-red-800">Declined{selected.declined_by_name ? ` by ${selected.declined_by_name}` : ''}</div>
+                {selected.declined_reason && <div className="text-red-900 mt-0.5">“{selected.declined_reason}”</div>}
+                {selected.declined_at && <div className="text-[11px] text-red-700 mt-0.5">{new Date(selected.declined_at).toLocaleString()}</div>}
+              </div>
+            )}
 
             {/* Client */}
             <div>
