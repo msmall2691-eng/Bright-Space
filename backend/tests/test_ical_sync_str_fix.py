@@ -7,6 +7,94 @@ from database.db import SessionLocal
 from integrations.ical_sync import _extract_guest_metadata, _make_end_time, _sync_ical_url
 
 
+def _sync_one_event(db, summary, *, uid="evt-1@feed"):
+    """Build a single-event, future-dated feed with the given SUMMARY, run the
+    sync against a fresh STR property, and return (result, job, checkout_date).
+    Used to assert which titles become turnovers vs. host blocks."""
+    client = Client(name="Test Client", email="t@example.com")
+    db.add(client); db.commit(); db.refresh(client)
+    prop = Property(client_id=client.id, name="Pier House",
+                    address="1 Pier Rd", property_type="str")
+    db.add(prop); db.commit(); db.refresh(prop)
+
+    checkin = date.today() + timedelta(days=14)
+    checkout = date.today() + timedelta(days=16)
+    ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:{uid}
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:{summary}
+END:VEVENT
+END:VCALENDAR""".encode()
+
+    with patch("integrations.ical_sync._httpx.Client") as mock_client_class:
+        resp = MagicMock()
+        resp.content = ics
+        resp.raise_for_status = MagicMock()
+        mock_client_class.return_value.__enter__.return_value.get.return_value = resp
+        with patch("integrations.google_calendar.create_event") as mock_gcal:
+            mock_gcal.return_value = None
+            result = _sync_ical_url(db, prop, "https://example.com/feed.ics?s=1",
+                                    ical_source_label="airbnb")
+
+    job = db.query(Job).filter_by(property_id=prop.id).first()
+    return result, job, checkout
+
+
+class TestBookingDetection:
+    """A calendar event becomes a turnover unless its title is a host block —
+    regardless of whether the title says 'Reserved' (Pier House regression)."""
+
+    def test_blank_title_creates_turnover(self):
+        """A booking with an empty SUMMARY (common on VRBO) still schedules a
+        turnover — the old allowlist silently dropped these."""
+        db = SessionLocal()
+        try:
+            result, job, checkout = _sync_one_event(db, "", uid="blank@feed")
+            assert result["jobs_created"] == 1
+            assert job is not None
+            assert job.scheduled_date == checkout
+        finally:
+            db.close()
+
+    def test_guest_name_title_creates_turnover(self):
+        """A booking whose title is just the guest's name (Hospitable/Guesty)
+        still schedules a turnover."""
+        db = SessionLocal()
+        try:
+            result, job, checkout = _sync_one_event(db, "John Smith", uid="guest@feed")
+            assert result["jobs_created"] == 1
+            assert job is not None
+            assert job.scheduled_date == checkout
+        finally:
+            db.close()
+
+    def test_owner_stay_is_skipped(self):
+        """An owner-stay block is NOT turned into a cleaning."""
+        db = SessionLocal()
+        try:
+            result, job, _ = _sync_one_event(db, "Owner stay", uid="owner@feed")
+            assert result["jobs_created"] == 0
+            assert result["skipped_host_blocks"] == 1
+            assert job is None
+        finally:
+            db.close()
+
+    def test_name_containing_owner_substring_is_a_booking(self):
+        """Word-boundary matching: a title like 'Downtowner' must not be
+        mistaken for an owner block."""
+        db = SessionLocal()
+        try:
+            result, job, checkout = _sync_one_event(db, "Reserved - Downtowner", uid="dt@feed")
+            assert result["jobs_created"] == 1
+            assert job is not None
+            assert job.scheduled_date == checkout
+        finally:
+            db.close()
+
+
 class TestExtractGuestMetadata:
     """Test guest metadata extraction from AirBnB DESCRIPTION."""
 
