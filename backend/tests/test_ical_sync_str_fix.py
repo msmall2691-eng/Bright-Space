@@ -358,3 +358,55 @@ END:VCALENDAR""".encode()
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestFeedInspection:
+    """The read-only ical-inspect diagnostic classifies events and surfaces
+    future bookings that have no live turnover."""
+
+    def test_inspect_reports_booking_block_and_missing(self):
+        from integrations.ical_sync import inspect_property_feeds
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="t@example.com")
+            db.add(client); db.commit(); db.refresh(client)
+            prop = Property(client_id=client.id, name="Pier House",
+                            address="1 Pier Rd", property_type="str",
+                            ical_url="https://www.airbnb.com/calendar/ical/9.ics?s=abc")
+            db.add(prop); db.commit(); db.refresh(prop)
+
+            checkin = date.today() + timedelta(days=20)
+            checkout = date.today() + timedelta(days=22)
+            ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:book-1@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:John Smith
+END:VEVENT
+BEGIN:VEVENT
+UID:block-1@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:Airbnb (Not available)
+END:VEVENT
+END:VCALENDAR""".encode()
+
+            with patch("integrations.ical_sync._httpx.Client") as mc:
+                resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
+                mc.return_value.__enter__.return_value.get.return_value = resp
+                result = inspect_property_feeds(db, prop)
+
+            feed = result["feeds"][0]
+            assert "error" not in feed
+            byuid = {e["uid"]: e for e in feed["events"]}
+            assert byuid["book-1@feed"]["classification"] == "booking"
+            assert byuid["block-1@feed"]["classification"] == "host_block"
+            assert byuid["book-1@feed"]["would_create_turnover"] is True
+            assert byuid["block-1@feed"]["would_create_turnover"] is False
+            assert byuid["book-1@feed"]["checkout"] == checkout.isoformat()
+            missing = [e["uid"] for e in feed["bookings_missing_turnover"]]
+            assert "book-1@feed" in missing and "block-1@feed" not in missing
+        finally:
+            db.close()
