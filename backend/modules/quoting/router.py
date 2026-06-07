@@ -296,10 +296,12 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     ))
                 else:
                     results["email"] = "failed"
-                    errors.append(f"email: {res.get('error')}")
+                    errors.append("email could not be sent")
+                    logger.warning(f"Quote {quote.id} email send failed: {res.get('error')}")
             except Exception as e:
                 results["email"] = "failed"
-                errors.append(f"email: {e}")
+                errors.append("email could not be sent")
+                logger.warning(f"Quote {quote.id} email send error: {e}")
 
     if want_sms:
         to_phone = (body.phone or client.phone or "").strip()
@@ -315,7 +317,8 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 results["sms"] = "sent"
             except Exception as e:
                 results["sms"] = "failed"
-                errors.append(f"sms: {e}")
+                errors.append("text message could not be sent")
+                logger.warning(f"Quote {quote.id} SMS send error: {e}")
 
     delivered = any(v == "sent" for v in results.values())
     if delivered:
