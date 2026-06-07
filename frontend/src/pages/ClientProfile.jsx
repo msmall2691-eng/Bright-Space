@@ -38,7 +38,10 @@ const INVOICE_COLORS = {
 const QUOTE_COLORS = {
   draft:    'bg-ink-3/15 text-ink-3',
   sent:     'bg-blue-500/20 text-blue-400',
+  viewed:   'bg-indigo-500/20 text-indigo-400',
+  changes_requested: 'bg-amber-500/20 text-amber-500',
   accepted: 'bg-green-500/20 text-green-400',
+  converted: 'bg-teal-500/20 text-teal-400',
   declined: 'bg-red-500/20 text-red-400',
 }
 

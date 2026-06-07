@@ -128,12 +128,12 @@ export default function Dashboard() {
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
-          get('/api/invoices').catch(() => []),
-          get('/api/quotes').catch(() => []),
+          get('/api/invoices?limit=200').catch(() => []),
+          get('/api/quotes?limit=500').catch(() => []),
           get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`).catch(() => ({ items: [] })),
           get('/api/comms/conversations?sla_state=breached&status=open&limit=20').catch(() => ({ items: [] })),
           get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
-          get('/api/intake').catch(() => []),
+          get('/api/intake?limit=200').catch(() => []),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
