@@ -7,6 +7,15 @@ from database.db import SessionLocal
 from integrations.ical_sync import _extract_guest_metadata, _make_end_time, _sync_ical_url
 
 
+@pytest.fixture(autouse=True)
+def _stub_ssrf_dns():
+    """The SSRF guard does a real DNS lookup before the mocked HTTP client is
+    reached. Stub it so these tests don't depend on external DNS resolution in
+    isolated CI environments (the HTTP responses are already mocked)."""
+    with patch("integrations.ical_sync._assert_public_url", return_value=None):
+        yield
+
+
 def _sync_one_event(db, summary, *, uid="evt-1@feed"):
     """Build a single-event, future-dated feed with the given SUMMARY, run the
     sync against a fresh STR property, and return (result, job, checkout_date).
@@ -649,6 +658,62 @@ END:VCALENDAR""".encode()
             db.rollback()
             db.query(Job).filter(Job.property_id == prop.id).delete(synchronize_session=False)
             from database.models import ICalEvent
+            db.query(ICalEvent).filter(ICalEvent.property_id == prop.id).delete(synchronize_session=False)
+            db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)
+            db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+            db.commit()
+            db.close()
+
+
+class TestMetadataRefreshOnReconcile:
+    """Stay metadata is kept in step on existing turnovers, not only new ones."""
+
+    def test_existing_turnover_gets_metadata_backfilled(self):
+        from integrations.ical_sync import _sync_ical_url
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="t@example.com")
+            db.add(client); db.commit(); db.refresh(client)
+            prop = Property(client_id=client.id, name="Pier House",
+                            address="1 Pier Rd", property_type="str",
+                            ical_url="https://www.airbnb.com/calendar/ical/m.ics?s=abc")
+            db.add(prop); db.commit(); db.refresh(prop)
+
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:stay-meta@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:Reserved
+END:VEVENT
+END:VCALENDAR""".encode()
+
+            def run_sync():
+                with patch("integrations.ical_sync._httpx.Client") as mc, \
+                     patch("integrations.google_calendar.create_event", return_value=None), \
+                     patch("integrations.google_calendar.update_event", return_value=True):
+                    resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
+                    mc.return_value.__enter__.return_value.get.return_value = resp
+                    return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+
+            run_sync()
+            job = db.query(Job).filter_by(property_id=prop.id).first()
+            # Simulate a pre-existing turnover with no stay metadata.
+            job.custom_fields = {}
+            db.commit()
+
+            run_sync()
+            db.refresh(job)
+            assert job.custom_fields.get("checkin_date") == checkin.isoformat()
+            assert job.custom_fields.get("checkout_date") == checkout.isoformat()
+            assert job.custom_fields.get("nights") == 2
+            assert job.custom_fields.get("booking_uid") == "stay-meta@feed"
+        finally:
+            db.rollback()
+            db.query(Job).filter(Job.property_id == prop.id).delete(synchronize_session=False)
             db.query(ICalEvent).filter(ICalEvent.property_id == prop.id).delete(synchronize_session=False)
             db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)
             db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)

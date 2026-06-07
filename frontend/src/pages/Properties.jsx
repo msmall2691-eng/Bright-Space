@@ -525,7 +525,7 @@ export default function Properties() {
                     )}
                   </div>
                   {!p.ok && (
-                    <button onClick={() => rebuildOne(p.property_id)} disabled={rebuildingId === p.property_id}
+                    <button onClick={() => rebuildOne(p.property_id)} disabled={rebuildingId !== null}
                       title="Force-rebuild this property's turnovers from the feed, then re-check"
                       className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors shrink-0">
                       <RefreshCw className={`w-3 h-3 ${rebuildingId === p.property_id ? 'animate-spin' : ''}`} />
