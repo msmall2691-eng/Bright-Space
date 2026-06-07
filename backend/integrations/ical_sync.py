@@ -389,13 +389,24 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                             except Exception as e:
                                 log.warning(f"Failed to update GCal for rescheduled turnover: {e}")
 
-        # A stale event.job_id (its Job was deleted by a data reset / "Delete
-        # scheduled visits") used to make the sync skip recreation forever —
-        # "no new turnovers" while the calendar stayed empty. Treat a missing
-        # linked Job as "no job" and clear the dangling pointer so we recreate.
+        # A stale event.job_id used to make the sync skip recreation forever —
+        # "no new turnovers" while the calendar stayed empty. Two cases:
+        #   1. The Job was hard-deleted (data reset / "Delete scheduled visits").
+        #   2. The Job was CANCELLED — manually, or when its Google Calendar event
+        #      was deleted — but the booking is still active in the feed.
+        # In both cases the cancelled/missing turnover stays hidden and the
+        # cleaning is silently lost. Policy: a booking that's still in the feed
+        # always keeps a turnover, so drop the stale link and recreate below.
+        # Completed jobs are left alone — that work is already done.
         if event.job_id:
             _linked = db.query(Job).filter(Job.id == event.job_id).first()
-            if _linked is None:
+            if _linked is None or _linked.status == "cancelled":
+                if _linked is not None:
+                    log.info(
+                        f"Resurrecting turnover for {prop.name} ({uid}): linked job "
+                        f"{_linked.id} was '{_linked.status}' but the booking is still "
+                        f"active in the feed — recreating."
+                    )
                 event.job_id = None
 
         # Create a Job if: no live job yet + checkout is today or future
