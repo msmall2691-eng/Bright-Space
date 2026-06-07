@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle, AlertCircle, Clock, MessageSquare } from 'lucide-react'
+import { CheckCircle, AlertCircle, Clock, MessageSquare, X } from 'lucide-react'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -13,6 +13,10 @@ export default function PublicQuote() {
   const [requestMsg, setRequestMsg] = useState("")
   const [requesting, setRequesting] = useState(false)
   const [requested, setRequested] = useState(false)
+  const [showDecline, setShowDecline] = useState(false)
+  const [declineReason, setDeclineReason] = useState("")
+  const [declining, setDeclining] = useState(false)
+  const [declined, setDeclined] = useState(false)
 
   useEffect(() => {
     const loadQuote = async () => {
@@ -84,6 +88,28 @@ export default function PublicQuote() {
     }
   }
 
+  const handleDecline = async () => {
+    setDeclining(true)
+    try {
+      const res = await window.fetch(`/api/quotes/public/${token}/decline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: declineReason.trim() || null }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || 'Could not decline. Please try again.')
+        return
+      }
+      setDeclined(true)
+      setShowDecline(false)
+    } catch (e) {
+      setError('Connection error. Please try again.')
+    } finally {
+      setDeclining(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
@@ -134,6 +160,19 @@ export default function PublicQuote() {
           <p className="text-sm text-ink-3">
             We'll review and send you an updated quote shortly.
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (declined) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <X className="w-16 h-16 text-ink-3 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-ink mb-2">Quote declined</h1>
+          <p className="text-ink-2 mb-2">Thanks for letting us know.</p>
+          <p className="text-sm text-ink-3">If anything changes, just reach out — we'd be glad to help.</p>
         </div>
       </div>
     )
@@ -246,6 +285,12 @@ export default function PublicQuote() {
           >
             Request changes
           </button>
+          <button
+            onClick={() => setShowDecline(true)}
+            className="w-full text-ink-3 hover:text-red-600 font-medium py-2 text-sm transition-colors"
+          >
+            Decline quote
+          </button>
           <p className="text-xs text-ink-3 text-center">
             By accepting, you're confirming your interest. We'll contact you to schedule the service.
           </p>
@@ -276,6 +321,36 @@ export default function PublicQuote() {
                   className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white rounded-lg disabled:cursor-not-allowed"
                 >
                   {requesting ? 'Sending...' : 'Send request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showDecline && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
+            <div className="w-full sm:max-w-md bg-panel rounded-t-2xl sm:rounded-lg shadow-xl flex flex-col max-h-[95vh]">
+              <div className="p-5 border-b border-hairline">
+                <h2 className="text-lg font-bold text-ink">Decline this quote?</h2>
+                <p className="text-xs text-ink-3 mt-1">Optionally tell us why — it helps us improve.</p>
+              </div>
+              <div className="p-5 overflow-y-auto flex-1">
+                <textarea
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="Reason (optional)"
+                  rows={4}
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+              <div className="p-4 border-t border-hairline bg-bg flex justify-end gap-2">
+                <button onClick={() => setShowDecline(false)} className="px-4 py-2 text-sm font-medium text-ink-2 hover:bg-bg-2 rounded-lg">Cancel</button>
+                <button
+                  onClick={handleDecline}
+                  disabled={declining}
+                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:bg-bg-2 text-white rounded-lg disabled:cursor-not-allowed"
+                >
+                  {declining ? 'Declining...' : 'Decline quote'}
                 </button>
               </div>
             </div>

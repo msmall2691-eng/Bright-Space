@@ -94,7 +94,13 @@ def _quote_dict(q: Quote) -> dict:
         "sent_at": q.sent_at.isoformat() if q.sent_at else None,
         "viewed_at": q.viewed_at.isoformat() if q.viewed_at else None,
         "accepted_at": q.accepted_at.isoformat() if q.accepted_at else None,
+        "accepted_by_name": q.accepted_by_name,
+        "accepted_by_email": q.accepted_by_email,
         "declined_at": q.declined_at.isoformat() if q.declined_at else None,
+        "declined_reason": getattr(q, "declined_reason", None),
+        "declined_by_name": getattr(q, "declined_by_name", None),
+        "requested_changes_message": getattr(q, "requested_changes_message", None),
+        "requested_changes_at": q.requested_changes_at.isoformat() if getattr(q, "requested_changes_at", None) else None,
         "created_at": q.created_at.isoformat() if q.created_at else None,
         "updated_at": q.updated_at.isoformat() if q.updated_at else None,
     }
@@ -459,6 +465,11 @@ class PublicChangeRequest(BaseModel):
     message: str
 
 
+class PublicDeclineRequest(BaseModel):
+    name: Optional[str] = None
+    reason: Optional[str] = None
+
+
 def _quote_by_token(token: str, db: Session) -> Quote:
     quote = db.query(Quote).filter(Quote.public_token == token).first()
     if not quote:
@@ -503,6 +514,36 @@ def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_
         logger.warning(f"[quotes] activity log failed for {quote.id}: {e}")
 
 
+def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: list) -> None:
+    """Email the business owner when a customer responds to a quote.
+
+    Sends to the configured business address (the same from_email used to send
+    quotes) so the owner gets a real heads-up instead of only a hidden activity
+    log. Best-effort: never let a notification failure break the public response.
+    """
+    try:
+        from integrations.email import _load_smtp_creds, send_email
+        creds = _load_smtp_creds()
+        owner = creds.get("from_email")
+        if not owner:
+            logger.info("[quotes] no owner email configured; skipping owner notification")
+            return
+        client_name = quote.client.name if quote.client else "a customer"
+        app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+        body_lines = lines + [
+            "",
+            f"Quote: {quote.quote_number}",
+            f"Customer: {client_name}",
+            f"Total: ${float(quote.total or 0):,.2f}",
+            f"Open it: {app_base}/quoting",
+        ]
+        html = "<br>".join(l or "&nbsp;" for l in body_lines)
+        send_email(to=owner, subject=subject, html_body=f"<div style='font-family:sans-serif'>{html}</div>",
+                   text_body="\n".join(body_lines))
+    except Exception as e:
+        logger.warning(f"[quotes] owner notification failed for {quote.id}: {e}")
+
+
 @router.get("/public/{token}")
 def public_view_quote(token: str, db: Session = Depends(get_db)):
     """Client-facing quote view. Marks the quote VIEWED on first open."""
@@ -536,7 +577,13 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
     if data:
         quote.accepted_by_name = data.name or quote.accepted_by_name
         quote.accepted_by_email = data.email or quote.accepted_by_email
+    who = quote.accepted_by_name or (quote.client.name if quote.client else "The customer")
     _notify_staff_quote_event(db, quote, f"Client accepted quote {quote.quote_number}", "quote_accepted")
+    _notify_owner_quote_event(
+        db, quote, f"✅ Quote {quote.quote_number} accepted",
+        [f"{who} accepted quote {quote.quote_number}.",
+         "You can convert it to a scheduled job from the Quoting page."],
+    )
     db.commit()
     return {"status": "accepted", "quote_number": quote.quote_number}
 
@@ -548,13 +595,47 @@ def public_request_changes(token: str, data: PublicChangeRequest, db: Session = 
     msg = (data.message or "").strip()
     if not msg:
         raise HTTPException(status_code=400, detail="Please include a message describing the changes.")
+    # Persist the request on the quote (not just an activity line) and flag it so
+    # the owner sees it needs attention.
+    quote.requested_changes_message = msg
+    quote.requested_changes_at = datetime.now()
+    if quote.status in ("sent", "viewed", "draft"):
+        quote.status = "changes_requested"
+    quote.updated_at = datetime.now()
     _notify_staff_quote_event(
         db, quote,
         f"Client requested changes to quote {quote.quote_number}: {msg[:500]}",
         "quote_change_requested",
     )
+    _notify_owner_quote_event(
+        db, quote, f"✏️ Quote {quote.quote_number}: changes requested",
+        ["The customer requested changes to this quote:", "", f"“{msg}”"],
+    )
     db.commit()
     return {"status": "received"}
+
+
+@router.post("/public/{token}/decline")
+def public_decline_quote(token: str, data: "PublicDeclineRequest" = None, db: Session = Depends(get_db)):
+    """Client declines the quote from the public link."""
+    quote = _quote_by_token(token, db)
+    if quote.status == "accepted":
+        raise HTTPException(status_code=409, detail="This quote was already accepted.")
+    quote.status = "declined"
+    quote.declined_at = datetime.now()
+    quote.updated_at = datetime.now()
+    if data:
+        quote.declined_by_name = (data.name or "").strip() or quote.declined_by_name
+        quote.declined_reason = (data.reason or "").strip() or quote.declined_reason
+    who = quote.declined_by_name or (quote.client.name if quote.client else "The customer")
+    reason = quote.declined_reason
+    _notify_staff_quote_event(db, quote, f"Client declined quote {quote.quote_number}", "quote_rejected")
+    _notify_owner_quote_event(
+        db, quote, f"❌ Quote {quote.quote_number} declined",
+        [f"{who} declined quote {quote.quote_number}."] + ([f"Reason: {reason}"] if reason else []),
+    )
+    db.commit()
+    return {"status": "declined"}
 
 
 # ========================

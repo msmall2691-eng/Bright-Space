@@ -856,6 +856,13 @@ class Quote(Base):
     accepted_by_name = Column(String(255), nullable=True)
     accepted_by_email = Column(String(255), nullable=True)
 
+    # Customer response capture from the public page (change request / decline),
+    # so the message/reason is persisted on the quote, not just an activity log.
+    requested_changes_message = Column(Text, nullable=True)
+    requested_changes_at = Column(DateTime(timezone=True), nullable=True)
+    declined_reason = Column(Text, nullable=True)
+    declined_by_name = Column(String(255), nullable=True)
+
     custom_fields = Column(JSON, default=dict)
 
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
