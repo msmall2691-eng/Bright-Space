@@ -319,32 +319,54 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
         client_id = client.id
 
     address = " ".join(filter(None, [intake.address, intake.city, intake.state, intake.zip_code]))
+
+    # Seed the first line item's price from the website "instant quote" estimate
+    # (midpoint of the range) so the operator starts from the customer's number
+    # instead of $0.
+    est = None
+    if intake.estimate_min is not None and intake.estimate_max is not None:
+        est = round((intake.estimate_min + intake.estimate_max) / 2, 2)
+    elif intake.estimate_max is not None:
+        est = intake.estimate_max
+    elif intake.estimate_min is not None:
+        est = intake.estimate_min
+    unit_price = float(est or 0)
+    tax_rate = 5.5
+    subtotal = round(unit_price, 2)
+    tax = round(subtotal * tax_rate / 100, 2)
+    total = round(subtotal + tax, 2)
+
+    import secrets
+    from modules.quoting.router import _assign_quote_number, _quote_dict
+
     quote = Quote(
         client_id=client_id,
         intake_id=intake_id,
+        # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
+        quote_number=f"PENDING-{secrets.token_hex(8)}",
         address=address or None,
         service_type=intake.service_type or "residential",
         items=[{
             "name": f"{(intake.service_type or 'residential').title()} Cleaning",
             "qty": 1,
-            "unit_price": 0,
-            "description": ""
+            "unit_price": unit_price,
+            "description": "Estimated from website instant quote" if est else "",
         }],
-        subtotal=0,
-        tax_rate=5.5,
-        tax=0,
-        total=0,
+        subtotal=subtotal,
+        tax_rate=tax_rate,
+        tax=tax,
+        total=total,
         status="draft",
         notes=intake.message or "",
         valid_until=None,
     )
     db.add(quote)
+    db.flush()
+    _assign_quote_number(quote)
     intake.status = "quoted"
     db.commit()
     db.refresh(quote)
-
-    from modules.quoting.router import quote_to_dict
-    return quote_to_dict(quote)
+    return _quote_dict(quote)
 
 
 # ---------------------------------------------------------------------------

@@ -1312,12 +1312,13 @@ export default function ClientProfile() {
             {quotes.length === 0 && <p className="text-ink-3 text-sm text-center py-10">No quotes yet</p>}
             {quotes.map(q => (
               <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4 flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-ink">${q.total?.toFixed(2)}</div>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate('/quoting', { state: { quoteId: q.id } })}
+                  title="Open this quote">
+                  <div className="font-medium text-ink">${q.total?.toFixed(2)} <span className="text-xs text-ink-3 font-normal">· {q.quote_number}</span></div>
                   <div className="text-xs text-ink-3 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
                 </div>
                 <div className="flex items-center gap-2 ml-4">
-                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status]}`}>{q.status}</span>
+                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${QUOTE_COLORS[q.status] || QUOTE_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
                   <OpportunityLinker
                     clientId={id}
                     itemType="quote"

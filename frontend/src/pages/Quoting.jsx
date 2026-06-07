@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check } from 'lucide-react'
+import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
-import { get, post, patch } from "../api"
+import { get, post, patch, put } from "../api"
 
 
 const QUOTE_STATUS_COLORS = {
@@ -75,6 +75,9 @@ export default function Quoting() {
   const [toast, setToast] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
+  // Template manager (create/edit/delete reusable quote templates).
+  const [editTemplates, setEditTemplates] = useState([])
+  const [savingTemplates, setSavingTemplates] = useState(false)
   // Inline "new client" quick-add from the quote form.
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
@@ -119,6 +122,46 @@ export default function Quoting() {
       setClientErr(e.message || 'Failed to create client')
     }
     setCreatingClient(false)
+  }
+
+  // ── Template manager helpers ─────────────────────────────────────────────
+  const tplSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `tpl_${Date.now()}`
+  const addTemplate = () => setEditTemplates(ts => [...ts, {
+    id: `tpl_${Date.now()}`, label: '', service_type: 'residential',
+    items: [{ name: '', description: '', qty: 1, unit_price: 0 }],
+  }])
+  const updateTemplate = (i, patch) => setEditTemplates(ts => ts.map((t, idx) => idx === i ? { ...t, ...patch } : t))
+  const removeTemplate = (i) => setEditTemplates(ts => ts.filter((_, idx) => idx !== i))
+  const updateTplItem = (ti, ii, patch) => setEditTemplates(ts => ts.map((t, idx) =>
+    idx !== ti ? t : { ...t, items: t.items.map((it, j) => j === ii ? { ...it, ...patch } : it) }))
+  const addTplItem = (ti) => setEditTemplates(ts => ts.map((t, idx) =>
+    idx !== ti ? t : { ...t, items: [...t.items, { name: '', description: '', qty: 1, unit_price: 0 }] }))
+  const removeTplItem = (ti, ii) => setEditTemplates(ts => ts.map((t, idx) =>
+    idx !== ti ? t : { ...t, items: t.items.filter((_, j) => j !== ii) }))
+
+  const saveTemplates = async () => {
+    // Normalize + validate: each template needs a label and ≥1 named item.
+    const cleaned = editTemplates.map(t => ({
+      id: t.id || tplSlug(t.label),
+      label: (t.label || '').trim(),
+      service_type: t.service_type || 'residential',
+      items: (t.items || []).filter(i => (i.name || '').trim()).map(i => ({
+        name: i.name.trim(), description: i.description || '',
+        qty: Number(i.qty) || 1, unit_price: Number(i.unit_price) || 0,
+      })),
+    }))
+    for (const t of cleaned) {
+      if (!t.label) { showToast('Every template needs a name'); return }
+      if (!t.items.length) { showToast(`"${t.label}" needs at least one line item`); return }
+    }
+    setSavingTemplates(true)
+    try {
+      const res = await put('/api/settings/quote-templates', { templates: cleaned })
+      setQuoteTemplates(res?.templates || cleaned)
+      setPanel(null)
+      showToast('Templates saved ✓')
+    } catch (e) { showToast(e.message || 'Could not save templates') }
+    setSavingTemplates(false)
   }
 
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
@@ -195,11 +238,22 @@ export default function Quoting() {
         service_type: q.service_type || 'residential', items: q.items?.length ? q.items : [{ ...EMPTY_ITEM }],
         tax_rate: q.tax_rate, notes: q.notes || '', valid_until: q.valid_until || '' })
     } else if (intake) {
+      // Seed the first line item's price from the lead's website "instant quote"
+      // (midpoint of the estimate range) so pricing starts from their number.
+      const mid = (intake.estimate_min != null && intake.estimate_max != null)
+        ? Math.round((intake.estimate_min + intake.estimate_max) / 2)
+        : (intake.estimate_max ?? intake.estimate_min ?? 0)
       setForm({
         client_id: intake.client_id || '', intake_id: intake.id,
         address: [intake.address, intake.city, intake.state].filter(Boolean).join(', '),
         service_type: intake.service_type || 'residential',
-        items: [{ ...EMPTY_ITEM }], tax_rate: 0,
+        items: [{
+          ...EMPTY_ITEM,
+          name: `${(intake.service_type || 'residential')} cleaning`,
+          unit_price: mid || 0,
+          description: mid ? 'From website instant quote' : '',
+        }],
+        tax_rate: 0,
         notes: intake.message || '', valid_until: ''
       })
     } else {
@@ -325,10 +379,16 @@ export default function Quoting() {
               Quotes
             </button>
           </div>
-          <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <Plus className="w-4 h-4" /> New Quote
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setEditTemplates(quoteTemplates.map(t => ({ ...t, items: (t.items || []).map(i => ({ ...i })) }))); setPanel('templates') }}
+              className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+              <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
+            </button>
+            <button onClick={() => { openQuoteForm(); setTab('quotes') }}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              <Plus className="w-4 h-4" /> New Quote
+            </button>
+          </div>
         </div>
 
         {/* Leads tab */}
@@ -457,6 +517,17 @@ export default function Quoting() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+
+            {/* Lead's website instant-quote estimate, when building from an intake. */}
+            {selectedIntake && (selectedIntake.estimate_min != null || selectedIntake.estimate_max != null) && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <span className="font-semibold">Website instant quote:</span>{' '}
+                {selectedIntake.estimate_min != null && selectedIntake.estimate_max != null
+                  ? `$${selectedIntake.estimate_min}–$${selectedIntake.estimate_max}`
+                  : `$${selectedIntake.estimate_max ?? selectedIntake.estimate_min}`}
+                <span className="text-blue-700"> — pre-filled below; adjust as needed.</span>
+              </div>
+            )}
 
             {/* Customer response banner — what the customer did with this quote */}
             {selected && selected.requested_changes_message && (
@@ -784,6 +855,63 @@ export default function Quoting() {
               <Send className="w-4 h-4" />
               {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
             </button>
+          </div>
+        </div>
+      )}
+
+      {panel === 'templates' && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center sm:justify-end">
+          <div className="w-full sm:w-[520px] bg-panel sm:h-full shadow-2xl flex flex-col max-h-[92vh] sm:max-h-full">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
+              <div>
+                <h2 className="font-semibold text-ink">Quote templates</h2>
+                <p className="text-xs text-ink-3 mt-0.5">Reusable line-item sets for "Start from template" on new quotes.</p>
+              </div>
+              <button onClick={() => setPanel(null)} className="text-ink-3 hover:text-ink"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+              {editTemplates.length === 0 && <p className="text-sm text-ink-3 text-center py-6">No templates yet — add one below.</p>}
+              {editTemplates.map((t, ti) => (
+                <div key={ti} className="border border-hairline rounded-xl p-3 space-y-2 bg-bg">
+                  <div className="flex items-center gap-2">
+                    <input value={t.label} onChange={e => updateTemplate(ti, { label: e.target.value })}
+                      placeholder="Template name (e.g. Biweekly Residential)"
+                      className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    <select value={t.service_type} onChange={e => updateTemplate(ti, { service_type: e.target.value })}
+                      className="bg-panel border border-hairline rounded-lg px-2 py-2 text-sm focus:outline-none">
+                      {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <button onClick={() => removeTemplate(ti)} title="Delete template"
+                      className="p-2 text-ink-3 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {(t.items || []).map((it, ii) => (
+                      <div key={ii} className="flex items-center gap-1.5">
+                        <input value={it.name} onChange={e => updateTplItem(ti, ii, { name: e.target.value })}
+                          placeholder="Line item"
+                          className="flex-1 bg-panel border border-hairline rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
+                        <input type="number" value={it.qty} onChange={e => updateTplItem(ti, ii, { qty: e.target.value })}
+                          title="Qty" className="w-14 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                        <input type="number" value={it.unit_price} onChange={e => updateTplItem(ti, ii, { unit_price: e.target.value })}
+                          title="Unit price" className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+                        <button onClick={() => removeTplItem(ti, ii)} className="p-1.5 text-ink-3 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                    <button onClick={() => addTplItem(ti)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add line item</button>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addTemplate} className="w-full border border-dashed border-hairline rounded-xl py-2.5 text-sm text-ink-2 hover:bg-bg-2 transition-colors">
+                + New template
+              </button>
+            </div>
+            <div className="p-4 border-t border-hairline shrink-0 flex gap-2">
+              <button onClick={() => setPanel(null)} className="flex-1 bg-bg-2 hover:bg-hairline text-ink-2 px-4 py-2.5 rounded-lg text-sm font-medium">Cancel</button>
+              <button onClick={saveTemplates} disabled={savingTemplates}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white px-4 py-2.5 rounded-lg text-sm font-medium">
+                {savingTemplates ? 'Saving…' : 'Save templates'}
+              </button>
+            </div>
           </div>
         </div>
       )}
