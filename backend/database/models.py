@@ -430,7 +430,10 @@ class Visit(Base):
     """A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
     __tablename__ = "visits"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    # BIGINT on Postgres (prod); plain INTEGER on SQLite so the primary key
+    # autoincrements there (SQLite only aliases rowid for INTEGER PRIMARY KEY,
+    # not BIGINT) — needed for the test suite to insert visits.
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
 
     # When is this visit scheduled?
