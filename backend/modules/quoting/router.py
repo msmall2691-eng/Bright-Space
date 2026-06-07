@@ -232,19 +232,113 @@ def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(g
 # Status transitions
 # ========================
 
+class QuoteSendRequest(BaseModel):
+    channel: str = "email"                 # 'email' | 'sms' | 'both'
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    custom_message: Optional[str] = None
+
+
 @router.post("/{quote_id}/send")
-def send_quote(quote_id: int, db: Session = Depends(get_db)):
-    """Mark a quote sent and mint its public accept-link token."""
+def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db)):
+    """Actually DELIVER the quote to the customer over the chosen channel(s), then
+    mark it sent. Email attaches the PDF; SMS texts the public accept-link.
+
+    Previously this only flipped the status and minted the link — nothing was
+    delivered — so the UI's email/SMS picker was ignored and customers never
+    received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
+    """
     quote = _get_quote_or_404(quote_id, db)
     if quote.status not in ("draft", "sent"):
         raise HTTPException(status_code=400, detail=f"Cannot send a {quote.status} quote")
-    quote.status = "sent"
-    quote.sent_at = datetime.now()
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    channel = (body.channel or "email").lower()
+    want_email = channel in ("email", "both")
+    want_sms = channel in ("sms", "both")
+    if not (want_email or want_sms):
+        raise HTTPException(status_code=400, detail=f"Unknown channel '{body.channel}'")
+
+    token = _ensure_public_token(quote)
+    app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+    quote_link = f"{app_base}/quote/{token}"
+
+    results: dict = {}
+    errors: list = []
+
+    if want_email:
+        to_email = (body.email or client.email or "").strip()
+        if "@" not in to_email:
+            results["email"] = "no email address on file"
+            errors.append("no valid email address")
+        else:
+            try:
+                pdf_bytes = QuotePDFService().generate_quote_pdf(
+                    quote_number=quote.quote_number, client_name=client.name,
+                    client_email=client.email or "", client_phone=client.phone,
+                    line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
+                    tax_amount=quote.tax, discount_amount=quote.discount,
+                    total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
+                )
+                res = QuoteEmailService().send_quote_email(
+                    to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
+                    total_amount=float(quote.total or 0),
+                    expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else "Upon Request",
+                    quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
+                )
+                if res.get("success"):
+                    results["email"] = "sent"
+                    db.add(QuoteEmail(
+                        quote_id=quote.id, recipient_email=to_email, sent_at=datetime.now(),
+                        delivery_status="sent", email_id=res.get("email_id"),
+                    ))
+                else:
+                    results["email"] = "failed"
+                    errors.append(f"email: {res.get('error')}")
+            except Exception as e:
+                results["email"] = "failed"
+                errors.append(f"email: {e}")
+
+    if want_sms:
+        to_phone = (body.phone or client.phone or "").strip()
+        if not to_phone:
+            results["sms"] = "no phone number on file"
+            errors.append("no phone number")
+        else:
+            try:
+                from integrations.twilio_client import send_sms
+                base = (body.custom_message or "").strip() or f"Hi {client.name or ''}, your quote {quote.quote_number} is ready."
+                msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
+                send_sms(to=to_phone, body=msg)
+                results["sms"] = "sent"
+            except Exception as e:
+                results["sms"] = "failed"
+                errors.append(f"sms: {e}")
+
+    delivered = any(v == "sent" for v in results.values())
+    if delivered:
+        quote.status = "sent"
+        quote.sent_at = datetime.now()
     quote.updated_at = datetime.now()
-    _ensure_public_token(quote)
     db.commit()
     db.refresh(quote)
-    return _quote_dict(quote)
+
+    if not delivered:
+        # Nothing went out — surface why so the UI shows a real error, not a
+        # false "sent".
+        raise HTTPException(status_code=502, detail="; ".join(errors) or "Quote could not be sent")
+
+    return {
+        "quote_id": quote.id,
+        "quote_number": quote.quote_number,
+        "status": quote.status,
+        "results": results,
+        "errors": errors,
+        "public_token": token,
+        "quote_link": quote_link,
+    }
 
 
 @router.post("/{quote_id}/generate-token")

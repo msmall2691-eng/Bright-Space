@@ -95,9 +95,17 @@ def test_quote_full_lifecycle():
     pq = r.json()
     assert (pq["subtotal"], pq["tax"], pq["total"]) == (100.0, 10.0, 110.0)
 
-    # Send -> public token, then public view + accept.
-    r = api.post(f"/api/quotes/{qid}/send")
+    # Send -> delivers (email) + public token, then public view + accept.
+    # /send now actually delivers, so stub the email path (no real Gmail creds
+    # in tests) and pass an explicit recipient.
+    from unittest.mock import patch as _patch
+    with _patch("modules.quoting.router.QuotePDFService") as _PDF, \
+         _patch("modules.quoting.router.QuoteEmailService") as _Email:
+        _PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        _Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "e1"}
+        r = api.post(f"/api/quotes/{qid}/send", json={"channel": "email", "email": "j@example.com"})
     assert r.status_code == 200, r.text
+    assert r.json()["results"]["email"] == "sent"
     token = r.json()["public_token"]
     assert token
     pv = api.get(f"/api/quotes/public/{token}")
