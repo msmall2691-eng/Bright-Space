@@ -11,6 +11,7 @@ import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
 import JobEditModal from '../components/JobEditModal'
+import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
 import { useToast } from '../components/ui/Toast'
 
@@ -930,6 +931,7 @@ export default function Schedule() {
   const [completingVisit, setCompletingVisit] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
+  const [showNewJob, setShowNewJob] = useState(false)
   const navigate = useNavigate()
   const [coverage, setCoverage] = useState(null)
   const [backfilling, setBackfilling] = useState(false)
@@ -1426,7 +1428,7 @@ export default function Schedule() {
               )}
             </div>
 
-            <Button onClick={() => { setEditingJob(null); setShowJobModal(true) }} variant="primary" size="sm" className="whitespace-nowrap">
+            <Button onClick={() => setShowNewJob(true)} variant="primary" size="sm" className="whitespace-nowrap">
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline ml-1.5">New Job</span>
             </Button>
@@ -1827,6 +1829,16 @@ export default function Schedule() {
           clients={Object.values(clients)}
           onClose={() => setShowJobModal(false)}
           onSave={handleJobSave}
+        />
+      )}
+
+      {/* Client-first "New Job": pick/create a client + property inline, one-time
+          or recurring, residential by default — and it lands on Google Calendar. */}
+      {showNewJob && (
+        <JobCreateModal
+          initialDate={dateStr}
+          onClose={() => setShowNewJob(false)}
+          onCreated={() => { setShowNewJob(false); handleJobSave() }}
         />
       )}
 
