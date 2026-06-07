@@ -11,7 +11,7 @@ const PRIMARY_TABS = [
 
 export default function BottomNav() {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-panel/95 backdrop-blur-md border-t border-hairline">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-panel/95 backdrop-blur-md border-t border-hairline">
       <div className="flex items-stretch justify-around px-1" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         {PRIMARY_TABS.map(tab => (
           <NavLink
