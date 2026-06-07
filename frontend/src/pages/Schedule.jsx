@@ -933,6 +933,9 @@ export default function Schedule() {
   const [showJobModal, setShowJobModal] = useState(false)
   const [showNewJob, setShowNewJob] = useState(false)
   const [newJobDate, setNewJobDate] = useState('')
+  // Bumped after any create/edit so the month CalendarView (which holds its own
+  // /api/jobs state) refetches and shows the change without a month switch.
+  const [calRefresh, setCalRefresh] = useState(0)
   const navigate = useNavigate()
   const [coverage, setCoverage] = useState(null)
   const [backfilling, setBackfilling] = useState(false)
@@ -1330,6 +1333,7 @@ export default function Schedule() {
     const visitsRes = await get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`)
     const visitsData = visitsRes?.items || visitsRes || []
     setVisits(visitsData)
+    setCalRefresh(k => k + 1)  // make the month CalendarView refetch its jobs too
   }
 
   const handleBackfill = async () => {
@@ -1586,6 +1590,7 @@ export default function Schedule() {
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
           <CalendarView
+            refreshKey={calRefresh}
             onJobClick={(j) => { setEditingJob(jobs[j.id] || j); setShowJobModal(true) }}
             onCreateForDay={(d) => { setNewJobDate(d); setShowNewJob(true) }}
             filters={{
