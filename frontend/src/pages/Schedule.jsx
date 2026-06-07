@@ -932,6 +932,7 @@ export default function Schedule() {
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
   const [showNewJob, setShowNewJob] = useState(false)
+  const [newJobDate, setNewJobDate] = useState('')
   const navigate = useNavigate()
   const [coverage, setCoverage] = useState(null)
   const [backfilling, setBackfilling] = useState(false)
@@ -1428,7 +1429,7 @@ export default function Schedule() {
               )}
             </div>
 
-            <Button onClick={() => setShowNewJob(true)} variant="primary" size="sm" className="whitespace-nowrap">
+            <Button onClick={() => { setNewJobDate(dateStr); setShowNewJob(true) }} variant="primary" size="sm" className="whitespace-nowrap">
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline ml-1.5">New Job</span>
             </Button>
@@ -1585,7 +1586,8 @@ export default function Schedule() {
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
           <CalendarView
-            onJobClick={(j) => setEditingJob(jobs[j.id] || j)}
+            onJobClick={(j) => { setEditingJob(jobs[j.id] || j); setShowJobModal(true) }}
+            onCreateForDay={(d) => { setNewJobDate(d); setShowNewJob(true) }}
             filters={{
               ...(selectedPropertyType !== 'all' ? { job_type: selectedPropertyType === 'str' ? 'str_turnover' : selectedPropertyType } : {}),
               ...(selectedStatus !== 'all' ? { status: selectedStatus } : {}),
@@ -1836,7 +1838,7 @@ export default function Schedule() {
           or recurring, residential by default — and it lands on Google Calendar. */}
       {showNewJob && (
         <JobCreateModal
-          initialDate={dateStr}
+          initialDate={newJobDate || dateStr}
           onClose={() => setShowNewJob(false)}
           onCreated={() => { setShowNewJob(false); handleJobSave() }}
         />
