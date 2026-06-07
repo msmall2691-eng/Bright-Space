@@ -162,10 +162,7 @@ class Client(Base):
 
     # Relationships - all cascade delete with client
     user = relationship("User", back_populates="client", uselist=False)  # One client per user (for role=client users)
-    # NOTE: Quote uses UUID FKs that don't map cleanly to Integer Client.id.
-    # Removed Client.quotes back_populates to keep the SQLAlchemy mapper happy.
-    # The actual quotes table has an Integer client_id column added via boot
-    # migrations; query it directly via raw SQL or a properly aligned model.
+    quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan", foreign_keys="Quote.client_id")
     jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="client", cascade="all, delete-orphan")
@@ -804,142 +801,100 @@ class QuoteRequestStatus(str, Enum):
 
 
 class Quote(Base):
-    """Main quote record."""
+    """A customer quote.
+
+    Integer-keyed to match clients/jobs/invoices/opportunities (the rest of the
+    app). Line items are stored inline as JSON (the same shape Invoice.items
+    uses) rather than in a separate table, which matches what the Quoting UI
+    sends and reads. Replaces the earlier UUID-keyed Quote + QuoteLineItem
+    design that couldn't link to the integer Client/Job ids."""
     __tablename__ = "quotes"
 
-    # Primary Key
-    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=lambda: UUID(int=0).hex)  # gen_random_uuid handled by DB
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Relationships (all integer FKs)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    intake_id = Column(Integer, ForeignKey("lead_intakes.id", ondelete="SET NULL"), nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Metadata
+    quote_number = Column(String(50), nullable=False, unique=True)
+    # Opaque token for the public (no-login) accept page link.
+    public_token = Column(String(64), nullable=True, unique=True, index=True)
+    title = Column(String(255), nullable=True)
+    service_type = Column(String(100), nullable=True)   # residential | commercial | str
+    address = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    # Line items, inline JSON: [{"name", "description", "qty", "unit_price"}]
+    items = Column(JSON, nullable=False, default=list)
+
+    # Pricing (tax_rate is a percent, e.g. 5.5)
+    subtotal = Column(Float, nullable=False, default=0.0)
+    tax_rate = Column(Float, nullable=False, default=0.0)
+    tax = Column(Float, nullable=False, default=0.0)
+    discount = Column(Float, nullable=False, default=0.0)
+    total = Column(Float, nullable=False, default=0.0)
+
+    # Status & workflow
+    status = Column(String(50), nullable=False, default="draft")
+    valid_until = Column(Date, nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    viewed_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    declined_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Acceptance capture (from the public accept page)
+    accepted_by_name = Column(String(255), nullable=True)
+    accepted_by_email = Column(String(255), nullable=True)
+
+    custom_fields = Column(JSON, default=dict)
+
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
     # Relationships
-    client_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
-    property_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
-    created_by: UUID = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
-    # Quote Metadata
-    quote_number: str = Column(String(50), nullable=False, unique=True)
-    # Opaque token for the public (no-login) accept page link. Generated when
-    # the quote is first sent. Indexed for the public-view lookup.
-    public_token: Optional[str] = Column(String(64), nullable=True, unique=True, index=True)
-    title: Optional[str] = Column(String(255), nullable=True)
-    description: Optional[str] = Column(Text(), nullable=True)
-    notes: Optional[str] = Column(Text(), nullable=True)
-
-    # Pricing
-    subtotal: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
-    tax_amount: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
-    discount_amount: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
-    total_amount: Decimal = Column(Numeric(precision=12, scale=2), nullable=False, default=Decimal("0"))
-
-    # Status & Workflow
-    status: str = Column(String(50), nullable=False, default=QuoteStatus.DRAFT)
-    sent_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
-    viewed_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
-    accepted_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
-    declined_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
-    expires_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
-
-    # Client Preferences for Scheduling
-    preferred_day: Optional[int] = Column(Integer(), nullable=True)  # 0-6 for day of week
-    preferred_time: Optional[str] = Column(String(50), nullable=True)  # e.g., "09:00-12:00"
-
-    # Acceptance/Signature
-    signature_data: Optional[dict] = Column(JSON(), nullable=True)  # E-signature data if needed
-    accepted_by_name: Optional[str] = Column(String(255), nullable=True)
-    accepted_by_email: Optional[str] = Column(String(255), nullable=True)
-
-    # Timestamps
-    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
-    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
-
-    # Relationships
-    client = relationship("Client", foreign_keys=[client_id])
+    client = relationship("Client", back_populates="quotes", foreign_keys=[client_id])
     property = relationship("Property", foreign_keys=[property_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
-    line_items = relationship("QuoteLineItem", back_populates="quote", cascade="all, delete-orphan")
     emails = relationship("QuoteEmail", back_populates="quote", cascade="all, delete-orphan")
 
-    # Constraints
     __table_args__ = (
-        CheckConstraint(
-            f"status IN ('{QuoteStatus.DRAFT}', '{QuoteStatus.SENT}', '{QuoteStatus.VIEWED}', "
-            f"'{QuoteStatus.ACCEPTED}', '{QuoteStatus.DECLINED}', '{QuoteStatus.EXPIRED}', '{QuoteStatus.ARCHIVED}')",
-            name="check_quote_status"
-        ),
         UniqueConstraint("quote_number", name="uq_quote_number"),
     )
 
 
-class QuoteLineItem(Base):
-    """Line item within a quote."""
-    __tablename__ = "quote_line_items"
-
-    # Primary Key
-    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=lambda: UUID(int=0).hex)
-
-    # Relationship
-    quote_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    # Item Details
-    description: str = Column(String(500), nullable=False)
-    service_type: Optional[str] = Column(String(100), nullable=True)  # e.g., "cleaning", "labor", "supplies"
-    quantity: Decimal = Column(Numeric(precision=10, scale=2), nullable=False, default=Decimal("1"))
-    unit: Optional[str] = Column(String(50), nullable=True)  # e.g., "hour", "sqft", "room"
-
-    # Pricing
-    unit_price: Decimal = Column(Numeric(precision=12, scale=2), nullable=False)
-    line_total: Decimal = Column(Numeric(precision=12, scale=2), nullable=False)
-
-    # Display Order
-    display_order: int = Column(Integer(), nullable=False, default=0)
-
-    # Timestamps
-    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
-    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
-
-    # Relationship
-    quote = relationship("Quote", back_populates="line_items")
-
-
 class QuoteRequest(Base):
-    """Customer quote request via web form."""
+    """Customer quote request via web form. Integer-keyed."""
     __tablename__ = "quote_requests"
 
-    # Primary Key
-    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=lambda: UUID(int=0).hex)
+    id = Column(Integer, primary_key=True, index=True)
 
-    # Requestor Info
-    client_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
-    requester_name: str = Column(String(255), nullable=False)
-    requester_email: str = Column(String(255), nullable=False)
-    requester_phone: Optional[str] = Column(String(20), nullable=True)
+    # Requestor info
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    requester_name = Column(String(255), nullable=False)
+    requester_email = Column(String(255), nullable=False)
+    requester_phone = Column(String(20), nullable=True)
 
-    # Request Details
-    property_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
-    service_type: Optional[str] = Column(String(100), nullable=True)
-    description: Optional[str] = Column(Text(), nullable=True)
-    preferred_date: Optional[date] = Column(Date(), nullable=True)
-    preferred_time: Optional[str] = Column(String(50), nullable=True)
+    # Request details
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
+    service_type = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    preferred_date = Column(Date, nullable=True)
+    preferred_time = Column(String(50), nullable=True)
 
-    # Status & Link to Quote
-    status: str = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
-    quote_id: Optional[UUID] = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Status & link to created quote
+    status = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
+    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    # Timestamps
-    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
-    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=None)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
-    # Relationships
     client = relationship("Client", foreign_keys=[client_id])
     property = relationship("Property", foreign_keys=[property_id])
     quote = relationship("Quote", foreign_keys=[quote_id])
-
-    # Constraints
-    __table_args__ = (
-        CheckConstraint(
-            f"status IN ('{QuoteRequestStatus.PENDING}', '{QuoteRequestStatus.ASSIGNED}', "
-            f"'{QuoteRequestStatus.QUOTED}', '{QuoteRequestStatus.ARCHIVED}')",
-            name="check_quote_request_status"
-        ),
-    )
 
 
 # ============================================
@@ -956,31 +911,20 @@ class QuoteEmailStatus(str, Enum):
 
 
 class QuoteEmail(Base):
-    """
-    Tracks email deliveries for quotes
-    Records when quotes are sent via email and delivery status
-    """
+    """Tracks email deliveries for quotes (when sent + delivery status)."""
     __tablename__ = "quote_emails"
 
-    id: UUID = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    quote_id: UUID = Column(PGUUID(as_uuid=True), ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False)
-    recipient_email: str = Column(String(255), nullable=False)
-    sent_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    delivery_status: str = Column(String(50), nullable=False, default=QuoteEmailStatus.SENT)
-    email_id: str = Column(String(255), nullable=True, unique=True)
-    error_message: str = Column(Text(), nullable=True)
-    created_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: datetime = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    id = Column(Integer, primary_key=True, index=True)
+    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_email = Column(String(255), nullable=False)
+    sent_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    delivery_status = Column(String(50), nullable=False, default="sent")
+    email_id = Column(String(255), nullable=True, unique=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
-    # Relationships
     quote = relationship("Quote", back_populates="emails")
-
-    __table_args__ = (
-        CheckConstraint(
-            "delivery_status IN ('sent', 'delivered', 'bounced', 'complained', 'failed')",
-            name="check_quote_emails_status"
-        ),
-    )
 
     def __repr__(self):
         return f"<QuoteEmail(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_email}, status={self.delivery_status})>"
