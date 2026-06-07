@@ -37,6 +37,7 @@ class PropertyCreate(BaseModel):
     business_name: Optional[str] = None
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
+    custom_fields: Optional[dict] = {}
 
 
 class PropertyUpdate(BaseModel):
@@ -60,6 +61,7 @@ class PropertyUpdate(BaseModel):
     notes: Optional[str] = None
     active: Optional[bool] = None
     checklist_template: Optional[list] = None
+    custom_fields: Optional[dict] = None
 
 
 class PropertyIcalSchema(BaseModel):
@@ -135,6 +137,7 @@ def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
         "hours_of_operation": getattr(p, 'hours_of_operation', None),
         "notes": p.notes,
         "checklist_template": getattr(p, 'checklist_template', None),
+        "custom_fields": getattr(p, 'custom_fields', None) or {},
         "active": p.active,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }

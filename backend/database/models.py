@@ -222,6 +222,9 @@ class Property(Base):
     # Shape: [{"area": "Kitchen", "tasks": ["Wipe counters", "Clean sink", "Mop floor"]}, ...]
     checklist_template = Column(JSON, nullable=True)
 
+    # Admin-defined custom fields (metadata), same mechanism as Client/Job/Invoice.
+    custom_fields = Column(JSON, default=dict)
+
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 

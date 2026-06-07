@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import { EmptyState } from '../components/ui'
+import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, del } from "../api"
 
 
@@ -123,7 +124,7 @@ const EMPTY = {
   access_notes: '', parking_notes: '',
   check_in_time: '14:00', check_out_time: '10:00', house_code: '', timezone: '',
   business_name: '', hours_of_operation: '',
-  notes: ''
+  notes: '', custom_fields: {}
 }
 
 const PROPERTY_TYPE_CONFIG = {
@@ -872,6 +873,13 @@ export default function Properties() {
               <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
+
+            {/* Admin-defined custom fields (Settings → Custom Fields → Properties) */}
+            <CustomFieldsForm
+              entityType="property"
+              values={form.custom_fields || {}}
+              onChange={(key, val) => setForm(f => ({ ...f, custom_fields: { ...(f.custom_fields || {}), [key]: val } }))}
+            />
           </div>
           <div className="p-6 border-t border-hairline shrink-0">
             <button onClick={save} disabled={saving || !form.client_id || !form.name || !form.address}

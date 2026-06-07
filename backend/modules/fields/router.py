@@ -10,6 +10,10 @@ from modules.auth.router import require_role
 
 router = APIRouter()
 
+# Entities that support admin-defined custom fields. Whitelisted so a typo
+# doesn't silently create fields that never render anywhere.
+ALLOWED_ENTITY_TYPES = {"client", "property", "job", "invoice", "opportunity", "quote"}
+
 
 def slugify(name: str) -> str:
     """Convert 'Pet Name' → 'pet_name'"""
@@ -57,6 +61,11 @@ def list_fields(entity_type: Optional[str] = None, db: Session = Depends(get_db)
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin"))])
 def create_field(data: FieldCreate, db: Session = Depends(get_db)):
+    if data.entity_type not in ALLOWED_ENTITY_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"entity_type must be one of {sorted(ALLOWED_ENTITY_TYPES)}",
+        )
     key = slugify(data.name)
     # Ensure key is unique per entity_type
     existing = db.query(FieldDefinition).filter(
