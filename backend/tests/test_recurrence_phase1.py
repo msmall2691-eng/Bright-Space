@@ -139,9 +139,9 @@ def test_apply_exceptions_removes_skip_dates(fresh_client_property):
         ))
         db.commit()
 
-        result = _apply_exceptions(db, sched, [target.isoformat(), (target + timedelta(days=7)).isoformat()])
-        assert target.isoformat() not in result
-        assert (target + timedelta(days=7)).isoformat() in result
+        result = _apply_exceptions(db, sched, [target, target + timedelta(days=7)])
+        assert target not in result
+        assert (target + timedelta(days=7)) in result
     finally:
         db.close()
 
@@ -162,9 +162,9 @@ def test_apply_exceptions_adds_reschedule_dates(fresh_client_property):
         ))
         db.commit()
 
-        result = _apply_exceptions(db, sched, [original.isoformat()])
-        assert original.isoformat() not in result
-        assert new.isoformat() in result
+        result = _apply_exceptions(db, sched, [original])
+        assert original not in result
+        assert new in result
     finally:
         db.close()
 

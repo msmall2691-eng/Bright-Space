@@ -1426,10 +1426,12 @@ def rehydrate_job_dates_from_gcal(
                     })
                 updated_count += 1
             else:
-                # Update the job
-                job.scheduled_date = str(new_date)
-                job.start_time = str(new_start_time)
-                job.end_time = str(new_end_time)
+                # Update the job. new_date/new_start_time/new_end_time are already
+                # date/time objects — assign them directly to the Date/Time
+                # columns (str() here produced strings that only Postgres coerced).
+                job.scheduled_date = new_date
+                job.start_time = new_start_time
+                job.end_time = new_end_time
                 db.add(job)
                 updated_count += 1
 
