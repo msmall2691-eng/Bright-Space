@@ -154,6 +154,31 @@ export default function PropertyIcalsBulk() {
     setSyncing(false)
   }
 
+  // Safety net: force-reconcile turnovers from the feeds and report before→after,
+  // recovering anything that got stuck (cancelled/deleted/wrong-date).
+  const [rebuilding, setRebuilding] = useState(false)
+  const rebuild = async () => {
+    setRebuilding(true)
+    setSyncResult(null)
+    try {
+      const d = await post(`/api/properties/${propertyId}/rebuild-turnovers`)
+      const recovered = (d.recovered_dates || []).length
+      const missing = (d.still_missing || []).length
+      const head = `Rebuilt from feed — ${d.turnovers_before} → ${d.turnovers_after} turnover${d.turnovers_after === 1 ? '' : 's'}`
+      const rec = recovered ? ` · recovered ${recovered} (${d.recovered_dates.join(', ')})` : ''
+      if (missing > 0) {
+        const dates = (d.still_missing || []).map(m => m.checkout).join(', ')
+        setSyncResult({ ok: false, message: `${head}${rec}. ⚠️ ${missing} still missing (${dates}) — check the feed.` })
+      } else {
+        setSyncResult({ ok: true, message: `${head}${rec} · all ${d.future_bookings} upcoming checkout${d.future_bookings === 1 ? '' : 's'} covered ✓` })
+      }
+      await load()
+    } catch (e) {
+      setSyncResult({ ok: false, message: e?.message || 'Rebuild failed' })
+    }
+    setRebuilding(false)
+  }
+
   // Retry a single feed without re-syncing the whole property — handy when one
   // feed is failing (bad URL / outage) but the others are fine.
   const [syncingFeed, setSyncingFeed] = useState(null)
@@ -216,6 +241,13 @@ export default function PropertyIcalsBulk() {
             className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline disabled:opacity-50 text-ink-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
             <AlertCircle className="w-3.5 h-3.5" />
             {diagLoading ? 'Checking…' : 'Diagnose feed'}
+          </button>
+          <button onClick={rebuild}
+            disabled={rebuilding || (property.icals?.length || 0) === 0}
+            title="Force-rebuild every turnover from the feed (recovers cancelled/missing ones) and confirm full coverage"
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
+            <RefreshCw className={`w-3.5 h-3.5 ${rebuilding ? 'animate-spin' : ''}`} />
+            {rebuilding ? 'Rebuilding…' : 'Rebuild from feed'}
           </button>
         </div>
         {syncResult && (
