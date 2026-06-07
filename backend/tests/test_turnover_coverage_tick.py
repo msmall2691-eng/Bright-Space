@@ -6,7 +6,7 @@ quiet once the turnover exists. Read-only — no feed fetch.
 from datetime import date, time, timedelta
 
 from database.db import SessionLocal
-from database.models import Client, Property, ICalEvent, Job
+from database.models import Client, Property, ICalEvent, Job, PropertyIcal
 from scheduler import turnover_coverage_tick
 
 
@@ -50,6 +50,31 @@ def test_flags_uncovered_checkout_then_clears_when_turnover_exists():
         db.rollback()
         db.query(Job).filter(Job.property_id == p.id).delete(synchronize_session=False)
         db.query(ICalEvent).filter(ICalEvent.property_id == p.id).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id == p.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+
+
+def test_failing_feed_is_flagged_even_with_no_missing_dates():
+    """A feed outage makes stored events stale, so coverage can't be trusted —
+    the property must be flagged even if the (stale) data looks fully covered."""
+    db = SessionLocal()
+    try:
+        c, p = _seed(db)
+        db.add(PropertyIcal(property_id=p.id, url="https://example.com/f.ics",
+                            source="airbnb", active=True, last_sync_status="failed",
+                            last_sync_error="boom"))
+        db.commit()
+
+        res = turnover_coverage_tick()
+        mine = next((f for f in res.get("flagged", []) if f["property_id"] == p.id), None)
+        assert mine is not None, "a property with a failing feed must be flagged"
+        assert mine.get("feed_errors"), "feed_errors should name the failing feed"
+        assert mine["missing"] == []  # no missing dates, but still unhealthy
+    finally:
+        db.rollback()
+        db.query(PropertyIcal).filter(PropertyIcal.property_id == p.id).delete(synchronize_session=False)
         db.query(Property).filter(Property.id == p.id).delete(synchronize_session=False)
         db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
         db.commit()

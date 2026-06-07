@@ -314,13 +314,31 @@ def turnover_coverage_tick() -> dict:
                 if j.scheduled_date and _d(j.scheduled_date) >= today
             }
             missing = sorted(expected - active)
-            if missing:
+            # A failing feed makes "expected" stale — a brand-new reservation
+            # won't be in ICalEvent yet — so coverage can't be trusted. Treat a
+            # feed outage as unhealthy too (mirrors turnover_sweep), so an outage
+            # can't produce a false all-clear while a turnover is actually missing.
+            failed_feeds = [
+                (pi.source or "feed") for pi in (prop.property_icals or [])
+                if getattr(pi, "active", True) and pi.last_sync_status in ("failed", "retrying")
+            ]
+            if missing or failed_feeds:
+                name = prop.name if prop else str(pid)
                 total_missing += len(missing)
-                flagged.append({"property_id": pid, "property": prop.name if prop else str(pid), "missing": missing})
-                log.error(
-                    f"[turnover-coverage] {prop.name if prop else pid}: "
-                    f"{len(missing)} upcoming checkout(s) with NO turnover: {missing}"
-                )
+                entry = {"property_id": pid, "property": name, "missing": missing}
+                if failed_feeds:
+                    entry["feed_errors"] = failed_feeds
+                flagged.append(entry)
+                if missing:
+                    log.error(
+                        f"[turnover-coverage] {name}: "
+                        f"{len(missing)} upcoming checkout(s) with NO turnover: {missing}"
+                    )
+                if failed_feeds:
+                    log.error(
+                        f"[turnover-coverage] {name}: feed sync failing ({failed_feeds}) — "
+                        f"coverage may be understated until it recovers"
+                    )
         if not flagged:
             log.info(f"[turnover-coverage] all upcoming checkouts covered across {len(prop_ids)} STR property(ies)")
         return {"properties_checked": len(prop_ids), "missing_total": total_missing, "flagged": flagged}
