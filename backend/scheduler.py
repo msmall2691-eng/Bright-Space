@@ -258,6 +258,79 @@ def daily_briefing_tick() -> dict:
         db.close()
 
 
+def turnover_coverage_tick() -> dict:
+    """Proactive daily safety net: every upcoming guest checkout should have an
+    active turnover. Read-only — the iCal tick already syncs feeds; this just
+    verifies coverage and logs LOUDLY (ERROR) if any property is missing a
+    turnover, so a gap is caught automatically instead of only when someone opens
+    "Check all turnovers". Gated by turnover_coverage_check_enabled /
+    TURNOVER_COVERAGE_CHECK_ENABLED."""
+    from datetime import date
+    from database.models import Property, PropertyIcal, ICalEvent, Job
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "turnover_coverage_check_enabled",
+                        env_flag("TURNOVER_COVERAGE_CHECK_ENABLED", True)):
+            return {"skipped": True, "reason": "disabled"}
+
+        today = date.today().isoformat()
+
+        def _d(x):
+            return x if isinstance(x, str) else (x.isoformat() if x else None)
+
+        prop_ids = [
+            r[0] for r in (
+                db.query(Property.id)
+                .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
+                .filter(
+                    Property.active == True,
+                    or_(
+                        Property.ical_url.isnot(None),
+                        and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
+                    ),
+                )
+                .distinct()
+                .all()
+            )
+        ]
+
+        flagged = []
+        total_missing = 0
+        for pid in prop_ids:
+            prop = db.query(Property).filter(Property.id == pid).first()
+            expected = {
+                _d(e.checkout_date) for e in db.query(ICalEvent).filter(
+                    ICalEvent.property_id == pid).all()
+                if getattr(e, "event_type", "reservation") == "reservation"
+                and e.checkout_date and _d(e.checkout_date) >= today
+            }
+            active = {
+                _d(j.scheduled_date) for j in db.query(Job).filter(
+                    Job.property_id == pid,
+                    Job.job_type == "str_turnover",
+                    Job.status.notin_(["cancelled"]),
+                    Job.scheduled_date.isnot(None),
+                ).all()
+                if j.scheduled_date and _d(j.scheduled_date) >= today
+            }
+            missing = sorted(expected - active)
+            if missing:
+                total_missing += len(missing)
+                flagged.append({"property_id": pid, "property": prop.name if prop else str(pid), "missing": missing})
+                log.error(
+                    f"[turnover-coverage] {prop.name if prop else pid}: "
+                    f"{len(missing)} upcoming checkout(s) with NO turnover: {missing}"
+                )
+        if not flagged:
+            log.info(f"[turnover-coverage] all upcoming checkouts covered across {len(prop_ids)} STR property(ies)")
+        return {"properties_checked": len(prop_ids), "missing_total": total_missing, "flagged": flagged}
+    except Exception as e:
+        log.error(f"[turnover-coverage] check failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
@@ -365,6 +438,21 @@ def start_scheduler():
         log.info(f"AI daily briefing pre-generate enabled (daily at {briefing_hour:02d}:00)")
     else:
         log.info("AI daily briefing pre-generate disabled via AI_DAILY_BRIEFING_ENABLED=0")
+
+    # Turnover coverage check — proactive daily safety net that logs loudly if any
+    # upcoming guest checkout is missing a turnover.
+    if env_flag("TURNOVER_COVERAGE_CHECK_ENABLED", True):
+        coverage_hour = env_int("TURNOVER_COVERAGE_CHECK_HOUR", 5)
+        _scheduler.add_job(
+            turnover_coverage_tick,
+            CronTrigger(hour=coverage_hour, minute=30),
+            id="turnover_coverage",
+            name="Turnover coverage check",
+            replace_existing=True,
+        )
+        log.info(f"Turnover coverage check enabled (daily at {coverage_hour:02d}:30)")
+    else:
+        log.info("Turnover coverage check disabled via TURNOVER_COVERAGE_CHECK_ENABLED=0")
 
     _scheduler.start()
     return _scheduler
