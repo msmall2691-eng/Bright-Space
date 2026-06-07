@@ -9,7 +9,7 @@ Covers:
 """
 import pytest
 from datetime import date, time
-from database.models import Client, Job, Activity, Visit, ActivityType
+from database.models import Client, Job, Activity, Visit, ActivityType, Property
 from database.db import SessionLocal
 from utils.activity_logger import (
     log_activity, log_job_created, log_job_status_change,
@@ -22,8 +22,11 @@ def client_and_job():
     db = SessionLocal()
     c = Client(name="Activity Test Client", phone="+12075550111", phone_tail="2075550111", status="active")
     db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name="P", address="123 Test St",
+                 property_type="residential", active=True)
+    db.add(p); db.commit(); db.refresh(p)
     j = Job(
-        client_id=c.id, title="Test Job",
+        client_id=c.id, property_id=p.id, title="Test Job",
         scheduled_date=date.today(), start_time=time(9, 0), end_time=time(11, 0),
         status="scheduled", job_type="residential",
     )
@@ -81,6 +84,9 @@ def test_log_job_status_change_logs_completion(client_and_job):
     c, j = client_and_job
     db = SessionLocal()
     try:
+        # Re-fetch the job into this session; mutating the fixture-session's
+        # instance here would dirty that session and StaleData its teardown.
+        j = db.query(Job).filter(Job.id == j.id).first()
         j.status = "completed"
         result = log_job_status_change(db, j, prev_status="scheduled")
         db.commit()

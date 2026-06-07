@@ -28,8 +28,11 @@ def test_client_and_property():
 
     yield client, prop
 
-    # Cleanup: cascade through schedules → jobs → visits
-    db.query(Visit).join(Job).filter(Job.client_id == client.id).delete(synchronize_session=False)
+    # Cleanup: cascade through schedules → jobs → visits.
+    # (Delete can't use a join, so resolve the job ids first.)
+    job_ids = [jid for (jid,) in db.query(Job.id).filter(Job.client_id == client.id).all()]
+    if job_ids:
+        db.query(Visit).filter(Visit.job_id.in_(job_ids)).delete(synchronize_session=False)
     db.query(Job).filter(Job.client_id == client.id).delete(synchronize_session=False)
     db.query(RecurringSchedule).filter(RecurringSchedule.client_id == client.id).delete(synchronize_session=False)
     db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)

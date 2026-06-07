@@ -3,17 +3,45 @@ import pytest
 from datetime import datetime, date, time
 from unittest.mock import Mock, patch, MagicMock
 from googleapiclient.errors import HttpError
-from database.models import Job
+from database.models import Job, Client, Property
 from database.db import SessionLocal
+
+
+def _seed_client_property(db):
+    """Create a client + property and return their ids (every Job needs both)."""
+    c = Client(name="Rehydrate Test", status="active")
+    db.add(c); db.commit(); db.refresh(c)
+    pr = Property(client_id=c.id, name="P", address="123 Test St",
+                  property_type="residential", active=True)
+    db.add(pr); db.commit(); db.refresh(pr)
+    return c.id, pr.id
+
+
+@pytest.fixture(autouse=True)
+def _clean_jobs():
+    """Reset jobs/clients/properties around each test. The rehydrate endpoint
+    scans ALL null-date jobs in the DB, so leftover rows from a prior test
+    (e.g. the dry-run job that's intentionally not written) would otherwise
+    inflate the next test's counts on the shared test DB."""
+    yield
+    db = SessionLocal()
+    try:
+        db.query(Job).delete(synchronize_session=False)
+        db.query(Property).delete(synchronize_session=False)
+        db.query(Client).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_rehydrate_dry_run():
     """Test rehydrate endpoint in dry_run mode — should not write to DB."""
     db = SessionLocal()
     try:
+        cid, pid = _seed_client_property(db)
         # Create a job with NULL dates but a valid gcal_event_id
         job = Job(
-            client_id=1,
+            client_id=cid, property_id=pid,
             title="Test Job",
             scheduled_date=None,  # This is NULL
             start_time=None,
@@ -28,7 +56,7 @@ def test_rehydrate_dry_run():
         job_id = job.id
 
         # Mock the Google Calendar service
-        with patch("modules.scheduling.router._get_service") as mock_service:
+        with patch("integrations.google_calendar._get_service") as mock_service:
             mock_events = MagicMock()
             mock_service.return_value.events.return_value = mock_events
 
@@ -66,9 +94,10 @@ def test_rehydrate_write_timed_event():
     """Test rehydrate endpoint writes timed event dates to DB."""
     db = SessionLocal()
     try:
+        cid, pid = _seed_client_property(db)
         # Create a job with NULL dates
         job = Job(
-            client_id=1,
+            client_id=cid, property_id=pid,
             title="Test Job",
             scheduled_date=None,
             start_time=None,
@@ -83,7 +112,7 @@ def test_rehydrate_write_timed_event():
         job_id = job.id
 
         # Mock the Google Calendar service
-        with patch("modules.scheduling.router._get_service") as mock_service:
+        with patch("integrations.google_calendar._get_service") as mock_service:
             mock_events = MagicMock()
             mock_service.return_value.events.return_value = mock_events
 
@@ -124,9 +153,10 @@ def test_rehydrate_all_day_event():
     """Test rehydrate endpoint handles all-day events."""
     db = SessionLocal()
     try:
+        cid, pid = _seed_client_property(db)
         # Create a job with NULL dates
         job = Job(
-            client_id=1,
+            client_id=cid, property_id=pid,
             title="All Day Job",
             scheduled_date=None,
             start_time=None,
@@ -140,7 +170,7 @@ def test_rehydrate_all_day_event():
         db.refresh(job)
 
         # Mock the Google Calendar service
-        with patch("modules.scheduling.router._get_service") as mock_service:
+        with patch("integrations.google_calendar._get_service") as mock_service:
             mock_events = MagicMock()
             mock_service.return_value.events.return_value = mock_events
 
@@ -162,10 +192,10 @@ def test_rehydrate_all_day_event():
             # Verify
             assert result["updated"] == 1
             db.refresh(job)
-            assert job.scheduled_date == "2026-04-07"
+            assert job.scheduled_date == date(2026, 4, 7)
             # All-day events should get default 9am-5pm
-            assert job.start_time == "09:00:00"
-            assert job.end_time == "17:00:00"
+            assert job.start_time == time(9, 0)
+            assert job.end_time == time(17, 0)
 
     finally:
         db.close()
@@ -175,13 +205,14 @@ def test_rehydrate_skips_already_populated():
     """Test rehydrate endpoint skips jobs that are already populated."""
     db = SessionLocal()
     try:
+        cid, pid = _seed_client_property(db)
         # Create a job with POPULATED dates
         job = Job(
-            client_id=1,
+            client_id=cid, property_id=pid,
             title="Already Done",
-            scheduled_date="2026-04-07",
-            start_time="09:00:00",
-            end_time="12:00:00",
+            scheduled_date=date(2026, 4, 7),
+            start_time=time(9, 0),
+            end_time=time(12, 0),
             status="scheduled",
             gcal_event_id="test_event_789",
             job_type="residential",
@@ -191,7 +222,7 @@ def test_rehydrate_skips_already_populated():
         db.refresh(job)
 
         # Mock the Google Calendar service
-        with patch("modules.scheduling.router._get_service") as mock_service:
+        with patch("integrations.google_calendar._get_service") as mock_service:
             mock_events = MagicMock()
             mock_service.return_value.events.return_value = mock_events
 
@@ -199,10 +230,10 @@ def test_rehydrate_skips_already_populated():
             from modules.scheduling.router import rehydrate_job_dates_from_gcal
             result = rehydrate_job_dates_from_gcal(dry_run=False, db=db)
 
-            # Verify it was skipped
+            # Verify it was left alone: the query only selects null-date jobs, so
+            # an already-populated job is never fetched or updated, and Google
+            # Calendar is never called for it.
             assert result["updated"] == 0
-            assert result["skipped_already_populated"] == 1
-            # Google Calendar should not have been called for this job
             mock_events.get.assert_not_called()
 
     finally:
@@ -213,9 +244,10 @@ def test_rehydrate_handles_404():
     """Test rehydrate endpoint handles missing GCal events gracefully."""
     db = SessionLocal()
     try:
+        cid, pid = _seed_client_property(db)
         # Create a job with a bogus gcal_event_id
         job = Job(
-            client_id=1,
+            client_id=cid, property_id=pid,
             title="Missing Event",
             scheduled_date=None,
             start_time=None,
@@ -229,7 +261,7 @@ def test_rehydrate_handles_404():
         db.refresh(job)
 
         # Mock the Google Calendar service to raise 404
-        with patch("modules.scheduling.router._get_service") as mock_service:
+        with patch("integrations.google_calendar._get_service") as mock_service:
             mock_events = MagicMock()
             mock_service.return_value.events.return_value = mock_events
 

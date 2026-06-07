@@ -1,7 +1,7 @@
 """Test Visit ORM model can be created with all VisitCreate fields."""
 import pytest
 from datetime import date, time
-from database.models import Visit, Job
+from database.models import Visit, Job, Client, Property
 from database.db import SessionLocal
 
 
@@ -14,9 +14,15 @@ def test_visit_can_be_created_with_all_fields():
     """
     db = SessionLocal()
     try:
-        # Create a test job first (required foreign key)
+        # Create a client + property + job first (Job requires both FKs).
+        client = Client(name="Visit Test", status="active")
+        db.add(client); db.commit(); db.refresh(client)
+        prop = Property(client_id=client.id, name="P", address="123 Test St",
+                        property_type="residential", active=True)
+        db.add(prop); db.commit(); db.refresh(prop)
         job = Job(
-            client_id=1,
+            client_id=client.id,
+            property_id=prop.id,
             title="Test Job",
             scheduled_date=date.today(),
             start_time=time(9, 0),

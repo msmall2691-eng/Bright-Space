@@ -185,9 +185,8 @@ def test_generate_dates_weekly_multi_day():
     dates = generate_dates(s, weeks_ahead=2)
     # Each date's weekday() should be 0, 2, or 4.
     assert dates, "expected at least one date in the next 2 weeks"
-    for iso in dates:
-        d = date.fromisoformat(iso)
-        assert d.weekday() in {0, 2, 4}, f"unexpected weekday for {iso}"
+    for d in dates:
+        assert d.weekday() in {0, 2, 4}, f"unexpected weekday for {d}"
 
 
 def test_generate_dates_biweekly_skips_alternate_weeks():
@@ -197,7 +196,7 @@ def test_generate_dates_biweekly_skips_alternate_weeks():
     s.day_of_month = None
     dates = sorted(generate_dates(s, weeks_ahead=8))
     # Consecutive dates should be 14 days apart, not 7.
-    parsed = [date.fromisoformat(d) for d in dates]
+    parsed = dates
     for a, b in zip(parsed, parsed[1:]):
         assert (b - a).days == 14
 
@@ -209,7 +208,7 @@ def test_generate_dates_monthly_skips_invalid_day():
     s.interval_weeks = None
     s.day_of_month = 31
     dates = generate_dates(s, weeks_ahead=52)  # cover ~1 year
-    parsed = [date.fromisoformat(d) for d in dates]
+    parsed = dates
     months_seen = {(d.year, d.month) for d in parsed}
     # Feb, Apr, Jun, Sep, Nov never have a 31st — none of those should appear.
     for d in parsed:
@@ -223,7 +222,7 @@ def test_generate_dates_monthly_handles_leap_day():
     s.interval_weeks = None
     s.day_of_month = 29
     dates = generate_dates(s, weeks_ahead=104)  # ~2 years to cross a Feb
-    parsed = [date.fromisoformat(d) for d in dates]
+    parsed = dates
     # Just assert nothing crashed and every emitted date really is the 29th.
     for d in parsed:
         assert d.day == 29
@@ -232,16 +231,14 @@ def test_generate_dates_monthly_handles_leap_day():
 # ---------------------------------------------------------------------------
 # Backend-tolerance helpers
 # ---------------------------------------------------------------------------
-# generate_jobs() inserts ISO strings into the Date column. Postgres coerces
-# this implicitly; SQLite raises TypeError. The pre-existing test suite has
-# the same constraint. Tests below that call generate_jobs() therefore skip
-# on SQLite and only run against a real Postgres-backed DATABASE_URL.
+# A couple of generate_jobs() tests below exercise Postgres-specific behavior
+# (the partial unique index's postgresql_where, and FK/cascade semantics after a
+# hard Job delete) that SQLite doesn't replicate, so they stay Postgres-only.
+# (The date-coercion that used to also force this is fixed — generate_jobs now
+# writes real date objects — but these particular tests still need Postgres.)
 _REQUIRES_POSTGRES = pytest.mark.skipif(
     "postgres" not in os.environ.get("DATABASE_URL", "").lower(),
-    reason=(
-        "generate_jobs() relies on Postgres date-string coercion that "
-        "SQLite does not perform; run against a Postgres DATABASE_URL."
-    ),
+    reason="exercises Postgres-specific index/FK behavior not present on SQLite",
 )
 
 

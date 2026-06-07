@@ -17,6 +17,10 @@ RFC 5545 rule: DTEND is EXCLUSIVE for all-day events.
 """
 
 import httpx
+# Module-level alias for the synchronous client so tests can patch
+# integrations.ical_sync._httpx.Client (it used to be a function-local import,
+# which isn't patchable from the module namespace).
+import httpx as _httpx
 import re
 import socket
 import ipaddress
@@ -155,6 +159,17 @@ def _to_time(s):
     return None
 
 
+def _to_date(value):
+    """Coerce an ISO date string (or date) into a datetime.date so Job's Date
+    column gets a real date object on both Postgres and SQLite."""
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
 async def fetch_ical(url: str) -> bytes:
     _assert_public_url(url)
     async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
@@ -172,8 +187,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
     - If DTEND=2026-04-22 and DTSTART=2026-04-20 (VALUE=DATE), guest checks out April 22 morning
     - Turnover cleaning happens April 22 (the checkout date = DTEND value, NO SUBTRACTION)
     """
-    # Fetch feed
-    import httpx as _httpx
+    # Fetch feed (uses the module-level _httpx alias so it stays patchable)
     try:
         _assert_public_url(ical_url)
     except ValueError as e:
@@ -326,7 +340,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 if event.job_id:
                     linked_job = db.query(Job).filter(Job.id == event.job_id).first()
                     if linked_job and linked_job.status not in ("cancelled", "completed"):
-                        linked_job.scheduled_date = checkout_date
+                        linked_job.scheduled_date = _to_date(checkout_date)
                         rescheduled_jobs += 1
                         # Update GCal event if linked
                         if linked_job.gcal_event_id:
@@ -693,9 +707,9 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     for j in broken_jobs:
         ev = db.query(ICalEvent).filter_by(id=j.ical_event_id).first()
         if ev and ev.checkout_date:
-            j.scheduled_date = ev.checkout_date
+            j.scheduled_date = _to_date(ev.checkout_date)
             if not j.start_time:
-                j.start_time = prop.check_out_time or "10:00"
+                j.start_time = _to_time(prop.check_out_time or "10:00")
             backfilled_count += 1
     if backfilled_count > 0:
         log.info(f"[sync_property] safety-net backfilled scheduled_date on {backfilled_count} jobs for {prop.name}")

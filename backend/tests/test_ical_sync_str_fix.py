@@ -1,6 +1,6 @@
 """Tests for STR turnover date fix (RFC 5545 DTEND exclusivity)."""
 import pytest
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from unittest.mock import Mock, patch, MagicMock
 from database.models import Property, ICalEvent, Job, Client
 from database.db import SessionLocal
@@ -90,20 +90,23 @@ class TestDTENDExclusivity:
             db.commit()
             db.refresh(prop)
 
-            # Mock an AirBnB iCal response with all-day event
-            # Guest checks in April 20, checks out April 22 (stays April 20-21)
-            # DTEND is April 22 (exclusive) — turnover happens April 22
-            ical_content = b"""BEGIN:VCALENDAR
+            # Mock an AirBnB iCal response with an all-day event. Use
+            # future-relative dates so the "checkout today or future" guard in
+            # _sync_ical_url always passes (hardcoded dates rotted into the past).
+            # DTEND is exclusive — turnover happens ON the DTEND date.
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ical_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//AirBnB//AirBnB Calendar//EN
 BEGIN:VEVENT
 UID:abc123xyz.airbnbicalendar@airbnb.com
-DTSTART;VALUE=DATE:20260420
-DTEND;VALUE=DATE:20260422
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
 SUMMARY:Reserved
 DESCRIPTION:Reservation URL: https://www.airbnb.com/hosting/reservations/details/HMTEST123\\nPhone Number (Last 4 Digits): 5555
 END:VEVENT
-END:VCALENDAR"""
+END:VCALENDAR""".encode()
 
             with patch("integrations.ical_sync._httpx.Client") as mock_client_class:
                 mock_response = MagicMock()
@@ -111,7 +114,7 @@ END:VCALENDAR"""
                 mock_response.raise_for_status = MagicMock()
                 mock_client_class.return_value.__enter__.return_value.get.return_value = mock_response
 
-                with patch("integrations.ical_sync.create_event") as mock_gcal:
+                with patch("integrations.google_calendar.create_event") as mock_gcal:
                     mock_gcal.return_value = "event_12345"
 
                     result = _sync_ical_url(
@@ -123,10 +126,10 @@ END:VCALENDAR"""
                     # Verify a job was created
                     assert result["jobs_created"] == 1
 
-                    # Verify the scheduled_date is DTEND (April 22), NOT DTEND-1 (April 21)
+                    # scheduled_date is the DTEND value (exclusive), NOT DTEND-1
                     job = db.query(Job).filter_by(property_id=prop.id).first()
                     assert job is not None
-                    assert job.scheduled_date == "2026-04-22"  # DTEND value
+                    assert job.scheduled_date == checkout  # DTEND value
                     assert job.job_type == "str_turnover"
 
                     # Verify guest metadata was extracted
@@ -217,16 +220,19 @@ class TestDedupLogic:
             db.commit()
             db.refresh(prop)
 
-            ical_content = b"""BEGIN:VCALENDAR
+            # Future-relative dates so the checkout-in-future guard passes.
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ical_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
 UID:same_uid_123.airbnbicalendar@airbnb.com
-DTSTART;VALUE=DATE:20260420
-DTEND;VALUE=DATE:20260422
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
 SUMMARY:Reserved
 DESCRIPTION:Reservation URL: https://www.airbnb.com/hosting/reservations/details/HMDEDUP1\\nPhone Number (Last 4 Digits): 1111
 END:VEVENT
-END:VCALENDAR"""
+END:VCALENDAR""".encode()
 
             with patch("integrations.ical_sync._httpx.Client") as mock_client_class:
                 mock_response = MagicMock()
@@ -234,7 +240,7 @@ END:VCALENDAR"""
                 mock_response.raise_for_status = MagicMock()
                 mock_client_class.return_value.__enter__.return_value.get.return_value = mock_response
 
-                with patch("integrations.ical_sync.create_event") as mock_gcal:
+                with patch("integrations.google_calendar.create_event") as mock_gcal:
                     mock_gcal.return_value = "event_id_1"
 
                     # First sync

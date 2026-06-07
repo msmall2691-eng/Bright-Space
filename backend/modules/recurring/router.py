@@ -124,8 +124,20 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
     }
 
 
-def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
-    """Return sorted list of YYYY-MM-DD dates this schedule should run in the next N weeks."""
+def _as_date(value):
+    """Coerce a value (ISO string, date, or None) to a date | None. Used so the
+    recurrence date math works in pure date objects regardless of whether a
+    column came back as a date (Postgres) or a string."""
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
+    """Return a sorted list of dates this schedule should run in the next N weeks."""
     today = date.today()
     end = today + timedelta(weeks=weeks_ahead)
     result = []
@@ -137,7 +149,7 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
             try:
                 target = date(current.year, current.month, dom)
                 if target >= today:
-                    result.append(target.isoformat())
+                    result.append(target)
             except ValueError:
                 pass  # invalid day for this month (e.g., Feb 30)
             if current.month == 12:
@@ -151,13 +163,13 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[str]:
             days_ahead = (dow - today.weekday()) % 7
             current = today + timedelta(days=days_ahead)
             while current <= end:
-                result.append(current.isoformat())
+                result.append(current)
                 current += timedelta(weeks=weeks_interval)
 
     return sorted(set(result))
 
 
-def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[str]) -> List[str]:
+def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[date]) -> List[date]:
     """Apply RecurrenceException rows to the rule-expanded date list.
 
     - skip rows REMOVE the original date.
@@ -178,11 +190,13 @@ def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[str]) -
     skip_dates = set()
     add_dates = set()
     for ex in exceptions:
-        ex_iso = ex.exception_date.isoformat() if hasattr(ex.exception_date, "isoformat") else str(ex.exception_date)
-        skip_dates.add(ex_iso)
+        ex_d = _as_date(ex.exception_date)
+        if ex_d:
+            skip_dates.add(ex_d)
         if ex.exception_type == "reschedule" and ex.rescheduled_date:
-            new_iso = ex.rescheduled_date.isoformat() if hasattr(ex.rescheduled_date, "isoformat") else str(ex.rescheduled_date)
-            add_dates.add(new_iso)
+            new_d = _as_date(ex.rescheduled_date)
+            if new_d:
+                add_dates.add(new_d)
 
     return sorted((set(dates) - skip_dates) | add_dates)
 
@@ -202,7 +216,7 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     # the parent Job row is later hard-deleted. Visit is the durable cancellation
     # record until Phase 1 introduces a proper RecurrenceException table.
     cancelled_dates = {
-        v.scheduled_date.isoformat() if hasattr(v.scheduled_date, "isoformat") else str(v.scheduled_date)
+        _as_date(v.scheduled_date)
         for v in db.query(Visit)
         .join(Job, Visit.job_id == Job.id)
         .filter(
@@ -227,8 +241,12 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
         .all()
     )
     if orphaned:
+        # Normalize to date objects so membership checks against the (date-typed)
+        # rule dates actually match — previously these were raw column values
+        # that could be date objects compared against ISO strings, so taken
+        # dates were never excluded and duplicate jobs could slip through.
         taken_dates = {
-            j.scheduled_date for j in db.query(Job).filter(
+            _as_date(j.scheduled_date) for j in db.query(Job).filter(
                 Job.recurring_schedule_id == sched.id,
                 Job.scheduled_date.isnot(None),
             ).all()
@@ -515,12 +533,12 @@ def _cancel_existing_job_and_visit(db: Session, sched_id: int, target_date: date
     """Mark any Job + Visit on (schedule_id, target_date) as cancelled. Used
     when a skip/reschedule exception is added so the immediate UI reflects
     the change without waiting for the next /generate-all run."""
-    iso = target_date.isoformat() if hasattr(target_date, "isoformat") else str(target_date)
+    target_date = _as_date(target_date)
     job = (
         db.query(Job)
         .filter(
             Job.recurring_schedule_id == sched_id,
-            Job.scheduled_date == iso,
+            Job.scheduled_date == target_date,
             Job.status != "completed",
         )
         .first()
