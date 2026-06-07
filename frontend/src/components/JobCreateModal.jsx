@@ -72,10 +72,31 @@ export default function JobCreateModal({
   const [creatingProp, setCreatingProp] = useState(false)
   const [propErr, setPropErr] = useState('')
 
+  // Standalone mode (opened from the Schedule page, not a client): pick the
+  // client here. When clientId is passed in (from a client profile) it's fixed.
+  const standalone = !clientId
+  const [activeClientId, setActiveClientId] = useState(clientId ? String(clientId) : '')
+  const [clients, setClients] = useState([])
+  const [addingClient, setAddingClient] = useState(false)
+  const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
+  const [creatingClient, setCreatingClient] = useState(false)
+  const [clientErr, setClientErr] = useState('')
+
+  // In standalone mode, load the client list for the picker. Raise the limit
+  // well above the API's default 50 so orgs with many clients can still pick an
+  // existing one (rather than being pushed into creating a duplicate).
   useEffect(() => {
-    if (!clientId) return
+    if (!standalone) return
+    get('/api/clients?status=active&limit=1000')
+      .then(d => setClients(Array.isArray(d) ? d : []))
+      .catch(() => setClients([]))
+  }, [standalone])
+
+  // Load the active client's properties whenever it changes.
+  useEffect(() => {
+    if (!activeClientId) { setProperties([]); return }
     setLoadingProps(true)
-    get(`/api/properties?client_id=${clientId}`)
+    get(`/api/properties?client_id=${activeClientId}`)
       .then(data => {
         const list = Array.isArray(data) ? data : []
         setProperties(list)
@@ -89,7 +110,45 @@ export default function JobCreateModal({
         setProperties([])
       })
       .finally(() => setLoadingProps(false))
-  }, [clientId])
+  }, [activeClientId])
+
+  const selectClient = (idStr) => {
+    setActiveClientId(idStr)
+    // Reset everything tied to the *previous* client's property — otherwise a
+    // stale property_id/address/job_type could save a job for the new client
+    // pointing at the old client's property (the endpoints don't cross-check).
+    setProperties([])
+    setAddingProp(false)
+    const c = clients.find(c => String(c.id) === String(idStr))
+    setForm(f => ({
+      ...f,
+      property_id: '',
+      job_type: 'residential',
+      address: c ? [c.address, c.city, c.state].filter(Boolean).join(', ') : '',
+      // Keep a user-typed title; otherwise default to the client's name.
+      title: (!f.title || /—\s*Clean$/.test(f.title)) && c ? `${c.name} — Clean` : f.title,
+    }))
+  }
+
+  const createInlineClient = async () => {
+    if (!newClient.name.trim()) { setClientErr('Name is required'); return }
+    setCreatingClient(true); setClientErr('')
+    try {
+      const created = await post('/api/clients', {
+        name: newClient.name.trim(),
+        phone: newClient.phone.trim() || null,
+        email: newClient.email.trim() || null,
+        status: 'active',
+      })
+      setClients(cs => [created, ...cs])
+      selectClient(String(created.id))
+      setAddingClient(false)
+      setNewClient({ name: '', phone: '', email: '' })
+    } catch (e) {
+      setClientErr(e.message || 'Failed to create client')
+    }
+    setCreatingClient(false)
+  }
 
   const applyProperty = (prop) => {
     setForm(f => ({
@@ -116,7 +175,7 @@ export default function JobCreateModal({
     setCreatingProp(true); setPropErr('')
     try {
       const created = await post('/api/properties', {
-        client_id: parseInt(clientId),
+        client_id: parseInt(activeClientId),
         name: newProp.name.trim(),
         address: newProp.address.trim() || '',
         property_type: form.job_type === 'str' ? 'str' : form.job_type || 'residential',
@@ -131,13 +190,14 @@ export default function JobCreateModal({
     setCreatingProp(false)
   }
 
-  // Validation differs by mode.
-  const canSave = recurring
+  // Validation differs by mode; both require a client (picked here in standalone
+  // mode, or supplied by the client profile).
+  const canSave = !!activeClientId && (recurring
     ? form.title && form.address &&
       (form.frequency === 'monthly'
         ? !!form.day_of_month
         : (form.days_of_week || []).length > 0)
-    : form.title && form.scheduled_date && form.start_time && form.end_time
+    : form.title && form.scheduled_date && form.start_time && form.end_time)
 
   const save = async () => {
     setSaving(true)
@@ -145,7 +205,7 @@ export default function JobCreateModal({
     try {
       if (recurring) {
         const body = {
-          client_id: parseInt(clientId),
+          client_id: parseInt(activeClientId),
           property_id: form.property_id ? parseInt(form.property_id) : null,
           job_type: form.job_type,
           title: form.title,
@@ -207,6 +267,47 @@ export default function JobCreateModal({
           {clientName && (
             <div className="text-xs text-ink-3">
               For client <span className="font-medium text-ink-2">{clientName}</span>
+            </div>
+          )}
+
+          {/* Client picker — only in standalone mode (Schedule page). When opened
+              from a client profile the client is fixed and this is hidden. */}
+          {standalone && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs text-ink-2 font-medium">Client *</label>
+                <button type="button"
+                  onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                  {addingClient ? 'Cancel' : '+ New client'}
+                </button>
+              </div>
+              {!addingClient ? (
+                <select value={activeClientId} onChange={e => selectClient(e.target.value)}
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
+                  <option value="">Select a client…</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              ) : (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+                  <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
+                    placeholder="Client name *"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
+                      placeholder="Phone"
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
+                      placeholder="Email"
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  </div>
+                  {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
+                  <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    {creatingClient ? 'Creating…' : 'Create & select client'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
