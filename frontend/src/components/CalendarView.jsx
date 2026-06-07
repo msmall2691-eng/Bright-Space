@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink, Plus } from 'lucide-react'
 import { get, patch } from "../api"
 
 
@@ -48,7 +48,7 @@ function useIsMobile(breakpoint = 768) {
   return isMobile
 }
 
-export default function CalendarView({ onJobClick, onDayClick, refreshKey, filters = {} }) {
+export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, refreshKey, filters = {} }) {
   const now = new Date()
   const [year,  setYear]  = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -293,15 +293,26 @@ export default function CalendarView({ onJobClick, onDayClick, refreshKey, filte
             </div>
           )}
         </div>
-        {isMobile && selected && (
-          <button
-            onClick={() => setSelected(null)}
-            className="p-1 -mr-1 text-ink-3 hover:text-ink-2 active:text-ink-2"
-            aria-label="Close day details"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {selected && onCreateForDay && (
+            <button
+              onClick={() => onCreateForDay(selected)}
+              className="flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-2.5 py-1 rounded-lg transition-colors"
+              aria-label="New job on this day"
+            >
+              <Plus className="w-3.5 h-3.5" /> New job
+            </button>
+          )}
+          {isMobile && selected && (
+            <button
+              onClick={() => setSelected(null)}
+              className="p-1 -mr-1 text-ink-3 hover:text-ink-2 active:text-ink-2"
+              aria-label="Close day details"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 scrollbar-thin space-y-4">
