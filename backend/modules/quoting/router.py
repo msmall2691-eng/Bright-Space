@@ -1,438 +1,356 @@
-"""FastAPI router for Quotes system."""
+"""FastAPI router for the Quotes system.
+
+Integer-keyed quotes with inline JSON line items, matching the rest of the app
+(clients/jobs/invoices) and what the Quoting UI sends/reads. Responses are
+plain dicts (see ``_quote_dict``) so the wire shape is decoupled from the ORM.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
-from uuid import UUID
-from datetime import datetime
-from decimal import Decimal
-from typing import List, Optional
+from datetime import datetime, date
+from typing import Optional
 import logging
 import os
 import secrets
 
+from database.db import get_db
+from schemas.quotes import (
+    QuoteCreate, QuoteUpdate, QuoteRequestCreate, QuoteRequestUpdate,
+)
+from database.models import (
+    Quote, QuoteRequest, QuoteEmail, Client, Job, Property,
+)
+from modules.auth.router import get_current_user
+
 logger = logging.getLogger(__name__)
+router = APIRouter(tags=["quotes"])
 
 
-def _ensure_public_token(quote) -> str:
-    """Return the quote's public link token, generating one if missing. Used
-    when sending a quote so the client can open the no-login accept page."""
+# ========================
+# Helpers
+# ========================
+
+def _parse_date(value) -> Optional[date]:
+    """'YYYY-MM-DD' (or a date) -> date | None. Empty string -> None."""
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _compute_totals(items, tax_rate, discount=0.0):
+    """Return (subtotal, tax, total) from line items + a percent tax rate."""
+    subtotal = sum(
+        float(i.get("qty", 1) or 0) * float(i.get("unit_price", 0) or 0)
+        for i in (items or [])
+    )
+    tax = round(subtotal * (float(tax_rate or 0) / 100.0), 2)
+    total = round(subtotal + tax - float(discount or 0), 2)
+    return round(subtotal, 2), tax, total
+
+
+def _items_to_dicts(items) -> list:
+    """Normalize incoming Pydantic items (or dicts) to plain dicts."""
+    out = []
+    for i in (items or []):
+        d = i.dict() if hasattr(i, "dict") else dict(i)
+        out.append({
+            "name": d.get("name", "") or "",
+            "description": d.get("description", "") or "",
+            "qty": float(d.get("qty", 1) or 0),
+            "unit_price": float(d.get("unit_price", 0) or 0),
+        })
+    return out
+
+
+def _quote_dict(q: Quote) -> dict:
+    """Serialize a Quote to the shape the Quoting UI expects."""
+    return {
+        "id": q.id,
+        "client_id": q.client_id,
+        "client_name": q.client.name if q.client else None,
+        "intake_id": q.intake_id,
+        "opportunity_id": q.opportunity_id,
+        "property_id": q.property_id,
+        "quote_number": q.quote_number,
+        "public_token": q.public_token,
+        "title": q.title,
+        "service_type": q.service_type,
+        "address": q.address,
+        "notes": q.notes,
+        "items": q.items or [],
+        "subtotal": q.subtotal,
+        "tax_rate": q.tax_rate,
+        "tax": q.tax,
+        "discount": q.discount,
+        "total": q.total,
+        "status": q.status,
+        "valid_until": q.valid_until.isoformat() if q.valid_until else None,
+        "sent_at": q.sent_at.isoformat() if q.sent_at else None,
+        "viewed_at": q.viewed_at.isoformat() if q.viewed_at else None,
+        "accepted_at": q.accepted_at.isoformat() if q.accepted_at else None,
+        "declined_at": q.declined_at.isoformat() if q.declined_at else None,
+        "created_at": q.created_at.isoformat() if q.created_at else None,
+        "updated_at": q.updated_at.isoformat() if q.updated_at else None,
+    }
+
+
+def _ensure_public_token(quote: Quote) -> str:
+    """Return the quote's public link token, generating one if missing."""
     if not quote.public_token:
         quote.public_token = secrets.token_urlsafe(32)
     return quote.public_token
 
 
-def _public_quote_dict(quote) -> dict:
-    """Serialize a Quote for the public accept page (PublicQuote.jsx). Maps the
-    DB model to the field names the page expects (items/total/tax/etc.) and
-    deliberately omits anything internal."""
-    items = [
-        {
-            "name": li.description,
-            "description": li.service_type or "",
-            "qty": float(li.quantity or 1),
-            "unit_price": float(li.unit_price or 0),
-        }
-        for li in sorted(quote.line_items, key=lambda x: (x.display_order or 0))
-    ]
-    return {
-        "id": str(quote.id),
-        "quote_number": quote.quote_number,
-        "status": quote.status,
-        "company_name": os.getenv("COMPANY_NAME", "Bright Space"),
-        "company_email": os.getenv("COMPANY_EMAIL") or os.getenv("SMTP_USER"),
-        "company_phone": os.getenv("COMPANY_PHONE"),
-        "address": quote.title or "",
-        "service_type": None,
-        "notes": quote.notes,
-        "items": items,
-        "subtotal": float(quote.subtotal or 0),
-        "tax": float(quote.tax_amount or 0),
-        "total": float(quote.total_amount or 0),
-        "valid_until": quote.expires_at.strftime("%B %d, %Y") if quote.expires_at else None,
-    }
-
-from database.db import get_db
-from schemas.quotes import (
-    QuoteCreate, QuoteUpdate, QuoteResponse, QuoteSummary,
-    QuoteLineItemCreate, QuoteLineItemUpdate, QuoteLineItemResponse,
-    QuoteRequestCreate, QuoteRequestUpdate, QuoteRequestResponse
-)
-from database.models import Quote, QuoteLineItem, QuoteRequest, QuoteStatus, QuoteRequestStatus, QuoteEmail, Client
-from modules.auth.router import require_role
-
-router = APIRouter(tags=["quotes"])
+def _get_quote_or_404(quote_id: int, db: Session) -> Quote:
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return quote
 
 
-def _app_base() -> str:
-    """Public base URL for customer-facing links (quote accept pages, etc.).
-
-    Set APP_BASE_URL to your real host. Falls back to the Railway deployment —
-    NOT a custom domain, since the obvious one (bright-space.com) belongs to an
-    unrelated company and would send customers to a stranger's site."""
-    return os.getenv(
-        "APP_BASE_URL", "https://brightbase-production.up.railway.app"
-    ).rstrip("/")
-
+def _assign_quote_number(quote: Quote) -> None:
+    """Set a unique, human-readable quote number (QT-YYYY-####) from the row id
+    so it's race-free."""
+    quote.quote_number = f"QT-{datetime.now().year}-{quote.id:04d}"
 
 
 # ========================
-# Quote CRUD Endpoints
+# Quote CRUD
 # ========================
 
-@router.post("/", response_model=QuoteResponse, status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-async def create_quote(
+@router.post("/", status_code=201)
+def create_quote(
     quote_data: QuoteCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    """Create a new quote."""
-    year = datetime.now().year
-    last_quote = (
-        db.query(Quote)
-        .order_by(Quote.created_at.desc())
-        .first()
-    )
+    """Create a quote from the Quoting UI (integer client_id + inline items)."""
+    client = db.query(Client).filter(Client.id == quote_data.client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
 
-    if last_quote and last_quote.quote_number.startswith(f"QT-{year}"):
-        # Extract number and increment
-        num = int(last_quote.quote_number.split("-")[-1])
-        next_num = num + 1
-    else:
-        next_num = 1
+    items = _items_to_dicts(quote_data.items)
+    subtotal, tax, total = _compute_totals(items, quote_data.tax_rate, quote_data.discount)
 
-    quote_number = f"QT-{year}-{next_num:04d}"
-
-    # Calculate totals if not provided
-    total = quote_data.subtotal + quote_data.tax_amount - quote_data.discount_amount
-
-    # Create quote
     quote = Quote(
-        quote_number=quote_number,
         client_id=quote_data.client_id,
+        intake_id=quote_data.intake_id,
+        opportunity_id=quote_data.opportunity_id,
         property_id=quote_data.property_id,
-        created_by=UUID("00000000-0000-0000-0000-000000000000"),
+        created_by=getattr(current_user, "id", None),
+        # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
+        quote_number=f"PENDING-{secrets.token_hex(8)}",
         title=quote_data.title,
-        description=quote_data.description,
+        service_type=quote_data.service_type or "residential",
+        address=quote_data.address,
         notes=quote_data.notes,
-        subtotal=quote_data.subtotal,
-        tax_amount=quote_data.tax_amount,
-        discount_amount=quote_data.discount_amount,
-        total_amount=total,
-        preferred_day=quote_data.preferred_day,
-        preferred_time=quote_data.preferred_time,
-        expires_at=quote_data.expires_at,
-        status=QuoteStatus.DRAFT
+        items=items,
+        subtotal=subtotal,
+        tax_rate=float(quote_data.tax_rate or 0),
+        tax=tax,
+        discount=float(quote_data.discount or 0),
+        total=total,
+        valid_until=_parse_date(quote_data.valid_until),
+        status=quote_data.status or "draft",
     )
-
     db.add(quote)
-    db.flush()  # Get the ID without committing yet
-
-    # Add line items if provided
-    if quote_data.line_items:
-        for item_data in quote_data.line_items:
-            line_item = QuoteLineItem(
-                quote_id=quote.id,
-                **item_data.dict()
-            )
-            db.add(line_item)
-
+    db.flush()  # assign id
+    _assign_quote_number(quote)
     db.commit()
     db.refresh(quote)
-
-    return quote
-
-
-@router.get("/{quote_id}", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def get_quote(
-    quote_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Get a specific quote by ID."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-    return quote
+    return _quote_dict(quote)
 
 
-@router.get("/", response_model=List[QuoteSummary], dependencies=[Depends(require_role("admin", "manager"))])
-async def list_quotes(
+@router.get("/")
+def list_quotes(
     db: Session = Depends(get_db),
-    client_id: Optional[UUID] = Query(None),
+    client_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    """List quotes with optional filters."""
+    """List quotes (most recent first), optionally filtered."""
     query = db.query(Quote)
-
-    if client_id:
+    if client_id is not None:
         query = query.filter(Quote.client_id == client_id)
-
     if status:
         query = query.filter(Quote.status == status)
-
     quotes = query.order_by(Quote.created_at.desc()).offset(offset).limit(limit).all()
-    return quotes
+    return [_quote_dict(q) for q in quotes]
 
 
-@router.put("/{quote_id}", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def update_quote(
-    quote_id: UUID,
-    quote_data: QuoteUpdate,
-    db: Session = Depends(get_db)
-):
-    """Update a quote (only if in draft status)."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
+@router.get("/{quote_id}")
+def get_quote(quote_id: int, db: Session = Depends(get_db)):
+    return _quote_dict(_get_quote_or_404(quote_id, db))
 
-    # Only allow updates to draft quotes
-    if quote.status != QuoteStatus.DRAFT:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot update quote with status '{quote.status}'. Only draft quotes can be updated."
+
+def _apply_update(quote: Quote, data: dict) -> None:
+    """Apply a partial update dict, recomputing totals when pricing changes."""
+    if "items" in data and data["items"] is not None:
+        quote.items = _items_to_dicts(data["items"])
+    for field in ("title", "service_type", "address", "notes", "status",
+                  "client_id", "intake_id", "opportunity_id", "property_id"):
+        if field in data and data[field] is not None:
+            setattr(quote, field, data[field])
+    if "valid_until" in data:
+        quote.valid_until = _parse_date(data["valid_until"])
+    if "tax_rate" in data and data["tax_rate"] is not None:
+        quote.tax_rate = float(data["tax_rate"])
+    if "discount" in data and data["discount"] is not None:
+        quote.discount = float(data["discount"])
+    # Recompute money if anything affecting it changed.
+    if any(k in data for k in ("items", "tax_rate", "discount")):
+        quote.subtotal, quote.tax, quote.total = _compute_totals(
+            quote.items, quote.tax_rate, quote.discount
         )
-
-    # Update fields
-    update_data = quote_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(quote, field, value)
-
-    # Recalculate total if pricing changed
-    if any(k in update_data for k in ["subtotal", "tax_amount", "discount_amount"]):
-        quote.total_amount = quote.subtotal + quote.tax_amount - quote.discount_amount
-
     quote.updated_at = datetime.now()
+
+
+@router.patch("/{quote_id}")
+def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
+    """Partial update (the Quoting UI uses PATCH for both edits and status)."""
+    quote = _get_quote_or_404(quote_id, db)
+    _apply_update(quote, quote_data.dict(exclude_unset=True))
     db.commit()
     db.refresh(quote)
-
-    return quote
-
-
-# ========================
-# Quote Line Items Endpoints
-# ========================
-
-@router.post("/{quote_id}/line-items", response_model=QuoteLineItemResponse, status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-async def add_line_item(
-    quote_id: UUID,
-    item_data: QuoteLineItemCreate,
-    db: Session = Depends(get_db)
-):
-    """Add a line item to a quote."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    if quote.status != QuoteStatus.DRAFT:
-        raise HTTPException(status_code=400, detail="Can only add items to draft quotes")
-
-    line_item = QuoteLineItem(
-        quote_id=quote_id,
-        **item_data.dict()
-    )
-
-    db.add(line_item)
-    db.commit()
-    db.refresh(line_item)
-
-    # Update quote totals
-    _update_quote_totals(quote, db)
-
-    return line_item
+    return _quote_dict(quote)
 
 
-@router.get("/{quote_id}/line-items", response_model=List[QuoteLineItemResponse], dependencies=[Depends(require_role("admin", "manager"))])
-async def get_line_items(
-    quote_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Get all line items for a quote."""
-    items = (
-        db.query(QuoteLineItem)
-        .filter(QuoteLineItem.quote_id == quote_id)
-        .order_by(QuoteLineItem.display_order)
-        .all()
-    )
-    return items
-
-
-@router.put("/line-items/{item_id}", response_model=QuoteLineItemResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def update_line_item(
-    item_id: UUID,
-    item_data: QuoteLineItemUpdate,
-    db: Session = Depends(get_db)
-):
-    """Update a line item."""
-    item = db.query(QuoteLineItem).filter(QuoteLineItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Line item not found")
-
-    # Check quote is still in draft
-    quote = db.query(Quote).filter(Quote.id == item.quote_id).first()
-    if quote.status != QuoteStatus.DRAFT:
-        raise HTTPException(status_code=400, detail="Can only edit items in draft quotes")
-
-    update_data = item_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(item, field, value)
-
-    item.updated_at = datetime.now()
-    db.commit()
-    db.refresh(item)
-
-    # Update quote totals
-    _update_quote_totals(quote, db)
-
-    return item
-
-
-@router.delete("/line-items/{item_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-async def delete_line_item(
-    item_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Delete a line item."""
-    item = db.query(QuoteLineItem).filter(QuoteLineItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Line item not found")
-
-    quote = db.query(Quote).filter(Quote.id == item.quote_id).first()
-    if quote.status != QuoteStatus.DRAFT:
-        raise HTTPException(status_code=400, detail="Can only delete items from draft quotes")
-
-    db.delete(item)
-    db.commit()
-
-    # Update quote totals
-    _update_quote_totals(quote, db)
+# PUT kept as an alias of PATCH for backward compatibility.
+@router.put("/{quote_id}")
+def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
+    return patch_quote(quote_id, quote_data, db)
 
 
 # ========================
-# Quote Status Endpoints
+# Status transitions
 # ========================
 
-@router.post("/{quote_id}/send", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def send_quote(
-    quote_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Mark quote as sent (updates status and sent_at timestamp)."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    if quote.status != QuoteStatus.DRAFT:
-        raise HTTPException(status_code=400, detail="Only draft quotes can be sent")
-
-    quote.status = QuoteStatus.SENT
+@router.post("/{quote_id}/send")
+def send_quote(quote_id: int, db: Session = Depends(get_db)):
+    """Mark a quote sent and mint its public accept-link token."""
+    quote = _get_quote_or_404(quote_id, db)
+    if quote.status not in ("draft", "sent"):
+        raise HTTPException(status_code=400, detail=f"Cannot send a {quote.status} quote")
+    quote.status = "sent"
     quote.sent_at = datetime.now()
     quote.updated_at = datetime.now()
-    _ensure_public_token(quote)  # mint the public accept-link token
-
+    _ensure_public_token(quote)
     db.commit()
     db.refresh(quote)
+    return _quote_dict(quote)
 
-    return quote
 
-
-@router.post("/{quote_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
-async def generate_quote_token(quote_id: UUID, db: Session = Depends(get_db)):
-    """Ensure the quote has a public accept-link token and return it +
-    the full shareable link. Used by the 'Copy Link' action so staff can share
-    the no-login accept page without sending an email."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
+@router.post("/{quote_id}/generate-token")
+def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
+    """Ensure a public token exists and return it + the shareable link."""
+    quote = _get_quote_or_404(quote_id, db)
     token = _ensure_public_token(quote)
     quote.updated_at = datetime.now()
     db.commit()
-    app_base = _app_base()
+    app_base = os.getenv("APP_BASE_URL", "").rstrip("/")
     return {
         "public_token": token,
-        "quote_link": f"{app_base}/quote/{token}",
+        "quote_link": f"{app_base}/quote/{token}" if app_base else None,
     }
 
 
-@router.post("/{quote_id}/view", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def mark_quote_viewed(
-    quote_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Mark quote as viewed (updates viewed_at timestamp)."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    if not quote.viewed_at:
-        quote.viewed_at = datetime.now()
-        quote.status = QuoteStatus.VIEWED
-        db.commit()
-        db.refresh(quote)
-
-    return quote
-
-
-@router.post("/{quote_id}/accept", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def accept_quote(
-    quote_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Accept a quote (updates status and accepted_at timestamp)."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    if quote.status in [QuoteStatus.ACCEPTED, QuoteStatus.DECLINED]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Quote has already been {quote.status}"
-        )
-
-    quote.status = QuoteStatus.ACCEPTED
+@router.post("/{quote_id}/accept")
+def accept_quote(quote_id: int, db: Session = Depends(get_db)):
+    quote = _get_quote_or_404(quote_id, db)
+    if quote.status in ("accepted", "declined"):
+        raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
+    quote.status = "accepted"
     quote.accepted_at = datetime.now()
     quote.updated_at = datetime.now()
-
     db.commit()
     db.refresh(quote)
-
-    # TODO: Send acceptance confirmation email
-    # TODO: Notify admin team
-
-    return quote
+    return _quote_dict(quote)
 
 
-@router.post("/{quote_id}/decline", response_model=QuoteResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def decline_quote(
-    quote_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Decline a quote (updates status and declined_at timestamp)."""
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    if quote.status in [QuoteStatus.ACCEPTED, QuoteStatus.DECLINED]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Quote has already been {quote.status}"
-        )
-
-    quote.status = QuoteStatus.DECLINED
+@router.post("/{quote_id}/decline")
+def decline_quote(quote_id: int, db: Session = Depends(get_db)):
+    quote = _get_quote_or_404(quote_id, db)
+    if quote.status in ("accepted", "declined"):
+        raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
+    quote.status = "declined"
     quote.declined_at = datetime.now()
     quote.updated_at = datetime.now()
-
     db.commit()
     db.refresh(quote)
-
-    return quote
+    return _quote_dict(quote)
 
 
 # ========================
-# Public (no-login) quote endpoints — reached via the tokenized accept link
-# emailed to the client. The /api/quotes/public/ prefix is whitelisted in
-# auth.py so these run without a session.
+# Convert accepted quote -> Job
+# ========================
+
+@router.post("/{quote_id}/convert-to-job")
+def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
+    """Create a Job from a quote. The date/time is left unset for the user to
+    fill in on the Scheduling page; every Job needs a Property, so we reuse the
+    client's existing property or create one from the quote address."""
+    quote = _get_quote_or_404(quote_id, db)
+
+    # Map the quote's service_type onto the Job/Property vocabularies.
+    svc = (quote.service_type or "residential").lower()
+    job_type = "str_turnover" if svc in ("str", "str_turnover") else (
+        "commercial" if svc == "commercial" else "residential")
+    prop_type = "str" if svc in ("str", "str_turnover") else (
+        "commercial" if svc == "commercial" else "residential")
+
+    prop = (
+        db.query(Property)
+        .filter(Property.client_id == quote.client_id)
+        .order_by(Property.id.asc())
+        .first()
+    )
+    if not prop:
+        addr = (quote.address or "Address TBD").strip() or "Address TBD"
+        prop = Property(
+            client_id=quote.client_id,
+            name=addr.split("\n")[0][:255],
+            address=addr,
+            property_type=prop_type,
+            active=True,
+        )
+        db.add(prop)
+        db.flush()
+
+    job = Job(
+        client_id=quote.client_id,
+        quote_id=quote.id,
+        opportunity_id=quote.opportunity_id,
+        property_id=prop.id,
+        job_type=job_type,
+        title=quote.title or f"{svc.title()} clean",
+        address=quote.address or prop.address,
+        status="scheduled",
+        notes=quote.notes,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return {
+        "id": job.id,
+        "client_id": job.client_id,
+        "quote_id": job.quote_id,
+        "property_id": job.property_id,
+        "title": job.title,
+        "status": job.status,
+        "job_type": job.job_type,
+    }
+
+
+# ========================
+# Public (no-login) endpoints — reached via the tokenized link.
+# /api/quotes/public/ is allowlisted in auth.py so these run without a session.
 # ========================
 
 class PublicAcceptRequest(BaseModel):
@@ -451,9 +369,29 @@ def _quote_by_token(token: str, db: Session) -> Quote:
     return quote
 
 
+def _public_quote_dict(quote: Quote) -> dict:
+    """Client-facing serialization for the public accept page."""
+    return {
+        "id": quote.id,
+        "quote_number": quote.quote_number,
+        "status": quote.status,
+        "company_name": os.getenv("COMPANY_NAME", "Bright Space"),
+        "company_email": os.getenv("COMPANY_EMAIL") or os.getenv("SMTP_USER"),
+        "company_phone": os.getenv("COMPANY_PHONE"),
+        "address": quote.address or "",
+        "service_type": quote.service_type,
+        "notes": quote.notes,
+        "items": quote.items or [],
+        "subtotal": quote.subtotal,
+        "tax_rate": quote.tax_rate,
+        "tax": quote.tax,
+        "total": quote.total,
+        "valid_until": quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else None,
+    }
+
+
 def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_type: str):
-    """Best-effort: drop an Activity row so staff see quote events in the
-    client timeline. Never let a logging failure break the public response."""
+    """Best-effort Activity row so staff see quote events in the timeline."""
     try:
         from utils.activity_logger import log_activity
         log_activity(
@@ -461,7 +399,7 @@ def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_
             client_id=quote.client_id,
             actor="client",
             summary=summary,
-            extra_data={"quote_id": str(quote.id), "quote_number": quote.quote_number},
+            extra_data={"quote_id": quote.id, "quote_number": quote.quote_number},
             commit=False,
         )
     except Exception as e:
@@ -469,15 +407,13 @@ def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_
 
 
 @router.get("/public/{token}")
-async def public_view_quote(token: str, db: Session = Depends(get_db)):
+def public_view_quote(token: str, db: Session = Depends(get_db)):
     """Client-facing quote view. Marks the quote VIEWED on first open."""
     quote = _quote_by_token(token, db)
-    # First view: stamp viewed_at + advance status (only from SENT, so we don't
-    # downgrade an already-accepted/declined quote).
     if not quote.viewed_at:
         quote.viewed_at = datetime.now()
-        if quote.status == QuoteStatus.SENT:
-            quote.status = QuoteStatus.VIEWED
+        if quote.status == "sent":
+            quote.status = "viewed"
         _notify_staff_quote_event(db, quote, f"Client viewed quote {quote.quote_number}", "quote_viewed")
         db.commit()
         db.refresh(quote)
@@ -485,21 +421,19 @@ async def public_view_quote(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/public/{token}/accept")
-async def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
+def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
     """Client accepts the quote from the public link."""
     quote = _quote_by_token(token, db)
-
-    if quote.status == QuoteStatus.ACCEPTED:
-        # Idempotent: re-accepting is a no-op success, not an error.
+    if quote.status == "accepted":
         return {"status": "accepted", "quote_number": quote.quote_number}
-    if quote.status == QuoteStatus.DECLINED:
+    if quote.status == "declined":
         raise HTTPException(status_code=409, detail="This quote was declined and can no longer be accepted.")
-    if quote.expires_at and quote.expires_at < datetime.now(quote.expires_at.tzinfo):
-        quote.status = QuoteStatus.EXPIRED
+    if quote.valid_until and quote.valid_until < date.today():
+        quote.status = "expired"
         db.commit()
         raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
 
-    quote.status = QuoteStatus.ACCEPTED
+    quote.status = "accepted"
     quote.accepted_at = datetime.now()
     quote.updated_at = datetime.now()
     if data:
@@ -511,7 +445,7 @@ async def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: 
 
 
 @router.post("/public/{token}/request-changes")
-async def public_request_changes(token: str, data: PublicChangeRequest, db: Session = Depends(get_db)):
+def public_request_changes(token: str, data: PublicChangeRequest, db: Session = Depends(get_db)):
     """Client asks for changes instead of accepting — logged for staff."""
     quote = _quote_by_token(token, db)
     msg = (data.message or "").strip()
@@ -527,324 +461,213 @@ async def public_request_changes(token: str, data: PublicChangeRequest, db: Sess
 
 
 # ========================
-# Quote Request Endpoints
+# Quote Requests (web form intake)
 # ========================
 
-@router.post("/requests/", response_model=QuoteRequestResponse, status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-async def create_quote_request(
-    request_data: QuoteRequestCreate,
-    db: Session = Depends(get_db),
-):
-    """Create a quote request from customer form."""
-    quote_request = QuoteRequest(
-        **request_data.dict()
-    )
-
-    db.add(quote_request)
+@router.post("/requests/", status_code=201)
+def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends(get_db)):
+    qr = QuoteRequest(**request_data.dict())
+    db.add(qr)
     db.commit()
-    db.refresh(quote_request)
-
-    # TODO: Send confirmation email to requester
-    # TODO: Notify admin team
-
-    return quote_request
+    db.refresh(qr)
+    return {"id": qr.id, "status": qr.status, "requester_name": qr.requester_name}
 
 
-@router.get("/requests/", response_model=List[QuoteRequestResponse], dependencies=[Depends(require_role("admin", "manager"))])
-async def list_quote_requests(
+@router.get("/requests/")
+def list_quote_requests(
     db: Session = Depends(get_db),
     status: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    """List quote requests."""
     query = db.query(QuoteRequest)
-
     if status:
         query = query.filter(QuoteRequest.status == status)
+    rows = query.order_by(QuoteRequest.created_at.desc()).offset(offset).limit(limit).all()
+    return [
+        {
+            "id": r.id, "client_id": r.client_id, "requester_name": r.requester_name,
+            "requester_email": r.requester_email, "requester_phone": r.requester_phone,
+            "service_type": r.service_type, "description": r.description,
+            "status": r.status, "quote_id": r.quote_id,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
 
-    requests = query.order_by(QuoteRequest.created_at.desc()).offset(offset).limit(limit).all()
-    return requests
 
-
-@router.get("/requests/{request_id}", response_model=QuoteRequestResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def get_quote_request(
-    request_id: UUID,
-    db: Session = Depends(get_db)
-):
-    """Get a specific quote request."""
-    quote_request = db.query(QuoteRequest).filter(QuoteRequest.id == request_id).first()
-    if not quote_request:
+@router.put("/requests/{request_id}")
+def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db)):
+    qr = db.query(QuoteRequest).filter(QuoteRequest.id == request_id).first()
+    if not qr:
         raise HTTPException(status_code=404, detail="Quote request not found")
-    return quote_request
-
-
-@router.put("/requests/{request_id}", response_model=QuoteRequestResponse, dependencies=[Depends(require_role("admin", "manager"))])
-async def update_quote_request(
-    request_id: UUID,
-    request_data: QuoteRequestUpdate,
-    db: Session = Depends(get_db)
-):
-    """Update a quote request."""
-    quote_request = db.query(QuoteRequest).filter(QuoteRequest.id == request_id).first()
-    if not quote_request:
-        raise HTTPException(status_code=404, detail="Quote request not found")
-
-    update_data = request_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(quote_request, field, value)
-
-    quote_request.updated_at = datetime.now()
+    for field, value in request_data.dict(exclude_unset=True).items():
+        setattr(qr, field, value)
+    qr.updated_at = datetime.now()
     db.commit()
-    db.refresh(quote_request)
-
-    return quote_request
+    return {"id": qr.id, "status": qr.status}
 
 
 # ========================
-# Helper Functions
-# ========================
-
-def _update_quote_totals(quote: Quote, db: Session):
-    """Recalculate quote totals from line items."""
-    line_items = db.query(QuoteLineItem).filter(QuoteLineItem.quote_id == quote.id).all()
-
-    subtotal = sum(item.line_total for item in line_items)
-    total = subtotal + quote.tax_amount - quote.discount_amount
-
-    quote.subtotal = subtotal
-    quote.total_amount = total
-    quote.updated_at = datetime.now()
-
-    db.commit()
-
-
-# ========================
-# Phase 2: PDF & Email Endpoints
+# PDF & Email
 # ========================
 
 from services.quote_pdf_service import QuotePDFService
 from services.quote_email_service import QuoteEmailService
-from fastapi.responses import StreamingResponse
 
 
-@router.post("/{quote_id}/generate-pdf", dependencies=[Depends(require_role("admin", "manager"))])
-async def generate_quote_pdf(
-    quote_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Generate a PDF for a quote"""
-    quote = db.query(Quote).filter(
-        Quote.id == quote_id,
-    ).first()
+def _pdf_line_items(quote: Quote) -> list:
+    return [
+        {
+            "description": i.get("name") or i.get("description") or "",
+            "quantity": float(i.get("qty", 1) or 0),
+            "unit": None,
+            "unit_price": float(i.get("unit_price", 0) or 0),
+            "line_total": round(float(i.get("qty", 1) or 0) * float(i.get("unit_price", 0) or 0), 2),
+        }
+        for i in (quote.items or [])
+    ]
 
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
 
-    line_items = db.query(QuoteLineItem).filter(
-        QuoteLineItem.quote_id == quote_id
-    ).order_by(QuoteLineItem.display_order).all()
-
+@router.post("/{quote_id}/generate-pdf")
+def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
+    quote = _get_quote_or_404(quote_id, db)
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    pdf_service = QuotePDFService()
-    pdf_bytes = pdf_service.generate_quote_pdf(
+    pdf_bytes = QuotePDFService().generate_quote_pdf(
         quote_number=quote.quote_number,
         client_name=client.name,
         client_email=client.email or "",
         client_phone=client.phone,
-        line_items=[
-            {
-                "description": item.description,
-                "quantity": float(item.quantity),
-                "unit": item.unit,
-                "unit_price": float(item.unit_price),
-                "line_total": float(item.line_total),
-            }
-            for item in line_items
-        ],
-        subtotal=float(quote.subtotal),
-        tax_amount=float(quote.tax_amount),
-        discount_amount=float(quote.discount_amount),
-        total_amount=float(quote.total_amount),
+        line_items=_pdf_line_items(quote),
+        subtotal=quote.subtotal,
+        tax_amount=quote.tax,
+        discount_amount=quote.discount,
+        total_amount=quote.total,
         notes=quote.notes,
-        expires_at=quote.expires_at,
+        expires_at=quote.valid_until,
     )
-
     return {
         "pdf_generated": True,
-        "quote_id": str(quote_id),
+        "quote_id": quote.id,
         "quote_number": quote.quote_number,
         "file_size": len(pdf_bytes),
         "timestamp": datetime.now().isoformat(),
     }
 
 
-@router.post("/{quote_id}/send-email", dependencies=[Depends(require_role("admin", "manager"))])
-async def send_quote_email(
-    quote_id: UUID,
-    recipient_email: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    """Send quote via email to client"""
-    quote = db.query(Quote).filter(
-        Quote.id == quote_id,
-    ).first()
-
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
+@router.post("/{quote_id}/send-email")
+def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Session = Depends(get_db)):
+    quote = _get_quote_or_404(quote_id, db)
     if "@" not in recipient_email:
         raise HTTPException(status_code=400, detail="Invalid email address")
-
-    line_items = db.query(QuoteLineItem).filter(
-        QuoteLineItem.quote_id == quote_id
-    ).order_by(QuoteLineItem.display_order).all()
-
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    pdf_service = QuotePDFService()
-    pdf_bytes = pdf_service.generate_quote_pdf(
+    pdf_bytes = QuotePDFService().generate_quote_pdf(
         quote_number=quote.quote_number,
         client_name=client.name,
         client_email=client.email or "",
         client_phone=client.phone,
-        line_items=[
-            {
-                "description": item.description,
-                "quantity": float(item.quantity),
-                "unit": item.unit,
-                "unit_price": float(item.unit_price),
-                "line_total": float(item.line_total),
-            }
-            for item in line_items
-        ],
-        subtotal=float(quote.subtotal),
-        tax_amount=float(quote.tax_amount),
-        discount_amount=float(quote.discount_amount),
-        total_amount=float(quote.total_amount),
+        line_items=_pdf_line_items(quote),
+        subtotal=quote.subtotal,
+        tax_amount=quote.tax,
+        discount_amount=quote.discount,
+        total_amount=quote.total,
         notes=quote.notes,
-        expires_at=quote.expires_at,
+        expires_at=quote.valid_until,
     )
 
-    # Public accept-link token + base URL (configurable; falls back to prod host).
     token = _ensure_public_token(quote)
-    app_base = _app_base()
+    app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
     quote_link = f"{app_base}/quote/{token}"
 
-    email_service = QuoteEmailService()
-    email_result = email_service.send_quote_email(
+    result = QuoteEmailService().send_quote_email(
         to_email=recipient_email,
         client_name=client.name,
         quote_number=quote.quote_number,
-        total_amount=float(quote.total_amount),
-        expires_at=quote.expires_at.strftime("%B %d, %Y") if quote.expires_at else "Upon Request",
+        total_amount=float(quote.total or 0),
+        expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else "Upon Request",
         quote_link=quote_link,
         pdf_bytes=pdf_bytes,
         pdf_filename=f"{quote.quote_number}.pdf",
     )
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=f"Email failed: {result['error']}")
 
-    if not email_result["success"]:
-        raise HTTPException(status_code=500, detail=f"Email failed: {email_result['error']}")
-
-    # Update quote status to SENT if it was in DRAFT
-    if hasattr(quote, 'status') and quote.status and str(quote.status).upper() == 'DRAFT':
-        quote.status = 'SENT'
+    if quote.status == "draft":
+        quote.status = "sent"
         quote.sent_at = datetime.now()
 
-    # Create email tracking record
-    quote_email = QuoteEmail(
-        quote_id=quote_id,
+    db.add(QuoteEmail(
+        quote_id=quote.id,
         recipient_email=recipient_email,
         sent_at=datetime.now(),
         delivery_status="sent",
-        email_id=email_result.get("email_id"),
-    )
-    db.add(quote_email)
+        email_id=result.get("email_id"),
+    ))
     db.commit()
-
     return {
         "success": True,
-        "quote_id": str(quote_id),
+        "quote_id": quote.id,
         "quote_number": quote.quote_number,
         "sent_to": recipient_email,
-        "email_id": email_result.get("email_id"),
+        "email_id": result.get("email_id"),
         "public_token": token,
         "quote_link": quote_link,
-        "timestamp": datetime.now().isoformat(),
         "status": "sent",
     }
 
 
-@router.get("/{quote_id}/email-history", dependencies=[Depends(require_role("admin", "manager"))])
-async def get_quote_email_history(
-    quote_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Get email delivery history for a quote"""
-    quote = db.query(Quote).filter(
-        Quote.id == quote_id,
-    ).first()
-
-    if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
-
-    emails = db.query(QuoteEmail).filter(
-        QuoteEmail.quote_id == quote_id
-    ).order_by(QuoteEmail.sent_at.desc()).all()
-
+@router.get("/{quote_id}/email-history")
+def get_quote_email_history(quote_id: int, db: Session = Depends(get_db)):
+    quote = _get_quote_or_404(quote_id, db)
+    emails = (
+        db.query(QuoteEmail)
+        .filter(QuoteEmail.quote_id == quote_id)
+        .order_by(QuoteEmail.sent_at.desc())
+        .all()
+    )
     return {
-        "quote_id": str(quote_id),
+        "quote_id": quote.id,
         "quote_number": quote.quote_number,
         "total_emails_sent": len(emails),
         "emails": [
             {
-                "recipient": email.recipient_email,
-                "sent_at": email.sent_at.isoformat(),
-                "status": email.delivery_status,
-                "email_id": email.email_id,
+                "recipient": e.recipient_email,
+                "sent_at": e.sent_at.isoformat() if e.sent_at else None,
+                "status": e.delivery_status,
+                "email_id": e.email_id,
             }
-            for email in emails
+            for e in emails
         ],
     }
 
 
 @router.post("/webhooks/resend")
 async def resend_webhook(request: Request, db: Session = Depends(get_db)):
-    """Webhook endpoint for Resend delivery events"""
+    """Webhook for Resend delivery events."""
     body = await request.json()
-    
-    # Verify webhook signature (implement based on Resend webhook secret)
-    # For now, assume signature is valid
-    
     event_type = body.get("type")
     email_id = body.get("data", {}).get("id")
-    
     if not email_id:
         return {"received": True}
-    
-    # Map event types to delivery statuses
     status_map = {
         "email.delivered": "delivered",
         "email.bounced": "bounced",
         "email.complained": "complained",
         "email.failed": "failed",
     }
-    
     new_status = status_map.get(event_type)
     if not new_status:
         return {"received": True}
-    
-    # Update the email record
-    email_record = db.query(QuoteEmail).filter(QuoteEmail.email_id == email_id).first()
-    if email_record:
-        email_record.delivery_status = new_status
+    record = db.query(QuoteEmail).filter(QuoteEmail.email_id == email_id).first()
+    if record:
+        record.delivery_status = new_status
         if event_type == "email.failed":
-            email_record.error_message = body.get("data", {}).get("error", {}).get("message", "Unknown error")
+            record.error_message = body.get("data", {}).get("error", {}).get("message", "Unknown error")
         db.commit()
-    
     return {"received": True}
