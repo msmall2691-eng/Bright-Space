@@ -88,7 +88,11 @@ export default function Quoting() {
     setForm(f => {
       const next = { ...f, client_id: idStr }
       if (c && !f.address) {
-        next.address = [c.address, c.city, c.state].filter(Boolean).join(', ')
+        // "123 Main St, Portland, ME 04101" — keep the ZIP so the quote (and any
+        // job converted from it) has the complete service address.
+        const cityStateZip = [[c.city, c.state].filter(Boolean).join(', '), c.zip_code]
+          .filter(Boolean).join(' ')
+        next.address = [c.address, cityStateZip].filter(Boolean).join(', ')
       }
       return next
     })
