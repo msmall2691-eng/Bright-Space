@@ -179,6 +179,24 @@ def _nights_between(checkin, checkout):
     return None
 
 
+def _refresh_booking_metadata(job, uid, checkin, checkout) -> None:
+    """Keep an existing turnover's stay metadata in step with its booking.
+
+    The stay window / nights / booking UID used to be written only when a job
+    was first created, so already-linked turnovers never got them and a
+    rescheduled booking kept its old dates. Call this on reconcile/reschedule so
+    custom_fields stays accurate. Merges into existing custom_fields.
+    """
+    cf = dict(job.custom_fields or {})
+    cf["booking_uid"] = uid
+    cf["checkin_date"] = checkin
+    cf["checkout_date"] = checkout
+    n = _nights_between(checkin, checkout)
+    if n is not None:
+        cf["nights"] = n
+    job.custom_fields = cf
+
+
 # A calendar event is treated as a real guest reservation (→ turnover cleaning)
 # UNLESS its title clearly marks it as a host block (owner stay, maintenance,
 # manually blocked dates). We match these as the *exclusion* list rather than
@@ -200,7 +218,7 @@ def _is_host_block(summary: str) -> bool:
     return bool(_HOST_BLOCK_RE.search(summary or ""))
 
 
-def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> None:
+def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> bool:
     """Update the linked Google Calendar event to match the turnover's current
     date/time.
 
@@ -213,7 +231,7 @@ def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> None:
     a stale/empty date) go through here. No-op if the job has no GCal event yet.
     """
     if not getattr(linked_job, "gcal_event_id", None):
-        return
+        return True  # nothing linked yet — nothing to keep in step
     try:
         from integrations.google_calendar import update_event
         client_for_update = db.query(Client).filter_by(id=prop.client_id).first()
@@ -233,13 +251,26 @@ def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> None:
             "name": client_for_update.name if client_for_update else "Client",
             "email": getattr(client_for_update, "email", None) if client_for_update else None,
         }
-        update_event(linked_job.gcal_event_id, job_dict, client_dict)
-        log.info(
-            f"Updated GCal event {linked_job.gcal_event_id} for turnover "
-            f"{linked_job.id} → {checkout_date}"
-        )
+        # update_event() returns False (it does NOT raise) when Google rejects
+        # the change or auth is unavailable. Treat that as a failure and log
+        # loudly — otherwise we'd "succeed" while Google keeps the stale date and
+        # the next authoritative GCal sync reverts the reconciliation.
+        ok = update_event(linked_job.gcal_event_id, job_dict, client_dict)
+        if ok:
+            log.info(
+                f"Updated GCal event {linked_job.gcal_event_id} for turnover "
+                f"{linked_job.id} → {checkout_date}"
+            )
+        else:
+            log.warning(
+                f"GCal update for turnover {linked_job.id} (event "
+                f"{linked_job.gcal_event_id}) did not apply — Google may revert "
+                f"the date to {checkout_date} on the next sync; will retry next run."
+            )
+        return ok
     except Exception as e:
         log.warning(f"Failed to update GCal for turnover {linked_job.id}: {e}")
+        return False
 
 
 async def fetch_ical(url: str) -> bytes:
@@ -413,6 +444,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                     linked_job = db.query(Job).filter(Job.id == event.job_id).first()
                     if linked_job and linked_job.status not in ("cancelled", "completed"):
                         linked_job.scheduled_date = _to_date(checkout_date)
+                        _refresh_booking_metadata(linked_job, uid, checkin_date, checkout_date)
                         rescheduled_jobs += 1
                         # Keep Google Calendar in step (it's authoritative on the
                         # next sync) so the move isn't reverted.
@@ -464,6 +496,9 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                         (property_ical.checkout_time if property_ical else None)
                         or prop.check_out_time or "10:00"
                     )
+                # Backfill/refresh stay metadata on the existing turnover so it
+                # carries the booking window even if it predates that feature.
+                _refresh_booking_metadata(_linked, uid, checkin_date, checkout_date)
 
         # Create a Job if: no live job yet + checkout is today or future
         if event.job_id is None and checkout_date >= today:
@@ -856,6 +891,40 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     # (catches ones created while Google was disconnected).
     gcal_backfilled = _backfill_turnover_gcal(db, prop)
 
+    # Coverage is computed ONCE here, after ALL feeds have run — not per feed.
+    # Per-feed coverage was wrong for multi-feed properties: cancellation
+    # detection compares every stored ICalEvent against only the current feed's
+    # UIDs, so a later feed can cancel an earlier feed's jobs after that feed
+    # already reported "all covered". Derive expected checkouts from the final
+    # stored reservation events and compare to the final active-turnover dates.
+    today_iso = date.today().isoformat()
+    expected = {
+        _d for e in db.query(ICalEvent).filter(
+            ICalEvent.property_id == prop.id,
+        ).all()
+        if getattr(e, "event_type", "reservation") == "reservation"
+        and e.checkout_date
+        and (_d := (e.checkout_date if isinstance(e.checkout_date, str)
+                    else e.checkout_date.isoformat())) >= today_iso
+    }
+    active_dates = {
+        (j.scheduled_date if isinstance(j.scheduled_date, str) else j.scheduled_date.isoformat())
+        for j in db.query(Job).filter(
+            Job.property_id == prop.id,
+            Job.job_type == "str_turnover",
+            Job.status.notin_(["cancelled"]),
+            Job.scheduled_date.isnot(None),
+        ).all()
+        if j.scheduled_date and (j.scheduled_date if isinstance(j.scheduled_date, str)
+                                 else j.scheduled_date.isoformat()) >= today_iso
+    }
+    missing_turnovers = [{"checkout": d} for d in sorted(expected - active_dates)]
+    if missing_turnovers:
+        log.error(
+            f"[coverage] {prop.name}: {len(missing_turnovers)} future booking(s) "
+            f"have NO turnover after sync: {[m['checkout'] for m in missing_turnovers]}"
+        )
+
     return {
         "property_id": prop.id,
         "property_name": prop.name,
@@ -869,9 +938,9 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         "gcal_backfilled": gcal_backfilled,
         "sources_synced": sources_synced,
         "sync_errors": sync_errors,
-        # Coverage: every future guest checkout should have an active turnover.
-        # missing_turnovers is the safety-net — it should always be empty.
-        "future_bookings": total_future_bookings,
+        # Coverage (computed once, after all feeds): every future guest checkout
+        # should have an active turnover. missing_turnovers should be empty.
+        "future_bookings": len(expected),
         "missing_turnovers": missing_turnovers,
         "synced_at": prop.ical_last_synced_at.isoformat() if prop.ical_last_synced_at else None,
     }

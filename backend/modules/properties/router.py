@@ -222,7 +222,8 @@ def sync_ical(property_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Property not found")
     result = sync_property(db, prop)
     if "error" in result:
-        raise HTTPException(status_code=502, detail=result["error"])
+        log.warning(f"iCal sync failed for property {property_id}: {result.get('error')}")
+        raise HTTPException(status_code=502, detail="Calendar sync failed — check the feed URL and try again.")
     return result
 
 
@@ -263,7 +264,8 @@ def rebuild_turnovers(property_id: int, db: Session = Depends(get_db)):
     before = _active_turnover_dates(db, property_id)
     result = sync_property(db, prop)
     if "error" in result:
-        raise HTTPException(status_code=502, detail=result["error"])
+        log.warning(f"iCal sync failed for property {property_id}: {result.get('error')}")
+        raise HTTPException(status_code=502, detail="Calendar sync failed — check the feed URL and try again.")
     after = _active_turnover_dates(db, property_id)
 
     recovered = sorted(after - before)
@@ -296,7 +298,8 @@ def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="iCal not found")
     result = sync_property(db, prop, only_ical_id=ical_id)
     if "error" in result:
-        raise HTTPException(status_code=502, detail=result["error"])
+        log.warning(f"iCal sync failed for property {property_id}: {result.get('error')}")
+        raise HTTPException(status_code=502, detail="Calendar sync failed — check the feed URL and try again.")
     return result
 
 

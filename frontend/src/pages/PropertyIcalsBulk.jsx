@@ -164,11 +164,18 @@ export default function PropertyIcalsBulk() {
       const d = await post(`/api/properties/${propertyId}/rebuild-turnovers`)
       const recovered = (d.recovered_dates || []).length
       const missing = (d.still_missing || []).length
+      const feedErrs = (d.sync_errors || []).length
       const head = `Rebuilt from feed — ${d.turnovers_before} → ${d.turnovers_after} turnover${d.turnovers_after === 1 ? '' : 's'}`
       const rec = recovered ? ` · recovered ${recovered} (${d.recovered_dates.join(', ')})` : ''
-      if (missing > 0) {
-        const dates = (d.still_missing || []).map(m => m.checkout).join(', ')
-        setSyncResult({ ok: false, message: `${head}${rec}. ⚠️ ${missing} still missing (${dates}) — check the feed.` })
+      // Only claim "all covered ✓" when the rebuild genuinely succeeded. A feed
+      // that failed (d.ok=false / sync_errors) means we can't trust coverage —
+      // never show a green all-clear in that case.
+      if (d.ok === false || feedErrs > 0 || missing > 0) {
+        const reasons = []
+        if (missing > 0) reasons.push(`${missing} still missing (${(d.still_missing || []).map(m => m.checkout).join(', ')})`)
+        if (feedErrs > 0) reasons.push(`${feedErrs} feed${feedErrs === 1 ? '' : 's'} failed to sync`)
+        if (!reasons.length) reasons.push('could not confirm coverage')
+        setSyncResult({ ok: false, message: `${head}${rec}. ⚠️ ${reasons.join('; ')} — check the feed.` })
       } else {
         setSyncResult({ ok: true, message: `${head}${rec} · all ${d.future_bookings} upcoming checkout${d.future_bookings === 1 ? '' : 's'} covered ✓` })
       }
