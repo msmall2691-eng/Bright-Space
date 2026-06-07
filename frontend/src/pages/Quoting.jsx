@@ -73,8 +73,47 @@ export default function Quoting() {
   const [toast, setToast] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
+  // Inline "new client" quick-add from the quote form.
+  const [addingClient, setAddingClient] = useState(false)
+  const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
+  const [creatingClient, setCreatingClient] = useState(false)
+  const [clientErr, setClientErr] = useState('')
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
+
+  // Selecting a client fills the quote address from the client's address when
+  // it's still blank (smart default; never clobbers typed input).
+  const selectClient = (idStr) => {
+    const c = clients.find(c => String(c.id) === String(idStr))
+    setForm(f => {
+      const next = { ...f, client_id: idStr }
+      if (c && !f.address) {
+        next.address = [c.address, c.city, c.state].filter(Boolean).join(', ')
+      }
+      return next
+    })
+  }
+
+  // Create a client without leaving the quote form, then select it.
+  const createInlineClient = async () => {
+    if (!newClient.name.trim()) { setClientErr('Name is required'); return }
+    setCreatingClient(true); setClientErr('')
+    try {
+      const created = await post('/api/clients', {
+        name: newClient.name.trim(),
+        phone: newClient.phone.trim() || null,
+        email: newClient.email.trim() || null,
+        status: 'active',
+      })
+      setClients(cs => [created, ...cs])
+      selectClient(String(created.id))
+      setAddingClient(false)
+      setNewClient({ name: '', phone: '', email: '' })
+    } catch (e) {
+      setClientErr(e.message || 'Failed to create client')
+    }
+    setCreatingClient(false)
+  }
 
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
@@ -414,8 +453,35 @@ export default function Quoting() {
 
             {/* Client */}
             <div>
-              <label className="block text-xs text-ink-3 mb-1">Client *</label>
-              <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs text-ink-3">Client *</label>
+                <button type="button"
+                  onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                  {addingClient ? 'Cancel' : '+ New client'}
+                </button>
+              </div>
+              {addingClient && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2 mb-2">
+                  <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
+                    placeholder="Client name *"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
+                      placeholder="Phone"
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
+                      placeholder="Email"
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  </div>
+                  {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
+                  <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    {creatingClient ? 'Creating…' : 'Create & select client'}
+                  </button>
+                </div>
+              )}
+              <select value={form.client_id} onChange={e => selectClient(e.target.value)}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
                 <option value="">Select client...</option>
                 {(() => {
