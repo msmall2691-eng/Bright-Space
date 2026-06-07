@@ -146,6 +146,11 @@ export default function Properties() {
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  // Inline "new client" quick-add from the property form (no trip to Clients).
+  const [addingClient, setAddingClient] = useState(false)
+  const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
+  const [creatingClient, setCreatingClient] = useState(false)
+  const [clientErr, setClientErr] = useState('')
   const [syncing, setSyncing] = useState(null)
   const [syncResult, setSyncResult] = useState(null)
   const [sweep, setSweep] = useState(null)
@@ -182,6 +187,45 @@ export default function Properties() {
   const clientName = (id) => {
     const client = clients.find(c => c.id === id)
     return client?.name || `Client #${id}`
+  }
+
+  // Selecting a client pre-fills the property's address from the client's own
+  // address when those fields are still empty (smart default; never clobbers
+  // anything you've already typed).
+  const selectClient = (idStr) => {
+    const c = clients.find(c => String(c.id) === String(idStr))
+    setForm(f => {
+      const next = { ...f, client_id: idStr }
+      if (c) {
+        if (!f.address && c.address) next.address = c.address
+        if (!f.city && c.city) next.city = c.city
+        if (!f.state && c.state) next.state = c.state
+        if (!f.zip_code && c.zip_code) next.zip_code = c.zip_code
+      }
+      return next
+    })
+  }
+
+  // Create a client without leaving the property form: POST, add to the list,
+  // and select it (with the same address smart-default).
+  const createInlineClient = async () => {
+    if (!newClient.name.trim()) { setClientErr('Name is required'); return }
+    setCreatingClient(true); setClientErr('')
+    try {
+      const created = await post('/api/clients', {
+        name: newClient.name.trim(),
+        phone: newClient.phone.trim() || null,
+        email: newClient.email.trim() || null,
+        status: 'active',
+      })
+      setClients(cs => [created, ...cs])
+      selectClient(String(created.id))
+      setAddingClient(false)
+      setNewClient({ name: '', phone: '', email: '' })
+    } catch (e) {
+      setClientErr(e.message || 'Failed to create client')
+    }
+    setCreatingClient(false)
   }
 
   const propType = (p) => (p?.property_type || '').toLowerCase()
@@ -281,6 +325,7 @@ export default function Properties() {
       check_out_time: p.check_out_time || '10:00',
       house_code: p.house_code || '',
     })
+    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr('')
     setShowForm(true)
   }
 
@@ -330,6 +375,7 @@ export default function Properties() {
   const confirmNewProperty = () => {
     setSelected(null)
     setForm({ ...EMPTY, property_type: newPropertyType })
+    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr('')
     setShowTypeModal(false)
     setShowForm(true)
   }
@@ -759,12 +805,40 @@ export default function Properties() {
             )}
 
             <div>
-              <label className="block text-xs text-ink-3 mb-1">Client *</label>
-              <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none">
-                <option value="">Select client...</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs text-ink-3">Client *</label>
+                <button type="button"
+                  onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                  {addingClient ? 'Cancel' : '+ New client'}
+                </button>
+              </div>
+              {!addingClient ? (
+                <select value={form.client_id} onChange={e => selectClient(e.target.value)}
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none">
+                  <option value="">Select client...</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              ) : (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+                  <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
+                    placeholder="Client name *"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={newClient.phone} onChange={e => setNewClient(n => ({ ...n, phone: e.target.value }))}
+                      placeholder="Phone"
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                    <input value={newClient.email} onChange={e => setNewClient(n => ({ ...n, email: e.target.value }))}
+                      placeholder="Email"
+                      className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  </div>
+                  {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
+                  <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    {creatingClient ? 'Creating…' : 'Create & select client'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Basic fields */}
