@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2, Users } from 'lucide-react'
+import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2, Users, Calendar } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
+import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 import { del, get, post, patch, upload } from "../api"
@@ -40,6 +41,8 @@ export default function Clients() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  // Quick "Schedule" from a client row → opens the job modal with that client.
+  const [jobClient, setJobClient] = useState(null)
   const [dupes, setDupes] = useState([]) // possible duplicates surfaced on create (non-blocking)
   // Invalidate the duplicate warning whenever a match-relevant field changes, so
   // editing the name/phone/email after a warning re-runs the check on next save
@@ -372,6 +375,12 @@ export default function Clients() {
                   </div>
                 </div>
                 <span className={`hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
+                  title={`Schedule a job for ${displayContactName(c)}`}
+                  aria-label={`Schedule ${c.name}`}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </button>
                 <ChevronRight className="w-4 h-4 text-ink-3 group-hover:text-ink-3 transition-colors shrink-0" />
               </div>
             ))}
@@ -434,7 +443,15 @@ export default function Clients() {
                     <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.city || '—'}</td>
                     <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.source || '—'}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                        <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
+                          title={`Schedule a job for ${displayContactName(c)}`}
+                          aria-label={`Schedule ${c.name}`}
+                          className="inline-flex items-center justify-center w-6 h-6 rounded-md text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                          <Calendar className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -676,6 +693,14 @@ export default function Clients() {
             </div>
           </div>
         </div>
+      )}
+      {jobClient && (
+        <JobCreateModal
+          clientId={jobClient.id}
+          clientName={jobClient.name}
+          onClose={() => setJobClient(null)}
+          onCreated={() => { setJobClient(null); toast.success('Job scheduled ✓') }}
+        />
       )}
       <ToastContainer />
     </div>
