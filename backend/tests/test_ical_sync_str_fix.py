@@ -402,6 +402,67 @@ END:VCALENDAR""".encode()
             db.close()
 
 
+class TestResurrectCancelledTurnover:
+    """An active booking always keeps a turnover: if its turnover was cancelled
+    (manually, or when its GCal event was deleted) the next sync recreates it."""
+
+    def test_cancelled_turnover_recreated_while_booking_active(self):
+        from integrations.ical_sync import _sync_ical_url
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="t@example.com")
+            db.add(client); db.commit(); db.refresh(client)
+            prop = Property(client_id=client.id, name="Pier House",
+                            address="1 Pier Rd", property_type="str",
+                            ical_url="https://www.airbnb.com/calendar/ical/5.ics?s=abc")
+            db.add(prop); db.commit(); db.refresh(prop)
+
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:stay-1@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:Reserved
+END:VEVENT
+END:VCALENDAR""".encode()
+
+            def run_sync():
+                with patch("integrations.ical_sync._httpx.Client") as mc:
+                    resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
+                    mc.return_value.__enter__.return_value.get.return_value = resp
+                    with patch("integrations.google_calendar.create_event") as gc:
+                        gc.return_value = None
+                        return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+
+            # First sync creates the turnover and links the iCal event to it.
+            r1 = run_sync()
+            assert r1["jobs_created"] == 1
+            job = db.query(Job).filter_by(property_id=prop.id).first()
+            ev = db.query(ICalEvent).filter_by(property_id=prop.id, uid="stay-1@feed").first()
+            assert ev.job_id == job.id
+
+            # Simulate a stuck cancellation that left the link pointing at it
+            # (manual cancel, or GCal event deleted) while the booking stays live.
+            job.status = "cancelled"
+            db.commit()
+
+            # Next sync must resurrect: a new active turnover on the same date,
+            # with the iCal event repointed to it.
+            r2 = run_sync()
+            assert r2["jobs_created"] == 1
+            active = db.query(Job).filter_by(property_id=prop.id, status="scheduled").all()
+            assert len(active) == 1
+            assert active[0].id != job.id
+            assert active[0].scheduled_date == checkout
+            db.refresh(ev)
+            assert ev.job_id == active[0].id
+        finally:
+            db.close()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
