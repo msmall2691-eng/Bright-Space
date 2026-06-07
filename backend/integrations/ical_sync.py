@@ -170,6 +170,27 @@ def _to_date(value):
         return None
 
 
+# A calendar event is treated as a real guest reservation (→ turnover cleaning)
+# UNLESS its title clearly marks it as a host block (owner stay, maintenance,
+# manually blocked dates). We match these as the *exclusion* list rather than
+# requiring a "Reserved"/"Airbnb" allowlist, because real bookings on VRBO,
+# Hospitable/Guesty, and other platforms often have a blank title, the guest's
+# name, or platform-specific wording that an allowlist silently drops.
+# Short, ambiguous words ("owner", "blocked") use \b word boundaries so we don't
+# false-match guest/property names like "Downtowner" or "Block Island".
+_HOST_BLOCK_RE = re.compile(
+    r"not available|unavailable|not bookable|do not book|do-not-book|"
+    r"\bblocked\b|\bmaintenance\b|\bowner\b|\bhold\b",
+    re.IGNORECASE,
+)
+
+
+def _is_host_block(summary: str) -> bool:
+    """True if the event title marks a host block / non-booking rather than a
+    guest reservation."""
+    return bool(_HOST_BLOCK_RE.search(summary or ""))
+
+
 async def fetch_ical(url: str) -> bytes:
     _assert_public_url(url)
     async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
@@ -234,15 +255,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         summary = str(component.get("SUMMARY", ""))
         description = str(component.get("DESCRIPTION", ""))
 
-        # Check SUMMARY — only process "Reserved" (skip "Not available")
-        low = summary.lower()
-        if "not available" in low or "blocked" in low or "unavailable" in low or "maintenance" in low or "owner" in low:
+        # Treat every event as a guest reservation UNLESS its title clearly marks
+        # it as a host block. The old logic *also* required the title to contain
+        # "reserved"/"airbnb", which silently dropped real bookings whose title
+        # was blank, a guest name, or a non-Airbnb platform's wording — the cause
+        # of missing turnovers. (skipped_not_reserved is kept in the result shape
+        # for compatibility but is no longer used.)
+        if _is_host_block(summary):
             skipped_host_blocks += 1
-            log.info(f"Skipping host block: {summary}")
-            continue
-
-        if "reserved" not in low and "airbnb" not in low:
-            skipped_not_reserved += 1
+            log.info(f"Skipping host block: {summary!r}")
             continue
 
         # Parse dates — pass the property's local TZ so tz-aware DTEND
