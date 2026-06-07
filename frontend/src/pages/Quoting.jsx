@@ -169,6 +169,12 @@ export default function Quoting() {
     setSavingTemplates(false)
   }
 
+  // Honor ?tab=quotes|leads (e.g. from the dashboard's Quotes & leads tile).
+  useEffect(() => {
+    const t = new URLSearchParams(location.search).get('tab')
+    if (t === 'quotes' || t === 'leads') setTab(t)
+  }, [location.search])
+
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
 
