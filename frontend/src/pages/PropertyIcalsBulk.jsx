@@ -122,13 +122,31 @@ export default function PropertyIcalsBulk() {
     }
   }
 
+  // Build a sync-result toast that includes turnover COVERAGE, so a silently
+  // missed checkout surfaces instead of hiding behind "Synced".
+  const syncResultFrom = (data, prefix) => {
+    const jobs = data?.jobs_created ?? 0
+    const future = data?.future_bookings ?? 0
+    const missing = (data?.missing_turnovers || []).length
+    const base = jobs > 0
+      ? `${prefix} — ${jobs} new turnover${jobs === 1 ? '' : 's'} scheduled`
+      : `${prefix} — no new turnovers`
+    if (missing > 0) {
+      const dates = (data.missing_turnovers || []).map(m => m.checkout).join(', ')
+      return { ok: false, message: `${base}. ⚠️ ${missing} upcoming checkout${missing === 1 ? '' : 's'} still missing a turnover (${dates}) — click "Diagnose feed".` }
+    }
+    if (future > 0) {
+      return { ok: true, message: `${base} · all ${future} upcoming checkout${future === 1 ? '' : 's'} covered ✓` }
+    }
+    return { ok: true, message: base }
+  }
+
   const sync = async () => {
     setSyncing(true)
     setSyncResult(null)
     try {
       const data = await post(`/api/properties/${propertyId}/sync`)
-      const jobs = data?.jobs_created ?? 0
-      setSyncResult({ ok: true, message: jobs > 0 ? `Synced — ${jobs} new turnover${jobs === 1 ? '' : 's'} scheduled` : 'Synced — no new turnovers' })
+      setSyncResult(syncResultFrom(data, 'Synced'))
       await load()
     } catch (e) {
       setSyncResult({ ok: false, message: e?.message || 'Sync failed' })
@@ -144,8 +162,7 @@ export default function PropertyIcalsBulk() {
     setSyncResult(null)
     try {
       const data = await post(`/api/properties/${propertyId}/icals/${icalId}/sync`)
-      const jobs = data?.jobs_created ?? 0
-      setSyncResult({ ok: true, message: jobs > 0 ? `Feed synced — ${jobs} new turnover${jobs === 1 ? '' : 's'}` : 'Feed synced — no new turnovers' })
+      setSyncResult(syncResultFrom(data, 'Feed synced'))
       await load()
     } catch (e) {
       setSyncResult({ ok: false, message: e?.message || 'Feed sync failed' })
@@ -221,11 +238,16 @@ export default function PropertyIcalsBulk() {
                 {f.error && <div className="text-red-600">{f.error}</div>}
                 {!f.error && (f.events || []).length === 0 && <div className="text-ink-3">No bookings in feed.</div>}
                 {(f.events || []).map((e, j) => {
-                  const made = e.decision?.includes('exists') || e.decision?.includes('would create')
+                  const d = e.decision || ''
+                  // green = a turnover exists/will exist; amber = needs/awaiting a
+                  // fix the sync will apply; grey = intentionally not cleaned.
+                  const willHave = d.includes('exists') || d.includes('completed') || d.includes('✓')
+                  const willFix = d.includes('will recreate') || d.includes('will fix') || d.includes('would create')
+                  const cls = willHave ? 'text-emerald-600' : willFix ? 'text-amber-600' : 'text-ink-3'
                   return (
                     <div key={j} className="flex items-center justify-between gap-2 py-1 border-b border-hairline/60 last:border-0">
                       <span className="text-ink-2 truncate">{e.checkout || '—'} · {e.summary || '(no title)'}</span>
-                      <span className={`shrink-0 ${made ? 'text-emerald-600' : 'text-ink-3'}`}>{e.decision}</span>
+                      <span className={`shrink-0 ${cls}`}>{e.decision}</span>
                     </div>
                   )
                 })}
