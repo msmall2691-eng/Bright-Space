@@ -15,7 +15,7 @@ You work in Google Calendar. BrightBase just watches and adds the business layer
 
 import os
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date, time
 from sqlalchemy.orm import Session
 from database.models import Job, Client, Property
 
@@ -145,15 +145,24 @@ def _match_by_address(event: dict, db: Session) -> dict | None:
     return None
 
 
-def _parse_event_datetime(dt_obj: dict | None) -> tuple[str, str] | None:
-    """Parse a GCal start/end object into (YYYY-MM-DD, HH:MM)."""
+def _parse_event_datetime(dt_obj: dict | None) -> "tuple[date, time | None] | None":
+    """Parse a GCal start/end object into (datetime.date, datetime.time | None).
+
+    Returns real date/time objects (not strings) so callers can compare and
+    assign them to Job's Date/Time columns directly. Comparing a string to a
+    Date column always reports "changed" and writes a string back into the
+    column — that caused the sync to churn every poll and re-introduced the
+    string-in-Date-column bug. Times are truncated to the minute (GCal only
+    surfaces minutes here) and keep the event's wall-clock value, matching the
+    previous strftime behavior.
+    """
     if not dt_obj:
         return None
     if "dateTime" in dt_obj:
         dt = datetime.fromisoformat(dt_obj["dateTime"].replace("Z", "+00:00"))
-        return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
+        return dt.date(), dt.time().replace(second=0, microsecond=0)
     if "date" in dt_obj:
-        return dt_obj["date"], None
+        return date.fromisoformat(dt_obj["date"]), None
     return None
 
 
@@ -347,8 +356,8 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 job_type=job_type,
                 title=event.get("summary", "Cleaning"),
                 scheduled_date=sched_date,
-                start_time=start_time or "09:00",
-                end_time=end_time or "12:00",
+                start_time=start_time or time(9, 0),
+                end_time=end_time or time(12, 0),
                 address=event.get("location", client.address or ""),
                 gcal_event_id=gcal_id,
                 calendar_invite_sent=bool(event.get("attendees")),
