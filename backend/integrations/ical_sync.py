@@ -756,3 +756,125 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         "synced_at": prop.ical_last_synced_at.isoformat() if prop.ical_last_synced_at else None,
     }
 
+
+
+def inspect_property_feeds(db: Session, prop: Property) -> dict:
+    """Read-only diagnostic: fetch each of a property's iCal feeds and report how
+    every VEVENT resolves — booking vs host block, the computed checkout date,
+    and whether a turnover job already exists for it — WITHOUT creating or
+    modifying anything.
+
+    Use this to answer "why didn't <date> become a turnover?": each event shows
+    its classification, whether it's in the past, the job currently linked to its
+    UID (and that job's status), and whether a turnover would be created on the
+    next real sync.
+    """
+    feeds = []
+    if prop.ical_url:
+        feeds.append(("legacy_ical_url", prop.ical_url))
+    for pi in (prop.property_icals or []):
+        if pi.active and pi.url:
+            feeds.append((pi.source or "feed", pi.url))
+    if not feeds:
+        return {"error": "No iCal URLs configured for this property"}
+
+    today = date.today().isoformat()
+    prop_tz = prop.timezone or "America/New_York"
+    out_feeds = []
+
+    for label, url in feeds:
+        report = {"source": label, "events": []}
+        try:
+            _assert_public_url(url)
+            with _httpx.Client(timeout=15, follow_redirects=False) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                raw = r.content
+            cal = Calendar.from_ical(raw)
+        except Exception as e:
+            report["error"] = str(e)[:300]
+            out_feeds.append(report)
+            continue
+
+        for comp in cal.walk():
+            if comp.name != "VEVENT":
+                continue
+            uid = str(comp.get("UID", ""))
+            summary = str(comp.get("SUMMARY", ""))
+            checkin = _parse_date(comp.get("DTSTART"), default_tz=prop_tz)
+            checkout = _parse_date(comp.get("DTEND"), default_tz=prop_tz)
+            is_block = _is_host_block(summary)
+
+            # What's currently linked to this UID, and what its job's status is.
+            ical_row = db.query(ICalEvent).filter_by(property_id=prop.id, uid=uid).first()
+            linked_job = None
+            if ical_row and ical_row.job_id:
+                j = db.query(Job).filter_by(id=ical_row.job_id).first()
+                linked_job = (
+                    {"id": j.id, "status": j.status, "scheduled_date": str(j.scheduled_date)}
+                    if j else {"id": ical_row.job_id, "status": "DELETED"}
+                )
+
+            # Any turnover job already sitting on this checkout date (any status).
+            existing_job = None
+            if checkout:
+                ej = (
+                    db.query(Job)
+                    .filter(
+                        Job.property_id == prop.id,
+                        Job.scheduled_date == _to_date(checkout),
+                        Job.job_type == "str_turnover",
+                    )
+                    .order_by(Job.id.desc())
+                    .first()
+                )
+                if ej:
+                    existing_job = {"id": ej.id, "status": ej.status}
+
+            in_past = bool(checkout and checkout < today)
+            # Mirror the create gate in _sync_ical_url: not a block, has a future
+            # checkout, and the UID isn't already linked to a live job.
+            would_create = (
+                (not is_block) and bool(checkout) and not in_past
+                and not (ical_row and ical_row.job_id)
+            )
+            # Most actionable reason a real checkout won't show as a turnover.
+            reason = None
+            if is_block:
+                reason = "title matched a host-block marker"
+            elif not checkout:
+                reason = "no parseable DTEND (checkout) date"
+            elif in_past:
+                reason = "checkout is in the past"
+            elif ical_row and ical_row.job_id:
+                st = linked_job.get("status") if isinstance(linked_job, dict) else None
+                reason = f"UID already linked to job {linked_job} (status={st}) — won't recreate"
+
+            report["events"].append({
+                "uid": uid[:80],
+                "summary": summary,
+                "checkin": checkin,
+                "checkout": checkout,
+                "classification": "host_block" if is_block else "booking",
+                "in_past": in_past,
+                "linked_job_for_uid": linked_job,
+                "existing_turnover_job_on_checkout": existing_job,
+                "would_create_turnover": would_create,
+                "note": reason,
+            })
+
+        # Surface the soonest future booking with no live turnover, front and center.
+        report["bookings_missing_turnover"] = [
+            e for e in report["events"]
+            if e["classification"] == "booking" and not e["in_past"]
+            and not (e["existing_turnover_job_on_checkout"]
+                     and e["existing_turnover_job_on_checkout"]["status"] != "cancelled")
+        ]
+        out_feeds.append(report)
+
+    return {
+        "property_id": prop.id,
+        "property_name": prop.name,
+        "today": today,
+        "feeds": out_feeds,
+    }

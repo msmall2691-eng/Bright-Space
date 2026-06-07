@@ -8,7 +8,7 @@ import logging
 
 from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal, Client
-from integrations.ical_sync import sync_property
+from integrations.ical_sync import sync_property, inspect_property_feeds
 from modules.auth.router import require_role
 
 
@@ -220,6 +220,23 @@ def sync_ical(property_id: int, db: Session = Depends(get_db)):
     result = sync_property(db, prop)
     if "error" in result:
         raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@router.get("/{property_id}/ical-inspect", dependencies=[Depends(require_role("admin", "manager"))])
+def ical_inspect(property_id: int, db: Session = Depends(get_db)):
+    """Read-only diagnostic for missing/incorrect turnovers. Fetches the
+    property's iCal feed(s) and reports how each event resolves — booking vs
+    host block, computed checkout date, whether it's in the past, the job linked
+    to its UID, and whether a turnover would be created — without writing
+    anything. `bookings_missing_turnover` lists future guest checkouts that have
+    no live cleaning, which is usually the answer to "where did <date> go?"."""
+    prop = db.query(Property).filter(Property.id == property_id).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    result = inspect_property_feeds(db, prop)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     return result
 
 
