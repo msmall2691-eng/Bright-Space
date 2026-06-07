@@ -515,6 +515,83 @@ END:VCALENDAR""".encode()
             db.close()
 
 
+class TestTurnoverHardening:
+    """Capture full booking data, report coverage, and keep GCal in step when
+    reconciling — so a missed/wrong-day turnover can't recur silently."""
+
+    def test_turnover_captures_stay_metadata_and_coverage(self):
+        db = SessionLocal()
+        try:
+            result, job, checkout = _sync_one_event(db, "Reserved", uid="meta@feed")
+            checkin = checkout - timedelta(days=2)  # _sync_one_event: checkin = checkout-2
+            # Full booking window is captured on the turnover.
+            assert job.custom_fields.get("checkin_date") == checkin.isoformat()
+            assert job.custom_fields.get("checkout_date") == checkout.isoformat()
+            assert job.custom_fields.get("nights") == 2
+            assert job.custom_fields.get("booking_uid") == "meta@feed"
+            # Coverage: the one future booking is covered, nothing missing.
+            assert result["future_bookings"] == 1
+            assert result["missing_turnovers"] == []
+        finally:
+            db.close()
+
+    def test_reconcile_pushes_corrected_date_to_gcal(self):
+        """When a linked turnover's date is reconciled, the linked Google Calendar
+        event must be updated too — otherwise the next GCal sync (authoritative)
+        reverts it."""
+        from integrations.ical_sync import _sync_ical_url
+        db = SessionLocal()
+        try:
+            client = Client(name="Test Client", email="t@example.com")
+            db.add(client); db.commit(); db.refresh(client)
+            prop = Property(client_id=client.id, name="Pier House",
+                            address="1 Pier Rd", property_type="str",
+                            ical_url="https://www.airbnb.com/calendar/ical/8.ics?s=abc")
+            db.add(prop); db.commit(); db.refresh(prop)
+
+            checkin = date.today() + timedelta(days=10)
+            checkout = date.today() + timedelta(days=12)
+            ics = f"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:stay-3@feed
+DTSTART;VALUE=DATE:{checkin.strftime('%Y%m%d')}
+DTEND;VALUE=DATE:{checkout.strftime('%Y%m%d')}
+SUMMARY:Reserved
+END:VEVENT
+END:VCALENDAR""".encode()
+
+            def run_sync(update_mock=None):
+                with patch("integrations.ical_sync._httpx.Client") as mc:
+                    resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
+                    mc.return_value.__enter__.return_value.get.return_value = resp
+                    with patch("integrations.google_calendar.create_event") as gc:
+                        gc.return_value = None
+                        if update_mock is not None:
+                            with patch("integrations.google_calendar.update_event", update_mock):
+                                return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+                        return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+
+            run_sync()
+            job = db.query(Job).filter_by(property_id=prop.id).first()
+            # Give it a GCal event, then wipe its date (the stuck state).
+            job.gcal_event_id = "evt_pier_123"
+            job.scheduled_date = None
+            db.commit()
+
+            upd = MagicMock()
+            run_sync(update_mock=upd)
+            db.refresh(job)
+            assert job.scheduled_date == checkout
+            # The GCal event was updated to the corrected checkout date.
+            assert upd.called, "expected update_event to be called on reconcile"
+            args, kwargs = upd.call_args
+            assert args[0] == "evt_pier_123"
+            assert args[1].get("scheduled_date") == checkout.isoformat()
+        finally:
+            db.close()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

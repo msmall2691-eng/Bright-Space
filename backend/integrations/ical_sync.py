@@ -170,6 +170,15 @@ def _to_date(value):
         return None
 
 
+def _nights_between(checkin, checkout):
+    """Number of guest nights between checkin and checkout (ISO strings/dates),
+    or None if either is missing/unparseable."""
+    ci, co = _to_date(checkin), _to_date(checkout)
+    if ci and co:
+        return (co - ci).days
+    return None
+
+
 # A calendar event is treated as a real guest reservation (→ turnover cleaning)
 # UNLESS its title clearly marks it as a host block (owner stay, maintenance,
 # manually blocked dates). We match these as the *exclusion* list rather than
@@ -189,6 +198,48 @@ def _is_host_block(summary: str) -> bool:
     """True if the event title marks a host block / non-booking rather than a
     guest reservation."""
     return bool(_HOST_BLOCK_RE.search(summary or ""))
+
+
+def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> None:
+    """Update the linked Google Calendar event to match the turnover's current
+    date/time.
+
+    CRITICAL for the GCal-as-source-of-truth model: gcal_sync treats Google
+    Calendar events as authoritative and writes their start date BACK onto the
+    Job (see gcal_sync.py). So any time we change a linked turnover's date in our
+    DB, we must push that change to Google too — otherwise the next Google sync
+    overwrites our change and the turnover drifts back to the wrong day. Both the
+    reschedule path (feed checkout moved) and the reconcile path (linked job had
+    a stale/empty date) go through here. No-op if the job has no GCal event yet.
+    """
+    if not getattr(linked_job, "gcal_event_id", None):
+        return
+    try:
+        from integrations.google_calendar import update_event
+        client_for_update = db.query(Client).filter_by(id=prop.client_id).first()
+        job_dict = {
+            "id": linked_job.id,
+            "title": linked_job.title,
+            "job_type": "str_turnover",
+            "scheduled_date": checkout_date,
+            "start_time": str(linked_job.start_time) if linked_job.start_time else "10:00",
+            "end_time": str(linked_job.end_time) if linked_job.end_time else "13:00",
+            "address": prop.address,
+            "notes": linked_job.notes or "",
+            "property_id": prop.id,
+        }
+        client_dict = {
+            "id": prop.client_id,
+            "name": client_for_update.name if client_for_update else "Client",
+            "email": getattr(client_for_update, "email", None) if client_for_update else None,
+        }
+        update_event(linked_job.gcal_event_id, job_dict, client_dict)
+        log.info(
+            f"Updated GCal event {linked_job.gcal_event_id} for turnover "
+            f"{linked_job.id} → {checkout_date}"
+        )
+    except Exception as e:
+        log.warning(f"Failed to update GCal for turnover {linked_job.id}: {e}")
 
 
 async def fetch_ical(url: str) -> bytes:
@@ -363,31 +414,9 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                     if linked_job and linked_job.status not in ("cancelled", "completed"):
                         linked_job.scheduled_date = _to_date(checkout_date)
                         rescheduled_jobs += 1
-                        # Update GCal event if linked
-                        if linked_job.gcal_event_id:
-                            try:
-                                from integrations.google_calendar import update_event
-                                client_for_update = db.query(Client).filter_by(id=prop.client_id).first()
-                                job_dict = {
-                                    "id": linked_job.id,
-                                    "title": linked_job.title,
-                                    "job_type": "str_turnover",
-                                    "scheduled_date": checkout_date,
-                                    "start_time": str(linked_job.start_time) if linked_job.start_time else "10:00",
-                                    "end_time": str(linked_job.end_time) if linked_job.end_time else "13:00",
-                                    "address": prop.address,
-                                    "notes": linked_job.notes or "",
-                                    "property_id": prop.id,
-                                }
-                                client_dict = {
-                                    "id": prop.client_id,
-                                    "name": client_for_update.name if client_for_update else "Client",
-                                    "email": getattr(client_for_update, "email", None) if client_for_update else None,
-                                }
-                                update_event(linked_job.gcal_event_id, job_dict, client_dict)
-                                log.info(f"Updated GCal event {linked_job.gcal_event_id} for rescheduled turnover")
-                            except Exception as e:
-                                log.warning(f"Failed to update GCal for rescheduled turnover: {e}")
+                        # Keep Google Calendar in step (it's authoritative on the
+                        # next sync) so the move isn't reverted.
+                        _push_turnover_to_gcal(db, prop, linked_job, checkout_date)
 
         # A stale event.job_id used to make the sync skip recreation forever —
         # "no new turnovers" while the calendar stayed empty. Two cases:
@@ -421,7 +450,16 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                         f"scheduled_date {_linked.scheduled_date} → {want}"
                     )
                     _linked.scheduled_date = want
-                if not _linked.start_time:
+                    if not _linked.start_time:
+                        _linked.start_time = _to_time(
+                            (property_ical.checkout_time if property_ical else None)
+                            or prop.check_out_time or "10:00"
+                        )
+                    # Push the corrected date to Google Calendar — otherwise the
+                    # next GCal sync (which treats its event as authoritative)
+                    # would write the stale date straight back onto the job.
+                    _push_turnover_to_gcal(db, prop, _linked, checkout_date)
+                elif not _linked.start_time:
                     _linked.start_time = _to_time(
                         (property_ical.checkout_time if property_ical else None)
                         or prop.check_out_time or "10:00"
@@ -463,16 +501,28 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 # No next booking — use default duration
                 end_time = _make_end_time(check_out_time, duration)
 
-            # Extract guest metadata
+            # Extract guest metadata + capture the full booking window so each
+            # turnover carries its guest context (stay dates, nights, source UID).
             guest_metadata = _extract_guest_metadata(description)
             guest_metadata['ical_source_label'] = ical_source_label
+            guest_metadata['booking_uid'] = uid
+            guest_metadata['checkin_date'] = checkin_date
+            guest_metadata['checkout_date'] = checkout_date
+            _nights = _nights_between(checkin_date, checkout_date)
+            if _nights is not None:
+                guest_metadata['nights'] = _nights
 
             # Get client for GCal invite
             client = db.query(Client).filter_by(id=prop.client_id).first()
             client_name = client.name if client else "Client"
 
-            # Build notes with reservation code, phone, and house code
+            # Build notes with the stay window, reservation code, phone, code.
             notes_parts = [f"Guest checkout. Booking: {summary}"]
+            if checkin_date:
+                stay = f"Stay: {checkin_date} → {checkout_date}"
+                if _nights is not None:
+                    stay += f" ({_nights} night{'s' if _nights != 1 else ''})"
+                notes_parts.append(stay)
             if guest_metadata.get('airbnb_reservation_code'):
                 notes_parts.append(f"Res: {guest_metadata['airbnb_reservation_code']}")
             if guest_metadata.get('guest_phone_last_4'):
@@ -585,6 +635,35 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
     db.commit()
 
+    # Coverage safety-net: after everything above, EVERY future guest booking in
+    # the feed should now have an active turnover. Re-check and report any that
+    # don't, so a silently-missed checkout surfaces loudly instead of vanishing.
+    active_turnover_dates = {
+        j.scheduled_date.isoformat() if hasattr(j.scheduled_date, "isoformat") else str(j.scheduled_date)
+        for j in db.query(Job).filter(
+            Job.property_id == prop.id,
+            Job.job_type == "str_turnover",
+            Job.status.notin_(["cancelled"]),
+            Job.scheduled_date.isnot(None),
+        ).all()
+        if j.scheduled_date
+    }
+    future_bookings = 0
+    missing_turnovers = []
+    for ev in all_events:
+        co = ev.get("checkout_date")
+        if not co or _is_host_block(ev.get("summary", "")) or co < today:
+            continue
+        future_bookings += 1
+        co_str = co if isinstance(co, str) else (co.isoformat() if hasattr(co, "isoformat") else str(co))
+        if co_str not in active_turnover_dates:
+            missing_turnovers.append({"checkout": co_str, "summary": ev.get("summary", ""), "uid": ev.get("uid", "")[:60]})
+    if missing_turnovers:
+        log.error(
+            f"[coverage] {prop.name}: {len(missing_turnovers)} future booking(s) "
+            f"have NO turnover after sync: {[m['checkout'] for m in missing_turnovers]}"
+        )
+
     return {
         "events_seen": seen,
         "events_created": created_events,
@@ -593,6 +672,8 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         "jobs_rescheduled": rescheduled_jobs,
         "skipped_host_blocks": skipped_host_blocks,
         "skipped_not_reserved": skipped_not_reserved,
+        "future_bookings": future_bookings,
+        "missing_turnovers": missing_turnovers,
     }
 
 
@@ -679,6 +760,8 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     total_rescheduled_jobs = 0
     total_skipped_host_blocks = 0
     total_skipped_not_reserved = 0
+    total_future_bookings = 0
+    missing_turnovers = []
     sources_synced = []
     # Per-source failures. The legacy ical_url has no PropertyIcal row to record
     # its status on, so a failed legacy feed would otherwise be invisible to
@@ -697,6 +780,8 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
             total_rescheduled_jobs += result.get("jobs_rescheduled", 0)
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
+            total_future_bookings += result.get("future_bookings", 0)
+            missing_turnovers.extend(result.get("missing_turnovers", []))
             sources_synced.append("legacy_ical_url")
         else:
             sync_errors.append({"source": "legacy_ical_url", "error": str(result.get("error", ""))[:200]})
@@ -733,6 +818,8 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
             total_rescheduled_jobs += result.get("jobs_rescheduled", 0)
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
+            total_future_bookings += result.get("future_bookings", 0)
+            missing_turnovers.extend(result.get("missing_turnovers", []))
             sources_synced.append(prop_ical.source or "unknown")
 
     # Update property sync timestamp
@@ -782,6 +869,10 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         "gcal_backfilled": gcal_backfilled,
         "sources_synced": sources_synced,
         "sync_errors": sync_errors,
+        # Coverage: every future guest checkout should have an active turnover.
+        # missing_turnovers is the safety-net — it should always be empty.
+        "future_bookings": total_future_bookings,
+        "missing_turnovers": missing_turnovers,
         "synced_at": prop.ical_last_synced_at.isoformat() if prop.ical_last_synced_at else None,
     }
 
