@@ -84,6 +84,9 @@ def test_log_job_status_change_logs_completion(client_and_job):
     c, j = client_and_job
     db = SessionLocal()
     try:
+        # Re-fetch the job into this session; mutating the fixture-session's
+        # instance here would dirty that session and StaleData its teardown.
+        j = db.query(Job).filter(Job.id == j.id).first()
         j.status = "completed"
         result = log_job_status_change(db, j, prev_status="scheduled")
         db.commit()
