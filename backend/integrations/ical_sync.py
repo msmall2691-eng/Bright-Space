@@ -408,6 +408,24 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                         f"active in the feed — recreating."
                     )
                 event.job_id = None
+            elif _linked.status != "completed":
+                # Case 3: the linked turnover is active but lost its date. Old
+                # data resets / the VARCHAR→DATE migration left some linked jobs
+                # with a NULL or stale scheduled_date — "linked" but invisible on
+                # the calendar. Reconcile it to the feed checkout (source of
+                # truth) and re-fill a missing start time so it shows up.
+                want = _to_date(checkout_date)
+                if want and _linked.scheduled_date != want:
+                    log.info(
+                        f"Reconciling turnover {_linked.id} for {prop.name} ({uid}): "
+                        f"scheduled_date {_linked.scheduled_date} → {want}"
+                    )
+                    _linked.scheduled_date = want
+                if not _linked.start_time:
+                    _linked.start_time = _to_time(
+                        (property_ical.checkout_time if property_ical else None)
+                        or prop.check_out_time or "10:00"
+                    )
 
         # Create a Job if: no live job yet + checkout is today or future
         if event.job_id is None and checkout_date >= today:
