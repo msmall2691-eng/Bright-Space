@@ -155,6 +155,7 @@ export default function Properties() {
   const [syncResult, setSyncResult] = useState(null)
   const [sweep, setSweep] = useState(null)
   const [sweeping, setSweeping] = useState(false)
+  const [rebuildingId, setRebuildingId] = useState(null)
   const runSweep = async () => {
     setSweeping(true); setSweep(null); setSyncResult(null)
     try {
@@ -164,6 +165,20 @@ export default function Properties() {
       setSweep({ error: String(e?.message || e) })
     }
     setSweeping(false)
+  }
+
+  // Fix one flagged property right from the health report: force-rebuild its
+  // turnovers from the feed, then re-run the sweep so the row re-verifies.
+  const rebuildOne = async (propertyId) => {
+    setRebuildingId(propertyId)
+    try {
+      await post(`/api/properties/${propertyId}/rebuild-turnovers`)
+      const data = await post('/api/properties/turnover-sweep')
+      setSweep(data)
+    } catch (e) {
+      setSweep(s => ({ ...(s || {}), error: String(e?.message || e) }))
+    }
+    setRebuildingId(null)
   }
   const [expandedPropId, setExpandedPropId] = useState(null)
   const [icalForm, setIcalForm] = useState({
@@ -509,6 +524,14 @@ export default function Properties() {
                       <div className="text-amber-600 mt-0.5">{p.not_on_google} turnover(s) not on Google — check the connection/calendar.</div>
                     )}
                   </div>
+                  {!p.ok && (
+                    <button onClick={() => rebuildOne(p.property_id)} disabled={rebuildingId === p.property_id}
+                      title="Force-rebuild this property's turnovers from the feed, then re-check"
+                      className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors shrink-0">
+                      <RefreshCw className={`w-3 h-3 ${rebuildingId === p.property_id ? 'animate-spin' : ''}`} />
+                      {rebuildingId === p.property_id ? 'Rebuilding…' : 'Rebuild'}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
