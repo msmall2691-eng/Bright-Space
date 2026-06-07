@@ -75,9 +75,14 @@ export default function Quoting() {
   const [toast, setToast] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
-  // Template manager (create/edit/delete reusable quote templates).
+  // Template manager (create/edit/delete reusable quote templates). Saving needs
+  // admin/manager (PUT is role-gated), so only show the editor to those roles.
   const [editTemplates, setEditTemplates] = useState([])
   const [savingTemplates, setSavingTemplates] = useState(false)
+  const canManageTemplates = (() => {
+    try { return ['admin', 'manager'].includes(JSON.parse(localStorage.getItem('brightbase_user') || '{}').role) }
+    catch { return false }
+  })()
   // Inline "new client" quick-add from the quote form.
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
@@ -172,7 +177,9 @@ export default function Quoting() {
     loadIntakes()
     get('/api/clients').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
     get('/api/settings/quote-templates').then(d => {
-      if (d?.templates?.length) setQuoteTemplates(d.templates)
+      // Treat any array as authoritative — including [] — so deleting every
+      // template sticks instead of the hardcoded defaults reappearing on reload.
+      if (Array.isArray(d?.templates)) setQuoteTemplates(d.templates)
     }).catch(() => {})
     // Use the configured company name in the customer-facing SMS instead of a
     // hardcoded brand. Falls back to the default if unset/unavailable.
@@ -380,10 +387,12 @@ export default function Quoting() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => { setEditTemplates(quoteTemplates.map(t => ({ ...t, items: (t.items || []).map(i => ({ ...i })) }))); setPanel('templates') }}
-              className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-              <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
-            </button>
+            {canManageTemplates && (
+              <button onClick={() => { setEditTemplates(quoteTemplates.map(t => ({ ...t, items: (t.items || []).map(i => ({ ...i })) }))); setPanel('templates') }}
+                className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
+              </button>
+            )}
             <button onClick={() => { openQuoteForm(); setTab('quotes') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               <Plus className="w-4 h-4" /> New Quote
