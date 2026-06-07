@@ -114,6 +114,8 @@ export default function Dashboard() {
   const [overdueConvs, setOverdueConvs] = useState([])
   const [unassignedConvs, setUnassignedConvs] = useState([])
   const [leads, setLeads] = useState([])
+  const [svcRevenue, setSvcRevenue] = useState([])
+  const [commsSummary, setCommsSummary] = useState({})
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -124,7 +126,7 @@ export default function Dashboard() {
       try {
         const [
           jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll,
+          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
@@ -134,6 +136,8 @@ export default function Dashboard() {
           get('/api/comms/conversations?sla_state=breached&status=open&limit=20').catch(() => ({ items: [] })),
           get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
           get('/api/intake?limit=200').catch(() => []),
+          get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
+          get('/api/comms/conversations/summary').catch(() => ({})),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
@@ -144,6 +148,8 @@ export default function Dashboard() {
         setOverdueConvs(Array.isArray(conversationsOverdue) ? conversationsOverdue : (conversationsOverdue?.items || []))
         setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
         setLeads(Array.isArray(leadsAll) ? leadsAll : (leadsAll?.items || []))
+        setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
+        setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
@@ -172,6 +178,21 @@ export default function Dashboard() {
     toSchedule: quotes.filter(q => q.status === 'accepted').length,
     newLeads: leads.filter(l => !l.status || ['new', 'received'].includes(l.status)).length,
   }), [quotes, leads])
+
+  // STR turnover coverage for the next 7 calendar days (today + 6; weekJobs is
+  // fetched with an inclusive +7 end, so clamp here). "Covered" = a cleaner is
+  // assigned.
+  const turnover = useMemo(() => {
+    const sixOut = new Date(Date.now() + 6 * 864e5).toISOString().slice(0, 10)
+    const str = weekJobs.filter(j =>
+      j.job_type === 'str_turnover' && j.status !== 'cancelled' &&
+      (j.scheduled_date || '').slice(0, 10) <= sixOut)
+    const needCrew = str.filter(j => !(j.cleaner_ids && j.cleaner_ids.length > 0))
+    return { total: str.length, needCrew: needCrew.length }
+  }, [weekJobs])
+
+  // Uncapped breached count from the summary endpoint (the list is limit=20).
+  const slaBreached = commsSummary.breached ?? overdueConvs.length
 
   // AR aging buckets — so the operator knows WHO to call this morning.
   // Groups overdue invoices by age: 0-30, 30-60, 60-90, 90+ days.
@@ -294,9 +315,18 @@ export default function Dashboard() {
           icon={Inbox}
           iconColor="text-blue-500"
           title="Inbox needs attention"
-          badge={attention.length > 0 && (
-            <span className="text-[10px] font-bold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded-full">
-              {attention.length}
+          badge={(attention.length > 0 || slaBreached > 0) && (
+            <span className="flex items-center gap-1">
+              {slaBreached > 0 && (
+                <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full" title="Conversations past their response SLA">
+                  {slaBreached} SLA
+                </span>
+              )}
+              {attention.length > 0 && (
+                <span className="text-[10px] font-bold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded-full">
+                  {attention.length}
+                </span>
+              )}
             </span>
           )}
           action="Open Comms"
@@ -421,6 +451,35 @@ export default function Dashboard() {
           )}
         </Tile>
 
+        {/* TURNOVER COVERAGE — STR cleanings this week and which need a crew */}
+        <Tile
+          icon={Zap}
+          iconColor="text-amber-500"
+          title="Turnover coverage"
+          badge={turnover.needCrew > 0 && (
+            <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
+              {turnover.needCrew} need a crew
+            </span>
+          )}
+          action="Open schedule"
+          onAction={() => navigate('/schedule')}
+        >
+          {loading ? (
+            <TileLoading />
+          ) : turnover.total === 0 ? (
+            <EmptyState compact icon={CheckCircle2} title="No turnovers this week"
+              description="STR cleanings will show here." />
+          ) : (
+            <div className="flex-1 grid grid-cols-2 gap-3">
+              <StatCard label="Turnovers (7 days)" value={turnover.total} />
+              <StatCard label="Need a cleaner"
+                value={turnover.needCrew}
+                accent={turnover.needCrew > 0 ? 'text-amber-600' : 'text-emerald-600'}
+                onClick={() => navigate('/schedule')} />
+            </div>
+          )}
+        </Tile>
+
         {/* MONEY — full width on desktop */}
         <div className="lg:col-span-2">
         <Tile
@@ -484,6 +543,21 @@ export default function Dashboard() {
                     <span className="text-ink-3">90d+</span>
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Revenue by service type (paid, month-to-date) */}
+          {svcRevenue.length > 0 && (
+            <div className="border-t border-hairline px-4 py-3">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Paid this month by service</div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+                {svcRevenue.map(s => (
+                  <div key={s.service} className="flex items-baseline gap-1">
+                    <span className="text-ink font-bold">{fmtMoney(s.total)}</span>
+                    <span className="text-ink-3 capitalize">{(s.service || '').replace('str_turnover', 'STR').replace('_', ' ')}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

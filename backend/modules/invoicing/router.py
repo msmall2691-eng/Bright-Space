@@ -97,6 +97,34 @@ def get_invoices(
     return [invoice_to_dict(i) for i in q.order_by(Invoice.created_at.desc()).offset(offset).limit(limit).all()]
 
 
+@router.get("/summary/by-service", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def invoice_summary_by_service(
+    period: str = Query("mtd", pattern="^(mtd|all)$"),
+    db: Session = Depends(get_db),
+):
+    """Paid-revenue split by service type (residential/commercial/str_turnover),
+    joined through the invoice's job. `period=mtd` (default) limits to this month
+    by paid_at; `all` is all-time. Powers the dashboard's revenue breakdown."""
+    from sqlalchemy import func
+    from database.models import Job
+    q = (
+        db.query(Job.job_type, func.count(Invoice.id), func.coalesce(func.sum(Invoice.total), 0.0))
+        .join(Invoice, Invoice.job_id == Job.id)
+        .filter(Invoice.status == "paid")
+    )
+    if period == "mtd":
+        month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        q = q.filter(Invoice.paid_at >= month_start)
+    rows = q.group_by(Job.job_type).all()
+    return {
+        "period": period,
+        "by_service": [
+            {"service": (jt or "residential"), "count": int(c or 0), "total": float(tot or 0)}
+            for jt, c, tot in rows
+        ],
+    }
+
+
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
     items = [i.model_dump() for i in data.items]
