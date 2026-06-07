@@ -6,9 +6,10 @@ import { applyTheme, getTheme } from '../theme'
 
 
 const ENTITY_TABS = [
-  { key: 'client',  label: 'Clients',  desc: 'Fields shown on every client record' },
-  { key: 'job',     label: 'Jobs',     desc: 'Fields shown on every job / appointment' },
-  { key: 'invoice', label: 'Invoices', desc: 'Fields shown on every invoice' },
+  { key: 'client',   label: 'Clients',    desc: 'Fields shown on every client record' },
+  { key: 'property', label: 'Properties', desc: 'Fields shown on every property record' },
+  { key: 'job',      label: 'Jobs',       desc: 'Fields shown on every job / appointment' },
+  { key: 'invoice',  label: 'Invoices',   desc: 'Fields shown on every invoice' },
 ]
 
 const FIELD_TYPES = [
