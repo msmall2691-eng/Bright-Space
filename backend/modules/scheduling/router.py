@@ -711,6 +711,30 @@ def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 18
                 "detail": "Could not load events from Google.", "events": []}
 
 
+@router.get("/gcal-sync-status", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def gcal_sync_status(db: Session = Depends(get_db)):
+    """How many upcoming jobs aren't on Google Calendar yet.
+
+    The Calendar page is a read-only Google embed, so it only shows jobs that
+    were actually pushed to GCal. This drives a "reconcile" banner there: when
+    app jobs (often created before Google was connected, or whose push failed)
+    have no gcal_event_id, they're invisible on that page — surfacing the count
+    + a Push button lets the operator close the gap in one click.
+    """
+    try:
+        from integrations.google_calendar import is_configured
+        configured = bool(is_configured())
+    except Exception:
+        configured = False
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    unsynced = db.query(Job).filter(
+        Job.gcal_event_id.is_(None),
+        Job.status.in_(["scheduled", "in_progress"]),
+        Job.scheduled_date >= today,
+    ).count()
+    return {"unsynced_count": unsynced, "configured": configured}
+
+
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_to_gcal(db: Session = Depends(get_db)):
     """Push any BrightBase jobs that don't yet have a GCal event."""
