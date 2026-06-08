@@ -70,3 +70,13 @@ def test_accept_notifies_owner(quote_ctx):
     db.refresh(q)
     assert q.status == "accepted" and q.accepted_at is not None
     assert send.called
+
+
+def test_accept_emails_customer_a_confirmation(quote_ctx):
+    db, c, q = quote_ctx
+    p1, p2 = _owner_patches()
+    with p1, p2 as send:
+        public_accept_quote("tok-resp-1", PublicAcceptRequest(name="Jo", email="jo@x.com"), db=db)
+    # Among the send_email calls, one goes to the accepting customer.
+    recipients = [(call.kwargs.get("to") or (call.args[0] if call.args else None)) for call in send.call_args_list]
+    assert "jo@x.com" in recipients, f"expected a customer confirmation to jo@x.com, got {recipients}"
