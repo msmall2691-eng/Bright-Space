@@ -22,6 +22,7 @@ from database.models import (
     Quote, QuoteRequest, QuoteEmail, Client, Job, Property,
 )
 from modules.auth.router import get_current_user, require_role
+from utils.integration_log import log_integration_event as _log_integration
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -300,14 +301,21 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                         quote_id=quote.id, recipient_email=to_email, sent_at=datetime.now(),
                         delivery_status="sent", email_id=res.get("email_id"),
                     ))
+                    _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                                     action="send", status="ok", external_id=res.get("email_id"),
+                                     detail=f"to {to_email}", commit=False)
                 else:
                     results["email"] = "failed"
                     errors.append("email could not be sent")
                     logger.warning(f"Quote {quote.id} email send failed: {res.get('error')}")
+                    _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                                     action="send", status="failed", detail="send_quote_email failed", commit=False)
             except Exception as e:
                 results["email"] = "failed"
                 errors.append("email could not be sent")
                 logger.warning(f"Quote {quote.id} email send error: {e}")
+                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                                 action="send", status="failed", detail=str(e), commit=False)
 
     if want_sms:
         to_phone = (body.phone or client.phone or "").strip()
@@ -321,10 +329,14 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
                 send_sms(to=to_phone, body=msg)
                 results["sms"] = "sent"
+                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                                 action="send", status="ok", detail=f"to {to_phone}", commit=False)
             except Exception as e:
                 results["sms"] = "failed"
                 errors.append("text message could not be sent")
                 logger.warning(f"Quote {quote.id} SMS send error: {e}")
+                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                                 action="send", status="failed", detail=str(e), commit=False)
 
     delivered = any(v == "sent" for v in results.values())
     if delivered:
