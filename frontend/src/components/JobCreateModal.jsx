@@ -9,6 +9,7 @@ const JOB_TYPES = [
 ]
 
 const FREQUENCIES = [
+  { value: 'daily',          label: 'Daily',          interval: 1 },
   { value: 'weekly',         label: 'Weekly',         interval: 1 },
   { value: 'biweekly',       label: 'Every 2 weeks',  interval: 2 },
   { value: 'every_3_weeks',  label: 'Every 3 weeks',  interval: 3 },
@@ -199,7 +200,9 @@ export default function JobCreateModal({
     ? form.title && form.address &&
       (form.frequency === 'monthly'
         ? !!form.day_of_month
-        : (form.days_of_week || []).length > 0)
+        : form.frequency === 'daily'
+          ? true                                   // daily: every day (days optional)
+          : (form.days_of_week || []).length > 0)
     : form.title && form.scheduled_date && form.start_time && form.end_time)
 
   const save = async () => {
@@ -453,6 +456,10 @@ export default function JobCreateModal({
                         ...f,
                         frequency: opt.value,
                         interval_weeks: opt.interval ?? f.interval_weeks,
+                        // Daily defaults to every day (no weekday filter); leaving
+                        // daily restores a sensible default day for weekly modes.
+                        days_of_week: opt.value === 'daily' ? []
+                          : ((f.days_of_week || []).length ? f.days_of_week : [0]),
                       }))}
                       className={`py-2 rounded-lg text-xs font-medium transition-colors border ${
                         form.frequency === opt.value
@@ -481,7 +488,9 @@ export default function JobCreateModal({
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs text-ink-2 font-medium mb-1">Days of Week *</label>
+                  <label className="block text-xs text-ink-2 font-medium mb-1">
+                    {form.frequency === 'daily' ? 'Days (optional — blank = every day)' : 'Days of Week *'}
+                  </label>
                   <div className="grid grid-cols-7 gap-1">
                     {WEEK_LABELS.map((d, i) => {
                       const selected = (form.days_of_week || []).includes(i)
