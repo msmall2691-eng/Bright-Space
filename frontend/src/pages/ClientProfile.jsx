@@ -215,6 +215,7 @@ export default function ClientProfile() {
   }
 
   const submitNote = async () => {
+    if (savingNote) return  // guard against ⌘/Ctrl+Enter repeats while in flight
     const body = noteText.trim()
     if (!body) return
     setSavingNote(true)

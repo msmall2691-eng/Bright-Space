@@ -15,6 +15,7 @@ from database.db import SessionLocal
 from database.models import Client, Quote, QuoteEmail, Property, LeadIntake
 from modules.quoting.router import (
     convert_quote_to_job, quotes_needing_follow_up, send_quote, QuoteSendRequest,
+    _apply_update,
 )
 from modules.intake.router import convert_intake_to_quote
 
@@ -47,6 +48,16 @@ def test_convert_to_job_stamps_converted_at(client_ctx):
     out = convert_quote_to_job(q.id, db=db)
     assert out["quote_id"] == q.id
     db.refresh(q)
+    assert q.status == "converted" and q.converted_at is not None
+
+
+def test_patch_to_converted_stamps_converted_at(client_ctx):
+    """The onboarding flow PATCHes status directly; _apply_update must still
+    stamp converted_at so the conversion metric isn't left null."""
+    db, c = client_ctx
+    q = _mk_quote(db, c.id, "QT-CONV-PATCH", status="accepted")
+    assert q.converted_at is None
+    _apply_update(q, {"status": "converted"})
     assert q.status == "converted" and q.converted_at is not None
 
 

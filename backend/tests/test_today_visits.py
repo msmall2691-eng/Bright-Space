@@ -49,6 +49,14 @@ def test_visit_dict_carries_day_of_details(visit_ctx):
     assert d["property"]["check_out_time"] == "10:00"
 
 
+class _Admin:
+    role = "admin"
+
+
+class _Viewer:
+    role = "viewer"
+
+
 def test_cleaner_id_filter_scopes_visits(visit_ctx):
     db, c, p, j = visit_ctx
     mine = Visit(job_id=j.id, scheduled_date=date.today(), start_time=time(10, 0),
@@ -58,7 +66,45 @@ def test_cleaner_id_filter_scopes_visits(visit_ctx):
     db.add(mine); db.add(others); db.commit()
     today = str(date.today())
     out = get_visits(scheduled_date_from=today, scheduled_date_to=today,
-                     cleaner_id="7", db=db)
+                     cleaner_id="7", db=db, current_user=_Admin())
     ids = {item["id"] for item in out["items"]}
     assert mine.id in ids and others.id not in ids
-    assert out["total"] == len([i for i in out["items"]])
+    assert out["total"] == len(out["items"])
+
+
+def test_cleaner_filter_applies_before_pagination(visit_ctx):
+    """A cleaner's match beyond the first page is still found and counted —
+    the predicate must run before limit/offset, not after."""
+    db, c, p, j = visit_ctx
+    # Interleave so the target cleaner's visits aren't all in page one.
+    made = []
+    for i in range(6):
+        cleaner = 7 if i % 2 == 0 else 9  # three each, interleaved by time
+        v = Visit(job_id=j.id, scheduled_date=date.today(),
+                  start_time=time(8 + i, 0), end_time=time(9 + i, 0),
+                  status="scheduled", cleaner_ids=[cleaner])
+        db.add(v); made.append(v)
+    db.commit()
+    today = str(date.today())
+    out = get_visits(scheduled_date_from=today, scheduled_date_to=today,
+                     cleaner_id="7", limit=2, offset=0, db=db, current_user=_Admin())
+    assert out["total"] == 3              # all three matches counted, not just page 1
+    assert len(out["items"]) == 2         # page size honored
+    assert all(7 in (i["cleaner_ids"] or []) for i in out["items"])
+
+
+def test_secrets_hidden_from_non_admin(visit_ctx):
+    db, c, p, j = visit_ctx
+    v = Visit(job_id=j.id, scheduled_date=date.today(), start_time=time(10, 0),
+              end_time=time(13, 0), status="scheduled", cleaner_ids=[])
+    db.add(v); db.commit()
+    today = str(date.today())
+    pick = lambda role: next(i for i in get_visits(
+        scheduled_date_from=today, scheduled_date_to=today, db=db, current_user=role
+    )["items"] if i["id"] == v.id)
+    admin = pick(_Admin())
+    viewer = pick(_Viewer())
+    assert admin["property"].get("house_code") == "4251"
+    assert "house_code" not in viewer["property"]
+    assert viewer["client"].get("phone") is None
+    assert admin["client"].get("phone")

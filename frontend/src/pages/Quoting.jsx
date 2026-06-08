@@ -86,10 +86,14 @@ export default function Quoting() {
   // admin/manager (PUT is role-gated), so only show the editor to those roles.
   const [editTemplates, setEditTemplates] = useState([])
   const [savingTemplates, setSavingTemplates] = useState(false)
-  const canManageTemplates = (() => {
+  // Quote mutations (create/edit/send/accept/decline/convert) are admin/manager
+  // only on the backend — gate the controls so viewers get a read-only funnel
+  // instead of buttons that 403. Same check drives the template editor.
+  const canEdit = (() => {
     try { return ['admin', 'manager'].includes(JSON.parse(localStorage.getItem('brightbase_user') || '{}').role) }
     catch { return false }
   })()
+  const canManageTemplates = canEdit
   // Inline "new client" quick-add from the quote form.
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
@@ -443,10 +447,12 @@ export default function Quoting() {
                 <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
               </button>
             )}
-            <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              <Plus className="w-4 h-4" /> New Quote
-            </button>
+            {canEdit && (
+              <button onClick={() => { openQuoteForm(); setTab('quotes') }}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Plus className="w-4 h-4" /> New Quote
+              </button>
+            )}
           </div>
         </div>
 
@@ -479,13 +485,13 @@ export default function Quoting() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5 shrink-0">
-                    {intake.status === 'new' && (
+                    {canEdit && intake.status === 'new' && (
                       <button onClick={() => markIntakeReviewed(intake.id)}
                         className="text-xs px-3 py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 rounded-lg transition-colors border border-hairline">
                         Mark Reviewed
                       </button>
                     )}
-                    {intake.status !== 'converted' && (
+                    {canEdit && intake.status !== 'converted' && (
                       <button onClick={() => { openQuoteForm(null, intake); setTab('quotes') }}
                         className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1">
                         <Plus className="w-3 h-3" /> Create Quote
@@ -524,32 +530,32 @@ export default function Quoting() {
                   </div>
                   <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
                   <div className="flex gap-1.5 shrink-0">
-                    {(q.status === 'draft' || q.status === 'sent') && (
+                    {canEdit && (q.status === 'draft' || q.status === 'sent') && (
                       <button onClick={() => openSendPanel(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
                         <Send className="w-3 h-3" /> Send
                       </button>
                     )}
-                    {q.status === 'sent' && (
+                    {canEdit && q.status === 'sent' && (
                       <button onClick={() => copyPublicLink(q)}
                         className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${copiedQuoteId === q.id ? 'bg-green-600/30 text-green-400' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
                         {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
                       </button>
                     )}
-                    {q.status === 'sent' && (
+                    {canEdit && q.status === 'sent' && (
                       <button onClick={() => updateStatus(q.id, 'accepted')}
                         className="text-xs px-2.5 py-1.5 bg-green-50 text-green-400 hover:bg-green-600/30 rounded-lg transition-colors">
                         Accept
                       </button>
                     )}
-                    {q.status === 'sent' && (
+                    {canEdit && q.status === 'sent' && (
                       <button onClick={() => updateStatus(q.id, 'declined')}
                         className="text-xs px-2.5 py-1.5 bg-red-50 text-red-400 hover:bg-red-600/30 rounded-lg transition-colors">
                         Decline
                       </button>
                     )}
-                    {q.status === 'accepted' && (
+                    {canEdit && q.status === 'accepted' && (
                       <button onClick={() => setScheduleQuote(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
                         <Calendar className="w-3 h-3" />
@@ -594,16 +600,18 @@ export default function Quoting() {
                       </div>
                     </div>
                     <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
-                    <div className="flex gap-1.5 shrink-0">
-                      <button onClick={() => sendFollowUp(q)} disabled={nudging === q.id}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors">
-                        <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
-                      </button>
-                      <button onClick={() => openSendPanel(q)}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline rounded-lg transition-colors">
-                        Options
-                      </button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => sendFollowUp(q)} disabled={nudging === q.id}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors">
+                          <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
+                        </button>
+                        <button onClick={() => openSendPanel(q)}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline rounded-lg transition-colors">
+                          Options
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
@@ -861,18 +869,22 @@ export default function Quoting() {
           )}
           </div>
 
-          <div className="p-6 border-t border-hairline flex gap-3 shrink-0">
-            <button onClick={save} disabled={saving || !form.client_id}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-              {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
-            </button>
-            {selected && (
-              <button onClick={() => openSendPanel(selected)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                <Send className="w-4 h-4" /> Send
+          {canEdit ? (
+            <div className="p-6 border-t border-hairline flex gap-3 shrink-0">
+              <button onClick={save} disabled={saving || !form.client_id}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+                {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
               </button>
-            )}
-          </div>
+              {selected && (
+                <button onClick={() => openSendPanel(selected)}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+                  <Send className="w-4 h-4" /> Send
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="p-6 border-t border-hairline shrink-0 text-xs text-ink-3">Read-only — your role can't edit quotes.</div>
+          )}
         </div>
       )}
 

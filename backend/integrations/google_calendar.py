@@ -330,34 +330,45 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_
     job_type = job.get("job_type", "residential")
     type_label = {"residential": "Residential", "commercial": "Commercial", "str_turnover": "STR Turnover"}.get(job_type, "")
 
-    description_lines = [
-        f"Job: {job['title']}",
-        f"Type: {type_label}" if type_label else None,
-        f"Client: {client.get('name', '')}",
-    ]
-    if job.get("address"):
-        description_lines.append(f"Address: {job['address']}")
+    if include_attendees:
+        # Customer-facing event — the client is an attendee and sees this on
+        # their own calendar, so keep it clean: NO gate codes, access notes,
+        # crew, or internal notes. Just what the customer should know.
+        description_lines = [f"{type_label} cleaning" if type_label else "Cleaning"]
+        if job.get("address"):
+            description_lines.append(f"Address: {job['address']}")
+        description_lines.append("\nYour upcoming cleaning with The Maine Cleaning Co.")
+        description_lines.append("Questions or need to reschedule? Just reply to this invitation.")
+    else:
+        # Internal event (your calendar / crew) — full on-site detail.
+        description_lines = [
+            f"Job: {job['title']}",
+            f"Type: {type_label}" if type_label else None,
+            f"Client: {client.get('name', '')}",
+        ]
+        if job.get("address"):
+            description_lines.append(f"Address: {job['address']}")
 
-    # Property-level on-site info
-    if property_data:
-        if property_data.get("house_code"):
-            description_lines.append(f"Access Code: {property_data['house_code']}")
-        if property_data.get("access_notes"):
-            description_lines.append(f"Access: {property_data['access_notes']}")
-        if property_data.get("parking_notes"):
-            description_lines.append(f"Parking: {property_data['parking_notes']}")
-        if property_data.get("site_contact_name") and property_data.get("site_contact_phone"):
-            description_lines.append(
-                f"Site contact: {property_data['site_contact_name']} ({property_data['site_contact_phone']})"
-            )
+        # Property-level on-site info
+        if property_data:
+            if property_data.get("house_code"):
+                description_lines.append(f"Access Code: {property_data['house_code']}")
+            if property_data.get("access_notes"):
+                description_lines.append(f"Access: {property_data['access_notes']}")
+            if property_data.get("parking_notes"):
+                description_lines.append(f"Parking: {property_data['parking_notes']}")
+            if property_data.get("site_contact_name") and property_data.get("site_contact_phone"):
+                description_lines.append(
+                    f"Site contact: {property_data['site_contact_name']} ({property_data['site_contact_phone']})"
+                )
 
-    # Crew assignment
-    if crew_emails:
-        description_lines.append(f"Crew: {len(crew_emails)} assigned")
+        # Crew assignment
+        if crew_emails:
+            description_lines.append(f"Crew: {len(crew_emails)} assigned")
 
-    if job.get("notes"):
-        description_lines.append(f"\nNotes: {job['notes']}")
-    description_lines.append("\n— The Maine Cleaning Co.")
+        if job.get("notes"):
+            description_lines.append(f"\nNotes: {job['notes']}")
+        description_lines.append("\n— The Maine Cleaning Co.")
 
     # Filter None entries
     description = "\n".join(line for line in description_lines if line)

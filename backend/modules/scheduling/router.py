@@ -636,9 +636,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
                 "property_id": job.property_id,
             }
-            event_id = create_event(job_dict, client_dict)
+            # Invite the customer (attendee + email) so the cleaning lands on
+            # their own calendar — gated by the Settings toggle and requires an
+            # email to invite to.
+            from modules.settings.router import customer_invites_enabled
+            invite = customer_invites_enabled(db) and bool(client and client.email)
+            event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
-                job.calendar_invite_sent = False  # Not invited until user says so
+                job.calendar_invite_sent = invite
                 job.gcal_event_id = event_id
                 db.commit()
                 db.refresh(job)
@@ -711,6 +716,30 @@ def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 18
                 "detail": "Could not load events from Google.", "events": []}
 
 
+@router.get("/gcal-sync-status", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def gcal_sync_status(db: Session = Depends(get_db)):
+    """How many upcoming jobs aren't on Google Calendar yet.
+
+    The Calendar page is a read-only Google embed, so it only shows jobs that
+    were actually pushed to GCal. This drives a "reconcile" banner there: when
+    app jobs (often created before Google was connected, or whose push failed)
+    have no gcal_event_id, they're invisible on that page — surfacing the count
+    + a Push button lets the operator close the gap in one click.
+    """
+    try:
+        from integrations.google_calendar import is_configured
+        configured = bool(is_configured())
+    except Exception:
+        configured = False
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    unsynced = db.query(Job).filter(
+        Job.gcal_event_id.is_(None),
+        Job.status.in_(["scheduled", "in_progress"]),
+        Job.scheduled_date >= today,
+    ).count()
+    return {"unsynced_count": unsynced, "configured": configured}
+
+
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_to_gcal(db: Session = Depends(get_db)):
     """Push any BrightBase jobs that don't yet have a GCal event."""
@@ -729,6 +758,8 @@ def push_to_gcal(db: Session = Depends(get_db)):
     if not jobs:
         return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
 
+    from modules.settings.router import customer_invites_enabled
+    invites_on = customer_invites_enabled(db)
     created_count = 0
     errors = []
 
@@ -742,9 +773,11 @@ def push_to_gcal(db: Session = Depends(get_db)):
             "property_id": job.property_id,
         }
         try:
-            event_id = create_event(job_dict, client_dict)
+            invite = invites_on and bool(client and client.email)
+            event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
                 job.gcal_event_id = event_id
+                job.calendar_invite_sent = invite
                 created_count += 1
         except Exception as e:
             errors.append({"job_id": job.id, "error": str(e)})

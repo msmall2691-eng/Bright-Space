@@ -12,10 +12,38 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-database_url = os.getenv("DATABASE_URL", "sqlite:///./brightbase.db")
+# DATABASE_URL is REQUIRED — same contract as the app (database/db.py). The old
+# default `sqlite:///./brightbase.db` was dangerous: if a deploy ever ran
+# `alembic upgrade head` without DATABASE_URL in its environment, it would
+# silently migrate a throwaway SQLite file inside the container, exit 0, and
+# leave the real Postgres un-migrated (schema drift with a "successful" deploy).
+# Fail loudly instead of migrating the wrong database.
+database_url = os.getenv("DATABASE_URL", "").strip()
+if not database_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set — refusing to run migrations against the SQLite "
+        "fallback. Set DATABASE_URL to the Postgres URL (production) or an explicit "
+        "sqlite:///./local.db for local dev/tests."
+    )
 if database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 config.set_main_option("sqlalchemy.url", database_url)
+
+# Log WHICH database we're migrating (host/db only — never the credentials) so
+# the deploy logs make the target unambiguous. Answers "which DB did alembic
+# actually touch?" at a glance.
+def _redact(url: str) -> str:
+    # Keep ONLY scheme + host[:port] + db name. Drop userinfo AND the query
+    # string — credentials can hide in either (user:pass@host or ?password=…).
+    try:
+        from urllib.parse import urlsplit
+        p = urlsplit(url)
+        host = p.hostname or ""
+        port = f":{p.port}" if p.port else ""
+        return f"{p.scheme}://{host}{port}{p.path}"
+    except Exception:
+        return (url.split("://", 1)[0] if "://" in url else "db") + "://…"
+print(f"[alembic] migrating target: {_redact(database_url)}", flush=True)
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
@@ -63,14 +91,13 @@ def run_migrations_online() -> None:
             connection=connection, target_metadata=target_metadata
         )
 
+        # Let migration errors propagate. The previous version swallowed any
+        # "already exists" / DuplicateTable error and pass-ed, which silently
+        # aborted the chain mid-way (leaving the DB behind a "successful" deploy)
+        # AND hid the real failure from a manual `alembic upgrade head`. Failing
+        # loudly is the only way drift gets noticed and fixed.
         with context.begin_transaction():
-            try:
-                context.run_migrations()
-            except Exception as e:
-                if "already exists" in str(e) or "DuplicateTable" in str(type(e)):
-                    pass
-                else:
-                    raise
+            context.run_migrations()
 
 
 if context.is_offline_mode():
