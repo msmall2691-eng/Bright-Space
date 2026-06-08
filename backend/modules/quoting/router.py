@@ -255,7 +255,7 @@ def quotes_needing_follow_up(
     return out
 
 
-@router.get("/{quote_id}")
+@router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db)):
     return _quote_dict(_get_quote_or_404(quote_id, db))
 
@@ -288,7 +288,7 @@ def _apply_update(quote: Quote, data: dict) -> None:
     quote.updated_at = datetime.now()
 
 
-@router.patch("/{quote_id}")
+@router.patch("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
     """Partial update (the Quoting UI uses PATCH for both edits and status)."""
     quote = _get_quote_or_404(quote_id, db)
@@ -299,7 +299,7 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
 
 
 # PUT kept as an alias of PATCH for backward compatibility.
-@router.put("/{quote_id}")
+@router.put("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
     return patch_quote(quote_id, quote_data, db)
 
@@ -315,7 +315,7 @@ class QuoteSendRequest(BaseModel):
     custom_message: Optional[str] = None
 
 
-@router.post("/{quote_id}/send")
+@router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
 def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db)):
     """Actually DELIVER the quote to the customer over the chosen channel(s), then
     mark it sent. Email attaches the PDF; SMS texts the public accept-link.
@@ -439,7 +439,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     }
 
 
-@router.post("/{quote_id}/generate-token")
+@router.post("/{quote_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
 def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     """Ensure a public token exists and return it + the shareable link."""
     quote = _get_quote_or_404(quote_id, db)
@@ -453,7 +453,7 @@ def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{quote_id}/accept")
+@router.post("/{quote_id}/accept", dependencies=[Depends(require_role("admin", "manager"))])
 def accept_quote(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     if quote.status in ("accepted", "declined"):
@@ -466,7 +466,7 @@ def accept_quote(quote_id: int, db: Session = Depends(get_db)):
     return _quote_dict(quote)
 
 
-@router.post("/{quote_id}/decline")
+@router.post("/{quote_id}/decline", dependencies=[Depends(require_role("admin", "manager"))])
 def decline_quote(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     if quote.status in ("accepted", "declined"):
@@ -483,7 +483,7 @@ def decline_quote(quote_id: int, db: Session = Depends(get_db)):
 # Convert accepted quote -> Job
 # ========================
 
-@router.post("/{quote_id}/convert-to-job")
+@router.post("/{quote_id}/convert-to-job", dependencies=[Depends(require_role("admin", "manager"))])
 def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
     """Create a Job from a quote. The date/time is left unset for the user to
     fill in on the Scheduling page; every Job needs a Property, so we reuse the
@@ -779,7 +779,7 @@ def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends
     return {"id": qr.id, "status": qr.status, "requester_name": qr.requester_name}
 
 
-@router.get("/requests/")
+@router.get("/requests/", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def list_quote_requests(
     db: Session = Depends(get_db),
     status: Optional[str] = Query(None),
@@ -802,7 +802,7 @@ def list_quote_requests(
     ]
 
 
-@router.put("/requests/{request_id}")
+@router.put("/requests/{request_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db)):
     qr = db.query(QuoteRequest).filter(QuoteRequest.id == request_id).first()
     if not qr:
@@ -835,7 +835,7 @@ def _pdf_line_items(quote: Quote) -> list:
     ]
 
 
-@router.post("/{quote_id}/generate-pdf")
+@router.post("/{quote_id}/generate-pdf", dependencies=[Depends(require_role("admin", "manager"))])
 def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     client = db.query(Client).filter(Client.id == quote.client_id).first()
@@ -864,7 +864,7 @@ def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{quote_id}/send-email")
+@router.post("/{quote_id}/send-email", dependencies=[Depends(require_role("admin", "manager"))])
 def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     if "@" not in recipient_email:
@@ -928,7 +928,7 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
     }
 
 
-@router.get("/{quote_id}/email-history")
+@router.get("/{quote_id}/email-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote_email_history(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     emails = (
