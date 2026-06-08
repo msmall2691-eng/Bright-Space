@@ -94,6 +94,7 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
     client_dict = {
         "id": client.id,
         "name": client.name or "",
+        "phone": client.phone or None,
     } if client else {}
 
     property_dict = {
@@ -101,6 +102,14 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
         "name": property_obj.name or "",
         "address": property_obj.address or "",
         "property_type": property_obj.property_type or "residential",
+        # Day-of operational details the cleaner/owner needs on site.
+        "house_code": property_obj.house_code or None,
+        "access_notes": property_obj.access_notes or None,
+        "parking_notes": property_obj.parking_notes or None,
+        "site_contact_name": property_obj.site_contact_name or None,
+        "site_contact_phone": property_obj.site_contact_phone or None,
+        "check_in_time": property_obj.check_in_time or None,
+        "check_out_time": property_obj.check_out_time or None,
     } if property_obj else {}
 
     return {
@@ -290,6 +299,7 @@ def get_visits(
     status: Optional[str] = None,
     property_type: Optional[str] = None,
     job_id: Optional[int] = None,
+    cleaner_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -318,6 +328,14 @@ def get_visits(
     if property_type and property_type != "all":
         visits = [v for v in visits if v.job and v.job.property and v.job.property.property_type == property_type]
         total_count = len(visits)  # Recalculate total after Python filter
+
+    # Filter to a single cleaner's visits (membership in cleaner_ids). Done in
+    # Python so it's portable across the JSON cleaner_ids column on sqlite/pg;
+    # compared as strings since ids may be ints (User.id) or strings (crew ids).
+    if cleaner_id:
+        cid = str(cleaner_id)
+        visits = [v for v in visits if any(str(c) == cid for c in (v.cleaner_ids or []))]
+        total_count = len(visits)
 
     return {
         "items": [
