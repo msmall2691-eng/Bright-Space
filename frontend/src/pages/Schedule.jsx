@@ -1378,20 +1378,23 @@ export default function Schedule() {
       <div className="bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
           {/* Single compact row: title · date nav · view toggle · New Job */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
 
-            {/* View switcher — in-app calendar by default, one tap to Google. */}
+            {/* View switcher — in-app calendar by default, one tap to Google.
+                Short labels on phones so the toolbar fits narrow viewports. */}
             <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
-              {[['month', 'Calendar'], ['list', 'Week'], ['agenda', 'Day'], ['google', 'Google']].map(([v, label]) => (
+              {[['month', 'Calendar', 'Cal'], ['list', 'Week', 'Wk'], ['agenda', 'Day', 'Day'], ['google', 'Google', 'GCal']].map(([v, label, short]) => (
                 <button key={v} onClick={() => setViewMode(v)}
                   className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
-                  {label}
+                  <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
                 </button>
               ))}
             </div>
 
-            {!isGoogleOnly && (
+            {/* Outer date nav — only for Week/Day. Month mode uses CalendarView's
+                own month nav, so these arrows would otherwise do nothing. */}
+            {!isGoogleOnly && viewMode !== 'month' && (
               <div className="hidden sm:flex items-center gap-1 ml-1">
                 <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                   <ChevronLeft className="w-4 h-4" />
