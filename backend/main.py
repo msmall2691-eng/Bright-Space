@@ -169,6 +169,19 @@ async def startup():
     init_db()
     start_scheduler()
 
+    # Loudly flag a behind-on-migrations DB (the usual cause of mysterious 500s)
+    # so it screams in the logs at boot instead of failing per-endpoint.
+    from database.db import check_schema_drift
+    drift = check_schema_drift()
+    if drift.get("ok") is False:
+        print(f"🛑 SCHEMA DRIFT: DB at migration {drift.get('db_revision')} but code head is "
+              f"{drift.get('head_revision')}. Run 'alembic upgrade head' — endpoints reading newer "
+              f"columns may 500 until then.")
+    elif drift.get("ok"):
+        print(f"✓ DB schema at head ({drift.get('head_revision')})")
+    else:
+        print(f"⚠️  Schema-drift check skipped: {drift.get('error')}")
+
     # Check for visits/jobs drift. Wrapped so a missing table (fresh DB,
     # mid-migration) doesn't take down the whole app at startup.
     from database.db import SessionLocal

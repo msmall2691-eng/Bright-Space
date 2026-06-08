@@ -43,6 +43,45 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def check_schema_drift() -> dict:
+    """Compare the DB's applied Alembic revision to the code's head revision.
+
+    Fail-soft: returns a dict and NEVER raises. Run at startup to LOUDLY surface a
+    behind-on-migrations production DB — the usual cause of "column does not
+    exist" 500s (e.g. the GET /api/quotes/ 500 in the June audit) — instead of
+    letting individual endpoints fail mysteriously later. Returns:
+      {"ok": True|False|None, "db_revision": str|None, "head_revision": str|None}
+    ok is None when the check itself couldn't run (no alembic_version table on a
+    fresh/SQLite DB, etc.).
+    """
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+        cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
+        head = ScriptDirectory.from_config(cfg).get_current_head()
+        current = None
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
+                current = row[0] if row else None
+        except Exception:
+            return {"ok": None, "db_revision": None, "head_revision": head,
+                    "error": "alembic_version table not found"}
+        ok = current == head
+        if not ok:
+            logger.error(
+                "[schema-drift] DB is at migration %r but code head is %r. "
+                "Run 'alembic upgrade head' — endpoints that read newer columns "
+                "may return 500 until migrations are applied.", current, head,
+            )
+        return {"ok": ok, "db_revision": current, "head_revision": head}
+    except Exception as e:
+        logger.warning("[schema-drift] could not verify migration state: %s", e)
+        return {"ok": None, "error": str(e)}
+
+
 def init_db():
     # Note: Schema creation and migrations are now handled by Alembic.
     # The 'alembic upgrade head' command runs before the app starts,
