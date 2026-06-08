@@ -1107,8 +1107,13 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
         if job.gcal_event_id:
             try:
                 from integrations.google_calendar import delete_event
-                delete_event(job.gcal_event_id, job.job_type or "residential")
-                job.gcal_event_id = None
+                # delete_event returns False (doesn't raise) when Google rejects
+                # or is unavailable. Only detach the id on success, so a failed
+                # delete can be retried next time rather than orphaning the event.
+                if delete_event(job.gcal_event_id, job.job_type or "residential"):
+                    job.gcal_event_id = None
+                else:
+                    logger.warning(f"GCal delete did not apply for cancelled job {job.id}; keeping event id to retry")
             except Exception as e:
                 logger.warning(f"GCal delete failed for cancelled job {job.id}: {e}")
         db.commit()
