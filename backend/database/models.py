@@ -491,7 +491,7 @@ class LeadIntake(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
     # Back-reference to the quote this intake was converted into (§6 traceability).
-    converted_quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
+    converted_quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True)
 
     name = Column(String, nullable=False)
     email = Column(String)

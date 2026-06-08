@@ -279,6 +279,12 @@ def _apply_update(quote: Quote, data: dict) -> None:
         quote.subtotal, quote.tax, quote.total = _compute_totals(
             quote.items, quote.tax_rate, quote.discount
         )
+    # Stamp converted_at on the transition to 'converted' no matter which path
+    # got here — the "Set up schedule" onboarding flow PATCHes status directly
+    # rather than going through convert-to-job, and the conversion metric needs
+    # the timestamp set there too.
+    if quote.status == "converted" and not quote.converted_at:
+        quote.converted_at = datetime.now()
     quote.updated_at = datetime.now()
 
 
