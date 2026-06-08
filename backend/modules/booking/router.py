@@ -139,7 +139,11 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
     # so the operator sees a price range on every new intake without having
     # to flip back to the website.
     estimate = estimate_price(
-        service_type=service_type,
+        # Pass the RAW service type so the engine can detect deep-clean /
+        # move-in-out (the x1.5 / x1.65 multipliers). The mapped value above
+        # flattens those to "residential" and silently dropped the multiplier.
+        # estimate_price() does its own alias mapping for the base rate.
+        service_type=data.serviceType or "residential",
         bedrooms=data.bedrooms,
         bathrooms=data.bathrooms,
         square_footage=data.squareFeet,
@@ -229,7 +233,11 @@ def instant_quote(request: Request, data: InstantQuoteRequest):
     range and the operator-facing range agree by construction."""
     service_type = BOOKING_SERVICE_MAP.get((data.serviceType or "").lower(), "residential")
     return estimate_price(
-        service_type=service_type,
+        # Pass the RAW service type so the engine can detect deep-clean /
+        # move-in-out (the x1.5 / x1.65 multipliers). The mapped value above
+        # flattens those to "residential" and silently dropped the multiplier.
+        # estimate_price() does its own alias mapping for the base rate.
+        service_type=data.serviceType or "residential",
         bedrooms=data.bedrooms,
         bathrooms=data.bathrooms,
         square_footage=data.squareFeet,
