@@ -33,12 +33,16 @@ config.set_main_option("sqlalchemy.url", database_url)
 # the deploy logs make the target unambiguous. Answers "which DB did alembic
 # actually touch?" at a glance.
 def _redact(url: str) -> str:
+    # Keep ONLY scheme + host[:port] + db name. Drop userinfo AND the query
+    # string — credentials can hide in either (user:pass@host or ?password=…).
     try:
-        scheme = url.split("://", 1)[0]
-        tail = url.split("@", 1)[1] if "@" in url else url.split("://", 1)[1]
-        return f"{scheme}://…@{tail}" if "@" in url else f"{scheme}://{tail}"
+        from urllib.parse import urlsplit
+        p = urlsplit(url)
+        host = p.hostname or ""
+        port = f":{p.port}" if p.port else ""
+        return f"{p.scheme}://{host}{port}{p.path}"
     except Exception:
-        return url.split("://", 1)[0] + "://…"
+        return (url.split("://", 1)[0] if "://" in url else "db") + "://…"
 print(f"[alembic] migrating target: {_redact(database_url)}", flush=True)
 
 def run_migrations_offline() -> None:
