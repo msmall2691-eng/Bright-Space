@@ -32,6 +32,15 @@ router = APIRouter(tags=["quotes"])
 # Helpers
 # ========================
 
+def _iso(v):
+    """Serialize a date/datetime to ISO 8601, tolerating values that are
+    already strings (legacy VARCHAR columns) instead of raising
+    AttributeError and 500-ing the whole list endpoint."""
+    if v is None:
+        return None
+    return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
+
 def _parse_date(value) -> Optional[date]:
     """'YYYY-MM-DD' (or a date) -> date | None. Empty string -> None."""
     if not value:
@@ -91,21 +100,21 @@ def _quote_dict(q: Quote) -> dict:
         "discount": q.discount,
         "total": q.total,
         "status": q.status,
-        "valid_until": q.valid_until.isoformat() if q.valid_until else None,
-        "sent_at": q.sent_at.isoformat() if q.sent_at else None,
-        "viewed_at": q.viewed_at.isoformat() if q.viewed_at else None,
-        "accepted_at": q.accepted_at.isoformat() if q.accepted_at else None,
+        "valid_until": _iso(q.valid_until),
+        "sent_at": _iso(q.sent_at),
+        "viewed_at": _iso(q.viewed_at),
+        "accepted_at": _iso(q.accepted_at),
         "accepted_by_name": q.accepted_by_name,
         "accepted_by_email": q.accepted_by_email,
-        "declined_at": q.declined_at.isoformat() if q.declined_at else None,
-        "converted_at": q.converted_at.isoformat() if getattr(q, "converted_at", None) else None,
-        "follow_up_sent_at": q.follow_up_sent_at.isoformat() if getattr(q, "follow_up_sent_at", None) else None,
+        "declined_at": _iso(q.declined_at),
+        "converted_at": _iso(getattr(q, "converted_at", None)),
+        "follow_up_sent_at": _iso(getattr(q, "follow_up_sent_at", None)),
         "declined_reason": getattr(q, "declined_reason", None),
         "declined_by_name": getattr(q, "declined_by_name", None),
         "requested_changes_message": getattr(q, "requested_changes_message", None),
-        "requested_changes_at": q.requested_changes_at.isoformat() if getattr(q, "requested_changes_at", None) else None,
-        "created_at": q.created_at.isoformat() if q.created_at else None,
-        "updated_at": q.updated_at.isoformat() if q.updated_at else None,
+        "requested_changes_at": _iso(getattr(q, "requested_changes_at", None)),
+        "created_at": _iso(q.created_at),
+        "updated_at": _iso(q.updated_at),
     }
 
 
