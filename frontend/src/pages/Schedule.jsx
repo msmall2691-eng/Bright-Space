@@ -905,12 +905,10 @@ export default function Schedule() {
   // desktop — see the useEffect below.
   const VALID_VIEWS = ['agenda', 'list', 'month', 'google']
   const rawView = searchParams.get('view')
-  // Schedule is Google-Calendar only: it shows your embedded Google Calendar and
-  // nothing else. The native agenda/list/month views remain reachable via an
-  // explicit ?view= (kept for debugging/backfill), but the UI defaults to — and
-  // stays on — Google. (Note: we intentionally ignore any old localStorage
-  // 'schedule_view' so a previously-stuck Month pick doesn't override this.)
-  const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'google'
+  // Default to the rich in-app calendar (month grid: color-by-service, drag to
+  // reschedule, click a day to book). A one-click view switcher jumps to
+  // Week / Day / the embedded Google Calendar. ?view= persists the choice.
+  const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'month'
   const isGoogleOnly = viewMode === 'google'
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
@@ -1382,6 +1380,16 @@ export default function Schedule() {
           {/* Single compact row: title · date nav · view toggle · New Job */}
           <div className="flex items-center gap-2 sm:gap-3">
             <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
+
+            {/* View switcher — in-app calendar by default, one tap to Google. */}
+            <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
+              {[['month', 'Calendar'], ['list', 'Week'], ['agenda', 'Day'], ['google', 'Google']].map(([v, label]) => (
+                <button key={v} onClick={() => setViewMode(v)}
+                  className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
 
             {!isGoogleOnly && (
               <div className="hidden sm:flex items-center gap-1 ml-1">
