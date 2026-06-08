@@ -541,8 +541,9 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
             f"Total: ${float(quote.total or 0):,.2f}",
             f"Open it: {app_base}/quoting",
         ]
-        html = "<br>".join(l or "&nbsp;" for l in body_lines)
-        send_email(to=owner, subject=subject, html_body=f"<div style='font-family:sans-serif'>{html}</div>",
+        import html as _html
+        body = "<br>".join(_html.escape(l) if l else "&nbsp;" for l in body_lines)
+        send_email(to=owner, subject=subject, html_body=f"<div style='font-family:sans-serif'>{body}</div>",
                    text_body="\n".join(body_lines))
     except Exception as e:
         logger.warning(f"[quotes] owner notification failed for {quote.id}: {e}")
@@ -567,10 +568,11 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
             "",
             "Questions? Just reply to this email.",
         ]
-        html = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
-            "<br>".join(l or "&nbsp;" for l in lines) + "</div>"
+        import html as _html
+        body = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
+            "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines) + "</div>"
         send_email(to=to_email, subject=f"Quote {quote.quote_number} confirmed — thank you!",
-                   html_body=html, text_body="\n".join(lines))
+                   html_body=body, text_body="\n".join(lines))
     except Exception as e:
         logger.warning(f"[quotes] customer confirmation email failed for {quote.id}: {e}")
 
