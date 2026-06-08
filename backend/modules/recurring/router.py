@@ -358,8 +358,10 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
 
     # Auto-push new jobs to Google Calendar
     if new_jobs:
+        from modules.settings.router import customer_invites_enabled
         client = db.query(Client).filter(Client.id == sched.client_id).first()
-        client_dict = {"name": client.name if client else "", "email": getattr(client, "email", None)}
+        client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
+        invite = customer_invites_enabled(db) and bool(client and client.email)
         for job in new_jobs:
             db.refresh(job)
             job_dict = {
@@ -368,9 +370,9 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
             }
             try:
-                event_id = create_event(job_dict, client_dict)
+                event_id = create_event(job_dict, client_dict, send_invite=invite)
                 if event_id:
-                    job.calendar_invite_sent = True
+                    job.calendar_invite_sent = invite
                     job.gcal_event_id = event_id
                     log_calendar_event(
                         db, "created",

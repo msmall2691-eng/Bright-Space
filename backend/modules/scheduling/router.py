@@ -636,9 +636,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
                 "property_id": job.property_id,
             }
-            event_id = create_event(job_dict, client_dict)
+            # Invite the customer (attendee + email) so the cleaning lands on
+            # their own calendar — gated by the Settings toggle and requires an
+            # email to invite to.
+            from modules.settings.router import customer_invites_enabled
+            invite = customer_invites_enabled(db) and bool(client and client.email)
+            event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
-                job.calendar_invite_sent = False  # Not invited until user says so
+                job.calendar_invite_sent = invite
                 job.gcal_event_id = event_id
                 db.commit()
                 db.refresh(job)
@@ -753,6 +758,8 @@ def push_to_gcal(db: Session = Depends(get_db)):
     if not jobs:
         return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
 
+    from modules.settings.router import customer_invites_enabled
+    invites_on = customer_invites_enabled(db)
     created_count = 0
     errors = []
 
@@ -766,9 +773,11 @@ def push_to_gcal(db: Session = Depends(get_db)):
             "property_id": job.property_id,
         }
         try:
-            event_id = create_event(job_dict, client_dict)
+            invite = invites_on and bool(client and client.email)
+            event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
                 job.gcal_event_id = event_id
+                job.calendar_invite_sent = invite
                 created_count += 1
         except Exception as e:
             errors.append({"job_id": job.id, "error": str(e)})
