@@ -1096,8 +1096,24 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
         except Exception as e:
             logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
-    # Sync update to Google Calendar if event exists
-    if job.gcal_event_id:
+    # Google Calendar + visits sync.
+    if job.status == "cancelled":
+        # Cancelling pulls the job off the schedule everywhere: cancel its active
+        # visits (so the agenda/list views drop it too) and remove the Google
+        # Calendar event entirely instead of re-pushing it.
+        for v in getattr(job, "visits", []) or []:
+            if v.status not in ("cancelled", "completed"):
+                v.status = "cancelled"
+        if job.gcal_event_id:
+            try:
+                from integrations.google_calendar import delete_event
+                delete_event(job.gcal_event_id, job.job_type or "residential")
+                job.gcal_event_id = None
+            except Exception as e:
+                logger.warning(f"GCal delete failed for cancelled job {job.id}: {e}")
+        db.commit()
+        db.refresh(job)
+    elif job.gcal_event_id:
         try:
             from integrations.google_calendar import update_event
             client = db.query(Client).filter(Client.id == job.client_id).first()

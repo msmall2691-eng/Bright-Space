@@ -90,6 +90,10 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   }, [])
 
   const filteredJobs = jobs.filter(j => {
+    // Hide cancelled jobs by default so a deleted/cancelled job comes OFF the
+    // calendar instead of lingering crossed-out. Still reachable by explicitly
+    // filtering for the "Cancelled" status.
+    if (j.status === 'cancelled' && filters.status !== 'cancelled') return false
     if (filters.job_type && j.job_type !== filters.job_type) return false
     if (filters.status && j.status !== filters.status) return false
     if (filters.property_id && String(j.property_id) !== filters.property_id) return false
