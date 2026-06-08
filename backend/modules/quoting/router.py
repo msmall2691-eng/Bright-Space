@@ -548,6 +548,33 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
         logger.warning(f"[quotes] owner notification failed for {quote.id}: {e}")
 
 
+def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) -> None:
+    """Email the customer a receipt when they accept their quote. Best-effort —
+    never let a failure block the acceptance."""
+    if not to_email or "@" not in to_email:
+        return
+    try:
+        from integrations.email import _load_smtp_creds, send_email
+        creds = _load_smtp_creds()
+        company = creds.get("from_name") or "Our team"
+        name = quote.accepted_by_name or (quote.client.name if quote.client else "there")
+        total = f"${float(quote.total or 0):,.2f}"
+        lines = [
+            f"Hi {name},",
+            "",
+            f"Thanks for accepting quote {quote.quote_number} ({total}).",
+            f"{company} will reach out shortly to schedule your service.",
+            "",
+            "Questions? Just reply to this email.",
+        ]
+        html = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
+            "<br>".join(l or "&nbsp;" for l in lines) + "</div>"
+        send_email(to=to_email, subject=f"Quote {quote.quote_number} confirmed — thank you!",
+                   html_body=html, text_body="\n".join(lines))
+    except Exception as e:
+        logger.warning(f"[quotes] customer confirmation email failed for {quote.id}: {e}")
+
+
 @router.get("/public/{token}")
 def public_view_quote(token: str, db: Session = Depends(get_db)):
     """Client-facing quote view. Marks the quote VIEWED on first open."""
@@ -587,6 +614,11 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
         db, quote, f"✅ Quote {quote.quote_number} accepted",
         [f"{who} accepted quote {quote.quote_number}.",
          "You can convert it to a scheduled job from the Quoting page."],
+    )
+    # Send the customer a receipt/confirmation too.
+    _send_customer_quote_confirmation(
+        db, quote,
+        quote.accepted_by_email or (quote.client.email if quote.client else None),
     )
     db.commit()
     return {"status": "accepted", "quote_number": quote.quote_number}
