@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Users, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
   Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical, Zap, LogIn,
-  List, Grid3x3, AlignLeft, Wand2, Wrench, ChevronDown
+  List, Grid3x3, AlignLeft, Wand2, Wrench, ChevronDown, Camera
 } from 'lucide-react'
 import { get, post, put, del } from '../api'
 import Button from '../components/ui/Button'
@@ -257,15 +257,21 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
 }
 
 
-const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect }) => {
+const VISIT_ACCENT = { str: 'border-l-amber-400', str_turnover: 'border-l-amber-400', residential: 'border-l-blue-400', commercial: 'border-l-purple-400' }
+const cleanerInitials = (name) => (name || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'
+
+const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect, empName }) => {
   const propertyType = property?.property_type || 'residential'
   const config = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
   const PropertyIcon = config.icon
   const statusConfig = VISIT_STATUS_CONFIG[visit.status] || VISIT_STATUS_CONFIG.scheduled
+  const accent = VISIT_ACCENT[propertyType] || 'border-l-blue-400'
 
-  const hasAssigned = visit.cleaner_ids?.length > 0
-  const hasGcal = visit.gcal_event_id ? '✅' : ''
-  const hasSMS = job?.sms_reminder_sent ? '📲' : ''
+  const cleaners = visit.cleaner_ids || []
+  const hasAssigned = cleaners.length > 0
+  const hasGcal = !!visit.gcal_event_id
+  const hasSMS = !!job?.sms_reminder_sent
+  const hasPhotos = (visit.photos || []).length > 0
   const isCompleted = visit.status === 'completed'
 
   // Phase 8 redesign: tighter list-row layout. Single horizontal row with
@@ -275,7 +281,7 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
     <div
       className={`group flex items-center gap-3 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg transition-colors cursor-pointer ${
         selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-panel hover:bg-bg'
-      } border border-hairline`}
+      } border border-hairline border-l-4 ${accent}`}
       onClick={() => onEdit(visit, job, property)}
     >
       <input
@@ -319,13 +325,25 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
         </div>
       </div>
 
-      {/* Status pill + cleaner indicator */}
+      {/* Status icons + pill + cleaner avatars */}
       <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1">
+          {hasGcal && <span title="On Google Calendar"><Calendar className="w-3.5 h-3.5 text-indigo-500" /></span>}
+          {hasSMS && <span title="Reminder sent"><MessageCircle className="w-3.5 h-3.5 text-cyan-500" /></span>}
+          {hasPhotos && <span title="Photos attached"><Camera className="w-3.5 h-3.5 text-emerald-500" /></span>}
+        </div>
         <StatusBadge status={statusConfig.badge} className="text-[10px]">{statusConfig.label}</StatusBadge>
         {hasAssigned ? (
-          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-            <User className="w-2.5 h-2.5" /> {visit.cleaner_ids.length}
-          </span>
+          <div className="flex items-center -space-x-1" title={cleaners.map(id => empName?.(id) || `Cleaner ${id}`).join(', ')}>
+            {cleaners.slice(0, 3).map((id, i) => (
+              <span key={i} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold border border-panel">
+                {cleanerInitials(empName?.(id) || `C${id}`)}
+              </span>
+            ))}
+            {cleaners.length > 3 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-bg-2 text-ink-3 text-[9px] font-bold border border-panel">+{cleaners.length - 3}</span>
+            )}
+          </div>
         ) : (
           <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
             no cleaner
@@ -1668,6 +1686,7 @@ export default function Schedule() {
                           onDelete={handleDelete}
                           selected={selectedVisitIds.has(visit.id)}
                           onToggleSelect={toggleVisitSelect}
+                          empName={empName}
                         />
                       ))}
                     </div>
@@ -1718,6 +1737,33 @@ export default function Schedule() {
                   <p className="text-sm sm:text-base text-ink break-words">{selectedVisit.property?.address}</p>
                 </div>
 
+                {/* On-site access details (house code, entry/parking notes, site
+                    contact, STR check-in/out) — what a crew needs to get in. */}
+                {(() => {
+                  const p = selectedVisit.property || {}
+                  if (!(p.house_code || p.access_notes || p.parking_notes || p.site_contact_phone || p.check_in_time || p.check_out_time)) return null
+                  return (
+                    <div>
+                      <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Access</p>
+                      <div className="text-sm text-ink space-y-0.5">
+                        {p.house_code && <p>Code <span className="font-semibold">{p.house_code}</span></p>}
+                        {p.access_notes && <p className="break-words">{p.access_notes}</p>}
+                        {p.parking_notes && <p className="text-ink-2">Parking: {p.parking_notes}</p>}
+                        {(p.site_contact_name || p.site_contact_phone) && (
+                          <p>Site contact: {p.site_contact_name || ''}{p.site_contact_phone ? ` · ${p.site_contact_phone}` : ''}</p>
+                        )}
+                        {(p.check_out_time || p.check_in_time) && (
+                          <p className="text-ink-3">
+                            {p.check_out_time ? `Checkout ${p.check_out_time}` : ''}
+                            {p.check_out_time && p.check_in_time ? ' · ' : ''}
+                            {p.check_in_time ? `Check-in ${p.check_in_time}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 <div>
                   <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Client</p>
                   <p className="text-sm sm:text-base text-ink">{selectedVisit.job?.client_name}</p>
@@ -1760,7 +1806,16 @@ export default function Schedule() {
                 {selectedVisit.visit.cleaner_ids?.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Assigned Cleaners</p>
-                    <p className="text-sm sm:text-base text-ink">{selectedVisit.visit.cleaner_ids.length} cleaner(s)</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedVisit.visit.cleaner_ids.map((cid, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 text-sm text-ink bg-bg-2 pl-1 pr-2.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">
+                            {cleanerInitials(empName(cid) || `C${cid}`)}
+                          </span>
+                          {empName(cid) || `Cleaner ${cid}`}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -1828,9 +1883,15 @@ export default function Schedule() {
                 )}
 
                 {/* Completion summary, once a visit has been completed */}
-                {selectedVisit.visit.status === 'completed' && (selectedVisit.visit.checklist_results || selectedVisit.visit.photos?.length > 0) && (
+                {selectedVisit.visit.status === 'completed' && (
                   <div className="border-t border-hairline pt-3">
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Completion</p>
+                    {(selectedVisit.visit.completed_at || selectedVisit.visit.completed_by) && (
+                      <p className="text-[12px] text-ink-3 mb-1">
+                        {selectedVisit.visit.completed_at && `Completed ${new Date(selectedVisit.visit.completed_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+                        {selectedVisit.visit.completed_by && ` · by ${empName(selectedVisit.visit.completed_by)}`}
+                      </p>
+                    )}
                     {selectedVisit.visit.checklist_results && (
                       <ul className="text-sm text-ink space-y-0.5">
                         {Object.entries(selectedVisit.visit.checklist_results).map(([task, done]) => (
