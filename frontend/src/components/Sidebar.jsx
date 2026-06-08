@@ -9,6 +9,7 @@ import { logout } from '../api'
 
 const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/today',       icon: CalendarDays,    label: 'Today' },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
   { divider: true, label: 'Sales Pipeline' },
   { to: '/requests',    icon: Inbox,           label: 'Leads' },

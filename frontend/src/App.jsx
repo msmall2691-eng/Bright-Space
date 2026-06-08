@@ -64,6 +64,7 @@ function SidebarWithUnread(props) {
 }
 
 // Lazy-loaded pages for code splitting
+const Today = lazy(() => import('./pages/Today'))
 const Workspace = lazy(() => import('./pages/Workspace'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
@@ -144,6 +145,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/today" element={<Today />} />
               <Route path="/workspace" element={<Workspace />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientProfile />} />
