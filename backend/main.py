@@ -216,7 +216,22 @@ async def manual_ical_sync():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "BrightBase"}
+    # Surface schema-drift state here (not just in startup logs) so a
+    # behind-on-migrations DB — the usual cause of "column does not exist"
+    # 500s like the GET/POST /api/quotes failures — can be diagnosed from the
+    # browser without log access. Fail-soft: check_schema_drift() never raises.
+    from database.db import check_schema_drift
+    drift = check_schema_drift()
+    return {
+        "status": "ok",
+        "service": "BrightBase",
+        "schema": {
+            "ok": drift.get("ok"),
+            "db_revision": drift.get("db_revision"),
+            "head_revision": drift.get("head_revision"),
+            "error": drift.get("error"),
+        },
+    }
 
 
 @app.get("/api/agents")
