@@ -21,7 +21,7 @@ from schemas.quotes import (
 from database.models import (
     Quote, QuoteRequest, QuoteEmail, Client, Job, Property,
 )
-from modules.auth.router import get_current_user
+from modules.auth.router import get_current_user, require_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -130,7 +130,7 @@ def _assign_quote_number(quote: Quote) -> None:
 # Quote CRUD
 # ========================
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_quote(
     quote_data: QuoteCreate,
     db: Session = Depends(get_db),
@@ -173,7 +173,7 @@ def create_quote(
     return _quote_dict(quote)
 
 
-@router.get("/")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def list_quotes(
     db: Session = Depends(get_db),
     client_id: Optional[int] = Query(None),

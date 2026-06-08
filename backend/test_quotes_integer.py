@@ -54,6 +54,7 @@ def _make_client():
 
     class FakeUser:
         id = 1
+        role = "admin"  # quoting collection routes are now role-gated
 
     app = FastAPI()
     app.include_router(quoting_router, prefix="/api/quotes")
@@ -65,8 +66,9 @@ def _make_client():
 def test_quote_full_lifecycle():
     api, client_id = _make_client()
 
-    # Create — totals computed server-side, quote_number assigned.
-    r = api.post("/api/quotes/", json={
+    # Create — NO trailing slash (the contract the frontend uses; a trailing
+    # slash on the collection route previously caused a 405 in production).
+    r = api.post("/api/quotes", json={
         "client_id": client_id,
         "service_type": "residential",
         "address": "4 Red Barn Cir",
@@ -84,7 +86,7 @@ def test_quote_full_lifecycle():
     assert (q["subtotal"], q["tax"], q["total"]) == (300.0, 16.5, 316.5)
 
     # List + get.
-    assert api.get("/api/quotes/").json()[0]["id"] == qid
+    assert api.get("/api/quotes").json()[0]["id"] == qid
     assert api.get(f"/api/quotes/{qid}").json()["address"] == "4 Red Barn Cir"
 
     # Patch recomputes money.
@@ -125,7 +127,7 @@ def test_quote_full_lifecycle():
 
 def test_create_requires_existing_client():
     api, _ = _make_client()
-    r = api.post("/api/quotes/", json={"client_id": 999999, "items": []})
+    r = api.post("/api/quotes", json={"client_id": 999999, "items": []})
     assert r.status_code == 404
 
 
