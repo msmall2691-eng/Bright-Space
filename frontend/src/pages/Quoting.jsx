@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import JobCreateModal from '../components/JobCreateModal'
+import QuotePreview from '../components/QuotePreview'
 import { get, post, patch, put } from "../api"
 
 
@@ -78,6 +79,8 @@ export default function Quoting() {
   const [converting, setConverting] = useState(null)
   const [toast, setToast] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  // Live customer-facing preview alongside the editor (§7.2 #4 quote reader).
+  const [previewMode, setPreviewMode] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
   // Template manager (create/edit/delete reusable quote templates). Saving needs
   // admin/manager (PUT is role-gated), so only show the editor to those roles.
@@ -620,16 +623,29 @@ export default function Quoting() {
       {/* Quote edit panel — full-screen sheet on mobile (sits above the z-30
           BottomNav so the Save button is reachable), side panel on desktop. */}
       {panel === 'quote' && (
-        <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[500px] sm:border-l sm:border-hairline sm:shrink-0">
+        <div className={`fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:border-l sm:border-hairline sm:shrink-0 ${previewMode ? 'sm:w-[500px] 2xl:w-[900px]' : 'sm:w-[500px]'}`}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
             <div>
               <h2 className="font-semibold text-ink">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
               {selectedIntake && <p className="text-xs text-ink-3 mt-0.5">From: {selectedIntake.name}</p>}
             </div>
-            <button onClick={() => setPanel(null)} className="text-ink-3 hover:text-ink-3"><X className="w-5 h-5" /></button>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPreviewMode(p => !p)}
+                title="Toggle the customer's view"
+                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                  previewMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-bg-2 text-ink-2 border-hairline hover:bg-hairline'
+                }`}>
+                <Eye className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Preview</span>
+              </button>
+              <button onClick={() => setPanel(null)} className="text-ink-3 hover:text-ink p-1"><X className="w-5 h-5" /></button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+          <div className="flex-1 flex overflow-hidden">
+          {/* Editor column — while previewing, the toggle swaps to the preview on
+              smaller screens; the two-pane (editor beside preview) only kicks in
+              at 2xl, where there's room for the widened panel next to the sidebar. */}
+          <div className={`overflow-y-auto p-6 space-y-5 scrollbar-thin ${previewMode ? 'hidden 2xl:block 2xl:w-[460px] 2xl:shrink-0 2xl:border-r 2xl:border-hairline' : 'flex-1'}`}>
 
             {/* Lead's website instant-quote estimate, when building from an intake. */}
             {selectedIntake && (selectedIntake.estimate_min != null || selectedIntake.estimate_max != null) && (
@@ -843,6 +859,14 @@ export default function Quoting() {
                 placeholder="Special instructions, inclusions/exclusions, access details..."
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
+          </div>
+
+          {/* Preview column — the live customer-facing render. */}
+          {previewMode && (
+            <div className="flex-1 overflow-y-auto p-6 bg-bg scrollbar-thin">
+              <QuotePreview form={form} quoteNumber={selected?.quote_number} companyName={companyName} />
+            </div>
+          )}
           </div>
 
           {canEdit ? (
