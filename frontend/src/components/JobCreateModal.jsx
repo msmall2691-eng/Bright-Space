@@ -234,7 +234,7 @@ export default function JobCreateModal({
         return
       }
       const body = {
-        client_id: parseInt(clientId),
+        client_id: parseInt(activeClientId),
         title: form.title,
         job_type: form.job_type,
         scheduled_date: form.scheduled_date,
@@ -254,28 +254,53 @@ export default function JobCreateModal({
     }
   }
 
+  // 3-step guided flow: Who (client + property) → What (title, type, repeat,
+  // notes) → When (date/recurrence + times + address). All the state, handlers
+  // and submit logic above are unchanged; the steps are purely a layout over
+  // them, so every call site keeps working.
+  const [step, setStep] = useState(1)
+  const STEPS = [{ n: 1, label: 'Who' }, { n: 2, label: 'What' }, { n: 3, label: 'When' }]
+  const step1Valid = !!activeClientId          // a client must be chosen/known
+  const step2Valid = !!form.title              // job_type always has a default
+  const goNext = () => setStep(s => Math.min(3, s + 1))
+  const goBack = () => setStep(s => Math.max(1, s - 1))
+  const btn = "px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center sm:justify-end"
       data-testid="job-create-modal"
     >
       <div className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-hairline">
-          <h2 className="font-semibold text-ink">
-            {recurring ? 'Recurring Schedule' : 'Schedule Job'}
-          </h2>
-          <button onClick={onClose} className="text-ink-3 hover:text-ink" aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
+        <div className="px-6 py-4 border-b border-hairline">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-ink">
+              {recurring ? 'Recurring Schedule' : 'Schedule Job'}
+              {clientName && <span className="ml-2 text-xs text-ink-3 font-normal">· {clientName}</span>}
+            </h2>
+            <button onClick={onClose} className="text-ink-3 hover:text-ink" aria-label="Close">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          {/* Step indicator */}
+          <div className="flex items-center gap-1.5 mt-3">
+            {STEPS.map((s, i) => (
+              <div key={s.n} className="flex items-center gap-1.5 flex-1">
+                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold shrink-0 ${
+                  step === s.n ? 'bg-blue-600 text-white'
+                  : step > s.n ? 'bg-blue-100 text-blue-700'
+                  : 'bg-bg-2 text-ink-3'
+                }`}>{s.n}</span>
+                <span className={`text-xs font-medium ${step === s.n ? 'text-ink' : 'text-ink-3'}`}>{s.label}</span>
+                {i < STEPS.length - 1 && <span className="flex-1 h-px bg-hairline" />}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
-          {clientName && (
-            <div className="text-xs text-ink-3">
-              For client <span className="font-medium text-ink-2">{clientName}</span>
-            </div>
-          )}
-
+          {/* ── Step 1 · Who ───────────────────────────────────────────── */}
+          {step === 1 && (<>
           {/* Client picker — only in standalone mode (Schedule page). When opened
               from a client profile the client is fixed and this is hidden. */}
           {standalone && (
@@ -364,7 +389,10 @@ export default function JobCreateModal({
               </div>
             )}
           </div>
+          </>)}
 
+          {/* ── Step 2 · What ──────────────────────────────────────────── */}
+          {step === 2 && (<>
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">Title *</label>
             <input
@@ -426,7 +454,10 @@ export default function JobCreateModal({
               />
             </button>
           </div>
+          </>)}
 
+          {/* ── Step 3 · When ──────────────────────────────────────────── */}
+          {step === 3 && (<>
           {/* One-time mode: single Date */}
           {!recurring && (
             <div>
@@ -587,20 +618,34 @@ export default function JobCreateModal({
               {error}
             </div>
           )}
+          </>)}
         </div>
 
-        <div className="p-6 border-t border-hairline">
+        <div className="p-6 border-t border-hairline flex items-center gap-3">
           <button
-            onClick={save}
-            disabled={saving || !canSave}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            onClick={step === 1 ? onClose : goBack}
+            className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}
           >
-            {saving
-              ? 'Creating...'
-              : recurring
-                ? 'Create & Generate Jobs'
-                : 'Create Job'}
+            {step === 1 ? 'Cancel' : 'Back'}
           </button>
+          {step < 3 ? (
+            <button
+              onClick={goNext}
+              disabled={step === 1 ? !step1Valid : !step2Valid}
+              data-testid="job-create-next"
+              className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              onClick={save}
+              disabled={saving || !canSave}
+              className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
+            >
+              {saving ? 'Creating...' : recurring ? 'Create & Generate Jobs' : 'Create Job'}
+            </button>
+          )}
         </div>
       </div>
     </div>
