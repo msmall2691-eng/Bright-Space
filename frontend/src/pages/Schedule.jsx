@@ -926,6 +926,9 @@ export default function Schedule() {
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
+  // Integration audit rows for the open job (Google Calendar push outcomes), so
+  // the detail drawer shows the *real* sync result, not just "has an event id".
+  const [jobEvents, setJobEvents] = useState([])
   const [completingVisit, setCompletingVisit] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
@@ -1214,6 +1217,18 @@ export default function Schedule() {
     setSelectedVisit({ visit, job, property })
     setShowDetails(true)
   }
+
+  // When the detail drawer opens for a job, pull its Google Calendar audit rows
+  // so we can show whether the last push actually landed (and why, if it didn't).
+  useEffect(() => {
+    const jobId = showDetails ? selectedVisit?.job?.id : null
+    if (!jobId) { setJobEvents([]); return }
+    let cancelled = false
+    get(`/api/integration-events?entity_type=job&entity_id=${jobId}&provider=gcal&limit=20`)
+      .then(rows => { if (!cancelled) setJobEvents(Array.isArray(rows) ? rows : []) })
+      .catch(err => { if (!cancelled) { console.error('[Schedule] integration-events', err); setJobEvents([]) } })
+    return () => { cancelled = true }
+  }, [showDetails, selectedVisit?.job?.id])
 
   const handleDelete = async (visitId) => {
     if (!confirm('Delete this visit?')) return
@@ -1749,10 +1764,40 @@ export default function Schedule() {
                   </div>
                 )}
 
-                {selectedVisit.visit.gcal_event_id && (
+                {(jobEvents.length > 0 || selectedVisit.visit.gcal_event_id) && (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Google Calendar</p>
-                    <p className="text-sm text-green-700">✅ Synced</p>
+                    {(() => {
+                      const latest = jobEvents[0]  // newest-first from the API
+                      if (!latest) {
+                        // Has an event id but predates the audit log — show the
+                        // plain synced state we already knew about.
+                        return <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700"><CheckCircle className="w-3.5 h-3.5" /> Synced</span>
+                      }
+                      const when = latest.created_at ? new Date(latest.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+                      if (latest.status === 'failed') {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={latest.error_message || ''}>
+                            <AlertCircle className="w-3.5 h-3.5" /> {latest.action === 'delete' ? 'Calendar removal failed' : 'Calendar sync failed'}{when && ` · ${when}`}
+                          </span>
+                        )
+                      }
+                      if (latest.action === 'delete') {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+                            <Clock className="w-3.5 h-3.5" /> Removed from calendar{when && ` · ${when}`}
+                          </span>
+                        )
+                      }
+                      return (
+                        <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                          <CheckCircle className="w-3.5 h-3.5" /> Synced{when && ` · ${when}`}
+                        </span>
+                      )
+                    })()}
+                    {jobEvents[0]?.status === 'failed' && jobEvents[0]?.error_message && (
+                      <p className="text-[11px] text-red-600 mt-1 break-words">{String(jobEvents[0].error_message).slice(0, 200)}</p>
+                    )}
                   </div>
                 )}
 

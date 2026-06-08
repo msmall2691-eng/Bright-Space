@@ -59,6 +59,8 @@ export default function Quoting() {
   const location = useLocation()
   const [tab, setTab] = useState('leads')
   const [quotes, setQuotes] = useState([])
+  const [followUps, setFollowUps] = useState([])
+  const [nudging, setNudging] = useState(null)
   const [intakes, setIntakes] = useState([])
   const [clients, setClients] = useState([])
   const [quoteTemplates, setQuoteTemplates] = useState(DEFAULT_QUOTE_TEMPLATES)
@@ -171,18 +173,21 @@ export default function Quoting() {
     setSavingTemplates(false)
   }
 
-  // Honor ?tab=quotes|leads (e.g. from the dashboard's Quotes & leads tile).
+  // Honor ?tab=quotes|leads|follow-ups (e.g. from the dashboard's tiles).
   useEffect(() => {
     const t = new URLSearchParams(location.search).get('tab')
-    if (t === 'quotes' || t === 'leads') setTab(t)
+    if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
   }, [location.search])
 
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  // Quotes the customer is sitting on (sent-but-unopened / opened-but-no-reply).
+  const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
 
   useEffect(() => {
     loadQuotes()
     loadIntakes()
+    loadFollowUps()
     get('/api/clients').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
     get('/api/settings/quote-templates').then(d => {
       // Treat any array as authoritative — including [] — so deleting every
@@ -329,9 +334,25 @@ export default function Quoting() {
     setSending(false)
   }
 
+  // One-click follow-up nudge: re-send the quote by email to the address on
+  // file. The backend records it as a follow-up (keeps the original sent/viewed
+  // state intact) — nothing is auto-sent; this only fires when the owner clicks.
+  const sendFollowUp = async (q) => {
+    setNudging(q.id)
+    try {
+      await post(`/api/quotes/${q.id}/generate-token`, {})
+      const data = await post(`/api/quotes/${q.id}/send`, { channel: 'email' })
+      const channels = Object.entries(data.results || {}).filter(([, v]) => v === 'sent').map(([k]) => k)
+      showToast(`Follow-up sent via ${channels.join(' & ') || 'email'} ✓`)
+      await Promise.all([loadQuotes(), loadFollowUps()])
+    } catch (e) { showToast(e.message || 'Could not send follow-up') }
+    setNudging(null)
+  }
+
   const updateStatus = async (id, status) => {
     await patch(`/api/quotes/${id}`, { status })
     loadQuotes()
+    loadFollowUps()
   }
 
   const markIntakeReviewed = async (id) => {
@@ -405,6 +426,11 @@ export default function Quoting() {
             <button onClick={() => setTab('quotes')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Quotes
+            </button>
+            <button onClick={() => setTab('follow-ups')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              Follow-ups
+              {followUps.length > 0 && <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{followUps.length}</span>}
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -531,6 +557,54 @@ export default function Quoting() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Needs follow-up tab — quotes the customer is sitting on */}
+        {tab === 'follow-ups' && (
+          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            {followUps.length === 0 && (
+              <div className="text-center py-16 text-ink-3">
+                <p className="text-sm">No quotes need a follow-up</p>
+                <p className="text-xs mt-1 text-ink-3">Sent quotes the customer hasn't opened (48h+) or opened but hasn't answered (24h+) show up here.</p>
+              </div>
+            )}
+            {followUps.map(q => {
+              const h = q.hours_waiting || 0
+              const waited = h >= 48 ? `${Math.round(h / 24)}d` : `${Math.round(h)}h`
+              const reasonLabel = q.follow_up_reason === 'viewed_not_accepted' ? 'Opened, no reply' : 'Not opened yet'
+              const reasonTone = q.follow_up_reason === 'viewed_not_accepted'
+                ? 'bg-purple-50 text-purple-500 border-purple-200' : 'bg-amber-50 text-amber-600 border-amber-200'
+              return (
+                <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-ink">{clientName(q.client_id)}</span>
+                        <span className="text-xs text-ink-3">{q.quote_number}</span>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full border ${reasonTone}`}>{reasonLabel}</span>
+                        <span className="text-xs text-ink-3">waiting {waited}</span>
+                        {q.follow_up_sent_at && <span className="text-xs text-ink-3">· nudged before</span>}
+                      </div>
+                      <div className="text-xs text-ink-3 mt-0.5">
+                        {[q.address, `${q.items?.length || 0} items`, q.sent_at && `sent ${new Date(q.sent_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button onClick={() => sendFollowUp(q)} disabled={nudging === q.id}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors">
+                        <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
+                      </button>
+                      <button onClick={() => openSendPanel(q)}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline rounded-lg transition-colors">
+                        Options
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

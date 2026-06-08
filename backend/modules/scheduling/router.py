@@ -14,6 +14,7 @@ from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
+from utils.integration_log import log_integration_event as _log_integration
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -649,11 +650,17 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 )
                 db.commit()
                 gcal_status["synced"] = True
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="create", status="ok", external_id=event_id)
             else:
                 gcal_status["reason"] = "error"
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="create", status="failed", detail="create_event returned no id")
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
         gcal_status["reason"] = "error"
+        _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                         action="create", status="failed", detail=str(e))
 
     result = job_to_dict(job)
     result["gcal"] = gcal_status
@@ -1105,6 +1112,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
             if v.status not in ("cancelled", "completed"):
                 v.status = "cancelled"
         if job.gcal_event_id:
+            old_event_id = job.gcal_event_id
             try:
                 from integrations.google_calendar import delete_event
                 # delete_event returns False (doesn't raise) when Google rejects
@@ -1112,10 +1120,18 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 # delete can be retried next time rather than orphaning the event.
                 if delete_event(job.gcal_event_id, job.job_type or "residential"):
                     job.gcal_event_id = None
+                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                     action="delete", status="ok", external_id=old_event_id, commit=False)
                 else:
                     logger.warning(f"GCal delete did not apply for cancelled job {job.id}; keeping event id to retry")
+                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                     action="delete", status="failed", external_id=old_event_id,
+                                     detail="delete_event returned False (kept id to retry)", commit=False)
             except Exception as e:
                 logger.warning(f"GCal delete failed for cancelled job {job.id}: {e}")
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="delete", status="failed", external_id=old_event_id,
+                                 detail=str(e), commit=False)
         db.commit()
         db.refresh(job)
     elif job.gcal_event_id:
