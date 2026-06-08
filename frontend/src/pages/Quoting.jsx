@@ -615,7 +615,7 @@ export default function Quoting() {
       {/* Quote edit panel — full-screen sheet on mobile (sits above the z-30
           BottomNav so the Save button is reachable), side panel on desktop. */}
       {panel === 'quote' && (
-        <div className={`fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:border-l sm:border-hairline sm:shrink-0 ${previewMode ? 'sm:w-[500px] lg:w-[940px]' : 'sm:w-[500px]'}`}>
+        <div className={`fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:border-l sm:border-hairline sm:shrink-0 ${previewMode ? 'sm:w-[500px] 2xl:w-[900px]' : 'sm:w-[500px]'}`}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
             <div>
               <h2 className="font-semibold text-ink">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
@@ -634,9 +634,10 @@ export default function Quoting() {
           </div>
 
           <div className="flex-1 flex overflow-hidden">
-          {/* Editor column — hidden on small screens while previewing (the toggle
-              swaps to the preview); kept beside the preview on lg+ (two-pane). */}
-          <div className={`overflow-y-auto p-6 space-y-5 scrollbar-thin ${previewMode ? 'hidden lg:block lg:w-[460px] lg:shrink-0 lg:border-r lg:border-hairline' : 'flex-1'}`}>
+          {/* Editor column — while previewing, the toggle swaps to the preview on
+              smaller screens; the two-pane (editor beside preview) only kicks in
+              at 2xl, where there's room for the widened panel next to the sidebar. */}
+          <div className={`overflow-y-auto p-6 space-y-5 scrollbar-thin ${previewMode ? 'hidden 2xl:block 2xl:w-[460px] 2xl:shrink-0 2xl:border-r 2xl:border-hairline' : 'flex-1'}`}>
 
             {/* Lead's website instant-quote estimate, when building from an intake. */}
             {selectedIntake && (selectedIntake.estimate_min != null || selectedIntake.estimate_max != null) && (

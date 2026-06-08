@@ -11,6 +11,14 @@ export default function QuotePreview({ form, quoteNumber, companyName, clientNam
   const tax = subtotal * rate / 100
   const total = subtotal + tax
   const money = (n) => `$${(n || 0).toFixed(2)}`
+  // Match the public page, which shows the validity date as "June 30, 2026"
+  // (the form holds the raw YYYY-MM-DD from the date input). Parse the parts
+  // explicitly so it isn't shifted a day by UTC-midnight interpretation.
+  const fmtValidUntil = (d) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '')
+    if (!m) return d
+    return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  }
 
   return (
     <div className="rounded-xl overflow-hidden border border-hairline bg-bg-2/40">
@@ -18,7 +26,7 @@ export default function QuotePreview({ form, quoteNumber, companyName, clientNam
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-5">
         <h1 className="text-xl font-bold mb-0.5">Quote {quoteNumber || 'QT-…'}</h1>
         <p className="text-blue-100 text-xs">from {companyName || 'Maine Cleaning Co'}</p>
-        {form.valid_until && <p className="text-blue-100 text-[11px] mt-2">Valid until: {form.valid_until}</p>}
+        {form.valid_until && <p className="text-blue-100 text-[11px] mt-2">Valid until: {fmtValidUntil(form.valid_until)}</p>}
       </div>
 
       <div className="p-5">
