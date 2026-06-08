@@ -4,10 +4,11 @@
  * Uses JWT authentication via Bearer token in Authorization header.
  * JWT is stored in localStorage and automatically included in all requests.
  *
- * Note on API_KEY: main.jsx installs a global fetch interceptor that
- * injects X-API-Key on every fetch, so most call paths don't need to
- * touch this directly. We still need it for `wsUrl()` (WebSocket URLs
- * can't go through fetch) and as a fallback inside `upload()`.
+ * Note on API_KEY: it is only used as a FALLBACK when there is no JWT session.
+ * Authenticated users send their Bearer JWT; the shared key is not attached to
+ * their requests (main.jsx's interceptor, upload(), and wsUrl() all prefer the
+ * JWT). The key should ultimately live server-side only — for now it's the
+ * no-session fallback so public/login flows still reach the API.
  */
 
 const API_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY)
@@ -114,9 +115,14 @@ export const del = (url) => api(url, { method: "DELETE" });
  */
 export async function upload(url, formData) {
   const h = {};
-  if (API_KEY) h["X-API-Key"] = API_KEY;
   const token = getJWT();
-  if (token) h["Authorization"] = `Bearer ${token}`;
+  if (token) {
+    h["Authorization"] = `Bearer ${token}`;
+  } else if (API_KEY) {
+    // Fallback only when there's no JWT session — don't ride the shared key
+    // along on an authenticated user's upload.
+    h["X-API-Key"] = API_KEY;
+  }
 
   const res = await fetch(url, {
     method: "POST",
