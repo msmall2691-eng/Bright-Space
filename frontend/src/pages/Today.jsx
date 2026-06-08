@@ -48,6 +48,12 @@ export default function Today() {
   const [busyId, setBusyId] = useState(null)
   const [toast, setToast] = useState(null)
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(null), 2800) }
+  // Start/Complete hit PUT /api/visits/{id}, which the backend allows only for
+  // admin/manager — so don't show those controls to viewer/cleaner (they'd 403).
+  const canEdit = (() => {
+    try { return ['admin', 'manager'].includes(JSON.parse(localStorage.getItem('brightbase_user') || '{}').role) }
+    catch { return false }
+  })()
 
   const load = useCallback(() => {
     const t = todayStr()
@@ -175,16 +181,16 @@ export default function Today() {
                   )}
                 </div>
 
-                {/* Start / Complete */}
-                {v.status !== 'cancelled' && (
+                {/* Start / Complete — only for roles that can actually PUT. */}
+                {v.status !== 'cancelled' && (canEdit || done) && (
                   <div className="mt-3 flex gap-2">
-                    {!done && v.status !== 'in_progress' && (
+                    {canEdit && !done && v.status !== 'in_progress' && (
                       <button onClick={() => setStatus(v, 'in_progress')} disabled={busyId === v.id}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors disabled:opacity-50">
                         <Play className="w-4 h-4" /> Start
                       </button>
                     )}
-                    {!done && (
+                    {canEdit && !done && (
                       <button onClick={() => setStatus(v, 'completed')} disabled={busyId === v.id}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50">
                         <Check className="w-4 h-4" /> Complete

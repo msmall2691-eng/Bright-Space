@@ -1083,10 +1083,14 @@ def add_client_note(
     act = log_activity(
         db, ActivityType.NOTE_ADDED.value,
         client_id=client_id, actor=actor, summary=body,
-        extra_data={"note": True}, commit=True,
+        extra_data={"note": True}, commit=False,
     )
     if not act:
         raise HTTPException(status_code=500, detail="Could not record note")
+    # Commit here (not via the logger's swallowed commit) so a write failure
+    # surfaces as a 500 instead of a false "Note added".
+    db.commit()
+    db.refresh(act)
     return activity_to_dict(act)
 
 

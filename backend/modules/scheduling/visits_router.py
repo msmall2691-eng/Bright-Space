@@ -69,8 +69,15 @@ class VisitRead(BaseModel):
         from_attributes = True
 
 
-def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj: Property = None) -> dict:
-    """Convert Visit model to dict with enriched data."""
+def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj: Property = None,
+                  include_sensitive: bool = True) -> dict:
+    """Convert Visit model to dict with enriched data.
+
+    `include_sensitive` controls whether on-site secrets (house code, access /
+    parking notes, site contact, client phone) are included. These are gated to
+    admin/manager: /api/visits is also readable by the cleaner/viewer roles, and
+    we must not leak access codes for properties a caller isn't responsible for.
+    """
     # Resolve job if not passed in
     if not job and hasattr(v, "job") and v.job:
         job = v.job
@@ -94,7 +101,7 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
     client_dict = {
         "id": client.id,
         "name": client.name or "",
-        "phone": client.phone or None,
+        "phone": (client.phone or None) if include_sensitive else None,
     } if client else {}
 
     property_dict = {
@@ -102,15 +109,19 @@ def visit_to_dict(v: Visit, job: Job = None, client: Client = None, property_obj
         "name": property_obj.name or "",
         "address": property_obj.address or "",
         "property_type": property_obj.property_type or "residential",
-        # Day-of operational details the cleaner/owner needs on site.
-        "house_code": property_obj.house_code or None,
-        "access_notes": property_obj.access_notes or None,
-        "parking_notes": property_obj.parking_notes or None,
-        "site_contact_name": property_obj.site_contact_name or None,
-        "site_contact_phone": property_obj.site_contact_phone or None,
-        "check_in_time": property_obj.check_in_time or None,
-        "check_out_time": property_obj.check_out_time or None,
     } if property_obj else {}
+    if property_obj and include_sensitive:
+        # Day-of operational details the assigned crew needs on site — admin /
+        # manager only (see include_sensitive note above).
+        property_dict.update({
+            "house_code": property_obj.house_code or None,
+            "access_notes": property_obj.access_notes or None,
+            "parking_notes": property_obj.parking_notes or None,
+            "site_contact_name": property_obj.site_contact_name or None,
+            "site_contact_phone": property_obj.site_contact_phone or None,
+            "check_in_time": property_obj.check_in_time or None,
+            "check_out_time": property_obj.check_out_time or None,
+        })
 
     return {
         "id": v.id,
@@ -303,6 +314,7 @@ def get_visits(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Get visits with date range and optional filters. Paginated for performance."""
     q = db.query(Visit).options(
@@ -319,23 +331,30 @@ def get_visits(
     if job_id:
         q = q.filter(Visit.job_id == job_id)
 
-    # Apply pagination BEFORE executing the query
-    total_count = q.count()
-    visits = q.order_by(Visit.scheduled_date, Visit.start_time).limit(limit).offset(offset).all()
+    q = q.order_by(Visit.scheduled_date, Visit.start_time)
 
-    # Filter by property_type in Python after loading (post-processing)
-    # This avoids join complexity and works with already-loaded relationships
-    if property_type and property_type != "all":
-        visits = [v for v in visits if v.job and v.job.property and v.job.property.property_type == property_type]
-        total_count = len(visits)  # Recalculate total after Python filter
+    # property_type / cleaner_id are Python-side filters (joined relationship and
+    # a JSON array column). They must run on the FULL matching set BEFORE
+    # paginating, otherwise `?cleaner_id=` returns a partial/empty page and a
+    # wrong `total`. The date filters bound the set, so loading it is fine.
+    py_property = bool(property_type and property_type != "all")
+    py_cleaner = bool(cleaner_id)
+    if py_property or py_cleaner:
+        rows = q.all()
+        if py_property:
+            rows = [v for v in rows if v.job and v.job.property and v.job.property.property_type == property_type]
+        if py_cleaner:
+            cid = str(cleaner_id)
+            rows = [v for v in rows if any(str(c) == cid for c in (v.cleaner_ids or []))]
+        total_count = len(rows)
+        visits = rows[offset: offset + limit]
+    else:
+        total_count = q.count()
+        visits = q.limit(limit).offset(offset).all()
 
-    # Filter to a single cleaner's visits (membership in cleaner_ids). Done in
-    # Python so it's portable across the JSON cleaner_ids column on sqlite/pg;
-    # compared as strings since ids may be ints (User.id) or strings (crew ids).
-    if cleaner_id:
-        cid = str(cleaner_id)
-        visits = [v for v in visits if any(str(c) == cid for c in (v.cleaner_ids or []))]
-        total_count = len(visits)
+    # On-site secrets (access codes, contacts) are admin/manager only; /api/visits
+    # is also readable by viewer/cleaner.
+    include_sensitive = getattr(current_user, "role", None) in ("admin", "manager")
 
     return {
         "items": [
@@ -344,6 +363,7 @@ def get_visits(
                 job=v.job if hasattr(v, "job") else None,
                 client=v.job.client if hasattr(v, "job") and hasattr(v.job, "client") else None,
                 property_obj=v.job.property if hasattr(v, "job") and hasattr(v.job, "property") else None,
+                include_sensitive=include_sensitive,
             )
             for v in visits
         ],
@@ -380,7 +400,7 @@ def create_visit(data: VisitCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{visit_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_visit(visit_id: int, db: Session = Depends(get_db)):
+def get_visit(visit_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """Get a single visit by ID."""
     visit = db.query(Visit).options(
         joinedload(Visit.job).joinedload(Job.client),
@@ -390,11 +410,13 @@ def get_visit(visit_id: int, db: Session = Depends(get_db)):
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
 
+    include_sensitive = getattr(current_user, "role", None) in ("admin", "manager")
     return visit_to_dict(
         visit,
         job=visit.job if hasattr(visit, "job") else None,
         client=visit.job.client if hasattr(visit, "job") and hasattr(visit.job, "client") else None,
         property_obj=visit.job.property if hasattr(visit, "job") and hasattr(visit.job, "property") else None,
+        include_sensitive=include_sensitive,
     )
 
 

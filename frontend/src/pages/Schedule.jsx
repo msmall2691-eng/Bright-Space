@@ -1740,8 +1740,11 @@ export default function Schedule() {
                 {/* On-site access details (house code, entry/parking notes, site
                     contact, STR check-in/out) — what a crew needs to get in. */}
                 {(() => {
-                  const p = selectedVisit.property || {}
-                  if (!(p.house_code || p.access_notes || p.parking_notes || p.site_contact_phone || p.check_in_time || p.check_out_time)) return null
+                  // Prefer the visit's enriched property (from /api/visits, which
+                  // carries house_code/access/site-contact); the /api/properties
+                  // copy omits site_contact_*.
+                  const p = selectedVisit.visit?.property || selectedVisit.property || {}
+                  if (!(p.house_code || p.access_notes || p.parking_notes || p.site_contact_name || p.site_contact_phone || p.check_in_time || p.check_out_time)) return null
                   return (
                     <div>
                       <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Access</p>
