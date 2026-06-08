@@ -196,6 +196,7 @@ export default function Settings() {
     gcal_auto_sync_enabled: true,
     gcal_sync_interval: 10,
     recurring_auto_generate_enabled: true,
+    invite_customers: true,
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
@@ -1090,6 +1091,23 @@ export default function Settings() {
                   </div>
                   {automationSettings.recurring_auto_generate_enabled && (
                     <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
+                  )}
+                </div>
+
+                <div className="border-t border-hairline pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-ink">Invite customers to their cleanings</h3>
+                      <p className="text-xs text-ink-3 mt-1">Add the customer (by email) to each cleaning's Google Calendar event, so they get an invite and see all their upcoming cleanings on their own calendar. Their copy never shows gate codes, crew, or internal notes.</p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={automationSettings.invite_customers}
+                        onChange={e => setAutomationSettings(s => ({ ...s, invite_customers: e.target.checked }))}
+                        className="w-4 h-4 rounded" />
+                    </label>
+                  </div>
+                  {automationSettings.invite_customers && (
+                    <p className="text-xs text-ink-3 mt-1">Applies to new cleanings and to the Calendar page's “Push to Google” backfill (which emails each client an invite for their upcoming cleanings). Only clients with an email on file are invited.</p>
                   )}
                 </div>
               </div>

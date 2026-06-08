@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, RefreshCw, ExternalLink } from 'lucide-react'
-import { get } from '../api'
+import { CalendarDays, RefreshCw, ExternalLink, Upload, AlertCircle, DownloadCloud } from 'lucide-react'
+import { get, post } from '../api'
 
 /**
  * Dedicated, full-width Google Calendar page for admins.
@@ -38,12 +38,49 @@ export default function Calendar() {
   const [state, setState] = useState({ loading: true })
   const [mode, setMode] = useState('WEEK')
   const [reload, setReload] = useState(0)
+  // Reconciliation: the embed only shows jobs already pushed to Google, so app
+  // jobs without a GCal event are invisible here. Surface the gap + one-click fix.
+  const [sync, setSync] = useState({ unsynced: 0, configured: false })
+  const [busy, setBusy] = useState(null)   // 'push' | 'sync' | null
+  const [toast, setToast] = useState(null)
+  const canEdit = (() => {
+    try { return ['admin', 'manager'].includes(JSON.parse(localStorage.getItem('brightbase_user') || '{}').role) }
+    catch { return false }
+  })()
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 3500) }
+
+  const loadSync = () => get('/api/jobs/gcal-sync-status')
+    .then(r => setSync({ unsynced: r?.unsynced_count || 0, configured: !!r?.configured }))
+    .catch(() => {})
 
   useEffect(() => {
     get('/api/settings/gcal-embed?overlay=all')
       .then(r => setState({ loading: false, url: r?.embed_url, configured: !!r?.configured }))
       .catch(() => setState({ loading: false, configured: false }))
+    loadSync()
   }, [])
+
+  const pushToGoogle = async () => {
+    setBusy('push')
+    try {
+      const r = await post('/api/jobs/push-to-gcal', {})
+      flash(r?.message || `Pushed ${r?.pushed || 0} job(s) to Google`)
+      await loadSync()
+      setReload(k => k + 1)   // bust the embed cache so the new events appear
+    } catch (e) { flash(e.message || 'Could not push to Google') }
+    setBusy(null)
+  }
+
+  const syncFromGoogle = async () => {
+    setBusy('sync')
+    try {
+      await post('/api/jobs/sync-gcal', {})
+      flash('Synced from Google')
+      await loadSync()
+      setReload(k => k + 1)
+    } catch (e) { flash(e.message || 'Could not sync from Google') }
+    setBusy(null)
+  }
 
   const src = withMode(state.url, mode, reload)
 
@@ -94,6 +131,31 @@ export default function Calendar() {
           )}
         </div>
       </div>
+
+      {/* Reconcile banner — app jobs that aren't on Google won't show in the
+          embed above. One click pushes them so this page matches Schedule. */}
+      {canEdit && sync.configured && sync.unsynced > 0 && (
+        <div className="flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-[13px] shrink-0 flex-wrap">
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+          <span className="flex-1 min-w-0">
+            <span className="font-semibold">{sync.unsynced}</span> upcoming job{sync.unsynced === 1 ? '' : 's'} {sync.unsynced === 1 ? "isn't" : "aren't"} on Google yet — this page only shows what's been pushed.
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={syncFromGoogle} disabled={!!busy}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:bg-bg-2 disabled:opacity-50 transition-colors"
+              title="Pull changes made in Google back into the app">
+              <DownloadCloud className="w-3.5 h-3.5" /> {busy === 'sync' ? 'Syncing…' : 'Sync from Google'}
+            </button>
+            <button onClick={pushToGoogle} disabled={!!busy}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors">
+              <Upload className="w-3.5 h-3.5" /> {busy === 'push' ? 'Pushing…' : `Push ${sync.unsynced} to Google`}
+            </button>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div className="px-4 sm:px-6 py-2 bg-bg-2 text-ink-2 text-xs border-b border-hairline shrink-0">{toast}</div>
+      )}
 
       {/* Body */}
       {state.loading ? (
