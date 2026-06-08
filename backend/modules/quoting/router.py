@@ -98,6 +98,8 @@ def _quote_dict(q: Quote) -> dict:
         "accepted_by_name": q.accepted_by_name,
         "accepted_by_email": q.accepted_by_email,
         "declined_at": q.declined_at.isoformat() if q.declined_at else None,
+        "converted_at": q.converted_at.isoformat() if getattr(q, "converted_at", None) else None,
+        "follow_up_sent_at": q.follow_up_sent_at.isoformat() if getattr(q, "follow_up_sent_at", None) else None,
         "declined_reason": getattr(q, "declined_reason", None),
         "declined_by_name": getattr(q, "declined_by_name", None),
         "requested_changes_message": getattr(q, "requested_changes_message", None),
@@ -192,6 +194,58 @@ def list_quotes(
     return [_quote_dict(q) for q in quotes]
 
 
+def _hours_since(ts) -> Optional[float]:
+    """Hours elapsed since a stored timestamp, tolerant of naive vs tz-aware
+    values (sent_at etc. are stamped with naive datetime.now() but read back
+    tz-aware from Postgres)."""
+    if ts is None:
+        return None
+    t = ts.replace(tzinfo=None) if getattr(ts, "tzinfo", None) else ts
+    return (datetime.now() - t).total_seconds() / 3600.0
+
+
+@router.get("/follow-ups", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def quotes_needing_follow_up(
+    db: Session = Depends(get_db),
+    sent_hours: float = Query(48, ge=0, description="Flag sent-but-unviewed quotes older than this many hours"),
+    viewed_hours: float = Query(24, ge=0, description="Flag viewed-but-unaccepted quotes older than this many hours"),
+):
+    """Quotes that are waiting on the customer and due for a nudge (Journey E).
+
+    Read-only — surfaces the list so the operator can act; it does NOT send
+    anything. Two buckets, mirroring the audit's rules:
+      - 'sent_not_viewed': sent > sent_hours ago and never opened.
+      - 'viewed_not_accepted': opened > viewed_hours ago, still not accepted.
+    A quote already nudged more recently than its bucket's window is suppressed
+    (so it doesn't reappear every poll right after you follow up)."""
+    candidates = (
+        db.query(Quote)
+        .filter(Quote.status.in_(["sent", "viewed"]))
+        .order_by(Quote.sent_at.asc().nullslast())
+        .all()
+    )
+    out = []
+    for q in candidates:
+        if not q.viewed_at:
+            waited = _hours_since(q.sent_at)
+            if waited is None or waited < sent_hours:
+                continue
+            reason, window = "sent_not_viewed", sent_hours
+        else:
+            waited = _hours_since(q.viewed_at)
+            if waited is None or waited < viewed_hours:
+                continue
+            reason, window = "viewed_not_accepted", viewed_hours
+        nudged = _hours_since(q.follow_up_sent_at)
+        if nudged is not None and nudged < window:
+            continue  # already followed up within this window
+        row = _quote_dict(q)
+        row["follow_up_reason"] = reason
+        row["hours_waiting"] = round(waited, 1)
+        out.append(row)
+    return out
+
+
 @router.get("/{quote_id}")
 def get_quote(quote_id: int, db: Session = Depends(get_db)):
     return _quote_dict(_get_quote_or_404(quote_id, db))
@@ -256,8 +310,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
     """
     quote = _get_quote_or_404(quote_id, db)
-    if quote.status not in ("draft", "sent"):
+    # draft = first send; sent/viewed = a follow-up nudge (re-send).
+    if quote.status not in ("draft", "sent", "viewed"):
         raise HTTPException(status_code=400, detail=f"Cannot send a {quote.status} quote")
+    prior_status = quote.status
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -340,8 +396,14 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
 
     delivered = any(v == "sent" for v in results.values())
     if delivered:
-        quote.status = "sent"
-        quote.sent_at = datetime.now()
+        if prior_status == "draft":
+            quote.status = "sent"
+            quote.sent_at = datetime.now()
+        else:
+            # A re-send of an already sent/viewed quote is a follow-up nudge:
+            # keep the original status/sent_at (so the "viewed" signal and the
+            # sent→accepted clock survive) and just record the nudge.
+            quote.follow_up_sent_at = datetime.now()
     quote.updated_at = datetime.now()
     db.commit()
     db.refresh(quote)
@@ -453,6 +515,7 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
     # Mark the quote converted so it stops showing as "accepted — ready to
     # schedule" and the Schedule-Job action can't create a second job for it.
     quote.status = "converted"
+    quote.converted_at = datetime.now()
     quote.updated_at = datetime.now()
     db.commit()
     db.refresh(job)

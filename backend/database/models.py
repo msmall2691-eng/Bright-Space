@@ -490,6 +490,8 @@ class LeadIntake(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+    # Back-reference to the quote this intake was converted into (§6 traceability).
+    converted_quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
 
     name = Column(String, nullable=False)
     email = Column(String)
@@ -851,6 +853,10 @@ class Quote(Base):
     viewed_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     declined_at = Column(DateTime(timezone=True), nullable=True)
+    # When an accepted quote was turned into a Job (conversion tracking).
+    converted_at = Column(DateTime(timezone=True), nullable=True)
+    # When a follow-up nudge was last sent on a stale sent/viewed quote.
+    follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # Acceptance capture (from the public accept page)
     accepted_by_name = Column(String(255), nullable=True)

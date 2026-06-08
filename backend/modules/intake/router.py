@@ -364,6 +364,7 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
     db.flush()
     _assign_quote_number(quote)
     intake.status = "quoted"
+    intake.converted_quote_id = quote.id
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
