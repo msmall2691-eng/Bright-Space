@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import JobCreateModal from '../components/JobCreateModal'
 import { get, post, patch, put } from "../api"
 
 
@@ -348,6 +349,19 @@ export default function Quoting() {
     setConverting(null)
   }
 
+  // Onboard an accepted quote: open the job modal (recurring by default,
+  // pre-filled from the quote) to set up the repeating schedule + first job on
+  // Google Calendar, then mark the quote converted.
+  const [scheduleQuote, setScheduleQuote] = useState(null)
+  const quoteJobType = (svc) => (svc === 'str' ? 'str_turnover' : (svc === 'commercial' ? 'commercial' : 'residential'))
+  const finishOnboard = async () => {
+    if (!scheduleQuote) return
+    try { await patch(`/api/quotes/${scheduleQuote.id}`, { status: 'converted' }) } catch { /* non-fatal */ }
+    setScheduleQuote(null)
+    await loadQuotes()
+    showToast('Client onboarded — schedule created ✓')
+  }
+
   const copyPublicLink = async (quote) => {
     if (!quote.public_token) {
       try {
@@ -507,10 +521,10 @@ export default function Quoting() {
                       </button>
                     )}
                     {q.status === 'accepted' && (
-                      <button onClick={() => convertToJob(q.id)} disabled={converting === q.id}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 rounded-lg transition-colors">
+                      <button onClick={() => setScheduleQuote(q)}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
                         <Calendar className="w-3 h-3" />
-                        {converting === q.id ? 'Converting…' : 'Schedule Job'}
+                        Set up schedule
                       </button>
                     )}
                   </div>
@@ -931,6 +945,19 @@ export default function Quoting() {
             </div>
           </div>
         </div>
+      )}
+
+      {scheduleQuote && (
+        <JobCreateModal
+          clientId={scheduleQuote.client_id}
+          clientName={clientName(scheduleQuote.client_id)}
+          initialPropertyId={scheduleQuote.property_id || null}
+          initialJobType={quoteJobType(scheduleQuote.service_type)}
+          initialTitle={scheduleQuote.title || `${clientName(scheduleQuote.client_id)} — Clean`}
+          defaultRecurring
+          onClose={() => setScheduleQuote(null)}
+          onCreated={finishOnboard}
+        />
       )}
 
       {toast && <Toast msg={toast} />}

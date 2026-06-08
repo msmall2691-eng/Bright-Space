@@ -42,15 +42,18 @@ export default function JobCreateModal({
   clientName,
   initialPropertyId = null,
   initialDate = '',
+  initialJobType = null,
+  initialTitle = null,
+  defaultRecurring = false,
   onClose,
   onCreated,
 }) {
   const [properties, setProperties] = useState([])
   const [loadingProps, setLoadingProps] = useState(false)
-  const [recurring, setRecurring] = useState(false)
+  const [recurring, setRecurring] = useState(defaultRecurring)
   const [form, setForm] = useState({
-    title: clientName ? `${clientName} — Clean` : '',
-    job_type: 'residential',
+    title: initialTitle || (clientName ? `${clientName} — Clean` : ''),
+    job_type: initialJobType || 'residential',
     scheduled_date: initialDate,
     start_time: '09:00',
     end_time: '12:00',
