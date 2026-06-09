@@ -1,6 +1,12 @@
 -- ============================================================================
 -- BrightBase — PRODUCTION SCHEMA RECONCILIATION (P0, 2026-06-08)
 --
+-- EASIEST PATH: run the self-gating script instead of pasting this SQL —
+--   python scripts/reconcile_prod_schema.py --dry-run   # read-only: gate + diff
+--   python scripts/reconcile_prod_schema.py             # apply + stamp 022
+-- (does the gate + idempotent ADD COLUMNs in one transaction + the stamp, in one
+-- command). This .sql file is the manual equivalent / reference.
+--
 -- Context: prod Postgres was create_all-seeded, so tables/enum types exist
 -- WITHOUT the matching Alembic history. `alembic_version` says 011, but objects
 -- from 012–022 partially exist (e.g. property_type_enum, the quotes table),
