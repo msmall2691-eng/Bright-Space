@@ -14,8 +14,42 @@ import PublicPayment from './pages/PublicPayment'
 import { useUnreadCount } from './hooks/useUnreadCount'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
+import GlobalToasts from './components/ui/GlobalToasts'
+import { pushToast } from './utils/toastBus'
 
 const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
+
+// Safety net for errors a page didn't catch itself: a thrown mutation (e.g. an
+// `onClick={async …}` with no try/catch) rejects, and without this the user
+// sees nothing. We surface the real reason as a toast. Pages that DO catch and
+// toast their own errors won't reach here, so this doesn't double up.
+function useUnhandledErrorToasts() {
+  useEffect(() => {
+    // Debounce identical messages — a burst (e.g. a list of N failing rows)
+    // shouldn't stack N identical red toasts.
+    let lastMsg = ''
+    let lastAt = 0
+    const surface = (raw) => {
+      const msg = (raw && (raw.message || String(raw))) || ''
+      if (!msg || msg === 'undefined' || msg === '[object Object]') return
+      // api() resolves (not rejects) on 401 — it redirects to /login — so auth
+      // bounces never reach here. Guard anyway against a stray "Failed to fetch"
+      // storm from a dropped connection during navigation.
+      const now = Date.now()
+      if (msg === lastMsg && now - lastAt < 4000) return
+      lastMsg = msg; lastAt = now
+      pushToast(msg, 'error')
+    }
+    const onRejection = (e) => surface(e?.reason)
+    const onError = (e) => { if (e?.error) surface(e.error) }
+    window.addEventListener('unhandledrejection', onRejection)
+    window.addEventListener('error', onError)
+    return () => {
+      window.removeEventListener('unhandledrejection', onRejection)
+      window.removeEventListener('error', onError)
+    }
+  }, [])
+}
 
 class ErrorBoundary extends Component {
   state = { hasError: false, error: null }
@@ -85,6 +119,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const location = useLocation()
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
+  useUnhandledErrorToasts()
 
   useEffect(() => {
     const jwt = localStorage.getItem('brightbase_jwt')
@@ -173,6 +208,7 @@ export default function App() {
       <BottomNav />
       <AICommandBar />
       <GlobalSearch />
+      <GlobalToasts />
       {import.meta.env.DEV && <TweaksPanel />}
     </div>
   )
