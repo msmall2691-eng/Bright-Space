@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 
-from integrations.connecteam import get_timesheets, get_mileage
+from integrations.connecteam import ConnecteamAuthError, get_timesheets, get_mileage
 from modules.auth.router import require_role
 
 router = APIRouter()
@@ -18,6 +18,8 @@ async def fetch_timesheets(
     """Pull timesheet data from Connecteam for a pay period."""
     try:
         sheets = await get_timesheets(start_date, end_date, employee_id)
+    except ConnecteamAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Connecteam error: {str(e)}")
 
@@ -44,6 +46,8 @@ async def fetch_mileage(
     """Pull mileage data from Connecteam and calculate reimbursements."""
     try:
         entries = await get_mileage(start_date, end_date, employee_id)
+    except ConnecteamAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Connecteam error: {str(e)}")
 

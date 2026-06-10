@@ -118,6 +118,7 @@ export default function Dashboard() {
   const [svcRevenue, setSvcRevenue] = useState([])
   const [commsSummary, setCommsSummary] = useState({})
   const [employees, setEmployees] = useState([])
+  const [rosterUnavailable, setRosterUnavailable] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -141,7 +142,7 @@ export default function Dashboard() {
           get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
           get('/api/comms/conversations/summary').catch(() => ({})),
           get('/api/quotes/follow-ups').catch(() => []),
-          get('/api/dispatch/employees').catch(() => []),
+          get('/api/dispatch/employees').catch(() => null),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
@@ -155,6 +156,9 @@ export default function Dashboard() {
         setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
         setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
         setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
+        // null = roster fetch failed (Connecteam down / bad credentials). The
+        // tile still renders workload from job data; names degrade to IDs.
+        setRosterUnavailable(employeesAll === null)
         setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
@@ -526,6 +530,11 @@ export default function Dashboard() {
               description="Assignments will show here." />
           ) : (
             <div className="flex-1 overflow-y-auto max-h-[300px] space-y-1.5">
+              {rosterUnavailable && (
+                <p className="text-[11px] text-ink-3 bg-bg-2 rounded-lg px-2.5 py-1.5">
+                  Crew roster unavailable (Connecteam offline) — cleaners shown by ID.
+                </p>
+              )}
               {crew.rows.map(r => {
                 const pct = crew.rows[0] ? Math.round((r.n / crew.rows[0].n) * 100) : 0
                 return (
