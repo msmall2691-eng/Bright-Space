@@ -332,9 +332,21 @@ export default function Quoting() {
     try {
       await post(`/api/quotes/${selected.id}/generate-token`, {})
       const data = await post(`/api/quotes/${selected.id}/send`, sendForm)
-      const channels = Object.entries(data.results || {})
-        .filter(([, v]) => v === 'sent').map(([k]) => k)
-      showToast(`Quote sent via ${channels.join(' & ')} ✓`)
+      if (data.delivered) {
+        const channels = Object.entries(data.results || {})
+          .filter(([, v]) => v === 'sent').map(([k]) => k)
+        showToast(`Quote sent via ${channels.join(' & ')} ✓`)
+      } else {
+        // Nothing went out (e.g. email server hiccup), but the link is ready —
+        // copy it so the owner can still share the quote manually.
+        const reason = (data.errors || []).join('; ') || 'delivery failed'
+        if (data.quote_link && navigator.clipboard?.writeText) {
+          try { await navigator.clipboard.writeText(data.quote_link) } catch {}
+          showToast(`Couldn't send (${reason}) — link copied to share manually`)
+        } else {
+          showToast(`Couldn't send: ${reason}`)
+        }
+      }
       await loadQuotes()
       setPanel(null)
     } catch (e) { showToast(e.message || 'Error sending quote') }
