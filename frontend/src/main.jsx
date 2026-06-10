@@ -10,15 +10,13 @@ applyTheme()
 
 
 // ── Global fetch interceptor ──
-// Authenticate every same-origin request that doesn't already carry a
-// credential: prefer the user's Bearer JWT, and only fall back to the shared
-// API key when there's no JWT session (login/public flows). This keeps the
-// admin key off a logged-in user's traffic (shrinks XSS blast radius) WITHOUT
-// breaking the call sites that use fetch() directly instead of the api()
-// wrapper — they now get the JWT automatically. The key should ultimately live
-// server-side only.
+// Attach the user's Bearer JWT to every same-origin request that doesn't already
+// carry a credential, so call sites using fetch() directly (not the api()
+// wrapper) still authenticate. JWT-only: the SPA never sends the shared
+// X-API-Key — the master key must not live in the browser (it was effectively a
+// synthetic admin). No JWT → the request 401s → the api() wrapper redirects to
+// /login. The backend still accepts X-API-Key for server-to-server callers.
 const _origFetch = window.fetch
-const STATIC_API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || ""
 window.fetch = function (url, opts = {}) {
   const reqUrl = typeof url === 'string' ? url : url?.url || ''
   const isSameOrigin = reqUrl.startsWith('/') || reqUrl.startsWith(window.location.origin)
@@ -31,7 +29,6 @@ window.fetch = function (url, opts = {}) {
     if (!hasCred) {
       const jwt = localStorage.getItem("brightbase_jwt")
       if (jwt) setH("Authorization", `Bearer ${jwt}`)
-      else if (STATIC_API_KEY) setH("X-API-Key", STATIC_API_KEY)
     }
   }
   return _origFetch.call(this, url, opts)

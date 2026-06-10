@@ -41,6 +41,10 @@ _PUBLIC_PREFIXES = (
     "/api/booking",
     "/api/agents",
     "/api/quotes/public/",
+    # Customer-facing payment portal — the public invoice endpoints validate an
+    # HMAC token themselves, so they don't need (and must not require) the master
+    # key now that the SPA is JWT-only.
+    "/api/invoices/public/",
     "/assets/",
 )
 
