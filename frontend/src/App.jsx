@@ -14,7 +14,6 @@ import PublicPayment from './pages/PublicPayment'
 import { useUnreadCount } from './hooks/useUnreadCount'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
-import GlobalToasts from './components/ui/GlobalToasts'
 import { pushToast } from './utils/toastBus'
 
 const PageLoader = () => <div className="flex items-center justify-center min-h-screen">Loading...</div>
@@ -208,7 +207,8 @@ export default function App() {
       <BottomNav />
       <AICommandBar />
       <GlobalSearch />
-      <GlobalToasts />
+      {/* GlobalToasts is mounted once at the app root (main.jsx) so it covers
+          every route, including /login and the public pages. */}
       {import.meta.env.DEV && <TweaksPanel />}
     </div>
   )

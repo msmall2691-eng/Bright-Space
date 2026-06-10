@@ -52,6 +52,10 @@ export default function Quoting() {
   const [intakes, setIntakes] = useState([])
   const [clients, setClients] = useState([])
   const [quoteTemplates, setQuoteTemplates] = useState([])
+  // Gate the template editor until the initial GET settles. Without this, an
+  // admin could open the editor while templates are still [] (loading), then
+  // Save — overwriting all stored templates with an empty list.
+  const [templatesLoaded, setTemplatesLoaded] = useState(false)
   const [companyName, setCompanyName] = useState('Maine Cleaning Co')
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
@@ -143,6 +147,9 @@ export default function Quoting() {
     idx !== ti ? t : { ...t, items: t.items.filter((_, j) => j !== ii) }))
 
   const saveTemplates = async () => {
+    // Never save before the initial load settled — a PUT here would clobber the
+    // stored templates with whatever the editor was seeded from (possibly []).
+    if (!templatesLoaded) { showToast('Templates are still loading — try again'); return }
     // Normalize + validate: each template needs a label and ≥1 named item.
     const cleaned = editTemplates.map(t => ({
       id: t.id || tplSlug(t.label),
@@ -187,7 +194,7 @@ export default function Quoting() {
       // Treat any array as authoritative — including [] — so deleting every
       // template sticks instead of the hardcoded defaults reappearing on reload.
       if (Array.isArray(d?.templates)) setQuoteTemplates(d.templates)
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setTemplatesLoaded(true))
     // Use the configured company name in the customer-facing SMS instead of a
     // hardcoded brand. Falls back to the default if unset/unavailable.
     get('/api/settings').then(d => { if (d?.company_name) setCompanyName(d.company_name) }).catch(() => {})
@@ -441,8 +448,11 @@ export default function Quoting() {
           </div>
           <div className="flex items-center gap-2">
             {canManageTemplates && (
-              <button onClick={() => { setEditTemplates(quoteTemplates.map(t => ({ ...t, items: (t.items || []).map(i => ({ ...i })) }))); setPanel('templates') }}
-                className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+              <button
+                disabled={!templatesLoaded}
+                title={templatesLoaded ? undefined : 'Loading templates…'}
+                onClick={() => { setEditTemplates(quoteTemplates.map(t => ({ ...t, items: (t.items || []).map(i => ({ ...i })) }))); setPanel('templates') }}
+                className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
               </button>
             )}
