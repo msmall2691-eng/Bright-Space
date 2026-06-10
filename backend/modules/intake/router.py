@@ -441,18 +441,23 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
         parts.append(f"Condition: {data.condition}")
 
     # Compute the canonical backend estimate so ops always sees the authoritative
-    # number - even if the maineclean.co site's pricing math has drifted.
+    # number - even if the maineclean.co site's pricing math has drifted. Uses the
+    # SAME engine the public booking form uses (modules.booking.pricing), so the
+    # website and the webhook can never disagree on the rate card.
     canonical_min = canonical_max = None
     try:
         from modules.booking.pricing import estimate_price
-        canonical_min, canonical_max = estimate_price(
+        canonical = estimate_price(
             service_type=service_key or "residential",
-            sqft=sqft,
             bathrooms=data.bathrooms,
+            square_footage=sqft,
             frequency=data.frequency,
-            pet_hair=data.petHair,
-            condition=data.condition,
+            # Free-text notes drive the deep-clean / move-in-out keyword sniff,
+            # exactly as the booking form passes its message field.
+            message=notes_text,
         )
+        canonical_min = canonical["estimate_min"]
+        canonical_max = canonical["estimate_max"]
     except Exception as e:
         logger.warning("Canonical estimate computation failed: %s", e)
         canonical_min = canonical_max = None
@@ -483,4 +488,6 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
         message=message,
         source=data.source or "website",
     )
-    return submit_intake(normalized, db)
+    # Forward the real Request: submit_intake is a @limiter.limit endpoint, so
+    # slowapi needs a starlette Request (not the IntakeSubmit) as the first arg.
+    return submit_intake(request, normalized, db)
