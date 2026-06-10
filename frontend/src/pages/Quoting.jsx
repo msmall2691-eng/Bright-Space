@@ -27,25 +27,12 @@ const LEAD_STATUS_COLORS = {
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
-// Hardcoded defaults — used as fallback when the admin hasn't customized
-// templates yet. Once they edit via the template manager, these are
-// replaced by the API-stored version from /api/settings/quote-templates.
-const DEFAULT_QUOTE_TEMPLATES = [
-  { id: 'biweekly_residential', label: 'Biweekly Residential', service_type: 'residential',
-    items: [{ name: 'Biweekly home clean', description: 'Recurring biweekly residential cleaning', qty: 1, unit_price: 185 }] },
-  { id: 'weekly_residential', label: 'Weekly Residential', service_type: 'residential',
-    items: [{ name: 'Weekly home clean', description: 'Recurring weekly residential cleaning', qty: 1, unit_price: 165 }] },
-  { id: 'str_turnover', label: 'STR Turnover', service_type: 'str',
-    items: [{ name: 'Airbnb / VRBO turnover', description: 'Strip beds, clean kitchen + baths, restock linens between guests', qty: 1, unit_price: 145 }] },
-  { id: 'one_time_deep', label: 'One-Time Deep Clean', service_type: 'residential',
-    items: [{ name: 'Deep clean (one-time)', description: 'Full top-to-bottom deep clean of the home', qty: 1, unit_price: 425 }] },
-  { id: 'move_in_out', label: 'Move-In / Move-Out', service_type: 'residential',
-    items: [
-      { name: 'Move-in / move-out clean', description: 'Empty-home top-to-bottom clean, inside cabinets, appliances, baseboards', qty: 1, unit_price: 525 },
-    ] },
-  { id: 'office_clean', label: 'Commercial / Office', service_type: 'commercial',
-    items: [{ name: 'Office clean', description: 'Recurring office cleaning - trash, restrooms, vacuum, kitchen', qty: 1, unit_price: 295 }] },
-]
+// Quote templates (and their prices) live ONLY in the backend
+// (/api/settings/quote-templates), which seeds a default set when the admin
+// hasn't customized any. We deliberately keep NO hardcoded copy here — a second
+// price list in the frontend is a rate card that silently drifts from the
+// backend's. Templates load on mount; until then (or if the fetch fails) the
+// picker just offers "Custom (build from scratch)".
 
 function Toast({ msg }) {
   return (
@@ -64,7 +51,7 @@ export default function Quoting() {
   const [nudging, setNudging] = useState(null)
   const [intakes, setIntakes] = useState([])
   const [clients, setClients] = useState([])
-  const [quoteTemplates, setQuoteTemplates] = useState(DEFAULT_QUOTE_TEMPLATES)
+  const [quoteTemplates, setQuoteTemplates] = useState([])
   const [companyName, setCompanyName] = useState('Maine Cleaning Co')
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
