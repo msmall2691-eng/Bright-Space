@@ -423,15 +423,15 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     db.commit()
     db.refresh(quote)
 
-    if not delivered:
-        # Nothing went out — surface why so the UI shows a real error, not a
-        # false "sent".
-        raise HTTPException(status_code=502, detail="; ".join(errors) or "Quote could not be sent")
-
+    # Don't 502 when delivery fails: the public link IS the deliverable and it's
+    # ready, so always return 200 with the link + per-channel results. The UI
+    # shows what went out (and what didn't) and can offer the link to copy —
+    # instead of a dead-end error with no way to share the quote.
     return {
         "quote_id": quote.id,
         "quote_number": quote.quote_number,
         "status": quote.status,
+        "delivered": delivered,
         "results": results,
         "errors": errors,
         "public_token": token,
