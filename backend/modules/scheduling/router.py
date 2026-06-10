@@ -14,6 +14,7 @@ from modules.auth.router import get_current_user, require_role
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
+from utils.integration_log import log_integration_event as _log_integration
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -635,9 +636,14 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
                 "property_id": job.property_id,
             }
-            event_id = create_event(job_dict, client_dict)
+            # Invite the customer (attendee + email) so the cleaning lands on
+            # their own calendar — gated by the Settings toggle and requires an
+            # email to invite to.
+            from modules.settings.router import customer_invites_enabled
+            invite = customer_invites_enabled(db) and bool(client and client.email)
+            event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
-                job.calendar_invite_sent = False  # Not invited until user says so
+                job.calendar_invite_sent = invite
                 job.gcal_event_id = event_id
                 db.commit()
                 db.refresh(job)
@@ -649,11 +655,17 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                 )
                 db.commit()
                 gcal_status["synced"] = True
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="create", status="ok", external_id=event_id)
             else:
                 gcal_status["reason"] = "error"
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="create", status="failed", detail="create_event returned no id")
     except Exception as e:
         logger.warning(f"GCal push failed for job {job.id}: {e}")
         gcal_status["reason"] = "error"
+        _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                         action="create", status="failed", detail=str(e))
 
     result = job_to_dict(job)
     result["gcal"] = gcal_status
@@ -704,6 +716,30 @@ def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 18
                 "detail": "Could not load events from Google.", "events": []}
 
 
+@router.get("/gcal-sync-status", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def gcal_sync_status(db: Session = Depends(get_db)):
+    """How many upcoming jobs aren't on Google Calendar yet.
+
+    The Calendar page is a read-only Google embed, so it only shows jobs that
+    were actually pushed to GCal. This drives a "reconcile" banner there: when
+    app jobs (often created before Google was connected, or whose push failed)
+    have no gcal_event_id, they're invisible on that page — surfacing the count
+    + a Push button lets the operator close the gap in one click.
+    """
+    try:
+        from integrations.google_calendar import is_configured
+        configured = bool(is_configured())
+    except Exception:
+        configured = False
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    unsynced = db.query(Job).filter(
+        Job.gcal_event_id.is_(None),
+        Job.status.in_(["scheduled", "in_progress"]),
+        Job.scheduled_date >= today,
+    ).count()
+    return {"unsynced_count": unsynced, "configured": configured}
+
+
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_to_gcal(db: Session = Depends(get_db)):
     """Push any BrightBase jobs that don't yet have a GCal event."""
@@ -722,6 +758,8 @@ def push_to_gcal(db: Session = Depends(get_db)):
     if not jobs:
         return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
 
+    from modules.settings.router import customer_invites_enabled
+    invites_on = customer_invites_enabled(db)
     created_count = 0
     errors = []
 
@@ -735,9 +773,11 @@ def push_to_gcal(db: Session = Depends(get_db)):
             "property_id": job.property_id,
         }
         try:
-            event_id = create_event(job_dict, client_dict)
+            invite = invites_on and bool(client and client.email)
+            event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
                 job.gcal_event_id = event_id
+                job.calendar_invite_sent = invite
                 created_count += 1
         except Exception as e:
             errors.append({"job_id": job.id, "error": str(e)})
@@ -1096,8 +1136,38 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
         except Exception as e:
             logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
-    # Sync update to Google Calendar if event exists
-    if job.gcal_event_id:
+    # Google Calendar + visits sync.
+    if job.status == "cancelled":
+        # Cancelling pulls the job off the schedule everywhere: cancel its active
+        # visits (so the agenda/list views drop it too) and remove the Google
+        # Calendar event entirely instead of re-pushing it.
+        for v in getattr(job, "visits", []) or []:
+            if v.status not in ("cancelled", "completed"):
+                v.status = "cancelled"
+        if job.gcal_event_id:
+            old_event_id = job.gcal_event_id
+            try:
+                from integrations.google_calendar import delete_event
+                # delete_event returns False (doesn't raise) when Google rejects
+                # or is unavailable. Only detach the id on success, so a failed
+                # delete can be retried next time rather than orphaning the event.
+                if delete_event(job.gcal_event_id, job.job_type or "residential"):
+                    job.gcal_event_id = None
+                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                     action="delete", status="ok", external_id=old_event_id, commit=False)
+                else:
+                    logger.warning(f"GCal delete did not apply for cancelled job {job.id}; keeping event id to retry")
+                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                     action="delete", status="failed", external_id=old_event_id,
+                                     detail="delete_event returned False (kept id to retry)", commit=False)
+            except Exception as e:
+                logger.warning(f"GCal delete failed for cancelled job {job.id}: {e}")
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="delete", status="failed", external_id=old_event_id,
+                                 detail=str(e), commit=False)
+        db.commit()
+        db.refresh(job)
+    elif job.gcal_event_id:
         try:
             from integrations.google_calendar import update_event
             client = db.query(Client).filter(Client.id == job.client_id).first()

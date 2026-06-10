@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import JobCreateModal from '../components/JobCreateModal'
+import QuotePreview from '../components/QuotePreview'
 import { get, post, patch, put } from "../api"
 
 
@@ -58,6 +60,8 @@ export default function Quoting() {
   const location = useLocation()
   const [tab, setTab] = useState('leads')
   const [quotes, setQuotes] = useState([])
+  const [followUps, setFollowUps] = useState([])
+  const [nudging, setNudging] = useState(null)
   const [intakes, setIntakes] = useState([])
   const [clients, setClients] = useState([])
   const [quoteTemplates, setQuoteTemplates] = useState(DEFAULT_QUOTE_TEMPLATES)
@@ -75,15 +79,21 @@ export default function Quoting() {
   const [converting, setConverting] = useState(null)
   const [toast, setToast] = useState(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  // Live customer-facing preview alongside the editor (§7.2 #4 quote reader).
+  const [previewMode, setPreviewMode] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
   // Template manager (create/edit/delete reusable quote templates). Saving needs
   // admin/manager (PUT is role-gated), so only show the editor to those roles.
   const [editTemplates, setEditTemplates] = useState([])
   const [savingTemplates, setSavingTemplates] = useState(false)
-  const canManageTemplates = (() => {
+  // Quote mutations (create/edit/send/accept/decline/convert) are admin/manager
+  // only on the backend — gate the controls so viewers get a read-only funnel
+  // instead of buttons that 403. Same check drives the template editor.
+  const canEdit = (() => {
     try { return ['admin', 'manager'].includes(JSON.parse(localStorage.getItem('brightbase_user') || '{}').role) }
     catch { return false }
   })()
+  const canManageTemplates = canEdit
   // Inline "new client" quick-add from the quote form.
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
@@ -170,18 +180,21 @@ export default function Quoting() {
     setSavingTemplates(false)
   }
 
-  // Honor ?tab=quotes|leads (e.g. from the dashboard's Quotes & leads tile).
+  // Honor ?tab=quotes|leads|follow-ups (e.g. from the dashboard's tiles).
   useEffect(() => {
     const t = new URLSearchParams(location.search).get('tab')
-    if (t === 'quotes' || t === 'leads') setTab(t)
+    if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
   }, [location.search])
 
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  // Quotes the customer is sitting on (sent-but-unopened / opened-but-no-reply).
+  const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
 
   useEffect(() => {
     loadQuotes()
     loadIntakes()
+    loadFollowUps()
     get('/api/clients').then(d => setClients(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
     get('/api/settings/quote-templates').then(d => {
       // Treat any array as authoritative — including [] — so deleting every
@@ -319,18 +332,46 @@ export default function Quoting() {
     try {
       await post(`/api/quotes/${selected.id}/generate-token`, {})
       const data = await post(`/api/quotes/${selected.id}/send`, sendForm)
-      const channels = Object.entries(data.results || {})
-        .filter(([, v]) => v === 'sent').map(([k]) => k)
-      showToast(`Quote sent via ${channels.join(' & ')} ✓`)
+      if (data.delivered) {
+        const channels = Object.entries(data.results || {})
+          .filter(([, v]) => v === 'sent').map(([k]) => k)
+        showToast(`Quote sent via ${channels.join(' & ')} ✓`)
+      } else {
+        // Nothing went out (e.g. email server hiccup), but the link is ready —
+        // copy it so the owner can still share the quote manually.
+        const reason = (data.errors || []).join('; ') || 'delivery failed'
+        if (data.quote_link && navigator.clipboard?.writeText) {
+          try { await navigator.clipboard.writeText(data.quote_link) } catch {}
+          showToast(`Couldn't send (${reason}) — link copied to share manually`)
+        } else {
+          showToast(`Couldn't send: ${reason}`)
+        }
+      }
       await loadQuotes()
       setPanel(null)
     } catch (e) { showToast(e.message || 'Error sending quote') }
     setSending(false)
   }
 
+  // One-click follow-up nudge: re-send the quote by email to the address on
+  // file. The backend records it as a follow-up (keeps the original sent/viewed
+  // state intact) — nothing is auto-sent; this only fires when the owner clicks.
+  const sendFollowUp = async (q) => {
+    setNudging(q.id)
+    try {
+      await post(`/api/quotes/${q.id}/generate-token`, {})
+      const data = await post(`/api/quotes/${q.id}/send`, { channel: 'email' })
+      const channels = Object.entries(data.results || {}).filter(([, v]) => v === 'sent').map(([k]) => k)
+      showToast(`Follow-up sent via ${channels.join(' & ') || 'email'} ✓`)
+      await Promise.all([loadQuotes(), loadFollowUps()])
+    } catch (e) { showToast(e.message || 'Could not send follow-up') }
+    setNudging(null)
+  }
+
   const updateStatus = async (id, status) => {
     await patch(`/api/quotes/${id}`, { status })
     loadQuotes()
+    loadFollowUps()
   }
 
   const markIntakeReviewed = async (id) => {
@@ -346,6 +387,19 @@ export default function Quoting() {
       navigate(`/scheduling`)
     } catch (e) { showToast(e.message || 'Error converting to job') }
     setConverting(null)
+  }
+
+  // Onboard an accepted quote: open the job modal (recurring by default,
+  // pre-filled from the quote) to set up the repeating schedule + first job on
+  // Google Calendar, then mark the quote converted.
+  const [scheduleQuote, setScheduleQuote] = useState(null)
+  const quoteJobType = (svc) => (svc === 'str' ? 'str_turnover' : (svc === 'commercial' ? 'commercial' : 'residential'))
+  const finishOnboard = async () => {
+    if (!scheduleQuote) return
+    try { await patch(`/api/quotes/${scheduleQuote.id}`, { status: 'converted' }) } catch { /* non-fatal */ }
+    setScheduleQuote(null)
+    await loadQuotes()
+    showToast('Client onboarded — schedule created ✓')
   }
 
   const copyPublicLink = async (quote) => {
@@ -392,6 +446,11 @@ export default function Quoting() {
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Quotes
             </button>
+            <button onClick={() => setTab('follow-ups')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              Follow-ups
+              {followUps.length > 0 && <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{followUps.length}</span>}
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {canManageTemplates && (
@@ -400,10 +459,12 @@ export default function Quoting() {
                 <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
               </button>
             )}
-            <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              <Plus className="w-4 h-4" /> New Quote
-            </button>
+            {canEdit && (
+              <button onClick={() => { openQuoteForm(); setTab('quotes') }}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Plus className="w-4 h-4" /> New Quote
+              </button>
+            )}
           </div>
         </div>
 
@@ -436,13 +497,13 @@ export default function Quoting() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5 shrink-0">
-                    {intake.status === 'new' && (
+                    {canEdit && intake.status === 'new' && (
                       <button onClick={() => markIntakeReviewed(intake.id)}
                         className="text-xs px-3 py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 rounded-lg transition-colors border border-hairline">
                         Mark Reviewed
                       </button>
                     )}
-                    {intake.status !== 'converted' && (
+                    {canEdit && intake.status !== 'converted' && (
                       <button onClick={() => { openQuoteForm(null, intake); setTab('quotes') }}
                         className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1">
                         <Plus className="w-3 h-3" /> Create Quote
@@ -481,36 +542,36 @@ export default function Quoting() {
                   </div>
                   <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
                   <div className="flex gap-1.5 shrink-0">
-                    {(q.status === 'draft' || q.status === 'sent') && (
+                    {canEdit && (q.status === 'draft' || q.status === 'sent') && (
                       <button onClick={() => openSendPanel(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
                         <Send className="w-3 h-3" /> Send
                       </button>
                     )}
-                    {q.status === 'sent' && (
+                    {canEdit && q.status === 'sent' && (
                       <button onClick={() => copyPublicLink(q)}
                         className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${copiedQuoteId === q.id ? 'bg-green-600/30 text-green-400' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
                         {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
                       </button>
                     )}
-                    {q.status === 'sent' && (
+                    {canEdit && q.status === 'sent' && (
                       <button onClick={() => updateStatus(q.id, 'accepted')}
                         className="text-xs px-2.5 py-1.5 bg-green-50 text-green-400 hover:bg-green-600/30 rounded-lg transition-colors">
                         Accept
                       </button>
                     )}
-                    {q.status === 'sent' && (
+                    {canEdit && q.status === 'sent' && (
                       <button onClick={() => updateStatus(q.id, 'declined')}
                         className="text-xs px-2.5 py-1.5 bg-red-50 text-red-400 hover:bg-red-600/30 rounded-lg transition-colors">
                         Decline
                       </button>
                     )}
-                    {q.status === 'accepted' && (
-                      <button onClick={() => convertToJob(q.id)} disabled={converting === q.id}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 rounded-lg transition-colors">
+                    {canEdit && q.status === 'accepted' && (
+                      <button onClick={() => setScheduleQuote(q)}
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
                         <Calendar className="w-3 h-3" />
-                        {converting === q.id ? 'Converting…' : 'Schedule Job'}
+                        Set up schedule
                       </button>
                     )}
                   </div>
@@ -519,21 +580,84 @@ export default function Quoting() {
             ))}
           </div>
         )}
+
+        {/* Needs follow-up tab — quotes the customer is sitting on */}
+        {tab === 'follow-ups' && (
+          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            {followUps.length === 0 && (
+              <div className="text-center py-16 text-ink-3">
+                <p className="text-sm">No quotes need a follow-up</p>
+                <p className="text-xs mt-1 text-ink-3">Sent quotes the customer hasn't opened (48h+) or opened but hasn't answered (24h+) show up here.</p>
+              </div>
+            )}
+            {followUps.map(q => {
+              const h = q.hours_waiting || 0
+              const waited = h >= 48 ? `${Math.round(h / 24)}d` : `${Math.round(h)}h`
+              const reasonLabel = q.follow_up_reason === 'viewed_not_accepted' ? 'Opened, no reply' : 'Not opened yet'
+              const reasonTone = q.follow_up_reason === 'viewed_not_accepted'
+                ? 'bg-purple-50 text-purple-500 border-purple-200' : 'bg-amber-50 text-amber-600 border-amber-200'
+              return (
+                <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-ink">{clientName(q.client_id)}</span>
+                        <span className="text-xs text-ink-3">{q.quote_number}</span>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full border ${reasonTone}`}>{reasonLabel}</span>
+                        <span className="text-xs text-ink-3">waiting {waited}</span>
+                        {q.follow_up_sent_at && <span className="text-xs text-ink-3">· nudged before</span>}
+                      </div>
+                      <div className="text-xs text-ink-3 mt-0.5">
+                        {[q.address, `${q.items?.length || 0} items`, q.sent_at && `sent ${new Date(q.sent_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+                    {canEdit && (
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => sendFollowUp(q)} disabled={nudging === q.id}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors">
+                          <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
+                        </button>
+                        <button onClick={() => openSendPanel(q)}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline rounded-lg transition-colors">
+                          Options
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Quote edit panel — full-screen sheet on mobile (sits above the z-30
           BottomNav so the Save button is reachable), side panel on desktop. */}
       {panel === 'quote' && (
-        <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[500px] sm:border-l sm:border-hairline sm:shrink-0">
+        <div className={`fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:border-l sm:border-hairline sm:shrink-0 ${previewMode ? 'sm:w-[500px] 2xl:w-[900px]' : 'sm:w-[500px]'}`}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
             <div>
               <h2 className="font-semibold text-ink">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
               {selectedIntake && <p className="text-xs text-ink-3 mt-0.5">From: {selectedIntake.name}</p>}
             </div>
-            <button onClick={() => setPanel(null)} className="text-ink-3 hover:text-ink-3"><X className="w-5 h-5" /></button>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPreviewMode(p => !p)}
+                title="Toggle the customer's view"
+                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                  previewMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-bg-2 text-ink-2 border-hairline hover:bg-hairline'
+                }`}>
+                <Eye className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Preview</span>
+              </button>
+              <button onClick={() => setPanel(null)} className="text-ink-3 hover:text-ink p-1"><X className="w-5 h-5" /></button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+          <div className="flex-1 flex overflow-hidden">
+          {/* Editor column — while previewing, the toggle swaps to the preview on
+              smaller screens; the two-pane (editor beside preview) only kicks in
+              at 2xl, where there's room for the widened panel next to the sidebar. */}
+          <div className={`overflow-y-auto p-6 space-y-5 scrollbar-thin ${previewMode ? 'hidden 2xl:block 2xl:w-[460px] 2xl:shrink-0 2xl:border-r 2xl:border-hairline' : 'flex-1'}`}>
 
             {/* Lead's website instant-quote estimate, when building from an intake. */}
             {selectedIntake && (selectedIntake.estimate_min != null || selectedIntake.estimate_max != null) && (
@@ -749,18 +873,30 @@ export default function Quoting() {
             </div>
           </div>
 
-          <div className="p-6 border-t border-hairline flex gap-3 shrink-0">
-            <button onClick={save} disabled={saving || !form.client_id}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-              {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
-            </button>
-            {selected && (
-              <button onClick={() => openSendPanel(selected)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                <Send className="w-4 h-4" /> Send
-              </button>
-            )}
+          {/* Preview column — the live customer-facing render. */}
+          {previewMode && (
+            <div className="flex-1 overflow-y-auto p-6 bg-bg scrollbar-thin">
+              <QuotePreview form={form} quoteNumber={selected?.quote_number} companyName={companyName} />
+            </div>
+          )}
           </div>
+
+          {canEdit ? (
+            <div className="p-6 border-t border-hairline flex gap-3 shrink-0">
+              <button onClick={save} disabled={saving || !form.client_id}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+                {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
+              </button>
+              {selected && (
+                <button onClick={() => openSendPanel(selected)}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+                  <Send className="w-4 h-4" /> Send
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="p-6 border-t border-hairline shrink-0 text-xs text-ink-3">Read-only — your role can't edit quotes.</div>
+          )}
         </div>
       )}
 
@@ -931,6 +1067,19 @@ export default function Quoting() {
             </div>
           </div>
         </div>
+      )}
+
+      {scheduleQuote && (
+        <JobCreateModal
+          clientId={scheduleQuote.client_id}
+          clientName={clientName(scheduleQuote.client_id)}
+          initialPropertyId={scheduleQuote.property_id || null}
+          initialJobType={quoteJobType(scheduleQuote.service_type)}
+          initialTitle={scheduleQuote.title || `${clientName(scheduleQuote.client_id)} — Clean`}
+          defaultRecurring
+          onClose={() => setScheduleQuote(null)}
+          onCreated={finishOnboard}
+        />
       )}
 
       {toast && <Toast msg={toast} />}

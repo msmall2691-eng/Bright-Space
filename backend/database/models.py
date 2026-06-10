@@ -490,6 +490,8 @@ class LeadIntake(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+    # Back-reference to the quote this intake was converted into (§6 traceability).
+    converted_quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True)
 
     name = Column(String, nullable=False)
     email = Column(String)
@@ -851,6 +853,10 @@ class Quote(Base):
     viewed_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     declined_at = Column(DateTime(timezone=True), nullable=True)
+    # When an accepted quote was turned into a Job (conversion tracking).
+    converted_at = Column(DateTime(timezone=True), nullable=True)
+    # When a follow-up nudge was last sent on a stale sent/viewed quote.
+    follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # Acceptance capture (from the public accept page)
     accepted_by_name = Column(String(255), nullable=True)
@@ -966,3 +972,31 @@ class CleanerTimeOff(Base):
 
     def __repr__(self):
         return f"<CleanerTimeOff(cleaner_id={self.cleaner_id}, {self.start_date}..{self.end_date})>"
+
+
+class IntegrationEvent(Base):
+    """Audit log of outbound integration actions (Google Calendar, email, SMS).
+
+    One row per attempt to push/update/delete something on an external provider,
+    so the operator can answer "did this job's calendar event actually get
+    created/deleted?" and "did the quote email/text go out?" without reading
+    server logs. Write-only/best-effort: logging must never break the action it
+    records (§5.5 of the April audit).
+
+    The table itself was scaffolded in 001_initial_schema.py but never wired to a
+    model or used; this model adopts that exact schema (no new migration), so
+    create_all (tests) and the existing prod table stay in lockstep."""
+    __tablename__ = "integration_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String, nullable=False)   # 'job' | 'visit' | 'quote' | 'invoice'
+    entity_id = Column(Integer, nullable=False)    # the row this action was for
+    provider = Column(String, nullable=False)      # 'gcal' | 'email' | 'sms' | 'connecteam'
+    action = Column(String, nullable=False)        # 'create' | 'update' | 'delete' | 'send'
+    status = Column(String, nullable=False)        # 'ok' | 'failed'
+    external_id = Column(String, nullable=True)    # gcal_event_id, message sid, email id, ...
+    error_message = Column(String, nullable=True)  # failure reason (status='failed')
+    error_code = Column(String, nullable=True)     # provider error code, if any
+    request_payload = Column(String, nullable=True)   # short human note (e.g. "to a@b.com")
+    response_payload = Column(String, nullable=True)  # provider response summary, if any
+    created_at = Column(DateTime, default=_utcnow, index=True)

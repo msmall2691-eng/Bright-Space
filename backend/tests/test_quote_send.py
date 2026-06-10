@@ -51,10 +51,14 @@ def test_send_sms_actually_delivers(quote_ctx):
     assert "/quote/" in body  # the accept link is included
 
 
-def test_send_with_no_destination_raises_not_false_success(quote_ctx):
+def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     db, c, q = quote_ctx
     c.email = None; c.phone = None; db.commit()
-    with pytest.raises(Exception):
-        send_quote(q.id, QuoteSendRequest(channel="both"), db=db)
+    # No longer 502s — returns 200 with delivered=False + the link to share
+    # manually, and the quote stays draft (not falsely marked sent).
+    out = send_quote(q.id, QuoteSendRequest(channel="both"), db=db)
+    assert out["delivered"] is False
+    assert out["errors"]            # explains why nothing went out
+    assert out["quote_link"]        # link still provided
     db.refresh(q)
-    assert q.status == "draft"  # not falsely marked sent
+    assert q.status == "draft"

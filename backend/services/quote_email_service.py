@@ -133,8 +133,12 @@ class QuoteEmailService:
                 pdf_part.add_header('Content-Disposition', f'attachment; filename= {pdf_filename}')
                 msg.attach(pdf_part)
 
-            # Send via Gmail SMTP
-            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            # Send via Gmail SMTP. timeout is REQUIRED: without it a slow/blocked
+            # SMTP socket hangs the whole web request until Railway's gateway
+            # times out (~30-60s) and returns a 502. With a timeout the call
+            # fails fast and is caught below, so the endpoint returns a clean
+            # result instead of a gateway 502.
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
                 server.login(self.gmail_email, self.gmail_password)
                 server.send_message(msg)
 

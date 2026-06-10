@@ -344,6 +344,15 @@ class AutomationConfig(BaseModel):
     gcal_auto_sync_enabled: Optional[bool] = None
     gcal_sync_interval: Optional[int] = None
     recurring_auto_generate_enabled: Optional[bool] = None
+    invite_customers: Optional[bool] = None
+
+
+def customer_invites_enabled(db: Session) -> bool:
+    """Whether to add the customer as an attendee on their cleaning's Google
+    Calendar event (so they get an invite email and see it on their calendar).
+    Defaults on — it's the headline "customers see their cleanings" behavior —
+    and is the in-app kill switch (Settings → Automation)."""
+    return _coerce_bool(get_setting(db, "invite_customers"), True)
 
 
 AUTOMATION_DEFAULTS = {
@@ -432,6 +441,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
             get_setting(db, "recurring_auto_generate_enabled"),
             os.getenv("RECURRING_AUTO_GENERATE_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
         ),
+        "invite_customers": customer_invites_enabled(db),
     }
 
 

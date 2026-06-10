@@ -9,18 +9,26 @@ import { applyTheme } from './theme'
 applyTheme()
 
 
-// ── Global fetch interceptor: inject API key into every request ──
+// ── Global fetch interceptor ──
+// Attach the user's Bearer JWT to every same-origin request that doesn't already
+// carry a credential, so call sites using fetch() directly (not the api()
+// wrapper) still authenticate. JWT-only: the SPA never sends the shared
+// X-API-Key — the master key must not live in the browser (it was effectively a
+// synthetic admin). No JWT → the request 401s → the api() wrapper redirects to
+// /login. The backend still accepts X-API-Key for server-to-server callers.
 const _origFetch = window.fetch
-const API_KEY = import.meta.env.VITE_API_KEY || localStorage.getItem("brightbase_api_key") || ""
 window.fetch = function (url, opts = {}) {
   const reqUrl = typeof url === 'string' ? url : url?.url || ''
   const isSameOrigin = reqUrl.startsWith('/') || reqUrl.startsWith(window.location.origin)
-  if (API_KEY && isSameOrigin) {
+  if (isSameOrigin) {
     opts.headers = opts.headers || {}
-    if (opts.headers instanceof Headers) {
-      if (!opts.headers.has("X-API-Key")) opts.headers.set("X-API-Key", API_KEY)
-    } else {
-      opts.headers["X-API-Key"] = opts.headers["X-API-Key"] || API_KEY
+    const isHeaders = opts.headers instanceof Headers
+    const getH = (k) => (isHeaders ? opts.headers.get(k) : opts.headers[k])
+    const setH = (k, v) => (isHeaders ? opts.headers.set(k, v) : (opts.headers[k] = v))
+    const hasCred = !!getH("Authorization") || !!getH("X-API-Key")
+    if (!hasCred) {
+      const jwt = localStorage.getItem("brightbase_jwt")
+      if (jwt) setH("Authorization", `Bearer ${jwt}`)
     }
   }
   return _origFetch.call(this, url, opts)

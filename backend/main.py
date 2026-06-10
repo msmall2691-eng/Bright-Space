@@ -36,6 +36,7 @@ from modules.fields.router import router as fields_router
 from modules.gmail.router import router as gmail_router
 from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
+from modules.integration_events.router import router as integration_events_router
 from modules.search import router as search_router
 from modules.geo.router import router as geo_router
 from modules.settings.router import router as settings_router
@@ -94,6 +95,7 @@ app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
 app.include_router(activities_router, prefix="/api/activities", tags=["activities"])
+app.include_router(integration_events_router, prefix="/api/integration-events", tags=["integration-events"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(geo_router, prefix="/api/geo", tags=["geo"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
@@ -169,6 +171,19 @@ async def startup():
     init_db()
     start_scheduler()
 
+    # Loudly flag a behind-on-migrations DB (the usual cause of mysterious 500s)
+    # so it screams in the logs at boot instead of failing per-endpoint.
+    from database.db import check_schema_drift
+    drift = check_schema_drift()
+    if drift.get("ok") is False:
+        print(f"🛑 SCHEMA DRIFT: DB at migration {drift.get('db_revision')} but code head is "
+              f"{drift.get('head_revision')}. Run 'alembic upgrade head' — endpoints reading newer "
+              f"columns may 500 until then.")
+    elif drift.get("ok"):
+        print(f"✓ DB schema at head ({drift.get('head_revision')})")
+    else:
+        print(f"⚠️  Schema-drift check skipped: {drift.get('error')}")
+
     # Check for visits/jobs drift. Wrapped so a missing table (fresh DB,
     # mid-migration) doesn't take down the whole app at startup.
     from database.db import SessionLocal
@@ -201,7 +216,22 @@ async def manual_ical_sync():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "BrightBase"}
+    # Surface schema-drift state here (not just in startup logs) so a
+    # behind-on-migrations DB — the usual cause of "column does not exist"
+    # 500s like the GET/POST /api/quotes failures — can be diagnosed from the
+    # browser without log access. Fail-soft: check_schema_drift() never raises.
+    from database.db import check_schema_drift
+    drift = check_schema_drift()
+    return {
+        "status": "ok",
+        "service": "BrightBase",
+        "schema": {
+            "ok": drift.get("ok"),
+            "db_revision": drift.get("db_revision"),
+            "head_revision": drift.get("head_revision"),
+            "error": drift.get("error"),
+        },
+    }
 
 
 @app.get("/api/agents")

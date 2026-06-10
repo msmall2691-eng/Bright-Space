@@ -21,7 +21,8 @@ from schemas.quotes import (
 from database.models import (
     Quote, QuoteRequest, QuoteEmail, Client, Job, Property,
 )
-from modules.auth.router import get_current_user
+from modules.auth.router import get_current_user, require_role
+from utils.integration_log import log_integration_event as _log_integration
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -30,6 +31,15 @@ router = APIRouter(tags=["quotes"])
 # ========================
 # Helpers
 # ========================
+
+def _iso(v):
+    """Serialize a date/datetime to ISO 8601, tolerating values that are
+    already strings (legacy VARCHAR columns) instead of raising
+    AttributeError and 500-ing the whole list endpoint."""
+    if v is None:
+        return None
+    return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
 
 def _parse_date(value) -> Optional[date]:
     """'YYYY-MM-DD' (or a date) -> date | None. Empty string -> None."""
@@ -90,19 +100,21 @@ def _quote_dict(q: Quote) -> dict:
         "discount": q.discount,
         "total": q.total,
         "status": q.status,
-        "valid_until": q.valid_until.isoformat() if q.valid_until else None,
-        "sent_at": q.sent_at.isoformat() if q.sent_at else None,
-        "viewed_at": q.viewed_at.isoformat() if q.viewed_at else None,
-        "accepted_at": q.accepted_at.isoformat() if q.accepted_at else None,
+        "valid_until": _iso(q.valid_until),
+        "sent_at": _iso(q.sent_at),
+        "viewed_at": _iso(q.viewed_at),
+        "accepted_at": _iso(q.accepted_at),
         "accepted_by_name": q.accepted_by_name,
         "accepted_by_email": q.accepted_by_email,
-        "declined_at": q.declined_at.isoformat() if q.declined_at else None,
+        "declined_at": _iso(q.declined_at),
+        "converted_at": _iso(getattr(q, "converted_at", None)),
+        "follow_up_sent_at": _iso(getattr(q, "follow_up_sent_at", None)),
         "declined_reason": getattr(q, "declined_reason", None),
         "declined_by_name": getattr(q, "declined_by_name", None),
         "requested_changes_message": getattr(q, "requested_changes_message", None),
-        "requested_changes_at": q.requested_changes_at.isoformat() if getattr(q, "requested_changes_at", None) else None,
-        "created_at": q.created_at.isoformat() if q.created_at else None,
-        "updated_at": q.updated_at.isoformat() if q.updated_at else None,
+        "requested_changes_at": _iso(getattr(q, "requested_changes_at", None)),
+        "created_at": _iso(q.created_at),
+        "updated_at": _iso(q.updated_at),
     }
 
 
@@ -130,7 +142,7 @@ def _assign_quote_number(quote: Quote) -> None:
 # Quote CRUD
 # ========================
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_quote(
     quote_data: QuoteCreate,
     db: Session = Depends(get_db),
@@ -173,7 +185,7 @@ def create_quote(
     return _quote_dict(quote)
 
 
-@router.get("/")
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def list_quotes(
     db: Session = Depends(get_db),
     client_id: Optional[int] = Query(None),
@@ -191,7 +203,59 @@ def list_quotes(
     return [_quote_dict(q) for q in quotes]
 
 
-@router.get("/{quote_id}")
+def _hours_since(ts) -> Optional[float]:
+    """Hours elapsed since a stored timestamp, tolerant of naive vs tz-aware
+    values (sent_at etc. are stamped with naive datetime.now() but read back
+    tz-aware from Postgres)."""
+    if ts is None:
+        return None
+    t = ts.replace(tzinfo=None) if getattr(ts, "tzinfo", None) else ts
+    return (datetime.now() - t).total_seconds() / 3600.0
+
+
+@router.get("/follow-ups", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def quotes_needing_follow_up(
+    db: Session = Depends(get_db),
+    sent_hours: float = Query(48, ge=0, description="Flag sent-but-unviewed quotes older than this many hours"),
+    viewed_hours: float = Query(24, ge=0, description="Flag viewed-but-unaccepted quotes older than this many hours"),
+):
+    """Quotes that are waiting on the customer and due for a nudge (Journey E).
+
+    Read-only — surfaces the list so the operator can act; it does NOT send
+    anything. Two buckets, mirroring the audit's rules:
+      - 'sent_not_viewed': sent > sent_hours ago and never opened.
+      - 'viewed_not_accepted': opened > viewed_hours ago, still not accepted.
+    A quote already nudged more recently than its bucket's window is suppressed
+    (so it doesn't reappear every poll right after you follow up)."""
+    candidates = (
+        db.query(Quote)
+        .filter(Quote.status.in_(["sent", "viewed"]))
+        .order_by(Quote.sent_at.asc().nullslast())
+        .all()
+    )
+    out = []
+    for q in candidates:
+        if not q.viewed_at:
+            waited = _hours_since(q.sent_at)
+            if waited is None or waited < sent_hours:
+                continue
+            reason, window = "sent_not_viewed", sent_hours
+        else:
+            waited = _hours_since(q.viewed_at)
+            if waited is None or waited < viewed_hours:
+                continue
+            reason, window = "viewed_not_accepted", viewed_hours
+        nudged = _hours_since(q.follow_up_sent_at)
+        if nudged is not None and nudged < window:
+            continue  # already followed up within this window
+        row = _quote_dict(q)
+        row["follow_up_reason"] = reason
+        row["hours_waiting"] = round(waited, 1)
+        out.append(row)
+    return out
+
+
+@router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db)):
     return _quote_dict(_get_quote_or_404(quote_id, db))
 
@@ -215,10 +279,16 @@ def _apply_update(quote: Quote, data: dict) -> None:
         quote.subtotal, quote.tax, quote.total = _compute_totals(
             quote.items, quote.tax_rate, quote.discount
         )
+    # Stamp converted_at on the transition to 'converted' no matter which path
+    # got here — the "Set up schedule" onboarding flow PATCHes status directly
+    # rather than going through convert-to-job, and the conversion metric needs
+    # the timestamp set there too.
+    if quote.status == "converted" and not quote.converted_at:
+        quote.converted_at = datetime.now()
     quote.updated_at = datetime.now()
 
 
-@router.patch("/{quote_id}")
+@router.patch("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
     """Partial update (the Quoting UI uses PATCH for both edits and status)."""
     quote = _get_quote_or_404(quote_id, db)
@@ -229,7 +299,7 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
 
 
 # PUT kept as an alias of PATCH for backward compatibility.
-@router.put("/{quote_id}")
+@router.put("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
     return patch_quote(quote_id, quote_data, db)
 
@@ -245,7 +315,7 @@ class QuoteSendRequest(BaseModel):
     custom_message: Optional[str] = None
 
 
-@router.post("/{quote_id}/send")
+@router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
 def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: Session = Depends(get_db)):
     """Actually DELIVER the quote to the customer over the chosen channel(s), then
     mark it sent. Email attaches the PDF; SMS texts the public accept-link.
@@ -255,8 +325,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
     """
     quote = _get_quote_or_404(quote_id, db)
-    if quote.status not in ("draft", "sent"):
+    # draft = first send; sent/viewed = a follow-up nudge (re-send).
+    if quote.status not in ("draft", "sent", "viewed"):
         raise HTTPException(status_code=400, detail=f"Cannot send a {quote.status} quote")
+    prior_status = quote.status
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -300,14 +372,21 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                         quote_id=quote.id, recipient_email=to_email, sent_at=datetime.now(),
                         delivery_status="sent", email_id=res.get("email_id"),
                     ))
+                    _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                                     action="send", status="ok", external_id=res.get("email_id"),
+                                     detail=f"to {to_email}", commit=False)
                 else:
                     results["email"] = "failed"
                     errors.append("email could not be sent")
                     logger.warning(f"Quote {quote.id} email send failed: {res.get('error')}")
+                    _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                                     action="send", status="failed", detail="send_quote_email failed", commit=False)
             except Exception as e:
                 results["email"] = "failed"
                 errors.append("email could not be sent")
                 logger.warning(f"Quote {quote.id} email send error: {e}")
+                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
+                                 action="send", status="failed", detail=str(e), commit=False)
 
     if want_sms:
         to_phone = (body.phone or client.phone or "").strip()
@@ -321,28 +400,38 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
                 send_sms(to=to_phone, body=msg)
                 results["sms"] = "sent"
+                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                                 action="send", status="ok", detail=f"to {to_phone}", commit=False)
             except Exception as e:
                 results["sms"] = "failed"
                 errors.append("text message could not be sent")
                 logger.warning(f"Quote {quote.id} SMS send error: {e}")
+                _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                                 action="send", status="failed", detail=str(e), commit=False)
 
     delivered = any(v == "sent" for v in results.values())
     if delivered:
-        quote.status = "sent"
-        quote.sent_at = datetime.now()
+        if prior_status == "draft":
+            quote.status = "sent"
+            quote.sent_at = datetime.now()
+        else:
+            # A re-send of an already sent/viewed quote is a follow-up nudge:
+            # keep the original status/sent_at (so the "viewed" signal and the
+            # sent→accepted clock survive) and just record the nudge.
+            quote.follow_up_sent_at = datetime.now()
     quote.updated_at = datetime.now()
     db.commit()
     db.refresh(quote)
 
-    if not delivered:
-        # Nothing went out — surface why so the UI shows a real error, not a
-        # false "sent".
-        raise HTTPException(status_code=502, detail="; ".join(errors) or "Quote could not be sent")
-
+    # Don't 502 when delivery fails: the public link IS the deliverable and it's
+    # ready, so always return 200 with the link + per-channel results. The UI
+    # shows what went out (and what didn't) and can offer the link to copy —
+    # instead of a dead-end error with no way to share the quote.
     return {
         "quote_id": quote.id,
         "quote_number": quote.quote_number,
         "status": quote.status,
+        "delivered": delivered,
         "results": results,
         "errors": errors,
         "public_token": token,
@@ -350,7 +439,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     }
 
 
-@router.post("/{quote_id}/generate-token")
+@router.post("/{quote_id}/generate-token", dependencies=[Depends(require_role("admin", "manager"))])
 def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     """Ensure a public token exists and return it + the shareable link."""
     quote = _get_quote_or_404(quote_id, db)
@@ -364,7 +453,7 @@ def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{quote_id}/accept")
+@router.post("/{quote_id}/accept", dependencies=[Depends(require_role("admin", "manager"))])
 def accept_quote(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     if quote.status in ("accepted", "declined"):
@@ -377,7 +466,7 @@ def accept_quote(quote_id: int, db: Session = Depends(get_db)):
     return _quote_dict(quote)
 
 
-@router.post("/{quote_id}/decline")
+@router.post("/{quote_id}/decline", dependencies=[Depends(require_role("admin", "manager"))])
 def decline_quote(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     if quote.status in ("accepted", "declined"):
@@ -394,7 +483,7 @@ def decline_quote(quote_id: int, db: Session = Depends(get_db)):
 # Convert accepted quote -> Job
 # ========================
 
-@router.post("/{quote_id}/convert-to-job")
+@router.post("/{quote_id}/convert-to-job", dependencies=[Depends(require_role("admin", "manager"))])
 def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
     """Create a Job from a quote. The date/time is left unset for the user to
     fill in on the Scheduling page; every Job needs a Property, so we reuse the
@@ -441,6 +530,7 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
     # Mark the quote converted so it stops showing as "accepted — ready to
     # schedule" and the Schedule-Job action can't create a second job for it.
     quote.status = "converted"
+    quote.converted_at = datetime.now()
     quote.updated_at = datetime.now()
     db.commit()
     db.refresh(job)
@@ -689,7 +779,7 @@ def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends
     return {"id": qr.id, "status": qr.status, "requester_name": qr.requester_name}
 
 
-@router.get("/requests/")
+@router.get("/requests/", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def list_quote_requests(
     db: Session = Depends(get_db),
     status: Optional[str] = Query(None),
@@ -712,7 +802,7 @@ def list_quote_requests(
     ]
 
 
-@router.put("/requests/{request_id}")
+@router.put("/requests/{request_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db)):
     qr = db.query(QuoteRequest).filter(QuoteRequest.id == request_id).first()
     if not qr:
@@ -745,7 +835,7 @@ def _pdf_line_items(quote: Quote) -> list:
     ]
 
 
-@router.post("/{quote_id}/generate-pdf")
+@router.post("/{quote_id}/generate-pdf", dependencies=[Depends(require_role("admin", "manager"))])
 def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     client = db.query(Client).filter(Client.id == quote.client_id).first()
@@ -774,7 +864,7 @@ def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{quote_id}/send-email")
+@router.post("/{quote_id}/send-email", dependencies=[Depends(require_role("admin", "manager"))])
 def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     if "@" not in recipient_email:
@@ -838,7 +928,7 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
     }
 
 
-@router.get("/{quote_id}/email-history")
+@router.get("/{quote_id}/email-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote_email_history(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
     emails = (

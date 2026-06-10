@@ -1053,6 +1053,47 @@ def relink_conversations(client_id: int, db: Session = Depends(get_db)):
     return combined_report
 
 
+class ClientNoteRequest(BaseModel):
+    body: str
+
+
+@router.post("/{client_id}/notes", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def add_client_note(
+    client_id: int,
+    data: ClientNoteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Jot an internal note on a client. Recorded as a NOTE_ADDED activity so it
+    lands in the client's unified timeline — works even when there's no SMS/email
+    conversation to hang a note off of (the old /conversations/{id}/notes path
+    required one)."""
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    body = (data.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Note body is required")
+
+    from utils.activity_logger import log_activity
+    from database.models import ActivityType
+    from modules.activities.router import activity_to_dict
+
+    actor = getattr(current_user, "email", None) or getattr(current_user, "full_name", None) or "staff"
+    act = log_activity(
+        db, ActivityType.NOTE_ADDED.value,
+        client_id=client_id, actor=actor, summary=body,
+        extra_data={"note": True}, commit=False,
+    )
+    if not act:
+        raise HTTPException(status_code=500, detail="Could not record note")
+    # Commit here (not via the logger's swallowed commit) so a write failure
+    # surfaces as a 500 instead of a false "Note added".
+    db.commit()
+    db.refresh(act)
+    return activity_to_dict(act)
+
+
 @router.patch("/{client_id}/phones/{phone_id}", response_model=ContactPhoneRead, dependencies=[Depends(require_role("admin", "manager"))])
 def update_client_phone(client_id: int, phone_id: int, data: ContactPhoneUpdate, db: Session = Depends(get_db)):
     client = db.query(Client).filter(Client.id == client_id).first()

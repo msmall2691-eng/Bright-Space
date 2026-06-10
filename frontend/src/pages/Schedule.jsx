@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, MapPin, User, Users, Clock, Plus, AlertCircle,
   Home, Building2, Wind, RefreshCw, Filter, X, CheckCircle, MessageCircle, Phone,
   Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical, Zap, LogIn,
-  List, Grid3x3, AlignLeft, Wand2, Wrench, ChevronDown
+  List, Grid3x3, AlignLeft, Wand2, Wrench, ChevronDown, Camera
 } from 'lucide-react'
 import { get, post, put, del } from '../api'
 import Button from '../components/ui/Button'
@@ -257,15 +257,21 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
 }
 
 
-const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect }) => {
+const VISIT_ACCENT = { str: 'border-l-amber-400', str_turnover: 'border-l-amber-400', residential: 'border-l-blue-400', commercial: 'border-l-purple-400' }
+const cleanerInitials = (name) => (name || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'
+
+const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusChange, selected, onToggleSelect, empName }) => {
   const propertyType = property?.property_type || 'residential'
   const config = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
   const PropertyIcon = config.icon
   const statusConfig = VISIT_STATUS_CONFIG[visit.status] || VISIT_STATUS_CONFIG.scheduled
+  const accent = VISIT_ACCENT[propertyType] || 'border-l-blue-400'
 
-  const hasAssigned = visit.cleaner_ids?.length > 0
-  const hasGcal = visit.gcal_event_id ? '✅' : ''
-  const hasSMS = job?.sms_reminder_sent ? '📲' : ''
+  const cleaners = visit.cleaner_ids || []
+  const hasAssigned = cleaners.length > 0
+  const hasGcal = !!visit.gcal_event_id
+  const hasSMS = !!job?.sms_reminder_sent
+  const hasPhotos = (visit.photos || []).length > 0
   const isCompleted = visit.status === 'completed'
 
   // Phase 8 redesign: tighter list-row layout. Single horizontal row with
@@ -275,7 +281,7 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
     <div
       className={`group flex items-center gap-3 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg transition-colors cursor-pointer ${
         selected ? 'bg-blue-50 ring-1 ring-blue-300' : 'bg-panel hover:bg-bg'
-      } border border-hairline`}
+      } border border-hairline border-l-4 ${accent}`}
       onClick={() => onEdit(visit, job, property)}
     >
       <input
@@ -319,13 +325,25 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
         </div>
       </div>
 
-      {/* Status pill + cleaner indicator */}
+      {/* Status icons + pill + cleaner avatars */}
       <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1">
+          {hasGcal && <span title="On Google Calendar"><Calendar className="w-3.5 h-3.5 text-indigo-500" /></span>}
+          {hasSMS && <span title="Reminder sent"><MessageCircle className="w-3.5 h-3.5 text-cyan-500" /></span>}
+          {hasPhotos && <span title="Photos attached"><Camera className="w-3.5 h-3.5 text-emerald-500" /></span>}
+        </div>
         <StatusBadge status={statusConfig.badge} className="text-[10px]">{statusConfig.label}</StatusBadge>
         {hasAssigned ? (
-          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-            <User className="w-2.5 h-2.5" /> {visit.cleaner_ids.length}
-          </span>
+          <div className="flex items-center -space-x-1" title={cleaners.map(id => empName?.(id) || `Cleaner ${id}`).join(', ')}>
+            {cleaners.slice(0, 3).map((id, i) => (
+              <span key={i} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold border border-panel">
+                {cleanerInitials(empName?.(id) || `C${id}`)}
+              </span>
+            ))}
+            {cleaners.length > 3 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-bg-2 text-ink-3 text-[9px] font-bold border border-panel">+{cleaners.length - 3}</span>
+            )}
+          </div>
         ) : (
           <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
             no cleaner
@@ -905,12 +923,10 @@ export default function Schedule() {
   // desktop — see the useEffect below.
   const VALID_VIEWS = ['agenda', 'list', 'month', 'google']
   const rawView = searchParams.get('view')
-  // Schedule is Google-Calendar only: it shows your embedded Google Calendar and
-  // nothing else. The native agenda/list/month views remain reachable via an
-  // explicit ?view= (kept for debugging/backfill), but the UI defaults to — and
-  // stays on — Google. (Note: we intentionally ignore any old localStorage
-  // 'schedule_view' so a previously-stuck Month pick doesn't override this.)
-  const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'google'
+  // Default to the rich in-app calendar (month grid: color-by-service, drag to
+  // reschedule, click a day to book). A one-click view switcher jumps to
+  // Week / Day / the embedded Google Calendar. ?view= persists the choice.
+  const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'month'
   const isGoogleOnly = viewMode === 'google'
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
@@ -928,6 +944,9 @@ export default function Schedule() {
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
+  // Integration audit rows for the open job (Google Calendar push outcomes), so
+  // the detail drawer shows the *real* sync result, not just "has an event id".
+  const [jobEvents, setJobEvents] = useState([])
   const [completingVisit, setCompletingVisit] = useState(null)
   const [editingJob, setEditingJob] = useState(null)
   const [showJobModal, setShowJobModal] = useState(false)
@@ -1217,6 +1236,18 @@ export default function Schedule() {
     setShowDetails(true)
   }
 
+  // When the detail drawer opens for a job, pull its Google Calendar audit rows
+  // so we can show whether the last push actually landed (and why, if it didn't).
+  useEffect(() => {
+    const jobId = showDetails ? selectedVisit?.job?.id : null
+    if (!jobId) { setJobEvents([]); return }
+    let cancelled = false
+    get(`/api/integration-events?entity_type=job&entity_id=${jobId}&provider=gcal&limit=20`)
+      .then(rows => { if (!cancelled) setJobEvents(Array.isArray(rows) ? rows : []) })
+      .catch(err => { if (!cancelled) { console.error('[Schedule] integration-events', err); setJobEvents([]) } })
+    return () => { cancelled = true }
+  }, [showDetails, selectedVisit?.job?.id])
+
   const handleDelete = async (visitId) => {
     if (!confirm('Delete this visit?')) return
     try {
@@ -1380,10 +1411,23 @@ export default function Schedule() {
       <div className="bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
           {/* Single compact row: title · date nav · view toggle · New Job */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
 
-            {!isGoogleOnly && (
+            {/* View switcher — in-app calendar by default, one tap to Google.
+                Short labels on phones so the toolbar fits narrow viewports. */}
+            <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
+              {[['month', 'Calendar', 'Cal'], ['list', 'Week', 'Wk'], ['agenda', 'Day', 'Day'], ['google', 'Google', 'GCal']].map(([v, label, short]) => (
+                <button key={v} onClick={() => setViewMode(v)}
+                  className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                  <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Outer date nav — only for Week/Day. Month mode uses CalendarView's
+                own month nav, so these arrows would otherwise do nothing. */}
+            {!isGoogleOnly && viewMode !== 'month' && (
               <div className="hidden sm:flex items-center gap-1 ml-1">
                 <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                   <ChevronLeft className="w-4 h-4" />
@@ -1642,6 +1686,7 @@ export default function Schedule() {
                           onDelete={handleDelete}
                           selected={selectedVisitIds.has(visit.id)}
                           onToggleSelect={toggleVisitSelect}
+                          empName={empName}
                         />
                       ))}
                     </div>
@@ -1692,6 +1737,36 @@ export default function Schedule() {
                   <p className="text-sm sm:text-base text-ink break-words">{selectedVisit.property?.address}</p>
                 </div>
 
+                {/* On-site access details (house code, entry/parking notes, site
+                    contact, STR check-in/out) — what a crew needs to get in. */}
+                {(() => {
+                  // Prefer the visit's enriched property (from /api/visits, which
+                  // carries house_code/access/site-contact); the /api/properties
+                  // copy omits site_contact_*.
+                  const p = selectedVisit.visit?.property || selectedVisit.property || {}
+                  if (!(p.house_code || p.access_notes || p.parking_notes || p.site_contact_name || p.site_contact_phone || p.check_in_time || p.check_out_time)) return null
+                  return (
+                    <div>
+                      <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Access</p>
+                      <div className="text-sm text-ink space-y-0.5">
+                        {p.house_code && <p>Code <span className="font-semibold">{p.house_code}</span></p>}
+                        {p.access_notes && <p className="break-words">{p.access_notes}</p>}
+                        {p.parking_notes && <p className="text-ink-2">Parking: {p.parking_notes}</p>}
+                        {(p.site_contact_name || p.site_contact_phone) && (
+                          <p>Site contact: {p.site_contact_name || ''}{p.site_contact_phone ? ` · ${p.site_contact_phone}` : ''}</p>
+                        )}
+                        {(p.check_out_time || p.check_in_time) && (
+                          <p className="text-ink-3">
+                            {p.check_out_time ? `Checkout ${p.check_out_time}` : ''}
+                            {p.check_out_time && p.check_in_time ? ' · ' : ''}
+                            {p.check_in_time ? `Check-in ${p.check_in_time}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 <div>
                   <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Client</p>
                   <p className="text-sm sm:text-base text-ink">{selectedVisit.job?.client_name}</p>
@@ -1734,14 +1809,53 @@ export default function Schedule() {
                 {selectedVisit.visit.cleaner_ids?.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Assigned Cleaners</p>
-                    <p className="text-sm sm:text-base text-ink">{selectedVisit.visit.cleaner_ids.length} cleaner(s)</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedVisit.visit.cleaner_ids.map((cid, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 text-sm text-ink bg-bg-2 pl-1 pr-2.5 py-0.5 rounded-full">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">
+                            {cleanerInitials(empName(cid) || `C${cid}`)}
+                          </span>
+                          {empName(cid) || `Cleaner ${cid}`}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {selectedVisit.visit.gcal_event_id && (
+                {(jobEvents.length > 0 || selectedVisit.visit.gcal_event_id) && (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Google Calendar</p>
-                    <p className="text-sm text-green-700">✅ Synced</p>
+                    {(() => {
+                      const latest = jobEvents[0]  // newest-first from the API
+                      if (!latest) {
+                        // Has an event id but predates the audit log — show the
+                        // plain synced state we already knew about.
+                        return <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700"><CheckCircle className="w-3.5 h-3.5" /> Synced</span>
+                      }
+                      const when = latest.created_at ? new Date(latest.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+                      if (latest.status === 'failed') {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={latest.error_message || ''}>
+                            <AlertCircle className="w-3.5 h-3.5" /> {latest.action === 'delete' ? 'Calendar removal failed' : 'Calendar sync failed'}{when && ` · ${when}`}
+                          </span>
+                        )
+                      }
+                      if (latest.action === 'delete') {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
+                            <Clock className="w-3.5 h-3.5" /> Removed from calendar{when && ` · ${when}`}
+                          </span>
+                        )
+                      }
+                      return (
+                        <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                          <CheckCircle className="w-3.5 h-3.5" /> Synced{when && ` · ${when}`}
+                        </span>
+                      )
+                    })()}
+                    {jobEvents[0]?.status === 'failed' && jobEvents[0]?.error_message && (
+                      <p className="text-[11px] text-red-600 mt-1 break-words">{String(jobEvents[0].error_message).slice(0, 200)}</p>
+                    )}
                   </div>
                 )}
 
@@ -1772,9 +1886,15 @@ export default function Schedule() {
                 )}
 
                 {/* Completion summary, once a visit has been completed */}
-                {selectedVisit.visit.status === 'completed' && (selectedVisit.visit.checklist_results || selectedVisit.visit.photos?.length > 0) && (
+                {selectedVisit.visit.status === 'completed' && (
                   <div className="border-t border-hairline pt-3">
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Completion</p>
+                    {(selectedVisit.visit.completed_at || selectedVisit.visit.completed_by) && (
+                      <p className="text-[12px] text-ink-3 mb-1">
+                        {selectedVisit.visit.completed_at && `Completed ${new Date(selectedVisit.visit.completed_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+                        {selectedVisit.visit.completed_by && ` · by ${empName(selectedVisit.visit.completed_by)}`}
+                      </p>
+                    )}
                     {selectedVisit.visit.checklist_results && (
                       <ul className="text-sm text-ink space-y-0.5">
                         {Object.entries(selectedVisit.visit.checklist_results).map(([task, done]) => (

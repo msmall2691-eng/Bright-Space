@@ -115,6 +115,8 @@ export default function ClientProfile() {
   const [emails, setEmails] = useState([])
   const [tab, setTab] = useState('activity')  // Twenty leads with the Timeline
   const [activityFilter, setActivityFilter] = useState('all')
+  const [noteText, setNoteText] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
@@ -203,6 +205,29 @@ export default function ClientProfile() {
     } catch (e) {
       console.error('[ClientProfile load error]', e)
     }
+  }
+
+  const reloadActivities = async () => {
+    try {
+      const acts = await get(`/api/activities?client_id=${id}&limit=50`)
+      setActivities(Array.isArray(acts) ? acts : [])
+    } catch { /* non-fatal */ }
+  }
+
+  const submitNote = async () => {
+    if (savingNote) return  // guard against ⌘/Ctrl+Enter repeats while in flight
+    const body = noteText.trim()
+    if (!body) return
+    setSavingNote(true)
+    try {
+      await post(`/api/clients/${id}/notes`, { body })
+      setNoteText('')
+      await reloadActivities()
+      toast.success('Note added')
+    } catch (e) {
+      toast.error(e.message || 'Could not add note')
+    }
+    setSavingNote(false)
   }
 
   const reloadProperties = async () => {
@@ -684,6 +709,27 @@ export default function ClientProfile() {
         {/* Activity feed */}
         {tab === 'activity' && (
           <div className="max-w-2xl space-y-3">
+            {/* Jot an internal note — lands in this timeline (no conversation needed). */}
+            <div className="bg-panel border border-hairline rounded-xl p-3">
+              <textarea
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitNote() }}
+                rows={2}
+                placeholder="Add an internal note about this client…"
+                className="w-full resize-none bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none"
+              />
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[11px] text-ink-3">⌘/Ctrl + Enter</span>
+                <button
+                  onClick={submitNote}
+                  disabled={savingNote || !noteText.trim()}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                >
+                  {savingNote ? 'Adding…' : 'Add note'}
+                </button>
+              </div>
+            </div>
             {/* Twenty-style filter chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mt-1 sticky top-0 bg-bg z-10 py-2">
               {ACTIVITY_FILTERS.map(f => {

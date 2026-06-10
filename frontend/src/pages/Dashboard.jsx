@@ -110,6 +110,7 @@ export default function Dashboard() {
   const [weekJobs, setWeekJobs] = useState([])
   const [invoices, setInvoices] = useState([])
   const [quotes, setQuotes] = useState([])
+  const [followUps, setFollowUps] = useState([])
   const [todayVisits, setTodayVisits] = useState([])
   const [overdueConvs, setOverdueConvs] = useState([])
   const [unassignedConvs, setUnassignedConvs] = useState([])
@@ -127,7 +128,7 @@ export default function Dashboard() {
       try {
         const [
           jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, employeesAll,
+          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
@@ -139,6 +140,7 @@ export default function Dashboard() {
           get('/api/intake?limit=200').catch(() => []),
           get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
           get('/api/comms/conversations/summary').catch(() => ({})),
+          get('/api/quotes/follow-ups').catch(() => []),
           get('/api/dispatch/employees').catch(() => []),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
@@ -152,6 +154,7 @@ export default function Dashboard() {
         setLeads(Array.isArray(leadsAll) ? leadsAll : (leadsAll?.items || []))
         setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
         setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
+        setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
         setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
@@ -180,7 +183,8 @@ export default function Dashboard() {
     changes: quotes.filter(q => q.status === 'changes_requested').length,
     toSchedule: quotes.filter(q => q.status === 'accepted').length,
     newLeads: leads.filter(l => !l.status || ['new', 'received'].includes(l.status)).length,
-  }), [quotes, leads])
+    followUp: followUps.length,
+  }), [quotes, leads, followUps])
 
   // STR turnover coverage for the next 7 calendar days (today + 6; weekJobs is
   // fetched with an inclusive +7 end, so clamp here). "Covered" = a cleaner is
@@ -451,12 +455,13 @@ export default function Dashboard() {
         >
           {loading ? (
             <TileLoading />
-          ) : (quoteActions.awaiting + quoteActions.changes + quoteActions.toSchedule + quoteActions.newLeads) === 0 ? (
+          ) : (quoteActions.awaiting + quoteActions.changes + quoteActions.toSchedule + quoteActions.newLeads + quoteActions.followUp) === 0 ? (
             <EmptyState compact icon={CheckCircle2} title="Funnel clear"
               description="No quotes or leads waiting on you." />
           ) : (
             <div className="flex-1 space-y-1.5">
               {[
+                { n: quoteActions.followUp, label: 'Need a follow-up nudge', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/quoting?tab=follow-ups') },
                 { n: quoteActions.changes, label: 'Changes requested', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/quoting?tab=quotes') },
                 { n: quoteActions.awaiting, label: 'Awaiting customer response', tone: 'text-blue-700 bg-blue-50 border-blue-200', go: () => navigate('/quoting?tab=quotes') },
                 { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', go: () => navigate('/quoting?tab=quotes') },
