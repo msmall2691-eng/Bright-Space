@@ -20,7 +20,7 @@ import { Card, StatCard, EmptyState, Skeleton } from '../components/ui'
 import { AIFollowUps } from '../components/AIBriefing'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
-  CheckCircle2, Clock, ArrowRight, Zap, FileText,
+  CheckCircle2, Clock, ArrowRight, Zap, FileText, Users,
 } from 'lucide-react'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -117,6 +117,7 @@ export default function Dashboard() {
   const [leads, setLeads] = useState([])
   const [svcRevenue, setSvcRevenue] = useState([])
   const [commsSummary, setCommsSummary] = useState({})
+  const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -127,7 +128,7 @@ export default function Dashboard() {
       try {
         const [
           jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, followUpsResp,
+          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
@@ -140,6 +141,7 @@ export default function Dashboard() {
           get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
           get('/api/comms/conversations/summary').catch(() => ({})),
           get('/api/quotes/follow-ups').catch(() => []),
+          get('/api/dispatch/employees').catch(() => []),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
@@ -153,6 +155,7 @@ export default function Dashboard() {
         setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
         setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
         setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
+        setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
@@ -197,6 +200,24 @@ export default function Dashboard() {
 
   // Uncapped breached count from the summary endpoint (the list is limit=20).
   const slaBreached = commsSummary.breached ?? overdueConvs.length
+
+  // Crew workload for the next 7 days: jobs assigned per cleaner + unassigned.
+  const crew = useMemo(() => {
+    const sixOut = new Date(Date.now() + 6 * 864e5).toISOString().slice(0, 10)
+    const jobs = weekJobs.filter(j => j.status !== 'cancelled' && (j.scheduled_date || '').slice(0, 10) <= sixOut)
+    const nameOf = (id) => employees.find(e => String(e.id) === String(id))?.name || `Cleaner ${id}`
+    const counts = {}
+    let unassigned = 0
+    for (const j of jobs) {
+      const ids = j.cleaner_ids || []
+      if (ids.length === 0) { unassigned++; continue }
+      for (const id of ids) counts[id] = (counts[id] || 0) + 1
+    }
+    const rows = Object.entries(counts)
+      .map(([id, n]) => ({ id, name: nameOf(id), n }))
+      .sort((a, b) => b.n - a.n)
+    return { rows, unassigned, total: jobs.length }
+  }, [weekJobs, employees])
 
   // AR aging buckets — so the operator knows WHO to call this morning.
   // Groups overdue invoices by age: 0-30, 30-60, 60-90, 90+ days.
@@ -481,6 +502,49 @@ export default function Dashboard() {
                 value={turnover.needCrew}
                 accent={turnover.needCrew > 0 ? 'text-amber-600' : 'text-emerald-600'}
                 onClick={() => navigate('/schedule')} />
+            </div>
+          )}
+        </Tile>
+
+        {/* CREW WORKLOAD — who's booked this week, to balance assignments */}
+        <Tile
+          icon={Users}
+          iconColor="text-blue-500"
+          title="Crew workload (7 days)"
+          badge={crew.unassigned > 0 && (
+            <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
+              {crew.unassigned} unassigned
+            </span>
+          )}
+          action="Open schedule"
+          onAction={() => navigate('/schedule')}
+        >
+          {loading ? (
+            <TileLoading />
+          ) : crew.rows.length === 0 && crew.unassigned === 0 ? (
+            <EmptyState compact icon={Users} title="No jobs this week"
+              description="Assignments will show here." />
+          ) : (
+            <div className="flex-1 overflow-y-auto max-h-[300px] space-y-1.5">
+              {crew.rows.map(r => {
+                const pct = crew.rows[0] ? Math.round((r.n / crew.rows[0].n) * 100) : 0
+                return (
+                  <div key={r.id} className="flex items-center gap-2 text-sm">
+                    <span className="w-28 truncate text-ink-2 shrink-0">{r.name}</span>
+                    <div className="flex-1 bg-bg-2 rounded-full h-2 overflow-hidden">
+                      <div className="bg-blue-500 h-full rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-6 text-right font-semibold text-ink shrink-0">{r.n}</span>
+                  </div>
+                )
+              })}
+              {crew.unassigned > 0 && (
+                <button onClick={() => navigate('/schedule')}
+                  className="w-full flex items-center justify-between gap-2 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-800 hover:opacity-90 transition-opacity mt-1">
+                  <span>Jobs with no crew assigned</span>
+                  <span className="font-bold flex items-center gap-1">{crew.unassigned} <ArrowRight className="w-3.5 h-3.5" /></span>
+                </button>
+              )}
             </div>
           )}
         </Tile>
