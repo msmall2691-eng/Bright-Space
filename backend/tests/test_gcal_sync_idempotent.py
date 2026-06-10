@@ -107,3 +107,54 @@ def test_sync_applies_a_real_date_change_once():
         db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
         db.commit()
         db.close()
+
+
+def test_sync_does_not_churn_utc_z_form_event():
+    """A UTC 'Z' event must read back as the business wall-clock time, not the
+    raw UTC hour — otherwise it churns every poll and corrupts the stored time.
+
+    Regression for the two-parser disagreement: the rehydrate endpoint converts
+    13:00Z to 09:00 EDT, but sync_calendar used to take the raw 13:00. So the
+    job, correctly stored at 09:00, was overwritten to 13:00 on the next poll
+    (and flip-flopped forever). Both paths now agree on the Eastern wall clock.
+    """
+    db = SessionLocal()
+    try:
+        client = Client(name="GCal Z Test", email="ztz@example.com")
+        db.add(client); db.commit(); db.refresh(client)
+        prop = Property(client_id=client.id, name="P", address="1 Test St",
+                        property_type="residential", active=True)
+        db.add(prop); db.commit(); db.refresh(prop)
+        # Job stored at the correct LOCAL time (09:00 EDT == 13:00Z).
+        job = Job(
+            client_id=client.id, property_id=prop.id, job_type="residential", title="Z Clean",
+            scheduled_date=date(2026, 7, 10), start_time=time(9, 0), end_time=time(12, 0),
+            address="", gcal_event_id="evt_z_1", status="scheduled",
+        )
+        db.add(job); db.commit(); db.refresh(job)
+
+        # Same event coming back from Google in UTC 'Z' form.
+        event = {
+            "id": "evt_z_1",
+            "status": "confirmed",
+            "summary": "Z Clean",
+            "start": {"dateTime": "2026-07-10T13:00:00Z"},
+            "end": {"dateTime": "2026-07-10T16:00:00Z"},
+        }
+        r1 = _run_sync(db, [event])
+        assert r1["jobs_updated"] == 0, "13:00Z must match the stored 09:00 EDT — no churn"
+        r2 = _run_sync(db, [event])
+        assert r2["jobs_updated"] == 0
+
+        db.refresh(job)
+        # The stored local time is preserved, NOT overwritten to the UTC hour.
+        assert job.scheduled_date == date(2026, 7, 10)
+        assert job.start_time == time(9, 0)
+        assert job.end_time == time(12, 0)
+    finally:
+        db.rollback()
+        db.query(Job).filter(Job.gcal_event_id == "evt_z_1").delete(synchronize_session=False)
+        db.query(Property).filter(Property.client_id == client.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+        db.commit()
+        db.close()

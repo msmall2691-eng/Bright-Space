@@ -16,10 +16,20 @@ You work in Google Calendar. BrightBase just watches and adds the business layer
 import os
 import logging
 from datetime import datetime, timedelta, timezone, date, time
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from database.models import Job, Client, Property
 
 log = logging.getLogger(__name__)
+
+# Business wall-clock timezone. GCal hands back an *instant* — sometimes as UTC
+# ("…Z"), sometimes with an explicit offset. Jobs are scheduled and displayed in
+# the business's local time, so we extract the wall-clock value in THIS zone.
+# This must match the rehydrate endpoint (modules/scheduling/router.py, which
+# does `astimezone(ZoneInfo("America/New_York"))`); if the two disagree, one
+# writes 09:00 and the other reads 13:00 from the same 13:00Z event and the sync
+# churns the time on every poll. Overridable for non-Eastern operators.
+BUSINESS_TZ = ZoneInfo(os.getenv("BUSINESS_TIMEZONE", "America/New_York"))
 
 
 def _s(val) -> str:
@@ -153,13 +163,24 @@ def _parse_event_datetime(dt_obj: dict | None) -> "tuple[date, time | None] | No
     Date column always reports "changed" and writes a string back into the
     column — that caused the sync to churn every poll and re-introduced the
     string-in-Date-column bug. Times are truncated to the minute (GCal only
-    surfaces minutes here) and keep the event's wall-clock value, matching the
-    previous strftime behavior.
+    surfaces minutes here).
+
+    The instant is converted to BUSINESS_TZ before the wall-clock value is
+    taken, so a UTC "13:00Z" event reads back as 09:00 EDT — the same value the
+    rehydrate endpoint writes. Without this, a 'Z'-form event makes the two
+    paths disagree (one stores 09:00, the sync re-reads 13:00) and the job's
+    time churns on every poll. Offset-form values (e.g. "…-04:00") are
+    unaffected: converting 09:00-04:00 to Eastern is still 09:00.
     """
     if not dt_obj:
         return None
     if "dateTime" in dt_obj:
         dt = datetime.fromisoformat(dt_obj["dateTime"].replace("Z", "+00:00"))
+        # GCal dateTimes are tz-aware (offset or Z); normalize to the business
+        # wall clock. Guard tzinfo is None defensively — a naive value has no
+        # instant to convert and is assumed already-local.
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(BUSINESS_TZ)
         return dt.date(), dt.time().replace(second=0, microsecond=0)
     if "date" in dt_obj:
         return date.fromisoformat(dt_obj["date"]), None
