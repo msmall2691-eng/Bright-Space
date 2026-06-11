@@ -213,6 +213,10 @@ def test_disconnect_clears_provenance_references(ctx):
         assert conv.synced_by_google_account_id is None
         db.refresh(job)
         assert job.gcal_account_id is None
+        # The event lives on the revoked account's calendar — we can't manage
+        # it anymore, so the job must be fully unlinked (NOT reclassified as a
+        # legacy event, which the cancellation sync would 404 and cancel).
+        assert job.gcal_event_id is None
     finally:
         msg = db.query(Message).filter(Message.external_id == "<disc-prov@mail>").first()
         if msg:
@@ -236,6 +240,13 @@ def test_calendar_mutations_route_to_the_owning_account():
     with patch.object(gc, "_account_service", return_value="svc-7") as acct_svc:
         assert gc._get_service(7) == "svc-7"
     acct_svc.assert_called_once_with(7)
+
+    # An explicit owner whose grant is unusable RAISES — falling back to the
+    # legacy token would query the wrong calendar, and the cancellation sync
+    # reads a 404 there as "event deleted" and cancels real jobs.
+    with patch.object(gc, "_account_service", return_value=None):
+        with pytest.raises(RuntimeError, match="reconnect"):
+            gc._get_service(7)
 
     # Owner None = legacy event: the per-user path must NOT be consulted.
     with patch.object(gc, "_account_service", return_value="svc-x") as acct_svc, \

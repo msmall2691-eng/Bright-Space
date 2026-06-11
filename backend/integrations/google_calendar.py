@@ -128,8 +128,11 @@ def _get_service(account_id=_PREFER_CONNECTED):
       _PREFER_CONNECTED (default) — newest connected member account with the
         calendar channel on, then the legacy shared token. For NEW events and
         read-only calls.
-      <int> — the recorded owner (jobs.gcal_account_id) of an existing event;
-        falls back to the legacy chain only if that grant is unusable.
+      <int> — the recorded owner (jobs.gcal_account_id) of an existing event.
+        STRICT: if that grant is unusable this RAISES instead of falling back
+        — querying a different calendar would 404 and the cancellation sync
+        would read that as "event deleted" and cancel real jobs (Codex P1 on
+        #266). Callers already treat a raise as skip-and-retry.
       None — the event predates per-user accounts (gcal_account_id NULL):
         go straight to the legacy shared token.
     """
@@ -139,8 +142,18 @@ def _get_service(account_id=_PREFER_CONNECTED):
     _ACTIVE_ACCOUNT_ID = None
 
     if account_id is not None:
-        svc = _account_service(None if account_id is _PREFER_CONNECTED else account_id)
-        if svc is not None:
+        if account_id is _PREFER_CONNECTED:
+            svc = _account_service(None)
+            if svc is not None:
+                return svc
+        else:
+            svc = _account_service(account_id)
+            if svc is None:
+                raise RuntimeError(
+                    f"Google account grant {account_id} (the recorded owner of this "
+                    "calendar event) is unusable — the member must reconnect their "
+                    "Google account. Refusing to query a different calendar."
+                )
             return svc
 
     base = Path(__file__).parent.parent
