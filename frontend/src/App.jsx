@@ -7,6 +7,7 @@ import AICommandBar from './components/AICommandBar'
 import GlobalSearch from './components/GlobalSearch'
 import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
+import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
 import Requests from './pages/Requests'
 import PublicQuote from './pages/PublicQuote'
@@ -167,6 +168,20 @@ export default function App() {
 
   if (isLoginRoute) {
     return <Login onLoginSuccess={handleLoginSuccess} />
+  }
+
+  // Signed up but not approved yet: identity is valid, data access is not —
+  // every API call would 403 pending_approval, so show the waiting room only.
+  if (user?.status === 'pending') {
+    return (
+      <PendingApproval
+        user={user}
+        onApproved={(updated) => {
+          setUser(updated)
+          localStorage.setItem('brightbase_user', JSON.stringify(updated))
+        }}
+      />
+    )
   }
 
   return (

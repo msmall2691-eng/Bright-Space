@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap } from 'lucide-react'
+import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import UsersAdmin from '../components/UsersAdmin'
 import { del, get, post, patch } from "../api"
 import { applyTheme, getTheme } from '../theme'
 
@@ -51,7 +52,12 @@ function Toast({ toasts }) {
 }
 
 export default function Settings() {
-  const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations'
+  const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations' | 'users'
+  // Users management is admin-only (the backend enforces it; this hides the tab).
+  const isAdmin = (() => {
+    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+    catch { return false }
+  })()
   const [themeChoice, setThemeChoice] = useState(getTheme())
   const [showScout, setShowScout] = useState(() => localStorage.getItem('brightbase_hide_scout') !== '1')
   const [entityTab, setEntityTab] = useState('client')
@@ -468,8 +474,23 @@ export default function Settings() {
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
               <Settings2 className="w-3.5 h-3.5" /> Custom Fields
             </button>
+            {isAdmin && (
+              <button onClick={() => setSection('users')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                <Users className="w-3.5 h-3.5" /> Users
+              </button>
+            )}
           </div>
         </div>
+
+        {/* === USERS SECTION (admin only) === */}
+        {section === 'users' && isAdmin && (
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
+            <div className="max-w-2xl pt-6">
+              <UsersAdmin />
+            </div>
+          </div>
+        )}
 
         {/* === GENERAL SETTINGS SECTION === */}
         {section === 'general' && (

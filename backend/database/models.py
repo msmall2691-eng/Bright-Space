@@ -97,6 +97,18 @@ class FieldDefinition(Base):
     )
 
 
+class Org(Base):
+    """Workspace/tenant (Twenty-style). v1 is single-org (id=1, seeded at boot)
+    but every new table carries org_id so a second company later is a data
+    backfill, not a redesign. See docs/auth-workspaces-plan-2026-06.md."""
+    __tablename__ = "orgs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class User(Base):
     """System users: admins, cleaners, and clients who log in to the app."""
     __tablename__ = "users"
@@ -109,16 +121,62 @@ class User(Base):
     google_sub = Column(String, nullable=True, unique=True, index=True)
     auth_provider = Column(String, nullable=True)  # 'password' | 'google' (informational)
     full_name = Column(String, nullable=True)
-    role = Column(String, nullable=False, default=UserRole.CLIENT)  # admin | cleaner | client
+    role = Column(String, nullable=False, default=UserRole.CLIENT)
+    # admin | manager | member | viewer | cleaner | client
     # FK to Client — only set for role=client users. Admins/cleaners have no client profile.
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     phone = Column(String, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
+    # Workspace membership + approval. New self-signups are 'pending' (no API
+    # access) until an admin approves; allow-list emails/domains auto-approve.
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)
+    status = Column(String(16), nullable=False, default="active")  # active | pending | disabled
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="user")
     jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
+
+
+class UserGoogleAccount(Base):
+    """Per-user Google OAuth grant (Twenty's connectedAccount): each member
+    connects their OWN Google account; tokens are Fernet-encrypted with
+    TOKEN_ENCRYPTION_KEY (never plaintext); Gmail/Calendar sync cursors live
+    here so each account feeds the workspace independently. Replaces the
+    single shared google_token AppSetting / GOOGLE_TOKEN_B64 pattern."""
+    __tablename__ = "user_google_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # One Google account per user (v1).
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=False, index=True)
+    google_sub = Column(String(64), nullable=False)
+    email = Column(String(255), nullable=False)
+    access_token = Column(Text, nullable=True)    # encrypted
+    refresh_token = Column(Text, nullable=True)   # encrypted
+    token_expiry = Column(DateTime, nullable=True)
+    scopes = Column(JSON, default=list, nullable=False)  # granted, not requested
+    status = Column(String(16), nullable=False, default="connected")
+    # connected | expired | revoked
+
+    # Per-channel sync state (Twenty's message/calendar channels).
+    gmail_sync_enabled = Column(Boolean, default=False, nullable=False)
+    gmail_history_id = Column(String(32), nullable=True)   # incremental Gmail cursor
+    gcal_sync_enabled = Column(Boolean, default=False, nullable=False)
+    gcal_calendar_id = Column(String(255), nullable=True)
+    gcal_sync_token = Column(Text, nullable=True)          # incremental events cursor
+    last_sync_at = Column(DateTime, nullable=True)
+    last_sync_error = Column(Text, nullable=True)
+    connected_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "google_sub", name="uq_user_google_accounts_org_sub"),
+    )
+
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class Client(Base):
@@ -395,6 +453,9 @@ class Job(Base):
     # True to suppress the 24h SMS for a single job without disabling the system.
     skip_sms_reminder = Column(Boolean, default=False, nullable=False)
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
+    # Whose connected Google account owns the calendar event (NULL = legacy
+    # shared business calendar token).
+    gcal_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
 
     title = Column(String, nullable=False)
     scheduled_date = Column(Date)       # ISO date
@@ -603,6 +664,10 @@ class Conversation(Base):
     snoozed_until = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
 
+    # Which member's connected Google account synced this in (NULL = legacy
+    # shared business inbox). Lets per-user sync be attributed and unsynced.
+    synced_by_google_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -646,6 +711,10 @@ class Message(Base):
     # is_internal_note=True so they appear inline in the thread but are
     # never sent to the customer.
     is_internal_note = Column(Boolean, default=False, nullable=False)
+
+    # Which member's connected Google account synced this in (NULL = legacy
+    # shared business inbox).
+    synced_by_google_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
 

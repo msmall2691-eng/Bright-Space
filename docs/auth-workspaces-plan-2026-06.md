@@ -1,8 +1,23 @@
 # Auth & Workspaces plan — sign-in and Google integration like Twenty CRM
 
-Status: PROPOSAL (June 11, 2026) — schema + migration plan for review before any code.
+Status: APPROVED June 11, 2026 (decisions below). M0 + Phase A implemented on
+`claude/quirky-fermat-xv7t69`; phases B-D not yet built.
 Hard constraint: `office@mainecleaningco.com` (password login, role=admin) must keep
 working at every step.
+
+## 0. Decisions (owner, June 11)
+
+1. Approved signups get the new **`member`** role (operational work, no
+   settings/users/billing). Implemented by expanding `member` wherever
+   `require_role` accepts `manager` — admin-only checks unaffected, zero
+   call-site churn.
+2. Pending users see **only the waiting screen** (`/api/auth/session-status`
+   is the one endpoint their token can hit).
+3. **Keep the shared-IMAP fallback** for the business inbox when per-user
+   Gmail-API sync ships (phase C).
+4. **`TOKEN_ENCRYPTION_KEY` env var approved** for Fernet-encrypting per-user
+   Google tokens (key loss = users reconnect, no data loss).
+5. Customer-facing `role=client` logins stay untouched in every phase.
 
 ## 1. Where we are today
 

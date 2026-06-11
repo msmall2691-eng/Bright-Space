@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -12,6 +13,8 @@ from database.db import get_db
 from database.models import User, AppSetting
 from auth_jwt import hash_password, verify_password, create_jwt, verify_jwt
 from ratelimit import limiter
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
@@ -29,6 +32,9 @@ class LoginResponse(BaseModel):
     user_id: int
     email: str
     role: str
+    # 'active' | 'pending' | 'disabled' — pending users hold a valid identity
+    # token but every API call is rejected until an admin approves them.
+    status: str = "active"
 
 
 class RegisterRequest(BaseModel):
@@ -42,18 +48,48 @@ class RegisterResponse(BaseModel):
     email: str
     full_name: str
     role: str
-    # Set when an allow-listed email self-registers, so the UI logs them in.
+    status: str = "active"
+    # Set when an email self-registers, so the UI logs them in (pending users
+    # land on the waiting screen).
     access_token: Optional[str] = None
     token_type: str = "bearer"
 
 
 def _signup_allowlist() -> list[str]:
-    """Emails permitted to self-register (as admins) without an existing admin —
-    reuses the same allow-list as Google sign-in. Lets the owner create their
-    account without opening signup to the whole internet."""
-    import os
-    raw = os.getenv("SIGNUP_ALLOWED_EMAILS") or os.getenv("GOOGLE_ALLOWED_EMAILS", "")
+    """Emails on the auto-approve lists (SIGNUP_ALLOWED_EMAILS and
+    GOOGLE_ALLOWED_EMAILS, unioned). Signup is open to anyone — these lists
+    only decide who skips the pending-approval step, and (on a fresh install
+    with no admin yet) who bootstraps as the first admin."""
+    raw = ",".join([os.getenv("SIGNUP_ALLOWED_EMAILS", ""), os.getenv("GOOGLE_ALLOWED_EMAILS", "")])
     return [e.strip().lower() for e in raw.split(",") if e.strip()]
+
+
+def _auto_approved(email: str) -> bool:
+    """Whether a self-signup skips 'pending': email on either allow-list, or
+    its domain on GOOGLE_ALLOWED_DOMAINS."""
+    email = (email or "").strip().lower()
+    if email in _signup_allowlist():
+        return True
+    domains = [d.strip().lower() for d in os.getenv("GOOGLE_ALLOWED_DOMAINS", "").split(",") if d.strip()]
+    return bool(domains) and email.split("@")[-1] in domains
+
+
+def _default_org_id(db: Session) -> Optional[int]:
+    """The single v1 workspace (seeded at boot; created here defensively)."""
+    from database.models import Org
+    org = db.query(Org).order_by(Org.id.asc()).first()
+    if not org:
+        org = Org(name="Maine Cleaning Co", slug="maine-cleaning-co")
+        db.add(org)
+        db.flush()
+    return org.id
+
+
+def _active_admin_exists(db: Session) -> bool:
+    return db.query(User).filter(
+        User.role == "admin", User.active == True,  # noqa: E712
+        (User.status == "active") | (User.status.is_(None)),
+    ).first() is not None
 
 
 class UserResponse(BaseModel):
@@ -62,6 +98,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     active: bool
+    status: str = "active"
 
 
 _optional_security = HTTPBearer(auto_error=False)
@@ -94,8 +131,13 @@ def get_current_user(
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
 
-        if not user.active:
+        if not user.active or (user.status or "active") == "disabled":
             raise HTTPException(status_code=403, detail="Account disabled")
+
+        # Signed up but not yet approved: valid identity, zero data access.
+        # The frontend recognizes this detail and shows the waiting screen.
+        if (user.status or "active") == "pending":
+            raise HTTPException(status_code=403, detail="pending_approval")
 
         return user
 
@@ -135,9 +177,16 @@ def require_role(*allowed_roles):
     """
     Factory to create a dependency that requires specific roles.
     Usage: Depends(require_role("admin", "manager"))
+
+    'member' (an approved workspace signup) works the business like a manager
+    — jobs, quotes, comms — but never passes admin-only checks. Expanding it
+    here keeps the 160+ existing require_role call sites untouched.
     """
     def check_role(current_user: User = Depends(get_current_user)):
-        if current_user.role not in allowed_roles:
+        roles = set(allowed_roles)
+        if "manager" in roles:
+            roles.add("member")
+        if current_user.role not in roles:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return current_user
     return check_role
@@ -177,6 +226,7 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
         user_id=user.id,
         email=user.email,
         role=user.role,
+        status=user.status or "active",
     )
 
 
@@ -225,7 +275,8 @@ def google_signin(request: Request, data: GoogleSignInRequest, db: Session = Dep
     db.refresh(user)
 
     token = create_jwt(user.id, user.email, user.role)
-    return LoginResponse(access_token=token, user_id=user.id, email=user.email, role=user.role)
+    return LoginResponse(access_token=token, user_id=user.id, email=user.email, role=user.role,
+                         status=user.status or "active")
 
 
 # ── shared helpers for Google auth ──────────────────────────────────────────
@@ -249,27 +300,29 @@ def _app_del(db: Session, key: str):
 
 
 def _resolve_google_user(db: Session, email: str, sub: Optional[str], name: str) -> User:
-    """Default-deny match/provision for a verified Google email. Existing
-    admin/manager users or allow-listed emails (GOOGLE_ALLOWED_EMAILS /
-    _DOMAINS) are accepted; allow-listed new emails become admins."""
-    allowed_emails = [e.strip().lower() for e in os.getenv("GOOGLE_ALLOWED_EMAILS", "").split(",") if e.strip()]
-    allowed_domains = [d.strip().lower() for d in os.getenv("GOOGLE_ALLOWED_DOMAINS", "").split(",") if d.strip()]
-    domain_ok = email.split("@")[-1] in allowed_domains if allowed_domains else False
+    """Match or provision a verified Google identity (Twenty-style open signup).
 
+    Existing users sign in regardless of allow-lists — pending/disabled is
+    enforced downstream by get_current_user. NEW users are provisioned as
+    role='member' — NEVER auto-admin — and start 'pending' unless their
+    email/domain is on the auto-approve lists. The only exception: a fresh
+    install with no active admin yet bootstraps an allow-listed signup as the
+    first admin (someone has to be able to approve everyone else)."""
     user = db.query(User).filter(User.google_sub == sub).first() if sub else None
     if not user:
         user = db.query(User).filter(User.email == email).first()
 
     if user:
-        if not user.active:
+        if not user.active or (user.status or "active") == "disabled":
             raise HTTPException(status_code=403, detail="This account is inactive.")
-        if user.role not in ("admin", "manager") and email not in allowed_emails and not domain_ok:
-            raise HTTPException(status_code=403, detail="This Google account isn't authorized for admin access.")
     else:
-        if email not in allowed_emails and not domain_ok:
-            raise HTTPException(status_code=403, detail="This Google account isn't authorized. Ask an admin to add it.")
+        approved = _auto_approved(email)
+        bootstrap_admin = approved and not _active_admin_exists(db)
         user = User(email=email, password_hash=None, full_name=name or email,
-                    role="admin", auth_provider="google", active=True)
+                    role="admin" if bootstrap_admin else "member",
+                    auth_provider="google", active=True,
+                    org_id=_default_org_id(db),
+                    status="active" if approved else "pending")
         db.add(user)
         db.flush()
 
@@ -386,7 +439,9 @@ def google_exchange(data: GoogleExchangeRequest, db: Session = Depends(get_db)):
     payload = verify_jwt(token)
     if not payload:
         raise HTTPException(status_code=400, detail="Invalid session.")
-    return LoginResponse(access_token=token, user_id=payload["user_id"], email=payload["email"], role=payload["role"])
+    u = db.query(User).filter(User.id == payload["user_id"]).first()
+    return LoginResponse(access_token=token, user_id=payload["user_id"], email=payload["email"],
+                         role=payload["role"], status=(u.status if u else None) or "active")
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -398,25 +453,20 @@ def register(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Create a user. Two safe paths only:
+    Create a user. Three paths:
       1. An authenticated admin creates a user (defaults to role=client).
-      2. An allow-listed email (SIGNUP_ALLOWED_EMAILS / GOOGLE_ALLOWED_EMAILS)
-         self-registers as an admin — so the owner can bootstrap their own
-         account without an existing admin.
+      2. An auto-approved email (SIGNUP_ALLOWED_EMAILS / GOOGLE_ALLOWED_EMAILS /
+         GOOGLE_ALLOWED_DOMAINS) self-registers active — and bootstraps as the
+         FIRST admin only when no active admin exists yet.
+      3. Anyone else self-registers as role='member', status='pending' — a
+         valid identity with zero data access until an admin approves it.
 
-    BB-SEC-07: open / empty-table self-registration is still disabled (it let
-    whoever POSTed first on a fresh/wiped DB grab admin). The allow-list keeps
-    self-signup restricted to known emails.
+    BB-SEC-07 still holds: open self-registration can never grab admin — the
+    bootstrap-admin path requires the allow-list AND an admin-less install.
     """
     email_l = (data.email or "").strip().lower()
     is_admin_caller = bool(current_user and current_user.role == "admin")
-    allowlisted = email_l in _signup_allowlist()
-
-    if not is_admin_caller and not allowlisted:
-        raise HTTPException(
-            status_code=403,
-            detail="Sign-up isn't open. Ask an admin to add you, or sign in with an authorized Google account."
-        )
+    allowlisted = _auto_approved(email_l)
 
     # Check if email already exists (case-insensitive).
     existing = (
@@ -438,13 +488,22 @@ def register(
                 email=existing.email,
                 full_name=existing.full_name or existing.email.split("@")[0],
                 role=existing.role,
+                status=existing.status or "active",
                 access_token=create_jwt(existing.id, existing.email, existing.role),
             )
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # Allow-listed self-signups are the owner bootstrapping → admin. Users an
-    # admin creates default to the lowest-privilege role (promote later).
-    role = "admin" if allowlisted else "client"
+    # Roles: admin-created users default to the lowest-privilege role
+    # (promote later); self-signups are members — the bootstrap-admin
+    # exception only fires on an install with no active admin yet.
+    if is_admin_caller:
+        role, status = "client", "active"
+    elif allowlisted:
+        role = "admin" if not _active_admin_exists(db) else "member"
+        status = "active"
+    else:
+        role, status = "member", "pending"
+
     new_user = User(
         email=data.email,
         password_hash=hash_password(data.password),
@@ -452,21 +511,24 @@ def register(
         role=role,
         auth_provider="password",
         active=True,
+        org_id=_default_org_id(db),
+        status=status,
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    # Log allow-listed self-signups straight in; admin-created users don't get a
-    # token (the admin stays signed in as themselves).
-    token = create_jwt(new_user.id, new_user.email, new_user.role) if (allowlisted and not is_admin_caller) else None
+    # Log self-signups straight in (pending users land on the waiting screen);
+    # admin-created users don't get a token (the admin stays signed in).
+    token = create_jwt(new_user.id, new_user.email, new_user.role) if not is_admin_caller else None
 
     return RegisterResponse(
         user_id=new_user.id,
         email=new_user.email,
         full_name=new_user.full_name,
         role=new_user.role,
+        status=new_user.status or "active",
         access_token=token,
     )
 
@@ -480,4 +542,134 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         full_name=current_user.full_name,
         role=current_user.role,
         active=current_user.active,
+        status=current_user.status or "active",
     )
+
+
+@router.get("/session-status")
+def session_status(request: Request, db: Session = Depends(get_db)):
+    """Pending-tolerant status probe for the waiting screen. A pending user's
+    JWT can't pass get_current_user (every data endpoint 403s), but they still
+    need a way to learn that an admin approved them."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = verify_jwt(auth_header[7:])
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user = db.query(User).filter(User.id == payload.get("user_id")).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return {"status": user.status or "active", "role": user.role,
+            "email": user.email, "active": user.active}
+
+
+# ── Admin: workspace user management (Settings → Users) ─────────────────────
+
+ASSIGNABLE_ROLES = {"admin", "manager", "member", "viewer", "cleaner", "client"}
+
+
+class AdminUserUpdate(BaseModel):
+    role: Optional[str] = None
+    active: Optional[bool] = None
+
+
+def _user_row(db: Session, u: User) -> dict:
+    from database.models import UserGoogleAccount
+    has_google_grant = db.query(UserGoogleAccount.id).filter(
+        UserGoogleAccount.user_id == u.id).first() is not None
+    return {
+        "id": u.id,
+        "email": u.email,
+        "full_name": u.full_name,
+        "role": u.role,
+        "status": u.status or "active",
+        "active": u.active,
+        "auth_provider": u.auth_provider,
+        "google_connected": bool(u.google_sub) or has_google_grant,
+        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+    }
+
+
+def _ensure_not_last_admin(db: Session, user: User):
+    """Refuse a change that would leave the workspace with no active admin."""
+    if user.role != "admin":
+        return
+    others = db.query(User).filter(
+        User.id != user.id, User.role == "admin", User.active == True,  # noqa: E712
+        (User.status == "active") | (User.status.is_(None)),
+    ).count()
+    if others == 0:
+        raise HTTPException(status_code=409, detail="Can't remove or demote the last active admin.")
+
+
+@router.get("/users", dependencies=[Depends(require_role("admin"))])
+def list_workspace_users(db: Session = Depends(get_db), include_clients: bool = False):
+    """All workspace users for the admin Users screen. Customer logins
+    (role=client) are hidden by default — they're portal accounts, not staff."""
+    q = db.query(User)
+    if not include_clients:
+        q = q.filter(User.role != "client")
+    users = q.all()
+    rows = [_user_row(db, u) for u in users]
+    # Pending approvals float to the top; then alphabetical.
+    rows.sort(key=lambda r: (0 if r["status"] == "pending" else 1, (r["full_name"] or r["email"]).lower()))
+    return rows
+
+
+@router.post("/users/{user_id}/approve")
+def approve_user(user_id: int, db: Session = Depends(get_db),
+                 current_user: User = Depends(require_role("admin"))):
+    """Approve a pending signup: they keep their role (member) and gain access."""
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if (u.status or "active") == "pending":
+        u.status = "active"
+        u.approved_by = current_user.id
+        u.approved_at = datetime.now(timezone.utc)
+        db.commit()
+        logger.info(f"[auth] {current_user.email} approved signup {u.email} (role={u.role})")
+    return _user_row(db, u)
+
+
+@router.post("/users/{user_id}/deny")
+def deny_user(user_id: int, db: Session = Depends(get_db),
+              current_user: User = Depends(require_role("admin"))):
+    """Deny a pending signup (or shut off an account): status=disabled."""
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_not_last_admin(db, u)
+    u.status = "disabled"
+    db.commit()
+    logger.info(f"[auth] {current_user.email} denied/disabled {u.email}")
+    return _user_row(db, u)
+
+
+@router.patch("/users/{user_id}")
+def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Depends(get_db),
+                          current_user: User = Depends(require_role("admin"))):
+    """Change a user's role or active flag. Guarded so the workspace can never
+    lose its last active admin."""
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if data.role is not None:
+        if data.role not in ASSIGNABLE_ROLES:
+            raise HTTPException(status_code=400, detail=f"Unknown role '{data.role}'")
+        if u.role == "admin" and data.role != "admin":
+            _ensure_not_last_admin(db, u)
+        u.role = data.role
+    if data.active is not None:
+        if not data.active:
+            _ensure_not_last_admin(db, u)
+        u.active = data.active
+        # Re-enabling a disabled account restores access in one step.
+        if data.active and (u.status or "active") == "disabled":
+            u.status = "active"
+    db.commit()
+    logger.info(f"[auth] {current_user.email} updated user {u.email}: "
+                f"role={data.role!r} active={data.active!r}")
+    return _user_row(db, u)
