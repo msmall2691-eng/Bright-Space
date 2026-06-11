@@ -173,10 +173,19 @@ export default function Quoting() {
     if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
   }, [location.search])
 
-  const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  // Guard (June 10 P1): one malformed row — legacy JSON shapes where items is
+  // a dict/string, or a non-string status — must never crash or wedge the page.
+  // Coerce the fields the page iterates/renders before they reach state.
+  const safeQuote = (q) => ({
+    ...q,
+    items: Array.isArray(q?.items) ? q.items : [],
+    status: typeof q?.status === 'string' ? q.status : 'draft',
+  })
+
+  const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   // Quotes the customer is sitting on (sent-but-unopened / opened-but-no-reply).
-  const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error("[Quoting]", err))
 
   useEffect(() => {
     loadQuotes()
@@ -196,7 +205,7 @@ export default function Quoting() {
   useEffect(() => {
     if (location.state?.quoteId) {
       get(`/api/quotes/${location.state.quoteId}`).then(q => {
-        openQuoteForm(q)
+        openQuoteForm(safeQuote(q))
         setTab('quotes')
       }).catch(err => console.error("[Quoting]", err))
     }
