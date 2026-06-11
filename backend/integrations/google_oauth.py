@@ -29,12 +29,24 @@ from google_auth_oauthlib.flow import Flow
 # Calendar is the source of truth for scheduling. (Gmail stays on IMAP.)
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# Unified "Sign in with Google" — identity AND calendar access in one consent,
-# so logging in also connects the business calendar.
+# "Sign in with Google" is identity-ONLY. It used to also request calendar and
+# silently capture a shared calendar token on every login — per-account access
+# is now an explicit, separate "Connect Google account" consent (below).
 LOGIN_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
+]
+
+# Per-user "Connect Google account" (Settings): the member grants THEIR
+# Gmail + Calendar to BrightBase; tokens are stored encrypted on
+# user_google_accounts, never in a shared AppSetting.
+CONNECT_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",
 ]
 
@@ -127,8 +139,42 @@ def login_redirect_uri(request) -> str:
 
 
 def build_login_flow(request, state: str | None = None) -> Flow:
-    """OAuth flow for unified sign-in: identity + calendar in one consent."""
+    """OAuth flow for sign-in: identity only."""
     cfg = _client_config()
     if not cfg:
         raise RuntimeError("No Google OAuth client configured.")
     return Flow.from_client_config(cfg, scopes=LOGIN_SCOPES, redirect_uri=login_redirect_uri(request), state=state)
+
+
+def connect_redirect_uri(request) -> str:
+    """Redirect URI for the per-user Connect Google account flow. Must be
+    registered in the Google Cloud OAuth client (alongside the login and
+    settings callback URIs). Prefer an explicit env value."""
+    env = os.getenv("GOOGLE_CONNECT_REDIRECT_URI")
+    if env:
+        return env
+    base = str(request.base_url).rstrip("/")
+    if base.startswith("http://") and not ("localhost" in base or "127.0.0.1" in base):
+        base = "https://" + base[len("http://"):]
+    return f"{base}/api/auth/google-account/callback"
+
+
+def build_connect_flow(request, state: str | None = None) -> Flow:
+    """OAuth flow for the per-user Gmail + Calendar grant."""
+    cfg = _client_config()
+    if not cfg:
+        raise RuntimeError("No Google OAuth client configured.")
+    return Flow.from_client_config(cfg, scopes=CONNECT_SCOPES, redirect_uri=connect_redirect_uri(request), state=state)
+
+
+def client_secret() -> str | None:
+    """The OAuth client secret — needed to refresh per-user tokens."""
+    csec = os.getenv("GOOGLE_CLIENT_SECRET")
+    if csec:
+        return csec.strip()
+    cfg = _client_config()
+    if cfg:
+        for key in ("web", "installed"):
+            if isinstance(cfg.get(key), dict) and cfg[key].get("client_secret"):
+                return cfg[key]["client_secret"]
+    return None

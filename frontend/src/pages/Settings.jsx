@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import UsersAdmin from '../components/UsersAdmin'
+import GoogleAccountCard from '../components/GoogleAccountCard'
 import { del, get, post, patch } from "../api"
 import { applyTheme, getTheme } from '../theme'
 
@@ -739,6 +740,10 @@ export default function Settings() {
         {section === 'integrations' && (
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
             <div className="max-w-2xl pt-6 space-y-8">
+
+              {/* Per-user Google grant (Gmail + Calendar), distinct from the
+                  shared business connection below. */}
+              <GoogleAccountCard />
 
               {/* Customer messaging status — at-a-glance "are we auto-texting
                   customers?". Read-only mirror of the job SMS reminder flag. */}

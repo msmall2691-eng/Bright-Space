@@ -86,13 +86,17 @@ def _parse_email_dt(value: str):
     return dt
 
 
-def _thread_inbound_email(db: Session, client_id: int, em: dict) -> bool:
+def _thread_inbound_email(db: Session, client_id: int, em: dict,
+                          account_id: Optional[int] = None) -> bool:
     """Attach an inbound email to a Conversation (channel='email'), mirroring
     the SMS webhook so emails show up in the unified inbox threaded by client.
 
     Dedupes on the email Message-ID (external_id). Returns True if a new
     Message was created, False if it was a duplicate. Reuses the comms helpers
     so SLA / unread / last-activity bookkeeping stays identical to SMS.
+
+    account_id stamps which member's connected Google account synced the
+    message in (None = the legacy shared business inbox).
     """
     # Lazy import avoids any import-order coupling between the two routers.
     from modules.comms.router import find_or_create_conversation, _apply_inbound
@@ -124,6 +128,8 @@ def _thread_inbound_email(db: Session, client_id: int, em: dict) -> bool:
     )
     if conv.client_id is None and client_id:
         conv.client_id = client_id
+    if account_id and conv.synced_by_google_account_id is None:
+        conv.synced_by_google_account_id = account_id
 
     msg = Message(
         client_id=client_id,
@@ -137,6 +143,7 @@ def _thread_inbound_email(db: Session, client_id: int, em: dict) -> bool:
         external_id=message_id or None,
         status="received",
         is_internal_note=False,
+        synced_by_google_account_id=account_id,
         created_at=_parse_email_dt(em.get("date")) or datetime.now(timezone.utc),
     )
     db.add(msg)
@@ -151,13 +158,17 @@ def run_inbox_sync(
     max_results: int = 30,
     skip_automated: bool = True,
     auto_enrich: bool = True,
+    emails: Optional[list] = None,
+    source_account_id: Optional[int] = None,
 ) -> dict:
-    """Fetch the Gmail inbox, match/enrich senders, and thread inbound emails
-    into Conversations. Shared by the GET /inbox endpoint and the background
-    scheduler so on-demand and automatic syncs behave identically.
+    """Match/enrich senders and thread inbound emails into Conversations.
+    Shared by the GET /inbox endpoint, the background scheduler, and the
+    per-user Gmail-API sync (which passes pre-fetched `emails` plus the
+    user_google_accounts id for provenance) so every path behaves identically.
     """
     try:
-        emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
+        if emails is None:
+            emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
     except ConnectionError as e:
         err = str(e)
         if "no_credentials" in err:
@@ -252,7 +263,7 @@ def run_inbox_sync(
             # recorded, so the tick retried (and re-failed) it forever.
             try:
                 with db.begin_nested():
-                    created = _thread_inbound_email(db, client_id, em)
+                    created = _thread_inbound_email(db, client_id, em, account_id=source_account_id)
             except Exception as e:
                 logger.warning(f"[gmail] threading failed for message "
                                f"{em.get('message_id') or '(no id)'} from {em.get('from_email')}: {e}")
@@ -298,6 +309,28 @@ def run_inbox_sync(
             "skipped_by_filter": skipped_by_filter,
         },
     }
+
+
+def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> dict:
+    """Sync ONE member's connected Gmail (Gmail API, their own OAuth grant)
+    into the unified inbox. Messages stamp the account for provenance;
+    Message-ID dedupe means overlap with the shared IMAP inbox is harmless."""
+    from integrations.google_accounts import AccountCredentialsError, account_credentials, mark_sync
+    from integrations.gmail_api import fetch_inbox_for_account
+    try:
+        creds = account_credentials(db, account)
+        emails = fetch_inbox_for_account(creds, max_results=max_results)
+    except AccountCredentialsError as e:
+        # account_credentials already marked the row expired with the reason.
+        logger.info(f"[gmail] account sync skipped: {e}")
+        return {"error": "reconnect_required", "summary": {"total": 0, "threaded": 0}}
+    except Exception as e:
+        logger.warning(f"[gmail] account sync failed for {account.email}: {e}")
+        mark_sync(db, account, error=str(e))
+        return {"error": str(e), "summary": {"total": 0, "threaded": 0}}
+    result = run_inbox_sync(db, emails=emails, source_account_id=account.id)
+    mark_sync(db, account, error=None)
+    return result
 
 
 @router.get("/inbox")

@@ -374,6 +374,8 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 if event_id:
                     job.calendar_invite_sent = invite
                     job.gcal_event_id = event_id
+                    from integrations.google_calendar import active_account_id as _gcal_acct
+                    job.gcal_account_id = _gcal_acct()
                     log_calendar_event(
                         db, "created",
                         client_id=job.client_id, job_id=job.id,
