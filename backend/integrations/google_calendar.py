@@ -71,26 +71,40 @@ def _save_db_token(token_json: str) -> None:
 # legacy shared token). Callers can read this to stamp sync provenance.
 _ACTIVE_ACCOUNT_ID: int | None = None
 
+# Sentinel for _get_service: "no owner specified — prefer the newest connected
+# account, then the legacy chain". Distinct from an explicit None, which means
+# "this event belongs to the LEGACY shared token; don't let a member's account
+# hijack the mutation" (Codex P1 on #265: update/cancel paths were querying
+# whichever account connected most recently, where the event doesn't exist).
+_PREFER_CONNECTED = object()
+
 
 def active_account_id() -> int | None:
     return _ACTIVE_ACCOUNT_ID
 
 
-def _account_service():
-    """Calendar service from a member's connected Google account (phase C):
-    the most recently connected user_google_accounts row with the calendar
-    channel enabled. Returns None when there is no usable account, so the
-    caller falls through to the legacy shared token (kept as a fallback per
-    the rollout plan)."""
+def _account_service(account_id: int | None = None):
+    """Calendar service from a member's connected Google account (phase C).
+
+    account_id None  -> the most recently connected account with the calendar
+                        channel enabled (used for NEW events).
+    account_id int   -> exactly that account row — the recorded owner of an
+                        existing event — regardless of its sync toggle.
+    Returns None when there is no usable account, so the caller falls through
+    to the legacy shared token (kept as a fallback per the rollout plan)."""
     global _ACTIVE_ACCOUNT_ID
     try:
         from database.db import SessionLocal
+        from database.models import UserGoogleAccount
         from integrations.google_accounts import (
             AccountCredentialsError, account_credentials, calendar_account,
         )
         db = SessionLocal()
         try:
-            acct = calendar_account(db)
+            if account_id is not None:
+                acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.id == account_id).first()
+            else:
+                acct = calendar_account(db)
             if not acct:
                 return None
             try:
@@ -107,23 +121,40 @@ def _account_service():
         return None
 
 
-def _get_service():
+def _get_service(account_id=_PREFER_CONNECTED):
     """Build and return an authenticated Google Calendar service.
 
-    Token source priority:
-      1. A member's connected Google account (user_google_accounts) with the
-         calendar channel enabled — the per-user path.
-      2. DB (app_settings 'google_token') — the legacy shared in-app connect.
-      3. GOOGLE_TOKEN_B64 env / token file — the manual/legacy path.
+    account_id semantics:
+      _PREFER_CONNECTED (default) — newest connected member account with the
+        calendar channel on, then the legacy shared token. For NEW events and
+        read-only calls.
+      <int> — the recorded owner (jobs.gcal_account_id) of an existing event.
+        STRICT: if that grant is unusable this RAISES instead of falling back
+        — querying a different calendar would 404 and the cancellation sync
+        would read that as "event deleted" and cancel real jobs (Codex P1 on
+        #266). Callers already treat a raise as skip-and-retry.
+      None — the event predates per-user accounts (gcal_account_id NULL):
+        go straight to the legacy shared token.
     """
     import base64, json as _json
 
     global _ACTIVE_ACCOUNT_ID
     _ACTIVE_ACCOUNT_ID = None
 
-    svc = _account_service()
-    if svc is not None:
-        return svc
+    if account_id is not None:
+        if account_id is _PREFER_CONNECTED:
+            svc = _account_service(None)
+            if svc is not None:
+                return svc
+        else:
+            svc = _account_service(account_id)
+            if svc is None:
+                raise RuntimeError(
+                    f"Google account grant {account_id} (the recorded owner of this "
+                    "calendar event) is unusable — the member must reconnect their "
+                    "Google account. Refusing to query a different calendar."
+                )
+            return svc
 
     base = Path(__file__).parent.parent
     token_path = base / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")
@@ -509,10 +540,12 @@ def create_event(job: dict, client: dict, send_invite: bool = False, crew_emails
         return None
 
 
-def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> bool:
-    """Update an existing Google Calendar event."""
+def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None, owner_account_id: int | None = None) -> bool:
+    """Update an existing Google Calendar event. owner_account_id is the
+    job's recorded gcal_account_id — mutations must hit the calendar the
+    event actually lives on (None = the legacy shared token)."""
     try:
-        service = _get_service()
+        service = _get_service(owner_account_id)
         cal_id = _calendar_id(job.get("job_type", "residential"))
         event = _build_event(
             job, client,
@@ -533,7 +566,7 @@ def update_event(event_id: str, job: dict, client: dict, send_invite: bool = Fal
         return False
 
 
-def invite_client_to_event(event_id: str, job_type: str, client_email: str, client_name: str = "") -> bool:
+def invite_client_to_event(event_id: str, job_type: str, client_email: str, client_name: str = "", owner_account_id: int | None = None) -> bool:
     """Add a client as attendee to an existing GCal event and send them the invite.
 
     This is the "I'm ready — send it to the client" action.
@@ -542,7 +575,7 @@ def invite_client_to_event(event_id: str, job_type: str, client_email: str, clie
         print("[GCal] Cannot invite: no client email provided")
         return False
     try:
-        service = _get_service()
+        service = _get_service(owner_account_id)
         cal_id = _calendar_id(job_type)
         # Fetch current event to preserve existing data
         event = service.events().get(calendarId=cal_id, eventId=event_id).execute()
@@ -565,10 +598,10 @@ def invite_client_to_event(event_id: str, job_type: str, client_email: str, clie
         return False
 
 
-def delete_event(event_id: str, job_type: str = "residential") -> bool:
-    """Delete a Google Calendar event."""
+def delete_event(event_id: str, job_type: str = "residential", owner_account_id: int | None = None) -> bool:
+    """Delete a Google Calendar event from the calendar it lives on."""
     try:
-        service = _get_service()
+        service = _get_service(owner_account_id)
         cal_id = _calendar_id(job_type)
         service.events().delete(
             calendarId=cal_id,
@@ -581,7 +614,7 @@ def delete_event(event_id: str, job_type: str = "residential") -> bool:
         return False
 
 
-def get_event(event_id: str, job_type: str = "residential") -> dict | None:
+def get_event(event_id: str, job_type: str = "residential", owner_account_id: int | None = None) -> dict | None:
     """Fetch a single GCal event by id. Returns:
     - the event dict (with whatever shape Google returns) if found
     - None if the event was deleted (404)
@@ -592,7 +625,7 @@ def get_event(event_id: str, job_type: str = "residential") -> dict | None:
     so a per-event check is the only reliable signal.
     """
     from googleapiclient.errors import HttpError
-    service = _get_service()
+    service = _get_service(owner_account_id)
     cal_id = _calendar_id(job_type)
     try:
         return service.events().get(calendarId=cal_id, eventId=event_id).execute()

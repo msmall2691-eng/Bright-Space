@@ -455,7 +455,8 @@ class Job(Base):
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
     # Whose connected Google account owns the calendar event (NULL = legacy
     # shared business calendar token).
-    gcal_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+    gcal_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
 
     title = Column(String, nullable=False)
     scheduled_date = Column(Date)       # ISO date
@@ -666,7 +667,8 @@ class Conversation(Base):
 
     # Which member's connected Google account synced this in (NULL = legacy
     # shared business inbox). Lets per-user sync be attributed and unsynced.
-    synced_by_google_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+    synced_by_google_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -714,7 +716,8 @@ class Message(Base):
 
     # Which member's connected Google account synced this in (NULL = legacy
     # shared business inbox).
-    synced_by_google_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+    synced_by_google_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
 
@@ -804,7 +807,9 @@ class Activity(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
-    message_id = Column(Integer, ForeignKey("messages.id"), nullable=True)
+    # SET NULL: deleting a message (any channel — SMS or email) must orphan
+    # the timeline entry, not be blocked by it.
+    message_id = Column(Integer, ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
 
     actor = Column(String, nullable=True)
     activity_type = Column(String, nullable=False, index=True)

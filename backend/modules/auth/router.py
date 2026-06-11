@@ -819,6 +819,25 @@ def disconnect_google_account(db: Session = Depends(get_db),
             httpx.post("https://oauth2.googleapis.com/revoke", params={"token": token}, timeout=10)
     except Exception as e:
         logger.info(f"[google-account] revoke at Google failed (continuing): {e}")
+    # Detach everything this account synced BEFORE deleting it: the provenance
+    # FKs (messages/conversations/jobs) were created without ON DELETE SET
+    # NULL, so a bare delete violates them on Postgres once anything synced —
+    # Disconnect would 500 with the token already revoked at Google but the
+    # grant row stuck in the DB (Codex P1 on #265). NULL = legacy/unattributed.
+    from database.models import Conversation, Job, Message
+    db.query(Message).filter(Message.synced_by_google_account_id == acct.id) \
+        .update({"synced_by_google_account_id": None}, synchronize_session=False)
+    db.query(Conversation).filter(Conversation.synced_by_google_account_id == acct.id) \
+        .update({"synced_by_google_account_id": None}, synchronize_session=False)
+    # Jobs are different (Codex P1 on #266): their events live on THIS
+    # account's calendar, which we just revoked — we can't manage or even see
+    # them anymore. Clearing only the owner would reclassify them as legacy
+    # events, and the cancellation sync's 404 against the legacy calendar
+    # would cancel real jobs. Unlink the events entirely: the jobs stay
+    # scheduled, show as "not on Google", and the reconcile flow can re-push
+    # them to the active calendar.
+    db.query(Job).filter(Job.gcal_account_id == acct.id) \
+        .update({"gcal_account_id": None, "gcal_event_id": None}, synchronize_session=False)
     db.delete(acct)
     db.commit()
     logger.info(f"[google-account] {current_user.email} disconnected their Google account")

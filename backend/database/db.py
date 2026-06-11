@@ -349,6 +349,65 @@ def _run_migrations():
             # "ALTER TABLE jobs DROP COLUMN IF EXISTS end_time CASCADE",
             # "ALTER TABLE jobs RENAME COLUMN end_time_new TO end_time",
             "CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_date ON jobs(scheduled_date)",
+            # Workspaces M0 follow-up (Codex P2 on #266): the provenance FKs
+            # were first created WITHOUT ON DELETE SET NULL, so deleting a
+            # user (CASCADE through user_google_accounts) could violate them.
+            # Rebuild each constraint with SET NULL, idempotently: look up
+            # whatever the live constraint is called, drop it, re-add.
+            """DO $$
+            DECLARE c text;
+            BEGIN
+              SELECT tc.constraint_name INTO c
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+              WHERE tc.table_name='messages' AND tc.constraint_type='FOREIGN KEY'
+                AND kcu.column_name='synced_by_google_account_id';
+              IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE messages DROP CONSTRAINT %I', c); END IF;
+              ALTER TABLE messages ADD CONSTRAINT messages_synced_by_google_account_id_fkey
+                FOREIGN KEY (synced_by_google_account_id) REFERENCES user_google_accounts(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$""",
+            """DO $$
+            DECLARE c text;
+            BEGIN
+              SELECT tc.constraint_name INTO c
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+              WHERE tc.table_name='conversations' AND tc.constraint_type='FOREIGN KEY'
+                AND kcu.column_name='synced_by_google_account_id';
+              IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE conversations DROP CONSTRAINT %I', c); END IF;
+              ALTER TABLE conversations ADD CONSTRAINT conversations_synced_by_google_account_id_fkey
+                FOREIGN KEY (synced_by_google_account_id) REFERENCES user_google_accounts(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$""",
+            """DO $$
+            DECLARE c text;
+            BEGIN
+              SELECT tc.constraint_name INTO c
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+              WHERE tc.table_name='jobs' AND tc.constraint_type='FOREIGN KEY'
+                AND kcu.column_name='gcal_account_id';
+              IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE jobs DROP CONSTRAINT %I', c); END IF;
+              ALTER TABLE jobs ADD CONSTRAINT jobs_gcal_account_id_fkey
+                FOREIGN KEY (gcal_account_id) REFERENCES user_google_accounts(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$""",
+            # Same fix for activities.message_id: deleting a message (SMS or
+            # email) must orphan its timeline entry, not raise.
+            """DO $$
+            DECLARE c text;
+            BEGIN
+              SELECT tc.constraint_name INTO c
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+              WHERE tc.table_name='activities' AND tc.constraint_type='FOREIGN KEY'
+                AND kcu.column_name='message_id';
+              IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE activities DROP CONSTRAINT %I', c); END IF;
+              ALTER TABLE activities ADD CONSTRAINT activities_message_id_fkey
+                FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$""",
             # "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS start_time CASCADE",
             # "ALTER TABLE recurring_schedules RENAME COLUMN start_time_new TO start_time",
             # "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS end_time CASCADE",

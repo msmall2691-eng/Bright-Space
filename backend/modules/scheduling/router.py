@@ -1155,7 +1155,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 # delete_event returns False (doesn't raise) when Google rejects
                 # or is unavailable. Only detach the id on success, so a failed
                 # delete can be retried next time rather than orphaning the event.
-                if delete_event(job.gcal_event_id, job.job_type or "residential"):
+                if delete_event(job.gcal_event_id, job.job_type or "residential",
+                                owner_account_id=getattr(job, "gcal_account_id", None)):
                     job.gcal_event_id = None
                     _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
                                      action="delete", status="ok", external_id=old_event_id, commit=False)
@@ -1182,7 +1183,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
                 "property_id": job.property_id,
             }
-            update_event(job.gcal_event_id, job_dict, client_dict)
+            update_event(job.gcal_event_id, job_dict, client_dict,
+                         owner_account_id=getattr(job, "gcal_account_id", None))
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
     return job_to_dict(job)
@@ -1246,7 +1248,8 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     if job.gcal_event_id:
         try:
             from integrations.google_calendar import delete_event
-            delete_event(job.gcal_event_id, job.job_type or "residential")
+            delete_event(job.gcal_event_id, job.job_type or "residential",
+                         owner_account_id=getattr(job, "gcal_account_id", None))
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
     db.delete(job)
@@ -1300,6 +1303,7 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
             job.job_type or "residential",
             client.email,
             client.name,
+            owner_account_id=getattr(job, "gcal_account_id", None),
         )
         if success:
             job.calendar_invite_sent = True
