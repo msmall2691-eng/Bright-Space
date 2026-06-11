@@ -246,7 +246,17 @@ def run_inbox_sync(
         # senders surface via the "Convert to client" affordance first.
         client_id = em["client"]["id"] if em["client"] else None
         if client_id:
-            created = _thread_inbound_email(db, client_id, em)
+            # Savepoint per email: one bad message must not poison the whole
+            # sync transaction — before this, a single IntegrityError aborted
+            # every email in the batch AND the failed message was never
+            # recorded, so the tick retried (and re-failed) it forever.
+            try:
+                with db.begin_nested():
+                    created = _thread_inbound_email(db, client_id, em)
+            except Exception as e:
+                logger.warning(f"[gmail] threading failed for message "
+                               f"{em.get('message_id') or '(no id)'} from {em.get('from_email')}: {e}")
+                created = False
             em["activity_logged"] = created
             if created:
                 threaded += 1

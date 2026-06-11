@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import or_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
@@ -322,8 +323,19 @@ def find_or_create_conversation(
     subject: Optional[str] = None,
 ) -> Conversation:
     """
-    Find the current (non-resolved) conversation for this contact + channel,
-    or create a new one. Preference: match by client_id, else by contact.
+    Find the conversation for this contact + channel, or create a new one.
+    Preference: match by client_id, else by contact.
+
+    Prefers the active (non-resolved) thread — but for a known client a
+    RESOLVED conversation is reused, never duplicated:
+    uq_conversations_client_channel allows exactly ONE row per
+    (client_id, channel), so inserting a sibling is a guaranteed
+    IntegrityError. (That poisoned the whole Gmail sync transaction every
+    tick once a client's only conversation was resolved — the June 10
+    incident.) Callers re-open a resolved thread on the next inbound via
+    _apply_inbound. The insert runs in a savepoint so a lost race with a
+    concurrent writer (e.g. the SMS webhook) degrades to returning the
+    surviving row instead of aborting the caller's transaction.
     """
     external_contact = _normalize_contact(external_contact)
     q = db.query(Conversation).filter(Conversation.channel == channel)
@@ -339,19 +351,31 @@ def find_or_create_conversation(
                  .order_by(Conversation.last_message_at.desc()).first())
         if conv:
             return conv
+        if client_id:
+            conv = q.order_by(Conversation.last_message_at.desc()).first()
+            if conv:
+                return conv
 
-    conv = Conversation(
-        client_id=client_id,
-        external_contact=external_contact,
-        channel=channel,
-        subject=subject,
-        status="open",
-        priority="normal",
-        assignee=DEFAULT_ASSIGNEE,
-    )
-    db.add(conv)
-    db.flush()
-    return conv
+    try:
+        with db.begin_nested():
+            conv = Conversation(
+                client_id=client_id,
+                external_contact=external_contact,
+                channel=channel,
+                subject=subject,
+                status="open",
+                priority="normal",
+                assignee=DEFAULT_ASSIGNEE,
+            )
+            db.add(conv)
+        return conv
+    except IntegrityError:
+        if q is None:
+            raise
+        conv = q.order_by(Conversation.last_message_at.desc()).first()
+        if conv is None:
+            raise
+        return conv
 
 
 def _apply_inbound(conv: Conversation, msg: Message):
