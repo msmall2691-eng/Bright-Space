@@ -393,6 +393,21 @@ def _run_migrations():
                 FOREIGN KEY (gcal_account_id) REFERENCES user_google_accounts(id) ON DELETE SET NULL;
             EXCEPTION WHEN duplicate_object THEN NULL;
             END $$""",
+            # Same fix for activities.message_id: deleting a message (SMS or
+            # email) must orphan its timeline entry, not raise.
+            """DO $$
+            DECLARE c text;
+            BEGIN
+              SELECT tc.constraint_name INTO c
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+              WHERE tc.table_name='activities' AND tc.constraint_type='FOREIGN KEY'
+                AND kcu.column_name='message_id';
+              IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE activities DROP CONSTRAINT %I', c); END IF;
+              ALTER TABLE activities ADD CONSTRAINT activities_message_id_fkey
+                FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$""",
             # "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS start_time CASCADE",
             # "ALTER TABLE recurring_schedules RENAME COLUMN start_time_new TO start_time",
             # "ALTER TABLE recurring_schedules DROP COLUMN IF EXISTS end_time CASCADE",

@@ -807,7 +807,9 @@ class Activity(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
     job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
-    message_id = Column(Integer, ForeignKey("messages.id"), nullable=True)
+    # SET NULL: deleting a message (any channel — SMS or email) must orphan
+    # the timeline entry, not be blocked by it.
+    message_id = Column(Integer, ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
 
     actor = Column(String, nullable=True)
     activity_type = Column(String, nullable=False, index=True)
