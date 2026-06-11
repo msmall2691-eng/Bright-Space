@@ -165,22 +165,37 @@ def _parse_event_datetime(dt_obj: dict | None) -> "tuple[date, time | None] | No
     string-in-Date-column bug. Times are truncated to the minute (GCal only
     surfaces minutes here).
 
-    The instant is converted to BUSINESS_TZ before the wall-clock value is
-    taken, so a UTC "13:00Z" event reads back as 09:00 EDT — the same value the
-    rehydrate endpoint writes. Without this, a 'Z'-form event makes the two
-    paths disagree (one stores 09:00, the sync re-reads 13:00) and the job's
-    time churns on every poll. Offset-form values (e.g. "…-04:00") are
-    unaffected: converting 09:00-04:00 to Eastern is still 09:00.
+    We want the event's *property-local* wall clock — the time the cleaner shows
+    up — and _build_event creates events in the property's timezone. GCal echoes
+    that back as a `timeZone` field plus a dateTime with that zone's offset.
+    Three cases:
+
+      1. A `timeZone` field is present → convert to it and take the wall clock.
+         Authoritative for ANY property timezone (a 09:00 Pacific event stays
+         09:00, not 12:00 Eastern).
+      2. No timeZone, value is bare UTC ("13:00Z") → no local context in the
+         value, so recover the wall clock in BUSINESS_TZ (Maine/Eastern). This
+         is the original 'Z'-churn fix and matches the rehydrate endpoint.
+      3. No timeZone, explicit non-UTC offset ("09:00-07:00") → the offset is
+         already the local wall clock; take .time() as-is, no conversion (else
+         non-Eastern properties get rewritten to the wrong hour every sync).
     """
     if not dt_obj:
         return None
     if "dateTime" in dt_obj:
         dt = datetime.fromisoformat(dt_obj["dateTime"].replace("Z", "+00:00"))
-        # GCal dateTimes are tz-aware (offset or Z); normalize to the business
-        # wall clock. Guard tzinfo is None defensively — a naive value has no
-        # instant to convert and is assumed already-local.
-        if dt.tzinfo is not None:
+        tzname = dt_obj.get("timeZone")
+        if tzname:
+            try:
+                dt = dt.astimezone(ZoneInfo(tzname))
+            except Exception:
+                # Unknown/garbage zone string — fall through to the value's own
+                # offset rather than corrupting the time.
+                pass
+        elif dt.tzinfo is not None and dt.utcoffset() == timedelta(0):
+            # Bare UTC with no zone hint: best-guess the business wall clock.
             dt = dt.astimezone(BUSINESS_TZ)
+        # else: explicit non-UTC offset and no timeZone — already property-local.
         return dt.date(), dt.time().replace(second=0, microsecond=0)
     if "date" in dt_obj:
         return date.fromisoformat(dt_obj["date"]), None

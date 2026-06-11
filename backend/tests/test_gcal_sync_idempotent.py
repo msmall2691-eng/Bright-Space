@@ -158,3 +158,50 @@ def test_sync_does_not_churn_utc_z_form_event():
         db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
         db.commit()
         db.close()
+
+
+def test_sync_preserves_non_eastern_property_wall_clock():
+    """An event in a NON-Eastern property's timezone must keep its property-local
+    wall clock — not get rewritten to the Eastern hour every sync.
+
+    Regression for the over-eager BUSINESS_TZ conversion: a 09:00 Pacific event
+    comes back as 09:00:00-07:00 with timeZone America/Los_Angeles. Forcing it to
+    Eastern would store 12:00 and churn forever. With the event's own timeZone
+    honored, 09:00 stays 09:00.
+    """
+    db = SessionLocal()
+    try:
+        client = Client(name="GCal PT Test", email="pttz@example.com")
+        db.add(client); db.commit(); db.refresh(client)
+        prop = Property(client_id=client.id, name="P", address="1 Test St",
+                        property_type="residential", active=True)
+        db.add(prop); db.commit(); db.refresh(prop)
+        # Job stored at the property-local Pacific time (09:00 PT).
+        job = Job(
+            client_id=client.id, property_id=prop.id, job_type="residential", title="PT Clean",
+            scheduled_date=date(2026, 7, 10), start_time=time(9, 0), end_time=time(12, 0),
+            address="", gcal_event_id="evt_pt_1", status="scheduled",
+        )
+        db.add(job); db.commit(); db.refresh(job)
+
+        # Google echoes the property timezone alongside the offset-form dateTime.
+        event = {
+            "id": "evt_pt_1",
+            "status": "confirmed",
+            "summary": "PT Clean",
+            "start": {"dateTime": "2026-07-10T09:00:00-07:00", "timeZone": "America/Los_Angeles"},
+            "end": {"dateTime": "2026-07-10T12:00:00-07:00", "timeZone": "America/Los_Angeles"},
+        }
+        r1 = _run_sync(db, [event])
+        assert r1["jobs_updated"] == 0, "09:00 PT must stay 09:00 — not become 12:00 Eastern"
+        db.refresh(job)
+        assert job.scheduled_date == date(2026, 7, 10)
+        assert job.start_time == time(9, 0)
+        assert job.end_time == time(12, 0)
+    finally:
+        db.rollback()
+        db.query(Job).filter(Job.gcal_event_id == "evt_pt_1").delete(synchronize_session=False)
+        db.query(Property).filter(Property.client_id == client.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+        db.commit()
+        db.close()
