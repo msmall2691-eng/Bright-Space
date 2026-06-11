@@ -173,10 +173,19 @@ export default function Quoting() {
     if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
   }, [location.search])
 
-  const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  // Guard (June 10 P1): one malformed row — legacy JSON shapes where items is
+  // a dict/string, or a non-string status — must never crash or wedge the page.
+  // Coerce the fields the page iterates/renders before they reach state.
+  const safeQuote = (q) => ({
+    ...q,
+    items: Array.isArray(q?.items) ? q.items : [],
+    status: typeof q?.status === 'string' ? q.status : 'draft',
+  })
+
+  const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error("[Quoting]", err))
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
   // Quotes the customer is sitting on (sent-but-unopened / opened-but-no-reply).
-  const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d : [])).catch(err => console.error("[Quoting]", err))
+  const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error("[Quoting]", err))
 
   useEffect(() => {
     loadQuotes()
@@ -196,7 +205,7 @@ export default function Quoting() {
   useEffect(() => {
     if (location.state?.quoteId) {
       get(`/api/quotes/${location.state.quoteId}`).then(q => {
-        openQuoteForm(q)
+        openQuoteForm(safeQuote(q))
         setTab('quotes')
       }).catch(err => console.error("[Quoting]", err))
     }
@@ -522,6 +531,12 @@ export default function Quoting() {
                       <span className="text-xs text-ink-3">{q.quote_number}</span>
                       <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
                       {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
+                      {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
+                        <span className="text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200"
+                          title={q.last_send_error}>
+                          send failed
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-ink-3 mt-0.5">
                       {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address, `${q.items?.length || 0} items`, new Date(q.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
@@ -654,6 +669,16 @@ export default function Quoting() {
                   ? `$${selectedIntake.estimate_min}–$${selectedIntake.estimate_max}`
                   : `$${selectedIntake.estimate_max ?? selectedIntake.estimate_min}`}
                 <span className="text-blue-700"> — pre-filled below; adjust as needed.</span>
+              </div>
+            )}
+
+            {/* Delivery banner — the last send attempt failed; the quote never
+                reached the customer. Cleared automatically on a successful send. */}
+            {selected && selected.last_send_error && ['draft', 'sent', 'viewed'].includes(selected.status) && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+                <div className="font-semibold text-red-800 mb-1">Last send failed — the customer didn't get this quote</div>
+                <div className="text-red-900">{selected.last_send_error}</div>
+                {selected.last_send_attempt_at && <div className="text-[11px] text-red-700 mt-1">{new Date(selected.last_send_attempt_at).toLocaleString()}</div>}
               </div>
             )}
 

@@ -109,6 +109,8 @@ def _quote_dict(q: Quote) -> dict:
         "declined_at": _iso(q.declined_at),
         "converted_at": _iso(getattr(q, "converted_at", None)),
         "follow_up_sent_at": _iso(getattr(q, "follow_up_sent_at", None)),
+        "last_send_attempt_at": _iso(getattr(q, "last_send_attempt_at", None)),
+        "last_send_error": getattr(q, "last_send_error", None),
         "declined_reason": getattr(q, "declined_reason", None),
         "declined_by_name": getattr(q, "declined_by_name", None),
         "requested_changes_message": getattr(q, "requested_changes_message", None),
@@ -410,6 +412,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                                  action="send", status="failed", detail=str(e), commit=False)
 
     delivered = any(v == "sent" for v in results.values())
+    # Delivery visibility: a failed send must not leave a silent "draft" —
+    # record the attempt + reason so the UI can show a "send failed" state.
+    quote.last_send_attempt_at = datetime.now()
+    quote.last_send_error = None if delivered else ("; ".join(errors) or "delivery failed")
     if delivered:
         if prior_status == "draft":
             quote.status = "sent"
@@ -901,9 +907,13 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         pdf_bytes=pdf_bytes,
         pdf_filename=f"{quote.quote_number}.pdf",
     )
+    quote.last_send_attempt_at = datetime.now()
     if not result["success"]:
+        quote.last_send_error = str(result.get("error") or "delivery failed")
+        db.commit()
         raise HTTPException(status_code=500, detail=f"Email failed: {result['error']}")
 
+    quote.last_send_error = None
     if quote.status == "draft":
         quote.status = "sent"
         quote.sent_at = datetime.now()

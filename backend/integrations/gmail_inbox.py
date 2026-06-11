@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_USER = os.getenv("SMTP_USER", "") or os.getenv("GMAIL_EMAIL", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "") or os.getenv("GMAIL_PASSWORD", "")
 
 # Patterns to filter out automated / newsletter emails
 AUTOMATED_PATTERNS = [

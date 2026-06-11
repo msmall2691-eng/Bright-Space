@@ -6,7 +6,7 @@ from typing import List
 from database.db import get_db
 from modules.auth.router import require_role
 from database.models import Job
-from integrations.connecteam import create_shift, delete_shift, get_employees
+from integrations.connecteam import ConnecteamAuthError, create_shift, delete_shift, get_employees
 
 router = APIRouter()
 
@@ -39,6 +39,8 @@ async def list_employees():
     """Fetch all employees from Connecteam."""
     try:
         return await get_employees()
+    except ConnecteamAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Connecteam error: {str(e)}")
 

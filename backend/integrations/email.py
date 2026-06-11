@@ -7,6 +7,12 @@ Required env vars:
   SMTP_HOST     — default smtp.gmail.com
   SMTP_PORT     — default 587
   FROM_NAME     — display name, default "Maine Cleaning Co"
+
+_load_smtp_creds() below is the ONE canonical credential source for every
+sender in the app (comms, invoicing, quotes, gmail IMAP fallback):
+DB settings (Settings → Email) first, then SMTP_USER/SMTP_PASS env, then the
+legacy GMAIL_EMAIL/GMAIL_PASSWORD pair so older Railway environments keep
+working.
 """
 
 import html as html_mod
@@ -44,8 +50,8 @@ def _load_smtp_creds() -> dict:
             db.close()
     except Exception:
         pass
-    smtp_user = s.get("smtp_user") or os.getenv("SMTP_USER")
-    smtp_pass = s.get("smtp_pass") or os.getenv("SMTP_PASS")
+    smtp_user = s.get("smtp_user") or os.getenv("SMTP_USER") or os.getenv("GMAIL_EMAIL")
+    smtp_pass = s.get("smtp_pass") or os.getenv("SMTP_PASS") or os.getenv("GMAIL_PASSWORD")
     smtp_host = s.get("smtp_host") or os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port_raw = s.get("smtp_port") or os.getenv("SMTP_PORT", "587")
     from_name = s.get("from_name") or os.getenv("FROM_NAME", "Maine Cleaning Co")
@@ -67,7 +73,10 @@ def send_email(to: str, subject: str, html_body: str, text_body: str = "") -> di
     from_email = creds["from_email"]
 
     if not smtp_user or not smtp_pass:
-        raise ValueError("SMTP credentials missing. Add them in BrightBase → Settings → Email, or set SMTP_USER + SMTP_PASS env vars.")
+        raise ValueError(
+            "Email credentials missing. Add them in BrightBase → Settings → Email, "
+            "or set SMTP_USER + SMTP_PASS env vars (legacy GMAIL_EMAIL + GMAIL_PASSWORD also accepted)."
+        )
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

@@ -152,6 +152,9 @@ def _run_migrations():
         # "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
         # PR 3: Quote traceability — track when client views quote
         "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
+        # Quote delivery visibility: failed sends must be visible, not silent drafts
+        "ALTER TABLE quotes ADD COLUMN last_send_attempt_at TIMESTAMP",
+        "ALTER TABLE quotes ADD COLUMN last_send_error TEXT",
         # PR 4: Visits table (created by create_all, but ensure indexes)
         # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
         # PR 6: iCal feeds sync status tracking
@@ -286,6 +289,49 @@ def _run_migrations():
         "ALTER TABLE users ADD COLUMN google_sub TEXT",
         "ALTER TABLE users ADD COLUMN auth_provider TEXT",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)",
+        # ── Workspaces & per-user Google accounts (M0, June 2026) ──
+        # Additive only; see docs/auth-workspaces-plan-2026-06.md. v1 is
+        # single-org: org 1 is seeded below and every existing user joins it.
+        f"""CREATE TABLE IF NOT EXISTS orgs (
+            id {"SERIAL" if is_pg else "INTEGER"} PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            slug VARCHAR(64) NOT NULL UNIQUE,
+            created_at TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS user_google_accounts (
+            id {"SERIAL" if is_pg else "INTEGER"} PRIMARY KEY,
+            user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            org_id INTEGER NOT NULL REFERENCES orgs(id),
+            google_sub VARCHAR(64) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            access_token TEXT,
+            refresh_token TEXT,
+            token_expiry TIMESTAMP,
+            scopes {"JSON" if is_pg else "TEXT"} DEFAULT '[]',
+            status VARCHAR(16) NOT NULL DEFAULT 'connected',
+            gmail_sync_enabled {bool_col},
+            gmail_history_id VARCHAR(32),
+            gcal_sync_enabled {bool_col},
+            gcal_calendar_id VARCHAR(255),
+            gcal_sync_token TEXT,
+            last_sync_at TIMESTAMP,
+            last_sync_error TEXT,
+            connected_at TIMESTAMP,
+            UNIQUE (org_id, google_sub)
+        )""",
+        # users: workspace membership + approval workflow
+        "ALTER TABLE users ADD COLUMN org_id INTEGER REFERENCES orgs(id)",
+        "ALTER TABLE users ADD COLUMN status VARCHAR(16) DEFAULT 'active'",
+        "ALTER TABLE users ADD COLUMN approved_by INTEGER REFERENCES users(id)",
+        "ALTER TABLE users ADD COLUMN approved_at TIMESTAMP",
+        # Per-user sync provenance (phase C reads these; NULL = legacy shared account)
+        "ALTER TABLE conversations ADD COLUMN synced_by_google_account_id INTEGER REFERENCES user_google_accounts(id)",
+        "ALTER TABLE messages ADD COLUMN synced_by_google_account_id INTEGER REFERENCES user_google_accounts(id)",
+        "ALTER TABLE jobs ADD COLUMN gcal_account_id INTEGER REFERENCES user_google_accounts(id)",
+        # Seed + backfill (idempotent): one workspace, everyone in it, active.
+        "INSERT INTO orgs (name, slug, created_at) SELECT 'Maine Cleaning Co', 'maine-cleaning-co', CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM orgs)",
+        "UPDATE users SET status = 'active' WHERE status IS NULL",
+        "UPDATE users SET org_id = (SELECT MIN(id) FROM orgs) WHERE org_id IS NULL",
     ]
 
     # Dialect-aware backfill migrations

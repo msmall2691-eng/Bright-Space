@@ -17,11 +17,15 @@ function isoDate(y, m, d) {
   return `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
 }
 
-function eachDay(start, end) {
+export function eachDay(start, end) {
   const days = []
   const cur = new Date(start + 'T12:00:00')
   const fin = new Date(end   + 'T12:00:00')
-  while (cur <= fin) {
+  if (isNaN(cur) || isNaN(fin)) return days
+  // Hard cap: this runs per event per render, and a corrupt feed date (e.g.
+  // a checkout in year 9999 from a bad iCal/GCal sync) must not lock the
+  // renderer iterating millions of days. 400 covers any real stay/block.
+  for (let i = 0; cur <= fin && i < 400; i++) {
     days.push(cur.toISOString().slice(0, 10))
     cur.setDate(cur.getDate() + 1)
   }

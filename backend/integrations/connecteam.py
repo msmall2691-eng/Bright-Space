@@ -10,6 +10,23 @@ from typing import Optional
 CONNECTEAM_BASE = "https://api.connecteam.com/v1"
 
 
+class ConnecteamAuthError(Exception):
+    """Connecteam rejected our credentials.
+
+    Connecteam answers auth failures with a 302 redirect to '/' instead of a
+    401, so a redirect (or explicit 401/403) on an API call means the API key
+    is invalid or expired — not that the service is down.
+    """
+
+
+def _raise_for_status(r: httpx.Response) -> None:
+    if (300 <= r.status_code < 400) or r.status_code in (401, 403):
+        raise ConnecteamAuthError(
+            "Connecteam credentials invalid/expired — rotate CONNECTEAM_API_KEY"
+        )
+    r.raise_for_status()
+
+
 def _headers() -> dict:
     return {
         "Authorization": f"Bearer {os.getenv('CONNECTEAM_API_KEY', '')}",
@@ -28,7 +45,7 @@ async def get_employees() -> list:
             f"{CONNECTEAM_BASE}/companies/{_company_id()}/users",
             headers=_headers(),
         )
-        r.raise_for_status()
+        _raise_for_status(r)
         return r.json().get("users", [])
 
 
@@ -58,7 +75,7 @@ async def create_shift(
             headers=_headers(),
             json=payload,
         )
-        r.raise_for_status()
+        _raise_for_status(r)
         return r.json()
 
 
@@ -69,7 +86,7 @@ async def delete_shift(shift_id: str) -> None:
             f"{CONNECTEAM_BASE}/companies/{_company_id()}/shifts/{shift_id}",
             headers=_headers(),
         )
-        r.raise_for_status()
+        _raise_for_status(r)
 
 
 async def get_timesheets(
@@ -92,7 +109,7 @@ async def get_timesheets(
             headers=_headers(),
             params=params,
         )
-        r.raise_for_status()
+        _raise_for_status(r)
         return r.json().get("timesheets", [])
 
 
@@ -116,5 +133,5 @@ async def get_mileage(
             headers=_headers(),
             params=params,
         )
-        r.raise_for_status()
+        _raise_for_status(r)
         return r.json().get("entries", [])
