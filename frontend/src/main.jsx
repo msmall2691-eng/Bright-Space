@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import GlobalToasts from './components/ui/GlobalToasts'
 import './index.css'
 import { applyTheme } from './theme'
 
@@ -38,6 +39,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <App />
+      {/* Mounted at the root — outside App's route branching — so the global
+          error-toast safety net works on every route (login, public /quote
+          and /pay, the loading splash), not just the authenticated shell. */}
+      <GlobalToasts />
     </BrowserRouter>
   </React.StrictMode>
 )
