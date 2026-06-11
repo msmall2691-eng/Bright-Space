@@ -255,7 +255,8 @@ def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> bool:
         # the change or auth is unavailable. Treat that as a failure and log
         # loudly — otherwise we'd "succeed" while Google keeps the stale date and
         # the next authoritative GCal sync reverts the reconciliation.
-        ok = update_event(linked_job.gcal_event_id, job_dict, client_dict)
+        ok = update_event(linked_job.gcal_event_id, job_dict, client_dict,
+                          owner_account_id=getattr(linked_job, "gcal_account_id", None))
         if ok:
             log.info(
                 f"Updated GCal event {linked_job.gcal_event_id} for turnover "
@@ -656,7 +657,8 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                     if linked_job.gcal_event_id:
                         try:
                             from integrations.google_calendar import delete_event
-                            delete_event(linked_job.gcal_event_id, "str_turnover")
+                            delete_event(linked_job.gcal_event_id, "str_turnover",
+                                         owner_account_id=getattr(linked_job, "gcal_account_id", None))
                             log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
                         except Exception as e:
                             log.warning(f"Failed to delete GCal for cancelled turnover: {e}")

@@ -172,3 +172,85 @@ def test_account_sync_stamps_provenance(ctx):
                 db.delete(conv); db.commit()
         db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
         db.commit()
+
+
+def test_disconnect_clears_provenance_references(ctx):
+    """Codex P1 (#265): rows synced by the account reference it via FKs with
+    no ON DELETE SET NULL — disconnect must detach them or the delete 500s on
+    Postgres after the token was already revoked at Google."""
+    db, u = ctx
+    _run_callback(db, u)
+    acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == u.id).one()
+
+    from database.models import Client, Job, Property
+    client = Client(name="Disc Prov", email="discprov@example.com", status="active")
+    db.add(client); db.commit(); db.refresh(client)
+    prop = Property(client_id=client.id, name="P", address="1 St",
+                    property_type="residential", active=True)
+    db.add(prop); db.commit(); db.refresh(prop)
+    job = Job(client_id=client.id, property_id=prop.id, title="J", job_type="residential",
+              gcal_event_id="evt1", gcal_account_id=acct.id)
+    db.add(job); db.commit(); db.refresh(job)
+    try:
+        from modules.gmail.router import run_inbox_sync
+        emails = [{"id": "g2", "message_id": "<disc-prov@mail>", "from_name": "Disc Prov",
+                   "from_email": "discprov@example.com", "to": "x@y.z", "subject": "hi",
+                   "snippet": "hi", "body": "hi",
+                   "date": datetime.now(timezone.utc).isoformat(), "is_read": False,
+                   "has_attachments": False}]
+        run_inbox_sync(db, emails=emails, source_account_id=acct.id)
+        db.commit()
+
+        from modules.auth.router import disconnect_google_account
+        with patch("httpx.post"):
+            out = disconnect_google_account(db=db, current_user=u)
+        assert out == {"connected": False}
+        assert db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == u.id).count() == 0
+        # Synced data survives, detached from the deleted grant.
+        msg = db.query(Message).filter(Message.external_id == "<disc-prov@mail>").one()
+        assert msg.synced_by_google_account_id is None
+        conv = db.query(Conversation).filter(Conversation.id == msg.conversation_id).one()
+        assert conv.synced_by_google_account_id is None
+        db.refresh(job)
+        assert job.gcal_account_id is None
+    finally:
+        msg = db.query(Message).filter(Message.external_id == "<disc-prov@mail>").first()
+        if msg:
+            conv_id = msg.conversation_id
+            db.delete(msg); db.commit()
+            conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+            if conv:
+                db.delete(conv); db.commit()
+        db.query(Job).filter(Job.id == job.id).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+        db.commit()
+
+
+def test_calendar_mutations_route_to_the_owning_account():
+    """Codex P1 (#265): update/cancel must hit the calendar the event lives
+    on — the recorded owner — not whichever account connected most recently."""
+    import integrations.google_calendar as gc
+
+    # An explicit owner routes to exactly that account.
+    with patch.object(gc, "_account_service", return_value="svc-7") as acct_svc:
+        assert gc._get_service(7) == "svc-7"
+    acct_svc.assert_called_once_with(7)
+
+    # Owner None = legacy event: the per-user path must NOT be consulted.
+    with patch.object(gc, "_account_service", return_value="svc-x") as acct_svc, \
+         patch.object(gc, "_load_db_token", return_value=None), \
+         patch.dict("os.environ", {"GOOGLE_TOKEN_B64": ""}, clear=False):
+        with pytest.raises(RuntimeError):
+            gc._get_service(None)   # falls to the legacy chain (unconfigured here)
+    acct_svc.assert_not_called()
+
+    # Default (new events / reads): newest connected account is preferred.
+    with patch.object(gc, "_account_service", return_value="svc-new") as acct_svc:
+        assert gc._get_service() == "svc-new"
+    acct_svc.assert_called_once_with(None)
+
+    # And the mutation wrappers pass the owner through.
+    with patch.object(gc, "_get_service", return_value=MagicMock()) as get_svc:
+        gc.delete_event("evt", "residential", owner_account_id=42)
+    get_svc.assert_called_once_with(42)

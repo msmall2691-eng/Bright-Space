@@ -455,7 +455,8 @@ class Job(Base):
     gcal_event_id = Column(String, nullable=True)   # Google Calendar event ID for two-way sync
     # Whose connected Google account owns the calendar event (NULL = legacy
     # shared business calendar token).
-    gcal_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+    gcal_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
 
     title = Column(String, nullable=False)
     scheduled_date = Column(Date)       # ISO date
@@ -666,7 +667,8 @@ class Conversation(Base):
 
     # Which member's connected Google account synced this in (NULL = legacy
     # shared business inbox). Lets per-user sync be attributed and unsynced.
-    synced_by_google_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+    synced_by_google_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -714,7 +716,8 @@ class Message(Base):
 
     # Which member's connected Google account synced this in (NULL = legacy
     # shared business inbox).
-    synced_by_google_account_id = Column(Integer, ForeignKey("user_google_accounts.id"), nullable=True)
+    synced_by_google_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
 

@@ -463,7 +463,8 @@ def sync_gcal_cancellations(db: Session) -> dict:
     would_cancel = 0
     for job in jobs:
         try:
-            event = get_event(job.gcal_event_id, job_type=job.job_type or "residential")
+            event = get_event(job.gcal_event_id, job_type=job.job_type or "residential",
+                              owner_account_id=getattr(job, "gcal_account_id", None))
             fetched[job.id] = (event, None)
             if event is None or event.get("status") == "cancelled":
                 would_cancel += 1
