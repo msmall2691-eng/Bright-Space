@@ -152,6 +152,9 @@ def _run_migrations():
         # "ALTER TABLE recurring_schedules ADD COLUMN end_time_new TIME",
         # PR 3: Quote traceability — track when client views quote
         "ALTER TABLE quotes ADD COLUMN viewed_at TIMESTAMP",
+        # Quote delivery visibility: failed sends must be visible, not silent drafts
+        "ALTER TABLE quotes ADD COLUMN last_send_attempt_at TIMESTAMP",
+        "ALTER TABLE quotes ADD COLUMN last_send_error TEXT",
         # PR 4: Visits table (created by create_all, but ensure indexes)
         # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
         # PR 6: iCal feeds sync status tracking

@@ -1,8 +1,15 @@
 """
 Quote Email Service
-Sends quotes via Gmail SMTP with delivery tracking
+Sends quotes via SMTP with delivery tracking.
+
+Credentials come from the ONE canonical source the rest of the app uses —
+integrations.email._load_smtp_creds() (Settings → Email in the DB, then
+SMTP_USER/SMTP_PASS env, then legacy GMAIL_EMAIL/GMAIL_PASSWORD). This service
+previously read GMAIL_* directly, so a Railway env with only SMTP_* configured
+sent invoices fine but silently failed every quote.
 """
 
+import logging
 import os
 import smtplib
 import uuid
@@ -14,18 +21,29 @@ from email.mime.base import MIMEBase
 from email import encoders
 from jinja2 import Template
 
+from integrations.email import _load_smtp_creds
+
+logger = logging.getLogger(__name__)
+
 
 class QuoteEmailService:
-    """Send quote emails with PDF attachments using Gmail SMTP"""
+    """Send quote emails with PDF attachments over the shared SMTP config"""
 
     def __init__(self):
-        self.gmail_email = os.getenv("GMAIL_EMAIL")
-        self.gmail_password = os.getenv("GMAIL_PASSWORD")
-        self.from_email = os.getenv("RESEND_FROM_EMAIL", self.gmail_email or "quotes@bright-space.com")
-        self.company_name = os.getenv("COMPANY_NAME", "Bright-Space")
+        creds = _load_smtp_creds()
+        self.smtp_user = creds["smtp_user"]
+        self.smtp_pass = creds["smtp_pass"]
+        self.smtp_host = creds["smtp_host"]
+        self.smtp_port = creds["smtp_port"]
+        self.from_email = creds["from_email"] or "quotes@bright-space.com"
+        self.company_name = os.getenv("COMPANY_NAME") or creds["from_name"] or "Bright-Space"
 
-        if not self.gmail_email or not self.gmail_password:
-            raise ValueError("GMAIL_EMAIL and GMAIL_PASSWORD environment variables are required")
+        if not self.smtp_user or not self.smtp_pass:
+            msg = ("Email credentials missing — set SMTP_USER + SMTP_PASS "
+                   "(legacy GMAIL_EMAIL + GMAIL_PASSWORD also accepted), or save them "
+                   "in BrightBase → Settings → Email.")
+            logger.error(f"[quote-email] {msg}")
+            raise ValueError(msg)
 
     def get_email_template(self) -> str:
         """Return the quote email HTML template"""
@@ -107,7 +125,7 @@ class QuoteEmailService:
             # Create message
             msg = MIMEMultipart('alternative')
             msg['Subject'] = f"Your Quote {quote_number} from {self.company_name}"
-            msg['From'] = self.gmail_email
+            msg['From'] = f"{self.company_name} <{self.from_email}>"
             msg['To'] = to_email
 
             # Render HTML template
@@ -133,13 +151,15 @@ class QuoteEmailService:
                 pdf_part.add_header('Content-Disposition', f'attachment; filename= {pdf_filename}')
                 msg.attach(pdf_part)
 
-            # Send via Gmail SMTP. timeout is REQUIRED: without it a slow/blocked
-            # SMTP socket hangs the whole web request until Railway's gateway
-            # times out (~30-60s) and returns a 502. With a timeout the call
-            # fails fast and is caught below, so the endpoint returns a clean
-            # result instead of a gateway 502.
-            with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
-                server.login(self.gmail_email, self.gmail_password)
+            # Send over the shared SMTP config (STARTTLS, like send_email()).
+            # timeout is REQUIRED: without it a slow/blocked SMTP socket hangs
+            # the whole web request until Railway's gateway times out
+            # (~30-60s) and returns a 502. With a timeout the call fails fast
+            # and is caught below, so the endpoint returns a clean result.
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=20) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(self.smtp_user, self.smtp_pass)
                 server.send_message(msg)
 
             # Generate email ID for tracking

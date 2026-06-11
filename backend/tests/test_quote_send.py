@@ -62,3 +62,32 @@ def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     assert out["quote_link"]        # link still provided
     db.refresh(q)
     assert q.status == "draft"
+
+
+def test_failed_send_is_visible_then_cleared_on_success(quote_ctx):
+    """A failed delivery must not leave a silent draft: last_send_error /
+    last_send_attempt_at record what happened, and a later successful send
+    clears the error."""
+    db, c, q = quote_ctx
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email:
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {
+            "success": False, "error": "SMTP auth failed", "email_id": None,
+        }
+        out = send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
+    assert out["delivered"] is False
+    db.refresh(q)
+    assert q.status == "draft"                    # not falsely marked sent
+    assert q.last_send_attempt_at is not None
+    assert q.last_send_error                      # visible reason, not silence
+
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email:
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "e2"}
+        out = send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
+    assert out["delivered"] is True
+    db.refresh(q)
+    assert q.status == "sent"
+    assert q.last_send_error is None              # cleared on success

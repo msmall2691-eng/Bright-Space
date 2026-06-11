@@ -857,6 +857,11 @@ class Quote(Base):
     converted_at = Column(DateTime(timezone=True), nullable=True)
     # When a follow-up nudge was last sent on a stale sent/viewed quote.
     follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
+    # Delivery visibility: the last send attempt and why it failed (cleared on
+    # a successful send). A failed send used to leave the quote sitting in
+    # "draft" with no trace in the UI.
+    last_send_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_send_error = Column(Text, nullable=True)
 
     # Acceptance capture (from the public accept page)
     accepted_by_name = Column(String(255), nullable=True)
