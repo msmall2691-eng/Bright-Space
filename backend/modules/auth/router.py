@@ -334,22 +334,7 @@ def _resolve_google_user(db: Session, email: str, sub: Optional[str], name: str)
     return user
 
 
-def _is_business_calendar_account(db: Session, email: str) -> bool:
-    """Whether this email is the designated business calendar account — so signing
-    in as them (re)connects the shared calendar, but a different admin signing in
-    never hijacks it."""
-    email = (email or "").strip().lower()
-    candidates = []
-    biz = _app_get(db, "from_email") or os.getenv("GCAL_PRIMARY_ID") or os.getenv("GOOGLE_CALENDAR_ACCOUNT")
-    if biz:
-        candidates.append(biz.strip().lower())
-    allow = [e.strip().lower() for e in os.getenv("GOOGLE_ALLOWED_EMAILS", "").split(",") if e.strip()]
-    if allow:
-        candidates.append(allow[0])
-    return email in candidates
-
-
-# ── Unified "Sign in with Google": identity + calendar in one consent ───────
+# ── "Sign in with Google": identity only ────────────────────────────────────
 class GoogleExchangeRequest(BaseModel):
     code: str
 
@@ -405,13 +390,9 @@ def google_login_callback(request: Request, code: str = "", state: str = "", db:
         db.commit()
         return RedirectResponse(url="/login?sso_error=not_authorized", status_code=302)
 
-    # Same consent granted calendar access — persist it as the shared calendar
-    # token, but only for the business account (so a second admin can't hijack it).
-    if _is_business_calendar_account(db, email) or not _app_get(db, "google_token"):
-        try:
-            _app_set(db, "google_token", creds.to_json())
-        except Exception as e:
-            logger.warning(f"Could not store calendar token from login: {e}")
+    # NOTE: login consent is identity-only now. It used to also capture a
+    # shared calendar token here — per-user Gmail/Calendar access is granted
+    # explicitly via /google-account/connect-url (Settings) instead.
 
     token = create_jwt(user.id, user.email, user.role)
     sso_code = secrets.token_urlsafe(24)
@@ -673,3 +654,172 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
     logger.info(f"[auth] {current_user.email} updated user {u.email}: "
                 f"role={data.role!r} active={data.active!r}")
     return _user_row(db, u)
+
+
+# ── Per-user Google account: explicit Gmail + Calendar grant (phase B) ──────
+# docs/auth-workspaces-plan-2026-06.md. Sign-in stays identity-only; THIS flow
+# is where a member grants their own Gmail/Calendar, stored encrypted on
+# user_google_accounts (TOKEN_ENCRYPTION_KEY) — never in a shared AppSetting.
+
+class GoogleAccountUpdate(BaseModel):
+    gmail_sync_enabled: Optional[bool] = None
+    gcal_sync_enabled: Optional[bool] = None
+
+
+def _google_account_row(acct) -> dict:
+    return {
+        "connected": True,
+        "email": acct.email,
+        "status": acct.status,
+        "scopes": list(acct.scopes or []),
+        "gmail_sync_enabled": acct.gmail_sync_enabled,
+        "gcal_sync_enabled": acct.gcal_sync_enabled,
+        "last_sync_at": acct.last_sync_at.isoformat() if acct.last_sync_at else None,
+        "last_sync_error": acct.last_sync_error,
+        "connected_at": acct.connected_at.isoformat() if acct.connected_at else None,
+    }
+
+
+@router.get("/google-account")
+def get_google_account(db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
+    """The signed-in user's connected Google account (or what's blocking one)."""
+    from database.models import UserGoogleAccount
+    from integrations.google_oauth import is_oauth_available
+    from utils.crypto import encryption_available
+    acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == current_user.id).first()
+    if acct:
+        return _google_account_row(acct)
+    return {
+        "connected": False,
+        "oauth_available": is_oauth_available(),
+        "encryption_available": encryption_available(),
+    }
+
+
+@router.get("/google-account/connect-url")
+def google_account_connect_url(request: Request, db: Session = Depends(get_db),
+                               current_user: User = Depends(get_current_user)):
+    """Start the per-user grant: returns the Google consent URL (Gmail +
+    Calendar, offline). The state nonce binds the callback to this user."""
+    import secrets
+    from integrations.google_oauth import build_connect_flow, is_oauth_available
+    from utils.crypto import encryption_available
+    if not is_oauth_available():
+        raise HTTPException(status_code=503, detail="Google OAuth isn't configured on the server.")
+    if not encryption_available():
+        raise HTTPException(status_code=503,
+                            detail="TOKEN_ENCRYPTION_KEY is not set on the server — tokens can't be stored safely.")
+    state = secrets.token_urlsafe(24)
+    _app_set(db, f"gconnect_state_{state}",
+             f"{current_user.id}|{datetime.now(timezone.utc).isoformat()}")
+    db.commit()
+    flow = build_connect_flow(request, state=state)
+    auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+    return {"auth_url": auth_url}
+
+
+@router.get("/google-account/callback")
+def google_account_callback(request: Request, code: str = "", state: str = "",
+                            db: Session = Depends(get_db)):
+    """OAuth redirect target for the per-user grant. No Bearer header here (a
+    browser redirect) — the user is resolved from the one-time state nonce."""
+    from fastapi.responses import RedirectResponse
+    from database.models import UserGoogleAccount
+    from integrations.google_oauth import build_connect_flow, client_id as _google_client_id
+    from utils.crypto import encrypt_secret
+
+    stored = _app_get(db, f"gconnect_state_{state}") if state else None
+    if not stored:
+        return RedirectResponse(url="/settings?google_account=invalid_state", status_code=302)
+    _app_del(db, f"gconnect_state_{state}")
+    try:
+        user_id_s, issued_at = stored.split("|", 1)
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(issued_at)).total_seconds()
+    except Exception:
+        age, user_id_s = 1e9, "0"
+    if age > 600:
+        db.commit()
+        return RedirectResponse(url="/settings?google_account=expired", status_code=302)
+    user = db.query(User).filter(User.id == int(user_id_s)).first()
+    if not user:
+        db.commit()
+        return RedirectResponse(url="/settings?google_account=error", status_code=302)
+
+    try:
+        flow = build_connect_flow(request, state=state)
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        info = google_id_token.verify_oauth2_token(creds.id_token, google_requests.Request(), _google_client_id())
+    except Exception as e:
+        logger.warning(f"[google-account] connect callback failed for user {user.id}: {e}")
+        db.commit()
+        return RedirectResponse(url="/settings?google_account=failed", status_code=302)
+
+    if not info.get("email") or not info.get("email_verified"):
+        db.commit()
+        return RedirectResponse(url="/settings?google_account=unverified", status_code=302)
+
+    acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == user.id).first()
+    if not acct:
+        acct = UserGoogleAccount(user_id=user.id, org_id=user.org_id or _default_org_id(db),
+                                 google_sub=info.get("sub") or "", email=info["email"].strip().lower())
+        db.add(acct)
+    acct.google_sub = info.get("sub") or acct.google_sub
+    acct.email = info["email"].strip().lower()
+    acct.access_token = encrypt_secret(creds.token or "")
+    # prompt=consent guarantees a refresh token on first connect; on a
+    # re-connect Google may omit it — keep the one we already have.
+    if creds.refresh_token:
+        acct.refresh_token = encrypt_secret(creds.refresh_token)
+    acct.token_expiry = creds.expiry
+    acct.scopes = sorted(creds.scopes or [])
+    acct.status = "connected"
+    acct.last_sync_error = None
+    acct.connected_at = datetime.now(timezone.utc)
+    # The point of connecting is sync — both channels default ON; the
+    # Settings card has per-channel toggles.
+    acct.gmail_sync_enabled = True
+    acct.gcal_sync_enabled = True
+    db.commit()
+    logger.info(f"[google-account] {user.email} connected Google account {acct.email}")
+    return RedirectResponse(url="/settings?google_account=connected", status_code=302)
+
+
+@router.patch("/google-account")
+def update_google_account(data: GoogleAccountUpdate, db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    from database.models import UserGoogleAccount
+    acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == current_user.id).first()
+    if not acct:
+        raise HTTPException(status_code=404, detail="No Google account connected")
+    if data.gmail_sync_enabled is not None:
+        acct.gmail_sync_enabled = data.gmail_sync_enabled
+    if data.gcal_sync_enabled is not None:
+        acct.gcal_sync_enabled = data.gcal_sync_enabled
+    db.commit()
+    return _google_account_row(acct)
+
+
+@router.delete("/google-account")
+def disconnect_google_account(db: Session = Depends(get_db),
+                              current_user: User = Depends(get_current_user)):
+    """Disconnect: best-effort revoke at Google, then wipe the stored grant."""
+    from database.models import UserGoogleAccount
+    from utils.crypto import decrypt_secret
+    acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == current_user.id).first()
+    if not acct:
+        return {"connected": False}
+    try:
+        import httpx
+        token = decrypt_secret(acct.refresh_token or "") or decrypt_secret(acct.access_token or "")
+        if token:
+            httpx.post("https://oauth2.googleapis.com/revoke", params={"token": token}, timeout=10)
+    except Exception as e:
+        logger.info(f"[google-account] revoke at Google failed (continuing): {e}")
+    db.delete(acct)
+    db.commit()
+    logger.info(f"[google-account] {current_user.email} disconnected their Google account")
+    return {"connected": False}

@@ -645,6 +645,8 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
             if event_id:
                 job.calendar_invite_sent = invite
                 job.gcal_event_id = event_id
+                from integrations.google_calendar import active_account_id as _gcal_acct
+                job.gcal_account_id = _gcal_acct()
                 db.commit()
                 db.refresh(job)
                 log_calendar_event(
@@ -777,6 +779,8 @@ def push_to_gcal(db: Session = Depends(get_db)):
             event_id = create_event(job_dict, client_dict, send_invite=invite)
             if event_id:
                 job.gcal_event_id = event_id
+                from integrations.google_calendar import active_account_id as _gcal_acct
+                job.gcal_account_id = _gcal_acct()
                 job.calendar_invite_sent = invite
                 created_count += 1
         except Exception as e:
@@ -1277,6 +1281,8 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
             event_id = create_event(job_dict, client_dict, send_invite=True)
             if event_id:
                 job.gcal_event_id = event_id
+                from integrations.google_calendar import active_account_id as _gcal_acct
+                job.gcal_account_id = _gcal_acct()
                 job.calendar_invite_sent = True
                 db.commit()
                 return {"invited": True, "message": f"Created GCal event and sent invite to {client.email}"}

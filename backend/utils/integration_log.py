@@ -43,13 +43,25 @@ def log_integration_event(
             error_message=note if (is_failure and note) else None,
             request_payload=note if (not is_failure and note) else None,
         )
-        db.add(row)
         if commit:
+            db.add(row)
             db.commit()
+        else:
+            # Savepoint: flush the row HERE so a bad insert rolls back only
+            # the audit row, never the caller's transaction. Without this the
+            # deferred INSERT failed at the caller's commit (June 11: prod
+            # integration_events payload columns had drifted to json) and
+            # rolled back delivery bookkeeping — the quote stayed 'draft'
+            # while the customer DID get the email.
+            with db.begin_nested():
+                db.add(row)
     except Exception as e:  # pragma: no cover - logging must never break callers
         logger.warning("[integration-log] failed to record %s/%s for %s %s: %s",
                        provider, action, entity_type, entity_id, e)
-        try:
-            db.rollback()
-        except Exception:
-            pass
+        if commit:
+            # Only safe when we own the transaction; with commit=False the
+            # savepoint already rolled back and the caller's work must survive.
+            try:
+                db.rollback()
+            except Exception:
+                pass

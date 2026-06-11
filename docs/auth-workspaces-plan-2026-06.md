@@ -1,7 +1,25 @@
 # Auth & Workspaces plan — sign-in and Google integration like Twenty CRM
 
-Status: APPROVED June 11, 2026 (decisions below). M0 + Phase A implemented on
-`claude/quirky-fermat-xv7t69`; phases B-D not yet built.
+Status: APPROVED June 11, 2026 (decisions below). Implemented on
+`claude/quirky-fermat-xv7t69`: M0, Phase A, Phase B, and most of Phase C —
+per-account Gmail sync (recent-inbox listing + Message-ID dedupe;
+`gmail_history_id` reserved for incremental-cursor optimization), calendar
+sync prefers a connected account over the legacy shared token, and synced
+conversations/messages/jobs stamp their source account. Remaining: outbound
+send via the member's Gmail, incremental cursors, and Phase D (retire
+`GOOGLE_TOKEN_B64` after the owner's real account is connected and syncing).
+
+DEPLOY NOTES (Railway / Google Cloud, required before phase B works in prod):
+- Set `TOKEN_ENCRYPTION_KEY` (generate:
+  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
+  The Connect button errors clearly until it's set.
+- Add the new OAuth redirect URI to the Google Cloud client:
+  `https://<app-domain>/api/auth/google-account/callback`
+  (or set `GOOGLE_CONNECT_REDIRECT_URI` explicitly). Also enable the Gmail
+  API for the project — the calendar-only client won't have it on.
+- Login consent no longer requests calendar: the previously stored shared
+  `google_token` AppSetting keeps driving legacy sync untouched, and the old
+  Settings → Integrations business-calendar connect flow still exists.
 Hard constraint: `office@mainecleaningco.com` (password login, role=admin) must keep
 working at every step.
 

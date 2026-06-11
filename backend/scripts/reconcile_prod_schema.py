@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Production schema reconciliation (P0, 2026-06-08; extended 2026-06-10).
+"""Production schema reconciliation (P0, 2026-06-08; extended 2026-06-10/11).
 
 WHY: prod Postgres was built with Base.metadata.create_all(), so tables/enum
 types exist without matching Alembic history (alembic_version=011), and the
@@ -7,25 +7,32 @@ migration chain itself is structurally broken (see
 docs/recover-prod-schema-2026-06-08.sql), so we DON'T run `alembic upgrade head`.
 Originally this reconciled only the quote tables (missing columns from 013-022
 made quoting 500). On 2026-06-10 properties.custom_fields turned up missing in
-prod too (/api/visits 500, UndefinedColumn), proving the drift isn't confined
-to quoting — so this now diffs EVERY model table against the live schema.
+prod too (/api/visits 500, UndefinedColumn) — so this diffs EVERY model table.
+On 2026-06-11 a second drift CLASS surfaced: column TYPES (prod
+integration_events payload columns were json while the model says String,
+500ing quote-send after successful delivery) — so the diff now also compares
+types against the model.
 
-SAFE + idempotent + re-runnable. It only ADDs missing tables/columns/FK; it
-never drops or alters existing objects.
+SAFE + idempotent + re-runnable. It only ADDs missing tables/columns/FK by
+default; type drift is REPORTED, and only fixed with the opt-in --fix-types
+(and then only where the model wants the text family — ::text casts are
+lossless from any type; anything else needs a human-reviewed cast).
 
   0. GATE: aborts unless quotes.id is integer/bigint. If it's uuid the table
      predates 018_integerize_quotes and needs a real migration, not this.
   1. CREATE any missing model TABLE (everything registered on Base.metadata)
      — checkfirst, so existing tables are untouched.
   2. ADD COLUMN IF NOT EXISTS for every model column missing on an existing table.
+     With --fix-types: ALTER text-family type drift (json -> TEXT etc).
   3. ADD the lead_intakes.converted_quote_id -> quotes(id) FK (the thing 022 adds),
      idempotently.
   All of 1-3 in ONE transaction.
   4. `alembic stamp 022_intake_converted_quote_fk`.
 
 USAGE (in the app container, DATABASE_URL set; BACK UP POSTGRES FIRST):
-    python scripts/reconcile_prod_schema.py --dry-run   # read-only: gate + full diff
-    python scripts/reconcile_prod_schema.py             # apply + stamp
+    python scripts/reconcile_prod_schema.py --dry-run     # read-only: gate + full diff
+    python scripts/reconcile_prod_schema.py               # apply adds + stamp
+    python scripts/reconcile_prod_schema.py --fix-types   # also fix text-family type drift
 """
 import argparse
 import os
@@ -67,8 +74,37 @@ def _pgtype(col) -> str:
     return "text"
 
 
+def _accepted_types(col) -> set:
+    """information_schema.data_type values compatible with the model column.
+    Anything outside this set is TYPE DRIFT — the class of bug that 500'd
+    /api/visits (custom_fields) and quote-send (integration_events payloads
+    stored as json while the model says String)."""
+    t = col.type
+    if isinstance(t, sa.Float):
+        return {"double precision", "real", "numeric"}
+    if isinstance(t, sa.BigInteger):
+        return {"bigint"}
+    if isinstance(t, sa.Boolean):
+        return {"boolean"}
+    if isinstance(t, sa.Integer):
+        return {"integer", "bigint", "smallint"}
+    if isinstance(t, sa.DateTime):
+        # tz-ness varies between create_all eras; both read back fine.
+        return {"timestamp with time zone", "timestamp without time zone"}
+    if isinstance(t, sa.Date):
+        return {"date"}
+    if isinstance(t, sa.Time):
+        return {"time without time zone", "time with time zone"}
+    if isinstance(t, sa.JSON):
+        return {"json", "jsonb"}
+    if isinstance(t, (sa.Text, sa.String)):
+        # The string family is interchangeable for psycopg2; json is NOT.
+        return {"text", "character varying"}
+    return {"text", "character varying"}
+
+
 def _target_columns(table):
-    return [(c.name, _pgtype(c)) for c in table.columns if not c.primary_key]
+    return [(c.name, _pgtype(c), _accepted_types(c)) for c in table.columns if not c.primary_key]
 
 
 def _table_exists(conn, table) -> bool:
@@ -77,10 +113,12 @@ def _table_exists(conn, table) -> bool:
     ), {"t": table}).scalar())
 
 
-def _existing_columns(conn, table) -> set:
-    return set(conn.execute(sa.text(
-        "SELECT column_name FROM information_schema.columns WHERE table_name=:t"
-    ), {"t": table}).scalars().all())
+def _existing_columns(conn, table) -> dict:
+    """{column_name: data_type} for the live table."""
+    rows = conn.execute(sa.text(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name=:t"
+    ), {"t": table}).all()
+    return {name: dtype for name, dtype in rows}
 
 
 def _fk_exists(conn, name) -> bool:
@@ -102,6 +140,9 @@ def _engine():
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="read-only: gate + the full diff")
+    ap.add_argument("--fix-types", action="store_true",
+                    help="also ALTER type-drifted columns whose model type is text/varchar "
+                         "(col::text is always a safe cast); other drift is report-only")
     args = ap.parse_args()
 
     engine = _engine()
@@ -133,26 +174,36 @@ def main() -> int:
             version = "(none)"
         print(f"[alembic] current version = {version!r}")
 
-        missing_tables, missing_cols = [], []
+        missing_tables, missing_cols, type_drift = [], [], []
         for table in TABLES:
             if not _table_exists(conn, table.name):
                 missing_tables.append(table.name)
                 continue
             existing = _existing_columns(conn, table.name)
-            for name, typ in _target_columns(table):
+            for name, typ, accepted in _target_columns(table):
                 if name not in existing:
                     missing_cols.append((table.name, name, typ))
+                elif existing[name] not in accepted:
+                    type_drift.append((table.name, name, existing[name], typ))
         fk_missing = not _fk_exists(conn, FK_NAME)
 
     print(f"[diff] missing tables: {missing_tables or 'none'}")
     print(f"[diff] missing columns: {len(missing_cols)}")
     for table, name, typ in missing_cols:
         print(f"    {table}.{name}  ({typ})")
+    print(f"[diff] type drift: {len(type_drift)}")
+    for table, name, actual, expected in type_drift:
+        fixable = expected in ("text", "varchar") or expected.startswith("varchar(")
+        print(f"    {table}.{name}  is '{actual}', model wants {expected}"
+              f"  -> ALTER TABLE {table} ALTER COLUMN \"{name}\" TYPE {expected} "
+              f"USING \"{name}\"::{'text' if fixable else expected}"
+              f"{'' if fixable else '   [NOT auto-fixed: review the cast]'}")
     print(f"[diff] converted_quote_id FK ({FK_NAME}) missing: {fk_missing}")
 
     if args.dry_run:
         print(f"\n# DRY RUN — nothing changed. Apply would create the tables above, add the "
-              f"columns, add the FK, then: alembic stamp {STAMP_REVISION}")
+              f"columns{', fix text-family type drift' if args.fix_types else ''}, "
+              f"add the FK, then: alembic stamp {STAMP_REVISION}")
         return 0
 
     with engine.begin() as conn:
@@ -166,6 +217,24 @@ def main() -> int:
             conn.execute(sa.text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "{name}" {typ}'))
         if missing_cols:
             print(f"[apply] added {len(missing_cols)} column(s)")
+        # 2b) type drift: only with --fix-types, and only when the MODEL type is
+        # in the string family — ::text is a lossless cast from anything
+        # (that's exactly the integration_events json->TEXT fix run by hand on
+        # June 11). Everything else stays report-only: a wrong cast can lose
+        # data, so a human picks it up from the dry-run output.
+        fixed_types = skipped_types = 0
+        for table, name, actual, expected in type_drift:
+            if args.fix_types and (expected in ("text", "varchar") or expected.startswith("varchar(")):
+                conn.execute(sa.text(
+                    f'ALTER TABLE {table} ALTER COLUMN "{name}" TYPE {expected} USING "{name}"::text'
+                ))
+                print(f"[apply] {table}.{name}: {actual} -> {expected}")
+                fixed_types += 1
+            else:
+                skipped_types += 1
+        if skipped_types:
+            print(f"[apply] {skipped_types} type-drifted column(s) left untouched "
+                  f"({'re-run with --fix-types for the text-family ones' if not args.fix_types else 'non-text targets need manual review'})")
         # 3) the FK that 022 adds (idempotent via a duplicate_object guard).
         conn.execute(sa.text(
             f"DO $$ BEGIN "

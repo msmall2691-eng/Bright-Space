@@ -67,15 +67,63 @@ def _save_db_token(token_json: str) -> None:
         print(f"[GCal] Could not persist refreshed token to DB: {e}")
 
 
+# Which user_google_accounts row drove the last _get_service() call (None =
+# legacy shared token). Callers can read this to stamp sync provenance.
+_ACTIVE_ACCOUNT_ID: int | None = None
+
+
+def active_account_id() -> int | None:
+    return _ACTIVE_ACCOUNT_ID
+
+
+def _account_service():
+    """Calendar service from a member's connected Google account (phase C):
+    the most recently connected user_google_accounts row with the calendar
+    channel enabled. Returns None when there is no usable account, so the
+    caller falls through to the legacy shared token (kept as a fallback per
+    the rollout plan)."""
+    global _ACTIVE_ACCOUNT_ID
+    try:
+        from database.db import SessionLocal
+        from integrations.google_accounts import (
+            AccountCredentialsError, account_credentials, calendar_account,
+        )
+        db = SessionLocal()
+        try:
+            acct = calendar_account(db)
+            if not acct:
+                return None
+            try:
+                creds = account_credentials(db, acct)
+            except AccountCredentialsError as e:
+                print(f"[GCal] connected account unusable, falling back to shared token: {e}")
+                return None
+            _ACTIVE_ACCOUNT_ID = acct.id
+            return build("calendar", "v3", credentials=creds)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[GCal] per-user account lookup failed (falling back): {e}")
+        return None
+
+
 def _get_service():
     """Build and return an authenticated Google Calendar service.
 
     Token source priority:
-      1. DB (app_settings 'google_token') — written by the in-app Connect Google
-         flow; the only source that survives a Railway redeploy.
-      2. GOOGLE_TOKEN_B64 env / token file — the manual/legacy path.
+      1. A member's connected Google account (user_google_accounts) with the
+         calendar channel enabled — the per-user path.
+      2. DB (app_settings 'google_token') — the legacy shared in-app connect.
+      3. GOOGLE_TOKEN_B64 env / token file — the manual/legacy path.
     """
     import base64, json as _json
+
+    global _ACTIVE_ACCOUNT_ID
+    _ACTIVE_ACCOUNT_ID = None
+
+    svc = _account_service()
+    if svc is not None:
+        return svc
 
     base = Path(__file__).parent.parent
     token_path = base / os.getenv("GOOGLE_TOKEN_FILE", "google_token.json")
@@ -130,6 +178,17 @@ def is_configured() -> bool:
     but the API call failed", so the UI can tell the operator whether the
     event actually landed on Google (the source of truth) or not.
     """
+    try:
+        from database.db import SessionLocal
+        from integrations.google_accounts import calendar_account
+        db = SessionLocal()
+        try:
+            if calendar_account(db):
+                return True
+        finally:
+            db.close()
+    except Exception:
+        pass
     if _load_db_token():
         return True
     if os.getenv("GOOGLE_TOKEN_B64"):

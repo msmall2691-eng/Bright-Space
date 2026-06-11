@@ -196,17 +196,31 @@ def sync_gmail_inbox_tick() -> dict:
     endpoint returns an {"error": ...} envelope rather than raising — so we
     surface it as a skip, not a failure.
     """
-    from modules.gmail.router import run_inbox_sync
+    from modules.gmail.router import run_inbox_sync, run_account_inbox_sync
     db = SessionLocal()
     try:
         if not _db_flag(db, "gmail_auto_sync_enabled", env_flag("GMAIL_AUTO_SYNC_ENABLED", True)):
             log.debug("Gmail auto-sync disabled via app_settings; skipping tick")
             return {"skipped": True, "reason": "disabled"}
+        # 1) Legacy shared business inbox (IMAP App Password) — kept as a
+        #    permanent fallback by decision (auth-workspaces plan §0.3).
         result = run_inbox_sync(db, max_results=30, skip_automated=True, auto_enrich=True)
         if result.get("error"):
-            log.info(f"Gmail auto-sync skipped: {result.get('error')}")
-            return {"skipped": True, "reason": result.get("error")}
-        summary = result.get("summary", {})
+            log.info(f"Gmail auto-sync (shared inbox) skipped: {result.get('error')}")
+        summary = dict(result.get("summary") or {"total": 0, "threaded": 0})
+
+        # 2) Per-user connected Google accounts (Gmail API, phase C). Each
+        #    account is isolated: an expired grant marks itself for reconnect
+        #    and the rest keep syncing.
+        try:
+            from integrations.google_accounts import gmail_accounts
+            for acct in gmail_accounts(db):
+                acct_summary = run_account_inbox_sync(db, acct, max_results=30).get("summary") or {}
+                summary["total"] = summary.get("total", 0) + acct_summary.get("total", 0)
+                summary["threaded"] = summary.get("threaded", 0) + acct_summary.get("threaded", 0)
+        except Exception as e:
+            log.error(f"Per-account Gmail sync pass failed: {e}")
+
         log.info(f"Gmail auto-sync: {summary.get('threaded', 0)} new emails threaded "
                  f"({summary.get('total', 0)} fetched)")
         return summary
