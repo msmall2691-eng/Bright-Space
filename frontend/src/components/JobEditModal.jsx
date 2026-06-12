@@ -181,6 +181,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
               >
+                {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
+                  <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
+                )}
                 <option value="residential">Residential</option>
                 <option value="commercial">Commercial</option>
                 <option value="str_turnover">STR Turnover</option>
@@ -194,6 +197,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onChange={e => setFormData(f => ({ ...f, status: e.target.value }))}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
               >
+                {!['scheduled', 'in_progress', 'completed', 'cancelled'].includes(formData.status) && (
+                  <option value={formData.status}>{formData.status || '(unset)'}</option>
+                )}
                 <option value="scheduled">Scheduled</option>
                 <option value="in_progress">In progress</option>
                 <option value="completed">Completed</option>

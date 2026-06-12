@@ -1063,9 +1063,14 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
 
-    if "job_type" in updates and updates["job_type"] not in JOB_TYPES:
+    # The edit modal sends EVERY field, so a job whose stored status/type
+    # predates the current vocabulary must not become uneditable: the job's
+    # own current value always passes (a no-op), only CHANGES are validated.
+    if "job_type" in updates and updates["job_type"] not in JOB_TYPES \
+            and updates["job_type"] != job.job_type:
         raise HTTPException(status_code=400, detail=f"Unknown job_type '{updates['job_type']}'")
-    if "status" in updates and updates["status"] not in JOB_STATUSES:
+    if "status" in updates and updates["status"] not in JOB_STATUSES \
+            and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")
     if "property_id" in updates:
         prop = db.query(Property).filter(Property.id == updates["property_id"]).first()
@@ -1234,17 +1239,23 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 # place would look it up on the NEW calendar, fail silently,
                 # and leave Google stale (Codex P2 on #271). Move it:
                 # delete from the old calendar, recreate on the new one.
-                delete_event(job.gcal_event_id, prev_job_type,
-                             owner_account_id=getattr(job, "gcal_account_id", None))
-                new_event_id = create_event(job_dict, client_dict)
-                if new_event_id:
-                    from integrations.google_calendar import active_account_id as _gcal_acct
-                    job.gcal_event_id = new_event_id
-                    job.gcal_account_id = _gcal_acct()
+                if delete_event(job.gcal_event_id, prev_job_type,
+                                owner_account_id=getattr(job, "gcal_account_id", None)):
+                    new_event_id = create_event(job_dict, client_dict)
+                    if new_event_id:
+                        from integrations.google_calendar import active_account_id as _gcal_acct
+                        job.gcal_event_id = new_event_id
+                        job.gcal_account_id = _gcal_acct()
+                    else:
+                        job.gcal_event_id = None  # reconcile flow can re-push
+                    db.commit()
+                    db.refresh(job)
                 else:
-                    job.gcal_event_id = None  # reconcile flow can re-push
-                db.commit()
-                db.refresh(job)
+                    # Delete didn't apply (Google down / auth) — creating now
+                    # would leave DUPLICATE events. Keep the old id so the
+                    # move retries on the next edit.
+                    logger.warning(f"GCal move skipped for job {job.id}: delete on "
+                                   f"'{prev_job_type}' calendar did not apply; will retry")
             else:
                 update_event(job.gcal_event_id, job_dict, client_dict,
                              owner_account_id=getattr(job, "gcal_account_id", None))

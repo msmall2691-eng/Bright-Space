@@ -14,8 +14,7 @@
 const money = (n) => `$${(parseFloat(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const qtyLabel = (q) => {
   const n = parseFloat(q)
-  if (Number.isNaN(n)) return '1'
-  return Number.isInteger(n) ? String(n) : String(n)
+  return Number.isNaN(n) ? '1' : String(n)
 }
 
 export default function QuoteDocument({ quote, actions = null }) {
