@@ -171,6 +171,23 @@ def get_general_settings(db: Session = Depends(get_db)):
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}
 
 
+_HEX_COLOR_RE = re.compile(r"^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def _normalize_brand_color(value: str) -> str:
+    """'1f2937' / '#1F2937' / '#abc' -> '#1f2937' form. Anything else is a
+    400: a bad value would make colors.HexColor() raise inside PDF
+    generation, and PDF generation precedes email delivery — quote sends
+    would fail until the setting was fixed."""
+    m = _HEX_COLOR_RE.match((value or "").strip())
+    if not m:
+        raise HTTPException(400, "Brand Color must be a hex color like #1f2937")
+    hexpart = m.group(1).lower()
+    if len(hexpart) == 3:
+        hexpart = "".join(ch * 2 for ch in hexpart)
+    return f"#{hexpart}"
+
+
 @router.post("/general", dependencies=[Depends(require_role("admin"))])
 def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)):
     """Persist company identity + quote terms. The Settings UI was already
@@ -180,6 +197,8 @@ def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)
     for key in _GENERAL_KEYS:
         value = getattr(config, key)
         if value is not None:
+            if key == "brand_color" and value.strip():
+                value = _normalize_brand_color(value)
             set_setting(db, key, value.strip())
     db.commit()
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}

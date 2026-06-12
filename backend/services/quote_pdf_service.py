@@ -24,7 +24,14 @@ class QuotePDFService:
         self.company_name = company_name
         self.company_email = company_email
         self.company_phone = company_phone
-        self.brand_color = brand_color or "#1f2937"
+        # Guard the only consumer that RAISES on a bad color (CSS surfaces
+        # just render nothing): a legacy/hand-edited setting must never make
+        # PDF generation — and therefore quote sends — fail.
+        try:
+            colors.HexColor(brand_color or "#1f2937")
+            self.brand_color = brand_color or "#1f2937"
+        except Exception:
+            self.brand_color = "#1f2937"
         self.terms = terms
 
     def generate_quote_pdf(

@@ -221,3 +221,31 @@ def test_email_company_name_comes_from_settings(monkeypatch):
     finally:
         db.query(AppSetting).filter(AppSetting.key == "company_name").delete(synchronize_session=False)
         db.commit(); db.close()
+
+
+def test_brand_color_is_validated_and_normalized():
+    """Codex P2 (#269): a malformed brand color must never reach the DB —
+    colors.HexColor() raises inside PDF generation, which precedes email
+    delivery, so quote sends would fail until the setting was fixed."""
+    from fastapi import HTTPException
+    from modules.settings.router import _normalize_brand_color
+    assert _normalize_brand_color("#1F2937") == "#1f2937"
+    assert _normalize_brand_color("1f2937") == "#1f2937"
+    assert _normalize_brand_color("#abc") == "#aabbcc"
+    for bad in ("red", "not-a-color", "#12345", "#gggggg"):
+        with pytest.raises(HTTPException):
+            _normalize_brand_color(bad)
+
+
+def test_pdf_survives_a_bad_stored_brand_color():
+    """Belt-and-braces: even a legacy/hand-edited bad value falls back to the
+    default instead of breaking PDF generation."""
+    from services.quote_pdf_service import QuotePDFService
+    svc = QuotePDFService(brand_color="not-a-color")
+    assert svc.brand_color == "#1f2937"
+    pdf = svc.generate_quote_pdf(
+        quote_number="QT-X", client_name="Jane", client_email="j@x.com",
+        client_phone=None, line_items=[], subtotal=0, tax_amount=0,
+        discount_amount=0, total_amount=0,
+    )
+    assert pdf.startswith(b"%PDF")
