@@ -158,10 +158,12 @@ class GeneralSettings(BaseModel):
     currency: Optional[str] = None
     # Optional terms & conditions shown at the bottom of the public quote page.
     quote_terms: Optional[str] = None
+    # Header band color for every customer-facing quote surface.
+    brand_color: Optional[str] = None
 
 
 _GENERAL_KEYS = ("company_name", "company_email", "company_phone",
-                 "timezone", "currency", "quote_terms")
+                 "timezone", "currency", "quote_terms", "brand_color")
 
 
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])

@@ -91,6 +91,7 @@ def _quote_dict(q: Quote) -> dict:
         "public_token": q.public_token,
         "title": q.title,
         "customer_message": getattr(q, "customer_message", None),
+        "internal_notes": getattr(q, "internal_notes", None),
         "service_type": q.service_type,
         "address": q.address,
         "notes": q.notes,
@@ -169,6 +170,7 @@ def create_quote(
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         title=quote_data.title,
         customer_message=quote_data.customer_message,
+        internal_notes=quote_data.internal_notes,
         service_type=quote_data.service_type or "residential",
         address=quote_data.address,
         notes=quote_data.notes,
@@ -268,7 +270,8 @@ def _apply_update(quote: Quote, data: dict) -> None:
     """Apply a partial update dict, recomputing totals when pricing changes."""
     if "items" in data and data["items"] is not None:
         quote.items = _items_to_dicts(data["items"])
-    for field in ("title", "customer_message", "service_type", "address", "notes", "status",
+    for field in ("title", "customer_message", "internal_notes", "service_type", "address",
+                  "notes", "status",
                   "client_id", "intake_id", "opportunity_id", "property_id"):
         if field in data and data[field] is not None:
             setattr(quote, field, data[field])
@@ -362,12 +365,18 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
             errors.append("no valid email address")
         else:
             try:
-                pdf_bytes = QuotePDFService().generate_quote_pdf(
+                company = _company_info(db)
+                pdf_bytes = QuotePDFService(
+                    company_name=company["company_name"], company_email=company["company_email"] or "",
+                    company_phone=company["company_phone"], brand_color=company["brand_color"],
+                    terms=company["quote_terms"],
+                ).generate_quote_pdf(
                     quote_number=quote.quote_number, client_name=client.name,
                     client_email=client.email or "", client_phone=client.phone,
                     line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
                     tax_amount=quote.tax, discount_amount=quote.discount,
                     total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
+                    quote_title=quote.title,
                 )
                 res = QuoteEmailService().send_quote_email(
                     to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
@@ -606,6 +615,9 @@ def _company_info(db: Session) -> dict:
                           or get_setting(db, "from_email") or os.getenv("SMTP_USER")),
         "company_phone": get_setting(db, "company_phone") or os.getenv("COMPANY_PHONE"),
         "quote_terms": get_setting(db, "quote_terms") or None,
+        # Header band color for every customer-facing quote surface (page,
+        # email, PDF). Defaults to the email's original slate.
+        "brand_color": get_setting(db, "brand_color") or "#1f2937",
     }
 
 
@@ -622,6 +634,8 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "company_email": company["company_email"],
         "company_phone": company["company_phone"],
         "terms": company["quote_terms"],
+        "brand_color": company["brand_color"],
+        "quote_date": quote.created_at.strftime("%B %d, %Y") if quote.created_at else None,
         "address": quote.address or "",
         "service_type": quote.service_type,
         "notes": quote.notes,
@@ -884,7 +898,12 @@ def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    pdf_bytes = QuotePDFService().generate_quote_pdf(
+    company = _company_info(db)
+    pdf_bytes = QuotePDFService(
+        company_name=company["company_name"], company_email=company["company_email"] or "",
+        company_phone=company["company_phone"], brand_color=company["brand_color"],
+        terms=company["quote_terms"],
+    ).generate_quote_pdf(
         quote_number=quote.quote_number,
         client_name=client.name,
         client_email=client.email or "",
@@ -896,6 +915,7 @@ def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
         total_amount=quote.total,
         notes=quote.notes,
         expires_at=quote.valid_until,
+        quote_title=quote.title,
     )
     return {
         "pdf_generated": True,
@@ -915,7 +935,12 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    pdf_bytes = QuotePDFService().generate_quote_pdf(
+    company = _company_info(db)
+    pdf_bytes = QuotePDFService(
+        company_name=company["company_name"], company_email=company["company_email"] or "",
+        company_phone=company["company_phone"], brand_color=company["brand_color"],
+        terms=company["quote_terms"],
+    ).generate_quote_pdf(
         quote_number=quote.quote_number,
         client_name=client.name,
         client_email=client.email or "",
@@ -927,6 +952,7 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         total_amount=quote.total,
         notes=quote.notes,
         expires_at=quote.valid_until,
+        quote_title=quote.title,
     )
 
     token = _ensure_public_token(quote)

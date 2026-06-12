@@ -76,6 +76,7 @@ export default function Settings() {
     timezone: 'America/New_York',
     currency: 'USD',
     quote_terms: '',
+    brand_color: '#1f2937',
   })
   const [generalSaving, setGeneralSaving] = useState(false)
 
@@ -578,6 +579,18 @@ export default function Settings() {
                     </div>
                   </div>
                   <p className="text-[11px] text-ink-3 mt-2">Shown on the public quote page ("Questions?") and used across customer-facing email.</p>
+                  <div className="mt-4">
+                    <label className={lbl}>Brand Color</label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={generalSettings.brand_color || '#1f2937'}
+                        onChange={e => setGeneralSettings(s => ({ ...s, brand_color: e.target.value }))}
+                        className="h-9 w-12 rounded border border-hairline cursor-pointer bg-panel" />
+                      <input type="text" value={generalSettings.brand_color || ''}
+                        onChange={e => setGeneralSettings(s => ({ ...s, brand_color: e.target.value }))}
+                        placeholder="#1f2937" className={inp + ' w-32'} />
+                    </div>
+                    <p className="text-[11px] text-ink-3 mt-1">Header color on the quote email, public quote page, and PDF.</p>
+                  </div>
                   <div className="mt-4">
                     <label className={lbl}>Quote Terms &amp; Conditions (optional)</label>
                     <textarea rows={4} value={generalSettings.quote_terms}

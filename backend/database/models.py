@@ -924,6 +924,11 @@ class Quote(Base):
     # the quote email, editable in the quote editor (distinct from the
     # send-time "personal note", which is one-off).
     customer_message = Column(Text, nullable=True)
+    # Operator-only notes (intake context, access details, reminders). NEVER
+    # rendered to customers — an intake note ("TEST submission ... Please
+    # disregard") leaked onto a live public quote page on June 11. `notes`
+    # remains the customer-facing scope.
+    internal_notes = Column(Text, nullable=True)
 
     # Status & workflow
     status = Column(String(50), nullable=False, default="draft")
