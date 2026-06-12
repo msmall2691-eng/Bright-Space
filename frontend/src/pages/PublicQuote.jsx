@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Clock, MessageSquare, X } from 'lucide-react'
+import QuoteDocument from '../components/QuoteDocument'
 
 export default function PublicQuote() {
   const { token } = useParams()
@@ -178,131 +179,44 @@ export default function PublicQuote() {
     )
   }
 
-  const subtotal = quote.subtotal || 0
-  const tax = quote.tax || 0
-  const total = quote.total || 0
+  const actions = (
+    <div className="space-y-3 pt-2">
+      <button
+        onClick={handleAccept}
+        disabled={accepting}
+        className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+      >
+        {accepting ? 'Accepting...' : 'Accept Quote'}
+      </button>
+      <button
+        onClick={() => setShowRequest(true)}
+        className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors"
+      >
+        Request changes
+      </button>
+      <button
+        onClick={() => setShowDecline(true)}
+        className="w-full text-ink-3 hover:text-red-600 font-medium py-2 text-sm transition-colors"
+      >
+        Decline quote
+      </button>
+      <p className="text-xs text-ink-3 text-center">
+        By accepting, you're confirming your interest. We'll contact you to schedule the service.
+      </p>
+    </div>
+  )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 sm:p-8">
-        <div className="max-w-2xl mx-auto">
-          <h1 className="text-3xl font-bold mb-1">Quote {quote.quote_number || `QT-${quote.id}`}</h1>
-          {quote.title && <p className="text-blue-50 text-lg font-medium">{quote.title}</p>}
-          <p className="text-blue-100 text-sm">from {quote.company_name}</p>
-          {quote.valid_until && (
-            <p className="text-blue-100 text-xs mt-3">Valid until: {quote.valid_until}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-2xl mx-auto p-6 sm:p-8">
+    <div className="min-h-screen bg-bg">
+      <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-red-700">{error}</p>
           </div>
         )}
 
-        {/* Personal message from the business */}
-        {quote.customer_message && (
-          <div className="bg-panel rounded-lg shadow-sm border border-hairline p-6 mb-6">
-            <p className="text-ink-2 whitespace-pre-wrap">{quote.customer_message}</p>
-          </div>
-        )}
-
-        {/* Quote details */}
-        <div className="bg-panel rounded-lg shadow-sm border border-hairline p-6 mb-6">
-          {quote.address && (
-            <div className="mb-6 pb-6 border-b border-hairline">
-              <p className="text-xs text-ink-3 uppercase font-medium mb-1">Service Address</p>
-              <p className="text-ink">{quote.address}</p>
-            </div>
-          )}
-
-          {quote.service_type && (
-            <div className="mb-6 pb-6 border-b border-hairline">
-              <p className="text-xs text-ink-3 uppercase font-medium mb-1">Service Type</p>
-              <p className="text-ink capitalize">{quote.service_type} cleaning</p>
-            </div>
-          )}
-
-          {quote.notes && (
-            <div className="mb-6 pb-6 border-b border-hairline">
-              <p className="text-xs text-ink-3 uppercase font-medium mb-2">Notes</p>
-              <p className="text-ink-2 text-sm">{quote.notes}</p>
-            </div>
-          )}
-
-          {/* Line items */}
-          <div>
-            <p className="text-xs text-ink-3 uppercase font-medium mb-4">Services</p>
-            <div className="space-y-3 mb-4">
-              {(quote.items || []).map((item, i) => (
-                <div key={i} className="flex justify-between text-sm">
-                  <div className="flex-1">
-                    <p className="font-medium text-ink">{item.name}</p>
-                    {item.description && (
-                      <p className="text-xs text-ink-3 mt-0.5">{item.description}</p>
-                    )}
-                  </div>
-                  <div className="text-right ml-4">
-                    {parseFloat(item.qty) !== 1 && (
-                      <p className="text-xs text-ink-3">{item.qty} × ${parseFloat(item.unit_price || 0).toFixed(2)}</p>
-                    )}
-                    <p className="font-semibold text-ink">
-                      ${(parseFloat(item.qty || 1) * parseFloat(item.unit_price || 0)).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Totals */}
-            <div className="space-y-2 pt-4 border-t border-hairline">
-              <div className="flex justify-between text-sm text-ink-2">
-                <span>Subtotal</span>
-                <span>${subtotal.toFixed(2)}</span>
-              </div>
-              {tax > 0 && (
-                <div className="flex justify-between text-sm text-ink-2">
-                  <span>Tax ({quote.tax_rate}%)</span>
-                  <span>${tax.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-lg font-bold text-ink pt-2 border-t border-hairline">
-                <span>Total</span>
-                <span className="text-emerald-600">${total.toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CTA */}
-        <div className="space-y-3">
-          <button
-            onClick={handleAccept}
-            disabled={accepting}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-lg min-h-[52px] transition-colors disabled:cursor-not-allowed"
-          >
-            {accepting ? 'Accepting...' : 'Accept Quote'}
-          </button>
-          <button
-            onClick={() => setShowRequest(true)}
-            className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-lg min-h-[52px] transition-colors"
-          >
-            Request changes
-          </button>
-          <button
-            onClick={() => setShowDecline(true)}
-            className="w-full text-ink-3 hover:text-red-600 font-medium py-2 text-sm transition-colors"
-          >
-            Decline quote
-          </button>
-          <p className="text-xs text-ink-3 text-center">
-            By accepting, you're confirming your interest. We'll contact you to schedule the service.
-          </p>
-        </div>
+        {/* THE quote document — identical component to the editor preview */}
+        <QuoteDocument quote={quote} actions={actions} />
 
         {showRequest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
@@ -365,36 +279,6 @@ export default function PublicQuote() {
           </div>
         )}
 
-        {/* Contact */}
-        {(quote.company_email || quote.company_phone) && (
-          <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <p className="text-xs text-ink-3 mb-2">Questions?</p>
-            <div className="space-y-1">
-              {quote.company_email && (
-                <p className="text-sm">
-                  <a href={`mailto:${quote.company_email}`} className="text-blue-600 hover:underline">
-                    {quote.company_email}
-                  </a>
-                </p>
-              )}
-              {quote.company_phone && (
-                <p className="text-sm">
-                  <a href={`tel:${quote.company_phone}`} className="text-blue-600 hover:underline">
-                    {quote.company_phone}
-                  </a>
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Terms & conditions (optional — Settings → General → Quote Terms) */}
-        {quote.terms && (
-          <div className="mt-6 bg-panel border border-hairline rounded-lg p-4">
-            <p className="text-xs text-ink-3 uppercase font-medium mb-2">Terms &amp; Conditions</p>
-            <p className="text-xs text-ink-3 whitespace-pre-wrap">{quote.terms}</p>
-          </div>
-        )}
       </div>
     </div>
   )

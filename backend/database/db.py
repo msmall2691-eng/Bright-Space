@@ -123,6 +123,37 @@ def init_db():
     except Exception as e:
         logger.warning(f"Fix STR turnover dates failed (non-critical): {e}")
 
+    # One-time: move pre-split quote notes to internal_notes (they were intake
+    # context, and leaked onto the public page on June 11).
+    try:
+        _migrate_quote_notes_to_internal()
+    except Exception as e:
+        logger.warning(f"Quote notes migration failed (non-critical): {e}")
+
+
+def _migrate_quote_notes_to_internal():
+    """ONE-TIME (AppSetting-flagged, not just idempotent SQL): before the
+    internal/customer split, `quotes.notes` held intake/operator context and
+    was rendered on the public page. Move it to internal_notes once; after
+    that, anything an operator types in `notes` is deliberately customer-
+    facing and must never be migrated again."""
+    from database.models import AppSetting
+    db = SessionLocal()
+    try:
+        flag = db.query(AppSetting).filter(AppSetting.key == "migrated_quote_notes_to_internal").first()
+        if flag and flag.value == "1":
+            return
+        db.execute(text(
+            "UPDATE quotes SET internal_notes = notes, notes = NULL "
+            "WHERE (internal_notes IS NULL OR internal_notes = '') "
+            "AND notes IS NOT NULL AND notes != ''"
+        ))
+        db.add(AppSetting(key="migrated_quote_notes_to_internal", value="1"))
+        db.commit()
+        logger.info("[migration] moved legacy quote notes to internal_notes (one-time)")
+    finally:
+        db.close()
+
 
 def _run_migrations():
     """
@@ -157,6 +188,8 @@ def _run_migrations():
         "ALTER TABLE quotes ADD COLUMN last_send_error TEXT",
         # Customer-facing intro message on quotes (public page + email)
         "ALTER TABLE quotes ADD COLUMN customer_message TEXT",
+        # Operator-only quote notes; `notes` stays customer-facing scope
+        "ALTER TABLE quotes ADD COLUMN internal_notes TEXT",
         # PR 4: Visits table (created by create_all, but ensure indexes)
         # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
         # PR 6: iCal feeds sync status tracking

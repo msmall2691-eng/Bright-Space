@@ -61,14 +61,17 @@ export default function Quoting() {
   // admin could open the editor while templates are still [] (loading), then
   // Save — overwriting all stored templates with an empty list.
   const [templatesLoaded, setTemplatesLoaded] = useState(false)
-  const [companyName, setCompanyName] = useState('Maine Cleaning Co')
+  // Full customer-facing identity (Settings → General) — drives the REAL
+  // public-page preview, SMS copy, and send-panel subject prefill.
+  const [company, setCompany] = useState({ company_name: 'Maine Cleaning Co' })
+  const companyName = company.company_name || 'Maine Cleaning Co'
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
-    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', valid_until: ''
+    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: ''
   })
   const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '' })
   const [saving, setSaving] = useState(false)
@@ -160,6 +163,8 @@ export default function Quoting() {
     const cleaned = editTemplates.map(t => ({
       id: t.id || tplSlug(t.label),
       label: (t.label || '').trim(),
+      title: (t.title || '').trim(),
+      customer_message: (t.customer_message || '').trim(),
       service_type: t.service_type || 'residential',
       items: (t.items || []).filter(i => (i.name || '').trim()).map(i => ({
         name: i.name.trim(), description: i.description || '',
@@ -210,9 +215,13 @@ export default function Quoting() {
       // template sticks instead of the hardcoded defaults reappearing on reload.
       if (Array.isArray(d?.templates)) setQuoteTemplates(d.templates)
     }).catch(() => {}).finally(() => setTemplatesLoaded(true))
-    // Use the configured company name in the customer-facing SMS instead of a
-    // hardcoded brand. Falls back to the default if unset/unavailable.
-    get('/api/settings').then(d => { if (d?.company_name) setCompanyName(d.company_name) }).catch(() => {})
+    // Customer-facing identity for previews/SMS/subjects. /general is the
+    // canonical source; fall back to the legacy settings dump for viewers.
+    get('/api/settings/general')
+      .then(d => setCompany(c => ({ ...c, ...Object.fromEntries(Object.entries(d || {}).filter(([, v]) => v != null)) })))
+      .catch(() => get('/api/settings')
+        .then(d => { if (d?.company_name) setCompany(c => ({ ...c, company_name: d.company_name })) })
+        .catch(() => {}))
   }, [])
 
   useEffect(() => {
@@ -235,6 +244,7 @@ export default function Quoting() {
         intake_id: null,
         title: '',
         customer_message: '',
+        internal_notes: '',
         items: [{ ...EMPTY_ITEM }],
       }))
       setPanel('quote')
@@ -276,7 +286,8 @@ export default function Quoting() {
         title: q.title || '', customer_message: q.customer_message || '',
         address: q.address || '',
         service_type: q.service_type || 'residential', items: q.items?.length ? q.items : [{ ...EMPTY_ITEM }],
-        tax_rate: q.tax_rate, notes: q.notes || '', valid_until: q.valid_until || '' })
+        tax_rate: q.tax_rate, notes: q.notes || '', internal_notes: q.internal_notes || '',
+        valid_until: q.valid_until || '' })
     } else if (intake) {
       // Seed the first line item's price from the lead's website "instant quote"
       // (midpoint of the estimate range) so pricing starts from their number.
@@ -295,12 +306,16 @@ export default function Quoting() {
           description: mid ? 'From website instant quote' : '',
         }],
         tax_rate: 0,
-        notes: intake.message || '', valid_until: ''
+        notes: '',
+        // The lead's website message is operator context — it leaked onto a
+        // live public quote page on June 11. It belongs in internal notes.
+        internal_notes: intake.message || '',
+        valid_until: ''
       })
     } else {
       setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
         address: '', service_type: 'residential',
-        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', valid_until: '' })
+        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: '' })
     }
     setPanel('quote')
   }
@@ -823,7 +838,16 @@ export default function Quoting() {
                 onChange={e => {
                   const tpl = quoteTemplates.find(t => t.id === e.target.value)
                   if (!tpl) return
-                  setForm(f => ({ ...f, service_type: tpl.service_type, items: tpl.items.map(it => ({ ...it })) }))
+                  setForm(f => ({
+                    ...f,
+                    service_type: tpl.service_type,
+                    items: tpl.items.map(it => ({ ...it })),
+                    // Templates carry the full customer experience: title
+                    // pattern + default message, so every quote starts
+                    // polished. Only fill what the operator hasn't typed.
+                    title: f.title || tpl.title || '',
+                    customer_message: f.customer_message || tpl.customer_message || '',
+                  }))
                   e.target.value = ''
                 }}
                 className="w-full px-3 py-2 bg-bg-2 border border-hairline-2 rounded-md text-white text-sm"
@@ -908,12 +932,20 @@ export default function Quoting() {
               </div>
             </div>
 
-            {/* Notes */}
+            {/* Customer-visible scope */}
             <div>
-              <label className="block text-xs text-ink-3 mb-1">Notes / Scope</label>
+              <label className="block text-xs text-ink-3 mb-1">Scope / Notes <span className="text-amber-600 font-medium">(customer sees this)</span></label>
               <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                placeholder="Special instructions, inclusions/exclusions, access details..."
+                placeholder="What's included / excluded — shown on the quote the customer opens."
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+            </div>
+
+            {/* Internal notes — operator-only, never rendered to customers */}
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Internal Notes <span className="text-ink-3">(never shown to the customer)</span></label>
+              <textarea value={form.internal_notes} onChange={e => setForm(f => ({ ...f, internal_notes: e.target.value }))} rows={2}
+                placeholder="Lead context, access details, reminders — stays in the app."
+                className="w-full bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
 
             {/* Customer message — the intro paragraph on the public page & email */}
@@ -929,7 +961,7 @@ export default function Quoting() {
           {/* Preview column — the live customer-facing render. */}
           {previewMode && (
             <div className="flex-1 overflow-y-auto p-6 bg-bg scrollbar-thin">
-              <QuotePreview form={form} quoteNumber={selected?.quote_number} companyName={companyName} />
+              <QuotePreview form={form} quoteNumber={selected?.quote_number} company={company} />
             </div>
           )}
           </div>
@@ -1108,6 +1140,15 @@ export default function Quoting() {
                     <button onClick={() => removeTemplate(ti)} title="Delete template"
                       className="p-2 text-ink-3 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                   </div>
+                  {/* Templates carry the full customer experience: a default
+                      quote title + customer message, applied to FUTURE quotes
+                      when the template is picked (existing quotes untouched). */}
+                  <input value={t.title || ''} onChange={e => updateTemplate(ti, { title: e.target.value })}
+                    placeholder="Default quote title (optional — e.g. Biweekly cleaning)"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-400" />
+                  <textarea value={t.customer_message || ''} onChange={e => updateTemplate(ti, { customer_message: e.target.value })}
+                    placeholder="Default message to customer (optional)" rows={2}
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-400 resize-none" />
                   <div className="space-y-1.5">
                     {(t.items || []).map((it, ii) => (
                       <div key={ii} className="flex items-center gap-1.5">

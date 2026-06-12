@@ -60,8 +60,15 @@ class QuoteEmailService:
         self.smtp_host = creds["smtp_host"]
         self.smtp_port = creds["smtp_port"]
         self.from_email = creds["from_email"] or "quotes@bright-space.com"
-        self.company_name = (self._db_company_name() or os.getenv("COMPANY_NAME")
+        self.company_name = (self._db_setting("company_name") or os.getenv("COMPANY_NAME")
                              or creds["from_name"] or "Bright-Space")
+        # Shared customer-facing identity (same Settings rows as the public
+        # quote page, so all surfaces match).
+        self.company_email = (self._db_setting("company_email") or os.getenv("COMPANY_EMAIL")
+                              or self.from_email)
+        self.company_phone = self._db_setting("company_phone") or os.getenv("COMPANY_PHONE")
+        self.quote_terms = self._db_setting("quote_terms")
+        self.brand_color = self._db_setting("brand_color") or "#1f2937"
 
         if not self.smtp_user or not self.smtp_pass:
             msg = ("Email credentials missing — set SMTP_USER + SMTP_PASS "
@@ -71,15 +78,15 @@ class QuoteEmailService:
             raise ValueError(msg)
 
     @staticmethod
-    def _db_company_name():
-        """Company Name saved in Settings → General (the same row the public
-        quote page uses). Best-effort: no DB, no problem — env/from_name win."""
+    def _db_setting(key: str):
+        """A Settings → General row (the same rows the public quote page
+        uses). Best-effort: no DB, no problem — env/defaults win."""
         try:
             from database.db import SessionLocal
             from database.models import AppSetting
             db = SessionLocal()
             try:
-                row = db.query(AppSetting).filter(AppSetting.key == "company_name").first()
+                row = db.query(AppSetting).filter(AppSetting.key == key).first()
                 return (row.value or "").strip() or None
             finally:
                 db.close()
@@ -99,7 +106,7 @@ class QuoteEmailService:
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #1f2937 0%, #111827 100%); color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
+        .header { background: {{ brand_color }}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
         .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
         .header p { margin: 8px 0 0; color: #d1d5db; font-size: 14px; }
         .content { background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
@@ -168,8 +175,12 @@ class QuoteEmailService:
             <p>If you have any questions about this quote, just reply to this email — we're here to help!</p>
         </div>
         <div class="footer">
-            <p>&copy; {{ company_name }} - All rights reserved</p>
+            {% if company_email or company_phone %}
+            <p>Questions? {% if company_email %}Reply or email <a href="mailto:{{ company_email }}">{{ company_email }}</a>{% endif %}{% if company_phone %}{% if company_email %} · {% endif %}call <a href="tel:{{ company_phone }}">{{ company_phone }}</a>{% endif %}</p>
+            {% endif %}
             {% if expires_at %}<p>This quote is valid until {{ expires_at }}.</p>{% endif %}
+            {% if terms %}<p style="text-align:left; white-space: pre-wrap;">{{ terms }}</p>{% endif %}
+            <p>&copy; {{ company_name }} - All rights reserved</p>
         </div>
     </div>
 </body>
@@ -241,6 +252,10 @@ class QuoteEmailService:
                 expires_at=(expires_at or "").strip() or None,
                 quote_link=quote_link,
                 pdf_attached=bool(pdf_bytes),
+                brand_color=self.brand_color,
+                company_email=self.company_email,
+                company_phone=self.company_phone,
+                terms=self.quote_terms,
             )
 
             # Attach HTML content

@@ -18,9 +18,14 @@ from reportlab.lib.enums import TA_RIGHT, TA_LEFT, TA_CENTER
 class QuotePDFService:
     """Generate professional PDF quotes"""
 
-    def __init__(self, company_name: str = "Bright-Space", company_email: str = "quotes@bright-space.com"):
+    def __init__(self, company_name: str = "Bright-Space", company_email: str = "quotes@bright-space.com",
+                 company_phone: Optional[str] = None, brand_color: str = "#1f2937",
+                 terms: Optional[str] = None):
         self.company_name = company_name
         self.company_email = company_email
+        self.company_phone = company_phone
+        self.brand_color = brand_color or "#1f2937"
+        self.terms = terms
 
     def generate_quote_pdf(
         self,
@@ -35,6 +40,7 @@ class QuotePDFService:
         total_amount: Decimal,
         notes: Optional[str] = None,
         expires_at: Optional[datetime] = None,
+        quote_title: Optional[str] = None,
     ) -> bytes:
         """
         Generate a professional quote PDF
@@ -67,7 +73,7 @@ class QuotePDFService:
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=24,
-            textColor=colors.HexColor('#1f2937'),
+            textColor=colors.HexColor(self.brand_color),
             spaceAfter=6,
             fontName='Helvetica-Bold'
         )
@@ -81,7 +87,14 @@ class QuotePDFService:
         )
 
         story.append(Paragraph(self.company_name, title_style))
-        story.append(Paragraph(f"{self.company_email}", subtitle_style))
+        if quote_title:
+            quote_title_style = ParagraphStyle(
+                'QuoteTitle', parent=styles['Heading2'], fontSize=14,
+                textColor=colors.HexColor('#374151'), spaceAfter=4,
+            )
+            story.append(Paragraph(quote_title, quote_title_style))
+        contact_bits = " · ".join(b for b in (self.company_email, self.company_phone) if b)
+        story.append(Paragraph(contact_bits, subtitle_style))
 
         # Quote header info
         quote_header_data = [
@@ -200,10 +213,21 @@ class QuotePDFService:
             alignment=TA_CENTER
         )
         story.append(Spacer(1, 0.2*inch))
-        story.append(Paragraph(
-            f"This quote is valid until the expiration date. Questions? Email {self.company_email}",
-            footer_style
-        ))
+        if self.terms:
+            terms_style = ParagraphStyle(
+                'Terms', parent=styles['Normal'], fontSize=8,
+                textColor=colors.HexColor('#6b7280'),
+            )
+            story.append(Paragraph("<b>Terms &amp; Conditions</b>", terms_style))
+            for line in self.terms.splitlines():
+                if line.strip():
+                    story.append(Paragraph(line.strip(), terms_style))
+            story.append(Spacer(1, 0.15*inch))
+        contact = " or call ".join(b for b in (f"email {self.company_email}" if self.company_email else None,
+                                               self.company_phone) if b)
+        validity = (f"This quote is valid until {expires_at.strftime('%B %d, %Y')}. "
+                    if expires_at else "")
+        story.append(Paragraph(f"{validity}Questions? {contact}".strip(), footer_style))
 
         # Build PDF
         doc.build(story)
