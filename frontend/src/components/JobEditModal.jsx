@@ -52,6 +52,12 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       .finally(() => setLoadingCleaners(false))
   }, [])
 
+  // Editing keeps ownership consistent: only the job's client's properties
+  // are offered (the backend rejects cross-client moves anyway). New jobs see
+  // everything — the job adopts the chosen property's client.
+  const selectableProperties = (!isNew && job?.client_id)
+    ? properties.filter(p => !p.client_id || p.client_id === job.client_id)
+    : properties
   const selectedProperty = properties.find(p => p.id === parseInt(formData.property_id))
   const assignedCleaners = cleaners.filter(c => formData.cleaner_ids.includes(c.id))
   const filteredCleaners = cleaners.filter(c =>
@@ -238,7 +244,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               className="w-full px-4 py-3 sm:py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
             >
               <option value="">Select a property...</option>
-              {properties.map(p => (
+              {selectableProperties.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} • {p.address}
                 </option>
