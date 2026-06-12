@@ -1058,6 +1058,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     prev_status = job.status
+    prev_job_type = job.job_type or "residential"
 
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
@@ -1070,6 +1071,18 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
         prop = db.query(Property).filter(Property.id == updates["property_id"]).first()
         if not prop:
             raise HTTPException(status_code=404, detail="Property not found")
+        # Ownership must stay consistent: re-pointing a job at another
+        # client's property would leave invoices/activities/calendar tied to
+        # the OLD client (Codex P1 on #271). A job with no client adopts the
+        # property's owner instead.
+        if job.client_id and prop.client_id and prop.client_id != job.client_id:
+            raise HTTPException(
+                status_code=400,
+                detail="That property belongs to a different client. Pick one of this "
+                       "client's properties (or move the job from the other client's profile).",
+            )
+        if not job.client_id and prop.client_id:
+            updates["client_id"] = prop.client_id
 
     # Validate + conflict-check against the RESULTING values (incoming or
     # existing). Skip both when the edit only cancels the job. is_new=False so
@@ -1157,6 +1170,19 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
         except Exception as e:
             logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
+    # Visit lifecycle follows editable status changes: the schedule and its
+    # action controls read Visit.status, so a job completed via the edit modal
+    # must not keep its visits looking scheduled and actionable (Codex P1 on
+    # #271). Cancellation already had this sync below.
+    if job.status != prev_status and job.status in ("completed", "in_progress"):
+        active = ("scheduled", "dispatched", "en_route") if job.status == "in_progress" \
+            else ("scheduled", "dispatched", "en_route", "in_progress")
+        for v in getattr(job, "visits", []) or []:
+            if v.status in active:
+                v.status = job.status
+        db.commit()
+        db.refresh(job)
+
     # Google Calendar + visits sync.
     if job.status == "cancelled":
         # Cancelling pulls the job off the schedule everywhere: cancel its active
@@ -1172,7 +1198,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 # delete_event returns False (doesn't raise) when Google rejects
                 # or is unavailable. Only detach the id on success, so a failed
                 # delete can be retried next time rather than orphaning the event.
-                if delete_event(job.gcal_event_id, job.job_type or "residential",
+                if delete_event(job.gcal_event_id, prev_job_type,
                                 owner_account_id=getattr(job, "gcal_account_id", None)):
                     job.gcal_event_id = None
                     _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
@@ -1191,7 +1217,9 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
         db.refresh(job)
     elif job.gcal_event_id:
         try:
-            from integrations.google_calendar import update_event
+            from integrations.google_calendar import (
+                _calendar_id, create_event, delete_event, update_event,
+            )
             client = db.query(Client).filter(Client.id == job.client_id).first()
             client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
             job_dict = {
@@ -1200,8 +1228,26 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
                 "property_id": job.property_id,
             }
-            update_event(job.gcal_event_id, job_dict, client_dict,
-                         owner_account_id=getattr(job, "gcal_account_id", None))
+            new_type = job.job_type or "residential"
+            if _calendar_id(prev_job_type) != _calendar_id(new_type):
+                # The event lives on the OLD type's calendar — updating in
+                # place would look it up on the NEW calendar, fail silently,
+                # and leave Google stale (Codex P2 on #271). Move it:
+                # delete from the old calendar, recreate on the new one.
+                delete_event(job.gcal_event_id, prev_job_type,
+                             owner_account_id=getattr(job, "gcal_account_id", None))
+                new_event_id = create_event(job_dict, client_dict)
+                if new_event_id:
+                    from integrations.google_calendar import active_account_id as _gcal_acct
+                    job.gcal_event_id = new_event_id
+                    job.gcal_account_id = _gcal_acct()
+                else:
+                    job.gcal_event_id = None  # reconcile flow can re-push
+                db.commit()
+                db.refresh(job)
+            else:
+                update_event(job.gcal_event_id, job_dict, client_dict,
+                             owner_account_id=getattr(job, "gcal_account_id", None))
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
     return job_to_dict(job)
