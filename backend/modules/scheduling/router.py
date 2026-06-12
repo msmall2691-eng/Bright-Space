@@ -48,7 +48,15 @@ class JobUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
     custom_fields: Optional[dict] = None
+    # Every job field is editable after creation. property_id was always SENT
+    # by the edit modal but never declared here, so pydantic silently dropped
+    # it and property changes never saved.
+    job_type: Optional[str] = None
+    property_id: Optional[int] = None
     allow_conflicts: Optional[bool] = False
+
+JOB_TYPES = {"residential", "commercial", "str_turnover", "one_time"}
+JOB_STATUSES = {"scheduled", "in_progress", "completed", "cancelled"}
 
 
 class BookingInfo(BaseModel):
@@ -1053,6 +1061,15 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
 
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
+
+    if "job_type" in updates and updates["job_type"] not in JOB_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown job_type '{updates['job_type']}'")
+    if "status" in updates and updates["status"] not in JOB_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")
+    if "property_id" in updates:
+        prop = db.query(Property).filter(Property.id == updates["property_id"]).first()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property not found")
 
     # Validate + conflict-check against the RESULTING values (incoming or
     # existing). Skip both when the edit only cancels the job. is_new=False so

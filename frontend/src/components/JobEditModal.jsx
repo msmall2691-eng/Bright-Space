@@ -17,7 +17,10 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   const isNew = !job?.id
   const [formData, setFormData] = useState({
     title: job?.title || '',
+    job_type: job?.job_type || 'residential',
+    status: job?.status || 'scheduled',
     property_id: job?.property_id || '',
+    address: job?.address || '',
     cleaner_ids: job?.cleaner_ids || [],
     notes: job?.notes || '',
     scheduled_date: job?.scheduled_date || '',
@@ -57,7 +60,13 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   )
 
   const handlePropertyChange = (e) => {
-    setFormData(prev => ({ ...prev, property_id: e.target.value }))
+    const prop = properties.find(p => p.id === parseInt(e.target.value))
+    setFormData(prev => ({
+      ...prev,
+      property_id: e.target.value,
+      // Smart default only — never clobber an address the operator typed.
+      address: prev.address || prop?.address || '',
+    }))
   }
 
   const handleAddCleaner = (cleanerId) => {
@@ -76,7 +85,12 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }))
   }
 
-  const handleSave = async () => {
+  // A 409 means a real scheduling conflict (double-booked cleaner, time off,
+  // over capacity). The backend supports allow_conflicts to override — offer
+  // that explicitly instead of dead-ending the save.
+  const [conflict, setConflict] = useState(null)
+
+  const handleSave = async (allowConflicts = false) => {
     if (!formData.property_id) {
       setError('Please select a property')
       return
@@ -88,22 +102,24 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
     setSaving(true)
     setError('')
+    setConflict(null)
     try {
       const prop = properties.find(p => p.id === parseInt(formData.property_id))
       const payload = {
+        title: formData.title || (prop ? `Cleaning \u2014 ${prop.name}` : 'Cleaning'),
+        job_type: formData.job_type || 'residential',
+        status: formData.status || 'scheduled',
         property_id: parseInt(formData.property_id),
+        address: formData.address || prop?.address || '',
         cleaner_ids: formData.cleaner_ids,
         notes: formData.notes,
         scheduled_date: formData.scheduled_date || null,
         start_time: formData.start_time || null,
         end_time: formData.end_time || null,
+        allow_conflicts: allowConflicts,
       }
       if (isNew) {
-        payload.title = formData.title || (prop ? `Cleaning \u2014 ${prop.name}` : 'Cleaning')
-        payload.job_type = 'one_time'
-        payload.status = 'scheduled'
         if (prop?.client_id) payload.client_id = prop.client_id
-        if (prop?.address) payload.address = prop.address
         await post('/api/jobs', payload)
       } else {
         await patch(`/api/jobs/${job.id}`, payload)
@@ -111,7 +127,13 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       onSave?.()
       onClose()
     } catch (err) {
-      setError(err.message || 'Failed to save job')
+      const msg = err.message || 'Failed to save job'
+      // Backend 409s carry the human-readable conflict detail.
+      if (/conflict|unavailable|over capacity|time off/i.test(msg)) {
+        setConflict(msg)
+      } else {
+        setError(msg)
+      }
     } finally {
       setSaving(false)
     }
@@ -132,25 +154,51 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
         {/* Content */}
         <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-6">
-          {/* Job Info */}
+          {/* Title — editable on EVERY job, not just new ones */}
           <div>
-            <h3 className="text-xs font-semibold text-ink-2 uppercase mb-2">Job</h3>
-            {isNew ? (
-              <input
-                type="text"
-                value={formData.title}
-                onChange={e => setFormData(f => ({ ...f, title: e.target.value }))}
-                placeholder="Job title (auto-fills from property if blank)"
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
-              />
-            ) : (
-              <p className="text-base sm:text-lg font-semibold text-ink">{job?.title}</p>
-            )}
+            <label className="block text-sm font-semibold text-ink-2 mb-2">Job Title</label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={e => setFormData(f => ({ ...f, title: e.target.value }))}
+              placeholder="Job title (auto-fills from property if blank)"
+              className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base font-medium"
+            />
+          </div>
+
+          {/* Type + Status side by side on desktop, stacked on phones */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Job Type</label>
+              <select
+                value={formData.job_type}
+                onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
+              >
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+                <option value="str_turnover">STR Turnover</option>
+                <option value="one_time">One-time</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
+              <select
+                value={formData.status}
+                onChange={e => setFormData(f => ({ ...f, status: e.target.value }))}
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
+              >
+                <option value="scheduled">Scheduled</option>
+                <option value="in_progress">In progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
           </div>
 
           {/* Date + times — finally editable */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="col-span-2 sm:col-span-1">
               <label className="block text-sm font-semibold text-ink-2 mb-2">Date</label>
               <input
                 type="date"
@@ -201,6 +249,18 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 Type: <span className="font-semibold capitalize">{selectedProperty.property_type}</span>
               </p>
             )}
+          </div>
+
+          {/* Address — editable; pre-fills from the property when blank */}
+          <div>
+            <label className="block text-sm font-semibold text-ink-2 mb-2">Address</label>
+            <input
+              type="text"
+              value={formData.address}
+              onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
+              placeholder="Service address (auto-fills from the property)"
+              className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+            />
           </div>
 
           {/* Cleaner Selector */}
@@ -306,6 +366,20 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               {error}
             </div>
           )}
+
+          {conflict && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+              <p className="font-semibold text-amber-800 mb-1">Scheduling conflict</p>
+              <p className="text-amber-900 mb-3">{conflict}</p>
+              <button
+                onClick={() => handleSave(true)}
+                disabled={saving}
+                className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-lg text-sm font-semibold transition-colors"
+              >
+                {saving ? 'Saving…' : 'Save anyway (override conflict)'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -313,7 +387,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
+          <Button variant="primary" onClick={() => handleSave(false)} disabled={saving} className="w-full sm:w-auto">
             {saving ? 'Saving...' : (isNew ? 'Create Job' : 'Save Changes')}
           </Button>
         </div>
