@@ -90,6 +90,7 @@ def _quote_dict(q: Quote) -> dict:
         "quote_number": q.quote_number,
         "public_token": q.public_token,
         "title": q.title,
+        "customer_message": getattr(q, "customer_message", None),
         "service_type": q.service_type,
         "address": q.address,
         "notes": q.notes,
@@ -167,6 +168,7 @@ def create_quote(
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         title=quote_data.title,
+        customer_message=quote_data.customer_message,
         service_type=quote_data.service_type or "residential",
         address=quote_data.address,
         notes=quote_data.notes,
@@ -266,7 +268,7 @@ def _apply_update(quote: Quote, data: dict) -> None:
     """Apply a partial update dict, recomputing totals when pricing changes."""
     if "items" in data and data["items"] is not None:
         quote.items = _items_to_dicts(data["items"])
-    for field in ("title", "service_type", "address", "notes", "status",
+    for field in ("title", "customer_message", "service_type", "address", "notes", "status",
                   "client_id", "intake_id", "opportunity_id", "property_id"):
         if field in data and data[field] is not None:
             setattr(quote, field, data[field])
@@ -314,7 +316,12 @@ class QuoteSendRequest(BaseModel):
     channel: str = "email"                 # 'email' | 'sms' | 'both'
     email: Optional[str] = None
     phone: Optional[str] = None
+    # Included in BOTH the email body and the SMS (it used to be SMS-only
+    # while the send panel implied otherwise).
     custom_message: Optional[str] = None
+    # Optional per-send overrides for the email envelope.
+    subject: Optional[str] = None
+    greeting: Optional[str] = None
 
 
 @router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
@@ -365,8 +372,16 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 res = QuoteEmailService().send_quote_email(
                     to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
                     total_amount=float(quote.total or 0),
-                    expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else "Upon Request",
+                    expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else None,
                     quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
+                    subject=(body.subject or "").strip() or None,
+                    greeting=(body.greeting or "").strip() or None,
+                    # Send-time personal note wins; the quote's stored
+                    # customer message is the default intro.
+                    intro_message=(body.custom_message or "").strip()
+                                  or (quote.customer_message or "").strip() or None,
+                    quote_title=quote.title,
+                    items=quote.items or [],
                 )
                 if res.get("success"):
                     results["email"] = "sent"
@@ -398,7 +413,11 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         else:
             try:
                 from integrations.twilio_client import send_sms
-                base = (body.custom_message or "").strip() or f"Hi {client.name or ''}, your quote {quote.quote_number} is ready."
+                from services.quote_email_service import customer_display_name
+                nice_name = customer_display_name(client.name)
+                default_sms = (f"Hi {nice_name}, your quote {quote.quote_number} is ready."
+                               if nice_name else f"Hi, your quote {quote.quote_number} is ready.")
+                base = (body.custom_message or "").strip() or default_sms
                 msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
                 send_sms(to=to_phone, body=msg)
                 results["sms"] = "sent"
@@ -577,15 +596,32 @@ def _quote_by_token(token: str, db: Session) -> Quote:
     return quote
 
 
-def _public_quote_dict(quote: Quote) -> dict:
+def _company_info(db: Session) -> dict:
+    """Customer-facing business identity: Settings rows first, env fallback.
+    Powers the public quote page footer and the quote email."""
+    from modules.settings.router import get_setting
+    return {
+        "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", "Bright Space"),
+        "company_email": (get_setting(db, "company_email") or os.getenv("COMPANY_EMAIL")
+                          or get_setting(db, "from_email") or os.getenv("SMTP_USER")),
+        "company_phone": get_setting(db, "company_phone") or os.getenv("COMPANY_PHONE"),
+        "quote_terms": get_setting(db, "quote_terms") or None,
+    }
+
+
+def _public_quote_dict(quote: Quote, db: Session) -> dict:
     """Client-facing serialization for the public accept page."""
+    company = _company_info(db)
     return {
         "id": quote.id,
         "quote_number": quote.quote_number,
         "status": quote.status,
-        "company_name": os.getenv("COMPANY_NAME", "Bright Space"),
-        "company_email": os.getenv("COMPANY_EMAIL") or os.getenv("SMTP_USER"),
-        "company_phone": os.getenv("COMPANY_PHONE"),
+        "title": quote.title,
+        "customer_message": getattr(quote, "customer_message", None),
+        "company_name": company["company_name"],
+        "company_email": company["company_email"],
+        "company_phone": company["company_phone"],
+        "terms": company["quote_terms"],
         "address": quote.address or "",
         "service_type": quote.service_type,
         "notes": quote.notes,
@@ -684,7 +720,7 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
         _notify_staff_quote_event(db, quote, f"Client viewed quote {quote.quote_number}", "quote_viewed")
         db.commit()
         db.refresh(quote)
-    return _public_quote_dict(quote)
+    return _public_quote_dict(quote, db)
 
 
 @router.post("/public/{token}/accept")
@@ -902,10 +938,13 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         client_name=client.name,
         quote_number=quote.quote_number,
         total_amount=float(quote.total or 0),
-        expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else "Upon Request",
+        expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else None,
         quote_link=quote_link,
         pdf_bytes=pdf_bytes,
         pdf_filename=f"{quote.quote_number}.pdf",
+        intro_message=(quote.customer_message or "").strip() or None,
+        quote_title=quote.title,
+        items=quote.items or [],
     )
     quote.last_send_attempt_at = datetime.now()
     if not result["success"]:

@@ -71,8 +71,11 @@ export default function Settings() {
   // General settings
   const [generalSettings, setGeneralSettings] = useState({
     company_name: 'Maine Cleaning Co.',
+    company_email: '',
+    company_phone: '',
     timezone: 'America/New_York',
     currency: 'USD',
+    quote_terms: '',
   })
   const [generalSaving, setGeneralSaving] = useState(false)
 
@@ -325,6 +328,15 @@ export default function Settings() {
     if (section === 'integrations' || section === 'automation' || section === 'general') {
       loadAutomationSettings()
     }
+    if (section === 'general') {
+      get('/api/settings/general')
+        .then(d => setGeneralSettings(s => {
+          const next = { ...s }
+          for (const k of Object.keys(next)) if (d?.[k] != null) next[k] = d[k]
+          return next
+        }))
+        .catch(() => {})
+    }
   }, [section, loadAutomationSettings])
 
   const toast = useCallback((message, type = 'success') => {
@@ -548,6 +560,31 @@ export default function Settings() {
                       onChange={e => setGeneralSettings(s => ({ ...s, company_name: e.target.value }))}
                       placeholder="Maine Cleaning Co."
                       className={inp} />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className={lbl}>Company Email</label>
+                      <input type="email" value={generalSettings.company_email}
+                        onChange={e => setGeneralSettings(s => ({ ...s, company_email: e.target.value }))}
+                        placeholder="office@mainecleaningco.com"
+                        className={inp} />
+                    </div>
+                    <div>
+                      <label className={lbl}>Company Phone</label>
+                      <input type="tel" value={generalSettings.company_phone}
+                        onChange={e => setGeneralSettings(s => ({ ...s, company_phone: e.target.value }))}
+                        placeholder="+1 (207) 555-0100"
+                        className={inp} />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-ink-3 mt-2">Shown on the public quote page ("Questions?") and used across customer-facing email.</p>
+                  <div className="mt-4">
+                    <label className={lbl}>Quote Terms &amp; Conditions (optional)</label>
+                    <textarea rows={4} value={generalSettings.quote_terms}
+                      onChange={e => setGeneralSettings(s => ({ ...s, quote_terms: e.target.value }))}
+                      placeholder="Payment due upon completion. Cancellations require 24h notice. …"
+                      className={inp + ' resize-none'} />
+                    <p className="text-[11px] text-ink-3 mt-1">Appears at the bottom of every public quote page. Leave blank to hide.</p>
                   </div>
                 </div>
               </div>

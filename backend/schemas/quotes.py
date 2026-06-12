@@ -24,6 +24,7 @@ class QuoteCreate(BaseModel):
     opportunity_id: Optional[int] = None
     property_id: Optional[int] = None
     title: Optional[str] = None
+    customer_message: Optional[str] = None
     service_type: Optional[str] = "residential"
     address: Optional[str] = None
     notes: Optional[str] = None
@@ -41,6 +42,7 @@ class QuoteUpdate(BaseModel):
     opportunity_id: Optional[int] = None
     property_id: Optional[int] = None
     title: Optional[str] = None
+    customer_message: Optional[str] = None
     service_type: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None

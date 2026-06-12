@@ -150,6 +150,39 @@ def get_all_settings(db: Session = Depends(get_db)):
     return result
 
 
+class GeneralSettings(BaseModel):
+    company_name: Optional[str] = None
+    company_email: Optional[str] = None
+    company_phone: Optional[str] = None
+    timezone: Optional[str] = None
+    currency: Optional[str] = None
+    # Optional terms & conditions shown at the bottom of the public quote page.
+    quote_terms: Optional[str] = None
+
+
+_GENERAL_KEYS = ("company_name", "company_email", "company_phone",
+                 "timezone", "currency", "quote_terms")
+
+
+@router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
+def get_general_settings(db: Session = Depends(get_db)):
+    return {k: get_setting(db, k) for k in _GENERAL_KEYS}
+
+
+@router.post("/general", dependencies=[Depends(require_role("admin"))])
+def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)):
+    """Persist company identity + quote terms. The Settings UI was already
+    POSTing here — the endpoint just never existed, so 'Company Information'
+    silently failed to save. These rows feed the public quote page and the
+    quote email (settings first, env fallback)."""
+    for key in _GENERAL_KEYS:
+        value = getattr(config, key)
+        if value is not None:
+            set_setting(db, key, value.strip())
+    db.commit()
+    return {k: get_setting(db, k) for k in _GENERAL_KEYS}
+
+
 @router.get("/from-email")
 def get_from_email(db: Session = Depends(get_db)):
     """Get the configured from_email for sending replies."""

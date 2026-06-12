@@ -920,6 +920,11 @@ class Quote(Base):
     discount = Column(Float, nullable=False, default=0.0)
     total = Column(Float, nullable=False, default=0.0)
 
+    # Customer-facing intro paragraph: shown on the public quote page and in
+    # the quote email, editable in the quote editor (distinct from the
+    # send-time "personal note", which is one-off).
+    customer_message = Column(Text, nullable=True)
+
     # Status & workflow
     status = Column(String(50), nullable=False, default="draft")
     valid_until = Column(Date, nullable=True)
