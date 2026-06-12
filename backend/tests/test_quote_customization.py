@@ -183,3 +183,41 @@ def test_settings_general_round_trip():
                   "timezone", "currency", "quote_terms"):
             db.query(AppSetting).filter(AppSetting.key == k).delete(synchronize_session=False)
         db.commit(); db.close()
+
+
+def test_email_keeps_explicit_zero_quantities(monkeypatch):
+    """Codex P2 (#267): a qty-0 line must not be billed as qty 1 in the email
+    while the persisted total treats it as zero."""
+    msg, html = _rendered_email(monkeypatch, items=[
+        {"name": "Deep clean", "description": "", "qty": 0, "unit_price": 183},
+        {"name": "Windows", "description": "", "qty": None, "unit_price": 50},
+    ], total_amount=50)
+    assert ">0<" in html.replace(" ", "")      # qty column shows 0
+    assert "$0.00" in html                     # amount for the zero-qty line
+    assert "$50.00" in html                    # missing qty still defaults to 1
+    assert "$183.00" not in html               # never billed the zero-qty item
+
+
+def test_email_company_name_comes_from_settings(monkeypatch):
+    """Codex P2 (#267): Settings → General Company Name must drive the email
+    header/sender/subject, not just the public page."""
+    db = SessionLocal()
+    db.add(AppSetting(key="company_name", value="Maine Cleaning Co"))
+    db.commit()
+    try:
+        monkeypatch.setenv("SMTP_USER", "office@x.com")
+        monkeypatch.setenv("SMTP_PASS", "pw")
+        monkeypatch.delenv("COMPANY_NAME", raising=False)
+        from services.quote_email_service import QuoteEmailService
+        with patch("smtplib.SMTP") as SMTP:
+            svc = QuoteEmailService()
+            assert svc.company_name == "Maine Cleaning Co"
+            svc.send_quote_email(to_email="jane@example.com", client_name="Jane",
+                                 quote_number="QT-1", total_amount=10, expires_at=None,
+                                 quote_link="https://x/q/t")
+            msg = SMTP.return_value.__enter__.return_value.send_message.call_args[0][0]
+        assert "Maine Cleaning Co" in msg["Subject"]
+        assert "Maine Cleaning Co" in msg["From"]
+    finally:
+        db.query(AppSetting).filter(AppSetting.key == "company_name").delete(synchronize_session=False)
+        db.commit(); db.close()

@@ -60,7 +60,8 @@ class QuoteEmailService:
         self.smtp_host = creds["smtp_host"]
         self.smtp_port = creds["smtp_port"]
         self.from_email = creds["from_email"] or "quotes@bright-space.com"
-        self.company_name = os.getenv("COMPANY_NAME") or creds["from_name"] or "Bright-Space"
+        self.company_name = (self._db_company_name() or os.getenv("COMPANY_NAME")
+                             or creds["from_name"] or "Bright-Space")
 
         if not self.smtp_user or not self.smtp_pass:
             msg = ("Email credentials missing — set SMTP_USER + SMTP_PASS "
@@ -68,6 +69,22 @@ class QuoteEmailService:
                    "in BrightBase → Settings → Email.")
             logger.error(f"[quote-email] {msg}")
             raise ValueError(msg)
+
+    @staticmethod
+    def _db_company_name():
+        """Company Name saved in Settings → General (the same row the public
+        quote page uses). Best-effort: no DB, no problem — env/from_name win."""
+        try:
+            from database.db import SessionLocal
+            from database.models import AppSetting
+            db = SessionLocal()
+            try:
+                row = db.query(AppSetting).filter(AppSetting.key == "company_name").first()
+                return (row.value or "").strip() or None
+            finally:
+                db.close()
+        except Exception:
+            return None
 
     def get_email_template(self) -> str:
         """Quote email HTML. Mirrors what the send panel promises: title,
@@ -193,11 +210,22 @@ class QuoteEmailService:
             name = (greeting or "").strip() or customer_display_name(client_name)
             greeting_line = f"Hello {name}," if name else "Hello,"
 
+            def _qty(it):
+                """Default only when MISSING — an explicit 0 stays 0, matching
+                _compute_totals (the email used to bill qty-0 items as 1)."""
+                raw = it.get("qty")
+                if raw is None or raw == "":
+                    return 1.0
+                try:
+                    return float(raw)
+                except (TypeError, ValueError):
+                    return 1.0
+
             line_items = [{
                 "name": (it.get("name") or "").strip() or "Service",
                 "description": (it.get("description") or "").strip(),
-                "qty": ("%g" % float(it.get("qty") or 1)),
-                "amount": format_money(float(it.get("qty") or 1) * float(it.get("unit_price") or 0)),
+                "qty": ("%g" % _qty(it)),
+                "amount": format_money(_qty(it) * float(it.get("unit_price") or 0)),
             } for it in (items or []) if isinstance(it, dict)]
 
             # Render HTML template
