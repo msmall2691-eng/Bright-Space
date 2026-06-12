@@ -188,6 +188,7 @@ export default function PublicQuote() {
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 sm:p-8">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-3xl font-bold mb-1">Quote {quote.quote_number || `QT-${quote.id}`}</h1>
+          {quote.title && <p className="text-blue-50 text-lg font-medium">{quote.title}</p>}
           <p className="text-blue-100 text-sm">from {quote.company_name}</p>
           {quote.valid_until && (
             <p className="text-blue-100 text-xs mt-3">Valid until: {quote.valid_until}</p>
@@ -200,6 +201,13 @@ export default function PublicQuote() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        {/* Personal message from the business */}
+        {quote.customer_message && (
+          <div className="bg-panel rounded-lg shadow-sm border border-hairline p-6 mb-6">
+            <p className="text-ink-2 whitespace-pre-wrap">{quote.customer_message}</p>
           </div>
         )}
 
@@ -377,6 +385,14 @@ export default function PublicQuote() {
                 </p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Terms & conditions (optional — Settings → General → Quote Terms) */}
+        {quote.terms && (
+          <div className="mt-6 bg-panel border border-hairline rounded-lg p-4">
+            <p className="text-xs text-ink-3 uppercase font-medium mb-2">Terms &amp; Conditions</p>
+            <p className="text-xs text-ink-3 whitespace-pre-wrap">{quote.terms}</p>
           </div>
         )}
       </div>

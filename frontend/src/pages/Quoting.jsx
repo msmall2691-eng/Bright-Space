@@ -27,6 +27,11 @@ const LEAD_STATUS_COLORS = {
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
+// Names that are really phone numbers / intake placeholders — never greet
+// with these ("Hello +12074329492" shipped to a real customer on June 11).
+const PLACEHOLDER_RE = /^(unknown|brightbase webhook test|webhook test|test client|n\/a|\+?[\d\s().-]+)$/i
+const isPlaceholderName = (n) => !n || !n.trim() || PLACEHOLDER_RE.test(n.trim())
+
 // Quote templates (and their prices) live ONLY in the backend
 // (/api/settings/quote-templates), which seeds a default set when the admin
 // hasn't customized any. We deliberately keep NO hardcoded copy here — a second
@@ -61,10 +66,11 @@ export default function Quoting() {
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
   const [form, setForm] = useState({
-    client_id: '', intake_id: null, address: '', service_type: 'residential',
+    client_id: '', intake_id: null, title: '', customer_message: '',
+    address: '', service_type: 'residential',
     items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', valid_until: ''
   })
-  const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '' })
+  const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '' })
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [converting, setConverting] = useState(null)
@@ -227,6 +233,8 @@ export default function Quoting() {
         ...f,
         client_id: location.state.clientId,
         intake_id: null,
+        title: '',
+        customer_message: '',
         items: [{ ...EMPTY_ITEM }],
       }))
       setPanel('quote')
@@ -264,7 +272,9 @@ export default function Quoting() {
     setSelected(q)
     setSelectedIntake(intake)
     if (q) {
-      setForm({ client_id: q.client_id, intake_id: q.intake_id, address: q.address || '',
+      setForm({ client_id: q.client_id, intake_id: q.intake_id,
+        title: q.title || '', customer_message: q.customer_message || '',
+        address: q.address || '',
         service_type: q.service_type || 'residential', items: q.items?.length ? q.items : [{ ...EMPTY_ITEM }],
         tax_rate: q.tax_rate, notes: q.notes || '', valid_until: q.valid_until || '' })
     } else if (intake) {
@@ -275,6 +285,7 @@ export default function Quoting() {
         : (intake.estimate_max ?? intake.estimate_min ?? 0)
       setForm({
         client_id: intake.client_id || '', intake_id: intake.id,
+        title: '', customer_message: '',
         address: [intake.address, intake.city, intake.state].filter(Boolean).join(', '),
         service_type: intake.service_type || 'residential',
         items: [{
@@ -287,7 +298,8 @@ export default function Quoting() {
         notes: intake.message || '', valid_until: ''
       })
     } else {
-      setForm({ client_id: '', intake_id: null, address: '', service_type: 'residential',
+      setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
+        address: '', service_type: 'residential',
         items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', valid_until: '' })
     }
     setPanel('quote')
@@ -301,11 +313,14 @@ export default function Quoting() {
     const intake = q.intake_id ? intakes.find(i => i.id === q.intake_id) : null
     const preferEmail = intake?.email || client?.email || ''
     const preferPhone = intake?.phone || client?.phone || ''
+    const clientName = (intake?.name || client?.name || '').trim()
     setSendForm({
       channel: preferEmail ? 'email' : 'sms',
       email: preferEmail,
       phone: preferPhone,
-      custom_message: ''
+      custom_message: '',
+      subject: `Your Quote ${q.quote_number} from ${companyName}`,
+      greeting: isPlaceholderName(clientName) ? '' : clientName,
     })
     setSelected(q)
     setPanel('send')
@@ -714,6 +729,14 @@ export default function Quoting() {
               </div>
             )}
 
+            {/* Title — shows on the public quote page and in the email header */}
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Quote Title</label>
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Biweekly cleaning — 12 Pier Rd"
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+
             {/* Client */}
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -750,8 +773,7 @@ export default function Quoting() {
                 {(() => {
                   // Dedupe + sort: real names first, placeholders last w/ marker.
                   // Surfaces email/phone so two same-name clients are distinguishable.
-                  const PLACEHOLDER_RE = /^(unknown|brightbase webhook test|webhook test|test client|n\/a|\+?[\d\s().-]+)$/i
-                  const isPlaceholder = (n) => !n || !n.trim() || PLACEHOLDER_RE.test(n.trim())
+                  const isPlaceholder = isPlaceholderName
                   const seen = new Set()
                   const sorted = [...clients].filter(c => {
                     if (seen.has(c.id)) return false
@@ -893,6 +915,15 @@ export default function Quoting() {
                 placeholder="Special instructions, inclusions/exclusions, access details..."
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
             </div>
+
+            {/* Customer message — the intro paragraph on the public page & email */}
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Message to Customer</label>
+              <textarea value={form.customer_message} onChange={e => setForm(f => ({ ...f, customer_message: e.target.value }))} rows={3}
+                placeholder="Hi! Thanks for reaching out — here's the quote we discussed. Looking forward to working with you."
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+              <p className="text-[11px] text-ink-3 mt-1">Shown at the top of the emailed quote and the online quote page.</p>
+            </div>
           </div>
 
           {/* Preview column — the live customer-facing render. */}
@@ -962,6 +993,24 @@ export default function Quoting() {
               </div>
             )}
 
+            {/* Email envelope — subject + greeting, both editable per send */}
+            {(sendForm.channel === 'email' || sendForm.channel === 'both') && (
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Email Subject</label>
+                  <input value={sendForm.subject} onChange={e => setSendForm(f => ({ ...f, subject: e.target.value }))}
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Greeting Name</label>
+                  <input value={sendForm.greeting} onChange={e => setSendForm(f => ({ ...f, greeting: e.target.value }))}
+                    placeholder="Leave blank for a plain “Hello,”"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  <p className="text-[11px] text-ink-3 mt-1">The email opens with “Hello {sendForm.greeting.trim() || '…'},”</p>
+                </div>
+              </div>
+            )}
+
             {/* Phone */}
             {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (
               <div>
@@ -992,10 +1041,10 @@ export default function Quoting() {
               <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg p-3">
                 <div className="text-xs text-blue-300 font-medium mb-1">Email includes:</div>
                 <ul className="text-xs text-blue-400 space-y-0.5">
-                  <li>• Branded quote with all line items and totals</li>
-                  <li>• Service address and type</li>
-                  <li>• Valid until date</li>
-                  <li>• Reply-to-accept instructions</li>
+                  <li>• Quote title, your message, and all line items with totals</li>
+                  <li>• Accept / request-changes link to the online quote</li>
+                  <li>• Valid-until date (only when the quote has one)</li>
+                  <li>• PDF copy attached</li>
                 </ul>
               </div>
             )}
@@ -1006,7 +1055,7 @@ export default function Quoting() {
               <textarea value={sendForm.custom_message} onChange={e => setSendForm(f => ({ ...f, custom_message: e.target.value }))}
                 rows={3} placeholder="Hi! Great talking with you — here's the quote we discussed..."
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
-              <p className="text-xs text-ink-3 mt-1">Prepended to SMS. Not included in email (reply to the email thread instead).</p>
+              <p className="text-xs text-ink-3 mt-1">Included at the top of the email and prepended to the SMS. If blank, the quote's "Message to Customer" is used.</p>
             </div>
 
             {/* Quote summary */}

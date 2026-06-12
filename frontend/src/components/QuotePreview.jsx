@@ -25,11 +25,17 @@ export default function QuotePreview({ form, quoteNumber, companyName, clientNam
       {/* Customer-facing header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-5">
         <h1 className="text-xl font-bold mb-0.5">Quote {quoteNumber || 'QT-…'}</h1>
+        {form.title && <p className="text-blue-50 text-sm font-medium">{form.title}</p>}
         <p className="text-blue-100 text-xs">from {companyName || 'Maine Cleaning Co'}</p>
         {form.valid_until && <p className="text-blue-100 text-[11px] mt-2">Valid until: {fmtValidUntil(form.valid_until)}</p>}
       </div>
 
       <div className="p-5">
+        {form.customer_message && (
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4 text-sm text-ink-2 whitespace-pre-wrap">
+            {form.customer_message}
+          </div>
+        )}
         <div className="bg-panel rounded-lg border border-hairline p-5">
           {form.address && (
             <div className="mb-4 pb-4 border-b border-hairline">

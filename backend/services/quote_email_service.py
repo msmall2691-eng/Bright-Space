@@ -11,6 +11,7 @@ sent invoices fine but silently failed every quote.
 
 import logging
 import os
+import re
 import smtplib
 import uuid
 from typing import Optional
@@ -24,6 +25,29 @@ from jinja2 import Template
 from integrations.email import _load_smtp_creds
 
 logger = logging.getLogger(__name__)
+
+# A "client name" that's really a phone number or intake placeholder must not
+# end up in a greeting ("Hello +12074329492," — seen in prod June 11).
+_PLACEHOLDER_NAME_RE = re.compile(
+    r"^(unknown|webhook test|brightbase webhook test|test client|n/?a|\+?[\d\s().-]{7,})$",
+    re.IGNORECASE,
+)
+
+
+def customer_display_name(name: str | None) -> str:
+    """The name as greet-able text, or '' when it's a placeholder/phone."""
+    name = (name or "").strip()
+    if not name or _PLACEHOLDER_NAME_RE.match(name):
+        return ""
+    return name
+
+
+def format_money(amount) -> str:
+    """'183.00' / '1,234.50' — never Python float repr like '183.0'."""
+    try:
+        return f"{float(amount or 0):,.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
 
 
 class QuoteEmailService:
@@ -46,7 +70,10 @@ class QuoteEmailService:
             raise ValueError(msg)
 
     def get_email_template(self) -> str:
-        """Return the quote email HTML template"""
+        """Quote email HTML. Mirrors what the send panel promises: title,
+        intro message, every line item, formatted totals, and an expiry line
+        only when the quote actually has one (the old footer claimed "valid
+        for 30 days" regardless — contradicting the Expires row)."""
         return """
 <!DOCTYPE html>
 <html>
@@ -62,6 +89,14 @@ class QuoteEmailService:
         .content h2 { color: #1f2937; }
         .quote-info { background: #f9fafb; padding: 16px; border-radius: 6px; margin: 20px 0; }
         .quote-info-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px; }
+        .items { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+        .items th { text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase; padding: 6px 0; border-bottom: 1px solid #e5e7eb; }
+        .items th.amt, .items td.amt { text-align: right; }
+        .items td { padding: 8px 0; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+        .items .desc { color: #6b7280; font-size: 12px; }
+        .totals td { padding: 4px 0; border: none; }
+        .totals .label { color: #6b7280; }
+        .totals .grand { font-weight: bold; font-size: 16px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
         .cta-button { display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 20px 0; font-weight: 600; }
         .footer { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none; text-align: center; font-size: 12px; color: #6b7280; }
         .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
@@ -71,38 +106,53 @@ class QuoteEmailService:
     <div class="container">
         <div class="header">
             <h1>{{ company_name }}</h1>
-            <p>Quote for {{ client_name }}</p>
+            {% if quote_title %}<p>{{ quote_title }}</p>{% else %}<p>Quote {{ quote_number }}</p>{% endif %}
         </div>
         <div class="content">
-            <h2>Hello {{ client_name }},</h2>
-            <p>We've prepared a quote for your request. Please review the attached PDF and let us know if you have any questions.</p>
+            <h2>{{ greeting_line }}</h2>
+            {% if intro_message %}<p style="white-space: pre-wrap;">{{ intro_message }}</p>
+            {% else %}<p>We've prepared a quote for your request. Please review it below and let us know if you have any questions.</p>{% endif %}
 
             <div class="quote-info">
                 <div class="quote-info-row">
                     <strong>Quote #:</strong>
                     <span>{{ quote_number }}</span>
                 </div>
+                {% if expires_at %}
                 <div class="quote-info-row">
-                    <strong>Total Amount:</strong>
-                    <span>${{ total_amount }}</span>
-                </div>
-                <div class="quote-info-row">
-                    <strong>Expires:</strong>
+                    <strong>Valid until:</strong>
                     <span>{{ expires_at }}</span>
                 </div>
+                {% endif %}
             </div>
 
-            <p>Please review the quote document attached and let us know if you'd like to proceed. You can also view and accept the quote online:</p>
+            {% if items %}
+            <table class="items">
+                <tr><th>Service</th><th class="amt">Qty</th><th class="amt">Amount</th></tr>
+                {% for it in items %}
+                <tr>
+                    <td>{{ it.name }}{% if it.description %}<div class="desc">{{ it.description }}</div>{% endif %}</td>
+                    <td class="amt">{{ it.qty }}</td>
+                    <td class="amt">${{ it.amount }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% endif %}
+            <table class="items totals">
+                <tr><td class="label">Total</td><td class="amt grand">${{ total_amount }}</td></tr>
+            </table>
+
+            <p>You can view, accept, or request changes to this quote online{% if pdf_attached %} — a PDF copy is also attached{% endif %}:</p>
 
             <a href="{{ quote_link }}" class="cta-button">View Quote Online</a>
 
             <div class="divider"></div>
 
-            <p>If you have any questions about this quote, please don't hesitate to reach out. We're here to help!</p>
+            <p>If you have any questions about this quote, just reply to this email — we're here to help!</p>
         </div>
         <div class="footer">
             <p>&copy; {{ company_name }} - All rights reserved</p>
-            <p>This quote is valid for 30 days from the date above.</p>
+            {% if expires_at %}<p>This quote is valid until {{ expires_at }}.</p>{% endif %}
         </div>
     </div>
 </body>
@@ -114,29 +164,55 @@ class QuoteEmailService:
         to_email: str,
         client_name: str,
         quote_number: str,
-        total_amount: str,
-        expires_at: str,
+        total_amount,
+        expires_at: Optional[str],
         quote_link: str,
         pdf_bytes: Optional[bytes] = None,
         pdf_filename: str = "quote.pdf",
+        subject: Optional[str] = None,
+        greeting: Optional[str] = None,
+        intro_message: Optional[str] = None,
+        quote_title: Optional[str] = None,
+        items: Optional[list] = None,
     ) -> dict:
-        """Send a quote email with optional PDF attachment"""
+        """Send a quote email with optional PDF attachment.
+
+        expires_at: pre-formatted date string, or None when the quote has no
+        valid-until (no expiry text is shown at all — never a made-up "30
+        days"). subject/greeting are per-send overrides from the Send panel;
+        intro_message is the personal note / stored customer message.
+        """
         try:
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"Your Quote {quote_number} from {self.company_name}"
+            msg['Subject'] = (subject or "").strip() or f"Your Quote {quote_number} from {self.company_name}"
             msg['From'] = f"{self.company_name} <{self.from_email}>"
             msg['To'] = to_email
+
+            # Greeting: explicit override > greet-able client name > neutral.
+            name = (greeting or "").strip() or customer_display_name(client_name)
+            greeting_line = f"Hello {name}," if name else "Hello,"
+
+            line_items = [{
+                "name": (it.get("name") or "").strip() or "Service",
+                "description": (it.get("description") or "").strip(),
+                "qty": ("%g" % float(it.get("qty") or 1)),
+                "amount": format_money(float(it.get("qty") or 1) * float(it.get("unit_price") or 0)),
+            } for it in (items or []) if isinstance(it, dict)]
 
             # Render HTML template
             template = Template(self.get_email_template())
             html_content = template.render(
                 company_name=self.company_name,
-                client_name=client_name,
                 quote_number=quote_number,
-                total_amount=total_amount,
-                expires_at=expires_at,
+                quote_title=(quote_title or "").strip() or None,
+                greeting_line=greeting_line,
+                intro_message=(intro_message or "").strip() or None,
+                items=line_items,
+                total_amount=format_money(total_amount),
+                expires_at=(expires_at or "").strip() or None,
                 quote_link=quote_link,
+                pdf_attached=bool(pdf_bytes),
             )
 
             # Attach HTML content

@@ -155,6 +155,8 @@ def _run_migrations():
         # Quote delivery visibility: failed sends must be visible, not silent drafts
         "ALTER TABLE quotes ADD COLUMN last_send_attempt_at TIMESTAMP",
         "ALTER TABLE quotes ADD COLUMN last_send_error TEXT",
+        # Customer-facing intro message on quotes (public page + email)
+        "ALTER TABLE quotes ADD COLUMN customer_message TEXT",
         # PR 4: Visits table (created by create_all, but ensure indexes)
         # (Visits table is created by SQLAlchemy Base.metadata.create_all above)
         # PR 6: iCal feeds sync status tracking
