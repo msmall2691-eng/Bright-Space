@@ -7,6 +7,8 @@ from io import BytesIO
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+
+from utils.dates import coerce_date
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -68,6 +70,12 @@ class QuotePDFService:
         Returns:
             PDF as bytes
         """
+
+        # Prod schema drift can hand us a str (or even a human-formatted
+        # string) instead of a date; coerce once so both .strftime() sites
+        # below are safe and an unparseable value just hides the Expires row
+        # rather than 500-ing the whole quote send.
+        expires_at = coerce_date(expires_at)
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)

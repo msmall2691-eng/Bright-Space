@@ -64,6 +64,47 @@ def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     assert q.status == "draft"
 
 
+def test_send_with_string_valid_until_does_not_crash(quote_ctx):
+    """Prod schema drift hands us valid_until as a str, not a date. Building
+    the PDF/email used to call .strftime() on it → AttributeError → the send
+    "failed" with a misleading 'email could not be sent'. The tolerant
+    formatter must let the send go through for a quote that carries an expiry."""
+    db, c, q = quote_ctx
+    # Simulate the drifted column: a raw ISO string that reads back as a str.
+    # set_committed_value marks it as loaded-from-DB (not dirty) so SQLite's
+    # strict Date column doesn't reject it on commit — mirroring prod, where
+    # the column is text and the read returns a string.
+    from sqlalchemy.orm.attributes import set_committed_value
+    set_committed_value(q, "valid_until", "2026-07-13")
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email:
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "e-drift-1"}
+        out = send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
+    assert out["delivered"] is True
+    assert out["results"]["email"] == "sent"
+    # The pre-formatted expiry string is what the email service receives.
+    _, kwargs = Email.return_value.send_quote_email.call_args
+    assert kwargs["expires_at"] == "July 13, 2026"
+
+
+def test_failed_send_surfaces_real_error(quote_ctx):
+    """A delivery failure must record the REAL reason, not a generic string,
+    so an SMTP problem is distinguishable from a code bug (P1-B)."""
+    db, c, q = quote_ctx
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email:
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {
+            "success": False, "error": "SMTP auth failed: 535", "email_id": None,
+        }
+        out = send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
+    assert out["delivered"] is False
+    assert any("SMTP auth failed" in e for e in out["errors"])
+    db.refresh(q)
+    assert "SMTP auth failed" in (q.last_send_error or "")
+
+
 def test_failed_send_is_visible_then_cleared_on_success(quote_ctx):
     """A failed delivery must not leave a silent draft: last_send_error /
     last_send_attempt_at record what happened, and a later successful send
