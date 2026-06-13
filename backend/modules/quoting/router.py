@@ -23,6 +23,7 @@ from database.models import (
 )
 from modules.auth.router import get_current_user, require_role
 from utils.integration_log import log_integration_event as _log_integration
+from utils.dates import coerce_date, fmt_long_date
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -381,7 +382,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 res = QuoteEmailService().send_quote_email(
                     to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
                     total_amount=float(quote.total or 0),
-                    expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else None,
+                    expires_at=fmt_long_date(quote.valid_until),
                     quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
                     subject=(body.subject or "").strip() or None,
                     greeting=(body.greeting or "").strip() or None,
@@ -403,14 +404,20 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                                      detail=f"to {to_email}", commit=False)
                 else:
                     results["email"] = "failed"
-                    errors.append("email could not be sent")
-                    logger.warning(f"Quote {quote.id} email send failed: {res.get('error')}")
+                    # Surface the REAL reason (not a generic string) so the
+                    # owner/UI can tell an SMTP problem from a code bug.
+                    real_error = str(res.get("error") or "email could not be sent")
+                    errors.append(real_error)
+                    logger.error(f"Quote {quote.id} email send failed: {real_error}")
                     _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
-                                     action="send", status="failed", detail="send_quote_email failed", commit=False)
+                                     action="send", status="failed", detail=real_error, commit=False)
             except Exception as e:
                 results["email"] = "failed"
-                errors.append("email could not be sent")
-                logger.warning(f"Quote {quote.id} email send error: {e}")
+                # PDF build / service construction can raise (e.g. the date
+                # drift bug); record the actual exception, not "email could
+                # not be sent", and capture the traceback.
+                errors.append(str(e) or "email could not be sent")
+                logger.exception(f"Quote {quote.id} email send error")
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
                                  action="send", status="failed", detail=str(e), commit=False)
 
@@ -635,7 +642,7 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "company_phone": company["company_phone"],
         "terms": company["quote_terms"],
         "brand_color": company["brand_color"],
-        "quote_date": quote.created_at.strftime("%B %d, %Y") if quote.created_at else None,
+        "quote_date": fmt_long_date(quote.created_at),
         "address": quote.address or "",
         "service_type": quote.service_type,
         "notes": quote.notes,
@@ -644,7 +651,7 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "tax_rate": quote.tax_rate,
         "tax": quote.tax,
         "total": quote.total,
-        "valid_until": quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else None,
+        "valid_until": fmt_long_date(quote.valid_until),
     }
 
 
@@ -745,7 +752,10 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
         return {"status": "accepted", "quote_number": quote.quote_number}
     if quote.status == "declined":
         raise HTTPException(status_code=409, detail="This quote was declined and can no longer be accepted.")
-    if quote.valid_until and quote.valid_until < date.today():
+    # valid_until can be a str (prod schema drift) — coerce before comparing,
+    # or "date < str" raises TypeError and 500s the customer's accept click.
+    expiry = coerce_date(quote.valid_until)
+    if expiry and expiry < date.today():
         quote.status = "expired"
         db.commit()
         raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
@@ -935,43 +945,57 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    company = _company_info(db)
-    pdf_bytes = QuotePDFService(
-        company_name=company["company_name"], company_email=company["company_email"] or "",
-        company_phone=company["company_phone"], brand_color=company["brand_color"],
-        terms=company["quote_terms"],
-    ).generate_quote_pdf(
-        quote_number=quote.quote_number,
-        client_name=client.name,
-        client_email=client.email or "",
-        client_phone=client.phone,
-        line_items=_pdf_line_items(quote),
-        subtotal=quote.subtotal,
-        tax_amount=quote.tax,
-        discount_amount=quote.discount,
-        total_amount=quote.total,
-        notes=quote.notes,
-        expires_at=quote.valid_until,
-        quote_title=quote.title,
-    )
-
     token = _ensure_public_token(quote)
     app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
     quote_link = f"{app_base}/quote/{token}"
 
-    result = QuoteEmailService().send_quote_email(
-        to_email=recipient_email,
-        client_name=client.name,
-        quote_number=quote.quote_number,
-        total_amount=float(quote.total or 0),
-        expires_at=quote.valid_until.strftime("%B %d, %Y") if quote.valid_until else None,
-        quote_link=quote_link,
-        pdf_bytes=pdf_bytes,
-        pdf_filename=f"{quote.quote_number}.pdf",
-        intro_message=(quote.customer_message or "").strip() or None,
-        quote_title=quote.title,
-        items=quote.items or [],
-    )
+    # PDF build + email service construction can raise (e.g. the date-drift
+    # bug). Wrap them so a code error returns a clean JSON 500 with the real
+    # reason and a persisted last_send_error — not a bare 500 that looks like
+    # an SMTP/config problem.
+    try:
+        company = _company_info(db)
+        pdf_bytes = QuotePDFService(
+            company_name=company["company_name"], company_email=company["company_email"] or "",
+            company_phone=company["company_phone"], brand_color=company["brand_color"],
+            terms=company["quote_terms"],
+        ).generate_quote_pdf(
+            quote_number=quote.quote_number,
+            client_name=client.name,
+            client_email=client.email or "",
+            client_phone=client.phone,
+            line_items=_pdf_line_items(quote),
+            subtotal=quote.subtotal,
+            tax_amount=quote.tax,
+            discount_amount=quote.discount,
+            total_amount=quote.total,
+            notes=quote.notes,
+            expires_at=quote.valid_until,
+            quote_title=quote.title,
+        )
+
+        result = QuoteEmailService().send_quote_email(
+            to_email=recipient_email,
+            client_name=client.name,
+            quote_number=quote.quote_number,
+            total_amount=float(quote.total or 0),
+            expires_at=fmt_long_date(quote.valid_until),
+            quote_link=quote_link,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=f"{quote.quote_number}.pdf",
+            intro_message=(quote.customer_message or "").strip() or None,
+            quote_title=quote.title,
+            items=quote.items or [],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Quote {quote.id} send-email failed before delivery")
+        quote.last_send_attempt_at = datetime.now()
+        quote.last_send_error = str(e) or "send failed"
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Could not send quote: {e}")
+
     quote.last_send_attempt_at = datetime.now()
     if not result["success"]:
         quote.last_send_error = str(result.get("error") or "delivery failed")
