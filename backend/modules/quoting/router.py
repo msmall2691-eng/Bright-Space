@@ -23,7 +23,7 @@ from database.models import (
 )
 from modules.auth.router import get_current_user, require_role
 from utils.integration_log import log_integration_event as _log_integration
-from utils.dates import fmt_long_date
+from utils.dates import coerce_date, fmt_long_date
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -752,7 +752,10 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
         return {"status": "accepted", "quote_number": quote.quote_number}
     if quote.status == "declined":
         raise HTTPException(status_code=409, detail="This quote was declined and can no longer be accepted.")
-    if quote.valid_until and quote.valid_until < date.today():
+    # valid_until can be a str (prod schema drift) — coerce before comparing,
+    # or "date < str" raises TypeError and 500s the customer's accept click.
+    expiry = coerce_date(quote.valid_until)
+    if expiry and expiry < date.today():
         quote.status = "expired"
         db.commit()
         raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")

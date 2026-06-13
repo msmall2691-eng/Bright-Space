@@ -4,13 +4,19 @@ break quote sending because several paths called ``.strftime()`` directly.
 
 Covers the shared tolerant formatter, the PDF service, and the public serializer.
 """
+import secrets
+
 import pytest
+from unittest.mock import patch
 from datetime import date, datetime
+
+from fastapi import HTTPException
 
 from database.db import SessionLocal
 from database.models import Client, Quote
-from modules.quoting.router import _public_quote_dict
+from modules.quoting.router import _public_quote_dict, public_accept_quote
 from services.quote_pdf_service import QuotePDFService
+from sqlalchemy.orm.attributes import set_committed_value
 from utils.dates import coerce_date, fmt_long_date
 
 
@@ -102,3 +108,38 @@ def test_public_quote_dict_with_null_valid_until(quote_ctx):
     q.valid_until = None
     out = _public_quote_dict(q, db)
     assert out["valid_until"] is None
+
+
+# ---- accept path tolerates a string valid_until ----------------------------
+# The accept endpoint compared `quote.valid_until < date.today()`; with a
+# drifted string column that raised "date < str" TypeError -> 500 on the
+# customer's accept click. coerce_date() must make the comparison safe.
+
+def _tokenize(db, q):
+    q.public_token = secrets.token_urlsafe(16)
+    db.commit()
+    db.refresh(q)
+    return q.public_token
+
+
+def test_accept_with_future_string_valid_until(quote_ctx):
+    db, c, q = quote_ctx
+    token = _tokenize(db, q)
+    set_committed_value(q, "valid_until", "2099-12-31")
+    with patch("modules.quoting.router._notify_owner_quote_event"), \
+         patch("modules.quoting.router._send_customer_quote_confirmation"):
+        out = public_accept_quote(token, data=None, db=db)  # must not raise
+    assert out["status"] == "accepted"
+    db.refresh(q)
+    assert q.status == "accepted"
+
+
+def test_accept_with_past_string_valid_until_is_expired_not_500(quote_ctx):
+    db, c, q = quote_ctx
+    token = _tokenize(db, q)
+    set_committed_value(q, "valid_until", "2000-01-01")
+    with pytest.raises(HTTPException) as exc:
+        public_accept_quote(token, data=None, db=db)
+    assert exc.value.status_code == 409  # clean "expired", not a 500 TypeError
+    db.refresh(q)
+    assert q.status == "expired"
