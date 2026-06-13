@@ -24,6 +24,7 @@ from database.models import (
 from modules.auth.router import get_current_user, require_role
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
+from config import app_base_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -353,7 +354,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         raise HTTPException(status_code=400, detail=f"Unknown channel '{body.channel}'")
 
     token = _ensure_public_token(quote)
-    app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+    app_base = app_base_url()
     quote_link = f"{app_base}/quote/{token}"
 
     results: dict = {}
@@ -487,10 +488,10 @@ def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     token = _ensure_public_token(quote)
     quote.updated_at = datetime.now()
     db.commit()
-    app_base = os.getenv("APP_BASE_URL", "").rstrip("/")
+    app_base = app_base_url()
     return {
         "public_token": token,
-        "quote_link": f"{app_base}/quote/{token}" if app_base else None,
+        "quote_link": f"{app_base}/quote/{token}",
     }
 
 
@@ -686,7 +687,7 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
             logger.info("[quotes] no owner email configured; skipping owner notification")
             return
         client_name = quote.client.name if quote.client else "a customer"
-        app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+        app_base = app_base_url()
         body_lines = lines + [
             "",
             f"Quote: {quote.quote_number}",
@@ -946,7 +947,7 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         raise HTTPException(status_code=404, detail="Client not found")
 
     token = _ensure_public_token(quote)
-    app_base = os.getenv("APP_BASE_URL", "https://bright-space.com").rstrip("/")
+    app_base = app_base_url()
     quote_link = f"{app_base}/quote/{token}"
 
     # PDF build + email service construction can raise (e.g. the date-drift

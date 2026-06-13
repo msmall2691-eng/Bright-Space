@@ -556,6 +556,23 @@ def get_jobs(
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_job(data: JobCreate, db: Session = Depends(get_db)):
+    # ── QUOTE LINKAGE (P1-A) ──
+    # When a job is scheduled from an accepted quote, link it back and convert
+    # the quote. Idempotent: a double-submit (or a second click of "Set up
+    # schedule") returns the existing job instead of creating a duplicate, and
+    # preserves the revenue→job traceability that POST /api/jobs used to drop
+    # (quote_id was on JobCreate but never set, leaving jobs with quote_id null
+    # and quotes stuck at "accepted").
+    source_quote = None
+    if data.quote_id:
+        from database.models import Quote
+        source_quote = db.query(Quote).filter(Quote.id == data.quote_id).first()
+        if source_quote and source_quote.status == "converted":
+            existing = (db.query(Job).filter(Job.quote_id == source_quote.id)
+                        .order_by(Job.id.asc()).first())
+            if existing:
+                return job_to_dict(existing)
+
     # ── TIMING VALIDATION ── reject past dates / inverted windows up front.
     _validate_job_timing(data.scheduled_date, data.start_time, data.end_time, is_new=True)
 
@@ -599,10 +616,25 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                        f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
             )
 
-    job = Job(**data.model_dump(exclude={"allow_conflicts"}))
+    payload = data.model_dump(exclude={"allow_conflicts"})
+    # Store real date/time objects (the columns are Date/Time) rather than
+    # relying on the DB to implicitly cast the inbound strings — keeps writes
+    # portable and matches what a post-refresh read returns anyway.
+    payload["scheduled_date"] = _to_date(payload.get("scheduled_date"))
+    payload["start_time"] = _to_time(payload.get("start_time"))
+    payload["end_time"] = _to_time(payload.get("end_time"))
+    job = Job(**payload)
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    # Convert the source quote now that its job exists (mirrors
+    # quoting.convert_quote_to_job so there's one definition of "converted").
+    if source_quote is not None and source_quote.status != "converted":
+        source_quote.status = "converted"
+        source_quote.converted_at = datetime.now()
+        source_quote.updated_at = datetime.now()
+        db.commit()
 
     # Log to unified activity timeline
     log_job_created(db, job)

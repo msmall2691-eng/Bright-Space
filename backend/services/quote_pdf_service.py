@@ -20,9 +20,11 @@ from reportlab.lib.enums import TA_RIGHT, TA_LEFT, TA_CENTER
 class QuotePDFService:
     """Generate professional PDF quotes"""
 
-    def __init__(self, company_name: str = "Bright-Space", company_email: str = "quotes@bright-space.com",
+    def __init__(self, company_name: str = "Bright-Space", company_email: Optional[str] = None,
                  company_phone: Optional[str] = None, brand_color: str = "#1f2937",
                  terms: Optional[str] = None):
+        from config import DEFAULT_FROM_EMAIL
+        company_email = company_email or DEFAULT_FROM_EMAIL
         self.company_name = company_name
         self.company_email = company_email
         self.company_phone = company_phone

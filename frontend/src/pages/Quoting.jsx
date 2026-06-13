@@ -616,6 +616,13 @@ export default function Quoting() {
                         Set up schedule
                       </button>
                     )}
+                    {q.status === 'converted' && (
+                      <span className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-green-50 text-green-500 rounded-lg"
+                        title="This quote has been scheduled">
+                        <Calendar className="w-3 h-3" />
+                        Scheduled ✓
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1188,6 +1195,7 @@ export default function Quoting() {
           initialPropertyId={scheduleQuote.property_id || null}
           initialJobType={quoteJobType(scheduleQuote.service_type)}
           initialTitle={scheduleQuote.title || `${clientName(scheduleQuote.client_id)} — Clean`}
+          initialQuoteId={scheduleQuote.id}
           defaultRecurring
           onClose={() => setScheduleQuote(null)}
           onCreated={finishOnboard}
