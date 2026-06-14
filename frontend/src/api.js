@@ -147,6 +147,34 @@ export async function upload(url, formData) {
 }
 
 /**
+ * Download a file from an authenticated endpoint. Fetches with the JWT, reads
+ * the response as a Blob, and triggers a browser save with the given filename.
+ * Used for endpoints that return binary/attachments (e.g. a job's .ics invite),
+ * where a plain <a href> would omit the Authorization header and 401.
+ */
+export async function download(url, filename) {
+  const res = await fetch(url, { headers: headers() })
+  if (res.status === 401) {
+    clearJWT()
+    window.location.href = '/login'
+    return
+  }
+  if (!res.ok) {
+    const raw = await res.text().catch(() => '')
+    throw new Error(raw ? `HTTP ${res.status}: ${raw.slice(0, 200)}` : `HTTP ${res.status}`)
+  }
+  const blob = await res.blob()
+  const objUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objUrl
+  a.download = filename || 'download'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objUrl)
+}
+
+/**
  * Build a WebSocket URL that includes the API key as a query param.
  */
 export function wsUrl(path) {
