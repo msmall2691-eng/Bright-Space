@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import logging
 
 from database.db import get_db
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import LeadIntake, Client
 from modules.intake.normalize import build_intake, upsert_lead
 from ratelimit import limiter
@@ -125,9 +125,12 @@ def get_intakes(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """List intakes with filtering by status, source, service_type, priority."""
-    q = db.query(LeadIntake)
+    # MT-2: scope to the caller's workspace; tolerate legacy + public-submitted
+    # NULL-org leads (the contact form has no logged-in user).
+    q = db.query(LeadIntake).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)))
     if status:
         q = q.filter(LeadIntake.status == status)
     if source:
@@ -164,8 +167,11 @@ def get_intake_stats(db: Session = Depends(get_db)):
 
 
 @router.patch("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db)):
-    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
     updates = data.model_dump(exclude_none=True)
@@ -183,8 +189,11 @@ def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def delete_intake(intake_id: int, db: Session = Depends(get_db)):
-    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+def delete_intake(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
     db.delete(intake)
@@ -194,11 +203,14 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{intake_id}/convert-to-quote", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
+def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Convert an intake to a quote with sensible defaults."""
     from database.models import Quote
 
-    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
 
@@ -278,6 +290,7 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
         client_id=client_id,
         intake_id=intake_id,
         property_id=prop.id,
+        org_id=intake.org_id or resolve_org_id(org_id, db),  # MT-2: inherit the lead's workspace
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         address=address or None,
