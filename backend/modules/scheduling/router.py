@@ -1156,6 +1156,14 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                            f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
                 )
 
+    # Store real date/time objects (the columns are Date/Time) instead of the
+    # inbound strings — portable across SQLite/Postgres, matches create_job.
+    if "scheduled_date" in updates:
+        updates["scheduled_date"] = _to_date(updates["scheduled_date"])
+    if "start_time" in updates:
+        updates["start_time"] = _to_time(updates["start_time"])
+    if "end_time" in updates:
+        updates["end_time"] = _to_time(updates["end_time"])
     for field, value in updates.items():
         setattr(job, field, value)
     db.commit()

@@ -532,20 +532,19 @@ def decline_quote(quote_id: int, db: Session = Depends(get_db)):
 # Convert accepted quote -> Job
 # ========================
 
-@router.post("/{quote_id}/convert-to-job", dependencies=[Depends(require_role("admin", "manager"))])
-def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
-    """Create a Job from a quote. The date/time is left unset for the user to
-    fill in on the Scheduling page; every Job needs a Property, so we reuse the
-    client's existing property or create one from the quote address."""
-    quote = _get_quote_or_404(quote_id, db)
-
-    # Map the quote's service_type onto the Job/Property vocabularies.
+def _quote_job_vocab(quote: Quote):
+    """Map a quote's service_type onto the Job/Property type vocabularies."""
     svc = (quote.service_type or "residential").lower()
     job_type = "str_turnover" if svc in ("str", "str_turnover") else (
         "commercial" if svc == "commercial" else "residential")
     prop_type = "str" if svc in ("str", "str_turnover") else (
         "commercial" if svc == "commercial" else "residential")
+    return svc, job_type, prop_type
 
+
+def _resolve_property_for_quote(db: Session, quote: Quote, prop_type: str) -> Property:
+    """The client's existing property, or a new one created from the quote
+    address (every Job needs a Property)."""
     prop = (
         db.query(Property)
         .filter(Property.client_id == quote.client_id)
@@ -563,7 +562,27 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
         )
         db.add(prop)
         db.flush()
+    return prop
 
+
+def _existing_job_for_quote(db: Session, quote: Quote) -> Optional[Job]:
+    return (db.query(Job).filter(Job.quote_id == quote.id)
+            .order_by(Job.id.asc()).first())
+
+
+def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
+    """Idempotent quote → (undated) Job conversion. Returns the Job, creating it
+    and flipping the quote to 'converted' only if one doesn't already exist."""
+    existing = _existing_job_for_quote(db, quote)
+    if existing:
+        if quote.status != "converted":
+            quote.status = "converted"
+            quote.converted_at = datetime.now()
+            quote.updated_at = datetime.now()
+            db.commit()
+        return existing
+    svc, job_type, prop_type = _quote_job_vocab(quote)
+    prop = _resolve_property_for_quote(db, quote, prop_type)
     job = Job(
         client_id=quote.client_id,
         quote_id=quote.id,
@@ -576,13 +595,21 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
         notes=quote.notes,
     )
     db.add(job)
-    # Mark the quote converted so it stops showing as "accepted — ready to
-    # schedule" and the Schedule-Job action can't create a second job for it.
     quote.status = "converted"
     quote.converted_at = datetime.now()
     quote.updated_at = datetime.now()
     db.commit()
     db.refresh(job)
+    return job
+
+
+@router.post("/{quote_id}/convert-to-job", dependencies=[Depends(require_role("admin", "manager"))])
+def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
+    """Create a Job from a quote. The date/time is left unset for the user to
+    fill in on the Scheduling page; every Job needs a Property, so we reuse the
+    client's existing property or create one from the quote address."""
+    quote = _get_quote_or_404(quote_id, db)
+    job = _convert_quote_to_job(db, quote)
     return {
         "id": job.id,
         "client_id": job.client_id,
@@ -611,6 +638,41 @@ class PublicChangeRequest(BaseModel):
 class PublicDeclineRequest(BaseModel):
     name: Optional[str] = None
     reason: Optional[str] = None
+
+
+class PublicScheduleRequest(BaseModel):
+    date: str                      # YYYY-MM-DD
+    window: str = "morning"        # 'morning' | 'afternoon'
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+# Customer-facing arrival windows. The owner confirms the exact time; the job
+# carries a concrete start/end so it lands on the calendar.
+SCHEDULE_WINDOWS = {"morning": ("09:00", "12:00"), "afternoon": ("13:00", "16:00")}
+AVAILABILITY_DAYS = 42  # how far ahead a customer can self-schedule
+
+
+def _quote_availability(db: Session) -> list:
+    """Bookable days over the next AVAILABILITY_DAYS. A day is unavailable when
+    every cleaner in the roster is on time-off (so no one could do it); Sundays
+    are closed. Roster is derived from real assignments, so with no cleaners on
+    record every business day is offered."""
+    from modules.scheduling.router import _cleaner_roster, _find_unavailable_cleaners
+    roster = _cleaner_roster(db)
+    today = date.today()
+    out = []
+    for i in range(1, AVAILABILITY_DAYS + 1):
+        d = today + timedelta(days=i)
+        if d.weekday() == 6:       # Sunday: closed
+            continue
+        available = True
+        if roster:
+            off = {cid for cid, _ in _find_unavailable_cleaners(
+                db, cleaner_ids=roster, scheduled_date=d)}
+            available = len(off) < len(roster)
+        out.append({"date": d.isoformat(), "available": available})
+    return out
 
 
 def _quote_by_token(token: str, db: Session) -> Quote:
@@ -769,8 +831,10 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
 def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
     """Client accepts the quote from the public link."""
     quote = _quote_by_token(token, db)
-    if quote.status == "accepted":
-        return {"status": "accepted", "quote_number": quote.quote_number}
+    # Idempotent: a double-tap (or re-open of an already-accepted/converted
+    # link) must not revert status or re-fire conversion/notifications.
+    if quote.status in ("accepted", "converted"):
+        return {"status": quote.status, "quote_number": quote.quote_number}
     if quote.status == "declined":
         raise HTTPException(status_code=409, detail="This quote was declined and can no longer be accepted.")
     # valid_until can be a str (prod schema drift) — coerce before comparing,
@@ -800,7 +864,15 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
         quote.accepted_by_email or (quote.client.email if quote.client else None),
     )
     db.commit()
-    return {"status": "accepted", "quote_number": quote.quote_number}
+    # Auto-convert on accept when the quote already has a property — the job is
+    # ready to schedule. Quotes without a property stay "accepted" (a needs-
+    # scheduling state). Best-effort: a conversion hiccup must not fail accept.
+    if quote.property_id:
+        try:
+            _convert_quote_to_job(db, quote)
+        except Exception as e:
+            logger.warning(f"[quotes] auto-convert on accept failed for {quote.id}: {e}")
+    return {"status": quote.status, "quote_number": quote.quote_number}
 
 
 @router.post("/public/{token}/request-changes")
@@ -882,6 +954,99 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         BytesIO(pdf_bytes), media_type="application/pdf",
         headers={"Content-Disposition": f'{disp}; filename="{quote.quote_number}.pdf"'},
     )
+
+
+@router.get("/public/{token}/availability")
+def public_quote_availability(token: str, db: Session = Depends(get_db)):
+    """Bookable days + arrival windows for customer self-scheduling on accept."""
+    _quote_by_token(token, db)  # 404s on a bad token
+    return {
+        "windows": [
+            {"key": "morning", "label": "Morning (9am–12pm)"},
+            {"key": "afternoon", "label": "Afternoon (1pm–4pm)"},
+        ],
+        "dates": _quote_availability(db),
+    }
+
+
+@router.post("/public/{token}/schedule")
+def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session = Depends(get_db)):
+    """Accept + self-schedule in one step: the customer picks a date and an
+    arrival window; we accept the quote, convert it to a Job on that date (left
+    unassigned for the owner), and push it to Google Calendar. Idempotent — if a
+    job already exists for the quote (e.g. auto-converted on accept) it's re-dated
+    rather than duplicated."""
+    quote = _quote_by_token(token, db)
+    if quote.status == "declined":
+        raise HTTPException(status_code=409, detail="This quote was declined and can no longer be scheduled.")
+    expiry = coerce_date(quote.valid_until)
+    if expiry and expiry < date.today():
+        quote.status = "expired"
+        db.commit()
+        raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
+
+    d = coerce_date(data.date)
+    if not d or d < date.today():
+        raise HTTPException(status_code=400, detail="Please choose a valid future date.")
+    window = (data.window or "morning").lower()
+    if window not in SCHEDULE_WINDOWS:
+        raise HTTPException(status_code=400, detail="Please choose a morning or afternoon window.")
+    # Re-check availability server-side so a stale page can't book a closed day.
+    if not any(a["date"] == d.isoformat() and a["available"] for a in _quote_availability(db)):
+        raise HTTPException(status_code=409, detail="That date is no longer available. Please pick another.")
+    start, end = SCHEDULE_WINDOWS[window]
+
+    # Accept the quote (capture who) if it isn't already.
+    newly_accepted = quote.status in ("draft", "sent", "viewed")
+    if newly_accepted:
+        quote.status = "accepted"
+        quote.accepted_at = datetime.now()
+    if data.name:
+        quote.accepted_by_name = data.name or quote.accepted_by_name
+    if data.email:
+        quote.accepted_by_email = data.email or quote.accepted_by_email
+    quote.updated_at = datetime.now()
+    db.commit()
+
+    from modules.scheduling.router import (
+        create_job, JobCreate, update_job, JobUpdate,
+    )
+    existing = _existing_job_for_quote(db, quote)
+    if existing:
+        # Re-date the already-created job (keeps one job per quote) + sync Visit/GCal.
+        update_job(existing.id, JobUpdate(
+            scheduled_date=d.isoformat(), start_time=start, end_time=end), db=db)
+        job_id = existing.id
+    else:
+        svc, job_type, prop_type = _quote_job_vocab(quote)
+        prop = _resolve_property_for_quote(db, quote, prop_type)
+        created = create_job(JobCreate(
+            client_id=quote.client_id, title=quote.title or f"{svc.title()} clean",
+            job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
+            address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
+            cleaner_ids=[], notes=quote.notes,
+        ), db=db)
+        job_id = created["id"]
+
+    nice_date = d.strftime("%B %d, %Y")
+    win_label = "morning" if window == "morning" else "afternoon"
+    who = quote.accepted_by_name or (quote.client.name if quote.client else "The customer")
+    _notify_staff_quote_event(
+        db, quote, f"Client self-scheduled quote {quote.quote_number} for {nice_date} ({win_label})",
+        "quote_accepted")
+    _notify_owner_quote_event(
+        db, quote, f"📅 Quote {quote.quote_number} accepted & scheduled",
+        [f"{who} accepted quote {quote.quote_number} and booked {nice_date} ({win_label}).",
+         "A job was created (unassigned) and pushed to the calendar — assign a cleaner when ready."],
+    )
+    if newly_accepted:
+        _send_customer_quote_confirmation(
+            db, quote, quote.accepted_by_email or (quote.client.email if quote.client else None))
+
+    return {
+        "scheduled": True, "quote_number": quote.quote_number, "job_id": job_id,
+        "date": d.isoformat(), "date_label": nice_date, "window": window,
+    }
 
 
 # ========================

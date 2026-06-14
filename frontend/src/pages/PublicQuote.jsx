@@ -20,6 +20,14 @@ export default function PublicQuote() {
   const [declineReason, setDeclineReason] = useState("")
   const [declining, setDeclining] = useState(false)
   const [declined, setDeclined] = useState(false)
+  // Self-scheduling on accept
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [availability, setAvailability] = useState(null)   // { windows, dates }
+  const [loadingAvail, setLoadingAvail] = useState(false)
+  const [schedDate, setSchedDate] = useState("")
+  const [schedWindow, setSchedWindow] = useState("morning")
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduled, setScheduled] = useState(null)         // { date_label, window }
 
   useEffect(() => {
     const loadQuote = async () => {
@@ -65,6 +73,50 @@ export default function PublicQuote() {
       setError('Connection error. Please try again.')
     } finally {
       setAccepting(false)
+    }
+  }
+
+  const openScheduler = async () => {
+    setShowSchedule(true)
+    if (availability) return
+    setLoadingAvail(true)
+    try {
+      const res = await window.fetch(`/api/quotes/public/${token}/availability`)
+      if (!res.ok) { setError('Could not load available dates. Please try again.'); return }
+      const data = await res.json()
+      setAvailability(data)
+      const firstOpen = (data.dates || []).find(d => d.available)
+      if (firstOpen) setSchedDate(firstOpen.date)
+    } catch (e) {
+      setError('Connection error. Please try again.')
+    } finally {
+      setLoadingAvail(false)
+    }
+  }
+
+  const handleSchedule = async () => {
+    if (!schedDate) return
+    setScheduling(true)
+    try {
+      const res = await window.fetch(`/api/quotes/public/${token}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: schedDate, window: schedWindow,
+          name: acceptName.trim() || null, email: acceptEmail.trim() || null,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.detail || 'Could not book that time. Please pick another date.')
+        return
+      }
+      setScheduled({ date_label: data.date_label, window: data.window })
+      setShowSchedule(false)
+    } catch (e) {
+      setError('Connection error. Please try again.')
+    } finally {
+      setScheduling(false)
     }
   }
 
@@ -141,7 +193,7 @@ export default function PublicQuote() {
   // Effective state combines this session's actions with the stored status, so
   // re-opening an already-accepted/declined link shows the right banner — and
   // the document stays visible (and downloadable) in every state.
-  const isAccepted = accepted || ['accepted', 'converted'].includes(quote.status)
+  const isAccepted = accepted || !!scheduled || ['accepted', 'converted'].includes(quote.status)
   const isDeclined = declined || quote.status === 'declined'
   const isExpired = !isAccepted && !isDeclined && (quote.status === 'expired' || quote.is_expired)
   const isClosed = isAccepted || isDeclined || isExpired
@@ -161,7 +213,14 @@ export default function PublicQuote() {
     </>
   )
 
-  const banner = isAccepted ? (
+  const banner = scheduled ? (
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+      <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+      <p className="text-sm text-emerald-800 font-medium">
+        Booked ✓ for {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly.
+      </p>
+    </div>
+  ) : isAccepted ? (
     <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
       <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
       <p className="text-sm text-emerald-800 font-medium">
@@ -199,7 +258,9 @@ export default function PublicQuote() {
     </div>
   ) : null
 
-  // Action block (Accept / Request / Decline) — only when the quote is still open.
+  const openDates = (availability?.dates || []).filter(d => d.available)
+
+  // Action block (Accept / Schedule / Request / Decline) — only while open.
   const actions = isClosed ? null : (
     <div className="space-y-3 pt-2">
       {/* Light e-signature: who is accepting (optional, but makes it binding). */}
@@ -207,7 +268,7 @@ export default function PublicQuote() {
         <input
           value={acceptName}
           onChange={(e) => setAcceptName(e.target.value)}
-          placeholder="Your name (to accept)"
+          placeholder="Your name"
           className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
         />
         <input
@@ -218,28 +279,83 @@ export default function PublicQuote() {
           className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
         />
       </div>
-      <button
-        onClick={handleAccept}
-        disabled={accepting}
-        className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
-      >
-        {accepting ? 'Accepting...' : 'Accept Quote'}
-      </button>
-      <button
-        onClick={() => setShowRequest(true)}
-        className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors"
-      >
-        Request changes
-      </button>
-      <button
-        onClick={() => setShowDecline(true)}
-        className="w-full text-ink-3 hover:text-red-600 font-medium py-2 text-sm transition-colors"
-      >
-        Decline quote
-      </button>
-      <p className="text-xs text-ink-3 text-center">
-        By accepting, you agree to the terms above. We'll contact you to schedule the service.
-      </p>
+
+      {showSchedule ? (
+        <div className="space-y-3 rounded-xl border border-hairline bg-bg p-4">
+          <p className="text-sm font-semibold text-ink">Pick a date &amp; arrival window</p>
+          {loadingAvail ? (
+            <p className="text-sm text-ink-3">Loading available dates…</p>
+          ) : openDates.length === 0 ? (
+            <p className="text-sm text-ink-3">No open dates right now — accept and we'll reach out to schedule.</p>
+          ) : (
+            <>
+              <select
+                value={schedDate}
+                onChange={(e) => setSchedDate(e.target.value)}
+                className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-emerald-500"
+              >
+                {openDates.map(d => (
+                  <option key={d.date} value={d.date}>
+                    {new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}
+                  </option>
+                ))}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                {(availability?.windows || []).map(w => (
+                  <button
+                    key={w.key}
+                    onClick={() => setSchedWindow(w.key)}
+                    className={`py-3 rounded-xl text-sm font-medium border transition-colors ${schedWindow === w.key ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleSchedule}
+                disabled={scheduling || !schedDate}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+              >
+                {scheduling ? 'Booking…' : 'Accept & book this time'}
+              </button>
+            </>
+          )}
+          <button onClick={() => setShowSchedule(false)} className="w-full text-ink-3 hover:text-ink-2 font-medium py-1 text-sm">
+            Back
+          </button>
+        </div>
+      ) : (
+        <>
+          <button
+            onClick={openScheduler}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors shadow-sm"
+          >
+            Accept &amp; schedule
+          </button>
+          <button
+            onClick={handleAccept}
+            disabled={accepting}
+            className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed"
+          >
+            {accepting ? 'Accepting...' : "Accept — we'll reach out to schedule"}
+          </button>
+          <button
+            onClick={() => setShowRequest(true)}
+            className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors"
+          >
+            Request changes
+          </button>
+          <button
+            onClick={() => setShowDecline(true)}
+            className="w-full text-ink-3 hover:text-red-600 font-medium py-2 text-sm transition-colors"
+          >
+            Decline quote
+          </button>
+          <p className="text-xs text-ink-3 text-center">
+            By accepting, you agree to the terms above.
+          </p>
+        </>
+      )}
     </div>
   )
 
