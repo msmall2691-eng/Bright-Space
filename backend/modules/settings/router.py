@@ -295,6 +295,33 @@ def gcal_status():
     return connection_status()
 
 
+@router.get("/gmail-status")
+def gmail_status(db: Session = Depends(get_db)):
+    """Per-account Gmail connection health so Settings can surface
+    connected / token-expired / reconnect — the Gmail mirror of gcal-status.
+
+    Without this, a Gmail grant could silently expire and inbound email would
+    just stop syncing with no signal to the operator."""
+    from database.models import UserGoogleAccount
+    accounts, any_ok = [], False
+    for a in db.query(UserGoogleAccount).all():
+        scopes = a.scopes or []
+        if not (a.gmail_sync_enabled or any("gmail" in (s or "") for s in scopes)):
+            continue
+        needs_reconnect = a.status != "connected" or not a.refresh_token
+        any_ok = any_ok or not needs_reconnect
+        accounts.append({
+            "email": a.email,
+            "status": a.status,
+            "gmail_sync_enabled": a.gmail_sync_enabled,
+            "token_expiry": a.token_expiry.isoformat() if a.token_expiry else None,
+            "last_sync_at": a.last_sync_at.isoformat() if a.last_sync_at else None,
+            "last_sync_error": a.last_sync_error,
+            "needs_reconnect": needs_reconnect,
+        })
+    return {"connected": any_ok, "accounts": accounts}
+
+
 # ── Self-serve Google OAuth ── connect an admin's work Google account in-app.
 @router.get("/google/connect", dependencies=[Depends(require_role("admin"))])
 def google_connect(request: Request, db: Session = Depends(get_db)):
