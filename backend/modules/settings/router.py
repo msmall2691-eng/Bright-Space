@@ -295,6 +295,16 @@ def gcal_status():
     return connection_status()
 
 
+@router.post("/gcal-watch/register", dependencies=[Depends(require_role("admin"))])
+def gcal_watch_register(db: Session = Depends(get_db)):
+    """Register (or refresh) Google Calendar push channels for the configured
+    business calendars, so external edits notify BrightBase in real time. Needs a
+    public https APP_BASE_URL."""
+    from integrations.gcal_watch import register_watches
+    from config import app_base_url
+    return register_watches(db, app_base_url())
+
+
 @router.get("/gmail-status")
 def gmail_status(db: Session = Depends(get_db)):
     """Per-account Gmail connection health so Settings can surface
