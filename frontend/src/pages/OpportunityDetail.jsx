@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, FileText, Receipt, Calendar, Send, TrendingUp,
+  ArrowLeft, Building2, FileText, Receipt, Calendar, Send, TrendingUp, Plus,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import ActivityTimeline from '../components/ActivityTimeline'
@@ -59,6 +60,7 @@ export default function OpportunityDetail() {
   const [note, setNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
   const [timelineKey, setTimelineKey] = useState(0)
+  const [creating, setCreating] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -89,6 +91,23 @@ export default function OpportunityDetail() {
       toast.success('Note added')
     } catch (e) { toast.error('Could not add note') }
     finally { setSavingNote(false) }
+  }
+
+  // Spin up a linked record from this deal, then jump straight to it.
+  const createLinked = async (kind) => {
+    setCreating(true)
+    try {
+      if (kind === 'quote') {
+        const q = await post('/api/quotes', { client_id: opp.client_id, opportunity_id: opp.id, items: [] })
+        navigate(`/quotes/${q.id}`)
+      } else {
+        const inv = await post('/api/invoices', {
+          client_id: opp.client_id, opportunity_id: opp.id,
+          items: [{ name: opp.title || 'Service', unit_price: 0 }],
+        })
+        navigate(`/invoices/${inv.id}`)
+      }
+    } catch { toast.error(`Could not create ${kind}`); setCreating(false) }
   }
 
   if (loading) return <RecordSkeleton />
@@ -149,6 +168,19 @@ export default function OpportunityDetail() {
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
+
+            {canEdit() && opp.client_id && (
+              <div className="border-t border-hairline pt-3 space-y-2">
+                <button onClick={() => createLinked('quote')} disabled={creating}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> New quote
+                </button>
+                <button onClick={() => createLinked('invoice')} disabled={creating}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> New invoice
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Center: notes + activity timeline ─────────────────── */}

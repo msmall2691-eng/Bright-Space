@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt,
+  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, CheckCircle, Send,
 } from 'lucide-react'
-import { get, patch } from '../api'
+import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
@@ -41,6 +42,7 @@ export default function InvoiceDetail() {
   const [inv, setInv] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [acting, setActing] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -58,6 +60,31 @@ export default function InvoiceDetail() {
       .catch(() => { toast.error('Could not save change'); load() })
 
   const setStatus = (status) => { setInv(v => ({ ...v, status })); saveField({ status }) }
+
+  const markPaid = async () => {
+    setActing(true)
+    try {
+      await post(`/api/invoices/${id}/pay`, {})
+      setInv(v => ({ ...v, status: 'paid', paid_at: new Date().toISOString() }))
+      toast.success('Invoice marked paid')
+    } catch { toast.error('Could not mark paid') } finally { setActing(false) }
+  }
+
+  // Sends to the client's email on file; surface a failed delivery rather than
+  // a false "sent".
+  const sendInvoice = async () => {
+    setActing(true)
+    try {
+      const r = await post(`/api/invoices/${id}/send`, { channel: 'email' })
+      const emailRes = r?.results?.email
+      if (emailRes && emailRes !== 'sent') {
+        toast.error(`Send failed: ${emailRes}`)
+      } else {
+        toast.success('Invoice sent')
+        setInv(v => ({ ...v, status: v.status === 'draft' ? 'sent' : v.status }))
+      }
+    } catch { toast.error('Could not send invoice') } finally { setActing(false) }
+  }
 
   if (loading) return <RecordSkeleton />
   if (notFound || !inv) {
@@ -113,6 +140,19 @@ export default function InvoiceDetail() {
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
+
+            {canEdit() && inv.status !== 'paid' && (
+              <div className="border-t border-hairline pt-3 space-y-2">
+                <button onClick={sendInvoice} disabled={acting}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Send className="w-3.5 h-3.5" /> Send invoice
+                </button>
+                <button onClick={markPaid} disabled={acting}
+                  className="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <CheckCircle className="w-3.5 h-3.5" /> Mark paid
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Center: line items + notes ────────────────────────── */}

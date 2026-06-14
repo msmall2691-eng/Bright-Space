@@ -3,8 +3,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText,
 } from 'lucide-react'
-import { get, patch } from '../api'
+import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
@@ -51,6 +52,7 @@ export default function QuoteDetail() {
   const [quote, setQuote] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [converting, setConverting] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -68,6 +70,15 @@ export default function QuoteDetail() {
       .catch(() => { toast.error('Could not save change'); load() })
 
   const setStatus = (status) => { setQuote(q => ({ ...q, status })); saveField({ status }) }
+
+  // Idempotent on the backend — returns the existing job if already converted.
+  const convertToJob = async () => {
+    setConverting(true)
+    try {
+      const job = await post(`/api/quotes/${id}/convert-to-job`, {})
+      navigate(`/jobs/${job.id}`)
+    } catch { toast.error('Could not convert to job'); setConverting(false) }
+  }
 
   if (loading) return <RecordSkeleton />
   if (notFound || !quote) {
@@ -125,6 +136,15 @@ export default function QuoteDetail() {
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
+
+            {canEdit() && !quote.job && quote.status !== 'converted' && (
+              <div className="border-t border-hairline pt-3">
+                <button onClick={convertToJob} disabled={converting}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Calendar className="w-3.5 h-3.5" /> {converting ? 'Converting…' : 'Convert to job'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Center: line items + notes ────────────────────────── */}
