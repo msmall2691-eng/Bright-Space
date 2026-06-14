@@ -557,7 +557,10 @@ def register(
     # everyone else (MT-4) founds their own workspace as its admin.
     if is_admin_caller:
         role, status = "client", "active"
-        org_id = _default_org_id(db)
+        # Join the CREATING admin's workspace, not always the primary one — so an
+        # admin of any org adds users to their own tenant. (The synthetic
+        # master-API-key admin has no org_id and falls back to the primary org.)
+        org_id = getattr(current_user, "org_id", None) or _default_org_id(db)
     elif allowlisted:
         default_org = _default_org_id(db)
         role = "admin" if not _active_admin_exists(db, default_org) else "member"
