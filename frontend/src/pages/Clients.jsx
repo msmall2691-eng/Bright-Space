@@ -6,6 +6,7 @@ import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 import { del, get, post, patch, upload } from "../api"
+import InlineSelect from "../components/InlineSelect"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 
@@ -14,6 +15,13 @@ const STATUS_COLORS = {
   active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
   inactive: 'bg-bg-2 text-ink-3 border-hairline',
 }
+
+// Options for the inline-editable status chip in the table (Twenty-style).
+const STATUS_OPTIONS = [
+  { value: 'lead',     label: 'lead',     chipClass: STATUS_COLORS.lead,     dot: 'bg-amber-500' },
+  { value: 'active',   label: 'active',   chipClass: STATUS_COLORS.active,   dot: 'bg-emerald-500' },
+  { value: 'inactive', label: 'inactive', chipClass: STATUS_COLORS.inactive, dot: 'bg-ink-3' },
+]
 
 const AVATAR_COLORS = [
   'bg-blue-600/20 text-blue-400',
@@ -65,6 +73,19 @@ export default function Clients() {
 
   const load = () =>
     get(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`).then(setClients).catch(err => console.error("[Clients]", err))
+
+  // Inline-edit: change a client's status straight from the table (optimistic;
+  // reverts on failure). Mirrors Twenty's click-a-cell-to-edit pattern.
+  async function updateStatus(c, status) {
+    const prev = c.status
+    setClients(cs => cs.map(x => (x.id === c.id ? { ...x, status } : x)))
+    try {
+      await patch(`/api/clients/${c.id}`, { status })
+    } catch (err) {
+      console.error("[Clients] status update failed", err)
+      setClients(cs => cs.map(x => (x.id === c.id ? { ...x, status: prev } : x)))
+    }
+  }
 
   useEffect(() => { load() }, [statusFilter])
   useEffect(() => { clearSelection() }, [statusFilter, search])
@@ -444,7 +465,7 @@ export default function Clients() {
                     <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.source || '—'}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
+                        <InlineSelect value={c.status} options={STATUS_OPTIONS} onSelect={(s) => updateStatus(c, s)} />
                         <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
                           title={`Schedule a job for ${displayContactName(c)}`}
                           aria-label={`Schedule ${c.name}`}
