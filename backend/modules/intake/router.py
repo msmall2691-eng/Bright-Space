@@ -314,6 +314,17 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
     _assign_quote_number(quote)
     intake.status = "quoted"
     intake.converted_quote_id = quote.id
+    # Pipeline: advance the lead's deal to "quoted" and link the quote.
+    from utils.opportunity_helper import ensure_opportunity, advance_opportunity
+    opp = ensure_opportunity(
+        db, client_id=client_id, org_id=intake.org_id,
+        title=quote.title or (intake.service_type or "Quote"),
+        amount=quote.total, service_type=intake.service_type,
+    )
+    if opp:
+        quote.opportunity_id = opp.id
+        intake.opportunity_id = opp.id
+        advance_opportunity(db, opp, "quoted", amount=quote.total)
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)

@@ -19,6 +19,17 @@ const money = (n) => (n || n === 0)
   ? `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
   : '—'
 
+// Compact relative age for a deal card, e.g. "3d", "5w", "today".
+const age = (iso) => {
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000)
+  if (days <= 0) return 'today'
+  if (days < 7) return `${days}d`
+  if (days < 60) return `${Math.floor(days / 7)}w`
+  return `${Math.floor(days / 30)}mo`
+}
+
 export default function Pipeline() {
   const [opps, setOpps] = useState([])
   const [loading, setLoading] = useState(true)
@@ -165,7 +176,17 @@ export default function Pipeline() {
                               {o.client_name}
                             </Link>
                           )}
-                          <div className="text-[11px] font-semibold text-ink-2 mt-1">{money(o.amount)}</div>
+                          <div className="flex items-center justify-between gap-2 mt-1">
+                            <span className="text-[11px] font-semibold text-ink-2">{money(o.amount)}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {o.service_type && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-2 text-ink-3 border border-hairline capitalize">
+                                  {String(o.service_type).replace(/_/g, ' ')}
+                                </span>
+                              )}
+                              {o.created_at && <span className="text-[10px] text-ink-3">{age(o.created_at)}</span>}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
