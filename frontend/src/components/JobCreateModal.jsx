@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon } from 'lucide-react'
+import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check } from 'lucide-react'
 import { get, post } from '../api'
 import AddressAutocomplete from './AddressAutocomplete'
 
@@ -82,21 +82,36 @@ export default function JobCreateModal({
   // client here. When clientId is passed in (from a client profile) it's fixed.
   const standalone = !clientId
   const [activeClientId, setActiveClientId] = useState(clientId ? String(clientId) : '')
-  const [clients, setClients] = useState([])
+  const [selectedClient, setSelectedClient] = useState(null)
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
+  // Searchable typeahead state (replaces the old preload-everything dropdown,
+  // which silently 422'd on limit=1000 and rendered empty).
+  const [clientQuery, setClientQuery] = useState('')
+  const [clientResults, setClientResults] = useState([])
+  const [clientLoading, setClientLoading] = useState(false)
+  const [clientLoadErr, setClientLoadErr] = useState('')
+  const [clientRetry, setClientRetry] = useState(0)
 
-  // In standalone mode, load the client list for the picker. Raise the limit
-  // well above the API's default 50 so orgs with many clients can still pick an
-  // existing one (rather than being pushed into creating a duplicate).
+  // In standalone mode, search the client list as the user types. Empty query
+  // loads the most recent 20 so the list is never blank on open. Debounced;
+  // surfaces explicit loading / empty / error states (never a silent empty).
   useEffect(() => {
-    if (!standalone) return
-    get('/api/clients?status=active&limit=1000')
-      .then(d => setClients(Array.isArray(d) ? d : []))
-      .catch(() => setClients([]))
-  }, [standalone])
+    if (!standalone || selectedClient || addingClient) return
+    const q = clientQuery.trim()
+    const t = setTimeout(() => {
+      setClientLoading(true); setClientLoadErr('')
+      const params = new URLSearchParams({ status: 'active', limit: '20' })
+      if (q) params.append('search', q)
+      get(`/api/clients?${params.toString()}`)
+        .then(d => setClientResults(Array.isArray(d) ? d : []))
+        .catch(e => { setClientLoadErr(e?.message || 'Could not load clients'); setClientResults([]) })
+        .finally(() => setClientLoading(false))
+    }, q ? 250 : 0)
+    return () => clearTimeout(t)
+  }, [standalone, selectedClient, addingClient, clientQuery, clientRetry])
 
   // Load the active client's properties whenever it changes.
   useEffect(() => {
@@ -118,22 +133,30 @@ export default function JobCreateModal({
       .finally(() => setLoadingProps(false))
   }, [activeClientId])
 
-  const selectClient = (idStr) => {
-    setActiveClientId(idStr)
+  const chooseClient = (c) => {
+    if (!c) return
+    setActiveClientId(String(c.id))
+    setSelectedClient(c)
     // Reset everything tied to the *previous* client's property — otherwise a
     // stale property_id/address/job_type could save a job for the new client
     // pointing at the old client's property (the endpoints don't cross-check).
     setProperties([])
     setAddingProp(false)
-    const c = clients.find(c => String(c.id) === String(idStr))
     setForm(f => ({
       ...f,
       property_id: '',
       job_type: 'residential',
-      address: c ? [c.address, c.city, c.state].filter(Boolean).join(', ') : '',
+      address: [c.address, c.city, c.state].filter(Boolean).join(', '),
       // Keep a user-typed title; otherwise default to the client's name.
-      title: (!f.title || /—\s*Clean$/.test(f.title)) && c ? `${c.name} — Clean` : f.title,
+      title: (!f.title || /—\s*Clean$/.test(f.title)) ? `${c.name} — Clean` : f.title,
     }))
+  }
+
+  const clearClient = () => {
+    setActiveClientId('')
+    setSelectedClient(null)
+    setClientQuery('')
+    setProperties([])
   }
 
   const createInlineClient = async () => {
@@ -146,8 +169,7 @@ export default function JobCreateModal({
         email: newClient.email.trim() || null,
         status: 'active',
       })
-      setClients(cs => [created, ...cs])
-      selectClient(String(created.id))
+      chooseClient(created)
       setAddingClient(false)
       setNewClient({ name: '', phone: '', email: '' })
     } catch (e) {
@@ -321,11 +343,60 @@ export default function JobCreateModal({
                 </button>
               </div>
               {!addingClient ? (
-                <select value={activeClientId} onChange={e => selectClient(e.target.value)}
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
-                  <option value="">Select a client…</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                selectedClient ? (
+                  // A client is chosen — show it as a chip with a "Change" affordance.
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+                    <span className="flex items-center gap-2 min-w-0 text-sm text-ink">
+                      <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="truncate font-medium">{selectedClient.name}</span>
+                      {selectedClient.email && <span className="truncate text-xs text-ink-3">· {selectedClient.email}</span>}
+                    </span>
+                    <button type="button" onClick={clearClient}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium shrink-0">Change</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3 pointer-events-none" />
+                      <input
+                        autoFocus
+                        value={clientQuery}
+                        onChange={e => setClientQuery(e.target.value)}
+                        placeholder="Search clients by name, email, or phone…"
+                        data-testid="job-create-client-search"
+                        className="w-full bg-panel border border-hairline rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                      />
+                    </div>
+                    <div className="mt-1 max-h-52 overflow-y-auto rounded-lg border border-hairline divide-y divide-hairline scrollbar-thin">
+                      {clientLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-4 text-xs text-ink-3">
+                          <Loader className="w-4 h-4 animate-spin" /> Searching…
+                        </div>
+                      ) : clientLoadErr ? (
+                        <div className="flex items-center justify-between gap-2 px-3 py-3 text-xs">
+                          <span className="text-red-600 truncate">{clientLoadErr}</span>
+                          <button type="button" onClick={() => setClientRetry(n => n + 1)}
+                            className="text-blue-600 hover:text-blue-700 font-medium shrink-0">Retry</button>
+                        </div>
+                      ) : clientResults.length === 0 ? (
+                        <div className="px-3 py-4 text-xs text-ink-3 text-center">
+                          {clientQuery.trim() ? 'No matching clients' : 'No active clients yet'}
+                          <span className="block mt-0.5">Use “+ New client” to add one.</span>
+                        </div>
+                      ) : (
+                        clientResults.map(c => (
+                          <button key={c.id} type="button" onClick={() => chooseClient(c)}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-bg transition-colors">
+                            <div className="font-medium text-ink truncate">{c.name}</div>
+                            {(c.email || c.phone) && (
+                              <div className="text-[11px] text-ink-3 truncate">{[c.email, c.phone].filter(Boolean).join(' · ')}</div>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
                   <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
