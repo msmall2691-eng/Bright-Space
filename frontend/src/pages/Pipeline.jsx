@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, RefreshCw, GripVertical } from 'lucide-react'
+import { LayoutGrid, RefreshCw, GripVertical, Search } from 'lucide-react'
 import { get, patch } from '../api'
+import SavedViewsBar from '../components/SavedViewsBar'
 
 // Canonical opportunity pipeline (matches backend Opportunity.stage + the chips
 // already used on the client profile / OpportunityLinker).
@@ -25,6 +26,12 @@ export default function Pipeline() {
   const [dragId, setDragId] = useState(null)
   const [overStage, setOverStage] = useState(null)
   const [savingId, setSavingId] = useState(null)
+  const [search, setSearch] = useState('')
+  const [owner, setOwner] = useState('')
+
+  // Snapshot persisted by saved views, and the reverse — apply a view's config.
+  const viewConfig = { search, owner }
+  const applyView = (cfg) => { setSearch(cfg.search ?? ''); setOwner(cfg.owner ?? '') }
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -62,7 +69,14 @@ export default function Pipeline() {
     }
   }
 
-  const byStage = (s) => opps.filter(o => (o.stage || 'new') === s)
+  const owners = [...new Set(opps.map(o => o.owner).filter(Boolean))].sort()
+  const matches = (o) => {
+    const q = search.trim().toLowerCase()
+    const okSearch = !q || (o.title || '').toLowerCase().includes(q) || (o.client_name || '').toLowerCase().includes(q)
+    return okSearch && (!owner || (o.owner || '') === owner)
+  }
+  const visible = opps.filter(matches)
+  const byStage = (s) => visible.filter(o => (o.stage || 'new') === s)
   const total = (rows) => rows.reduce((sum, o) => sum + (o.amount || 0), 0)
 
   return (
@@ -71,12 +85,29 @@ export default function Pipeline() {
         <div className="flex items-center gap-2 min-w-0">
           <LayoutGrid className="w-5 h-5 text-blue-500 shrink-0" />
           <h1 className="text-lg sm:text-xl font-bold text-ink tracking-tight">Pipeline</h1>
-          <span className="text-xs text-ink-3 ml-1">{opps.length} {opps.length === 1 ? 'deal' : 'deals'}</span>
+          <span className="text-xs text-ink-3 ml-1">
+            {visible.length}{visible.length !== opps.length ? ` / ${opps.length}` : ''} {opps.length === 1 ? 'deal' : 'deals'}
+          </span>
         </div>
-        <button onClick={load}
-          className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals…"
+              className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 w-40 sm:w-52" />
+          </div>
+          {owners.length > 0 && (
+            <select value={owner} onChange={e => setOwner(e.target.value)}
+              className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-none focus:border-blue-400">
+              <option value="">All owners</option>
+              {owners.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          )}
+          <SavedViewsBar entityType="opportunity" currentConfig={viewConfig} onApply={applyView} defaultLabel="All deals" />
+          <button onClick={load}
+            className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {error && (

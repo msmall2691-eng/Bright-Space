@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle, Search } from 'lucide-react'
+import SavedViewsBar from '../components/SavedViewsBar'
 import AgentWidget from '../components/AgentWidget'
 import { EmptyState } from '../components/ui'
 import { CustomFieldsForm } from '../components/CustomFields'
@@ -137,6 +138,14 @@ export default function Properties() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const currentType = searchParams.get('type') || 'all'
+  const [search, setSearch] = useState('')
+
+  // Saved-views snapshot/restore (property type lives in the URL).
+  const viewConfig = { propertyType: currentType, search }
+  const applyView = (cfg) => {
+    setSearchParams({ type: (cfg.propertyType && cfg.propertyType !== 'all') ? cfg.propertyType : '' })
+    setSearch(cfg.search ?? '')
+  }
 
   const [properties, setProperties] = useState([])
   const [clients, setClients] = useState([])
@@ -245,9 +254,14 @@ export default function Properties() {
 
   const propType = (p) => (p?.property_type || '').toLowerCase()
 
-  const filteredProperties = currentType === 'all'
+  const filteredProperties = (currentType === 'all'
     ? properties
     : properties.filter(p => propType(p) === currentType)
+  ).filter(p => {
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return [p.name, p.address, p.client_name].some(v => (v || '').toLowerCase().includes(q))
+  })
 
   const typeCounts = {
     all: properties.length,
@@ -408,6 +422,12 @@ export default function Properties() {
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-bold text-ink tracking-tight">{pageTitle}</h2>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
+                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 w-40 sm:w-52" />
+            </div>
+            <SavedViewsBar entityType="property" currentConfig={viewConfig} onApply={applyView} defaultLabel="All properties" />
             {properties.length > 0 && (
               <button onClick={runSweep} disabled={sweeping}
                 title="Re-sync every feed and report which turnovers are missing or not on Google"
