@@ -186,6 +186,17 @@ def current_org_id(current_user: User = Depends(get_current_user),
     return getattr(current_user, "org_id", None) or _default_org_id(db)
 
 
+def resolve_org_id(org_id, db: Session) -> int:
+    """Coerce a current_org_id value to a real org id.
+
+    Endpoint functions that are also called in-process (e.g. quoting → create_job)
+    don't go through FastAPI, so their `org_id = Depends(current_org_id)` default
+    arrives as the unresolved Depends sentinel, not an int. Fall back to the
+    default workspace in that case so a direct call can't write/filter on a
+    Depends object."""
+    return org_id if isinstance(org_id, int) else _default_org_id(db)
+
+
 def require_role(*allowed_roles):
     """
     Factory to create a dependency that requires specific roles.
