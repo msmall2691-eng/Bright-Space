@@ -124,7 +124,8 @@ describe('PublicQuote page renders the shared document with actions', () => {
       </MemoryRouter>
     )
     await waitFor(() => expect(screen.getByText('Bi-weekly residential cleaning — Falmouth, ME')).toBeDefined())
-    expect(screen.getByRole('button', { name: 'Accept Quote' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Accept & schedule' })).toBeDefined()
+    expect(screen.getByRole('button', { name: /Accept — we'll reach out/ })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Request changes' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Decline quote' })).toBeDefined()
   })
@@ -160,11 +161,11 @@ describe('PublicQuote accept flow (e-sign + document stays visible)', () => {
         <Routes><Route path="/quote/:token" element={<PublicQuote />} /></Routes>
       </MemoryRouter>
     )
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Accept Quote' })).toBeDefined())
+    await waitFor(() => expect(screen.getByRole('button', { name: /Accept — we'll reach out/ })).toBeDefined())
 
     fireEvent.change(screen.getByPlaceholderText(/Your name/), { target: { value: 'Megan Small' } })
     fireEvent.change(screen.getByPlaceholderText(/Your email/), { target: { value: 'megan@example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Accept Quote' }))
+    fireEvent.click(screen.getByRole('button', { name: /Accept — we'll reach out/ }))
 
     await waitFor(() => expect(screen.getByText(/Accepted ✓/)).toBeDefined())
     // Document is still mounted (not swapped for a standalone thank-you).
@@ -174,5 +175,43 @@ describe('PublicQuote accept flow (e-sign + document stays visible)', () => {
     const body = JSON.parse(accept.opts.body)
     expect(body.name).toBe('Megan Small')
     expect(body.email).toBe('megan@example.com')
+  })
+})
+
+describe('PublicQuote self-schedule flow', () => {
+  it('loads availability, books a slot, and shows a Booked banner', async () => {
+    const calls = []
+    vi.stubGlobal('fetch', vi.fn(async (url, opts) => {
+      calls.push({ url: String(url), opts })
+      if (String(url).endsWith('/availability')) {
+        return new Response(JSON.stringify({
+          windows: [{ key: 'morning', label: 'Morning (9am–12pm)' }, { key: 'afternoon', label: 'Afternoon (1pm–4pm)' }],
+          dates: [{ date: '2099-01-05', available: true }, { date: '2099-01-06', available: false }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      if (String(url).endsWith('/schedule')) {
+        return new Response(JSON.stringify({ scheduled: true, date_label: 'January 05, 2099', window: 'morning', job_id: 9 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ ...FULL_QUOTE, status: 'sent' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    render(
+      <MemoryRouter initialEntries={['/quote/tok123']}>
+        <Routes><Route path="/quote/:token" element={<PublicQuote />} /></Routes>
+      </MemoryRouter>
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Accept & schedule' })).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: 'Accept & schedule' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Accept & book this time/ })).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: /Accept & book this time/ }))
+
+    await waitFor(() => expect(screen.getByText(/Booked ✓ for January 05, 2099/)).toBeDefined())
+    // Only the available date was offered as an option.
+    const sched = calls.find(c => c.url.endsWith('/schedule'))
+    expect(JSON.parse(sched.opts.body).date).toBe('2099-01-05')
+    // Document still mounted.
+    expect(screen.getByText('Bi-weekly residential cleaning — Falmouth, ME')).toBeDefined()
   })
 })
