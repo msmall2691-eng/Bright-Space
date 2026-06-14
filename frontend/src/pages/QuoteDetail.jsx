@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText, Loader,
+  ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText,
 } from 'lucide-react'
 import { get, patch } from '../api'
+import { toast } from '../utils/toastBus'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
+import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
@@ -58,17 +60,16 @@ export default function QuoteDetail() {
       .finally(() => setLoading(false))
   }, [id])
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (quote?.quote_number) document.title = `${quote.quote_number} · Quote` }, [quote?.quote_number])
 
   const saveField = (body) =>
     patch(`/api/quotes/${id}`, body)
       .then(updated => setQuote(q => ({ ...q, ...updated })))
-      .catch(load)
+      .catch(() => { toast.error('Could not save change'); load() })
 
   const setStatus = (status) => { setQuote(q => ({ ...q, status })); saveField({ status }) }
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-full"><Loader className="w-6 h-6 animate-spin text-ink-3" /></div>
-  }
+  if (loading) return <RecordSkeleton />
   if (notFound || !quote) {
     return (
       <div className="p-6">
