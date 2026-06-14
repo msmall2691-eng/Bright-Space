@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -182,8 +182,27 @@ def current_org_id(current_user: User = Depends(get_current_user),
     org_id, so it falls back to the default workspace (org 1) — i.e. the master
     integration operates in the primary org. Never returns None, so a scope
     filter can't accidentally become `WHERE org_id IS NULL` and hide everything.
+
+    Also sets the Postgres session var `app.current_org_id` so MT-3 Row-Level
+    Security can enforce isolation as a backstop even on a query that forgot its
+    org filter. No-op on SQLite / when not in Postgres.
     """
-    return getattr(current_user, "org_id", None) or _default_org_id(db)
+    oid = getattr(current_user, "org_id", None) or _default_org_id(db)
+    set_rls_org_context(db, oid)
+    return oid
+
+
+def set_rls_org_context(db: Session, org_id: int) -> None:
+    """Set the per-transaction Postgres GUC that MT-3 RLS policies read. Safe
+    no-op on non-Postgres (SQLite tests) and never raises into the request."""
+    try:
+        if db.bind and db.bind.dialect.name == "postgresql":
+            # SET LOCAL scopes to the current transaction; parameter binding isn't
+            # allowed for SET, so the int is interpolated (it's a validated int).
+            db.execute(text(f"SET LOCAL app.current_org_id = {int(org_id)}"))
+    except Exception:
+        # RLS context is a backstop; never break the request if it can't be set.
+        pass
 
 
 def resolve_org_id(org_id, db: Session) -> int:
