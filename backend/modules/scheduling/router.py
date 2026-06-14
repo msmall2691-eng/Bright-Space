@@ -1299,6 +1299,17 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
             else:
                 update_event(job.gcal_event_id, job_dict, client_dict,
                              owner_account_id=getattr(job, "gcal_account_id", None))
+            # Record the reschedule/edit on the client timeline. Create and
+            # cancel were already logged; an in-place move/edit used to be silent,
+            # so "why did this job move?" had no answer on the profile.
+            if job.gcal_event_id:
+                log_calendar_event(
+                    db, "updated",
+                    client_id=job.client_id, job_id=job.id,
+                    title=job.title, gcal_event_id=job.gcal_event_id,
+                    scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                )
+                db.commit()
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
     return job_to_dict(job)
