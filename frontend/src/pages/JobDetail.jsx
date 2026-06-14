@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar,
-  Loader, Send,
+  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
+import { toast } from '../utils/toastBus'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import ActivityTimeline from '../components/ActivityTimeline'
+import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
@@ -76,11 +77,12 @@ export default function JobDetail() {
       .finally(() => setLoading(false))
   }, [id])
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (job?.title) document.title = `${job.title} · Job` }, [job?.title])
 
   const saveField = (body) =>
     patch(`/api/jobs/${id}`, body)
       .then(updated => setJob(j => ({ ...j, ...updated })))
-      .catch(load)
+      .catch(() => { toast.error('Could not save change'); load() })
 
   const setStatus = (status) => { setJob(j => ({ ...j, status })); saveField({ status }) }
 
@@ -91,13 +93,12 @@ export default function JobDetail() {
     try {
       await post(`/api/jobs/${id}/notes`, { body })
       setNote(''); setTimelineKey(k => k + 1)
-    } catch (e) { console.error('[JobDetail] note', e) }
+      toast.success('Note added')
+    } catch (e) { toast.error('Could not add note') }
     finally { setSavingNote(false) }
   }
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-full"><Loader className="w-6 h-6 animate-spin text-ink-3" /></div>
-  }
+  if (loading) return <RecordSkeleton />
   if (notFound || !job) {
     return (
       <div className="p-6">

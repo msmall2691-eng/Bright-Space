@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt, Loader,
+  ArrowLeft, Building2, TrendingUp, Calendar, FileText, Receipt,
 } from 'lucide-react'
 import { get, patch } from '../api'
+import { toast } from '../utils/toastBus'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
+import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
@@ -48,17 +50,16 @@ export default function InvoiceDetail() {
       .finally(() => setLoading(false))
   }, [id])
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (inv?.invoice_number) document.title = `${inv.invoice_number} · Invoice` }, [inv?.invoice_number])
 
   const saveField = (body) =>
     patch(`/api/invoices/${id}`, body)
       .then(updated => setInv(v => ({ ...v, ...updated })))
-      .catch(load)
+      .catch(() => { toast.error('Could not save change'); load() })
 
   const setStatus = (status) => { setInv(v => ({ ...v, status })); saveField({ status }) }
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-full"><Loader className="w-6 h-6 animate-spin text-ink-3" /></div>
-  }
+  if (loading) return <RecordSkeleton />
   if (notFound || !inv) {
     return (
       <div className="p-6">

@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, FileText, Receipt, Calendar, Loader, Send, TrendingUp,
+  ArrowLeft, Building2, FileText, Receipt, Calendar, Send, TrendingUp,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
+import { toast } from '../utils/toastBus'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import ActivityTimeline from '../components/ActivityTimeline'
+import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 // Pipeline stages (mirrors the kanban + backend enum).
@@ -66,13 +68,14 @@ export default function OpportunityDetail() {
       .finally(() => setLoading(false))
   }, [id])
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (opp?.title) document.title = `${opp.title} · Deal` }, [opp?.title])
 
   // Persist one field; merge the server's response back so derived fields stay
-  // in sync. On failure, reload to drop the optimistic value.
+  // in sync. On failure, surface a toast and reload to drop the optimistic value.
   const saveField = (body) =>
     patch(`/api/opportunities/${id}`, body)
       .then(updated => setOpp(o => ({ ...o, ...updated })))
-      .catch(load)
+      .catch(() => { toast.error('Could not save change'); load() })
 
   const setStage = (stage) => { setOpp(o => ({ ...o, stage })); saveField({ stage }) }
 
@@ -83,13 +86,12 @@ export default function OpportunityDetail() {
     try {
       await post(`/api/opportunities/${id}/notes`, { body })
       setNote(''); setTimelineKey(k => k + 1)
-    } catch (e) { console.error('[OpportunityDetail] note', e) }
+      toast.success('Note added')
+    } catch (e) { toast.error('Could not add note') }
     finally { setSavingNote(false) }
   }
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-full"><Loader className="w-6 h-6 animate-spin text-ink-3" /></div>
-  }
+  if (loading) return <RecordSkeleton />
   if (notFound || !opp) {
     return (
       <div className="p-6">
