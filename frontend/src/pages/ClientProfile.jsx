@@ -542,6 +542,12 @@ export default function ClientProfile() {
                 <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
                   {client.status}
                 </span>
+                {client.lifecycle_stage && client.lifecycle_stage !== client.status && (
+                  <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-3 capitalize"
+                    title="Lifecycle stage">
+                    {client.lifecycle_stage}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap">
                 {client.phone && <span className="flex items-center gap-1 text-xs sm:text-sm text-ink-3"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
