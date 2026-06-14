@@ -103,6 +103,7 @@ const Today = lazy(() => import('./pages/Today'))
 const Workspace = lazy(() => import('./pages/Workspace'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
+const OpportunityDetail = lazy(() => import('./pages/OpportunityDetail'))
 const Quoting = lazy(() => import('./pages/Quoting'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Invoicing = lazy(() => import('./pages/Invoicing'))
@@ -201,6 +202,7 @@ export default function App() {
               <Route path="/clients/:id" element={<ClientProfile />} />
               <Route path="/requests" element={<Requests />} />
               <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/quoting" element={<Quoting />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />

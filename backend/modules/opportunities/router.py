@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from database.db import get_db
-from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message
-from modules.auth.router import require_role, current_org_id, resolve_org_id
+from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message, User
+from modules.auth.router import require_role, current_org_id, resolve_org_id, get_current_user
 
 router = APIRouter()
 
@@ -154,8 +154,18 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db), org_id: 
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
+    # Quotes link to an opportunity via Quote.opportunity_id (there's no ORM
+    # back-ref — it broke mapper init — so query the FK directly). Scoped to the
+    # caller's workspace (MT-2).
+    oid = resolve_org_id(org_id, db)
+    opp_quotes = db.query(Quote).filter(
+        Quote.opportunity_id == o.id,
+        or_(Quote.org_id == oid, Quote.org_id.is_(None)),
+    ).all()
+
     return {
         **opp_to_dict(o),
+        "quotes_count": len(opp_quotes),
         "quotes": [
             {
                 "id": q.id,
@@ -164,7 +174,7 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db), org_id: 
                 "total": q.total,
                 "created_at": q.created_at.isoformat() if q.created_at else None,
             }
-            for q in o.quotes
+            for q in opp_quotes
         ],
         "invoices": [
             {
@@ -288,3 +298,41 @@ def delete_opportunity(opp_id: int, db: Session = Depends(get_db), org_id: int =
         raise HTTPException(status_code=404, detail="Opportunity not found")
     db.delete(o)
     db.commit()
+
+
+class OpportunityNoteRequest(BaseModel):
+    body: str
+
+
+@router.post("/{opp_id}/notes", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def add_opportunity_note(opp_id: int, data: OpportunityNoteRequest,
+                         db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_user),
+                         org_id: int = Depends(current_org_id)):
+    """Jot an internal note on a deal. Recorded as a NOTE_ADDED activity anchored
+    to the opportunity (and its client) so it lands in the deal's timeline."""
+    o = db.query(Opportunity).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),
+    ).first()
+    if not o:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    body = (data.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Note body is required")
+
+    from utils.activity_logger import log_activity as _log_activity
+    from database.models import ActivityType
+    from modules.activities.router import activity_to_dict
+
+    actor = getattr(current_user, "email", None) or getattr(current_user, "full_name", None) or "staff"
+    act = _log_activity(
+        db, ActivityType.NOTE_ADDED.value,
+        client_id=o.client_id, opportunity_id=o.id, actor=actor, summary=body,
+        extra_data={"note": True}, commit=False,
+    )
+    if not act:
+        raise HTTPException(status_code=500, detail="Could not record note")
+    db.commit()
+    db.refresh(act)
+    return activity_to_dict(act)
