@@ -34,6 +34,37 @@ def app_base_url() -> str:
     return raw.rstrip("/")
 
 
+# Origins the lead pipeline depends on — the maineclean.co contact form posts
+# leads cross-origin to /api/intake/submit. A partial ALLOWED_ORIGINS override in
+# the environment that drops these silently breaks CORS preflight, so the browser
+# blocks the POST and inbound leads are lost (live-run #2 incident, 2026-06-14).
+# These are force-merged into the allow-list so a misconfigured env can't kill it.
+REQUIRED_CORS_ORIGINS = ("https://www.maineclean.co", "https://maineclean.co")
+
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173,http://localhost:3000,"
+    "https://www.maineclean.co,https://maineclean.co,"
+    "https://brightbase-production.up.railway.app"
+)
+
+
+def resolve_cors_origins(raw: str | None) -> list[str]:
+    """Allowed CORS origins = the configured list UNION the required production
+    origins (deduped, order-stable). Guarantees the website's lead form keeps
+    working even if ALLOWED_ORIGINS is set but omits it; warns when it had to
+    re-add them so the misconfig is visible."""
+    source = raw if (raw and raw.strip()) else DEFAULT_CORS_ORIGINS
+    configured = [o.strip() for o in source.split(",") if o.strip()]
+    missing = [o for o in REQUIRED_CORS_ORIGINS if o not in configured]
+    if missing:
+        logger.warning(
+            "ALLOWED_ORIGINS did not include %s — re-added so the website lead "
+            "form keeps working. Update the ALLOWED_ORIGINS env to include them.",
+            missing,
+        )
+    return list(dict.fromkeys(configured + list(REQUIRED_CORS_ORIGINS)))
+
+
 def env_flag(name: str, default: bool = True) -> bool:
     """Parse environment boolean flag."""
     val = os.getenv(name, str(default)).lower()

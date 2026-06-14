@@ -55,12 +55,10 @@ from slowapi.errors import RateLimitExceeded
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-_default_origins = (
-    "http://localhost:5173,http://localhost:3000,"
-    "https://www.maineclean.co,https://maineclean.co,"
-    "https://brightbase-production.up.railway.app"
-)
-_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
+from config import resolve_cors_origins
+# Force-merge the required production origins so a partial ALLOWED_ORIGINS env
+# override can't silently drop maineclean.co and lose inbound website leads.
+_allowed_origins = resolve_cors_origins(os.getenv("ALLOWED_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
