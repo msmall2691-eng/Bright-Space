@@ -164,6 +164,35 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db), org_id: int = De
     return invoice_to_dict(inv)
 
 
+@router.get("/{invoice_id}/details", dependencies=[Depends(require_role("admin", "manager"))])
+def get_invoice_details(invoice_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Full invoice record for the detail page: the invoice (incl. line items)
+    plus its linked records — client, job, opportunity, and the originating
+    quote (reached via Job.quote_id when the invoice came from a job)."""
+    from database.models import Job, Opportunity, Quote
+    oid = resolve_org_id(org_id, db)
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        or_(Invoice.org_id == oid, Invoice.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    client = db.query(Client).filter(Client.id == inv.client_id).first()
+    job = db.query(Job).filter(Job.id == inv.job_id).first() if inv.job_id else None
+    opp = db.query(Opportunity).filter(Opportunity.id == inv.opportunity_id).first() if inv.opportunity_id else None
+    quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if (job and job.quote_id) else None
+
+    return {
+        **invoice_to_dict(inv),
+        "client_name": client.name if client else None,
+        "job": ({"id": job.id, "title": job.title, "status": job.status,
+                 "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None} if job else None),
+        "opportunity": ({"id": opp.id, "title": opp.title, "stage": opp.stage} if opp else None),
+        "quote": ({"id": quote.id, "quote_number": quote.quote_number, "total": quote.total} if quote else None),
+    }
+
+
 @router.patch("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     inv = db.query(Invoice).filter(

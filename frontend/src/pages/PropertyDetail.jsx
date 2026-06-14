@@ -319,6 +319,15 @@ export default function PropertyDetail() {
                 <MapPin className="w-4 h-4 flex-shrink-0" />
                 <span>{property.address}</span>
               </div>
+              {property.client_id && (
+                <button
+                  onClick={() => navigate(`/clients/${property.client_id}`)}
+                  className="flex items-center gap-1.5 text-sm text-blue-500 hover:underline mt-1"
+                >
+                  <Building2 className="w-4 h-4 flex-shrink-0" />
+                  <span>View client</span>
+                </button>
+              )}
             </div>
           </div>
 

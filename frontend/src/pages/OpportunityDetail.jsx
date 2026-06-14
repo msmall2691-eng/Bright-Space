@@ -176,33 +176,36 @@ export default function OpportunityDetail() {
           <div className="space-y-4 self-start">
             <RelatedList icon={FileText} title="Quotes" items={opp.quotes || []} empty="No quotes yet"
               render={(q) => (
-                <div key={q.id} className="flex items-center justify-between gap-2 text-[12px]">
-                  <span className="text-ink-2 truncate">{q.quote_number || `#${q.id}`}</span>
+                <Link key={q.id} to={`/quotes/${q.id}`}
+                  className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
+                  <span className="text-blue-500 truncate hover:underline">{q.quote_number || `#${q.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(q.total)}</span>
                     <span className={STATUS_CHIP}>{q.status}</span>
                   </span>
-                </div>
+                </Link>
               )} />
             <RelatedList icon={Receipt} title="Invoices" items={opp.invoices || []} empty="No invoices yet"
               render={(inv) => (
-                <div key={inv.id} className="flex items-center justify-between gap-2 text-[12px]">
-                  <span className="text-ink-2 truncate">{inv.invoice_number || `#${inv.id}`}</span>
+                <Link key={inv.id} to={`/invoices/${inv.id}`}
+                  className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
+                  <span className="text-blue-500 truncate hover:underline">{inv.invoice_number || `#${inv.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(inv.total)}</span>
                     <span className={STATUS_CHIP}>{inv.status}</span>
                   </span>
-                </div>
+                </Link>
               )} />
             <RelatedList icon={Calendar} title="Jobs" items={opp.jobs || []} empty="No jobs yet"
               render={(j) => (
-                <div key={j.id} className="flex items-center justify-between gap-2 text-[12px]">
-                  <span className="text-ink-2 truncate">{j.title || `Job #${j.id}`}</span>
+                <Link key={j.id} to={`/jobs/${j.id}`}
+                  className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
+                  <span className="text-blue-500 truncate hover:underline">{j.title || `Job #${j.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{fmtDate(j.scheduled_date)}</span>
                     <span className={STATUS_CHIP}>{j.status}</span>
                   </span>
-                </div>
+                </Link>
               )} />
           </div>
         </div>
