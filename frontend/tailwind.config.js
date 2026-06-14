@@ -32,9 +32,12 @@ export default {
         },
       },
       boxShadow: {
-        glass: '0 8px 32px rgba(0, 0, 0, 0.1)',
-        'glass-lg': '0 20px 40px rgba(0, 0, 0, 0.15)',
-        'glass-sm': '0 4px 16px rgba(0, 0, 0, 0.08)',
+        // Twenty-style: flat surfaces with hairline borders, not big drop
+        // shadows. Kept as soft 1–2px so existing shadow-glass* classes don't
+        // need touching everywhere.
+        glass: '0 1px 2px rgba(0, 0, 0, 0.04)',
+        'glass-lg': '0 2px 6px rgba(0, 0, 0, 0.06)',
+        'glass-sm': '0 1px 2px rgba(0, 0, 0, 0.03)',
       },
       backdropBlur: {
         xs: '4px',
@@ -61,12 +64,13 @@ export default {
         '3xl': ['32px', { lineHeight: '1.2', letterSpacing: '-0.01em' }],
       },
       borderRadius: {
+        // Tightened toward Twenty's crisp, low-radius look (cards were 16–20px).
         xs: '4px',
         sm: '6px',
-        md: '8px',
-        lg: '12px',
-        xl: '16px',
-        '2xl': '20px',
+        md: '6px',
+        lg: '8px',
+        xl: '10px',
+        '2xl': '12px',
       },
     },
   },

@@ -83,12 +83,12 @@ export const sections = {
   cardSection: 'rounded-xl border border-neutral-200/60 bg-white shadow-sm overflow-hidden',
 
   // Section header
-  sectionHeader: 'px-6 py-4 border-b border-neutral-200/40 bg-neutral-50/50',
-  sectionTitle: 'text-lg font-semibold text-neutral-900',
-  sectionSubtitle: 'text-sm text-neutral-600 mt-1',
+  sectionHeader: 'px-4 py-3 border-b border-neutral-200/40 bg-neutral-50/50',
+  sectionTitle: 'text-base font-semibold text-neutral-900',
+  sectionSubtitle: 'text-sm text-neutral-600 mt-0.5',
 
   // Section content
-  sectionContent: 'p-6',
+  sectionContent: 'p-4',
 };
 
 export const tables = {
@@ -131,10 +131,10 @@ export const typography = {
 
 export const spacing = {
   // Common padding/margin utilities
-  pageContainer: 'px-4 sm:px-6 lg:px-8 py-8',
-  cardContainer: 'p-6',
-  sectionGap: 'gap-6',
-  itemGap: 'gap-4',
+  pageContainer: 'px-4 sm:px-6 lg:px-8 py-6',
+  cardContainer: 'p-4',
+  sectionGap: 'gap-4',
+  itemGap: 'gap-3',
 };
 
 export default {
