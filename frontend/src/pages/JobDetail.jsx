@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus,
+  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus, CalendarPlus,
 } from 'lucide-react'
-import { get, patch, post } from '../api'
+import { get, patch, post, download } from '../api'
 import { toast } from '../utils/toastBus'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
-import ActivityTimeline from '../components/ActivityTimeline'
+import UnifiedTimeline from '../components/UnifiedTimeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
@@ -100,6 +100,12 @@ export default function JobDetail() {
     finally { setSavingNote(false) }
   }
 
+  const addToCalendar = async () => {
+    try {
+      await download(`/api/reminders/jobs/${id}/invite.ics`, `cleaning-${id}.ics`)
+    } catch { toast.error('Could not generate calendar invite') }
+  }
+
   const newInvoice = async () => {
     setCreating(true)
     try {
@@ -171,12 +177,18 @@ export default function JobDetail() {
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
 
-            {canEdit() && job.client_id && (
-              <div className="border-t border-hairline pt-3">
-                <button onClick={newInvoice} disabled={creating}
-                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> New invoice
+            {canEdit() && (
+              <div className="border-t border-hairline pt-3 space-y-2">
+                <button onClick={addToCalendar}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <CalendarPlus className="w-3.5 h-3.5" /> Add to calendar (.ics)
                 </button>
+                {job.client_id && (
+                  <button onClick={newInvoice} disabled={creating}
+                    className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                    <Plus className="w-3.5 h-3.5" /> New invoice
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -198,7 +210,7 @@ export default function JobDetail() {
               </div>
             </div>
             <div className="bg-panel border border-hairline rounded-xl p-4">
-              <ActivityTimeline key={timelineKey} jobId={id} />
+              <UnifiedTimeline key={timelineKey} jobId={id} />
             </div>
           </div>
 

@@ -1143,6 +1143,104 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     }
 
 
+@router.get("/{job_id}/timeline", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def get_job_timeline(
+    job_id: int,
+    source: Optional[str] = None,  # "activity" | "integration" | "message" | None (all)
+    limit: int = 150,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Unified, chronological activity timeline for a job — Pillar 3 connective
+    tissue. Merges three existing signals into one newest-first feed:
+
+    - **Activity** records (job created/completed, note added, quote/invoice
+      milestones) — the human-readable story.
+    - **IntegrationEvent** rows (Google Calendar / Connecteam / email / SMS
+      sync attempts, ok or failed) — "did it actually go out, and why not?".
+    - **Message** records (SMS/email to the client) — the conversation.
+
+    Every entry is normalised to a common shape so the frontend renders them in
+    a single stream. ``source`` narrows to one kind; ``limit``/``offset``
+    paginate the merged result.
+    """
+    from database.models import Activity, IntegrationEvent, Message
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    items: list[dict] = []
+
+    if source in (None, "activity"):
+        for a in db.query(Activity).filter(Activity.job_id == job_id).all():
+            items.append({
+                "kind": "activity",
+                "id": f"activity-{a.id}",
+                "icon_key": a.activity_type,
+                "label": a.summary,
+                "sub": None,
+                "actor": a.actor,
+                "status": None,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            })
+
+    if source in (None, "integration"):
+        events = db.query(IntegrationEvent).filter(
+            IntegrationEvent.entity_type == "job",
+            IntegrationEvent.entity_id == job_id,
+        ).all()
+        for e in events:
+            provider = (e.provider or "").lower()
+            pretty = {"gcal": "Google Calendar", "connecteam": "Connecteam",
+                      "email": "Email", "sms": "SMS"}.get(provider, e.provider or "Sync")
+            ok = (e.status or "").lower() == "ok"
+            items.append({
+                "kind": "integration",
+                "id": f"integration-{e.id}",
+                "icon_key": provider,
+                "label": f"{pretty} {e.action or 'sync'} {'succeeded' if ok else 'failed'}",
+                "sub": None if ok else (e.error_message or e.error_code),
+                "actor": None,
+                "status": e.status,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            })
+
+    if source in (None, "message"):
+        for m in db.query(Message).filter(Message.job_id == job_id).all():
+            snippet = (m.body or "").strip().replace("\n", " ")
+            if len(snippet) > 140:
+                snippet = snippet[:140] + "…"
+            channel = (m.channel or "message").lower()
+            direction = (m.direction or "").lower()
+            verb = {"inbound": "Received", "outbound": "Sent", "note": "Note"}.get(direction, "")
+            items.append({
+                "kind": "message",
+                "id": f"message-{m.id}",
+                "icon_key": channel,
+                "label": m.subject or f"{verb} {channel.upper()}".strip(),
+                "sub": snippet or None,
+                "actor": m.author,
+                "status": m.status,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            })
+
+    # Newest first; entries with no timestamp sink to the bottom.
+    items.sort(key=lambda x: x["created_at"] or "", reverse=True)
+    total = len(items)
+    return {
+        "job_id": job_id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items[offset:offset + limit],
+    }
+
+
 @router.post("/{job_id}/notes", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def add_job_note(job_id: int, data: dict, db: Session = Depends(get_db),
                  current_user=Depends(get_current_user), org_id: int = Depends(current_org_id)):
