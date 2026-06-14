@@ -173,6 +173,19 @@ def get_current_user_optional(
     return user
 
 
+def current_org_id(current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> int:
+    """The caller's tenant (workspace) id — for scoping every read/write in the
+    multi-tenant model (MT-2).
+
+    JWT users carry their own org_id. The synthetic master-API-key admin has no
+    org_id, so it falls back to the default workspace (org 1) — i.e. the master
+    integration operates in the primary org. Never returns None, so a scope
+    filter can't accidentally become `WHERE org_id IS NULL` and hide everything.
+    """
+    return getattr(current_user, "org_id", None) or _default_org_id(db)
+
+
 def require_role(*allowed_roles):
     """
     Factory to create a dependency that requires specific roles.
