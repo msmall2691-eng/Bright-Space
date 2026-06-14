@@ -5,17 +5,18 @@ Integer-keyed quotes with inline JSON line items, matching the rest of the app
 plain dicts (see ``_quote_dict``) so the wire shape is decoupled from the ORM.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 import logging
 import os
 import secrets
 
+from ratelimit import rate_limit
 from database.db import get_db
 from schemas.quotes import (
     QuoteCreate, QuoteUpdate, QuoteRequestCreate, QuoteRequestUpdate,
@@ -35,6 +36,12 @@ router = APIRouter(tags=["quotes"])
 # ========================
 # Helpers
 # ========================
+
+def _utcnow():
+    """Timezone-aware UTC now for writes into timestamptz columns (replaces the
+    old naive wall-clock now, which only happened to be right on UTC Railway)."""
+    return datetime.now(timezone.utc)
+
 
 def _iso(v):
     """Serialize a date/datetime to ISO 8601, tolerating values that are
@@ -114,6 +121,7 @@ def _quote_dict(q: Quote) -> dict:
         "accepted_by_email": q.accepted_by_email,
         "declined_at": _iso(q.declined_at),
         "converted_at": _iso(getattr(q, "converted_at", None)),
+        "archived_at": _iso(getattr(q, "archived_at", None)),
         "follow_up_sent_at": _iso(getattr(q, "follow_up_sent_at", None)),
         "last_send_attempt_at": _iso(getattr(q, "last_send_attempt_at", None)),
         "last_send_error": getattr(q, "last_send_error", None),
@@ -143,7 +151,7 @@ def _get_quote_or_404(quote_id: int, db: Session) -> Quote:
 def _assign_quote_number(quote: Quote) -> None:
     """Set a unique, human-readable quote number (QT-YYYY-####) from the row id
     so it's race-free."""
-    quote.quote_number = f"QT-{datetime.now().year}-{quote.id:04d}"
+    quote.quote_number = f"QT-{_utcnow().year}-{quote.id:04d}"
 
 
 # ========================
@@ -211,18 +219,20 @@ def list_quotes(
         query = query.filter(Quote.client_id == client_id)
     if status:
         query = query.filter(Quote.status == status)
+    else:
+        # Archived (soft-deleted) quotes are hidden unless asked for explicitly.
+        query = query.filter(Quote.status != "archived")
     quotes = query.order_by(Quote.created_at.desc()).offset(offset).limit(limit).all()
     return [_quote_dict(q) for q in quotes]
 
 
 def _hours_since(ts) -> Optional[float]:
     """Hours elapsed since a stored timestamp, tolerant of naive vs tz-aware
-    values (sent_at etc. are stamped with naive datetime.now() but read back
-    tz-aware from Postgres)."""
+    values (legacy rows may be naive; new writes are tz-aware UTC)."""
     if ts is None:
         return None
-    t = ts.replace(tzinfo=None) if getattr(ts, "tzinfo", None) else ts
-    return (datetime.now() - t).total_seconds() / 3600.0
+    t = ts if getattr(ts, "tzinfo", None) else ts.replace(tzinfo=timezone.utc)
+    return (_utcnow() - t).total_seconds() / 3600.0
 
 
 @router.get("/follow-ups", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
@@ -298,8 +308,8 @@ def _apply_update(quote: Quote, data: dict) -> None:
     # rather than going through convert-to-job, and the conversion metric needs
     # the timestamp set there too.
     if quote.status == "converted" and not quote.converted_at:
-        quote.converted_at = datetime.now()
-    quote.updated_at = datetime.now()
+        quote.converted_at = _utcnow()
+    quote.updated_at = _utcnow()
 
 
 @router.patch("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
@@ -316,6 +326,24 @@ def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(ge
 @router.put("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
     return patch_quote(quote_id, quote_data, db)
+
+
+@router.delete("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
+def delete_quote(quote_id: int, db: Session = Depends(get_db)):
+    """Soft-delete (archive) a quote: hidden from lists but recoverable, and its
+    linked data is preserved. Refuses to archive a quote already converted into a
+    job — that would orphan the revenue→job link; cancel the job first."""
+    quote = _get_quote_or_404(quote_id, db)
+    if quote.status == "converted" or _existing_job_for_quote(db, quote):
+        raise HTTPException(
+            status_code=409,
+            detail="This quote has been scheduled into a job. Cancel/delete the job first.",
+        )
+    quote.status = "archived"
+    quote.archived_at = _utcnow()
+    quote.updated_at = _utcnow()
+    db.commit()
+    return {"status": "archived", "id": quote.id}
 
 
 # ========================
@@ -404,7 +432,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 if res.get("success"):
                     results["email"] = "sent"
                     db.add(QuoteEmail(
-                        quote_id=quote.id, recipient_email=to_email, sent_at=datetime.now(),
+                        quote_id=quote.id, recipient_email=to_email, sent_at=_utcnow(),
                         delivery_status="sent", email_id=res.get("email_id"),
                     ))
                     _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
@@ -457,18 +485,18 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     delivered = any(v == "sent" for v in results.values())
     # Delivery visibility: a failed send must not leave a silent "draft" —
     # record the attempt + reason so the UI can show a "send failed" state.
-    quote.last_send_attempt_at = datetime.now()
+    quote.last_send_attempt_at = _utcnow()
     quote.last_send_error = None if delivered else ("; ".join(errors) or "delivery failed")
     if delivered:
         if prior_status == "draft":
             quote.status = "sent"
-            quote.sent_at = datetime.now()
+            quote.sent_at = _utcnow()
         else:
             # A re-send of an already sent/viewed quote is a follow-up nudge:
             # keep the original status/sent_at (so the "viewed" signal and the
             # sent→accepted clock survive) and just record the nudge.
-            quote.follow_up_sent_at = datetime.now()
-    quote.updated_at = datetime.now()
+            quote.follow_up_sent_at = _utcnow()
+    quote.updated_at = _utcnow()
     db.commit()
     db.refresh(quote)
 
@@ -493,7 +521,7 @@ def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     """Ensure a public token exists and return it + the shareable link."""
     quote = _get_quote_or_404(quote_id, db)
     token = _ensure_public_token(quote)
-    quote.updated_at = datetime.now()
+    quote.updated_at = _utcnow()
     db.commit()
     app_base = app_base_url()
     return {
@@ -508,8 +536,8 @@ def accept_quote(quote_id: int, db: Session = Depends(get_db)):
     if quote.status in ("accepted", "declined"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "accepted"
-    quote.accepted_at = datetime.now()
-    quote.updated_at = datetime.now()
+    quote.accepted_at = _utcnow()
+    quote.updated_at = _utcnow()
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -521,8 +549,8 @@ def decline_quote(quote_id: int, db: Session = Depends(get_db)):
     if quote.status in ("accepted", "declined"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "declined"
-    quote.declined_at = datetime.now()
-    quote.updated_at = datetime.now()
+    quote.declined_at = _utcnow()
+    quote.updated_at = _utcnow()
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -577,8 +605,8 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     if existing:
         if quote.status != "converted":
             quote.status = "converted"
-            quote.converted_at = datetime.now()
-            quote.updated_at = datetime.now()
+            quote.converted_at = _utcnow()
+            quote.updated_at = _utcnow()
             db.commit()
         return existing
     svc, job_type, prop_type = _quote_job_vocab(quote)
@@ -596,8 +624,8 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     )
     db.add(job)
     quote.status = "converted"
-    quote.converted_at = datetime.now()
-    quote.updated_at = datetime.now()
+    quote.converted_at = _utcnow()
+    quote.updated_at = _utcnow()
     db.commit()
     db.refresh(job)
     return job
@@ -813,12 +841,12 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
         logger.warning(f"[quotes] customer confirmation email failed for {quote.id}: {e}")
 
 
-@router.get("/public/{token}")
+@router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "quote_view"))])
 def public_view_quote(token: str, db: Session = Depends(get_db)):
     """Client-facing quote view. Marks the quote VIEWED on first open."""
     quote = _quote_by_token(token, db)
     if not quote.viewed_at:
-        quote.viewed_at = datetime.now()
+        quote.viewed_at = _utcnow()
         if quote.status == "sent":
             quote.status = "viewed"
         _notify_staff_quote_event(db, quote, f"Client viewed quote {quote.quote_number}", "quote_viewed")
@@ -827,7 +855,7 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
     return _public_quote_dict(quote, db)
 
 
-@router.post("/public/{token}/accept")
+@router.post("/public/{token}/accept", dependencies=[Depends(rate_limit(20, 3600, "quote_accept"))])
 def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
     """Client accepts the quote from the public link."""
     quote = _quote_by_token(token, db)
@@ -846,8 +874,8 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
         raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
 
     quote.status = "accepted"
-    quote.accepted_at = datetime.now()
-    quote.updated_at = datetime.now()
+    quote.accepted_at = _utcnow()
+    quote.updated_at = _utcnow()
     if data:
         quote.accepted_by_name = data.name or quote.accepted_by_name
         quote.accepted_by_email = data.email or quote.accepted_by_email
@@ -875,7 +903,7 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
     return {"status": quote.status, "quote_number": quote.quote_number}
 
 
-@router.post("/public/{token}/request-changes")
+@router.post("/public/{token}/request-changes", dependencies=[Depends(rate_limit(20, 3600, "quote_changes"))])
 def public_request_changes(token: str, data: PublicChangeRequest, db: Session = Depends(get_db)):
     """Client asks for changes instead of accepting — logged for staff."""
     quote = _quote_by_token(token, db)
@@ -885,10 +913,10 @@ def public_request_changes(token: str, data: PublicChangeRequest, db: Session = 
     # Persist the request on the quote (not just an activity line) and flag it so
     # the owner sees it needs attention.
     quote.requested_changes_message = msg
-    quote.requested_changes_at = datetime.now()
+    quote.requested_changes_at = _utcnow()
     if quote.status in ("sent", "viewed", "draft"):
         quote.status = "changes_requested"
-    quote.updated_at = datetime.now()
+    quote.updated_at = _utcnow()
     _notify_staff_quote_event(
         db, quote,
         f"Client requested changes to quote {quote.quote_number}: {msg[:500]}",
@@ -902,15 +930,15 @@ def public_request_changes(token: str, data: PublicChangeRequest, db: Session = 
     return {"status": "received"}
 
 
-@router.post("/public/{token}/decline")
+@router.post("/public/{token}/decline", dependencies=[Depends(rate_limit(20, 3600, "quote_decline"))])
 def public_decline_quote(token: str, data: "PublicDeclineRequest" = None, db: Session = Depends(get_db)):
     """Client declines the quote from the public link."""
     quote = _quote_by_token(token, db)
     if quote.status == "accepted":
         raise HTTPException(status_code=409, detail="This quote was already accepted.")
     quote.status = "declined"
-    quote.declined_at = datetime.now()
-    quote.updated_at = datetime.now()
+    quote.declined_at = _utcnow()
+    quote.updated_at = _utcnow()
     if data:
         quote.declined_by_name = (data.name or "").strip() or quote.declined_by_name
         quote.declined_reason = (data.reason or "").strip() or quote.declined_reason
@@ -925,7 +953,7 @@ def public_decline_quote(token: str, data: "PublicDeclineRequest" = None, db: Se
     return {"status": "declined"}
 
 
-@router.get("/public/{token}/pdf")
+@router.get("/public/{token}/pdf", dependencies=[Depends(rate_limit(60, 3600, "quote_pdf"))])
 def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(get_db)):
     """Stream the quote PDF from the public link so the customer can view/save it.
 
@@ -956,7 +984,7 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
     )
 
 
-@router.get("/public/{token}/availability")
+@router.get("/public/{token}/availability", dependencies=[Depends(rate_limit(60, 3600, "quote_availability"))])
 def public_quote_availability(token: str, db: Session = Depends(get_db)):
     """Bookable days + arrival windows for customer self-scheduling on accept."""
     _quote_by_token(token, db)  # 404s on a bad token
@@ -969,7 +997,7 @@ def public_quote_availability(token: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/public/{token}/schedule")
+@router.post("/public/{token}/schedule", dependencies=[Depends(rate_limit(20, 3600, "quote_schedule"))])
 def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session = Depends(get_db)):
     """Accept + self-schedule in one step: the customer picks a date and an
     arrival window; we accept the quote, convert it to a Job on that date (left
@@ -1000,12 +1028,12 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
     newly_accepted = quote.status in ("draft", "sent", "viewed")
     if newly_accepted:
         quote.status = "accepted"
-        quote.accepted_at = datetime.now()
+        quote.accepted_at = _utcnow()
     if data.name:
         quote.accepted_by_name = data.name or quote.accepted_by_name
     if data.email:
         quote.accepted_by_email = data.email or quote.accepted_by_email
-    quote.updated_at = datetime.now()
+    quote.updated_at = _utcnow()
     db.commit()
 
     from modules.scheduling.router import (
@@ -1092,7 +1120,7 @@ def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: 
         raise HTTPException(status_code=404, detail="Quote request not found")
     for field, value in request_data.dict(exclude_unset=True).items():
         setattr(qr, field, value)
-    qr.updated_at = datetime.now()
+    qr.updated_at = _utcnow()
     db.commit()
     return {"id": qr.id, "status": qr.status}
 
@@ -1149,7 +1177,7 @@ def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
         "quote_id": quote.id,
         "quote_number": quote.quote_number,
         "file_size": len(pdf_bytes),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _utcnow().isoformat(),
     }
 
 
@@ -1210,12 +1238,12 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         raise
     except Exception as e:
         logger.exception(f"Quote {quote.id} send-email failed before delivery")
-        quote.last_send_attempt_at = datetime.now()
+        quote.last_send_attempt_at = _utcnow()
         quote.last_send_error = str(e) or "send failed"
         db.commit()
         raise HTTPException(status_code=500, detail=f"Could not send quote: {e}")
 
-    quote.last_send_attempt_at = datetime.now()
+    quote.last_send_attempt_at = _utcnow()
     if not result["success"]:
         quote.last_send_error = str(result.get("error") or "delivery failed")
         db.commit()
@@ -1224,12 +1252,12 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
     quote.last_send_error = None
     if quote.status == "draft":
         quote.status = "sent"
-        quote.sent_at = datetime.now()
+        quote.sent_at = _utcnow()
 
     db.add(QuoteEmail(
         quote_id=quote.id,
         recipient_email=recipient_email,
-        sent_at=datetime.now(),
+        sent_at=_utcnow(),
         delivery_status="sent",
         email_id=result.get("email_id"),
     ))
@@ -1270,28 +1298,7 @@ def get_quote_email_history(quote_id: int, db: Session = Depends(get_db)):
         ],
     }
 
-
-@router.post("/webhooks/resend")
-async def resend_webhook(request: Request, db: Session = Depends(get_db)):
-    """Webhook for Resend delivery events."""
-    body = await request.json()
-    event_type = body.get("type")
-    email_id = body.get("data", {}).get("id")
-    if not email_id:
-        return {"received": True}
-    status_map = {
-        "email.delivered": "delivered",
-        "email.bounced": "bounced",
-        "email.complained": "complained",
-        "email.failed": "failed",
-    }
-    new_status = status_map.get(event_type)
-    if not new_status:
-        return {"received": True}
-    record = db.query(QuoteEmail).filter(QuoteEmail.email_id == email_id).first()
-    if record:
-        record.delivery_status = new_status
-        if event_type == "email.failed":
-            record.error_message = body.get("data", {}).get("error", {}).get("message", "Unknown error")
-        db.commit()
-    return {"received": True}
+# NOTE: the /webhooks/resend endpoint was removed — mail goes out over SMTP
+# (smtplib), so Resend events never fired and QuoteEmail.delivery_status never
+# advanced past "sent". Real delivered/bounced tracking is a separate future
+# feature (switch sending to Resend/Gmail API), not a dead webhook.

@@ -939,6 +939,9 @@ class Quote(Base):
     declined_at = Column(DateTime(timezone=True), nullable=True)
     # When an accepted quote was turned into a Job (conversion tracking).
     converted_at = Column(DateTime(timezone=True), nullable=True)
+    # Soft-delete: archived quotes are hidden from lists but recoverable, and
+    # their linked data (jobs/emails) is preserved.
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     # When a follow-up nudge was last sent on a stale sent/viewed quote.
     follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
     # Delivery visibility: the last send attempt and why it failed (cleared on

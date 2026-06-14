@@ -4,7 +4,7 @@ import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye,
 import AgentWidget from '../components/AgentWidget'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
-import { get, post, patch, put } from "../api"
+import { get, post, patch, put, del } from "../api"
 
 
 const QUOTE_STATUS_COLORS = {
@@ -429,6 +429,16 @@ export default function Quoting() {
     setConverting(null)
   }
 
+  const archiveQuote = async (quote) => {
+    if (!window.confirm(`Archive quote ${quote.quote_number || quote.id}? It will be hidden from this list.`)) return
+    try {
+      await del(`/api/quotes/${quote.id}`)
+      if (selected?.id === quote.id) { setSelected(null); setPanel(null) }
+      await loadQuotes()
+      showToast('Quote archived')
+    } catch (e) { showToast(e.message || 'Could not archive quote') }
+  }
+
   // Onboard an accepted quote: open the job modal (recurring by default,
   // pre-filled from the quote) to set up the repeating schedule + first job on
   // Google Calendar, then mark the quote converted.
@@ -629,6 +639,14 @@ export default function Quoting() {
                         <Calendar className="w-3 h-3" />
                         Scheduled ✓
                       </span>
+                    )}
+                    {canEdit && q.status !== 'converted' && (
+                      <button onClick={() => archiveQuote(q)}
+                        title="Archive (hide) this quote"
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-ink-3 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 className="w-3 h-3" />
+                        Archive
+                      </button>
                     )}
                   </div>
                 </div>
