@@ -192,13 +192,14 @@ export default function JobDetail() {
               primary={job.property?.name} secondary={job.property?.address} />
             <RelatedList icon={Receipt} title="Invoices" items={job.invoices || []} empty="No invoices yet"
               render={(inv) => (
-                <div key={inv.id} className="flex items-center justify-between gap-2 text-[12px]">
-                  <span className="text-ink-2 truncate">{inv.invoice_number || `#${inv.id}`}</span>
+                <Link key={inv.id} to={`/invoices/${inv.id}`}
+                  className="flex items-center justify-between gap-2 text-[12px] hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 transition-colors">
+                  <span className="text-blue-500 truncate hover:underline">{inv.invoice_number || `#${inv.id}`}</span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className="text-ink-3">{money(inv.total)}</span>
                     <span className={STATUS_CHIP}>{inv.status}</span>
                   </span>
-                </div>
+                </Link>
               )} />
           </div>
         </div>
