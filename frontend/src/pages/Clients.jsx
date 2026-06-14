@@ -7,6 +7,7 @@ import { EmptyState } from '../components/ui'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 import { del, get, post, patch, upload } from "../api"
 import InlineSelect from "../components/InlineSelect"
+import SavedViewsBar from "../components/SavedViewsBar"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 
@@ -60,6 +61,12 @@ export default function Clients() {
   const [importResult, setImportResult] = useState(null)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
   useEffect(() => { localStorage.setItem('clients_view', viewMode) }, [viewMode])
+  // Saved views (Twenty-style): a view persists the meaningful list state.
+  const viewConfig = { statusFilter, viewMode }
+  const applyView = (cfg) => {
+    setStatusFilter(cfg.statusFilter ?? '')
+    if (cfg.viewMode) setViewMode(cfg.viewMode)
+  }
   const fileInputRef = useRef(null)
   const [phoneNumbers, setPhoneNumbers] = useState([])
   const [newPhoneNumber, setNewPhoneNumber] = useState('')
@@ -265,6 +272,9 @@ export default function Clients() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
               className="w-full bg-bg border border-hairline rounded-lg pl-9 pr-4 py-2 text-[13px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 transition-colors" />
           </div>
+
+          {/* Saved views switcher (Twenty-style) */}
+          <SavedViewsBar entityType="client" currentConfig={viewConfig} onApply={applyView} defaultLabel="All clients" />
 
           {/* Status pills */}
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-0.5">

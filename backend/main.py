@@ -40,6 +40,7 @@ from modules.integration_events.router import router as integration_events_route
 from modules.search import router as search_router
 from modules.geo.router import router as geo_router
 from modules.settings.router import router as settings_router
+from modules.views.router import router as views_router
 from modules.work import router as work_router
 from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
@@ -99,6 +100,7 @@ app.include_router(integration_events_router, prefix="/api/integration-events", 
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(geo_router, prefix="/api/geo", tags=["geo"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+app.include_router(views_router, prefix="/api/views", tags=["views"])
 app.include_router(work_router, prefix="/api/work", tags=["work"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
