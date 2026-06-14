@@ -35,6 +35,9 @@ _PUBLIC_PREFIXES = (
     "/api/intake/submit",
     "/api/intake/webhook",
     "/api/comms/twilio/webhook",
+    # Google Calendar push channel — authenticated by the per-channel token in
+    # the handler (Google can't send our API key), not the master key.
+    "/api/integrations/gcal/notifications",
     # Google OAuth redirect lands here without an API key; it's protected by a
     # one-time state nonce verified in the handler instead.
     "/api/settings/google/callback",

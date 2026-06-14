@@ -636,3 +636,45 @@ def get_event(event_id: str, job_type: str = "residential", owner_account_id: in
             # 410 Gone = event was permanently deleted. Treat same as 404.
             return None
         raise
+
+
+def start_watch(calendar_id: str, address: str, token: str, ttl_seconds: int = 7 * 24 * 3600) -> dict | None:
+    """Register a Google push channel (events.watch) on a calendar.
+
+    Google will POST to ``address`` whenever the calendar changes; ``token`` is
+    echoed back as X-Goog-Channel-Token so we can authenticate the callback.
+    Returns {channel_id, resource_id, expiration_ms} or None on failure.
+    """
+    import uuid
+    from googleapiclient.errors import HttpError
+    try:
+        service = _get_service()
+        channel_id = f"bb-{uuid.uuid4().hex}"
+        body = {
+            "id": channel_id,
+            "type": "web_hook",
+            "address": address,
+            "token": token,
+            "params": {"ttl": str(int(ttl_seconds))},
+        }
+        res = service.events().watch(calendarId=calendar_id, body=body).execute()
+        return {
+            "channel_id": res.get("id", channel_id),
+            "resource_id": res.get("resourceId"),
+            "expiration_ms": int(res["expiration"]) if res.get("expiration") else None,
+        }
+    except (RuntimeError, HttpError, KeyError, ValueError) as e:
+        print(f"[GCal] watch registration failed for {calendar_id}: {e}")
+        return None
+
+
+def stop_watch(channel_id: str, resource_id: str) -> bool:
+    """Stop a previously registered push channel."""
+    from googleapiclient.errors import HttpError
+    try:
+        service = _get_service()
+        service.channels().stop(body={"id": channel_id, "resourceId": resource_id}).execute()
+        return True
+    except (RuntimeError, HttpError) as e:
+        print(f"[GCal] watch stop failed for {channel_id}: {e}")
+        return False

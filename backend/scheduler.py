@@ -394,6 +394,24 @@ def quote_expiry_tick() -> dict:
         db.close()
 
 
+def gcal_watch_renew_tick() -> dict:
+    """Renew Google Calendar push channels before they expire (~weekly cap), so
+    real-time notifications don't silently lapse. Gated by GCAL_WATCH_ENABLED
+    (off by default — needs a public https base URL)."""
+    if not env_flag("GCAL_WATCH_ENABLED", False):
+        return {"skipped": True, "reason": "disabled"}
+    from integrations.gcal_watch import renew_expiring
+    from config import app_base_url
+    db = SessionLocal()
+    try:
+        return renew_expiring(db, app_base_url())
+    except Exception as e:
+        log.error(f"[gcal-watch] renew failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
@@ -531,6 +549,18 @@ def start_scheduler():
         log.info(f"Quote auto-expiry enabled (daily at {expiry_hour:02d}:00)")
     else:
         log.info("Quote auto-expiry disabled via QUOTE_AUTO_EXPIRE_ENABLED=0")
+
+    # Google Calendar push-channel renewal — re-registers watches before their
+    # ~weekly expiry so real-time sync doesn't lapse. Off by default.
+    if env_flag("GCAL_WATCH_ENABLED", False):
+        _scheduler.add_job(
+            gcal_watch_renew_tick,
+            IntervalTrigger(hours=env_int("GCAL_WATCH_RENEW_INTERVAL_HOURS", 12)),
+            id="gcal_watch_renew",
+            name="Google Calendar watch renewal",
+            replace_existing=True,
+        )
+        log.info("Google Calendar watch renewal enabled")
 
     _scheduler.start()
     return _scheduler

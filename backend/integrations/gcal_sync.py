@@ -71,6 +71,17 @@ def _parse_external_updated(event: dict):
 # A per-calendar cursor: after the first bounded full list, Google returns only
 # CHANGED events (incl. cancellations) for that token, so polling is cheap and
 # can't miss an edit. Stored in AppSetting keyed by calendar id.
+def resolve_calendar_ids() -> list[str]:
+    """The configured business calendars (residential/commercial/STR), or
+    ['primary'] when none are set. Shared by sync + watch registration."""
+    ids = list(set(filter(None, [
+        os.getenv("GCAL_RESIDENTIAL_ID", "primary"),
+        os.getenv("GCAL_COMMERCIAL_ID"),
+        os.getenv("GCAL_STR_ID"),
+    ])))
+    return ids or ["primary"]
+
+
 def _synctoken_key(cal_id: str) -> str:
     return f"gcal_synctoken:{cal_id}"
 
@@ -317,13 +328,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
 
     # Default to all configured business calendars
     if not calendar_ids:
-        calendar_ids = list(set(filter(None, [
-            os.getenv("GCAL_RESIDENTIAL_ID", "primary"),
-            os.getenv("GCAL_COMMERCIAL_ID"),
-            os.getenv("GCAL_STR_ID"),
-        ])))
-        if not calendar_ids:
-            calendar_ids = ["primary"]
+        calendar_ids = resolve_calendar_ids()
 
     # Time range: 30 days back, 90 days forward
     now = datetime.now(timezone.utc)

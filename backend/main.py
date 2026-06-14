@@ -91,6 +91,8 @@ app.include_router(recurring_router, prefix="/api/recurring", tags=["recurring"]
 app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"])
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
 app.include_router(booking_router, prefix="/api/booking", tags=["booking"])
+from modules.integrations.router import router as integrations_router
+app.include_router(integrations_router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
