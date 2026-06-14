@@ -304,6 +304,15 @@ export default function Quoting() {
       const mid = (intake.estimate_min != null && intake.estimate_max != null)
         ? Math.round((intake.estimate_min + intake.estimate_max) / 2)
         : (intake.estimate_max ?? intake.estimate_min ?? 0)
+      // Surface the customer's structured details on the line item so the
+      // operator confirms against real data instead of re-deriving it.
+      const details = [
+        intake.square_footage && `${intake.square_footage.toLocaleString()} sqft`,
+        intake.bedrooms && `${intake.bedrooms} bd`,
+        intake.bathrooms && `${intake.bathrooms} ba`,
+        intake.frequency,
+      ].filter(Boolean).join(' · ')
+      const lineDesc = [mid ? 'From website instant quote' : '', details].filter(Boolean).join(' — ')
       setForm({
         client_id: intake.client_id || '', intake_id: intake.id,
         title: '', customer_message: '',
@@ -313,7 +322,7 @@ export default function Quoting() {
           ...EMPTY_ITEM,
           name: `${(intake.service_type || 'residential')} cleaning`,
           unit_price: mid || 0,
-          description: mid ? 'From website instant quote' : '',
+          description: lineDesc,
         }],
         tax_rate: 0,
         notes: '',
@@ -596,6 +605,23 @@ export default function Quoting() {
                       <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${LEAD_STATUS_COLORS[intake.status]}`}>{intake.status}</span>
                       <span className="text-xs text-ink-3 capitalize bg-bg-2 px-2 py-0.5 rounded-full">{intake.service_type}</span>
                     </div>
+                    {/* Structured request chips — the data the customer entered on
+                        the website (sqft/beds/baths/frequency/estimate), so the
+                        operator reads it at a glance instead of from the message blob. */}
+                    {(intake.square_footage || intake.bedrooms || intake.bathrooms || intake.frequency
+                      || intake.estimate_min != null) && (
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        {intake.square_footage ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.square_footage.toLocaleString()} sqft</span> : null}
+                        {intake.bedrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bedrooms} bd</span> : null}
+                        {intake.bathrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bathrooms} ba</span> : null}
+                        {intake.frequency ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2 capitalize">{intake.frequency}</span> : null}
+                        {(intake.estimate_min != null && intake.estimate_max != null) ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium">
+                            ${Math.round(intake.estimate_min)}–${Math.round(intake.estimate_max)}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                     <div className="text-xs text-ink-3 space-y-0.5">
                       {(intake.phone || intake.email) && <div>{[intake.phone, intake.email].filter(Boolean).join(' · ')}</div>}
                       {intake.address && <div>{[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}</div>}
