@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import RecordLink from '../components/RecordLink'
 import AgentWidget from '../components/AgentWidget'
 import ClientCRMSummary from '../components/ClientCRMSummary'
@@ -147,6 +147,16 @@ export default function ClientProfile() {
 
   // One-off job creation modal
   const [jobModal, setJobModal] = useState(null)  // null | { propertyId?: number }
+  // Deep-link "Schedule job for <client>" (e.g. from Cmd+K): /clients/:id?schedule=1
+  // opens the schedule modal pre-scoped to this client, then strips the param.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('schedule') === '1') {
+      setJobModal({})
+      const next = new URLSearchParams(searchParams); next.delete('schedule')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   // Bumped after add/edit/cancel/invite to force the embedded Google Calendar
   // iframe to reload (Google's embed caches, so a fresh event needs a nudge).
   const [gcalReload, setGcalReload] = useState(0)

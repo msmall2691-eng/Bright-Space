@@ -954,6 +954,18 @@ export default function Schedule() {
   const [showJobModal, setShowJobModal] = useState(false)
   const [showNewJob, setShowNewJob] = useState(false)
   const [newJobDate, setNewJobDate] = useState('')
+
+  // Deep-link entry point (e.g. Cmd+K → "Schedule a job"): /schedule?new=1
+  // (optionally &date=YYYY-MM-DD) opens Quick-schedule, then strips the params.
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setNewJobDate(searchParams.get('date') || '')
+      setShowNewJob(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete('new'); next.delete('date')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   // Bumped after any create/edit so the month CalendarView (which holds its own
   // /api/jobs state) refetches and shows the change without a month switch.
   const [calRefresh, setCalRefresh] = useState(0)
