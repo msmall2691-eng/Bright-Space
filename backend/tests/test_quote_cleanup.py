@@ -64,6 +64,28 @@ def test_delete_refuses_converted_quote(ctx):
     assert q.status == "converted"   # untouched
 
 
+def test_permanent_delete_requires_archived_first(ctx):
+    db, c = ctx
+    from modules.quoting.router import permanently_delete_quote
+    q = _mk_quote(db, c, "QT-CL-6", status="sent")
+    with pytest.raises(HTTPException) as exc:
+        permanently_delete_quote(q.id, db=db)
+    assert exc.value.status_code == 409          # must archive before hard delete
+    db.refresh(q)
+    assert q.status == "sent"                     # untouched
+
+
+def test_permanent_delete_removes_archived_quote(ctx):
+    db, c = ctx
+    from modules.quoting.router import delete_quote, permanently_delete_quote
+    from database.models import Quote
+    q = _mk_quote(db, c, "QT-CL-7", status="sent")
+    delete_quote(q.id, db=db)                     # archive
+    out = permanently_delete_quote(q.id, db=db)   # then hard delete
+    assert out["status"] == "deleted"
+    assert db.query(Quote).filter(Quote.id == q.id).first() is None
+
+
 def test_expiry_sweep_flips_past_due_sent_quotes(ctx):
     db, c = ctx
     past = _mk_quote(db, c, "QT-CL-3", status="sent", valid_until=date.today() - timedelta(days=1))

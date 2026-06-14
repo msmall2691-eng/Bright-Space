@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { X, Search, Check, User, Zap } from 'lucide-react'
-import { get, patch, post } from '../api'
+import { X, Search, Check, User, Zap, Trash2, Ban } from 'lucide-react'
+import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively.
@@ -13,7 +13,7 @@ function normalizeEmployee(e) {
   return { id, name }
 }
 
-export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave }) {
+export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave, notify }) {
   const isNew = !job?.id
   const [formData, setFormData] = useState({
     title: job?.title || '',
@@ -95,6 +95,43 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // over capacity). The backend supports allow_conflicts to override — offer
   // that explicitly instead of dead-ending the save.
   const [conflict, setConflict] = useState(null)
+  const [removing, setRemoving] = useState(false)
+
+  // Hard delete: removes the job AND its Google Calendar event (the backend's
+  // DELETE /api/jobs/{id} calls delete_event). Irreversible, so confirm first.
+  const handleDelete = async () => {
+    if (!job?.id) return
+    if (!window.confirm('Delete this job? This permanently removes it and its Google Calendar event.')) return
+    setRemoving(true)
+    setError('')
+    try {
+      await del(`/api/jobs/${job.id}`)
+      notify?.('Job deleted · calendar event removed')
+      onSave?.()
+      onClose()
+    } catch (err) {
+      setError(err.message || 'Failed to delete job')
+      setRemoving(false)
+    }
+  }
+
+  // Softer option: keep the record but mark it cancelled (the calendar event is
+  // updated/removed by the backend on the status change).
+  const handleCancelJob = async () => {
+    if (!job?.id) return
+    if (!window.confirm('Cancel this job? It will be marked cancelled.')) return
+    setRemoving(true)
+    setError('')
+    try {
+      await patch(`/api/jobs/${job.id}`, { status: 'cancelled' })
+      notify?.('Job cancelled')
+      onSave?.()
+      onClose()
+    } catch (err) {
+      setError(err.message || 'Failed to cancel job')
+      setRemoving(false)
+    }
+  }
 
   const handleSave = async (allowConflicts = false) => {
     if (!formData.property_id) {
@@ -395,13 +432,36 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         </div>
 
         {/* Footer */}
-        <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
-          <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={() => handleSave(false)} disabled={saving} className="w-full sm:w-auto">
-            {saving ? 'Saving...' : (isNew ? 'Create Job' : 'Save Changes')}
-          </Button>
+        <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 sm:items-center sm:justify-between sticky bottom-0">
+          {/* Destructive actions live on the left, away from Save (existing jobs only). */}
+          {!isNew ? (
+            <div className="flex gap-2">
+              <button
+                onClick={handleDelete}
+                disabled={removing || saving}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+              {formData.status !== 'cancelled' && (
+                <button
+                  onClick={handleCancelJob}
+                  disabled={removing || saving}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-60 transition-colors"
+                >
+                  <Ban className="w-4 h-4" /> Cancel job
+                </button>
+              )}
+            </div>
+          ) : <span className="hidden sm:block" />}
+          <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+            <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
+              Close
+            </Button>
+            <Button variant="primary" onClick={() => handleSave(false)} disabled={saving || removing} className="w-full sm:w-auto">
+              {saving ? 'Saving...' : (isNew ? 'Create Job' : 'Save Changes')}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
