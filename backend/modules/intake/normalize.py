@@ -26,7 +26,9 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.models import LeadIntake, Client, Activity
-from utils.contacts import find_client_by_contact, normalize_phone
+from utils.contacts import (
+    find_client_by_contact, normalize_phone, add_contact_email, add_contact_phone,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +278,12 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             client.phone = data.phone
         if data.address and not client.address:
             client.address = data.address
+
+    # Record the lead's email/phone in the canonical multi-value tables so a
+    # returning customer (or a Gmail thread) matches this client instead of
+    # spawning a duplicate — even if it isn't the client's primary contact.
+    add_contact_email(db, client, data.email, source=data.source)
+    add_contact_phone(db, client, data.phone, source=data.source)
 
     intake = LeadIntake(
         name=data.name or client.name, email=data.email, phone=data.phone,
