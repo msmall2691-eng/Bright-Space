@@ -1095,6 +1095,85 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
     return job_to_dict(job)
 
 
+@router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Full job record for the detail page: the job plus its linked records
+    (client, opportunity, property, originating quote), related invoices, and
+    the job-scoped activity timeline."""
+    from database.models import Invoice, Opportunity, Quote, Activity
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(
+        joinedload(Job.client), joinedload(Job.property), joinedload(Job.opportunity),
+    ).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    invoices = db.query(Invoice).filter(
+        Invoice.job_id == job.id,
+        or_(Invoice.org_id == org_id, Invoice.org_id.is_(None)),
+    ).all()
+    quote = None
+    if job.quote_id:
+        quote = db.query(Quote).filter(Quote.id == job.quote_id).first()
+    timeline = db.query(Activity).filter(
+        Activity.job_id == job.id,
+    ).order_by(Activity.created_at.desc()).limit(50).all()
+
+    return {
+        **job_to_dict(job),
+        "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
+                     if job.property else None),
+        "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
+                        if job.opportunity else None),
+        "quote": ({"id": quote.id, "quote_number": quote.quote_number, "status": quote.status, "total": quote.total}
+                  if quote else None),
+        "invoices": [
+            {"id": inv.id, "invoice_number": inv.invoice_number, "status": inv.status, "total": inv.total,
+             "created_at": inv.created_at.isoformat() if inv.created_at else None}
+            for inv in invoices
+        ],
+        "timeline": [
+            {"id": a.id, "activity_type": a.activity_type, "summary": a.summary, "actor": a.actor,
+             "created_at": a.created_at.isoformat() if a.created_at else None}
+            for a in timeline
+        ],
+    }
+
+
+@router.post("/{job_id}/notes", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def add_job_note(job_id: int, data: dict, db: Session = Depends(get_db),
+                 current_user=Depends(get_current_user), org_id: int = Depends(current_org_id)):
+    """Jot an internal note on a job. Recorded as a NOTE_ADDED activity anchored
+    to the job (and its client) so it lands in the job's timeline."""
+    from database.models import ActivityType
+    from modules.activities.router import activity_to_dict
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    body = (data.get("body") or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Note body is required")
+
+    actor = getattr(current_user, "email", None) or getattr(current_user, "full_name", None) or "staff"
+    act = log_activity(
+        db, ActivityType.NOTE_ADDED.value,
+        client_id=job.client_id, job_id=job.id, actor=actor, summary=body,
+        extra_data={"note": True}, commit=False,
+    )
+    if not act:
+        raise HTTPException(status_code=500, detail="Could not record note")
+    db.commit()
+    db.refresh(act)
+    return activity_to_dict(act)
+
+
 @router.patch("/{job_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     org_id = resolve_org_id(org_id, db)

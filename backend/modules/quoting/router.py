@@ -292,6 +292,32 @@ def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depend
     return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))
 
 
+@router.get("/{quote_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def get_quote_details(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Full quote record for the detail page: the quote (incl. line items) plus
+    its linked records — client, opportunity, property — and the job it was
+    converted into, if any (Job.quote_id back-link)."""
+    from database.models import Opportunity
+    oid = resolve_org_id(org_id, db)
+    quote = _get_quote_or_404(quote_id, db, oid)
+
+    opp = None
+    if quote.opportunity_id:
+        opp = db.query(Opportunity).filter(Opportunity.id == quote.opportunity_id).first()
+    prop = None
+    if quote.property_id:
+        prop = db.query(Property).filter(Property.id == quote.property_id).first()
+    job = db.query(Job).filter(Job.quote_id == quote.id).first()
+
+    return {
+        **_quote_dict(quote),
+        "opportunity": ({"id": opp.id, "title": opp.title, "stage": opp.stage} if opp else None),
+        "property": ({"id": prop.id, "name": prop.name, "address": prop.address} if prop else None),
+        "job": ({"id": job.id, "title": job.title, "status": job.status,
+                 "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None} if job else None),
+    }
+
+
 def _apply_update(quote: Quote, data: dict) -> None:
     """Apply a partial update dict, recomputing totals when pricing changes."""
     if "items" in data and data["items"] is not None:

@@ -1707,12 +1707,22 @@ export default function Schedule() {
             <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
-                <button
-                  onClick={() => setShowDetails(false)}
-                  className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-bg-2 -mr-2 sm:mr-0"
-                >
-                  <X className="w-5 sm:w-5 h-5 sm:h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {selectedVisit.job?.id && (
+                    <button
+                      onClick={() => navigate(`/jobs/${selectedVisit.job.id}`)}
+                      className="text-[12px] font-medium text-blue-500 hover:underline px-2 py-1"
+                    >
+                      Open full page
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowDetails(false)}
+                    className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-bg-2 -mr-2 sm:mr-0"
+                  >
+                    <X className="w-5 sm:w-5 h-5 sm:h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Details */}
