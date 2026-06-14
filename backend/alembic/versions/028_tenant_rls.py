@@ -19,56 +19,25 @@ That means RLS is validated on a Railway preview/prod DB, not in CI.
 Revision ID: 028_tenant_rls
 """
 from alembic import op
-import sqlalchemy as sa
+
+from database.rls import apply_org_rls, drop_org_rls, POLICY, USING, TENANT_TABLES
 
 revision = "028_tenant_rls"
 down_revision = "027_tenant_org_id"
 branch_labels = None
 depends_on = None
 
-# Same set as migration 027 (every table that gained org_id).
-TABLES = [
-    "clients", "properties", "property_icals", "ical_events", "recurring_schedules",
-    "recurrence_exceptions", "jobs", "visits", "lead_intakes", "invoices",
-    "conversations", "messages", "opportunities", "contact_emails", "contact_phones",
-    "activities", "quotes", "quote_requests", "quote_emails", "cleaner_time_off",
-    "integration_events",
-]
-
-_POLICY = "bb_org_isolation"
-_USING = (
-    "org_id = current_setting('app.current_org_id', true)::int "
-    "OR current_setting('app.current_org_id', true) IS NULL"
-)
+# Back-compat aliases (the RLS validation test reads these from this module).
+TABLES = TENANT_TABLES
+_POLICY = POLICY
+_USING = USING
 
 
 def upgrade():
-    bind = op.get_bind()
-    if bind.dialect.name != "postgresql":
-        return  # RLS is Postgres-only; SQLite/CI no-ops.
-    insp = sa.inspect(bind)
-    existing = set(insp.get_table_names())
-    for table in TABLES:
-        if table not in existing:
-            continue
-        op.execute(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY')
-        op.execute(f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY')
-        op.execute(f'DROP POLICY IF EXISTS {_POLICY} ON "{table}"')
-        op.execute(
-            f'CREATE POLICY {_POLICY} ON "{table}" '
-            f'USING ({_USING}) WITH CHECK ({_USING})'
-        )
+    # Idempotent + Postgres-only; skips tables that don't exist yet at this point
+    # in history (e.g. saved_views, added in 029).
+    apply_org_rls(op.get_bind())
 
 
 def downgrade():
-    bind = op.get_bind()
-    if bind.dialect.name != "postgresql":
-        return
-    insp = sa.inspect(bind)
-    existing = set(insp.get_table_names())
-    for table in TABLES:
-        if table not in existing:
-            continue
-        op.execute(f'DROP POLICY IF EXISTS {_POLICY} ON "{table}"')
-        op.execute(f'ALTER TABLE "{table}" NO FORCE ROW LEVEL SECURITY')
-        op.execute(f'ALTER TABLE "{table}" DISABLE ROW LEVEL SECURITY')
+    drop_org_rls(op.get_bind())

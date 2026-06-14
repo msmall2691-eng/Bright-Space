@@ -35,13 +35,10 @@ _APP_PW = "rls_app_pw"
 
 
 def _migration_policy():
-    """Pull the EXACT USING/policy-name from migration 028 so this test tracks
-    the real policy text (no drift)."""
-    path = pathlib.Path(__file__).resolve().parent.parent / "alembic" / "versions" / "028_tenant_rls.py"
-    spec = importlib.util.spec_from_file_location("_m028", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod._USING, mod._POLICY
+    """The real policy text/name, from the shared module both the migration and
+    the bootstrap use (no drift)."""
+    from database.rls import USING, POLICY
+    return USING, POLICY
 
 
 @pytest.fixture(scope="module")
