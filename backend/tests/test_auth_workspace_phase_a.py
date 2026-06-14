@@ -12,7 +12,7 @@ from database.models import User, Org
 from modules.auth.router import (
     _resolve_google_user, _ensure_not_last_admin, require_role,
     approve_user, deny_user, update_workspace_user, AdminUserUpdate,
-    list_workspace_users,
+    list_workspace_users, _default_org_id,
 )
 from auth_jwt import hash_password
 
@@ -24,9 +24,11 @@ def db(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     db = SessionLocal()
     created_before = {uid for (uid,) in db.query(User.id)}
-    # The bootstrap admin — mirrors prod's office@ account.
+    # The bootstrap admin — mirrors prod's office@ account (org_id backfilled to
+    # the primary workspace at boot; MT-4's org-scoped admin check relies on it).
     admin = User(email="office@mainecleaningco.com", password_hash=hash_password("pw"),
-                 full_name="Office", role="admin", active=True, status="active")
+                 full_name="Office", role="admin", active=True, status="active",
+                 org_id=_default_org_id(db))
     db.add(admin); db.commit(); db.refresh(admin)
     yield db, admin
     db.rollback()
@@ -34,13 +36,18 @@ def db(monkeypatch):
     db.commit(); db.close()
 
 
-def test_new_google_signup_is_pending_member_never_admin(db):
+def test_new_google_signup_founds_own_workspace_as_admin(db):
+    """MT-4: a net-new self-signup founds its OWN workspace and is its admin,
+    active immediately — never admin of an existing workspace."""
     db_, admin = db
+    from modules.auth.router import _default_org_id
+    primary = _default_org_id(db_)
     u = _resolve_google_user(db_, "stranger@example.com", "sub-stranger", "Stranger")
     db_.commit()
-    assert u.role == "member"        # NEVER auto-admin
-    assert u.status == "pending"     # no access until approved
-    assert u.org_id is not None      # joined the workspace
+    assert u.role == "admin"          # admin of their OWN org...
+    assert u.status == "active"       # ...active, no approval needed
+    assert u.org_id is not None
+    assert u.org_id != primary        # a brand-new workspace, not the primary one
 
 
 def test_allowlisted_google_signup_is_auto_approved_member(db, monkeypatch):
@@ -80,8 +87,12 @@ def test_existing_active_user_signs_in_without_allowlist(db):
 
 def test_pending_user_is_blocked_until_approved_then_unblocked(db):
     db_, admin = db
-    pending = _resolve_google_user(db_, "waiting@example.com", "sub-wait", "Waiting")
-    db_.commit()
+    # Post-MT-4 a self-signup founds its own active org, so it's never pending;
+    # the approval machinery now serves invite-to-existing-workspace. Create a
+    # pending member directly to exercise that machinery.
+    pending = User(email="waiting@example.com", role="member", active=True,
+                   status="pending", org_id=admin.org_id)
+    db_.add(pending); db_.commit(); db_.refresh(pending)
 
     gate = require_role("admin", "manager")
     with pytest.raises(HTTPException) as ei:
@@ -130,9 +141,9 @@ def test_last_admin_cannot_be_demoted_or_deactivated(db):
 
 def test_role_change_and_listing(db):
     db_, admin = db
-    member = _resolve_google_user(db_, "promote@example.com", "sub-promote", "Promote Me")
-    member.status = "active"
-    db_.commit()
+    member = User(email="promote@example.com", role="member", active=True,
+                  status="active", org_id=admin.org_id)
+    db_.add(member); db_.commit(); db_.refresh(member)
     row = update_workspace_user(member.id, AdminUserUpdate(role="manager"), db=db_, current_user=admin)
     assert row["role"] == "manager"
     with pytest.raises(HTTPException):
@@ -143,7 +154,8 @@ def test_role_change_and_listing(db):
     assert "promote@example.com" in emails
     assert "office@mainecleaningco.com" in emails
     # Pending users sort first so approvals are seen.
-    _resolve_google_user(db_, "zzz-pending@example.com", "sub-zzz", "ZZZ")
+    db_.add(User(email="zzz-pending@example.com", role="member", active=True,
+                 status="pending", org_id=admin.org_id))
     db_.commit()
     rows = list_workspace_users(db=db_)
     assert rows[0]["status"] == "pending"
