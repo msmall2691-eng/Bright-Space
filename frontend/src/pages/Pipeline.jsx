@@ -124,7 +124,10 @@ export default function Pipeline() {
                       <div className="flex items-start gap-1.5">
                         <GripVertical className="w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                         <div className="min-w-0 flex-1">
-                          <div className="text-[13px] font-medium text-ink truncate">{o.title || 'Untitled'}</div>
+                          <Link to={`/opportunities/${o.id}`}
+                            className="text-[13px] font-medium text-ink hover:text-blue-500 truncate block">
+                            {o.title || 'Untitled'}
+                          </Link>
                           {o.client_name && (
                             <Link to={o.client_id ? `/clients/${o.client_id}` : '#'}
                               className="text-[11px] text-ink-3 hover:text-blue-500 truncate block">
