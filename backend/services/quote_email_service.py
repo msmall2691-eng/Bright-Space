@@ -59,7 +59,8 @@ class QuoteEmailService:
         self.smtp_pass = creds["smtp_pass"]
         self.smtp_host = creds["smtp_host"]
         self.smtp_port = creds["smtp_port"]
-        self.from_email = creds["from_email"] or "quotes@bright-space.com"
+        from config import DEFAULT_FROM_EMAIL
+        self.from_email = creds["from_email"] or DEFAULT_FROM_EMAIL
         self.company_name = (self._db_setting("company_name") or os.getenv("COMPANY_NAME")
                              or creds["from_name"] or "Bright-Space")
         # Shared customer-facing identity (same Settings rows as the public

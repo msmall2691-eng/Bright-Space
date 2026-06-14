@@ -45,6 +45,7 @@ export default function JobCreateModal({
   initialDate = '',
   initialJobType = null,
   initialTitle = null,
+  initialQuoteId = null,
   defaultRecurring = false,
   onClose,
   onCreated,
@@ -227,6 +228,8 @@ export default function JobCreateModal({
           end_time: form.end_time,
           generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
           notes: form.notes || null,
+          // Link back to the source quote so it's converted (see one-time path).
+          quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
         }
         const sched = await post('/api/recurring', body)
         onCreated?.({ kind: 'recurring', schedule: sched })
@@ -243,6 +246,9 @@ export default function JobCreateModal({
         address: form.address || null,
         notes: form.notes || null,
         property_id: form.property_id ? parseInt(form.property_id) : null,
+        // When scheduling from an accepted quote, link the job back so the
+        // backend converts the quote and revenue→job traceability is kept.
+        quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
       }
       const job = await post('/api/jobs', body)
       onCreated?.({ kind: 'job', job, gcal: job?.gcal })
