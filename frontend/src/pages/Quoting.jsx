@@ -89,6 +89,8 @@ export default function Quoting() {
   // Live customer-facing preview alongside the editor (§7.2 #4 quote reader).
   const [previewMode, setPreviewMode] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
+  const [archivedQuotes, setArchivedQuotes] = useState([])
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
   // Template manager (create/edit/delete reusable quote templates). Saving needs
   // admin/manager (PUT is role-gated), so only show the editor to those roles.
   const [editTemplates, setEditTemplates] = useState([])
@@ -196,6 +198,7 @@ export default function Quoting() {
   useEffect(() => {
     const t = new URLSearchParams(location.search).get('tab')
     if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
+    else if (t === 'archived') { setTab('archived'); loadArchived() }
   }, [location.search])
 
   // Guard (June 10 P1): one malformed row — legacy JSON shapes where items is
@@ -439,6 +442,56 @@ export default function Quoting() {
     } catch (e) { showToast(e.message || 'Could not archive quote') }
   }
 
+  // Permanent (hard) delete is admin-only and lives in the Archived view.
+  const isAdmin = (() => {
+    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+    catch { return false }
+  })()
+
+  const loadArchived = () => get('/api/quotes?status=archived')
+    .then(d => setArchivedQuotes(Array.isArray(d) ? d.map(safeQuote) : []))
+    .catch(err => console.error("[Quoting]", err))
+
+  // --- Bulk selection (quotes + archived tabs) ------------------------------
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const clearSelection = () => setSelectedIds(new Set())
+
+  const bulkArchive = async () => {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    if (!window.confirm(`Archive ${ids.length} quote${ids.length === 1 ? '' : 's'}? They'll be hidden from this list.`)) return
+    let failed = 0
+    for (const id of ids) { try { await del(`/api/quotes/${id}`) } catch { failed++ } }
+    clearSelection(); await loadQuotes()
+    showToast(failed
+      ? `Archived ${ids.length - failed} of ${ids.length} · ${failed} couldn't be archived (scheduled into a job?)`
+      : `Archived ${ids.length} quote${ids.length === 1 ? '' : 's'}`)
+  }
+
+  const bulkDeletePermanent = async () => {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    if (!window.confirm(`Permanently delete ${ids.length} quote${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    let failed = 0
+    for (const id of ids) { try { await del(`/api/quotes/${id}/permanent`) } catch { failed++ } }
+    clearSelection(); await loadArchived()
+    showToast(failed
+      ? `Deleted ${ids.length - failed} of ${ids.length} · ${failed} failed`
+      : `Deleted ${ids.length} quote${ids.length === 1 ? '' : 's'}`)
+  }
+
+  const deletePermanent = async (q) => {
+    if (!window.confirm(`Permanently delete quote ${q.quote_number || q.id}? This cannot be undone.`)) return
+    try { await del(`/api/quotes/${q.id}/permanent`); await loadArchived(); showToast('Quote deleted permanently') }
+    catch (e) { showToast(e.message || 'Could not delete quote') }
+  }
+
+  const switchTab = (t) => { clearSelection(); setTab(t); if (t === 'archived') loadArchived() }
+
   // Onboard an accepted quote: open the job modal (recurring by default,
   // pre-filled from the quote) to set up the repeating schedule + first job on
   // Google Calendar, then mark the quote converted.
@@ -487,19 +540,23 @@ export default function Quoting() {
         {/* Tabs + action */}
         <div className="flex justify-between items-center mb-5 shrink-0">
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1">
-            <button onClick={() => setTab('leads')}
+            <button onClick={() => switchTab('leads')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'leads' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Leads
               {newLeads > 0 && <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{newLeads}</span>}
             </button>
-            <button onClick={() => setTab('quotes')}
+            <button onClick={() => switchTab('quotes')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Quotes
             </button>
-            <button onClick={() => setTab('follow-ups')}
+            <button onClick={() => switchTab('follow-ups')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Follow-ups
               {followUps.length > 0 && <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{followUps.length}</span>}
+            </button>
+            <button onClick={() => switchTab('archived')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              Archived
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -578,10 +635,27 @@ export default function Quoting() {
         {/* Quotes tab */}
         {tab === 'quotes' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            {canEdit && selectedIds.size > 0 && (
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-2.5">
+                <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={bulkArchive}
+                    className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <Trash2 className="w-4 h-4" /> Archive {selectedIds.size}
+                  </button>
+                  <button onClick={clearSelection} className="text-sm px-2 py-1.5 text-ink-3 hover:text-ink">Clear</button>
+                </div>
+              </div>
+            )}
             {quotes.length === 0 && <div className="text-center py-16 text-ink-3 text-sm">No quotes yet</div>}
             {quotes.map(q => (
               <div key={q.id} className="bg-panel border border-hairline hover:border-hairline rounded-xl p-4 transition-colors">
                 <div className="flex items-center gap-3">
+                  {canEdit && (
+                    <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
+                      className="w-4 h-4 shrink-0 rounded border-hairline accent-blue-600 cursor-pointer"
+                      title="Select for bulk action" />
+                  )}
                   <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink">{clientName(q.client_id)}</span>
@@ -702,6 +776,60 @@ export default function Quoting() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* Archived tab — soft-deleted quotes, viewable + permanently deletable */}
+        {tab === 'archived' && (
+          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            {isAdmin && selectedIds.size > 0 && (
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-red-600/10 border border-red-600/30 rounded-xl px-4 py-2.5">
+                <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={bulkDeletePermanent}
+                    className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors">
+                    <Trash2 className="w-4 h-4" /> Delete {selectedIds.size} permanently
+                  </button>
+                  <button onClick={clearSelection} className="text-sm px-2 py-1.5 text-ink-3 hover:text-ink">Clear</button>
+                </div>
+              </div>
+            )}
+            {archivedQuotes.length === 0 && (
+              <div className="text-center py-16 text-ink-3 text-sm">No archived quotes</div>
+            )}
+            {archivedQuotes.map(q => (
+              <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  {isAdmin && (
+                    <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
+                      className="w-4 h-4 shrink-0 rounded border-hairline accent-red-600 cursor-pointer"
+                      title="Select for permanent delete" />
+                  )}
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-ink">{clientName(q.client_id)}</span>
+                      <span className="text-xs text-ink-3">{q.quote_number}</span>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline">archived</span>
+                    </div>
+                    <div className="text-xs text-ink-3 mt-0.5">
+                      {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address,
+                        q.archived_at && `archived ${new Date(q.archived_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                  <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+                  {isAdmin && (
+                    <button onClick={() => deletePermanent(q)}
+                      title="Delete permanently"
+                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {!isAdmin && archivedQuotes.length > 0 && (
+              <p className="text-xs text-ink-3 text-center pt-2">Permanent deletion is admin-only.</p>
+            )}
           </div>
         )}
       </div>

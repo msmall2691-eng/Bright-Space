@@ -346,6 +346,34 @@ def delete_quote(quote_id: int, db: Session = Depends(get_db)):
     return {"status": "archived", "id": quote.id}
 
 
+@router.delete("/{quote_id}/permanent", dependencies=[Depends(require_role("admin"))])
+def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db)):
+    """Hard-delete an archived quote (admin only) — for clearing test/junk quotes.
+
+    Requires the quote be archived first (so this can't be a one-click way to
+    destroy a live quote), and still refuses anything scheduled into a job. Sent
+    emails (QuoteEmail) cascade; recurring-schedule links are detached first so
+    the delete can't be FK-blocked."""
+    from database.models import RecurringSchedule
+
+    quote = _get_quote_or_404(quote_id, db)
+    if quote.status != "archived":
+        raise HTTPException(status_code=409, detail="Archive the quote before deleting it permanently.")
+    if quote.status == "converted" or _existing_job_for_quote(db, quote):
+        raise HTTPException(
+            status_code=409,
+            detail="This quote has been scheduled into a job. Cancel/delete the job first.",
+        )
+    # Detach the RESTRICT references so the row can actually be removed.
+    db.query(RecurringSchedule).filter(RecurringSchedule.quote_id == quote.id).update(
+        {RecurringSchedule.quote_id: None}, synchronize_session=False)
+    db.query(Job).filter(Job.quote_id == quote.id).update(
+        {Job.quote_id: None}, synchronize_session=False)
+    db.delete(quote)
+    db.commit()
+    return {"status": "deleted", "id": quote_id}
+
+
 # ========================
 # Status transitions
 # ========================
