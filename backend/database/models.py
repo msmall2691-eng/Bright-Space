@@ -136,7 +136,7 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
-    client = relationship("Client", back_populates="user")
+    client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
 
 
@@ -208,6 +208,11 @@ class Client(Base):
     source = Column(String)
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
+    # Audit actor metadata (Twenty's ActorMetadata): who/what created and last
+    # updated the record, and when. Nullable — public/website writes have no user.
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # client_type column removed by migration 007 — duplicated property_type
     # semantically. The CRM summary endpoint now derives it from
@@ -219,7 +224,7 @@ class Client(Base):
     email_verified = Column(Boolean, default=False)
 
     # Relationships - all cascade delete with client
-    user = relationship("User", back_populates="client", uselist=False)  # One client per user (for role=client users)
+    user = relationship("User", back_populates="client", uselist=False, foreign_keys="User.client_id")  # One client per user (for role=client users)
     quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan", foreign_keys="Quote.client_id")
     jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
@@ -284,7 +289,15 @@ class Property(Base):
     custom_fields = Column(JSON, default=dict)
 
     active = Column(Boolean, default=True, nullable=False)
+    # Structured size details, carried over from the lead/intake on convert so a
+    # quote can pre-fill from the customer's request instead of re-typing.
+    bedrooms = Column(Integer, nullable=True)
+    bathrooms = Column(Integer, nullable=True)
+    square_footage = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     client = relationship("Client", back_populates="properties")
     ical_events = relationship("ICalEvent", back_populates="property", cascade="all, delete-orphan")
@@ -584,6 +597,9 @@ class LeadIntake(Base):
     custom_fields = Column(JSON, default=dict)
     followed_up_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     client = relationship("Client", back_populates="lead_intakes")
     opportunity = relationship("Opportunity", back_populates="intake", uselist=False)
@@ -614,6 +630,8 @@ class Invoice(Base):
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")

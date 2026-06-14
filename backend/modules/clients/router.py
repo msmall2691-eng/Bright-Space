@@ -471,6 +471,9 @@ def client_to_dict(c: Client) -> dict:
         "source": c.source,
         "custom_fields": c.custom_fields or {},
         "created_at": c.created_at.isoformat() if c.created_at else None,
+        "updated_at": getattr(c, "updated_at", None).isoformat() if getattr(c, "updated_at", None) else None,
+        "created_by": getattr(c, "created_by", None),
+        "updated_by": getattr(c, "updated_by", None),
     }
 
 
@@ -488,7 +491,7 @@ def get_clients(
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_client(data: ClientCreate, db: Session = Depends(get_db)):
+def create_client(data: ClientCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     payload = data.model_dump()
     _normalize_client_fields(payload)
     # Enrich with extracted data from email, name, etc.
@@ -497,6 +500,8 @@ def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     if not payload["name"]:
         raise HTTPException(status_code=422, detail="name or first_name required")
     client = Client(**payload)
+    # Audit actor: who created this record (Twenty's ActorMetadata).
+    client.created_by = client.updated_by = getattr(current_user, "id", None)
     db.add(client)
     db.commit()
     db.refresh(client)
@@ -754,11 +759,12 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{client_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_db)):
+def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     updates = data.model_dump(exclude_none=True)
+    client.updated_by = getattr(current_user, "id", None)  # audit actor
     _normalize_client_fields(updates, existing_city=client.city)
     phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
     new_phone = updates.get("phone") if phone_changed else None

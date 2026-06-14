@@ -221,6 +221,40 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
 
     address = " ".join(filter(None, [intake.address, intake.city, intake.state, intake.zip_code]))
 
+    # Carry the customer's structured request onto a Property so the quote (and
+    # later the job) start from real data instead of re-typing. Reuse an existing
+    # property at the same address; otherwise create one and back-fill size.
+    from database.models import Property
+    prop = None
+    if intake.address:
+        prop = (
+            db.query(Property)
+            .filter(Property.client_id == client_id, Property.address == intake.address)
+            .first()
+        )
+    if prop:
+        if intake.bedrooms and not prop.bedrooms:
+            prop.bedrooms = intake.bedrooms
+        if intake.bathrooms and not prop.bathrooms:
+            prop.bathrooms = intake.bathrooms
+        if intake.square_footage and not prop.square_footage:
+            prop.square_footage = intake.square_footage
+    else:
+        prop = Property(
+            client_id=client_id,
+            name=intake.property_name or intake.address or f"{intake.name}'s property",
+            address=intake.address or address or "(no address on file)",
+            city=intake.city,
+            state=intake.state,
+            zip_code=intake.zip_code,
+            property_type=intake.service_type or "residential",
+            bedrooms=intake.bedrooms,
+            bathrooms=intake.bathrooms,
+            square_footage=intake.square_footage,
+        )
+        db.add(prop)
+        db.flush()
+
     # Seed the first line item's price from the website "instant quote" estimate
     # (midpoint of the range) so the operator starts from the customer's number
     # instead of $0.
@@ -243,6 +277,7 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
     quote = Quote(
         client_id=client_id,
         intake_id=intake_id,
+        property_id=prop.id,
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         address=address or None,
