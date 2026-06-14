@@ -1138,3 +1138,26 @@ class IntegrationEvent(Base):
     request_payload = Column(String, nullable=True)   # short human note (e.g. "to a@b.com")
     response_payload = Column(String, nullable=True)  # provider response summary, if any
     created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class SavedView(Base):
+    """A user's saved list-view preset (Twenty's "views"): a named bundle of a
+    list page's filters / sort / visible-columns / layout for one entity type.
+
+    Per-user AND per-workspace (org), so each member curates their own views
+    without affecting anyone else. `config` is an opaque JSON blob owned by the
+    frontend (e.g. {"statusFilter": "active", "viewMode": "table"}) — keeping it
+    schemaless lets each list page evolve what it persists without a migration.
+    At most one default per (user, entity_type)."""
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=False, index=True)  # tenant scope (MT-1)
+    entity_type = Column(String(40), nullable=False, index=True)  # 'client' | 'opportunity' | ...
+    name = Column(String(120), nullable=False)
+    config = Column(JSON, default=dict, nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
