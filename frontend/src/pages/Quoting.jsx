@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText, Search } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import SavedViewsBar from '../components/SavedViewsBar'
+import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
 import AddressAutocomplete from '../components/AddressAutocomplete'
@@ -25,6 +26,12 @@ const LEAD_STATUS_COLORS = {
   quoted:    'bg-purple-50 text-purple-700 border-purple-200',
   converted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
+
+// Inline-edit status options (Twenty-style chips) for the leads/quotes tables.
+const QUOTE_STATUS_OPTIONS = ['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted']
+  .map(s => ({ value: s, label: s, chipClass: QUOTE_STATUS_COLORS[s] || QUOTE_STATUS_COLORS.draft }))
+const LEAD_STATUS_OPTIONS = ['new', 'reviewed', 'quoted', 'converted']
+  .map(s => ({ value: s, label: s, chipClass: LEAD_STATUS_COLORS[s] }))
 
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
@@ -435,6 +442,11 @@ export default function Quoting() {
     loadIntakes()
   }
 
+  const updateLeadStatus = async (id, status) => {
+    await patch(`/api/intake/${id}`, { status })
+    loadIntakes()
+  }
+
   const convertToJob = async (quoteId) => {
     setConverting(quoteId)
     try {
@@ -610,13 +622,19 @@ export default function Quoting() {
                 <p className="text-xs mt-1 text-ink-3">Submissions from maineclean.co will appear here</p>
               </div>
             )}
+            {intakes.length > 0 && (
+            <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
             {intakes.map(intake => (
-              <div key={intake.id} className="bg-panel border border-hairline rounded-xl p-4">
+              <div key={intake.id} className="p-3 hover:bg-bg-2/40 transition-colors">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="font-medium text-ink">{intake.name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${LEAD_STATUS_COLORS[intake.status]}`}>{intake.status}</span>
+                      <span onClick={e => e.stopPropagation()}>
+                        <InlineSelect value={intake.status} options={LEAD_STATUS_OPTIONS}
+                          onSelect={(s) => updateLeadStatus(intake.id, s)}
+                          disabled={!canEdit || intake.status === 'converted'} />
+                      </span>
                       <span className="text-xs text-ink-3 capitalize bg-bg-2 px-2 py-0.5 rounded-full">{intake.service_type}</span>
                     </div>
                     {/* Structured request chips — the data the customer entered on
@@ -669,6 +687,8 @@ export default function Quoting() {
                 </div>
               </div>
             ))}
+            </div>
+            )}
           </div>
         )}
 
@@ -705,8 +725,10 @@ export default function Quoting() {
             {quotes.length > 0 && visibleQuotes.length === 0 && (
               <div className="text-center py-16 text-ink-3 text-sm">No quotes match your filters</div>
             )}
+            {visibleQuotes.length > 0 && (
+            <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
             {visibleQuotes.map(q => (
-              <div key={q.id} className="bg-panel border border-hairline hover:border-hairline rounded-xl p-4 transition-colors">
+              <div key={q.id} className="p-3 hover:bg-bg-2/40 transition-colors">
                 <div className="flex items-center gap-3">
                   {canEdit && (
                     <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
@@ -717,7 +739,14 @@ export default function Quoting() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink">{clientName(q.client_id)}</span>
                       <span className="text-xs text-ink-3">{q.quote_number}</span>
-                      <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+                      {canEdit && ['draft', 'sent', 'viewed', 'accepted', 'declined'].includes(q.status) ? (
+                        <span onClick={e => e.stopPropagation()}>
+                          <InlineSelect value={q.status} options={QUOTE_STATUS_OPTIONS}
+                            onSelect={(s) => updateStatus(q.id, s)} />
+                        </span>
+                      ) : (
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+                      )}
                       {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
                       {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
                         <span className="text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200"
@@ -788,6 +817,8 @@ export default function Quoting() {
                 </div>
               </div>
             ))}
+            </div>
+            )}
           </div>
         )}
 
