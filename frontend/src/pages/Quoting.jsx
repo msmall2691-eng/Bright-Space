@@ -4,6 +4,7 @@ import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye,
 import AgentWidget from '../components/AgentWidget'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
+import AddressAutocomplete from '../components/AddressAutocomplete'
 import { get, post, patch, put, del } from "../api"
 
 
@@ -1008,10 +1009,14 @@ export default function Quoting() {
               </div>
             </div>
 
-            {/* Address */}
+            {/* Address — structured autocomplete so city/state/zip are captured
+                consistently (better dedup + routing) instead of free text. */}
             <div>
               <label className="block text-xs text-ink-3 mb-1">Service Address</label>
-              <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+              <AddressAutocomplete
+                value={form.address}
+                onChange={v => setForm(f => ({ ...f, address: v }))}
+                onSelect={p => setForm(f => ({ ...f, address: p.address || f.address }))}
                 placeholder="123 Main St, Portland, ME 04101"
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>

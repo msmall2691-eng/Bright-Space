@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon } from 'lucide-react'
 import { get, post } from '../api'
+import AddressAutocomplete from './AddressAutocomplete'
 
 const JOB_TYPES = [
   { value: 'residential',  label: 'Residential' },
@@ -384,7 +385,10 @@ export default function JobCreateModal({
                 <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
                   placeholder="Property name * (e.g. 4 Red Barn Circle)"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                <input value={newProp.address} onChange={e => setNewProp(n => ({ ...n, address: e.target.value }))}
+                <AddressAutocomplete
+                  value={newProp.address}
+                  onChange={v => setNewProp(n => ({ ...n, address: v }))}
+                  onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
                   placeholder="Address"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 {propErr && <div className="text-xs text-red-600">{propErr}</div>}
