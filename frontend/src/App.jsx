@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
 import Requests from './pages/Requests'
+import Pipeline from './pages/Pipeline'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
 import { useUnreadCount } from './hooks/useUnreadCount'
@@ -199,7 +200,7 @@ export default function App() {
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientProfile />} />
               <Route path="/requests" element={<Requests />} />
-              <Route path="/pipeline" element={<Requests />} />
+              <Route path="/pipeline" element={<Pipeline />} />
               <Route path="/quoting" element={<Quoting />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
