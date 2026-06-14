@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from database.db import get_db
 from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 
 router = APIRouter()
 
@@ -82,8 +83,10 @@ def list_opportunities(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
-    q = db.query(Opportunity)
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+    q = db.query(Opportunity).filter(or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)))
     if stage:
         q = q.filter(Opportunity.stage == stage)
     if client_id:
@@ -96,8 +99,10 @@ def list_opportunities(
 
 
 @router.get("/summary")
-def opportunity_summary(db: Session = Depends(get_db)):
-    opps = db.query(Opportunity).all()
+def opportunity_summary(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    opps = db.query(Opportunity).filter(
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None))
+    ).all()
     stages = {}
     total_value = 0
     weighted_value = 0
@@ -118,30 +123,34 @@ def opportunity_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/{opp_id}")
-def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
+def get_opportunity(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     o = db.query(Opportunity).options(
         joinedload(Opportunity.client),
-        joinedload(Opportunity.quotes),
         joinedload(Opportunity.invoices),
         joinedload(Opportunity.jobs),
         joinedload(Opportunity.messages),
-    ).filter(Opportunity.id == opp_id).first()
+    ).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return opp_to_dict(o)
 
 
 @router.get("/{opp_id}/details")
-def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
+def get_opportunity_details(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Get full opportunity details with all related entities and timeline."""
     o = db.query(Opportunity).options(
         joinedload(Opportunity.client),
-        joinedload(Opportunity.quotes),
         joinedload(Opportunity.invoices),
         joinedload(Opportunity.jobs),
         joinedload(Opportunity.messages),
         joinedload(Opportunity.activities),
-    ).filter(Opportunity.id == opp_id).first()
+    ).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
@@ -191,12 +200,13 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
+def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     client = db.query(Client).filter(Client.id == data.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     o = Opportunity(
         client_id=data.client_id,
+        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
         title=data.title,
         stage=data.stage,
         amount=data.amount,
@@ -228,8 +238,11 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{opp_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depends(get_db)):
-    o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    o = db.query(Opportunity).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
@@ -266,8 +279,11 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
 
 
 @router.delete("/{opp_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_opportunity(opp_id: int, db: Session = Depends(get_db)):
-    o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+def delete_opportunity(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    o = db.query(Opportunity).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     db.delete(o)
