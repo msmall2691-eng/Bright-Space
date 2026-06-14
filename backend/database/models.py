@@ -182,6 +182,7 @@ class UserGoogleAccount(Base):
 class Client(Base):
     """Central hub entity connected to all business records."""
     __tablename__ = "clients"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)          # full display name (derived or manually set)
@@ -242,6 +243,7 @@ class Client(Base):
 class Property(Base):
     """A property (residential, commercial, or STR) belonging to a client."""
     __tablename__ = "properties"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -308,6 +310,7 @@ class Property(Base):
 class PropertyIcal(Base):
     """Multiple iCal URLs per property (Airbnb, VRBO, manual calendars, etc.)"""
     __tablename__ = "property_icals"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
@@ -336,6 +339,7 @@ class PropertyIcal(Base):
 class ICalEvent(Base):
     """A single event parsed from an STR property's iCal feed."""
     __tablename__ = "ical_events"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
@@ -362,6 +366,7 @@ class ICalEvent(Base):
 class RecurringSchedule(Base):
     """Defines a recurring cleaning engagement for residential or commercial clients."""
     __tablename__ = "recurring_schedules"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -407,6 +412,7 @@ class RecurrenceException(Base):
     actions are idempotent.
     """
     __tablename__ = "recurrence_exceptions"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     recurring_schedule_id = Column(
@@ -443,6 +449,7 @@ class RecurrenceException(Base):
 class Job(Base):
     """A cleaning job/task linked to a client, opportunity, and possibly quote."""
     __tablename__ = "jobs"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
@@ -514,6 +521,7 @@ class Job(Base):
 class Visit(Base):
     """A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
     __tablename__ = "visits"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     # BIGINT on Postgres (prod); plain INTEGER on SQLite so the primary key
     # autoincrements there (SQLite only aliases rowid for INTEGER PRIMARY KEY,
@@ -568,6 +576,7 @@ class Visit(Base):
 class LeadIntake(Base):
     """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
@@ -618,6 +627,7 @@ class LeadIntake(Base):
 class Invoice(Base):
     """Invoice linked to client, job, and opportunity."""
     __tablename__ = "invoices"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), index=True)
@@ -651,6 +661,7 @@ class Conversation(Base):
     Linked to client and opportunity for full context.
     """
     __tablename__ = "conversations"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -709,6 +720,7 @@ class Conversation(Base):
 class Message(Base):
     """Single message (email, SMS, chat, etc.) within a conversation."""
     __tablename__ = "messages"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -759,6 +771,7 @@ class Opportunity(Base):
     Inspired by Twenty CRM and Fieldcamp.
     """
     __tablename__ = "opportunities"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -793,6 +806,7 @@ class Opportunity(Base):
 class ContactEmail(Base):
     """Multiple email addresses per client (Twenty CRM pattern for enrichment)."""
     __tablename__ = "contact_emails"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -808,6 +822,7 @@ class ContactEmail(Base):
 class ContactPhone(Base):
     """Multiple phone numbers per client."""
     __tablename__ = "contact_phones"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -827,6 +842,7 @@ class Activity(Base):
     Tracks all interactions: emails, SMS, calls, notes, status changes, etc.
     """
     __tablename__ = "activities"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -916,6 +932,7 @@ class Quote(Base):
     sends and reads. Replaces the earlier UUID-keyed Quote + QuoteLineItem
     design that couldn't link to the integer Client/Job ids."""
     __tablename__ = "quotes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -1005,6 +1022,7 @@ class Quote(Base):
 class QuoteRequest(Base):
     """Customer quote request via web form. Integer-keyed."""
     __tablename__ = "quote_requests"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -1049,6 +1067,7 @@ class QuoteEmailStatus(str, Enum):
 class QuoteEmail(Base):
     """Tracks email deliveries for quotes (when sent + delivery status)."""
     __tablename__ = "quote_emails"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -1074,6 +1093,7 @@ class CleanerTimeOff(Base):
     a cleaner can't be assigned to a job on a day they're off. Dates are
     inclusive (start_date..end_date)."""
     __tablename__ = "cleaner_time_off"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     cleaner_id = Column(String, nullable=False, index=True)
@@ -1104,6 +1124,7 @@ class IntegrationEvent(Base):
     model or used; this model adopts that exact schema (no new migration), so
     create_all (tests) and the existing prod table stay in lockstep."""
     __tablename__ = "integration_events"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     entity_type = Column(String, nullable=False)   # 'job' | 'visit' | 'quote' | 'invoice'
