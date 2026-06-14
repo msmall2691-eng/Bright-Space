@@ -244,7 +244,7 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                       <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3">
                         {client?.name && <span className="truncate">{client.name}</span>}
                         <span className="ml-auto flex items-center gap-1 shrink-0">
-                          <SyncBadge ok={!!v.gcal_event_id} label="GCal" okTitle="On Google Calendar" offTitle="Not on Google Calendar yet" />
+                          <SyncBadge ok={!!(v.gcal_event_id || job?.gcal_event_id)} label="GCal" okTitle="On Google Calendar" offTitle="Not on Google Calendar yet" />
                           <SyncBadge ok={(job?.connecteam_shift_ids || []).length > 0} label="Connecteam" okTitle="Shift in Connecteam" offTitle="Not sent to Connecteam yet" />
                         </span>
                       </div>
@@ -275,7 +275,7 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
 
   const cleaners = visit.cleaner_ids || []
   const hasAssigned = cleaners.length > 0
-  const hasGcal = !!visit.gcal_event_id
+  const hasGcal = !!(visit.gcal_event_id || job?.gcal_event_id)
   const hasConnecteam = (job?.connecteam_shift_ids || []).length > 0
   const hasSMS = !!job?.sms_reminder_sent
   const hasPhotos = (visit.photos || []).length > 0
@@ -1238,7 +1238,10 @@ export default function Schedule() {
   const scheduleStats = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0]
     const active = (visits || []).filter(v => v.status !== 'cancelled')
-    const gcal = active.filter(v => !!v.gcal_event_id).length
+    // The Google event id lives on the Job, not the Visit, so resolve through the
+    // linked job — otherwise every visit reads as "not on Google" (false 0/total).
+    const onGcal = (v) => !!(v.gcal_event_id || jobs[v.job_id]?.gcal_event_id)
+    const gcal = active.filter(onGcal).length
     const connecteam = active.filter(v => (jobs[v.job_id]?.connecteam_shift_ids || []).length > 0).length
     return {
       today: active.filter(v => v.scheduled_date === todayStr).length,

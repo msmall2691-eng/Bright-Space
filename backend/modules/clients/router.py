@@ -481,6 +481,7 @@ def client_to_dict(c: Client) -> dict:
 @router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_clients(
     status: Optional[str] = None,
+    search: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -491,6 +492,11 @@ def get_clients(
     q = db.query(Client).filter(or_(Client.org_id == org_id, Client.org_id.is_(None)))
     if status:
         q = q.filter(Client.status == status)
+    # Typeahead support: case-insensitive match on name / email / phone so the
+    # job scheduler can search instead of preloading every client.
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        q = q.filter(or_(Client.name.ilike(like), Client.email.ilike(like), Client.phone.ilike(like)))
     return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()]
 
 
