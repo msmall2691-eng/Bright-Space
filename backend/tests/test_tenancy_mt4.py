@@ -71,6 +71,38 @@ def test_allowlisted_signup_joins_primary_workspace(db, monkeypatch):
     assert u.role == "member" and u.status == "active"
 
 
+def test_admin_created_user_joins_creating_admins_org(db):
+    """Tenant-correctness: an admin in org X who creates a user lands that user
+    in org X — not always the primary org."""
+    import uuid
+    from fastapi.testclient import TestClient
+    from main import app
+    from modules.auth.router import get_current_user_optional
+
+    db_, _ = db
+    org_x = _create_org_for_signup(db_, "Org X")
+    db_.commit()
+
+    class _AdminInOrgX:
+        id, role, org_id = 4242, "admin", org_x.id
+        email, status, active = "adminx@example.com", "active", True
+
+    app.dependency_overrides[get_current_user_optional] = lambda: _AdminInOrgX()
+    try:
+        email = f"hire-{uuid.uuid4().hex[:8]}@example.com"
+        r = TestClient(app).post("/api/auth/register",
+                                 json={"email": email, "password": "pw123456"})
+        assert r.status_code == 200, r.text
+        created = db_.query(User).filter(User.email == email).first()
+        assert created is not None
+        assert created.org_id == org_x.id          # joined the admin's org, not primary
+        assert created.role == "client"
+        db_.query(User).filter(User.id == created.id).delete(synchronize_session=False)
+        db_.commit()
+    finally:
+        app.dependency_overrides.pop(get_current_user_optional, None)
+
+
 def test_stranger_admin_does_not_block_primary_bootstrap(db, monkeypatch):
     """A stranger self-founding an admin org must NOT suppress the primary
     install's bootstrap-first-admin — the admin check is org-scoped."""
