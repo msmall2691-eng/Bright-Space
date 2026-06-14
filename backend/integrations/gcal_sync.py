@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone, date, time
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from database.models import Job, Client, Property
+from config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,52 @@ def _parse_external_updated(event: dict):
         return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except (ValueError, TypeError):
         return None
+
+
+# ── Incremental sync (syncToken) ──────────────────────────────────────────
+# A per-calendar cursor: after the first bounded full list, Google returns only
+# CHANGED events (incl. cancellations) for that token, so polling is cheap and
+# can't miss an edit. Stored in AppSetting keyed by calendar id.
+def _synctoken_key(cal_id: str) -> str:
+    return f"gcal_synctoken:{cal_id}"
+
+
+def _get_synctoken(db: Session, cal_id: str):
+    from database.models import AppSetting
+    row = db.query(AppSetting).filter(AppSetting.key == _synctoken_key(cal_id)).first()
+    return row.value if (row and row.value) else None
+
+
+def _save_synctoken(db: Session, cal_id: str, token) -> None:
+    from database.models import AppSetting
+    key = _synctoken_key(cal_id)
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if not token:
+        if row:
+            db.delete(row)
+            db.flush()  # so a same-transaction re-save (410 → fresh token) doesn't collide
+        return
+    if row:
+        row.value = token
+    else:
+        db.add(AppSetting(key=key, value=token))
+
+
+def _is_gone(exc: Exception) -> bool:
+    """True for an HTTP 410 GONE — an expired/invalid syncToken (full resync)."""
+    resp = getattr(exc, "resp", None)
+    return bool(resp is not None and getattr(resp, "status", None) in (410,))
+
+
+def _list_events(service, cal_id: str, sync_token, time_min: str, time_max: str):
+    """events.list — incremental when a syncToken is held (syncToken can't be
+    combined with timeMin/timeMax/orderBy), otherwise a bounded full list."""
+    params = {"calendarId": cal_id, "singleEvents": True, "maxResults": 500}
+    if sync_token:
+        params["syncToken"] = sync_token
+    else:
+        params.update(timeMin=time_min, timeMax=time_max, orderBy="startTime")
+    return service.events().list(**params).execute()
 
 
 # Keys used in extendedProperties.private for BrightBase-created events
@@ -296,24 +343,35 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
     }
     source_of_truth = calendar_source_of_truth(db)
 
+    incremental = env_flag("GCAL_INCREMENTAL_SYNC", True)
+
     for cal_id in calendar_ids:
         if not cal_id:
             continue
+        token = _get_synctoken(db, cal_id) if incremental else None
         try:
-            events_result = service.events().list(
-                calendarId=cal_id,
-                timeMin=time_min,
-                timeMax=time_max,
-                singleEvents=True,
-                orderBy="startTime",
-                maxResults=500,
-            ).execute()
+            events_result = _list_events(service, cal_id, token, time_min, time_max)
         except Exception as e:
-            results["errors"].append({"calendar": cal_id, "error": str(e)})
-            continue
+            # An expired/invalid syncToken returns HTTP 410 — drop it and fall
+            # back to a bounded full resync (Google's prescribed recovery).
+            if token and _is_gone(e):
+                _save_synctoken(db, cal_id, None)
+                try:
+                    events_result = _list_events(service, cal_id, None, time_min, time_max)
+                except Exception as e2:
+                    results["errors"].append({"calendar": cal_id, "error": str(e2)})
+                    continue
+            else:
+                results["errors"].append({"calendar": cal_id, "error": str(e)})
+                continue
 
         results["calendars_synced"] += 1
         events = events_result.get("items", [])
+        # Persist the cursor for next time — only changed events come back after
+        # this, so polling is cheap and never misses an edit.
+        next_token = events_result.get("nextSyncToken")
+        if incremental and next_token:
+            _save_synctoken(db, cal_id, next_token)
 
         for event in events:
             results["events_scanned"] += 1
