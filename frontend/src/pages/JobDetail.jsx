@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send,
+  ArrowLeft, Building2, MapPin, Receipt, FileText, TrendingUp, Calendar, Send, Plus,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import ActivityTimeline from '../components/ActivityTimeline'
@@ -68,6 +69,7 @@ export default function JobDetail() {
   const [note, setNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
   const [timelineKey, setTimelineKey] = useState(0)
+  const [creating, setCreating] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -96,6 +98,17 @@ export default function JobDetail() {
       toast.success('Note added')
     } catch (e) { toast.error('Could not add note') }
     finally { setSavingNote(false) }
+  }
+
+  const newInvoice = async () => {
+    setCreating(true)
+    try {
+      const inv = await post('/api/invoices', {
+        client_id: job.client_id, job_id: job.id,
+        items: [{ name: job.title || 'Cleaning', unit_price: 0 }],
+      })
+      navigate(`/invoices/${inv.id}`)
+    } catch { toast.error('Could not create invoice'); setCreating(false) }
   }
 
   if (loading) return <RecordSkeleton />
@@ -157,6 +170,15 @@ export default function JobDetail() {
                 </Link>
               ) : <span className="text-[12px] text-ink-3 italic">No client linked</span>}
             </div>
+
+            {canEdit() && job.client_id && (
+              <div className="border-t border-hairline pt-3">
+                <button onClick={newInvoice} disabled={creating}
+                  className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> New invoice
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── Center: notes + activity ──────────────────────────── */}
