@@ -470,6 +470,13 @@ class Job(Base):
     # shared business calendar token).
     gcal_account_id = Column(
         Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Stable Google identifier for idempotent matching (Twenty stores iCalUid on
+    # CalendarEvent). Matched on FIRST during sync — before extendedProperties,
+    # attendee, and address — so a re-created/moved event is recognized as the
+    # same booking instead of spawning a duplicate. externalUpdatedAt is Google's
+    # last-modified time, kept for drift detection.
+    gcal_ical_uid = Column(String, nullable=True, index=True)
+    gcal_external_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     title = Column(String, nullable=False)
     scheduled_date = Column(Date)       # ISO date
