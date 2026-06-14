@@ -298,7 +298,7 @@ export default function Dashboard() {
         title: `Past-due invoice · ${fmtMoney(i.total)}`,
         sub: `Invoice #${i.id}${i.client_name ? ` · ${i.client_name}` : ''}`,
         action: 'Call',
-        onClick: () => navigate('/invoicing'),
+        onClick: () => navigate(`/invoices/${i.id}`),
       }))
 
     return items
@@ -426,7 +426,7 @@ export default function Dashboard() {
               {todayJobs.map(j => (
                 <button
                   key={j.id}
-                  onClick={() => navigate('/schedule')}
+                  onClick={() => navigate(`/jobs/${j.id}`)}
                   className="w-full text-left flex items-baseline gap-3 px-4 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
                 >
                   <span className="text-[12px] font-semibold text-ink tabular-nums shrink-0 w-12">
