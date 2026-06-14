@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
@@ -24,7 +25,7 @@ from schemas.quotes import (
 from database.models import (
     Quote, QuoteRequest, QuoteEmail, Client, Job, Property,
 )
-from modules.auth.router import get_current_user, require_role
+from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from config import app_base_url
@@ -141,8 +142,12 @@ def _ensure_public_token(quote: Quote) -> str:
     return quote.public_token
 
 
-def _get_quote_or_404(quote_id: int, db: Session) -> Quote:
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+def _get_quote_or_404(quote_id: int, db: Session, org_id: int = None) -> Quote:
+    q = db.query(Quote).filter(Quote.id == quote_id)
+    if org_id is not None:
+        # MT-2: a quote in another workspace reads as 404; tolerate legacy NULL-org.
+        q = q.filter(or_(Quote.org_id == org_id, Quote.org_id.is_(None)))
+    quote = q.first()
     if not quote:
         raise HTTPException(status_code=404, detail="Quote not found")
     return quote
@@ -163,6 +168,7 @@ def create_quote(
     quote_data: QuoteCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    org_id: int = Depends(current_org_id),
 ):
     """Create a quote from the Quoting UI (integer client_id + inline items)."""
     client = db.query(Client).filter(Client.id == quote_data.client_id).first()
@@ -178,6 +184,7 @@ def create_quote(
         opportunity_id=quote_data.opportunity_id,
         property_id=quote_data.property_id,
         created_by=getattr(current_user, "id", None),
+        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         title=quote_data.title,
@@ -212,9 +219,12 @@ def list_quotes(
     status: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    org_id: int = Depends(current_org_id),
 ):
     """List quotes (most recent first), optionally filtered."""
-    query = db.query(Quote)
+    org_id = resolve_org_id(org_id, db)
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+    query = db.query(Quote).filter(or_(Quote.org_id == org_id, Quote.org_id.is_(None)))
     if client_id is not None:
         query = query.filter(Quote.client_id == client_id)
     if status:
@@ -278,8 +288,8 @@ def quotes_needing_follow_up(
 
 
 @router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
-def get_quote(quote_id: int, db: Session = Depends(get_db)):
-    return _quote_dict(_get_quote_or_404(quote_id, db))
+def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))
 
 
 def _apply_update(quote: Quote, data: dict) -> None:
@@ -313,9 +323,9 @@ def _apply_update(quote: Quote, data: dict) -> None:
 
 
 @router.patch("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db)):
+def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Partial update (the Quoting UI uses PATCH for both edits and status)."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     _apply_update(quote, quote_data.dict(exclude_unset=True))
     db.commit()
     db.refresh(quote)
@@ -329,11 +339,11 @@ def update_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(g
 
 
 @router.delete("/{quote_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def delete_quote(quote_id: int, db: Session = Depends(get_db)):
+def delete_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Soft-delete (archive) a quote: hidden from lists but recoverable, and its
     linked data is preserved. Refuses to archive a quote already converted into a
     job — that would orphan the revenue→job link; cancel the job first."""
-    quote = _get_quote_or_404(quote_id, db)
+    quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
     if quote.status == "converted" or _existing_job_for_quote(db, quote):
         raise HTTPException(
             status_code=409,
