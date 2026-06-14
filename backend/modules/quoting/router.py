@@ -207,6 +207,15 @@ def create_quote(
     db.add(quote)
     db.flush()  # assign id
     _assign_quote_number(quote)
+    # Pipeline: surface this quote as a deal (reuse the client's active one).
+    from utils.opportunity_helper import ensure_opportunity, advance_opportunity
+    opp = ensure_opportunity(
+        db, client_id=quote.client_id, org_id=getattr(quote, "org_id", None),
+        title=quote.title, amount=quote.total, service_type=quote.service_type,
+    )
+    if opp:
+        quote.opportunity_id = opp.id
+        advance_opportunity(db, opp, "quoted", amount=quote.total)
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -615,6 +624,8 @@ def decline_quote(quote_id: int, db: Session = Depends(get_db)):
     quote.status = "declined"
     quote.declined_at = _utcnow()
     quote.updated_at = _utcnow()
+    from utils.opportunity_helper import advance_for_quote
+    advance_for_quote(db, quote, "lost", lost_reason="Quote declined")
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -690,6 +701,8 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     quote.status = "converted"
     quote.converted_at = _utcnow()
     quote.updated_at = _utcnow()
+    from utils.opportunity_helper import advance_for_quote
+    advance_for_quote(db, quote, "won", close_date=str(date.today()))
     db.commit()
     db.refresh(job)
     return job
@@ -1013,6 +1026,8 @@ def public_decline_quote(token: str, data: "PublicDeclineRequest" = None, db: Se
         db, quote, f"❌ Quote {quote.quote_number} declined",
         [f"{who} declined quote {quote.quote_number}."] + ([f"Reason: {reason}"] if reason else []),
     )
+    from utils.opportunity_helper import advance_for_quote
+    advance_for_quote(db, quote, "lost", lost_reason=reason or "Quote declined")
     db.commit()
     return {"status": "declined"}
 

@@ -310,6 +310,16 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     except Exception as e:  # a timeline write must never block the lead
         logger.warning("lead_received activity write failed: %s", e)
 
+    # Pipeline: every lead becomes a deal in the "new" column.
+    from utils.opportunity_helper import ensure_opportunity
+    opp = ensure_opportunity(
+        db, client_id=client.id, org_id=getattr(client, "org_id", None), stage="new",
+        title=client.name, service_type=data.service_type,
+        amount=data.estimate_max or data.estimate_min,
+    )
+    if opp:
+        intake.opportunity_id = opp.id
+
     db.commit()
     db.refresh(intake)
     return {"success": True, "intake_id": intake.id, "client_id": client.id, "deduped": False}
