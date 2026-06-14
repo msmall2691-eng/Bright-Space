@@ -6,7 +6,7 @@
  * guard what customers actually see.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
 
 afterEach(cleanup)
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
@@ -60,7 +60,7 @@ describe('QuoteDocument — fully populated', () => {
     expect(screen.getByText('Bi-weekly residential cleaning — Falmouth, ME')).toBeDefined()
     expect(screen.getAllByText(/Maine Cleaning Co/).length).toBeGreaterThan(0)
     expect(screen.getByText(/QT-2026-0014 · June 12, 2026/)).toBeDefined()
-    expect(screen.getByText('Valid until June 30, 2026')).toBeDefined()
+    expect(screen.getByText('Valid for 30 days — expires June 30, 2026')).toBeDefined()
     expect(screen.getByText(/Great speaking with you/)).toBeDefined()
     expect(screen.getByText('Service Address')).toBeDefined()
     expect(screen.getByText('12 Lighthouse Rd, Falmouth, ME')).toBeDefined()
@@ -127,5 +127,52 @@ describe('PublicQuote page renders the shared document with actions', () => {
     expect(screen.getByRole('button', { name: 'Accept Quote' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Request changes' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Decline quote' })).toBeDefined()
+  })
+
+  it('offers Download PDF + Print in every state', async () => {
+    render(
+      <MemoryRouter initialEntries={['/quote/tok123']}>
+        <Routes><Route path="/quote/:token" element={<PublicQuote />} /></Routes>
+      </MemoryRouter>
+    )
+    await waitFor(() => expect(screen.getByText(/Download PDF/)).toBeDefined())
+    const dl = screen.getByText(/Download PDF/).closest('a')
+    expect(dl.getAttribute('href')).toContain('/api/quotes/public/tok123/pdf?download=1')
+    expect(screen.getByRole('button', { name: /Print/ })).toBeDefined()
+  })
+})
+
+describe('PublicQuote accept flow (e-sign + document stays visible)', () => {
+  it('posts typed name/email and keeps the document with an Accepted banner', async () => {
+    const calls = []
+    vi.stubGlobal('fetch', vi.fn(async (url, opts) => {
+      calls.push({ url, opts })
+      if (String(url).endsWith('/accept')) {
+        return new Response(JSON.stringify({ status: 'accepted' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ ...FULL_QUOTE, status: 'sent' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    render(
+      <MemoryRouter initialEntries={['/quote/tok123']}>
+        <Routes><Route path="/quote/:token" element={<PublicQuote />} /></Routes>
+      </MemoryRouter>
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Accept Quote' })).toBeDefined())
+
+    fireEvent.change(screen.getByPlaceholderText(/Your name/), { target: { value: 'Megan Small' } })
+    fireEvent.change(screen.getByPlaceholderText(/Your email/), { target: { value: 'megan@example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Accept Quote' }))
+
+    await waitFor(() => expect(screen.getByText(/Accepted ✓/)).toBeDefined())
+    // Document is still mounted (not swapped for a standalone thank-you).
+    expect(screen.getByText('Bi-weekly residential cleaning — Falmouth, ME')).toBeDefined()
+    // The acceptor's typed name/email were sent.
+    const accept = calls.find(c => String(c.url).endsWith('/accept'))
+    const body = JSON.parse(accept.opts.body)
+    expect(body.name).toBe('Megan Small')
+    expect(body.email).toBe('megan@example.com')
   })
 })

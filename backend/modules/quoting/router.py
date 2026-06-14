@@ -6,9 +6,11 @@ plain dicts (see ``_quote_dict``) so the wire shape is decoupled from the ORM.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from io import BytesIO
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 import logging
 import os
@@ -182,7 +184,9 @@ def create_quote(
         tax=tax,
         discount=float(quote_data.discount or 0),
         total=total,
-        valid_until=_parse_date(quote_data.valid_until),
+        # Every quote is valid for 30 days (owner policy). Default when the UI
+        # doesn't supply a date so the validity line is never empty/contradictory.
+        valid_until=_parse_date(quote_data.valid_until) or (date.today() + timedelta(days=30)),
         status=quote_data.status or "draft",
     )
     db.add(quote)
@@ -278,7 +282,8 @@ def _apply_update(quote: Quote, data: dict) -> None:
         if field in data and data[field] is not None:
             setattr(quote, field, data[field])
     if "valid_until" in data:
-        quote.valid_until = _parse_date(data["valid_until"])
+        # Keep the flat 30-day policy even on edit: never let it become null.
+        quote.valid_until = _parse_date(data["valid_until"]) or (date.today() + timedelta(days=30))
     if "tax_rate" in data and data["tax_rate"] is not None:
         quote.tax_rate = float(data["tax_rate"])
     if "discount" in data and data["discount"] is not None:
@@ -371,7 +376,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 pdf_bytes = QuotePDFService(
                     company_name=company["company_name"], company_email=company["company_email"] or "",
                     company_phone=company["company_phone"], brand_color=company["brand_color"],
-                    terms=company["quote_terms"],
+                    terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
                 ).generate_quote_pdf(
                     quote_number=quote.quote_number, client_name=client.name,
                     client_email=client.email or "", client_phone=client.phone,
@@ -393,6 +398,8 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                                   or (quote.customer_message or "").strip() or None,
                     quote_title=quote.title,
                     items=quote.items or [],
+                    subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
+                    tax_rate=quote.tax_rate, address=quote.address,
                 )
                 if res.get("success"):
                     results["email"] = "sent"
@@ -626,6 +633,9 @@ def _company_info(db: Session) -> dict:
         # Header band color for every customer-facing quote surface (page,
         # email, PDF). Defaults to the email's original slate.
         "brand_color": get_setting(db, "brand_color") or "#1f2937",
+        # Optional logo shown on the page, email, and PDF — the biggest
+        # "real business" signal. Falls back to the company name when unset.
+        "company_logo_url": get_setting(db, "company_logo_url") or None,
     }
 
 
@@ -643,6 +653,7 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "company_phone": company["company_phone"],
         "terms": company["quote_terms"],
         "brand_color": company["brand_color"],
+        "company_logo_url": company["company_logo_url"],
         "quote_date": fmt_long_date(quote.created_at),
         "address": quote.address or "",
         "service_type": quote.service_type,
@@ -653,7 +664,16 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "tax": quote.tax,
         "total": quote.total,
         "valid_until": fmt_long_date(quote.valid_until),
+        # Let the page render an "expired" state instead of letting Accept 409.
+        "is_expired": _is_quote_expired(quote),
     }
+
+
+def _is_quote_expired(quote: Quote) -> bool:
+    """True when the quote is past its validity window (tolerates a str
+    valid_until from legacy/drifted rows)."""
+    expiry = coerce_date(quote.valid_until)
+    return bool(expiry and expiry < date.today())
 
 
 def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_type: str):
@@ -833,6 +853,37 @@ def public_decline_quote(token: str, data: "PublicDeclineRequest" = None, db: Se
     return {"status": "declined"}
 
 
+@router.get("/public/{token}/pdf")
+def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(get_db)):
+    """Stream the quote PDF from the public link so the customer can view/save it.
+
+    The email only ever attached the PDF; this lets a customer who opened the
+    link from an SMS (or wants it again later) download/print the same document.
+    ``?download=1`` forces a save dialog; default opens inline in the browser.
+    """
+    quote = _quote_by_token(token, db)
+    client = db.query(Client).filter(Client.id == quote.client_id).first()
+    company = _company_info(db)
+    pdf_bytes = QuotePDFService(
+        company_name=company["company_name"], company_email=company["company_email"] or "",
+        company_phone=company["company_phone"], brand_color=company["brand_color"],
+        terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
+    ).generate_quote_pdf(
+        quote_number=quote.quote_number,
+        client_name=client.name if client else "",
+        client_email=client.email if client else "",
+        client_phone=client.phone if client else None,
+        line_items=_pdf_line_items(quote), subtotal=quote.subtotal, tax_amount=quote.tax,
+        discount_amount=quote.discount, total_amount=quote.total, notes=quote.notes,
+        expires_at=quote.valid_until, quote_title=quote.title,
+    )
+    disp = "attachment" if download else "inline"
+    return StreamingResponse(
+        BytesIO(pdf_bytes), media_type="application/pdf",
+        headers={"Content-Disposition": f'{disp}; filename="{quote.quote_number}.pdf"'},
+    )
+
+
 # ========================
 # Quote Requests (web form intake)
 # ========================
@@ -913,7 +964,7 @@ def generate_quote_pdf(quote_id: int, db: Session = Depends(get_db)):
     pdf_bytes = QuotePDFService(
         company_name=company["company_name"], company_email=company["company_email"] or "",
         company_phone=company["company_phone"], brand_color=company["brand_color"],
-        terms=company["quote_terms"],
+        terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
     ).generate_quote_pdf(
         quote_number=quote.quote_number,
         client_name=client.name,
@@ -959,7 +1010,7 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         pdf_bytes = QuotePDFService(
             company_name=company["company_name"], company_email=company["company_email"] or "",
             company_phone=company["company_phone"], brand_color=company["brand_color"],
-            terms=company["quote_terms"],
+            terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
         ).generate_quote_pdf(
             quote_number=quote.quote_number,
             client_name=client.name,
@@ -987,6 +1038,8 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
             intro_message=(quote.customer_message or "").strip() or None,
             quote_title=quote.title,
             items=quote.items or [],
+            subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
+            tax_rate=quote.tax_rate, address=quote.address,
         )
     except HTTPException:
         raise

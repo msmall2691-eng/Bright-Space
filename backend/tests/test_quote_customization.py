@@ -164,7 +164,8 @@ def test_email_subject_greeting_and_expiry_overrides(monkeypatch):
     )
     assert msg["Subject"] == "Custom subject line"
     assert "Hello Jane," in html
-    assert "valid until June 30, 2026" in html               # footer matches reality
+    # One consistent 30-day validity line that agrees with the date.
+    assert "valid for 30 days" in html and "June 30, 2026" in html
 
 
 def test_settings_general_round_trip():

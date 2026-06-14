@@ -285,3 +285,15 @@ body.mode-clean.theme-console {
   .shadow-glass-lg { box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); }
   .shadow-glass-sm { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
 }
+
+/* Print: clean one-pager for the public quote (window.print / Save as PDF).
+   Hide toolbars/banners/buttons and flatten gradients so only the document
+   card prints. */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #ffffff !important; }
+  .quote-document { max-width: 100% !important; margin: 0 !important; }
+  .quote-document .shadow-sm { box-shadow: none !important; }
+  /* Drop background gradients (e.g. loading/error screens never print). */
+  [class*="bg-gradient"] { background: #ffffff !important; }
+}
