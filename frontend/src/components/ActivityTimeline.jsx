@@ -98,14 +98,14 @@ function TimelineItem({ activity, isFirst, isLast }) {
   )
 }
 
-export default function ActivityTimeline({ clientId, opportunityId, limit = 50, entityType = null }) {
+export default function ActivityTimeline({ clientId, opportunityId, jobId, limit = 50, entityType = null }) {
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
 
   useEffect(() => {
     loadActivities()
-  }, [clientId, opportunityId, filter])
+  }, [clientId, opportunityId, jobId, filter])
 
   const loadActivities = async () => {
     setLoading(true)
@@ -115,6 +115,7 @@ export default function ActivityTimeline({ clientId, opportunityId, limit = 50, 
 
       if (clientId) params.append('client_id', clientId)
       if (opportunityId) params.append('opportunity_id', opportunityId)
+      if (jobId) params.append('job_id', jobId)
       if (limit) params.append('limit', limit)
       if (filter !== 'all') params.append('activity_type', filter)
 

@@ -104,6 +104,8 @@ const Workspace = lazy(() => import('./pages/Workspace'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const OpportunityDetail = lazy(() => import('./pages/OpportunityDetail'))
+const JobDetail = lazy(() => import('./pages/JobDetail'))
+const QuoteDetail = lazy(() => import('./pages/QuoteDetail'))
 const Quoting = lazy(() => import('./pages/Quoting'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Invoicing = lazy(() => import('./pages/Invoicing'))
@@ -203,6 +205,8 @@ export default function App() {
               <Route path="/requests" element={<Requests />} />
               <Route path="/pipeline" element={<Pipeline />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
+              <Route path="/jobs/:id" element={<JobDetail />} />
+              <Route path="/quotes/:id" element={<QuoteDetail />} />
               <Route path="/quoting" element={<Quoting />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />

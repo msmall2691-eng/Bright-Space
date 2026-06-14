@@ -702,6 +702,11 @@ export default function Quoting() {
                   </div>
                   <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
                   <div className="flex gap-1.5 shrink-0">
+                    <button onClick={() => navigate(`/quotes/${q.id}`)}
+                      className="text-xs px-2.5 py-1.5 bg-bg-2 text-ink-2 hover:bg-bg-3 rounded-lg transition-colors"
+                      title="Open full page">
+                      Open
+                    </button>
                     {canEdit && (q.status === 'draft' || q.status === 'sent') && (
                       <button onClick={() => openSendPanel(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
