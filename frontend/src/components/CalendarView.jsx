@@ -604,7 +604,9 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
                 <div className="space-y-0.5">
                   {dayJobs.slice(0, maxPills).map(j => {
                     const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
-                    const cleanerInits = (j.cleaner_ids || []).map(cleanerInitials).filter(Boolean)
+                    // Readable label: time + who (client, falling back to area/title).
+                    const chipTime = j.start_time ? j.start_time.slice(0, 5) : ''
+                    const chipWho = j.client_name || (j.address ? j.address.split(',')[0] : '') || j.title
                     const isDuplicate = j.job_type === 'str_turnover' && j.property_id &&
                       dayJobs.filter(dj => dj.job_type === 'str_turnover' && dj.property_id === j.property_id).length > 1
                     const isCancelled = j.status === 'cancelled'
@@ -629,22 +631,21 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
                           e.stopPropagation()
                           onJobClick?.(j)
                         }}
-                        className={`flex items-center gap-0.5 text-[9px] sm:text-[10px] px-0.5 sm:px-1.5 py-0.5 rounded border truncate leading-tight cursor-grab active:cursor-grabbing ${
+                        className={`flex items-center gap-1 text-[10px] sm:text-[11px] px-1 sm:px-1.5 py-0.5 rounded border leading-tight cursor-grab active:cursor-grabbing ${
                           isCancelled ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
                           isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
                           `${tc.pill} ${tc.pillHover}`
                         }`}
-                        title={`${j.title}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
+                        title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
                       >
-                        {isDuplicate && <span className="shrink-0 mr-0.5 text-red-500" title="Duplicate turnover detected">⚠</span>}
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
+                        {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
                         {j.is_immediate_turnover && (
                           <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
                         )}
                         {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
-                        <span className="truncate">{!isMobile && j.start_time ? `${j.start_time} ` : ''}{j.title}</span>
-                        {!isMobile && cleanerInits.length > 0 && (
-                          <span className="ml-auto shrink-0 text-[9px] font-semibold opacity-60">{cleanerInits.join(',')}</span>
-                        )}
+                        {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
+                        <span className="truncate">{chipWho}</span>
                       </div>
                     )
                   })}
