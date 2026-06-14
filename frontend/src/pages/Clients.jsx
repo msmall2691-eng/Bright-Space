@@ -8,6 +8,7 @@ import AddressAutocomplete from '../components/AddressAutocomplete'
 import { del, get, post, patch, upload } from "../api"
 import InlineSelect from "../components/InlineSelect"
 import SavedViewsBar from "../components/SavedViewsBar"
+import ColumnsButton from "../components/ColumnsButton"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 
@@ -39,6 +40,38 @@ function avatarColor(name) {
 
 const EMPTY = { first_name: '', last_name: '', email: '', phone: '', address: '', city: '', state: '', zip_code: '', billing_address: '', billing_city: '', billing_state: '', billing_zip: '', status: 'lead', source: '', notes: '', custom_fields: {} }
 
+// Configurable table columns. `render(c, h)` gets the row plus page helpers
+// (updateStatus, setJobClient). The leading selection checkbox is fixed and
+// lives outside this registry. A saved view stores an ordered list of the
+// visible column ids (see viewConfig.columns).
+const CLIENT_COLUMNS = [
+  { id: 'name', label: 'Name', render: (c) => (
+    <div className="flex items-center gap-2.5">
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
+        <span className="text-[10px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
+      </div>
+      <span className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</span>
+    </div>
+  ) },
+  { id: 'phone', label: 'Phone', render: (c) => <span className="text-[12px] text-ink-3">{c.phone || '—'}</span> },
+  { id: 'email', label: 'Email', render: (c) => <span className="text-[12px] text-ink-3 truncate block max-w-[200px]">{c.email || '—'}</span> },
+  { id: 'city', label: 'City', render: (c) => <span className="text-[12px] text-ink-3">{c.city || '—'}</span> },
+  { id: 'state', label: 'State', render: (c) => <span className="text-[12px] text-ink-3">{c.state || '—'}</span> },
+  { id: 'source', label: 'Source', render: (c) => <span className="text-[12px] text-ink-3">{c.source || '—'}</span> },
+  { id: 'created', label: 'Added', render: (c) => <span className="text-[12px] text-ink-3">{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</span> },
+  { id: 'status', label: 'Status', render: (c, h) => (
+    <div className="flex items-center gap-2">
+      <InlineSelect value={c.status} options={STATUS_OPTIONS} onSelect={(s) => h.updateStatus(c, s)} />
+      <button onClick={(e) => { e.stopPropagation(); h.setJobClient(c) }}
+        title={`Schedule a job for ${displayContactName(c)}`} aria-label={`Schedule ${c.name}`}
+        className="inline-flex items-center justify-center w-6 h-6 rounded-md text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+        <Calendar className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  ) },
+]
+const DEFAULT_CLIENT_COLUMNS = ['name', 'phone', 'email', 'city', 'source', 'status']
+
 export default function Clients() {
   const navigate = useNavigate()
   const { toast, ToastContainer } = useToast()
@@ -61,11 +94,26 @@ export default function Clients() {
   const [importResult, setImportResult] = useState(null)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
   useEffect(() => { localStorage.setItem('clients_view', viewMode) }, [viewMode])
+  // Visible/ordered table columns. Persisted to localStorage as the session
+  // default and into each saved view's config. Filter against the registry so a
+  // stale stored id (renamed/removed column) can't break rendering.
+  const [columns, setColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('clients_columns') || 'null')
+      if (Array.isArray(saved)) return saved.filter(id => CLIENT_COLUMNS.some(c => c.id === id))
+    } catch { /* fall through */ }
+    return DEFAULT_CLIENT_COLUMNS
+  })
+  useEffect(() => { localStorage.setItem('clients_columns', JSON.stringify(columns)) }, [columns])
+  const visibleColumns = columns.length
+    ? columns.map(id => CLIENT_COLUMNS.find(c => c.id === id)).filter(Boolean)
+    : CLIENT_COLUMNS.filter(c => DEFAULT_CLIENT_COLUMNS.includes(c.id))
   // Saved views (Twenty-style): a view persists the meaningful list state.
-  const viewConfig = { statusFilter, viewMode }
+  const viewConfig = { statusFilter, viewMode, columns }
   const applyView = (cfg) => {
     setStatusFilter(cfg.statusFilter ?? '')
     if (cfg.viewMode) setViewMode(cfg.viewMode)
+    if (Array.isArray(cfg.columns)) setColumns(cfg.columns.filter(id => CLIENT_COLUMNS.some(c => c.id === id)))
   }
   const fileInputRef = useRef(null)
   const [phoneNumbers, setPhoneNumbers] = useState([])
@@ -275,6 +323,9 @@ export default function Clients() {
 
           {/* Saved views switcher (Twenty-style) */}
           <SavedViewsBar entityType="client" currentConfig={viewConfig} onApply={applyView} defaultLabel="All clients" />
+          {viewMode === 'table' && (
+            <ColumnsButton columns={CLIENT_COLUMNS} value={columns} onChange={setColumns} />
+          )}
 
           {/* Status pills */}
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-0.5">
@@ -440,12 +491,9 @@ export default function Clients() {
                       aria-label="Select all rows"
                     />
                   </th>
-                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Name</th>
-                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Phone</th>
-                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Email</th>
-                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">City</th>
-                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Source</th>
-                  <th className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">Status</th>
+                  {visibleColumns.map(col => (
+                    <th key={col.id} className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider px-4 py-2.5">{col.label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -461,29 +509,9 @@ export default function Clients() {
                         aria-label={`Select ${c.name}`}
                       />
                     </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-                          <span className="text-[10px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
-                        </div>
-                        <span className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.phone || '—'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3 truncate max-w-[200px]">{c.email || '—'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.city || '—'}</td>
-                    <td className="px-4 py-2.5 text-[12px] text-ink-3">{c.source || '—'}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <InlineSelect value={c.status} options={STATUS_OPTIONS} onSelect={(s) => updateStatus(c, s)} />
-                        <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
-                          title={`Schedule a job for ${displayContactName(c)}`}
-                          aria-label={`Schedule ${c.name}`}
-                          className="inline-flex items-center justify-center w-6 h-6 rounded-md text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                          <Calendar className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                    {visibleColumns.map(col => (
+                      <td key={col.id} className="px-4 py-2.5">{col.render(c, { updateStatus, setJobClient })}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
