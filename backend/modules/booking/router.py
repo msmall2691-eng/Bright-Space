@@ -4,8 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database.db import get_db
-from database.models import LeadIntake, Client
-from utils.contacts import find_client_by_contact, normalize_phone
+from modules.intake.normalize import build_intake, upsert_lead
 from modules.booking.pricing import estimate_price
 from ratelimit import limiter
 
@@ -44,6 +43,7 @@ class BookingSubmit(BaseModel):
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     guests: Optional[int] = None
+    frequency: Optional[str] = None
     checkIn: Optional[str] = None
     checkOut: Optional[str] = None
     turnover: Optional[str] = None
@@ -101,29 +101,15 @@ class InstantQuoteResponse(BaseModel):
 def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(get_db)):
     """
     Public endpoint — called from maineclean.co booking/quote request form.
-    Creates a LeadIntake + Client record and returns a booking confirmation.
+
+    Routes through the single canonical intake path (modules.intake.normalize),
+    which persists every structured field, computes the estimate (now including
+    the customer's frequency, which used to be hard-coded to None so the cadence
+    AND its discount were dropped), and dedupes against the other public
+    endpoints so one visit doesn't create two leads.
     """
-    service_type = BOOKING_SERVICE_MAP.get(data.serviceType, "residential")
-
-    normalized_phone = normalize_phone(data.phone)
-    # Find or create client (fuzzy phone lookup falls back to last-10 digits
-    # so legacy rows with non-E.164 phones still match).
-    client = find_client_by_contact(db, email=data.email, phone=normalized_phone)
-
-    if not client:
-        client = Client(
-            name=data.name,
-            email=data.email,
-            phone=normalized_phone,
-            address=data.address,
-            state="ME",
-            status="lead",
-            source="website",
-        )
-        db.add(client)
-        db.flush()
-
-    # Build message from extra details
+    # Free-text message keeps only the customer's note(s) plus turnover (which
+    # has no dedicated column); guests etc. are stored as structured fields.
     parts = []
     if data.notes:
         parts.append(data.notes)
@@ -131,56 +117,21 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         parts.append(data.message)
     if data.turnover:
         parts.append(f"Turnover type: {data.turnover}")
-    if data.guests:
-        parts.append(f"Guests: {data.guests}")
     message = " | ".join(parts) if parts else None
 
-    # Run the same pricing engine the public /instant-quote endpoint uses,
-    # so the operator sees a price range on every new intake without having
-    # to flip back to the website.
-    estimate = estimate_price(
-        # Pass the RAW service type so the engine can detect deep-clean /
-        # move-in-out (the x1.5 / x1.65 multipliers). The mapped value above
-        # flattens those to "residential" and silently dropped the multiplier.
-        # estimate_price() does its own alias mapping for the base rate.
-        service_type=data.serviceType or "residential",
-        bedrooms=data.bedrooms,
-        bathrooms=data.bathrooms,
-        square_footage=data.squareFeet,
-        frequency=None,
-        message=message,
+    payload = build_intake(
+        name=data.name, email=data.email, phone=data.phone, address=data.address,
+        state="ME", service_key=data.serviceType, bedrooms=data.bedrooms,
+        bathrooms=data.bathrooms, square_footage=data.squareFeet, guests=data.guests,
+        frequency=data.frequency, requested_date=data.requestedDate,
+        check_in=data.checkIn, check_out=data.checkOut, property_name=data.property,
+        message=message, preferred_date=data.requestedDate, source="website",
     )
-
-    intake = LeadIntake(
-        name=data.name,
-        email=data.email,
-        phone=normalized_phone,
-        address=data.address,
-        state="ME",
-        service_type=service_type,
-        bedrooms=data.bedrooms,
-        bathrooms=data.bathrooms,
-        square_footage=data.squareFeet,
-        guests=data.guests,
-        frequency=None,
-        requested_date=data.requestedDate,
-        check_in=data.checkIn,
-        check_out=data.checkOut,
-        property_name=data.property,
-        message=message,
-        preferred_date=data.requestedDate,
-        source="website",
-        client_id=client.id,
-        estimate_min=estimate["estimate_min"],
-        estimate_max=estimate["estimate_max"],
-    )
-    db.add(intake)
-    db.commit()
-    db.refresh(intake)
+    result = upsert_lead(db, payload)
 
     return BookingResponse(
         success=True,
-        bookingId=intake.id,
+        bookingId=result["intake_id"],
         requestedDate=data.requestedDate,
         message="Your booking request has been submitted! We'll review and confirm within 1 business day.",
     )
