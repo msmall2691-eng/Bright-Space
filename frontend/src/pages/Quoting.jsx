@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText } from 'lucide-react'
+import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText, Search } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import SavedViewsBar from '../components/SavedViewsBar'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
 import AddressAutocomplete from '../components/AddressAutocomplete'
@@ -76,6 +77,8 @@ export default function Quoting() {
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
+  const [quoteSearch, setQuoteSearch] = useState('')
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState('')
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
@@ -543,6 +546,16 @@ export default function Quoting() {
 
   const newLeads = intakes.filter(i => i.status === 'new').length
 
+  // Quotes-tab filtering, persisted by saved views (entityType="quote").
+  const quoteViewConfig = { search: quoteSearch, status: quoteStatusFilter }
+  const applyQuoteView = (cfg) => { setQuoteSearch(cfg.search ?? ''); setQuoteStatusFilter(cfg.status ?? '') }
+  const visibleQuotes = quotes.filter(q => {
+    if (quoteStatusFilter && q.status !== quoteStatusFilter) return false
+    const term = quoteSearch.trim().toLowerCase()
+    if (!term) return true
+    return [clientName(q.client_id), q.quote_number, q.address].some(v => (v || '').toLowerCase().includes(term))
+  })
+
   return (
     <div className="flex h-full">
       <div className="flex-1 p-6 flex flex-col min-w-0 overflow-hidden">
@@ -662,6 +675,20 @@ export default function Quoting() {
         {/* Quotes tab */}
         {tab === 'quotes' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input value={quoteSearch} onChange={e => setQuoteSearch(e.target.value)} placeholder="Search quotes…"
+                  className="w-full bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+              </div>
+              <select value={quoteStatusFilter} onChange={e => setQuoteStatusFilter(e.target.value)}
+                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-none focus:border-blue-400">
+                <option value="">All statuses</option>
+                {['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted'].map(s =>
+                  <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+              </select>
+              <SavedViewsBar entityType="quote" currentConfig={quoteViewConfig} onApply={applyQuoteView} defaultLabel="All quotes" />
+            </div>
             {canEdit && selectedIds.size > 0 && (
               <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-2.5">
                 <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
@@ -675,7 +702,10 @@ export default function Quoting() {
               </div>
             )}
             {quotes.length === 0 && <div className="text-center py-16 text-ink-3 text-sm">No quotes yet</div>}
-            {quotes.map(q => (
+            {quotes.length > 0 && visibleQuotes.length === 0 && (
+              <div className="text-center py-16 text-ink-3 text-sm">No quotes match your filters</div>
+            )}
+            {visibleQuotes.map(q => (
               <div key={q.id} className="bg-panel border border-hairline hover:border-hairline rounded-xl p-4 transition-colors">
                 <div className="flex items-center gap-3">
                   {canEdit && (
