@@ -27,6 +27,25 @@ function jobTypeFromProperty(propertyType) {
   return 'residential'
 }
 
+// Default visit length per service type (minutes); drives the auto-filled End.
+const JOB_DURATIONS = { residential: 180, commercial: 180, str_turnover: 180 }
+
+// Quick-schedule default date: the next business day (skip Sat/Sun), so a fast
+// booking doesn't silently land on today.
+function nextBusinessDay() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+}
+
+// "09:00" + minutes → "12:00" (24h, wraps within a day).
+function addMinutes(hhmm, mins) {
+  const [h, m] = String(hhmm || '09:00').split(':').map(Number)
+  const total = ((h * 60 + m + mins) % 1440 + 1440) % 1440
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
 /**
  * Unified Schedule Job modal.
  *
@@ -57,9 +76,9 @@ export default function JobCreateModal({
   const [form, setForm] = useState({
     title: initialTitle || (clientName ? `${clientName} — Clean` : ''),
     job_type: initialJobType || 'residential',
-    scheduled_date: initialDate,
+    scheduled_date: initialDate || nextBusinessDay(),
     start_time: '09:00',
-    end_time: '12:00',
+    end_time: addMinutes('09:00', JOB_DURATIONS[initialJobType || 'residential'] || 180),
     address: '',
     notes: '',
     property_id: initialPropertyId ? String(initialPropertyId) : '',
@@ -72,6 +91,22 @@ export default function JobCreateModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  // Quick-schedule: a single compact form is the default for the common path.
+  // "Advanced" reveals the full stepped wizard (property, recurring, address).
+  const [quick, setQuick] = useState(!defaultRecurring)
+  const [showNotes, setShowNotes] = useState(false)
+  // Once the user edits End by hand, stop auto-deriving it from Start + duration.
+  const [endTouched, setEndTouched] = useState(false)
+
+  const setStartTime = (v) => setForm(f => ({
+    ...f, start_time: v,
+    end_time: endTouched ? f.end_time : addMinutes(v, JOB_DURATIONS[f.job_type] || 180),
+  }))
+  const setEndTime = (v) => { setEndTouched(true); setForm(f => ({ ...f, end_time: v })) }
+  const setJobType = (v) => setForm(f => ({
+    ...f, job_type: v,
+    end_time: endTouched ? f.end_time : addMinutes(f.start_time, JOB_DURATIONS[v] || 180),
+  }))
   // Inline "new property" quick-add (a client may have none yet).
   const [addingProp, setAddingProp] = useState(false)
   const [newProp, setNewProp] = useState({ name: '', address: '' })
@@ -311,7 +346,8 @@ export default function JobCreateModal({
               <X className="w-5 h-5" />
             </button>
           </div>
-          {/* Step indicator */}
+          {/* Step indicator — advanced wizard only */}
+          {!quick && (
           <div className="flex items-center gap-1.5 mt-3">
             {STEPS.map((s, i) => (
               <div key={s.n} className="flex items-center gap-1.5 flex-1">
@@ -325,14 +361,13 @@ export default function JobCreateModal({
               </div>
             ))}
           </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
-          {/* ── Step 1 · Who ───────────────────────────────────────────── */}
-          {step === 1 && (<>
-          {/* Client picker — only in standalone mode (Schedule page). When opened
-              from a client profile the client is fixed and this is hidden. */}
-          {standalone && (
+          {/* Client picker — quick mode, or step 1 of the advanced wizard.
+              Only in standalone mode; from a client profile the client is fixed. */}
+          {standalone && (quick || step === 1) && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
@@ -420,7 +455,63 @@ export default function JobCreateModal({
             </div>
           )}
 
-          {/* Property picker (filtered by client) */}
+          {/* ── Quick schedule · one screen (client above) ──────────────── */}
+          {quick && (<>
+            {!standalone && clientName && (
+              <div className="text-xs text-ink-3">Scheduling for <span className="font-medium text-ink-2">{clientName}</span></div>
+            )}
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1">Service type</label>
+              <div className="flex gap-2">
+                {JOB_TYPES.map(t => (
+                  <button key={t.value} type="button" onClick={() => setJobType(t.value)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                      form.job_type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
+                    }`}>{t.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1"><Calendar className="w-3 h-3 inline mr-1" /> Date *</label>
+              <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-ink-2 font-medium mb-1"><Clock className="w-3 h-3 inline mr-1" /> Start *</label>
+                <input type="time" value={form.start_time} onChange={e => setStartTime(e.target.value)}
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
+                <input type="time" value={form.end_time} onChange={e => setEndTime(e.target.value)}
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              </div>
+            </div>
+            {showNotes ? (
+              <div>
+                <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                  placeholder="Special instructions, access codes, etc."
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowNotes(true)}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add notes</button>
+            )}
+            <button type="button" onClick={() => setQuick(false)}
+              className="w-full text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
+              Advanced options (property, recurring, address)…
+            </button>
+            {error && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
+              </div>
+            )}
+          </>)}
+
+          {/* ── Advanced · Property (step 1; client handled above) ───────── */}
+          {!quick && step === 1 && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs text-ink-2 font-medium">Property</label>
@@ -470,10 +561,10 @@ export default function JobCreateModal({
               </div>
             )}
           </div>
-          </>)}
+          )}
 
           {/* ── Step 2 · What ──────────────────────────────────────────── */}
-          {step === 2 && (<>
+          {!quick && step === 2 && (<>
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">Title *</label>
             <input
@@ -491,7 +582,7 @@ export default function JobCreateModal({
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => setForm(f => ({ ...f, job_type: t.value }))}
+                  onClick={() => setJobType(t.value)}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
                     form.job_type === t.value
                       ? 'bg-blue-600 text-white border-blue-600'
@@ -538,7 +629,7 @@ export default function JobCreateModal({
           </>)}
 
           {/* ── Step 3 · When ──────────────────────────────────────────── */}
-          {step === 3 && (<>
+          {!quick && step === 3 && (<>
           {/* One-time mode: single Date */}
           {!recurring && (
             <div>
@@ -641,7 +732,7 @@ export default function JobCreateModal({
               <input
                 type="time"
                 value={form.start_time}
-                onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
+                onChange={e => setStartTime(e.target.value)}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               />
             </div>
@@ -650,7 +741,7 @@ export default function JobCreateModal({
               <input
                 type="time"
                 value={form.end_time}
-                onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
+                onChange={e => setEndTime(e.target.value)}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               />
             </div>
@@ -703,6 +794,19 @@ export default function JobCreateModal({
         </div>
 
         <div className="p-6 border-t border-hairline flex items-center gap-3">
+          {quick ? (
+            <>
+              <button onClick={onClose} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
+              <button
+                onClick={save}
+                disabled={saving || !canSave}
+                data-testid="job-create-submit"
+                className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
+              >
+                {saving ? 'Creating…' : 'Create job'}
+              </button>
+            </>
+          ) : (<>
           <button
             onClick={step === 1 ? onClose : goBack}
             className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}
@@ -727,6 +831,7 @@ export default function JobCreateModal({
               {saving ? 'Creating...' : recurring ? 'Create & Generate Jobs' : 'Create Job'}
             </button>
           )}
+          </>)}
         </div>
       </div>
     </div>

@@ -622,7 +622,34 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                        f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
             )
 
+    # ── PROPERTY DEFAULTING ──
+    # Every job needs a property (DB-level NOT NULL), but the one-screen
+    # Quick-schedule flow lets the user skip it. Resolve to the client's existing
+    # property, or create a sensible default, so a fast booking never fails here.
+    resolved_property_id = data.property_id
+    if not resolved_property_id:
+        existing_prop = (db.query(Property)
+                         .filter(Property.client_id == data.client_id)
+                         .order_by(Property.id.asc()).first())
+        if existing_prop:
+            resolved_property_id = existing_prop.id
+        else:
+            client = db.query(Client).filter(Client.id == data.client_id).first()
+            ptype = "str" if data.job_type == "str_turnover" else (
+                data.job_type if data.job_type in ("residential", "commercial") else "residential")
+            new_prop = Property(
+                client_id=data.client_id,
+                name=f"{client.name} — Main" if client and client.name else "Main location",
+                address=data.address or (getattr(client, "address", None) if client else "") or "",
+                property_type=ptype,
+            )
+            if hasattr(new_prop, "org_id"):
+                new_prop.org_id = resolve_org_id(org_id, db)
+            db.add(new_prop); db.commit(); db.refresh(new_prop)
+            resolved_property_id = new_prop.id
+
     payload = data.model_dump(exclude={"allow_conflicts"})
+    payload["property_id"] = resolved_property_id
     # Store real date/time objects (the columns are Date/Time) rather than
     # relying on the DB to implicitly cast the inbound strings — keeps writes
     # portable and matches what a post-refresh read returns anyway.
