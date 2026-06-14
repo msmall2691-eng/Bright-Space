@@ -19,9 +19,10 @@ def _service_returning(events):
     return svc
 
 
-def _run_sync(db, events):
+def _run_sync(db, events, source="brightbase"):
     from integrations import gcal_sync
-    with patch("integrations.google_calendar._get_service", return_value=_service_returning(events)):
+    with patch("integrations.google_calendar._get_service", return_value=_service_returning(events)), \
+         patch("integrations.gcal_sync.calendar_source_of_truth", return_value=source):
         return gcal_sync.sync_calendar(db, calendar_ids=["primary"])
 
 
@@ -51,9 +52,9 @@ def test_sync_is_noop_when_nothing_changed():
             "end": {"dateTime": "2026-07-10T13:00:00-04:00"},
         }
 
-        r1 = _run_sync(db, [event])
+        r1 = _run_sync(db, [event], source="google")
         assert r1["jobs_updated"] == 0, "first identical poll should not rewrite the job"
-        r2 = _run_sync(db, [event])
+        r2 = _run_sync(db, [event], source="google")
         assert r2["jobs_updated"] == 0, "second identical poll should also be a no-op"
 
         # And the job's columns are still real date/time objects (not strings).
@@ -71,7 +72,7 @@ def test_sync_is_noop_when_nothing_changed():
 
 
 def test_sync_applies_a_real_date_change_once():
-    """When Google really moves the event, the job is updated — but only the once."""
+    """With source='google' (legacy pull), a real Google move updates the job once."""
     db = SessionLocal()
     try:
         client = Client(name="GCal Move Test", email="move@example.com")
@@ -93,12 +94,12 @@ def test_sync_applies_a_real_date_change_once():
             "start": {"dateTime": "2026-07-12T10:00:00-04:00"},
             "end": {"dateTime": "2026-07-12T13:00:00-04:00"},
         }
-        r1 = _run_sync(db, [moved])
+        r1 = _run_sync(db, [moved], source="google")
         assert r1["jobs_updated"] == 1
         db.refresh(job)
         assert job.scheduled_date == date(2026, 7, 12)
         # Re-polling the moved event is now a no-op (no churn).
-        r2 = _run_sync(db, [moved])
+        r2 = _run_sync(db, [moved], source="google")
         assert r2["jobs_updated"] == 0
     finally:
         db.rollback()
@@ -141,9 +142,9 @@ def test_sync_does_not_churn_utc_z_form_event():
             "start": {"dateTime": "2026-07-10T13:00:00Z"},
             "end": {"dateTime": "2026-07-10T16:00:00Z"},
         }
-        r1 = _run_sync(db, [event])
+        r1 = _run_sync(db, [event], source="google")
         assert r1["jobs_updated"] == 0, "13:00Z must match the stored 09:00 EDT — no churn"
-        r2 = _run_sync(db, [event])
+        r2 = _run_sync(db, [event], source="google")
         assert r2["jobs_updated"] == 0
 
         db.refresh(job)
@@ -192,7 +193,7 @@ def test_sync_preserves_non_eastern_property_wall_clock():
             "start": {"dateTime": "2026-07-10T09:00:00-07:00", "timeZone": "America/Los_Angeles"},
             "end": {"dateTime": "2026-07-10T12:00:00-07:00", "timeZone": "America/Los_Angeles"},
         }
-        r1 = _run_sync(db, [event])
+        r1 = _run_sync(db, [event], source="google")
         assert r1["jobs_updated"] == 0, "09:00 PT must stay 09:00 — not become 12:00 Eastern"
         db.refresh(job)
         assert job.scheduled_date == date(2026, 7, 10)
@@ -205,3 +206,77 @@ def test_sync_preserves_non_eastern_property_wall_clock():
         db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
         db.commit()
         db.close()
+
+
+def test_brightbase_wins_ignores_external_reschedule():
+    """Default source-of-truth: a reschedule made directly in Google is surfaced
+    as drift, NOT applied over the job. Cancellations still propagate."""
+    db = SessionLocal()
+    client = Client(name="SoT Test", email="sot@example.com")
+    db.add(client); db.commit(); db.refresh(client)
+    try:
+        prop = Property(client_id=client.id, name="P", address="1 SoT St",
+                        property_type="residential", active=True)
+        db.add(prop); db.commit(); db.refresh(prop)
+        job = Job(client_id=client.id, property_id=prop.id, job_type="residential", title="SoT Clean",
+                  scheduled_date=date(2026, 7, 10), start_time=time(10, 0), end_time=time(13, 0),
+                  address="", gcal_event_id="evt_sot_1", status="scheduled")
+        db.add(job); db.commit(); db.refresh(job)
+
+        moved = {
+            "id": "evt_sot_1", "status": "confirmed", "summary": "SoT Clean",
+            "iCalUID": "sot-uid-1", "updated": "2026-06-14T03:00:00Z",
+            "start": {"dateTime": "2026-07-12T10:00:00-04:00"},
+            "end": {"dateTime": "2026-07-12T13:00:00-04:00"},
+        }
+        r = _run_sync(db, [moved])  # default = brightbase wins
+        assert r["jobs_updated"] == 0
+        assert r["drift_detected"] == 1
+        db.refresh(job)
+        assert job.scheduled_date == date(2026, 7, 10)   # NOT overwritten
+        assert job.gcal_ical_uid == "sot-uid-1"          # iCalUID captured
+
+        # A cancellation in Google still wins even when BrightBase is master.
+        cancelled = {"id": "evt_sot_1", "status": "cancelled", "iCalUID": "sot-uid-1"}
+        rc = _run_sync(db, [cancelled])
+        assert rc["jobs_cancelled"] == 1
+        db.refresh(job)
+        assert job.status == "cancelled"
+    finally:
+        db.rollback()
+        db.query(Job).filter(Job.gcal_event_id == "evt_sot_1").delete(synchronize_session=False)
+        db.query(Property).filter(Property.client_id == client.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_ical_uid_relinks_recreated_event_no_duplicate():
+    """An event whose id changed but whose iCalUID we already know relinks the
+    same job instead of creating a duplicate."""
+    db = SessionLocal()
+    client = Client(name="UID Test", email="uid@example.com")
+    db.add(client); db.commit(); db.refresh(client)
+    try:
+        prop = Property(client_id=client.id, name="P", address="1 UID St",
+                        property_type="residential", active=True)
+        db.add(prop); db.commit(); db.refresh(prop)
+        job = Job(client_id=client.id, property_id=prop.id, job_type="residential", title="UID Clean",
+                  scheduled_date=date(2026, 7, 10), start_time=time(10, 0), end_time=time(13, 0),
+                  address="", gcal_event_id="old_evt", gcal_ical_uid="uid-keep-1", status="scheduled")
+        db.add(job); db.commit(); db.refresh(job)
+
+        recreated = {
+            "id": "new_evt", "status": "confirmed", "summary": "UID Clean", "iCalUID": "uid-keep-1",
+            "start": {"dateTime": "2026-07-10T10:00:00-04:00"},
+            "end": {"dateTime": "2026-07-10T13:00:00-04:00"},
+        }
+        r = _run_sync(db, [recreated])
+        assert r["jobs_created"] == 0            # no duplicate job
+        db.refresh(job)
+        assert job.gcal_event_id == "new_evt"    # relinked to the new event id
+    finally:
+        db.rollback()
+        db.query(Job).filter(Job.client_id == client.id).delete(synchronize_session=False)
+        db.query(Property).filter(Property.client_id == client.id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+        db.commit(); db.close()

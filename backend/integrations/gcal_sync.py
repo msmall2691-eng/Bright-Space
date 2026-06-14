@@ -37,6 +37,35 @@ def _s(val) -> str:
     return str(val).strip() if val else ""
 
 
+def calendar_source_of_truth(db: Session) -> str:
+    """Who wins when a BrightBase-owned event is edited on both sides.
+
+    'brightbase' (default): Job/Visit is the system of record for the work —
+    a reschedule made directly in Google is SURFACED (drift logged) but NOT
+    applied over BrightBase; only a cancellation in Google propagates back.
+    'google': legacy two-way pull — Google edits override the job.
+    Settings row 'calendar_source_of_truth' overrides env CALENDAR_SOURCE_OF_TRUTH.
+    """
+    try:
+        from modules.settings.router import get_setting
+        val = get_setting(db, "calendar_source_of_truth")
+    except Exception:
+        val = None
+    val = (val or os.getenv("CALENDAR_SOURCE_OF_TRUTH", "brightbase")).strip().lower()
+    return "google" if val == "google" else "brightbase"
+
+
+def _parse_external_updated(event: dict):
+    """Google's RFC3339 'updated' instant -> aware datetime (for drift detection)."""
+    raw = event.get("updated")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
 # Keys used in extendedProperties.private for BrightBase-created events
 EP_CLIENT_ID = "brightbase_client_id"
 EP_PROPERTY_ID = "brightbase_property_id"
@@ -262,8 +291,10 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
         "jobs_cancelled": 0,
         "matched_by": {"extendedProperties": 0, "attendee_email": 0, "address_property": 0, "address_client": 0},
         "unmatched": 0,
+        "drift_detected": 0,
         "errors": [],
     }
+    source_of_truth = calendar_source_of_truth(db)
 
     for cal_id in calendar_ids:
         if not cal_id:
@@ -297,7 +328,16 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 # Event already linked — check for changes from GCal
                 changed = False
 
-                # Detect cancellation
+                # Idempotency: remember Google's stable iCalUID + last-modified so
+                # a future re-created/moved event can be re-matched as the same
+                # booking, and so we can detect drift.
+                if not existing_job.gcal_ical_uid and event.get("iCalUID"):
+                    existing_job.gcal_ical_uid = event.get("iCalUID")
+                ext_updated = _parse_external_updated(event)
+                if ext_updated:
+                    existing_job.gcal_external_updated_at = ext_updated
+
+                # Detect cancellation — ALWAYS wins, both directions.
                 if event.get("status") == "cancelled":
                     if existing_job.status != "cancelled":
                         existing_job.status = "cancelled"
@@ -307,6 +347,30 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                             if v.status not in ("cancelled", "completed"):
                                 v.status = "cancelled"
                         results["jobs_cancelled"] += 1
+                    continue
+
+                # Source-of-truth: when BrightBase is the master (default), a
+                # reschedule/edit made directly in Google does NOT overwrite the
+                # job — it's surfaced as drift. BrightBase re-asserts its values on
+                # the next push. Only with source='google' do we pull edits back.
+                if source_of_truth == "brightbase":
+                    start = event.get("start", {})
+                    parsed_start = _parse_event_datetime(start)
+                    gcal_title = _s(event.get("summary"))
+                    gcal_location = _s(event.get("location"))
+                    drift = bool(gcal_title and gcal_title != existing_job.title) \
+                        or bool(gcal_location and gcal_location != (existing_job.address or ""))
+                    if parsed_start:
+                        g_date, g_time = parsed_start
+                        drift = drift or g_date != existing_job.scheduled_date \
+                            or (g_time and g_time != existing_job.start_time)
+                    if drift:
+                        results.setdefault("drift_detected", 0)
+                        results["drift_detected"] += 1
+                        log.info(
+                            "[gcal-sync] drift on job %s (event %s) ignored — BrightBase is "
+                            "source of truth; will re-assert on next push", existing_job.id, gcal_id,
+                        )
                     continue
 
                 # Sync title
@@ -370,6 +434,19 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             sched_date, start_time = parsed_start
             end_time = parsed_end[1] if parsed_end else None
 
+            # Idempotency: an event we already know by its stable iCalUID — but
+            # whose event id changed (e.g. recreated) — is the SAME booking. Relink
+            # it instead of creating a duplicate job.
+            ical_uid = event.get("iCalUID")
+            if ical_uid:
+                known = db.query(Job).filter(Job.gcal_ical_uid == ical_uid).first()
+                if known:
+                    known.gcal_event_id = gcal_id
+                    ext_updated = _parse_external_updated(event)
+                    if ext_updated:
+                        known.gcal_external_updated_at = ext_updated
+                    continue
+
             # Try to match to a client (3-tier matching)
             match = (
                 _match_by_extended_properties(event, db)
@@ -396,6 +473,8 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 end_time=end_time or time(12, 0),
                 address=event.get("location", client.address or ""),
                 gcal_event_id=gcal_id,
+                gcal_ical_uid=event.get("iCalUID"),
+                gcal_external_updated_at=_parse_external_updated(event),
                 calendar_invite_sent=bool(event.get("attendees")),
                 status="scheduled",
                 notes=_s(event.get("description")),
