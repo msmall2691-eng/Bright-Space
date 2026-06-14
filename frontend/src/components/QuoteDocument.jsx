@@ -16,8 +16,10 @@ const qtyLabel = (q) => {
   const n = parseFloat(q)
   return Number.isNaN(n) ? '1' : String(n)
 }
+// Spaces/parens in a tel: href don't dial reliably — normalize to digits.
+const telHref = (p) => (p ? p.replace(/[^\d+]/g, '') : '')
 
-export default function QuoteDocument({ quote, actions = null }) {
+export default function QuoteDocument({ quote, actions = null, toolbar = null, banner = null }) {
   if (!quote) return null
   const items = Array.isArray(quote.items) ? quote.items : []
   const subtotal = parseFloat(quote.subtotal) || 0
@@ -27,9 +29,19 @@ export default function QuoteDocument({ quote, actions = null }) {
   const hasMeta = !!(quote.address || quote.service_type)
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto quote-document">
+      {/* Top toolbar (Download / Print) — hidden when printing */}
+      {toolbar && <div className="no-print mb-3 flex justify-end gap-2">{toolbar}</div>}
+
+      {/* Status banner (accepted / declined / expired) */}
+      {banner}
+
       {/* Header band — same identity as the email */}
       <div className="rounded-t-2xl px-6 py-7 sm:px-8 sm:py-8 text-white" style={{ background: brand }}>
+        {quote.company_logo_url && (
+          <img src={quote.company_logo_url} alt={quote.company_name || 'Logo'}
+               className="h-10 mb-3 object-contain" style={{ maxHeight: '40px' }} />
+        )}
         <p className="text-xs font-semibold uppercase tracking-widest text-white/70 mb-2">{quote.company_name || 'Quote'}</p>
         <h1 className="text-2xl sm:text-3xl font-bold leading-tight">
           {quote.title || 'Your Cleaning Quote'}
@@ -39,7 +51,7 @@ export default function QuoteDocument({ quote, actions = null }) {
         </p>
         {quote.valid_until && (
           <span className="inline-block mt-3 text-[11px] font-medium bg-white/15 border border-white/20 rounded-full px-3 py-1">
-            Valid until {quote.valid_until}
+            Valid for 30 days — expires {quote.valid_until}
           </span>
         )}
       </div>
@@ -141,7 +153,7 @@ export default function QuoteDocument({ quote, actions = null }) {
                 )}
                 {quote.company_email && quote.company_phone && <span className="text-ink-3"> · </span>}
                 {quote.company_phone && (
-                  <a href={`tel:${quote.company_phone}`} className="text-blue-600 hover:underline font-medium">{quote.company_phone}</a>
+                  <a href={`tel:${telHref(quote.company_phone)}`} className="text-blue-600 hover:underline font-medium">{quote.company_phone}</a>
                 )}
               </p>
             )}

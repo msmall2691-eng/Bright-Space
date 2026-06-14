@@ -26,6 +26,13 @@ const LEAD_STATUS_COLORS = {
 
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
+// Flat 30-day validity policy: a new quote's "Valid Until" defaults to 30 days
+// out (still editable) so it's never empty and matches the backend default.
+const defaultValidUntil = () => {
+  const d = new Date()
+  d.setDate(d.getDate() + 30)
+  return d.toISOString().slice(0, 10)
+}
 
 // Names that are really phone numbers / intake placeholders — never greet
 // with these ("Hello +12074329492" shipped to a real customer on June 11).
@@ -71,7 +78,7 @@ export default function Quoting() {
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
-    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: ''
+    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil()
   })
   const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '' })
   const [saving, setSaving] = useState(false)
@@ -310,12 +317,12 @@ export default function Quoting() {
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
-        valid_until: ''
+        valid_until: defaultValidUntil()
       })
     } else {
       setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
         address: '', service_type: 'residential',
-        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: '' })
+        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil() })
     }
     setPanel('quote')
   }
@@ -918,7 +925,7 @@ export default function Quoting() {
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-ink-3 mb-1">Valid Until</label>
+                <label className="block text-xs text-ink-3 mb-1">Valid Until <span className="text-ink-3/70">(30 days default)</span></label>
                 <input type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))}
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>

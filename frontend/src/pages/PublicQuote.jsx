@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle, AlertCircle, Clock, MessageSquare, X } from 'lucide-react'
+import { CheckCircle, AlertCircle, Clock, X, Download, Printer } from 'lucide-react'
 import QuoteDocument from '../components/QuoteDocument'
 
 export default function PublicQuote() {
@@ -10,6 +10,8 @@ export default function PublicQuote() {
   const [error, setError] = useState(null)
   const [accepting, setAccepting] = useState(false)
   const [accepted, setAccepted] = useState(false)
+  const [acceptName, setAcceptName] = useState("")
+  const [acceptEmail, setAcceptEmail] = useState("")
   const [showRequest, setShowRequest] = useState(false)
   const [requestMsg, setRequestMsg] = useState("")
   const [requesting, setRequesting] = useState(false)
@@ -24,14 +26,15 @@ export default function PublicQuote() {
       try {
         const res = await window.fetch(`/api/quotes/public/${token}`)
         if (!res.ok) {
-          if (res.status === 404) setError('Quote not found. The link may have expired.')
-          else setError('Unable to load quote. Please try again.')
+          // Distinguish a bad/expired link (404) from a server fault (5xx) so a
+          // valid link is never wrongly called "broken".
+          if (res.status === 404) setError('Quote not found. The link may be incorrect or expired.')
+          else setError("Something went wrong on our end. Please try again in a moment.")
           return
         }
-        const data = await res.json()
-        setQuote(data)
+        setQuote(await res.json())
       } catch (e) {
-        setError('Connection error. Please check your connection.')
+        setError('Connection error. Please check your connection and try again.')
       } finally {
         setLoading(false)
       }
@@ -45,19 +48,18 @@ export default function PublicQuote() {
       const res = await window.fetch(`/api/quotes/public/${token}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          name: acceptName.trim() || null,
+          email: acceptEmail.trim() || null,
+        }),
       })
-
       if (!res.ok) {
-        const data = await res.json()
-        if (res.status === 409) {
-          setError(data.detail || 'This quote has already been accepted.')
-        } else {
-          setError(data.detail || 'Error accepting quote. Please try again.')
-        }
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || (res.status === 409
+          ? 'This quote can no longer be accepted.'
+          : 'Error accepting quote. Please try again.'))
         return
       }
-
       setAccepted(true)
     } catch (e) {
       setError('Connection error. Please try again.')
@@ -136,51 +138,86 @@ export default function PublicQuote() {
 
   if (!quote) return null
 
-  if (accepted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center p-4">
-        <div className="text-center max-w-sm">
-          <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-ink mb-2">Thank You!</h1>
-          <p className="text-ink-2 mb-2">Your quote has been accepted.</p>
-          <p className="text-sm text-ink-3">
-            We'll reach out shortly to confirm your scheduled date and answer any questions.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  // Effective state combines this session's actions with the stored status, so
+  // re-opening an already-accepted/declined link shows the right banner — and
+  // the document stays visible (and downloadable) in every state.
+  const isAccepted = accepted || ['accepted', 'converted'].includes(quote.status)
+  const isDeclined = declined || quote.status === 'declined'
+  const isExpired = !isAccepted && !isDeclined && (quote.status === 'expired' || quote.is_expired)
+  const isClosed = isAccepted || isDeclined || isExpired
+  const todayLong = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
-  if (requested) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
-        <div className="text-center max-w-sm">
-          <MessageSquare className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-ink mb-2">Got it.</h1>
-          <p className="text-ink-2 mb-2">We received your change request.</p>
-          <p className="text-sm text-ink-3">
-            We'll review and send you an updated quote shortly.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  const pdfUrl = `/api/quotes/public/${token}/pdf`
+  const toolbar = (
+    <>
+      <a href={`${pdfUrl}?download=1`}
+        className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-panel border border-hairline text-ink-2 hover:bg-bg transition-colors">
+        <Download className="w-4 h-4" /> Download PDF
+      </a>
+      <button onClick={() => window.print()}
+        className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-panel border border-hairline text-ink-2 hover:bg-bg transition-colors">
+        <Printer className="w-4 h-4" /> Print
+      </button>
+    </>
+  )
 
-  if (declined) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
-        <div className="text-center max-w-sm">
-          <X className="w-16 h-16 text-ink-3 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-ink mb-2">Quote declined</h1>
-          <p className="text-ink-2 mb-2">Thanks for letting us know.</p>
-          <p className="text-sm text-ink-3">If anything changes, just reach out — we'd be glad to help.</p>
-        </div>
+  const banner = isAccepted ? (
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+      <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+      <p className="text-sm text-emerald-800 font-medium">
+        {accepted ? `Accepted ✓ on ${todayLong}` : 'Accepted ✓'} — we'll reach out shortly to confirm your scheduled date.
+      </p>
+    </div>
+  ) : requested ? (
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
+      <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
+      <p className="text-sm text-blue-800 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
+    </div>
+  ) : isDeclined ? (
+    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-bg-2 border border-hairline px-4 py-3">
+      <X className="w-5 h-5 text-ink-3 shrink-0" />
+      <p className="text-sm text-ink-2 font-medium">This quote was declined. If anything changes, just reach out.</p>
+    </div>
+  ) : isExpired ? (
+    <div className="no-print mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+      <div className="flex items-center gap-2">
+        <Clock className="w-5 h-5 text-amber-600 shrink-0" />
+        <p className="text-sm text-amber-800 font-medium">
+          This quote expired{quote.valid_until ? ` on ${quote.valid_until}` : ''} — contact us for an updated quote.
+        </p>
       </div>
-    )
-  }
+      {(quote.company_email || quote.company_phone) && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {quote.company_email && (
+            <a href={`mailto:${quote.company_email}`} className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white font-medium">Email us</a>
+          )}
+          {quote.company_phone && (
+            <a href={`tel:${quote.company_phone.replace(/[^\d+]/g, '')}`} className="text-xs px-3 py-1.5 rounded-lg bg-panel border border-amber-300 text-amber-800 font-medium">Call us</a>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null
 
-  const actions = (
+  // Action block (Accept / Request / Decline) — only when the quote is still open.
+  const actions = isClosed ? null : (
     <div className="space-y-3 pt-2">
+      {/* Light e-signature: who is accepting (optional, but makes it binding). */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <input
+          value={acceptName}
+          onChange={(e) => setAcceptName(e.target.value)}
+          placeholder="Your name (to accept)"
+          className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+        />
+        <input
+          value={acceptEmail}
+          onChange={(e) => setAcceptEmail(e.target.value)}
+          placeholder="Your email (for the receipt)"
+          type="email"
+          className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+        />
+      </div>
       <button
         onClick={handleAccept}
         disabled={accepting}
@@ -201,7 +238,7 @@ export default function PublicQuote() {
         Decline quote
       </button>
       <p className="text-xs text-ink-3 text-center">
-        By accepting, you're confirming your interest. We'll contact you to schedule the service.
+        By accepting, you agree to the terms above. We'll contact you to schedule the service.
       </p>
     </div>
   )
@@ -210,13 +247,13 @@ export default function PublicQuote() {
     <div className="min-h-screen bg-bg">
       <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="no-print bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-red-700">{error}</p>
           </div>
         )}
 
-        {/* THE quote document — identical component to the editor preview */}
-        <QuoteDocument quote={quote} actions={actions} />
+        {/* THE quote document — always visible, in every state, with PDF/print */}
+        <QuoteDocument quote={quote} actions={actions} toolbar={toolbar} banner={banner} />
 
         {showRequest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">

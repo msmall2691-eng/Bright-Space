@@ -160,10 +160,13 @@ class GeneralSettings(BaseModel):
     quote_terms: Optional[str] = None
     # Header band color for every customer-facing quote surface.
     brand_color: Optional[str] = None
+    # Optional logo URL shown on the public quote page, email, and PDF.
+    company_logo_url: Optional[str] = None
 
 
 _GENERAL_KEYS = ("company_name", "company_email", "company_phone",
-                 "timezone", "currency", "quote_terms", "brand_color")
+                 "timezone", "currency", "quote_terms", "brand_color",
+                 "company_logo_url")
 
 
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
@@ -199,6 +202,8 @@ def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)
         if value is not None:
             if key == "brand_color" and value.strip():
                 value = _normalize_brand_color(value)
+            if key == "company_logo_url" and value.strip() and not value.strip().startswith(("http://", "https://")):
+                raise HTTPException(400, "Company Logo URL must start with http:// or https://")
             set_setting(db, key, value.strip())
     db.commit()
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}
