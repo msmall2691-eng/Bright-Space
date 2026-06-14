@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import Job, Client, Visit, ICalEvent, CleanerTimeOff, Property
-from modules.auth.router import get_current_user, require_role
+from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
@@ -457,6 +457,7 @@ def get_jobs(
     job_type: Optional[str] = None,
     unassigned: Optional[bool] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     # Per-job earliest visit date. Used both for filtering AND for the
     # serialized response so that consumers (e.g. CalendarView) bucket by
@@ -473,6 +474,11 @@ def get_jobs(
           .options(joinedload(Job.client))
           .outerjoin(visit_min, visit_min.c.job_id == Job.id)
     )
+
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows
+    # (jobs created by internal paths — recurring, gcal sync — before backfill).
+    org_id = resolve_org_id(org_id, db)
+    q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
 
     if client_id:
         q = q.filter(Job.client_id == client_id)
@@ -555,7 +561,7 @@ def get_jobs(
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_job(data: JobCreate, db: Session = Depends(get_db)):
+def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     # ── QUOTE LINKAGE (P1-A) ──
     # When a job is scheduled from an accepted quote, link it back and convert
     # the quote. Idempotent: a double-submit (or a second click of "Set up
@@ -624,6 +630,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
     payload["start_time"] = _to_time(payload.get("start_time"))
     payload["end_time"] = _to_time(payload.get("end_time"))
     job = Job(**payload)
+    job.org_id = resolve_org_id(org_id, db)  # MT-2: stamp the caller's workspace (robust to in-process calls)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -1077,16 +1084,24 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_to_dict(job)
 
 
 @router.patch("/{job_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
-    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     prev_status = job.status
@@ -1358,8 +1373,12 @@ def update_reminder_settings(
 
 
 @router.delete("/{job_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     # Log to timeline before delete (FK rows are detached when job goes away,
