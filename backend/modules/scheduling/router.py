@@ -622,6 +622,30 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                        f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
             )
 
+        # ── DON'T DOUBLE-BOOK THE SLOT ── Google Free/Busy guard: if the
+        # calendar this job_type lands on is already busy in this window, block
+        # (overridable via allow_conflicts). Fails open when Google isn't
+        # connected or the check errors, so it never wedges scheduling.
+        try:
+            from modules.settings.router import freebusy_check_enabled
+            if freebusy_check_enabled(db):
+                from integrations.google_calendar import free_busy_conflicts
+                busy = free_busy_conflicts(
+                    data.job_type, data.scheduled_date, data.start_time, data.end_time,
+                )
+                if busy:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(f"That slot is already booked on Google Calendar "
+                                f"({len(busy)} conflicting event(s) between {data.start_time} and "
+                                f"{data.end_time} on {data.scheduled_date}). Pick another time, "
+                                f"or resubmit with allow_conflicts=true to book anyway."),
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Free/Busy guard skipped for new job: {e}")
+
     # ── PROPERTY DEFAULTING ──
     # Every job needs a property (DB-level NOT NULL), but the one-screen
     # Quick-schedule flow lets the user skip it. Resolve to the client's existing

@@ -451,6 +451,14 @@ def customer_invites_enabled(db: Session) -> bool:
     return _coerce_bool(get_setting(db, "invite_customers"), True)
 
 
+def freebusy_check_enabled(db: Session) -> bool:
+    """Whether to check Google Free/Busy when scheduling and block a booking that
+    would land on an already-busy slot (overridable per-booking via
+    allow_conflicts). Defaults on; in-app kill switch lives in
+    Settings → Automation. No-ops cleanly when Google isn't connected."""
+    return _coerce_bool(get_setting(db, "freebusy_check"), True)
+
+
 AUTOMATION_DEFAULTS = {
     "ical_auto_sync_enabled": True,
     "ical_sync_interval": 15,
