@@ -12,7 +12,9 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 600,
-    minify: 'esbuild',
+    // Vite 8 builds with Rolldown and no longer bundles esbuild; 'oxc' is the
+    // built-in minifier (the old 'esbuild' value now fails to resolve).
+    minify: 'oxc',
     rollupOptions: {
       output: {
         manualChunks(id) {
