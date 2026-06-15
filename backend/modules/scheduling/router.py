@@ -743,8 +743,21 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
                          action="create", status="failed", detail=str(e))
 
+    # ── PUSH TO CONNECTEAM (auto-dispatch) ──
+    # If cleaners are already assigned, scheduling the job sends their shifts to
+    # Connecteam now — no separate "Dispatch" click. No-ops cleanly when
+    # Connecteam isn't configured or no one's assigned yet.
+    ct_status = {"dispatched": False, "reason": None}
+    try:
+        from integrations.connecteam_auto import auto_dispatch_job
+        ct_status = auto_dispatch_job(db, job)
+    except Exception as e:
+        logger.warning(f"Connecteam auto-dispatch failed for job {job.id}: {e}")
+        ct_status = {"dispatched": False, "reason": "error"}
+
     result = job_to_dict(job)
     result["gcal"] = gcal_status
+    result["connecteam"] = ct_status
     return result
 
 
@@ -1310,6 +1323,11 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         raise HTTPException(status_code=404, detail="Job not found")
     prev_status = job.status
     prev_job_type = job.job_type or "residential"
+    # Signature of the shift-relevant fields BEFORE the edit. The edit modal
+    # sends every field, so we compare actual values (not "was it in the body")
+    # to decide whether Connecteam shifts need re-syncing.
+    prev_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
+                   tuple(str(c) for c in (job.cleaner_ids or [])))
 
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
@@ -1531,6 +1549,26 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 db.commit()
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
+
+    # ── CONNECTEAM SHIFT SYNC (independent of GCal) ──
+    # Cancelled → pull shifts. Active → push if newly assigned, or re-sync when
+    # the time/cleaners actually changed (delete old shifts, create fresh ones).
+    try:
+        from integrations.connecteam_auto import (
+            auto_dispatch_job, remove_job_from_connecteam, resync_job,
+        )
+        if job.status == "cancelled":
+            remove_job_from_connecteam(db, job)
+        else:
+            new_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
+                          tuple(str(c) for c in (job.cleaner_ids or [])))
+            if job.connecteam_shift_ids:
+                if new_ct_sig != prev_ct_sig:
+                    resync_job(db, job)
+            elif job.cleaner_ids:
+                auto_dispatch_job(db, job)
+    except Exception as e:
+        logger.warning(f"Connecteam sync failed for job {job.id}: {e}")
     return job_to_dict(job)
 
 
@@ -1600,6 +1638,14 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
                          owner_account_id=getattr(job, "gcal_account_id", None))
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
+    # Remove any Connecteam shifts so deleting a job doesn't leave cleaners with
+    # orphaned shifts on their schedule.
+    if job.connecteam_shift_ids:
+        try:
+            from integrations.connecteam_auto import remove_job_from_connecteam
+            remove_job_from_connecteam(db, job, commit=False)
+        except Exception as e:
+            logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
     db.delete(job)
     db.commit()
 
