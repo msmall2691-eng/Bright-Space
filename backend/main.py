@@ -70,11 +70,33 @@ app.add_middleware(
     # origin is added. Explicit lists match what the SPA actually sends.
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    # Sliding-session: let the SPA read the rotated token off the response.
+    expose_headers=["X-Refresh-Token"],
 )
 
 # API key authentication â must be added AFTER CORS middleware
 # (Starlette processes middleware in reverse order, so CORS runs first)
 app.add_middleware(APIKeyMiddleware)
+
+# Sliding-session refresh: when an authenticated request carries a token past
+# its half-life, hand back a fresh one via X-Refresh-Token so active users (e.g.
+# mid-booking) are never logged out underneath their work.
+from auth_jwt import maybe_refresh_jwt
+
+
+@app.middleware("http")
+async def sliding_session_refresh(request, call_next):
+    response = await call_next(request)
+    try:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            fresh = maybe_refresh_jwt(auth[7:])
+            if fresh:
+                response.headers["X-Refresh-Token"] = fresh
+    except Exception:
+        pass  # never let session-refresh bookkeeping break a response
+    return response
+
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])

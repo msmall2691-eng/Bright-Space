@@ -38,6 +38,14 @@ function headers(extra = {}) {
   return h
 }
 
+/** Swap in a rotated JWT from the sliding-session middleware, if present. */
+function maybeRotateToken(res) {
+  try {
+    const rotated = res?.headers?.get?.('X-Refresh-Token')
+    if (rotated) setJWT(rotated)
+  } catch { /* header not readable — ignore */ }
+}
+
 /**
  * Wrapper around fetch that:
  *  - Adds JWT Bearer token to Authorization header
@@ -51,10 +59,17 @@ export async function api(url, options = {}) {
     headers: headers(options.headers),
   })
 
+  // Sliding session: if the server rotated our token (past half-life), swap it
+  // in silently so an active user is never logged out mid-task.
+  maybeRotateToken(res)
+
   // Handle 401 Unauthorized - redirect to login. But NOT for auth endpoints
   // (login/register/google) — a failed login should show "invalid login" in the
   // form, not hard-redirect to /login (which looks like an endless loop).
   if (res.status === 401 && !String(url).includes('/api/auth/')) {
+    // Flag the timeout so /login can show a friendly note (and any in-progress
+    // work — e.g. a booking draft — can be restored after re-auth).
+    try { localStorage.setItem('brightbase_session_expired', '1') } catch { /* ignore */ }
     clearJWT()
     window.location.href = '/login'
     return
@@ -121,7 +136,10 @@ export async function upload(url, formData) {
     body: formData,
   });
 
+  maybeRotateToken(res)
+
   if (res.status === 401) {
+    try { localStorage.setItem('brightbase_session_expired', '1') } catch { /* ignore */ }
     clearJWT()
     window.location.href = '/login'
     return
@@ -154,7 +172,9 @@ export async function upload(url, formData) {
  */
 export async function download(url, filename) {
   const res = await fetch(url, { headers: headers() })
+  maybeRotateToken(res)
   if (res.status === 401) {
+    try { localStorage.setItem('brightbase_session_expired', '1') } catch { /* ignore */ }
     clearJWT()
     window.location.href = '/login'
     return
