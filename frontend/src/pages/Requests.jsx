@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { get, post, patch } from '../api'
 import { displayContactName } from '../utils/display'
+import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 
@@ -112,7 +113,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected
             {/* Metadata */}
             <div className="flex items-center gap-3 text-xs text-ink-3 flex-wrap">
               <span className={priorityConfig.color}>{priorityConfig.label} Priority</span>
-              {intake.requested_date && <span>• {intake.requested_date}</span>}
+              {intake.requested_date && <span>• {formatDate(intake.requested_date)}</span>}
               {intake.frequency && <span>• {intake.frequency}</span>}
               {(intake.estimate_min || intake.estimate_max) && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
@@ -173,7 +174,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected
       {/* Message Preview */}
       {intake.message && (
         <p className="text-xs text-ink-2 bg-bg p-2 rounded line-clamp-2">
-          "{intake.message}"
+          "{htmlToText(intake.message)}"
         </p>
       )}
     </div>
@@ -210,7 +211,7 @@ function ConversationLeadCard({ conv, onReply, onCreateQuote }) {
               )}
             </div>
             {conv.preview && (
-              <p className="text-[13px] text-ink-2 line-clamp-2 mb-2">{conv.preview}</p>
+              <p className="text-[13px] text-ink-2 line-clamp-2 mb-2">{htmlToText(conv.preview)}</p>
             )}
             <div className="flex items-center gap-3 text-xs text-ink-3 flex-wrap">
               {conv.client?.phone && (
@@ -386,7 +387,7 @@ export default function Requests() {
       <div className="bg-panel border-b border-hairline p-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-ink tracking-tight">Leads</h1>
+            <h1 className="text-xl font-bold text-ink tracking-tight">Requests</h1>
             <Button variant="primary" size="sm">
               <Plus className="w-4 h-4 mr-2" />
               New Request
@@ -567,8 +568,14 @@ export default function Requests() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Message</label>
-                <p className="text-sm text-ink whitespace-pre-wrap">{selectedRequest.message || '—'}</p>
+                <p className="text-sm text-ink whitespace-pre-wrap">{htmlToText(selectedRequest.message) || '—'}</p>
               </div>
+              {selectedRequest.created_at && (
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Received</label>
+                  <p className="text-sm text-ink">{formatDateTime(selectedRequest.created_at)}</p>
+                </div>
+              )}
               {selectedRequest.internal_notes && (
                 <div>
                   <label className="text-xs font-semibold text-ink-2 uppercase">Internal Notes</label>

@@ -393,8 +393,13 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     except WebSocketDisconnect:
         agent_histories.pop(conn_key, None)
     except Exception as e:
+        # Don't leak the provider's raw error (billing JSON, request_id, etc.) to
+        # the operator — map it to a friendly message first.
+        import logging
+        from utils.ai_errors import friendly_ai_error
+        logging.getLogger(__name__).exception("agent websocket error for %s", agent_name)
         try:
-            await websocket.send_json({"type": "error", "content": str(e)})
+            await websocket.send_json({"type": "error", "content": friendly_ai_error(e)})
         except Exception:
             pass
         agent_histories.pop(conn_key, None)
