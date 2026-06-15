@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
 import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check } from 'lucide-react'
 import { get, post } from '../api'
+import { toast } from '../utils/toastBus'
 import AddressAutocomplete from './AddressAutocomplete'
+
+// Where an in-progress booking is parked if the session expires mid-submit, so
+// it can be restored after re-login instead of being silently lost.
+const JOB_DRAFT_KEY = 'brightbase_job_draft'
 
 const JOB_TYPES = [
   { value: 'residential',  label: 'Residential' },
@@ -148,6 +153,23 @@ export default function JobCreateModal({
     return () => clearTimeout(t)
   }, [standalone, selectedClient, addingClient, clientQuery, clientRetry])
 
+  // One-shot restore: if a prior submit hit an expired session, the booking was
+  // parked in localStorage (see save()). Bring it back so no work is lost. Only
+  // in standalone mode (the Schedule "New Job" flow).
+  useEffect(() => {
+    if (!standalone) return
+    let draft = null
+    try { draft = JSON.parse(localStorage.getItem(JOB_DRAFT_KEY) || 'null') } catch { draft = null }
+    if (!draft) return
+    try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
+    if (draft.form) setForm(draft.form)
+    if (typeof draft.recurring === 'boolean') setRecurring(draft.recurring)
+    if (typeof draft.quick === 'boolean') setQuick(draft.quick)
+    if (draft.client) { setSelectedClient(draft.client); setActiveClientId(String(draft.client.id)) }
+    toast?.info?.('Restored your in-progress booking from before the session timed out.')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Load the active client's properties whenever it changes.
   useEffect(() => {
     if (!activeClientId) { setProperties([]); return }
@@ -267,6 +289,17 @@ export default function JobCreateModal({
   const save = async () => {
     setSaving(true)
     setError(null)
+    // Park the booking before we hit the network: if the session has expired,
+    // the 401 redirects to /login (this code never resumes), and this draft is
+    // what gets restored after re-auth. Cleared on a confirmed success below.
+    try {
+      localStorage.setItem(JOB_DRAFT_KEY, JSON.stringify({
+        form, recurring, quick,
+        client: selectedClient
+          ? { id: selectedClient.id, name: selectedClient.name, email: selectedClient.email }
+          : null,
+      }))
+    } catch { /* storage unavailable — proceed without a draft */ }
     try {
       if (recurring) {
         const body = {
@@ -290,6 +323,8 @@ export default function JobCreateModal({
           quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
         }
         const sched = await post('/api/recurring', body)
+        if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
+        try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
         onCreated?.({ kind: 'recurring', schedule: sched })
         onClose?.()
         return
@@ -309,6 +344,8 @@ export default function JobCreateModal({
         quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
       }
       const job = await post('/api/jobs', body)
+      if (!job) return  // 401 → redirecting to /login; keep the draft to restore
+      try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
       onCreated?.({ kind: 'job', job, gcal: job?.gcal })
       onClose?.()
     } catch (e) {
@@ -316,6 +353,12 @@ export default function JobCreateModal({
     } finally {
       setSaving(false)
     }
+  }
+
+  // Explicit dismissal abandons any parked draft so it isn't restored next open.
+  const handleCancel = () => {
+    try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
+    onClose?.()
   }
 
   // 3-step guided flow: Who (client + property) → What (title, type, repeat,
@@ -342,7 +385,7 @@ export default function JobCreateModal({
               {recurring ? 'Recurring Schedule' : 'Schedule Job'}
               {clientName && <span className="ml-2 text-xs text-ink-3 font-normal">· {clientName}</span>}
             </h2>
-            <button onClick={onClose} className="text-ink-3 hover:text-ink" aria-label="Close">
+            <button onClick={handleCancel} className="text-ink-3 hover:text-ink" aria-label="Close">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -796,7 +839,7 @@ export default function JobCreateModal({
         <div className="p-6 border-t border-hairline flex items-center gap-3">
           {quick ? (
             <>
-              <button onClick={onClose} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
+              <button onClick={handleCancel} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
               <button
                 onClick={save}
                 disabled={saving || !canSave}
@@ -808,7 +851,7 @@ export default function JobCreateModal({
             </>
           ) : (<>
           <button
-            onClick={step === 1 ? onClose : goBack}
+            onClick={step === 1 ? handleCancel : goBack}
             className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}
           >
             {step === 1 ? 'Cancel' : 'Back'}
