@@ -67,6 +67,27 @@ def canonical_service_type(service_key: Optional[str]) -> str:
     return SERVICE_TYPE_MAP.get((service_key or "").strip().lower(), "residential")
 
 
+# Common synonyms collapsed to one canonical source value so "Website" and
+# "website" (or "contact form") don't fragment the source filter / stats.
+_SOURCE_SYNONYMS = {
+    "web": "website", "webform": "website", "web form": "website",
+    "contact form": "website", "site": "website", "maineclean.co": "website",
+    "www": "website", "online": "website",
+    "phone call": "phone", "call": "phone",
+    "text": "sms", "text message": "sms",
+    "e-mail": "email", "gmail": "email",
+}
+
+
+def normalize_source(source: Optional[str]) -> str:
+    """Canonicalize a lead source: lowercase, trim, collapse spaces, map
+    synonyms. Defaults to 'website' (the public form is the main entrypoint)."""
+    s = re.sub(r"\s+", " ", (source or "").strip().lower())
+    if not s:
+        return "website"
+    return _SOURCE_SYNONYMS.get(s, s)
+
+
 def looks_placeholder_name(name: Optional[str]) -> bool:
     if not name:
         return True
@@ -186,7 +207,7 @@ def build_intake(
         property_name=property_name,
         message=message,
         preferred_date=preferred_date or requested_date,
-        source=source or "website",
+        source=normalize_source(source),
     )
 
 
