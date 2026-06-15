@@ -25,6 +25,27 @@ const FREQUENCIES = [
 
 const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+/** Amber "this slot conflicts" prompt with a one-click override. Shown when
+ *  create_job returns a 409 (cleaner double-booked, time off, over capacity, or
+ *  the slot is already busy on Google Calendar). */
+function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
+  if (!conflict) return null
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs">
+      <p className="font-semibold text-amber-800 mb-1">Scheduling conflict</p>
+      <p className="text-amber-900 mb-2">{conflict}</p>
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancel}
+          className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline">Pick another time</button>
+        <button type="button" onClick={onOverride} disabled={saving}
+          className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
+          {saving ? 'Booking…' : 'Book anyway'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function jobTypeFromProperty(propertyType) {
   const t = (propertyType || '').toLowerCase()
   if (t === 'commercial') return 'commercial'
@@ -286,9 +307,16 @@ export default function JobCreateModal({
           : (form.days_of_week || []).length > 0)
     : form.title && form.scheduled_date && form.start_time && form.end_time)
 
-  const save = async () => {
+  // A 409 from create_job means a scheduling conflict (cleaner double-booked,
+  // time off, over capacity, or the slot is already busy on Google Calendar).
+  // The backend accepts allow_conflicts to override, so we surface a "Book
+  // anyway" prompt rather than a dead-end error.
+  const [conflict, setConflict] = useState(null)
+
+  const save = async (allowConflicts = false) => {
     setSaving(true)
     setError(null)
+    setConflict(null)
     // Park the booking before we hit the network: if the session has expired,
     // the 401 redirects to /login (this code never resumes), and this draft is
     // what gets restored after re-auth. Cleared on a confirmed success below.
@@ -342,6 +370,7 @@ export default function JobCreateModal({
         // When scheduling from an accepted quote, link the job back so the
         // backend converts the quote and revenue→job traceability is kept.
         quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
+        allow_conflicts: allowConflicts,
       }
       const job = await post('/api/jobs', body)
       if (!job) return  // 401 → redirecting to /login; keep the draft to restore
@@ -349,7 +378,14 @@ export default function JobCreateModal({
       onCreated?.({ kind: 'job', job, gcal: job?.gcal })
       onClose?.()
     } catch (e) {
-      setError(e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`)
+      const msg = e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`
+      // Conflict 409s (incl. the Google Free/Busy "already booked" guard) are
+      // overridable — route them to the "Book anyway" prompt, not a hard error.
+      if (!recurring && /conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
+        setConflict(msg)
+      } else {
+        setError(msg)
+      }
     } finally {
       setSaving(false)
     }
@@ -551,6 +587,8 @@ export default function JobCreateModal({
                 <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
               </div>
             )}
+            <ConflictPrompt conflict={conflict} saving={saving}
+              onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           </>)}
 
           {/* ── Advanced · Property (step 1; client handled above) ───────── */}
@@ -833,6 +871,8 @@ export default function JobCreateModal({
               {error}
             </div>
           )}
+          <ConflictPrompt conflict={conflict} saving={saving}
+            onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           </>)}
         </div>
 
@@ -841,7 +881,7 @@ export default function JobCreateModal({
             <>
               <button onClick={handleCancel} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
               <button
-                onClick={save}
+                onClick={() => save()}
                 disabled={saving || !canSave}
                 data-testid="job-create-submit"
                 className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
@@ -867,7 +907,7 @@ export default function JobCreateModal({
             </button>
           ) : (
             <button
-              onClick={save}
+              onClick={() => save()}
               disabled={saving || !canSave}
               className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
             >

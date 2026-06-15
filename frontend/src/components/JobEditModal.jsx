@@ -172,7 +172,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     } catch (err) {
       const msg = err.message || 'Failed to save job'
       // Backend 409s carry the human-readable conflict detail.
-      if (/conflict|unavailable|over capacity|time off/i.test(msg)) {
+      if (/conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
         setConflict(msg)
       } else {
         setError(msg)

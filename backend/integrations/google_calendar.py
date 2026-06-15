@@ -638,6 +638,49 @@ def get_event(event_id: str, job_type: str = "residential", owner_account_id: in
         raise
 
 
+def free_busy_conflicts(job_type, scheduled_date, start_time, end_time, tz: str = "America/New_York") -> list:
+    """Query Google Free/Busy for the calendar this job_type lands on and return
+    any busy intervals overlapping [start, end] on the given date.
+
+    Used to stop double-booking a slot at scheduling time. Fails OPEN: if Google
+    isn't connected, the window is malformed, or the API errors, returns [] so a
+    Free/Busy hiccup can never block creating a job. Each returned item is the
+    raw Google busy block: {"start": ISO, "end": ISO}.
+    """
+    if not is_configured():
+        return []
+    try:
+        from zoneinfo import ZoneInfo
+
+        def _hm(t):
+            if t is None:
+                return "00:00"
+            if hasattr(t, "strftime"):
+                return t.strftime("%H:%M")
+            return str(t)[:5]
+
+        tzinfo = ZoneInfo(tz or "America/New_York")
+        start = datetime.fromisoformat(f"{scheduled_date}T{_hm(start_time)}:00").replace(tzinfo=tzinfo)
+        end = datetime.fromisoformat(f"{scheduled_date}T{_hm(end_time)}:00").replace(tzinfo=tzinfo)
+        if end <= start:
+            return []
+
+        service = _get_service()
+        cal_id = _calendar_id(job_type or "residential")
+        resp = service.freebusy().query(body={
+            "timeMin": start.isoformat(),
+            "timeMax": end.isoformat(),
+            "items": [{"id": cal_id}],
+        }).execute()
+        cal = (resp.get("calendars") or {}).get(cal_id, {})
+        # FreeBusy only returns blocks intersecting [timeMin, timeMax], so every
+        # entry here is a genuine overlap with the requested window.
+        return cal.get("busy", []) or []
+    except Exception as e:  # never block scheduling on a Free/Busy failure
+        print(f"[GCal] Free/Busy check failed (allowing booking): {e}")
+        return []
+
+
 def start_watch(calendar_id: str, address: str, token: str, ttl_seconds: int = 7 * 24 * 3600) -> dict | None:
     """Register a Google push channel (events.watch) on a calendar.
 
