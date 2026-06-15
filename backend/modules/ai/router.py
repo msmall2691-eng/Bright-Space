@@ -130,7 +130,8 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
                 "error": False}
     except Exception as e:
         logger.exception("ai/quick failed")
-        return {"answer": f"Sorry, I hit an error: {e}", "error": True}
+        from utils.ai_errors import friendly_ai_error
+        return {"answer": friendly_ai_error(e), "error": True}
 
 
 # ── GET /api/ai/daily-briefing ──────────────────────────────────────────────

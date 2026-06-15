@@ -12,7 +12,7 @@ const nav = [
   { to: '/today',       icon: CalendarDays,    label: 'Today' },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
   { divider: true, label: 'Sales Pipeline' },
-  { to: '/requests',    icon: Inbox,           label: 'Leads' },
+  { to: '/requests',    icon: Inbox,           label: 'Requests' },
   { to: '/pipeline',    icon: LayoutGrid,      label: 'Pipeline' },
   { to: '/quoting',     icon: FileText,        label: 'Quoting' },
   { to: '/invoicing',   icon: Receipt,         label: 'Invoicing' },

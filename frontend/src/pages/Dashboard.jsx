@@ -16,6 +16,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
+import { htmlToText } from '../utils/format'
 import { Card, StatCard, EmptyState, Skeleton } from '../components/ui'
 import { AIFollowUps } from '../components/AIBriefing'
 import {
@@ -258,7 +259,7 @@ export default function Dashboard() {
         key: `od-${c.id}`,
         tone: 'red',
         title: `Overdue reply · ${contactLabel(c)}`,
-        sub: c.preview || 'Awaiting reply',
+        sub: htmlToText(c.preview) || 'Awaiting reply',
         action: 'Reply',
         onClick: () => navigate('/comms'),
       })
@@ -283,7 +284,7 @@ export default function Dashboard() {
         key: `un-${c.id}`,
         tone: 'amber',
         title: `Unassigned · ${contactLabel(c)}`,
-        sub: c.preview || '',
+        sub: htmlToText(c.preview) || '',
         action: 'Assign',
         onClick: () => navigate('/comms'),
       })

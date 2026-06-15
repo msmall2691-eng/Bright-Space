@@ -8,6 +8,7 @@ import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 import { get, post, patch, put, del } from "../api"
+import { formatDate } from '../utils/format'
 
 
 const QUOTE_STATUS_COLORS = {
@@ -657,7 +658,7 @@ export default function Quoting() {
                     <div className="text-xs text-ink-3 space-y-0.5">
                       {(intake.phone || intake.email) && <div>{[intake.phone, intake.email].filter(Boolean).join(' · ')}</div>}
                       {intake.address && <div>{[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}</div>}
-                      {intake.preferred_date && <div>Preferred: {intake.preferred_date}</div>}
+                      {intake.preferred_date && <div>Preferred: {formatDate(intake.preferred_date)}</div>}
                       {intake.message && <div className="text-ink-3 italic mt-1 line-clamp-2">"{intake.message}"</div>}
                     </div>
                     <div className="text-xs text-ink-3 mt-1.5">

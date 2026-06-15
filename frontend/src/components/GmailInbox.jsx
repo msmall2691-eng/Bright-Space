@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Mail, UserPlus, Paperclip, ArrowLeft, RefreshCw, Link2, Clock, Inbox, Search, Send, X, AlertCircle, Phone, MessageCircle, MapPin, Zap } from 'lucide-react'
 import { get, post } from '../api'
+import { htmlToText } from '../utils/format'
 
 const QUICK_TEMPLATES = [
   { label: 'Confirm', text: 'Thank you! I\'ll confirm the details shortly.' },
@@ -496,7 +497,7 @@ export default function GmailInbox() {
             {/* Email body */}
             <div ref={detailRef} className="flex-1 overflow-y-auto px-6 py-5">
               <div className="prose prose-sm max-w-none text-ink-2 whitespace-pre-wrap leading-relaxed">
-                {selected.body || selected.snippet || '(No content)'}
+                {htmlToText(selected.body) || selected.snippet || '(No content)'}
               </div>
             </div>
 
