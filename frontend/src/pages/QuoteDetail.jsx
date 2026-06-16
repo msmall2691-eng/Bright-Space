@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText,
+  Mail, MessageSquare,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
@@ -53,6 +54,7 @@ export default function QuoteDetail() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [deliveryHistory, setDeliveryHistory] = useState([])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -62,6 +64,9 @@ export default function QuoteDetail() {
       .finally(() => setLoading(false))
   }, [id])
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (id) get(`/api/quotes/${id}/delivery-history`).then(d => setDeliveryHistory(d.history || [])).catch(() => {})
+  }, [id])
   useEffect(() => { if (quote?.quote_number) document.title = `${quote.quote_number} · Quote` }, [quote?.quote_number])
 
   const saveField = (body) =>
@@ -213,6 +218,34 @@ export default function QuoteDetail() {
             <LinkedCard icon={MapPin} label="Property"
               to={quote.property ? `/properties/${quote.property.id}` : null}
               primary={quote.property?.name} secondary={quote.property?.address} />
+
+            {/* Delivery history */}
+            {deliveryHistory.length > 0 && (
+              <div className="bg-panel border border-hairline rounded-xl p-4">
+                <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-2">Delivery history</div>
+                <div className="space-y-2">
+                  {deliveryHistory.map((d, i) => (
+                    <div key={i} className="flex items-start gap-2 text-[12px]">
+                      {d.channel === 'email'
+                        ? <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+                        : <MessageSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-ink-2 truncate">{d.recipient}</span>
+                          <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                            d.status === 'sent' || d.status === 'delivered' ? 'bg-emerald-500/15 text-emerald-500'
+                            : d.status === 'failed' || d.status === 'bounced' || d.status === 'undelivered' ? 'bg-red-500/15 text-red-500'
+                            : 'bg-amber-500/15 text-amber-500'
+                          }`}>{d.status}</span>
+                        </div>
+                        <div className="text-[11px] text-ink-3">{d.sent_at ? new Date(d.sent_at).toLocaleString() : ''}</div>
+                        {d.error && <div className="text-[11px] text-red-500 mt-0.5">{d.error}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

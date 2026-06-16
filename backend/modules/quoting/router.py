@@ -23,7 +23,7 @@ from schemas.quotes import (
     QuoteCreate, QuoteUpdate, QuoteRequestCreate, QuoteRequestUpdate,
 )
 from database.models import (
-    Quote, QuoteRequest, QuoteEmail, Client, Job, Property,
+    Quote, QuoteRequest, QuoteEmail, QuoteSMS, Client, Job, Property,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.integration_log import log_integration_event as _log_integration
@@ -544,14 +544,24 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                                if nice_name else f"Hi, your quote {quote.quote_number} is ready.")
                 base = (body.custom_message or "").strip() or default_sms
                 msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
-                send_sms(to=to_phone, body=msg)
+                sms_result = send_sms(to=to_phone, body=msg)
                 results["sms"] = "sent"
+                db.add(QuoteSMS(
+                    quote_id=quote.id, recipient_phone=to_phone, sent_at=_utcnow(),
+                    delivery_status=sms_result.get("status", "sent"),
+                    message_sid=sms_result.get("sid"),
+                ))
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
-                                 action="send", status="ok", detail=f"to {to_phone}", commit=False)
+                                 action="send", status="ok", external_id=sms_result.get("sid"),
+                                 detail=f"to {to_phone}", commit=False)
             except Exception as e:
                 results["sms"] = "failed"
                 errors.append("text message could not be sent")
                 logger.warning(f"Quote {quote.id} SMS send error: {e}")
+                db.add(QuoteSMS(
+                    quote_id=quote.id, recipient_phone=to_phone, sent_at=_utcnow(),
+                    delivery_status="failed", error_message=str(e),
+                ))
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
                                  action="send", status="failed", detail=str(e), commit=False)
 
@@ -1376,6 +1386,65 @@ def get_quote_email_history(quote_id: int, db: Session = Depends(get_db)):
             for e in emails
         ],
     }
+
+@router.get("/{quote_id}/sms-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def get_quote_sms_history(quote_id: int, db: Session = Depends(get_db)):
+    quote = _get_quote_or_404(quote_id, db)
+    messages = (
+        db.query(QuoteSMS)
+        .filter(QuoteSMS.quote_id == quote_id)
+        .order_by(QuoteSMS.sent_at.desc())
+        .all()
+    )
+    return {
+        "quote_id": quote.id,
+        "quote_number": quote.quote_number,
+        "total_sms_sent": len(messages),
+        "messages": [
+            {
+                "recipient": m.recipient_phone,
+                "sent_at": m.sent_at.isoformat() if m.sent_at else None,
+                "status": m.delivery_status,
+                "message_sid": m.message_sid,
+                "error": m.error_message,
+            }
+            for m in messages
+        ],
+    }
+
+
+@router.get("/{quote_id}/delivery-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def get_quote_delivery_history(quote_id: int, db: Session = Depends(get_db)):
+    """Combined email + SMS delivery history, sorted newest first."""
+    quote = _get_quote_or_404(quote_id, db)
+    emails = db.query(QuoteEmail).filter(QuoteEmail.quote_id == quote_id).all()
+    sms_msgs = db.query(QuoteSMS).filter(QuoteSMS.quote_id == quote_id).all()
+    history = []
+    for e in emails:
+        history.append({
+            "channel": "email",
+            "recipient": e.recipient_email,
+            "sent_at": e.sent_at.isoformat() if e.sent_at else None,
+            "status": e.delivery_status,
+            "external_id": e.email_id,
+        })
+    for m in sms_msgs:
+        history.append({
+            "channel": "sms",
+            "recipient": m.recipient_phone,
+            "sent_at": m.sent_at.isoformat() if m.sent_at else None,
+            "status": m.delivery_status,
+            "external_id": m.message_sid,
+            "error": m.error_message,
+        })
+    history.sort(key=lambda h: h["sent_at"] or "", reverse=True)
+    return {
+        "quote_id": quote.id,
+        "quote_number": quote.quote_number,
+        "total_deliveries": len(history),
+        "history": history,
+    }
+
 
 # NOTE: the /webhooks/resend endpoint was removed — mail goes out over SMTP
 # (smtplib), so Resend events never fired and QuoteEmail.delivery_status never
