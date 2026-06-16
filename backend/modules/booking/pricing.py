@@ -17,18 +17,36 @@ from typing import Optional
 # ── Base prices by service ─────────────────────────────────────────
 # Includes the first 2 bedrooms + 1 bathroom + 1000 sqft. Add-ons below.
 BASE_PRICE = {
-    "residential": 120,
-    "commercial":  180,
-    "str":         110,  # STR turnover — smaller default footprint
+    "residential": 130,
+    "commercial":  200,
+    "str":         120,  # STR turnover — smaller default footprint
 }
 
 # ── Per-additional-room ────────────────────────────────────────────
 PER_EXTRA_BEDROOM_USD  = 25
-PER_EXTRA_BATHROOM_USD = 18
+PER_EXTRA_BATHROOM_USD = 20
 
 # ── Per-sqft tier (above the first 1000) ───────────────────────────
 SQFT_BAND_SIZE = 500
-SQFT_BAND_PRICE_USD = 22
+SQFT_BAND_PRICE_USD = 25
+
+# ── Pet hair surcharge ─────────────────────────────────────────────
+PET_HAIR_SURCHARGE = {
+    None:    0,
+    "":      0,
+    "none":  0,
+    "some":  15,
+    "heavy": 30,
+}
+
+# ── Home condition surcharge ───────────────────────────────────────
+HOME_CONDITION_SURCHARGE = {
+    None:        0,
+    "":          0,
+    "maintained": 0,
+    "moderate":  15,
+    "heavy":     30,
+}
 
 # ── Service multipliers ────────────────────────────────────────────
 # Standard / move-in-out / deep-clean / etc. The booking form's
@@ -70,6 +88,8 @@ def estimate_price(
     square_footage: Optional[int] = None,
     frequency: Optional[str] = None,
     message: Optional[str] = None,
+    pet_hair: Optional[str] = None,
+    condition: Optional[str] = None,
 ) -> dict:
     """Return {estimate_min, estimate_max, breakdown} for a booking.
 
@@ -136,6 +156,20 @@ def estimate_price(
             "factor": multiplier,
         }
         subtotal *= multiplier
+
+    # Pet hair surcharge.
+    pet_key = (pet_hair or "").lower().strip()
+    pet_cost = PET_HAIR_SURCHARGE.get(pet_key, 0)
+    if pet_cost:
+        breakdown["pet_hair"] = {"level": pet_key, "surcharge": pet_cost}
+        subtotal += pet_cost
+
+    # Home condition surcharge.
+    cond_key = (condition or "").lower().strip()
+    cond_cost = HOME_CONDITION_SURCHARGE.get(cond_key, 0)
+    if cond_cost:
+        breakdown["home_condition"] = {"level": cond_key, "surcharge": cond_cost}
+        subtotal += cond_cost
 
     # Recurring-frequency discount.
     freq_key = (frequency or "").lower().strip()

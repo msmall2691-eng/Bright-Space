@@ -160,6 +160,8 @@ def build_intake(
     message: Optional[str] = None,
     preferred_date: Optional[str] = None,
     source: Optional[str] = "website",
+    pet_hair: Optional[str] = None,
+    condition: Optional[str] = None,
 ) -> IntakeData:
     """Normalize a raw public payload into :class:`IntakeData`.
 
@@ -179,6 +181,8 @@ def build_intake(
                 square_footage=_to_int(square_footage),
                 frequency=frequency,
                 message=message,
+                pet_hair=pet_hair,
+                condition=condition,
             )
             estimate_min = est.get("estimate_min")
             estimate_max = est.get("estimate_max")

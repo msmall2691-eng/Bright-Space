@@ -1,0 +1,12 @@
+fix: raise instant-quote rates and add pet/condition pricing
+
+- Raise residential base from $120 to $130, commercial $180 to $200, STR $110 to $120
+- Raise per-extra-bathroom from $18 to $20
+- Raise per-sqft-band from $22 to $25
+- Add pet hair surcharges: some +$15, heavy +$30
+- Add home condition surcharges: moderate +$15, heavy +$30
+- Wire petHair and condition from the website webhook through build_intake
+  into the pricing engine so the estimate reflects what the customer selected
+
+Target: 2000 sqft / 2 bath / biweekly / no pets = ~$190 midpoint (was $173).
+With some pets = ~$204, heavy pets = ~$218.

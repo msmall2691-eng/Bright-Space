@@ -383,6 +383,7 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
         zip_code=data.zip, service_key=service_key, bathrooms=data.bathrooms,
         square_footage=sqft, frequency=data.frequency, message=notes_text or None,
         source=data.source or "website",
+        pet_hair=data.petHair, condition=data.condition,
     )
     result = upsert_lead(db, payload)
 
