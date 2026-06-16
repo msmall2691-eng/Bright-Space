@@ -50,6 +50,11 @@ class BookingSubmit(BaseModel):
     squareFeet: Optional[int] = None
     notes: Optional[str] = None
     message: Optional[str] = None
+    # Mirror InstantQuoteRequest so the saved lead's estimate matches the
+    # quote the customer just saw — without these, build_intake's pricing
+    # call would drop the pet/condition surcharges.
+    petHair: Optional[str] = None
+    condition: Optional[str] = None
 
     class Config:
         extra = "allow"
@@ -130,6 +135,7 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         frequency=data.frequency, requested_date=data.requestedDate,
         check_in=data.checkIn, check_out=data.checkOut, property_name=data.property,
         message=message, preferred_date=data.requestedDate, source="website",
+        pet_hair=data.petHair, condition=data.condition,
     )
     result = upsert_lead(db, payload)
 
