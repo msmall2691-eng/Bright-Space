@@ -84,6 +84,10 @@ class InstantQuoteRequest(BaseModel):
     squareFeet: Optional[int] = None
     frequency: Optional[str] = None
     message: Optional[str] = None
+    # The website's calculator collects these two — forward them so BrightBase
+    # prices identically instead of ignoring pet hair / home condition.
+    petHair: Optional[str] = None          # "none" | "some" | "heavy"
+    condition: Optional[str] = None        # "maintenance" | "moderate" | "heavy"
 
     class Config:
         extra = "allow"
@@ -194,4 +198,6 @@ def instant_quote(request: Request, data: InstantQuoteRequest):
         square_footage=data.squareFeet,
         frequency=data.frequency,
         message=data.message,
+        pet_hair=data.petHair,
+        condition=data.condition,
     )
