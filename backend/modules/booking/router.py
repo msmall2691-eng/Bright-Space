@@ -50,6 +50,11 @@ class BookingSubmit(BaseModel):
     squareFeet: Optional[int] = None
     notes: Optional[str] = None
     message: Optional[str] = None
+    # Mirror InstantQuoteRequest so the saved lead's estimate matches the
+    # quote the customer just saw — without these, build_intake's pricing
+    # call would drop the pet/condition surcharges.
+    petHair: Optional[str] = None
+    condition: Optional[str] = None
 
     class Config:
         extra = "allow"
@@ -84,6 +89,10 @@ class InstantQuoteRequest(BaseModel):
     squareFeet: Optional[int] = None
     frequency: Optional[str] = None
     message: Optional[str] = None
+    # The website's calculator collects these two — forward them so BrightBase
+    # prices identically instead of ignoring pet hair / home condition.
+    petHair: Optional[str] = None          # "none" | "some" | "heavy"
+    condition: Optional[str] = None        # "maintenance" | "moderate" | "heavy"
 
     class Config:
         extra = "allow"
@@ -126,6 +135,7 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         frequency=data.frequency, requested_date=data.requestedDate,
         check_in=data.checkIn, check_out=data.checkOut, property_name=data.property,
         message=message, preferred_date=data.requestedDate, source="website",
+        pet_hair=data.petHair, condition=data.condition,
     )
     result = upsert_lead(db, payload)
 
@@ -194,4 +204,6 @@ def instant_quote(request: Request, data: InstantQuoteRequest):
         square_footage=data.squareFeet,
         frequency=data.frequency,
         message=data.message,
+        pet_hair=data.petHair,
+        condition=data.condition,
     )
