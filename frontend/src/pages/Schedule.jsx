@@ -1010,25 +1010,16 @@ export default function Schedule() {
         const start = startDate.toISOString().split('T')[0]
         const end = endDate.toISOString().split('T')[0]
 
-        const [visitsRes, jobsRes, propsRes, clientsRes, coverageRes] = await Promise.all([
-          get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`).catch(e => {
-            console.error('[Schedule] Visits API error:', e)
-            return { items: [] }
-          }),
-          get('/api/jobs').catch(e => {
-            console.error('[Schedule] Jobs API error:', e)
-            return []
-          }),
-          get('/api/properties').catch(e => {
-            console.error('[Schedule] Properties API error:', e)
-            return []
-          }),
-          get('/api/clients').catch(e => {
-            console.error('[Schedule] Clients API error:', e)
-            return []
-          }),
-          get('/api/visits/admin/coverage-check').catch(() => null),
-        ])
+        // One aggregate call returns the whole week (visits + jobs + properties
+        // + clients + coverage) instead of five parallel round trips. Shapes are
+        // identical to the standalone endpoints the server delegates to.
+        const week = await get(
+          `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`
+        ).catch(e => {
+          console.error('[Schedule] Week API error:', e)
+          return null
+        })
+        const coverageRes = week?.coverage ?? null
 
         // Index jobs, properties, clients for quick lookup
         const jobsMap = {}
@@ -1036,16 +1027,15 @@ export default function Schedule() {
         const clientsMap = {}
 
         // Parse responses safely
-        const jobsList = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.items || [])
-        const propsList = Array.isArray(propsRes) ? propsRes : (propsRes?.items || [])
-        const clientsList = Array.isArray(clientsRes) ? clientsRes : (clientsRes?.items || [])
+        const jobsList = Array.isArray(week?.jobs) ? week.jobs : []
+        const propsList = Array.isArray(week?.properties) ? week.properties : []
+        const clientsList = Array.isArray(week?.clients) ? week.clients : []
 
         jobsList.forEach(j => jobsMap[j.id] = j)
         propsList.forEach(p => propsMap[p.id] = p)
         clientsList.forEach(c => clientsMap[c.id] = c)
 
-        // Handle paginated or array response format for visits
-        const visitsData = Array.isArray(visitsRes) ? visitsRes : (visitsRes?.items || [])
+        const visitsData = Array.isArray(week?.visits) ? week.visits : []
 
         console.log('[Schedule] Loaded:', { visitsCount: visitsData.length, jobsCount: jobsList.length, propsCount: propsList.length })
 
