@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Search, Check, User, Zap, Trash2, Ban } from 'lucide-react'
+import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 
@@ -31,6 +31,10 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   const [showCleanerDropdown, setShowCleanerDropdown] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Everyday edit = date/time/property/cleaner. Type, status, address override,
+  // and notes hide behind this toggle. Auto-open when a job already has notes so
+  // nothing the operator wrote is hidden on edit.
+  const [showAdvanced, setShowAdvanced] = useState(Boolean(job?.notes))
 
   // Real cleaner roster from Connecteam via /api/dispatch/employees.
   // Mirrors the fetch CalendarView already does. Defensive: tolerates 502s
@@ -209,42 +213,6 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             />
           </div>
 
-          {/* Type + Status side by side on desktop, stacked on phones */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-ink-2 mb-2">Job Type</label>
-              <select
-                value={formData.job_type}
-                onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
-              >
-                {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
-                  <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
-                )}
-                <option value="residential">Residential</option>
-                <option value="commercial">Commercial</option>
-                <option value="str_turnover">STR Turnover</option>
-                <option value="one_time">One-time</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
-              <select
-                value={formData.status}
-                onChange={e => setFormData(f => ({ ...f, status: e.target.value }))}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
-              >
-                {!['scheduled', 'in_progress', 'completed', 'cancelled'].includes(formData.status) && (
-                  <option value={formData.status}>{formData.status || '(unset)'}</option>
-                )}
-                <option value="scheduled">Scheduled</option>
-                <option value="in_progress">In progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-          </div>
-
           {/* Date + times — finally editable */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="col-span-2 sm:col-span-1">
@@ -298,18 +266,6 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 Type: <span className="font-semibold capitalize">{selectedProperty.property_type}</span>
               </p>
             )}
-          </div>
-
-          {/* Address — editable; pre-fills from the property when blank */}
-          <div>
-            <label className="block text-sm font-semibold text-ink-2 mb-2">Address</label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
-              placeholder="Service address (auto-fills from the property)"
-              className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
-            />
           </div>
 
           {/* Cleaner Selector */}
@@ -383,32 +339,98 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             )}
           </div>
 
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-semibold text-ink-2 mb-3">Notes</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              placeholder="Add any notes about this job..."
-              rows={3}
-              className="w-full px-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-base"
-            />
+          {/* Advanced options — type, status, address override, notes, dispatch.
+              Rarely touched on a routine edit, so collapsed by default. */}
+          <div className="border-t border-hairline pt-4">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(v => !v)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-ink-2 hover:text-ink"
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              Advanced options
+              {!showAdvanced && (formData.notes || formData.status !== 'scheduled') && (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              )}
+            </button>
           </div>
 
-          {/* Dispatch Status Indicator */}
-          {!isNew && <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${job?.dispatched ? 'bg-green-500' : 'bg-ink-3'}`} />
-              <div className="min-w-0">
-                <p className="text-xs sm:text-sm font-semibold text-ink">
-                  {job?.dispatched ? '✅ Dispatched' : '⏳ Not Dispatched'}
-                </p>
-                <p className="text-xs text-ink-2">
-                  {job?.dispatched ? 'This job has been sent to cleaners' : 'Job is ready to dispatch'}
-                </p>
+          {showAdvanced && (<>
+            {/* Type + Status side by side on desktop, stacked on phones */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-semibold text-ink-2 mb-2">Job Type</label>
+                <select
+                  value={formData.job_type}
+                  onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
+                  className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
+                >
+                  {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
+                    <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
+                  )}
+                  <option value="residential">Residential</option>
+                  <option value="commercial">Commercial</option>
+                  <option value="str_turnover">STR Turnover</option>
+                  <option value="one_time">One-time</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={e => setFormData(f => ({ ...f, status: e.target.value }))}
+                  className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
+                >
+                  {!['scheduled', 'in_progress', 'completed', 'cancelled'].includes(formData.status) && (
+                    <option value={formData.status}>{formData.status || '(unset)'}</option>
+                  )}
+                  <option value="scheduled">Scheduled</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
               </div>
             </div>
-          </div>}
+
+            {/* Address — editable; pre-fills from the property when blank */}
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Address</label>
+              <input
+                type="text"
+                value={formData.address}
+                onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
+                placeholder="Service address (auto-fills from the property)"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              />
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-3">Notes</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Add any notes about this job..."
+                rows={3}
+                className="w-full px-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-base"
+              />
+            </div>
+
+            {/* Dispatch Status Indicator */}
+            {!isNew && <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full flex-shrink-0 ${job?.dispatched ? 'bg-green-500' : 'bg-ink-3'}`} />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-semibold text-ink">
+                    {job?.dispatched ? '✅ Dispatched' : '⏳ Not Dispatched'}
+                  </p>
+                  <p className="text-xs text-ink-2">
+                    {job?.dispatched ? 'This job has been sent to cleaners' : 'Job is ready to dispatch'}
+                  </p>
+                </div>
+              </div>
+            </div>}
+          </>)}
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
