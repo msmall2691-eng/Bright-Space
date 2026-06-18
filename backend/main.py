@@ -46,6 +46,7 @@ from modules.work import router as work_router
 from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
 from modules.ai.router import router as ai_router
+from modules.dashboard.router import router as dashboard_router
 
 load_dotenv()
 
@@ -167,6 +168,7 @@ app.include_router(views_router, prefix="/api/views", tags=["views"])
 app.include_router(work_router, prefix="/api/work", tags=["work"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
+app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 
 # Per-connection conversation histories: {connection_key: [messages]}
 # BB-CODE-03: bounded so a long chat doesn't accumulate megabytes per session
