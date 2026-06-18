@@ -9,6 +9,7 @@ import anthropic
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -73,6 +74,12 @@ app.add_middleware(
     # Sliding-session: let the SPA read the rotated token off the response.
     expose_headers=["X-Refresh-Token"],
 )
+
+# Compress JSON/text responses over the wire. The API returns large list
+# payloads (conversations, jobs, opportunities, properties) that gzip to a
+# fraction of their size; minimum_size skips tiny bodies where compression
+# overhead isn't worth it. Honors the client's Accept-Encoding automatically.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # API key authentication â must be added AFTER CORS middleware
 # (Starlette processes middleware in reverse order, so CORS runs first)

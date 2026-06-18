@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from database.db import get_db
 from modules.auth.router import require_role
@@ -461,7 +461,15 @@ def list_conversations(
     db: Session = Depends(get_db),
 ):
     """List conversations with rich filters. Ordered newest-first by activity."""
-    query = db.query(Conversation)
+    # Eager-load what conv_to_dict reads. Previously each row lazily fetched
+    # its client (many-to-one) and its full message collection (for the
+    # last-message preview), so a 100-row page fired ~200 queries. selectinload
+    # batches both into one query each and coexists with the search outerjoin
+    # below (unlike joinedload, which would double-join Client).
+    query = db.query(Conversation).options(
+        selectinload(Conversation.client),
+        selectinload(Conversation.messages),
+    )
     if status:
         query = query.filter(Conversation.status == status)
     if assignee == "unassigned":

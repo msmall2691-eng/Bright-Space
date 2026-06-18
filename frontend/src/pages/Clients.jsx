@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2, Users, Calendar } from 'lucide-react'
 import { CustomFieldsForm } from '../components/CustomFields'
@@ -148,10 +148,16 @@ export default function Clients() {
   useEffect(() => { load() }, [statusFilter])
   useEffect(() => { clearSelection() }, [statusFilter, search])
 
-  const filtered = clients.filter(c =>
-    !search || (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone || '').includes(search) || (c.email || '').toLowerCase().includes(search.toLowerCase())
-  )
+  // Memoized so the list only re-filters when the data or search term changes,
+  // not on every unrelated state update (this page holds ~25 useState — modals,
+  // form fields, selection — that would otherwise re-run the filter each time).
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return clients.filter(c =>
+      !search || (c.name || '').toLowerCase().includes(q) ||
+      (c.phone || '').includes(search) || (c.email || '').toLowerCase().includes(q)
+    )
+  }, [clients, search])
 
   const save = async () => {
     setSaving(true); setSaveError('')
@@ -306,12 +312,15 @@ export default function Clients() {
     setMerging(false)
   }
 
-  const statusCounts = {
-    '': clients.length,
-    lead: clients.filter(c => c.status === 'lead').length,
-    active: clients.filter(c => c.status === 'active').length,
-    inactive: clients.filter(c => c.status === 'inactive').length,
-  }
+  // One pass over clients (was four .filter() scans), recomputed only when the
+  // client list changes rather than on every render.
+  const statusCounts = useMemo(() => {
+    const counts = { '': clients.length, lead: 0, active: 0, inactive: 0 }
+    for (const c of clients) {
+      if (c.status in counts) counts[c.status] += 1
+    }
+    return counts
+  }, [clients])
 
   return (
     <div className="flex h-full">

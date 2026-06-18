@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -86,7 +86,18 @@ def list_opportunities(
     org_id: int = Depends(current_org_id),
 ):
     # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
-    q = db.query(Opportunity).filter(or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)))
+    # Eager-load everything opp_to_dict touches. Without this, serializing N
+    # opportunities fired ~1 + N×4 queries (client + invoices/jobs/messages
+    # counts) — a 50-row page issued ~200 queries. joinedload for the
+    # many-to-one client; selectinload batches the count collections in one
+    # query each. (Opportunity has no `quotes` relationship, so quotes_count
+    # stays 0 via opp_to_dict's hasattr guard — nothing to load there.)
+    q = db.query(Opportunity).options(
+        joinedload(Opportunity.client),
+        selectinload(Opportunity.invoices),
+        selectinload(Opportunity.jobs),
+        selectinload(Opportunity.messages),
+    ).filter(or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)))
     if stage:
         q = q.filter(Opportunity.stage == stage)
     if client_id:
