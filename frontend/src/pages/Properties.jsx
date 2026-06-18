@@ -37,7 +37,7 @@ function relTimeAgo(iso) {
 // glance "is this feed actually working?" without checking server logs.
 // The per-feed Sync Now button currently triggers a property-level sync
 // (the backend syncs all feeds on a property together, by design).
-function IcalFeedRow({ ical, onRemove, onSync, syncing }) {
+function IcalFeedRow({ ical, onRemove }) {
   const sourceLabel = ICAL_SOURCES.find(s => s.value === (ical.source || '').toLowerCase())?.label
     || ical.source
     || 'Custom'
@@ -85,14 +85,6 @@ function IcalFeedRow({ ical, onRemove, onSync, syncing }) {
           <div className="text-xs text-ink-3 truncate font-mono" title={ical.url}>{ical.url}</div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={onSync}
-            disabled={syncing}
-            className="text-blue-600 hover:text-blue-700 disabled:opacity-50 p-1"
-            title="Sync this property now"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-          </button>
           <button
             onClick={onRemove}
             className="text-red-400 hover:text-red-600 p-1"
@@ -190,12 +182,11 @@ export default function Properties() {
     setRebuildingId(null)
   }
   const [expandedPropId, setExpandedPropId] = useState(null)
-  const [icalForm, setIcalForm] = useState({
-    url: '', source: '',
-    checkout_time: '', duration_hours: '',
-    house_code: '', access_links: '', instructions: ''
-  })
+  const [icalForm, setIcalForm] = useState({ url: '', source: '' })
   const [showIcalForm, setShowIcalForm] = useState(null)
+  // Sync/repair tooling (health check, sync-all, rebuild) is power-user stuff
+  // that used to crowd the main screen — tucked behind this toggle now.
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [hardDelete, setHardDelete] = useState(false)
@@ -295,14 +286,12 @@ export default function Properties() {
   const addIcal = async (propId) => {
     if (!icalForm.url.trim()) return
     try {
-      const data = {
-        ...icalForm,
-        duration_hours: icalForm.duration_hours ? parseFloat(icalForm.duration_hours) : null
-      }
-      await post(`/api/properties/${propId}/icals`, data)
+      // Timing/access (checkout time, duration, house code) come from the
+      // property's own STR settings — no need to re-enter them per feed.
+      await post(`/api/properties/${propId}/icals`, { url: icalForm.url.trim(), source: icalForm.source })
       await load()
       setShowIcalForm(null)
-      setIcalForm({ url: '', source: '', checkout_time: '', duration_hours: '', house_code: '', access_links: '', instructions: '' })
+      setIcalForm({ url: '', source: '' })
     } catch (e) {
       alert('Error adding iCal: ' + e.message)
     }
@@ -428,12 +417,13 @@ export default function Properties() {
                 className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 w-40 sm:w-52" />
             </div>
             <SavedViewsBar entityType="property" currentConfig={viewConfig} onApply={applyView} defaultLabel="All properties" />
-            {properties.length > 0 && (
-              <button onClick={runSweep} disabled={sweeping}
-                title="Re-sync every feed and report which turnovers are missing or not on Google"
-                className="flex items-center gap-2 bg-bg-2 hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm transition-colors">
-                <CheckCircle className={`w-3.5 h-3.5 ${sweeping ? 'animate-spin' : ''}`} />
-                {sweeping ? 'Checking…' : 'Check all turnovers'}
+            {typeCounts.str > 0 && (
+              <button onClick={() => setShowAdvanced(v => !v)}
+                title="Sync tools and turnover health check"
+                className={`flex items-center gap-2 border border-hairline px-4 py-2 rounded-lg text-sm transition-colors ${showAdvanced ? 'bg-bg-2 text-ink' : 'bg-panel hover:bg-bg-2 text-ink-2'}`}>
+                <RefreshCw className="w-3.5 h-3.5" />
+                Sync tools
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
               </button>
             )}
             <button onClick={openNew}
@@ -512,7 +502,29 @@ export default function Properties() {
           </div>
         )}
 
-        {sweep && (
+        {/* Advanced: sync + repair tooling, hidden behind the "Sync tools" toggle
+            so the everyday "add a link, see turnovers" path stays uncluttered. */}
+        {showAdvanced && (
+          <div className="rounded-xl border border-hairline bg-bg p-4 mb-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={syncAll} disabled={syncing === 'all'}
+                title="Pull the latest bookings from every property's calendar feeds now"
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3.5 py-2 rounded-lg text-sm font-medium transition-colors">
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing === 'all' ? 'animate-spin' : ''}`} />
+                {syncing === 'all' ? 'Syncing…' : 'Sync all feeds'}
+              </button>
+              <button onClick={runSweep} disabled={sweeping}
+                title="Re-sync every feed and report which turnovers are missing or not on Google"
+                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-3.5 py-2 rounded-lg text-sm transition-colors">
+                <CheckCircle className={`w-3.5 h-3.5 ${sweeping ? 'animate-spin' : ''}`} />
+                {sweeping ? 'Checking…' : 'Check all turnovers'}
+              </button>
+              <span className="text-[11px] text-ink-3">Feeds also sync automatically in the background.</span>
+            </div>
+          </div>
+        )}
+
+        {showAdvanced && sweep && (
           <div className="rounded-xl border border-hairline bg-panel p-4 mb-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-ink">Turnover health</h3>
@@ -670,8 +682,6 @@ export default function Properties() {
                             key={ical.id}
                             ical={ical}
                             onRemove={() => removeIcal(p.id, ical.id)}
-                            onSync={() => syncOne(p.id)}
-                            syncing={syncing === p.id}
                           />
                         ))}
 
@@ -687,28 +697,9 @@ export default function Properties() {
                                 <option key={s.value} value={s.value}>{s.label}</option>
                               ))}
                             </select>
-
-                            <div className="border-t border-hairline pt-2 mt-2">
-                              <div className="text-xs font-semibold text-ink-2 mb-2">Turnover Settings</div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <input value={icalForm.checkout_time} onChange={e => setIcalForm(f => ({ ...f, checkout_time: e.target.value }))}
-                                  placeholder="Checkout (e.g., 11:00)"
-                                  type="time"
-                                  className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none" />
-                                <input value={icalForm.duration_hours} onChange={e => setIcalForm(f => ({ ...f, duration_hours: e.target.value }))}
-                                  placeholder="Duration (hrs)"
-                                  type="number"
-                                  step="0.5"
-                                  className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none" />
-                              </div>
-                              <input value={icalForm.house_code} onChange={e => setIcalForm(f => ({ ...f, house_code: e.target.value }))}
-                                placeholder="Access code"
-                                className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
-                              <textarea value={icalForm.instructions} onChange={e => setIcalForm(f => ({ ...f, instructions: e.target.value }))}
-                                placeholder="Special turnover instructions..."
-                                rows="2"
-                                className="w-full bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none mt-2" />
-                            </div>
+                            <p className="text-[11px] text-ink-3">
+                              Checkout time, duration, and access code come from this property's STR settings.
+                            </p>
 
                             <div className="flex gap-2 pt-2">
                               <button onClick={() => addIcal(p.id)}
@@ -952,13 +943,6 @@ export default function Properties() {
                   <label className="block text-xs text-ink-3 mb-1">House Code</label>
                   <input value={form.house_code || ''} onChange={e => setForm(f => ({ ...f, house_code: e.target.value }))}
                     placeholder="e.g. 1234 or Front door code"
-                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                </div>
-
-                <div className="mt-3">
-                  <label className="block text-xs text-ink-3 mb-1">Timezone</label>
-                  <input value={form.timezone || ''} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}
-                    placeholder="e.g. America/New_York"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 </div>
               </div>
