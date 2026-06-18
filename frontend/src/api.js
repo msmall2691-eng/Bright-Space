@@ -46,18 +46,57 @@ function maybeRotateToken(res) {
   } catch { /* header not readable — ignore */ }
 }
 
+// Phase 0 reliability: every request gets a hard timeout so a hung/cold backend
+// surfaces as a retryable error instead of an infinite spinner. Override per
+// call with `options.timeout` (ms).
+const DEFAULT_TIMEOUT_MS = 15000
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      const e = new Error('Request timed out — the server took too long to respond.')
+      e.isTimeout = true
+      throw e
+    }
+    throw err  // network/DNS failure (TypeError: Failed to fetch)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Wrapper around fetch that:
  *  - Adds JWT Bearer token to Authorization header
+ *  - Times out after DEFAULT_TIMEOUT_MS (no infinite spinners)
+ *  - Retries idempotent GETs once on timeout/network failure (cold starts)
  *  - Throws on non-OK responses with useful error messages
  *  - Redirects to /login on 401 Unauthorized
  *  - Returns parsed JSON
  */
 export async function api(url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: headers(options.headers),
-  })
+  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS
+  const method = (options.method || 'GET').toUpperCase()
+  const fetchOpts = { ...options, headers: headers(options.headers) }
+
+  let res
+  try {
+    res = await fetchWithTimeout(url, fetchOpts, timeoutMs)
+  } catch (err) {
+    // One automatic retry for GETs (idempotent) on timeout or network failure —
+    // a single dropped request or a cold-start hiccup shouldn't bubble up as an
+    // error the user has to manually retry. Non-GETs are not retried (a POST may
+    // have been applied server-side even if the response was lost).
+    const retryable = err?.isTimeout || err instanceof TypeError
+    if (method === 'GET' && retryable) {
+      res = await fetchWithTimeout(url, fetchOpts, timeoutMs)
+    } else {
+      throw err
+    }
+  }
 
   // Sliding session: if the server rotated our token (past half-life), swap it
   // in silently so an active user is never logged out mid-task.
