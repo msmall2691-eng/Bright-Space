@@ -9,6 +9,7 @@ import { del, get, post, patch, upload } from "../api"
 import InlineSelect from "../components/InlineSelect"
 import SavedViewsBar from "../components/SavedViewsBar"
 import ColumnsButton from "../components/ColumnsButton"
+import CRMHealthPanel from "../components/CRMHealthPanel"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 
@@ -384,6 +385,9 @@ export default function Clients() {
             <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">New Client</span>
           </button>
         </div>
+
+        {/* Read-only CRM health snapshot — see the real/dup/spam breakdown before cleanup. */}
+        <CRMHealthPanel />
 
         {importResult && (
           <div className={`mb-3 px-3 py-2 rounded-lg text-[12px] border flex items-center justify-between ${
