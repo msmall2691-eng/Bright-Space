@@ -943,6 +943,7 @@ export default function Schedule() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedPropertyType, setSelectedPropertyType] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
+  const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
@@ -1482,6 +1483,19 @@ export default function Schedule() {
 
             <div className="flex-1" />
 
+            {/* Filters hidden behind a toggle so the default view stays clean.
+                A dot shows when a filter is actually narrowing the list. */}
+            {!isGoogleOnly && (
+              <Button onClick={() => setShowFilters(o => !o)} variant="secondary" size="sm" className="whitespace-nowrap relative"
+                title="Filter by property type or status">
+                <Filter className="w-4 h-4" />
+                <span className="hidden sm:inline ml-1.5">Filters</span>
+                {(selectedPropertyType !== 'all' || selectedStatus !== 'all') && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
+                )}
+              </Button>
+            )}
+
             {/* Power tools tucked into one menu to keep the toolbar clean */}
             <div className="relative">
               <Button onClick={() => setToolsOpen(o => !o)} variant="secondary" size="sm" className="whitespace-nowrap"
@@ -1537,8 +1551,8 @@ export default function Schedule() {
           </div>
           )}
 
-          {/* Filter chips — compact, only render when active or hover-reveal */}
-          {!isGoogleOnly && (
+          {/* Filter chips — revealed via the Filters toggle to keep the toolbar clean */}
+          {!isGoogleOnly && showFilters && (
           <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
             <select
               value={selectedPropertyType}
@@ -1599,15 +1613,14 @@ export default function Schedule() {
         </div>
       )}
 
-      {/* Schedule health — summary strip */}
+      {/* Schedule health — just the two operational counts. The Google /
+          Connecteam sync ratios used to sit here as always-on diagnostic cards;
+          they're now surfaced only when something is actually out of sync, via
+          the "Needs attention" strip below. */}
       <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
-        <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
           <StatCard className="bg-panel border border-hairline rounded-lg" label="Today" value={scheduleStats.today} icon={CalendarIcon} />
           <StatCard className="bg-panel border border-hairline rounded-lg" label="This week" value={scheduleStats.week} icon={Clock} />
-          <StatCard className="bg-panel border border-hairline rounded-lg" label="On Google" value={`${scheduleStats.gcal}/${scheduleStats.total}`} icon={Calendar}
-            accent={scheduleStats.notGcal === 0 ? 'text-emerald-600' : 'text-ink'} />
-          <StatCard className="bg-panel border border-hairline rounded-lg" label="In Connecteam" value={`${scheduleStats.connecteam}/${scheduleStats.total}`} icon={Users}
-            accent={scheduleStats.notConnecteam === 0 ? 'text-emerald-600' : 'text-ink'} />
         </div>
         {(scheduleStats.notGcal > 0 || scheduleStats.notConnecteam > 0) && (
           <div className="max-w-7xl mx-auto mt-2 flex flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">

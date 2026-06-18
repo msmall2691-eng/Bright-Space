@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText, Search } from 'lucide-react'
+import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, ChevronRight, Copy, Check, FileText, Search } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import SavedViewsBar from '../components/SavedViewsBar'
 import InlineSelect from '../components/InlineSelect'
@@ -100,6 +100,10 @@ export default function Quoting() {
   const [previewOpen, setPreviewOpen] = useState(false)
   // Live customer-facing preview alongside the editor (§7.2 #4 quote reader).
   const [previewMode, setPreviewMode] = useState(false)
+  // The fast path is client → line items → save. Template picker and the
+  // scope/internal/message text areas live behind this toggle so the form
+  // opens short.
+  const [showQuoteAdvanced, setShowQuoteAdvanced] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
   const [archivedQuotes, setArchivedQuotes] = useState([])
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -303,6 +307,9 @@ export default function Quoting() {
   const openQuoteForm = (q = null, intake = null) => {
     setSelected(q)
     setSelectedIntake(intake)
+    // Auto-expand the optional-copy section when there's already something in it
+    // (editing an existing quote, or a lead whose message seeds internal notes).
+    setShowQuoteAdvanced(Boolean(q?.notes || q?.internal_notes || q?.customer_message || intake?.message))
     if (q) {
       setForm({ client_id: q.client_id, intake_id: q.intake_id,
         title: q.title || '', customer_message: q.customer_message || '',
@@ -780,18 +787,9 @@ export default function Quoting() {
                         {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
                       </button>
                     )}
-                    {canEdit && q.status === 'sent' && (
-                      <button onClick={() => updateStatus(q.id, 'accepted')}
-                        className="text-xs px-2.5 py-1.5 bg-green-50 text-green-400 hover:bg-green-600/30 rounded-lg transition-colors">
-                        Accept
-                      </button>
-                    )}
-                    {canEdit && q.status === 'sent' && (
-                      <button onClick={() => updateStatus(q.id, 'declined')}
-                        className="text-xs px-2.5 py-1.5 bg-red-50 text-red-400 hover:bg-red-600/30 rounded-lg transition-colors">
-                        Decline
-                      </button>
-                    )}
+                    {/* Accept / Decline removed — the inline status dropdown next
+                        to the client name already sets those states (most quotes
+                        are accepted by the customer via their link anyway). */}
                     {canEdit && q.status === 'accepted' && (
                       <button onClick={() => setScheduleQuote(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
@@ -1190,30 +1188,46 @@ export default function Quoting() {
               </div>
             </div>
 
-            {/* Customer-visible scope */}
-            <div>
-              <label className="block text-xs text-ink-3 mb-1">Scope / Notes <span className="text-amber-600 font-medium">(customer sees this)</span></label>
-              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
-                placeholder="What's included / excluded — shown on the quote the customer opens."
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
-            </div>
+            {/* Optional copy (scope, internal notes, customer message) is folded
+                away so the everyday quote is just client + items + total. A dot
+                flags when any of these actually has content. */}
+            <button type="button" onClick={() => setShowQuoteAdvanced(v => !v)}
+              className="flex items-center gap-1.5 text-xs font-medium text-ink-2 hover:text-ink">
+              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showQuoteAdvanced ? 'rotate-90' : ''}`} />
+              Scope, notes & customer message
+              {!showQuoteAdvanced && (form.notes || form.internal_notes || form.customer_message) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              )}
+            </button>
 
-            {/* Internal notes — operator-only, never rendered to customers */}
-            <div>
-              <label className="block text-xs text-ink-3 mb-1">Internal Notes <span className="text-ink-3">(never shown to the customer)</span></label>
-              <textarea value={form.internal_notes} onChange={e => setForm(f => ({ ...f, internal_notes: e.target.value }))} rows={2}
-                placeholder="Lead context, access details, reminders — stays in the app."
-                className="w-full bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
-            </div>
+            {showQuoteAdvanced && (
+              <>
+                {/* Customer-visible scope */}
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Scope / Notes <span className="text-amber-600 font-medium">(customer sees this)</span></label>
+                  <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3}
+                    placeholder="What's included / excluded — shown on the quote the customer opens."
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                </div>
 
-            {/* Customer message — the intro paragraph on the public page & email */}
-            <div>
-              <label className="block text-xs text-ink-3 mb-1">Message to Customer</label>
-              <textarea value={form.customer_message} onChange={e => setForm(f => ({ ...f, customer_message: e.target.value }))} rows={3}
-                placeholder="Hi! Thanks for reaching out — here's the quote we discussed. Looking forward to working with you."
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
-              <p className="text-[11px] text-ink-3 mt-1">Shown at the top of the emailed quote and the online quote page.</p>
-            </div>
+                {/* Internal notes — operator-only, never rendered to customers */}
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Internal Notes <span className="text-ink-3">(never shown to the customer)</span></label>
+                  <textarea value={form.internal_notes} onChange={e => setForm(f => ({ ...f, internal_notes: e.target.value }))} rows={2}
+                    placeholder="Lead context, access details, reminders — stays in the app."
+                    className="w-full bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                </div>
+
+                {/* Customer message — the intro paragraph on the public page & email */}
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Message to Customer</label>
+                  <textarea value={form.customer_message} onChange={e => setForm(f => ({ ...f, customer_message: e.target.value }))} rows={3}
+                    placeholder="Hi! Thanks for reaching out — here's the quote we discussed. Looking forward to working with you."
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+                  <p className="text-[11px] text-ink-3 mt-1">Shown at the top of the emailed quote and the online quote page.</p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Preview column — the live customer-facing render. */}
