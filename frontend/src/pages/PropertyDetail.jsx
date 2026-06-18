@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft, Plus, Edit2, Trash2, MoreVertical, MapPin, Home, Building2, Wind,
+  ChevronLeft, ChevronRight, Plus, Edit2, Trash2, MoreVertical, MapPin, Home, Building2, Wind,
   Calendar, Clock, Users, CheckCircle, AlertCircle, Navigation2, ClipboardList, X
 } from 'lucide-react'
 import { get, patch, post } from '../api'
@@ -218,6 +218,9 @@ export default function PropertyDetail() {
   const [error, setError] = useState('')
   const [selectedJob, setSelectedJob] = useState(null)
   const [showJobDetails, setShowJobDetails] = useState(false)
+  // The checklist template is a setup tool; collapse it so opening a property
+  // lands on its jobs, not the editor.
+  const [showChecklist, setShowChecklist] = useState(false)
 
   // Load property, jobs, and visits
   useEffect(() => {
@@ -355,14 +358,22 @@ export default function PropertyDetail() {
             </div>
           )}
 
-          {/* Cleaning Checklist — editable template per property */}
-          <ChecklistEditor
-            template={property.checklist_template}
-            onSave={async (areas) => {
-              await patch(`/api/properties/${propertyId}`, { checklist_template: areas })
-              setProperty(prev => ({ ...prev, checklist_template: areas }))
-            }}
-          />
+          {/* Cleaning Checklist — editable template per property, collapsed by
+              default (setup tool, not part of the daily jobs view). */}
+          <button type="button" onClick={() => setShowChecklist(v => !v)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-ink-2 hover:text-ink mb-3">
+            <ChevronRight className={`w-4 h-4 transition-transform ${showChecklist ? 'rotate-90' : ''}`} />
+            Cleaning checklist template
+          </button>
+          {showChecklist && (
+            <ChecklistEditor
+              template={property.checklist_template}
+              onSave={async (areas) => {
+                await patch(`/api/properties/${propertyId}`, { checklist_template: areas })
+                setProperty(prev => ({ ...prev, checklist_template: areas }))
+              }}
+            />
+          )}
 
           {sortedJobs.length === 0 ? (
             <GlassCard>
@@ -403,16 +414,10 @@ export default function PropertyDetail() {
                           </span>
                         </div>
 
-                        {/* Date + Time */}
-                        <div className="flex items-center gap-3 text-sm text-ink-2 mb-2 flex-wrap">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4 flex-shrink-0" />
-                            <span>{job.scheduled_date}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-4 h-4 flex-shrink-0" />
-                            <span>{job.start_time?.slice(0, 5)} - {job.end_time?.slice(0, 5)}</span>
-                          </div>
+                        {/* Date + Time — one compact line */}
+                        <div className="flex items-center gap-1.5 text-sm text-ink-2 mb-2">
+                          <Calendar className="w-4 h-4 flex-shrink-0" />
+                          <span>{job.scheduled_date} · {job.start_time?.slice(0, 5)} - {job.end_time?.slice(0, 5)}</span>
                         </div>
 
                         {/* Cleaners + Visits */}
