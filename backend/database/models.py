@@ -2,7 +2,9 @@ from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
     JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
+
+from utils.source import normalize_source
 from datetime import datetime, timezone, date
 
 def _utcnow():
@@ -206,7 +208,7 @@ class Client(Base):
     billing_zip = Column(String, nullable=True)
     status = Column(String, default="lead", index=True)  # lead, active, inactive
     notes = Column(Text)
-    source = Column(String)
+    source = Column(String)  # canonical: website|sms|email|referral|manual|ical|phone|unknown
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
     # Audit actor metadata (Twenty's ActorMetadata): who/what created and last
@@ -238,6 +240,14 @@ class Client(Base):
     contact_phones = relationship("ContactPhone", back_populates="client", cascade="all, delete-orphan")
     activities = relationship("Activity", back_populates="client", cascade="all, delete-orphan", order_by="Activity.created_at.desc()")
     lead_intakes = relationship("LeadIntake", back_populates="client", cascade="all, delete-orphan")
+
+    @validates("source")
+    def _canonicalize_source(self, _key, value):
+        """Enforce the canonical source set on every write path (API, Gmail,
+        Twilio, calendar sync) so reporting groups cleanly. Only canonicalizes a
+        non-None assignment — leaving source unset stays NULL until something
+        sets it."""
+        return normalize_source(value) if value is not None else None
 
 
 class Property(Base):
