@@ -34,6 +34,18 @@ const QUOTE_STATUS_OPTIONS = ['draft', 'sent', 'viewed', 'accepted', 'declined',
 const LEAD_STATUS_OPTIONS = ['new', 'reviewed', 'quoted', 'converted']
   .map(s => ({ value: s, label: s, chipClass: LEAD_STATUS_COLORS[s] }))
 
+// Guided "next step" per quote status — turns the quotes list into a worklist so
+// it's always obvious what moves a lead toward becoming a (recurring) client.
+const QUOTE_NEXT_STEP = {
+  draft:             { text: 'Next: send it to the customer', cls: 'text-blue-600' },
+  sent:              { text: 'Next: waiting on the customer — nudge if it goes quiet', cls: 'text-ink-3' },
+  viewed:            { text: 'Next: they opened it — follow up to close', cls: 'text-blue-600' },
+  changes_requested: { text: 'Next: revise and resend', cls: 'text-amber-600' },
+  accepted:          { text: 'Next: schedule the job', cls: 'text-emerald-600' },
+  declined:          { text: 'Next: follow up or archive', cls: 'text-ink-3' },
+  converted:         { text: 'Won ✓ — set up a recurring plan to keep them', cls: 'text-emerald-600' },
+}
+
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 // Flat 30-day validity policy: a new quote's "Valid Until" defaults to 30 days
@@ -766,6 +778,11 @@ export default function Quoting() {
                     <div className="text-xs text-ink-3 mt-0.5">
                       {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address, `${q.items?.length || 0} items`, new Date(q.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
                     </div>
+                    {QUOTE_NEXT_STEP[q.status] && (
+                      <div className={`text-[11px] font-medium mt-1 ${QUOTE_NEXT_STEP[q.status].cls}`}>
+                        {QUOTE_NEXT_STEP[q.status].text}
+                      </div>
+                    )}
                   </div>
                   <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
                   <div className="flex gap-1.5 shrink-0">
