@@ -18,7 +18,7 @@ from database.db import get_db
 from modules.auth.router import require_role
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
-from integrations.email_filter import should_create_client_from_email
+from integrations.email_filter import evaluate_inbound_email
 from utils.activity_logger import log_email
 from datetime import datetime, timezone
 import logging
@@ -208,13 +208,18 @@ def run_inbox_sync(
                 c.email_verified = True
             elif auto_enrich and addr:
                 # Defer to the spam/intent filter before auto-creating a Client.
-                if not should_create_client_from_email(em):
+                create_lead, reason = evaluate_inbound_email(em)
+                if not create_lead:
                     skipped_by_filter += 1
+                    # Audit log: every skipped sender is traceable, so "didn't
+                    # create a lead" never silently drops a real customer.
+                    logger.info("[gmail] skip lead for %s: %s", addr, reason)
                     client_cache[addr] = None
                     em["client"] = None
                     em["is_known_contact"] = False
                     # Still tag the email so the UI can offer "Convert to client"
                     em["can_convert_to_client"] = True
+                    em["lead_skip_reason"] = reason
                     continue
 
                 from_name = em.get("from_name", "").strip() or addr.split("@")[0]
@@ -227,7 +232,8 @@ def run_inbox_sync(
                     status="lead",
                     lifecycle_stage="new",
                     source="email",
-                    source_detail="gmail auto-enrich",
+                    # Trace WHY this lead was auto-created (reply vs cleaning intent).
+                    source_detail=f"gmail auto-enrich:{reason}",
                     email_verified=True,
                 )
                 db.add(c)

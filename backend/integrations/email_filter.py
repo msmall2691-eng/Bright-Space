@@ -53,6 +53,23 @@ SPAM_DOMAINS = {
     "github.com",
     "gitlab.com",
     "atlassian.net",
+    # Marketing/SaaS senders found polluting the live CRM (June audit).
+    "pinterest.com",
+    "figma.com",
+    "turno.com",
+    "turnoverbnb.com",
+    "textmagic.com",
+    "n8n.io",
+    "substack.com",
+    "klaviyomail.com",
+    "sendinblue.com",
+    "courts.maine.gov",
+    # Cold B2B outreach domains seen in the live data.
+    "debtrenegotiatehub.com",
+    "outboundherosolution.com",
+    "trymailergrowth.pro",
+    "terraboostpartnership.com",
+    "maidsos.com",
 }
 
 # Local-parts that indicate a no-reply / transactional sender.
@@ -84,6 +101,17 @@ CUSTOMER_KEYWORDS = [
     "airbnb", "vrbo", "str", "short term rental", "short-term rental",
     "vacation rental", "turnover", "turn over",
     "move in", "move out", "move-in", "move-out",
+]
+
+# Sales/marketing phrases that mark cold outreach. Deliberately unambiguous so a
+# real customer ("I need my house cleaned") never trips them — these are the
+# language of B2B pitches, not service requests.
+COLD_OUTREACH_PHRASES = [
+    "book a demo", "schedule a demo", "free trial", "increase your leads",
+    "more leads", "grow your revenue", "grow your business", "boost your sales",
+    "we help businesses like yours", "businesses like yours",
+    "limited time offer", "partnership opportunity", "lead generation",
+    "increase your revenue", "scale your business",
 ]
 
 # Domains the business operates under — replies to threads we started.
@@ -131,6 +159,30 @@ def looks_like_cleaning_inquiry(subject: Optional[str], body: Optional[str]) -> 
     return any(keyword in haystack for keyword in CUSTOMER_KEYWORDS)
 
 
+def looks_like_cold_outreach(subject: Optional[str], body: Optional[str]) -> bool:
+    """True if the email reads like a B2B sales pitch rather than a service request."""
+    haystack = f"{subject or ''}\n{body or ''}"[:2000].lower()
+    return any(phrase in haystack for phrase in COLD_OUTREACH_PHRASES)
+
+
+def is_bulk_mail(email: dict) -> bool:
+    """True if standard mail headers mark this as bulk/marketing/automated.
+
+    These are definitive machine-set markers (newsletters, ESP blasts, auto
+    responders) — present on Pinterest digests, Figma updates, etc. — and are
+    far more reliable than maintaining an exhaustive domain block list."""
+    if (email.get("list_unsubscribe") or "").strip():
+        return True
+    if (email.get("precedence") or "").strip().lower() in ("bulk", "list", "junk"):
+        return True
+    if (email.get("feedback_id") or "").strip():
+        return True
+    auto = (email.get("auto_submitted") or "").strip().lower()
+    if auto and auto != "no":
+        return True
+    return False
+
+
 def is_reply_to_our_thread(email: dict) -> bool:
     """
     True if this email appears to be a reply to a message we sent out.
@@ -157,28 +209,47 @@ def is_reply_to_our_thread(email: dict) -> bool:
     return False
 
 
-def should_create_client_from_email(email: dict) -> bool:
-    """
-    Decide whether the given email (as returned by integrations.gmail_inbox)
-    should trigger auto-creation of a Client row.
+def evaluate_inbound_email(email: dict) -> tuple[bool, str]:
+    """Decide whether an inbound email should auto-create a Client, with a reason.
 
-    Returns True when the sender passes the spam check AND the email either:
-      - mentions cleaning/quote/rental/scheduling keywords, OR
-      - is a reply to an outbound thread from our own domain.
+    Returns (create, reason). The reason is for the rejected-email audit log, so
+    "we stopped creating a lead" is always traceable and never means "we silently
+    lost a real customer".
+
+    Order matters and is biased toward NOT losing real customers:
+      1. reply to our own thread        → create (existing relationship)
+      2. blocked / no-reply sender      → skip
+      3. bulk/marketing mail headers    → skip
+      4. genuine cleaning intent        → create (positive intent wins)
+      5. cold-outreach sales language   → skip
+      6. anything else                  → skip (inbox-only; promotable by hand)
     """
     addr = (email.get("from_email") or "").strip()
     if not addr:
-        return False
-
-    if is_spam_sender(addr):
-        return False
+        return (False, "no_sender")
 
     if is_reply_to_our_thread(email):
-        return True
+        return (True, "reply_to_thread")
 
-    if looks_like_cleaning_inquiry(email.get("subject"), email.get("body") or email.get("snippet")):
-        return True
+    if is_spam_sender(addr):
+        return (False, "blocked_sender")
 
-    # Default: don't auto-create. The email will still appear in the inbox
-    # and the user can manually convert the sender to a client from the UI.
-    return False
+    if is_bulk_mail(email):
+        return (False, "bulk_mail")
+
+    body = email.get("body") or email.get("snippet")
+    if looks_like_cleaning_inquiry(email.get("subject"), body):
+        return (True, "cleaning_inquiry")
+
+    if looks_like_cold_outreach(email.get("subject"), body):
+        return (False, "cold_outreach")
+
+    # Default: don't auto-create. The email still appears in the inbox and the
+    # user can manually convert the sender to a client from the UI.
+    return (False, "no_cleaning_intent")
+
+
+def should_create_client_from_email(email: dict) -> bool:
+    """Boolean wrapper around evaluate_inbound_email (backwards-compatible)."""
+    create, _reason = evaluate_inbound_email(email)
+    return create

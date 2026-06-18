@@ -56,6 +56,25 @@ def _decode_hdr(value):
     return " ".join(decoded)
 
 
+def _lead_signal_headers(msg) -> dict:
+    """Headers the lead-filter uses to tell real prospects from bulk/automated mail.
+
+    - to_email / in_reply_to / references → is this a reply to a thread we started?
+    - list_unsubscribe / precedence / feedback_id / auto_submitted → bulk/marketing
+      markers (newsletters, ESP blasts) that should stay inbox-only, never a lead.
+    """
+    return {
+        "to_email": (parseaddr(msg["To"] or "")[1] or "").lower(),
+        "in_reply_to": msg["In-Reply-To"] or "",
+        "references": msg["References"] or "",
+        "list_unsubscribe": msg["List-Unsubscribe"] or "",
+        "precedence": (msg["Precedence"] or "").lower(),
+        "feedback_id": msg["Feedback-ID"] or "",
+        "auto_submitted": (msg["Auto-Submitted"] or "").lower(),
+    }
+
+
+
 def _get_text_body(msg):
     """Extract plain text body from email message."""
     if msg.is_multipart():
@@ -200,6 +219,7 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
                     "date": date_dt.isoformat(),
                     "is_read": is_read,
                     "has_attachments": _has_attachments(msg),
+                    **_lead_signal_headers(msg),
                 })
             except Exception as e:
                 logger.error(f"Error parsing email {mid}: {e}")
@@ -255,6 +275,7 @@ def fetch_email_by_id(email_id: str, folder="INBOX"):
             "body": _get_text_body(msg),
             "date": date_dt.isoformat(),
             "has_attachments": _has_attachments(msg),
+            **_lead_signal_headers(msg),
         }
         mail.close()
         mail.logout()
