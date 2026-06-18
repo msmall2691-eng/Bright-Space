@@ -17,11 +17,11 @@ import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
 import { htmlToText } from '../utils/format'
-import { Card, StatCard, EmptyState, Skeleton } from '../components/ui'
+import { StatCard, EmptyState, Skeleton } from '../components/ui'
 import { AIFollowUps } from '../components/AIBriefing'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
-  CheckCircle2, Clock, ArrowRight, Zap, FileText, Users,
+  CheckCircle2, Clock, ArrowRight, Zap, FileText, Users, TrendingUp,
 } from 'lucide-react'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -52,12 +52,12 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
+      className="w-full text-left flex items-start gap-3 px-5 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-100 last:border-b-0"
     >
       <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-ink truncate">{title}</div>
-        {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
+        <div className="text-[13px] font-medium text-slate-800 truncate">{title}</div>
+        {sub && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{sub}</div>}
       </div>
       {action && (
         <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{action}</span>
@@ -67,29 +67,61 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
 }
 
 
-/* ── Tile shell — the dashboard's calling convention over the shared Card
-      primitive. Card owns the surface (bg-panel / border / radius), header
-      row, icon, title + badge slot. Tile keeps the text+arrow "action" link
-      so the three call sites below stay unchanged. Body is unpadded — each
-      tile's children manage their own spacing (full-bleed lists, the money
-      grid). ── */
-function Tile({ icon, iconColor, title, badge, action, onAction, children }) {
+// Soft, airy card surface shared by the facelifted dashboard (white + blue,
+// rounded, gentle shadow — the look from the reference dashboard).
+const SOFT_CARD =
+  'bg-white rounded-2xl border border-slate-200/70 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-16px_rgba(15,23,42,0.12)]'
+
+// Map the existing iconColor tokens (passed by the tile call sites) to a tinted
+// chip so the icons read as colored badges without touching any call site.
+const CHIP = {
+  'text-blue-500':    'bg-blue-50 text-blue-600',
+  'text-violet-500':  'bg-violet-50 text-violet-600',
+  'text-purple-500':  'bg-purple-50 text-purple-600',
+  'text-amber-500':   'bg-amber-50 text-amber-600',
+  'text-emerald-500': 'bg-emerald-50 text-emerald-600',
+}
+
+/* ── Tile shell — facelifted to the airy white card. Header row carries a
+      tinted icon chip, title, optional badge, and a text+arrow action link.
+      Body is unpadded so each tile manages its own spacing. ── */
+function Tile({ icon: Icon, iconColor, title, badge, action, onAction, children }) {
   return (
-    <Card
-      as="section"
-      icon={icon}
-      iconColor={iconColor}
-      title={title}
-      badge={badge}
-      padded={false}
-      action={action && (
-        <button onClick={onAction} className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5">
-          {action} <ArrowRight className="w-3 h-3" />
-        </button>
-      )}
-    >
-      {children}
-    </Card>
+    <section className={`${SOFT_CARD} flex flex-col overflow-hidden`}>
+      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {Icon && (
+            <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${CHIP[iconColor] || 'bg-blue-50 text-blue-600'}`}>
+              <Icon className="w-4 h-4" />
+            </span>
+          )}
+          <h2 className="text-sm font-semibold text-slate-800 truncate">{title}</h2>
+          {badge}
+        </div>
+        {action && (
+          <button onClick={onAction} className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5 shrink-0">
+            {action} <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+      <div className="flex-1 min-h-0">{children}</div>
+    </section>
+  )
+}
+
+/* ── KPI card — the headline stat tiles across the top of the dashboard. ── */
+function KpiCard({ icon: Icon, chip, label, value, sub, accent }) {
+  return (
+    <div className={`${SOFT_CARD} p-4`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide truncate">{label}</span>
+        <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${chip}`}>
+          <Icon className="w-4 h-4" />
+        </span>
+      </div>
+      <div className={`text-2xl font-bold mt-2 tabular-nums ${accent || 'text-slate-900'}`}>{value}</div>
+      {sub && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{sub}</div>}
+    </div>
   )
 }
 
@@ -319,26 +351,43 @@ export default function Dashboard() {
   const todayCount = todayJobs.length
   const weekCount = weekJobs.length
 
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const longDate = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  const paidCount = invoices.filter(i => i.status === 'paid').length
+  const unpaidCount = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).length
+
   return (
-    <div className="min-h-screen bg-bg">
-      {/* Header */}
-      <div className="px-4 sm:px-6 pt-5 sm:pt-6 pb-4">
-        <div className="text-[10px] sm:text-[11px] font-semibold text-indigo-500 uppercase tracking-[0.14em]">
-          Command Center
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-ink mt-0.5">
-          {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-        </h1>
-        <p className="text-[12px] text-ink-3 mt-1">
-          {todayCount === 0 ? 'No jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
+    <div className="min-h-screen bg-slate-50">
+      {/* Greeting */}
+      <div className="px-4 sm:px-6 pt-6 pb-3">
+        <h1 className="text-2xl sm:text-[28px] font-bold text-slate-900 tracking-tight">{greeting} 👋</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          {longDate}
           {' · '}
-          {weekCount} this week
+          {todayCount === 0 ? 'no jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
+          {` · ${weekCount} this week`}
           {attention.length > 0 && ` · ${attention.length} need attention`}
         </p>
       </div>
 
-      {/* Two stacked tiles on top, money below */}
-      <div className="px-4 sm:px-6 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* KPI row — headline numbers, dashboard-style */}
+      <div className="px-4 sm:px-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <KpiCard icon={DollarSign} chip="bg-emerald-50 text-emerald-600" label="Collected today"
+          value={fmtMoney(todayRevenue)} sub={todayRevenue > 0 ? 'paid today' : 'nothing yet today'} />
+        <KpiCard icon={TrendingUp} chip="bg-blue-50 text-blue-600" label="Month to date"
+          value={fmtMoney(mtdRevenue)} sub={`${paidCount} paid`} />
+        <KpiCard icon={Clock} chip="bg-amber-50 text-amber-600" label="Outstanding"
+          value={fmtMoney(outstanding)}
+          sub={`${unpaidCount} unpaid${overdueInvoiceCount ? ` · ${overdueInvoiceCount} overdue` : ''}`}
+          accent={overdueInvoiceCount > 0 ? 'text-amber-600' : undefined} />
+        <KpiCard icon={FileText} chip="bg-violet-50 text-violet-600" label="Pipeline"
+          value={fmtMoney(pipeline)} sub={`${quotes.filter(q => q.status === 'sent').length} sent`}
+          accent="text-violet-700" />
+      </div>
+
+      {/* Tiles grid */}
+      <div className="px-4 sm:px-6 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
 
         {/* INBOX — what needs attention */}
         <Tile
@@ -428,15 +477,15 @@ export default function Dashboard() {
                 <button
                   key={j.id}
                   onClick={() => navigate(`/jobs/${j.id}`)}
-                  className="w-full text-left flex items-baseline gap-3 px-4 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
+                  className="w-full text-left flex items-baseline gap-3 px-5 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-100 last:border-b-0"
                 >
-                  <span className="text-[12px] font-semibold text-ink tabular-nums shrink-0 w-12">
+                  <span className="text-[12px] font-semibold text-blue-600 tabular-nums shrink-0 w-12">
                     {(j.start_time || '').slice(0, 5) || '—'}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] text-ink truncate">{j.title}</span>
+                    <span className="block text-[13px] text-slate-800 truncate">{j.title}</span>
                     {j.address && (
-                      <span className="block text-[11px] text-ink-3 truncate mt-0.5">{j.address}</span>
+                      <span className="block text-[11px] text-slate-500 truncate mt-0.5">{j.address}</span>
                     )}
                   </span>
                 </button>
@@ -568,21 +617,21 @@ export default function Dashboard() {
           action="Open Invoicing"
           onAction={() => navigate('/invoicing')}
         >
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-bg-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100">
             <StatCard
-              className="bg-panel"
+              className="bg-white"
               label="Today"
               value={fmtMoney(todayRevenue)}
               sub={todayRevenue > 0 ? 'collected today' : 'nothing collected yet'}
             />
             <StatCard
-              className="bg-panel"
+              className="bg-white"
               label="Month to date"
               value={fmtMoney(mtdRevenue)}
               sub={`${invoices.filter(i => i.status === 'paid').length} paid`}
             />
             <StatCard
-              className="bg-panel"
+              className="bg-white"
               label="Outstanding"
               value={fmtMoney(outstanding)}
               sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
@@ -590,7 +639,7 @@ export default function Dashboard() {
               onClick={() => navigate('/invoicing')}
             />
             <StatCard
-              className="bg-panel"
+              className="bg-white"
               label="Pipeline"
               value={fmtMoney(pipeline)}
               sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`}
@@ -601,7 +650,7 @@ export default function Dashboard() {
 
           {/* AR Aging — who to call this morning */}
           {(arAging['30'].length + arAging['60'].length + arAging['90'].length) > 0 && (
-            <div className="border-t border-hairline px-4 py-3">
+            <div className="border-t border-slate-100 px-5 py-3">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Aging receivables</div>
               <div className="flex gap-3 text-[12px]">
                 {arAging['30'].length > 0 && (
@@ -628,7 +677,7 @@ export default function Dashboard() {
 
           {/* Revenue by service type (paid, month-to-date) */}
           {svcRevenue.length > 0 && (
-            <div className="border-t border-hairline px-4 py-3">
+            <div className="border-t border-slate-100 px-5 py-3">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Paid this month by service</div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
                 {svcRevenue.map(s => (
