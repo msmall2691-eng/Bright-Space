@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users } from 'lucide-react'
+import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users, ChevronDown } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
 import UsersAdmin from '../components/UsersAdmin'
 import GoogleAccountCard from '../components/GoogleAccountCard'
@@ -84,6 +84,9 @@ export default function Settings() {
   const [resetConfirmText, setResetConfirmText] = useState('')
   const [resetting, setResetting] = useState(false)
   const [resetResult, setResetResult] = useState(null)
+  // Destructive controls are collapsed by default so the General tab opens to
+  // everyday settings, not a wall of red "reset / unlink" buttons.
+  const [showDangerZone, setShowDangerZone] = useState(false)
 
   // Danger zone — unlink calendars
   const [unlinkConfirmText, setUnlinkConfirmText] = useState('')
@@ -647,11 +650,15 @@ export default function Settings() {
                 Save Changes
               </button>
 
-              {/* Danger zone — sync controls + reset */}
+              {/* Danger zone — sync controls + reset, collapsed by default */}
               <div className="pt-8" data-testid="danger-zone">
-                <h2 className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2">
+                <button type="button" onClick={() => setShowDangerZone(v => !v)}
+                  className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2 hover:text-red-700">
                   <AlertTriangle className="w-5 h-5" /> Danger Zone
-                </h2>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showDangerZone ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showDangerZone && (<>
 
                 {/* Pause all syncs (reversible) */}
                 <div className="bg-panel rounded-xl border border-amber-200 p-6 space-y-4 mb-4">
@@ -791,6 +798,7 @@ export default function Settings() {
                     </div>
                   )}
                 </div>
+                </>)}
               </div>
             </div>
           </div>
@@ -1287,31 +1295,40 @@ export default function Settings() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={lbl}>IMAP Host</label>
-                    <input value={emailConfig.imap_host} onChange={e => setEmailConfig(c => ({ ...c, imap_host: e.target.value }))}
-                      className={inp} />
+                {/* IMAP/SMTP host+port default correctly for Gmail; tucked away
+                    so only non-Gmail setups need to open them. */}
+                <details className="group">
+                  <summary className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-ink-2 hover:text-ink select-none">
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                    Server details (advanced)
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={lbl}>IMAP Host</label>
+                        <input value={emailConfig.imap_host} onChange={e => setEmailConfig(c => ({ ...c, imap_host: e.target.value }))}
+                          className={inp} />
+                      </div>
+                      <div>
+                        <label className={lbl}>IMAP Port</label>
+                        <input value={emailConfig.imap_port} onChange={e => setEmailConfig(c => ({ ...c, imap_port: e.target.value }))}
+                          className={inp} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={lbl}>SMTP Host</label>
+                        <input value={emailConfig.smtp_host} onChange={e => setEmailConfig(c => ({ ...c, smtp_host: e.target.value }))}
+                          className={inp} />
+                      </div>
+                      <div>
+                        <label className={lbl}>SMTP Port</label>
+                        <input value={emailConfig.smtp_port} onChange={e => setEmailConfig(c => ({ ...c, smtp_port: e.target.value }))}
+                          className={inp} />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className={lbl}>IMAP Port</label>
-                    <input value={emailConfig.imap_port} onChange={e => setEmailConfig(c => ({ ...c, imap_port: e.target.value }))}
-                      className={inp} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={lbl}>SMTP Host</label>
-                    <input value={emailConfig.smtp_host} onChange={e => setEmailConfig(c => ({ ...c, smtp_host: e.target.value }))}
-                      className={inp} />
-                  </div>
-                  <div>
-                    <label className={lbl}>SMTP Port</label>
-                    <input value={emailConfig.smtp_port} onChange={e => setEmailConfig(c => ({ ...c, smtp_port: e.target.value }))}
-                      className={inp} />
-                  </div>
-                </div>
+                </details>
               </div>
 
               {/* Sending identity */}

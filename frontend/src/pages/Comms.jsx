@@ -1007,10 +1007,17 @@ export default function Comms() {
           </div>
         </div>
 
-        {/* Phase 8: additive filter chips. Stack on top of the selected folder. */}
+        {/* Phase 8: additive filter chips. Stack on top of the selected folder.
+            Chips with nothing to filter (count 0) are hidden unless active, so
+            the bar only shows what's actually actionable. */}
+        {(() => {
+          const visibleChips = CHIPS.filter(c =>
+            c.hideOn !== folder && ((c.count ?? 0) > 0 || chipFilters.has(c.key))
+          )
+          if (visibleChips.length === 0) return null
+          return (
         <div className="px-4 pb-3 flex flex-wrap gap-1.5 border-b border-hairline">
-          {CHIPS.map(({ key, label, icon: Ic, count, hideOn }) => {
-            if (hideOn === folder) return null
+          {visibleChips.map(({ key, label, icon: Ic, count }) => {
             const active = chipFilters.has(key)
             const isOverdue = key === 'overdue'
             return (
@@ -1034,6 +1041,8 @@ export default function Comms() {
             )
           })}
         </div>
+          )
+        })()}
 
         {/* Conversation list */}
         <div className="flex-1 overflow-y-auto">
