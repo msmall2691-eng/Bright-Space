@@ -3,7 +3,7 @@ import { useState, useCallback, useRef } from 'react'
 const VARIANTS = {
   success: 'bg-emerald-600 text-white',
   error: 'bg-red-600 text-white',
-  info: 'bg-zinc-800 text-white',
+  info: 'bg-ink text-bg',
 }
 
 export function useToast() {
