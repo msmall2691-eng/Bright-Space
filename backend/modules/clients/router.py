@@ -570,6 +570,102 @@ def check_duplicate(
     return {"duplicates": [client_to_dict(c) for c in matches.values()]}
 
 
+@router.get("/health", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def crm_health(
+    sample: int = Query(10, ge=0, le=100),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Read-only CRM health snapshot. Classifies every client in the workspace
+    into one primary bucket so you can SEE the breakdown — "how many of these 47
+    leads are real?" — BEFORE running any cleanup or merge. Mutates nothing.
+
+    Buckets are mutually exclusive (priority order below) so counts sum to total:
+      test           — name matches an obvious test/junk pattern
+      spam_marketing — email is a no-reply / marketing / cold-outreach sender
+                        (same rule that now blocks inbound auto-create)
+      duplicate      — shares a normalized email or phone with another client
+      incomplete     — no reachable email/phone, or an SMS phone-number placeholder
+                        standing in for a real name
+      real           — everything else (contactable, named, unique)
+
+    `by_source` / `by_status` are independent tallies (each sums to total).
+
+    NB: declared before GET /{client_id} so the literal path isn't swallowed by
+    the int path-param route."""
+    from collections import defaultdict
+    from integrations.email_filter import is_spam_sender
+
+    clients = db.query(Client).filter(
+        or_(Client.org_id == org_id, Client.org_id.is_(None))
+    ).all()
+
+    # Duplicate membership: any client sharing a normalized email or phone tail
+    # with at least one other client in the workspace.
+    by_email: dict[str, list[int]] = defaultdict(list)
+    by_tail: dict[str, list[int]] = defaultdict(list)
+    for c in clients:
+        if c.email and c.email.strip():
+            by_email[c.email.strip().lower()].append(c.id)
+        if c.phone_tail:
+            by_tail[c.phone_tail].append(c.id)
+    dup_ids: set[int] = set()
+    for ids in by_email.values():
+        if len(ids) > 1:
+            dup_ids.update(ids)
+    for ids in by_tail.values():
+        if len(ids) > 1:
+            dup_ids.update(ids)
+
+    TEST_PATTERNS = {"test", "asdf", "sample", "demo", "xxx"}
+
+    def _is_placeholder_name(c: Client) -> bool:
+        n = (c.name or "").strip()
+        digits = n.replace("-", "").replace("(", "").replace(")", "").replace(" ", "")
+        return bool(n) and (n.startswith("+") or digits.isdigit())
+
+    buckets: dict[str, list[Client]] = {
+        k: [] for k in ("test", "spam_marketing", "duplicate", "incomplete", "real")
+    }
+    by_source: dict[str, int] = defaultdict(int)
+    by_status: dict[str, int] = defaultdict(int)
+
+    for c in clients:
+        by_source[c.source or "unknown"] += 1
+        by_status[c.status or "unknown"] += 1
+
+        name_l = (c.name or "").lower()
+        has_contact = bool((c.email and c.email.strip()) or c.phone_tail)
+        if name_l and any(t in name_l for t in TEST_PATTERNS):
+            cat = "test"
+        elif c.email and is_spam_sender(c.email):
+            cat = "spam_marketing"
+        elif c.id in dup_ids:
+            cat = "duplicate"
+        elif not has_contact or _is_placeholder_name(c):
+            cat = "incomplete"
+        else:
+            cat = "real"
+        buckets[cat].append(c)
+
+    def _summarize(items: list[Client]) -> dict:
+        return {
+            "count": len(items),
+            "sample": [
+                {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone,
+                 "source": c.source, "status": c.status}
+                for c in items[:sample]
+            ],
+        }
+
+    return {
+        "total": len(clients),
+        "buckets": {k: _summarize(v) for k, v in buckets.items()},
+        "by_source": dict(sorted(by_source.items(), key=lambda kv: -kv[1])),
+        "by_status": dict(sorted(by_status.items(), key=lambda kv: -kv[1])),
+    }
+
+
 @router.get("/{client_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_client(client_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     # MT-2: a client in another workspace reads as 404 (not visible cross-tenant).
