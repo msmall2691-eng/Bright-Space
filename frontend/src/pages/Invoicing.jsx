@@ -66,6 +66,9 @@ export default function Invoicing() {
   const [panel, setPanel]         = useState(null)   // null | 'edit' | 'send'
   const [selected, setSelected]   = useState(null)
   const [form, setForm]           = useState({ client_id: '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
+  // Notes + custom fields fold behind this — the everyday invoice is client +
+  // line items + total.
+  const [showInvAdvanced, setShowInvAdvanced] = useState(false)
   const [sendForm, setSendForm]   = useState({ channel: 'email', email: '', phone: '', custom_message: '' })
   const [saving, setSaving]       = useState(false)
   const [sending, setSending]     = useState(false)
@@ -203,6 +206,7 @@ export default function Invoicing() {
   const openEdit = (inv) => {
     setSelected(inv)
     setForm({ client_id: inv.client_id, items: inv.items, tax_rate: inv.tax_rate, due_date: inv.due_date || '', notes: inv.notes || '', custom_fields: inv.custom_fields || {} })
+    setShowInvAdvanced(Boolean(inv.notes) || Object.keys(inv.custom_fields || {}).length > 0)
     setPanel('edit')
   }
 
@@ -216,6 +220,7 @@ export default function Invoicing() {
   const openNew = () => {
     setSelected(null)
     setForm({ client_id: '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
+    setShowInvAdvanced(false)
     setPanel('edit')
   }
 
@@ -488,20 +493,28 @@ export default function Invoicing() {
               </div>
             </div>
 
-            {/* Notes */}
-            <div>
-              <label className={lbl}>Notes</label>
-              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                rows={3} placeholder="Payment instructions, bank details…"
-                className={inp + ' bg-bg resize-none'} />
-            </div>
+            {/* Notes + custom fields — folded away from the everyday path. */}
+            <button type="button" onClick={() => setShowInvAdvanced(v => !v)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-ink-2 hover:text-ink">
+              <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showInvAdvanced ? 'rotate-90' : ''}`} />
+              Notes &amp; more
+              {!showInvAdvanced && form.notes && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+            </button>
 
+            {showInvAdvanced && (<>
+              <div>
+                <label className={lbl}>Notes</label>
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={3} placeholder="Payment instructions, bank details…"
+                  className={inp + ' bg-bg resize-none'} />
+              </div>
 
-            <CustomFieldsForm
-              entityType="invoice"
-              values={form.custom_fields || {}}
-              onChange={(key, val) => setForm(f => ({ ...f, custom_fields: { ...(f.custom_fields || {}), [key]: val } }))}
-            />
+              <CustomFieldsForm
+                entityType="invoice"
+                values={form.custom_fields || {}}
+                onChange={(key, val) => setForm(f => ({ ...f, custom_fields: { ...(f.custom_fields || {}), [key]: val } }))}
+              />
+            </>)}
 
             {/* Totals */}
             <div className="rounded-xl border border-hairline bg-bg overflow-hidden">

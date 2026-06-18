@@ -81,6 +81,9 @@ export default function Clients() {
   const [selected, setSelected] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY)
+  // Billing address is usually the same as the service address; hide it behind
+  // a toggle unless the client actually has separate billing details.
+  const [showBilling, setShowBilling] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   // Quick "Schedule" from a client row → opens the job modal with that client.
@@ -173,11 +176,12 @@ export default function Clients() {
     setSaving(false)
   }
 
-  const openNew = () => { setForm(EMPTY); setSelected(null); setPhoneNumbers([]); setDupes([]); setShowForm(true) }
+  const openNew = () => { setForm(EMPTY); setSelected(null); setPhoneNumbers([]); setDupes([]); setShowBilling(false); setShowForm(true) }
   const openEdit = (c) => {
     setForm({ ...c });
     setSelected(c);
     setDupes([])
+    setShowBilling(Boolean(c.billing_address || c.billing_city || c.billing_state || c.billing_zip))
     loadPhones(c.id)
     setShowForm(true)
   }
@@ -643,21 +647,28 @@ export default function Clients() {
               ))}
             </div>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-3 flex items-center gap-2">
-                <div className="h-px flex-1 bg-bg-2" /><span>Billing Address</span><div className="h-px flex-1 bg-bg-2" />
-              </div>
-              {[
-                { label: 'Street', key: 'billing_address' },
-                { label: 'City', key: 'billing_city' },
-                { label: 'State', key: 'billing_state' },
-                { label: 'ZIP', key: 'billing_zip' },
-              ].map(({ label, key }) => (
-                <div key={key} className="mb-3">
-                  <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
-                  <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+              {!showBilling ? (
+                <button type="button" onClick={() => setShowBilling(true)}
+                  className="text-[11px] font-medium text-blue-600 hover:text-blue-700">
+                  + Add separate billing address
+                </button>
+              ) : (<>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-3 mb-3 flex items-center gap-2">
+                  <div className="h-px flex-1 bg-bg-2" /><span>Billing Address</span><div className="h-px flex-1 bg-bg-2" />
                 </div>
-              ))}
+                {[
+                  { label: 'Street', key: 'billing_address' },
+                  { label: 'City', key: 'billing_city' },
+                  { label: 'State', key: 'billing_state' },
+                  { label: 'ZIP', key: 'billing_zip' },
+                ].map(({ label, key }) => (
+                  <div key={key} className="mb-3">
+                    <label className="block text-[11px] text-ink-3 mb-1 font-medium">{label}</label>
+                    <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20" />
+                  </div>
+                ))}
+              </>)}
             </div>
             <div>
               <label className="block text-[11px] text-ink-3 mb-1 font-medium">Status</label>

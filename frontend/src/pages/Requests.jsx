@@ -552,19 +552,23 @@ export default function Requests() {
                   {selectedRequest.address || '—'} {selectedRequest.city ? `, ${selectedRequest.city}` : ''} {selectedRequest.state}
                 </p>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-ink-2 uppercase">Service Type</label>
-                <p className="text-sm text-ink">{SERVICE_TYPE_CONFIG[selectedRequest.service_type]?.label}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-ink-2 uppercase">Status</label>
-                <p className="text-sm text-ink">{STATUS_CONFIG[selectedRequest.status]?.label}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-ink-2 uppercase">Priority</label>
-                <p className={`text-sm ${PRIORITY_CONFIG[selectedRequest.priority]?.color}`}>
-                  {PRIORITY_CONFIG[selectedRequest.priority]?.label}
-                </p>
+              {/* Service type / status / priority in one compact row instead of
+                  three stacked full-width blocks. */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Service</label>
+                  <p className="text-sm text-ink">{SERVICE_TYPE_CONFIG[selectedRequest.service_type]?.label}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Status</label>
+                  <p className="text-sm text-ink">{STATUS_CONFIG[selectedRequest.status]?.label}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Priority</label>
+                  <p className={`text-sm ${PRIORITY_CONFIG[selectedRequest.priority]?.color}`}>
+                    {PRIORITY_CONFIG[selectedRequest.priority]?.label}
+                  </p>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Message</label>
