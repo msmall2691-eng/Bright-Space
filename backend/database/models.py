@@ -204,7 +204,7 @@ class Client(Base):
     billing_city = Column(String, nullable=True)
     billing_state = Column(String, nullable=True)
     billing_zip = Column(String, nullable=True)
-    status = Column(String, default="lead")  # lead, active, inactive
+    status = Column(String, default="lead", index=True)  # lead, active, inactive
     notes = Column(Text)
     source = Column(String)
     custom_fields = Column(JSON, default=dict)
@@ -576,6 +576,9 @@ class Visit(Base):
 class LeadIntake(Base):
     """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"
+    # The Requests list filters by status and orders by created_at; this
+    # composite index serves both in one structure (Phase 0).
+    __table_args__ = (Index("idx_intake_status_created", "status", "created_at"),)
     org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)

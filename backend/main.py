@@ -105,6 +105,40 @@ async def sliding_session_refresh(request, call_next):
     return response
 
 
+# Phase 0 instrumentation: log "METHOD path status duration_ms" for every
+# request so the slowest endpoints surface in the Railway logs within an hour of
+# real use — no guessing about where the lag is. Slow requests (>1s) log at
+# WARNING so they stand out; the duration is also echoed in X-Process-Time-Ms
+# for quick inspection in the browser network tab. Defined last so it's the
+# outermost middleware and times the whole request, including the inner layers.
+import time as _time
+import logging as _logging
+
+_perf_logger = _logging.getLogger("brightbase.perf")
+if not _perf_logger.handlers:
+    _h = _logging.StreamHandler()
+    _h.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    _perf_logger.addHandler(_h)
+    _perf_logger.setLevel(_logging.INFO)
+
+
+@app.middleware("http")
+async def request_timing(request, call_next):
+    start = _time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (_time.perf_counter() - start) * 1000
+    try:
+        response.headers["X-Process-Time-Ms"] = f"{duration_ms:.0f}"
+        level = _logging.WARNING if duration_ms > 1000 else _logging.INFO
+        _perf_logger.log(
+            level, "%s %s %s %.0fms",
+            request.method, request.url.path, response.status_code, duration_ms,
+        )
+    except Exception:
+        pass  # instrumentation must never break a response
+    return response
+
+
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
 app.include_router(quoting_router, prefix="/api/quotes", tags=["quotes"])

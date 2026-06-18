@@ -32,6 +32,13 @@ if DATABASE_URL.startswith("postgres://"):
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
+else:
+    # Phase 0 reliability: cap how long any single statement can run. A
+    # pathological query (missing index, lock wait) now fails fast with an
+    # error the request layer can surface as a retry, instead of hanging the
+    # connection — and the request — indefinitely. 8s is generous for the OLTP
+    # reads/writes this API does; genuine long jobs run outside the web path.
+    connect_args["options"] = "-c statement_timeout=8000"
 
 engine = create_engine(
     DATABASE_URL,
