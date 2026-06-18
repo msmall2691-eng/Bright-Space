@@ -584,8 +584,9 @@ export default function ClientProfile() {
           </button>
         </div>
 
-        {/* Stats bar — compact on mobile, normal on desktop */}
-        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-hairline sm:grid-cols-4">
+        {/* Stats bar — the three business numbers. (A 4th "GCal" card showed a
+            cryptic ●/✓ sync diagnostic; that belongs on Schedule, not here.) */}
+        <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-hairline">
           {/* Upcoming */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
             <div className="text-xs sm:text-sm text-blue-600 font-medium">Upcoming</div>
@@ -602,12 +603,6 @@ export default function ClientProfile() {
           <div className={`border rounded-lg p-2.5 sm:p-3 ${outstanding > 0 ? 'bg-amber-50 border-amber-200' : 'bg-bg border-hairline'}`}>
             <div className={`text-xs sm:text-sm font-medium ${outstanding > 0 ? 'text-amber-600' : 'text-ink-2'}`}>Outstanding</div>
             <div className={`text-lg sm:text-base font-bold mt-0.5 ${outstanding > 0 ? 'text-amber-700' : 'text-ink-2'}`}>${outstanding.toFixed(0)}</div>
-          </div>
-
-          {/* GCal */}
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 sm:p-3">
-            <div className="text-xs sm:text-sm text-indigo-600 font-medium">GCal</div>
-            <div className="text-xs sm:text-sm text-indigo-700">● {visitStats?.gcal_synced ?? 0} | ✓ {visitStats?.invites_sent ?? 0}</div>
           </div>
         </div>
 
