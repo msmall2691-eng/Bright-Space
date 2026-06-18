@@ -198,17 +198,19 @@ export default function Dashboard() {
   const [todayJobs, setTodayJobs] = useState([])
   const [weekJobs, setWeekJobs] = useState([])
   const [invoices, setInvoices] = useState([])
-  const [quotes, setQuotes] = useState([])
   const [followUps, setFollowUps] = useState([])
   const [todayVisits, setTodayVisits] = useState([])
   const [overdueConvs, setOverdueConvs] = useState([])
   const [unassignedConvs, setUnassignedConvs] = useState([])
-  const [leads, setLeads] = useState([])
   const [svcRevenue, setSvcRevenue] = useState([])
   const [commsSummary, setCommsSummary] = useState({})
   const [employees, setEmployees] = useState([])
   const [rosterUnavailable, setRosterUnavailable] = useState(false)
-  const [activeClients, setActiveClients] = useState(null)
+  // Server-computed KPI aggregates (quote funnel/pipeline, new leads, active
+  // clients) from /api/dashboard/summary — replaces pulling full quote/lead/
+  // client lists just to count them.
+  const [summary, setSummary] = useState(null)
+  const activeClients = summary?.active_clients ?? null
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -218,32 +220,31 @@ export default function Dashboard() {
     const load = async () => {
       try {
         const [
-          jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll, clientsActive,
+          jobsToday, jobsWeek, invoicesAll,
+          visitsToday, conversationsOverdue, conversationsUnassigned, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll, summaryResp,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
           get('/api/invoices?limit=200').catch(() => []),
-          get('/api/quotes?limit=500').catch(() => []),
           get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`).catch(() => ({ items: [] })),
           get('/api/comms/conversations?sla_state=breached&status=open&limit=20').catch(() => ({ items: [] })),
           get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
-          get('/api/intake?limit=200').catch(() => []),
           get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
           get('/api/comms/conversations/summary').catch(() => ({})),
           get('/api/quotes/follow-ups').catch(() => []),
           get('/api/dispatch/employees').catch(() => null),
-          get('/api/clients?status=active').catch(() => []),
+          // Aggregate KPI endpoint: quote funnel/pipeline, new-lead count and
+          // active-client count, computed server-side with indexed SQL. Replaces
+          // the old quotes(500) + intake(200) + clients(active) row-pulls.
+          get('/api/dashboard/summary').catch(() => null),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
         setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
-        setQuotes(Array.isArray(quotesAll) ? quotesAll : (quotesAll?.items || []))
         const tv = Array.isArray(visitsToday) ? visitsToday : (visitsToday?.items || [])
         setTodayVisits(tv)
         setOverdueConvs(Array.isArray(conversationsOverdue) ? conversationsOverdue : (conversationsOverdue?.items || []))
         setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
-        setLeads(Array.isArray(leadsAll) ? leadsAll : (leadsAll?.items || []))
         setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
         setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
         setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
@@ -251,8 +252,7 @@ export default function Dashboard() {
         // tile still renders workload from job data; names degrade to IDs.
         setRosterUnavailable(employeesAll === null)
         setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
-        const clientArr = Array.isArray(clientsActive) ? clientsActive : (clientsActive?.items || [])
-        setActiveClients(clientArr.length)
+        setSummary(summaryResp && typeof summaryResp === 'object' ? summaryResp : null)
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
@@ -269,27 +269,26 @@ export default function Dashboard() {
   const outstanding = useMemo(() => invoices
     .filter(i => ['sent', 'overdue'].includes(i.status))
     .reduce((s, i) => s + (i.total || 0), 0), [invoices])
-  const pipeline = useMemo(() => quotes
-    .filter(q => ['sent', 'draft'].includes(q.status))
-    .reduce((s, q) => s + (q.total || 0), 0), [quotes])
+  const pipeline = summary?.quotes?.pipeline_value ?? 0
   const overdueInvoiceCount = invoices.filter(i => i.status === 'overdue').length
 
-  // Quotes & leads that need the owner to do something next.
+  // Quotes & leads that need the owner to do something next — from the server
+  // aggregate (counts only; the dashboard never needed the full quote rows).
   const quoteActions = useMemo(() => ({
-    awaiting: quotes.filter(q => ['sent', 'viewed'].includes(q.status)).length,
-    changes: quotes.filter(q => q.status === 'changes_requested').length,
-    toSchedule: quotes.filter(q => q.status === 'accepted').length,
-    newLeads: leads.filter(l => !l.status || ['new', 'received'].includes(l.status)).length,
+    awaiting: summary?.quotes?.awaiting ?? 0,
+    changes: summary?.quotes?.changes ?? 0,
+    toSchedule: summary?.quotes?.to_schedule ?? 0,
+    newLeads: summary?.new_leads ?? 0,
     followUp: followUps.length,
-  }), [quotes, leads, followUps])
+  }), [summary, followUps])
 
   // Lead → client funnel: the conversion pipeline as four ordered stages.
   // "Quoted" = quotes out for response (sent/viewed/changes); "Won" = quotes
   // that became jobs. convRate = won ÷ everyone who entered the funnel.
   const funnel = useMemo(() => {
-    const quoted = quotes.filter(q => ['sent', 'viewed', 'changes_requested'].includes(q.status)).length
-    const accepted = quotes.filter(q => q.status === 'accepted').length
-    const won = quotes.filter(q => q.status === 'converted').length
+    const quoted = summary?.quotes?.quoted ?? 0
+    const accepted = summary?.quotes?.accepted ?? 0
+    const won = summary?.quotes?.won ?? 0
     const newLeads = quoteActions.newLeads
     const entered = newLeads + quoted + accepted + won
     const stages = [
@@ -304,7 +303,7 @@ export default function Dashboard() {
     ]
     const convRate = entered > 0 ? Math.round((won / entered) * 100) : 0
     return { stages, convRate }
-  }, [quotes, quoteActions.newLeads, navigate])
+  }, [summary, quoteActions.newLeads, navigate])
 
   // STR turnover coverage for the next 7 calendar days (today + 6; weekJobs is
   // fetched with an inclusive +7 end, so clamp here). "Covered" = a cleaner is
@@ -465,7 +464,7 @@ export default function Dashboard() {
           sub={`${unpaidCount} unpaid${overdueInvoiceCount ? ` · ${overdueInvoiceCount} overdue` : ''}`}
           accent={overdueInvoiceCount > 0 ? 'text-amber-600' : undefined} />
         <KpiCard icon={FileText} chip="bg-violet-50 text-violet-600" label="Pipeline"
-          value={fmtMoney(pipeline)} sub={`${quotes.filter(q => q.status === 'sent').length} sent`}
+          value={fmtMoney(pipeline)} sub={`${summary?.quotes?.sent ?? 0} sent`}
           accent="text-violet-700" />
       </div>
 
@@ -730,7 +729,7 @@ export default function Dashboard() {
               className="bg-panel"
               label="Pipeline"
               value={fmtMoney(pipeline)}
-              sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`}
+              sub={`${summary?.quotes?.sent ?? 0} sent · ${summary?.quotes?.draft ?? 0} draft`}
               accent="text-emerald-600"
               onClick={() => navigate('/billing?view=quotes')}
             />
