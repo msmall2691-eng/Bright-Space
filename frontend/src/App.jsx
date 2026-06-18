@@ -99,7 +99,6 @@ function SidebarWithUnread(props) {
 }
 
 // Lazy-loaded pages for code splitting
-const Today = lazy(() => import('./pages/Today'))
 const Workspace = lazy(() => import('./pages/Workspace'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
@@ -107,16 +106,14 @@ const OpportunityDetail = lazy(() => import('./pages/OpportunityDetail'))
 const JobDetail = lazy(() => import('./pages/JobDetail'))
 const QuoteDetail = lazy(() => import('./pages/QuoteDetail'))
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
-const Quoting = lazy(() => import('./pages/Quoting'))
 const Schedule = lazy(() => import('./pages/Schedule'))
-const Invoicing = lazy(() => import('./pages/Invoicing'))
+const Billing = lazy(() => import('./pages/Billing'))
 const Payroll = lazy(() => import('./pages/Payroll'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Settings = lazy(() => import('./pages/Settings'))
-const Calendar = lazy(() => import('./pages/Calendar'))
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -199,7 +196,8 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/today" element={<Today />} />
+              {/* Today merged into the Dashboard's "Today's schedule" section. */}
+              <Route path="/today" element={<Navigate to="/dashboard" replace />} />
               <Route path="/workspace" element={<Workspace />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientProfile />} />
@@ -209,11 +207,14 @@ export default function App() {
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/quotes/:id" element={<QuoteDetail />} />
               <Route path="/invoices/:id" element={<InvoiceDetail />} />
-              <Route path="/quoting" element={<Quoting />} />
+              {/* Quoting + Invoicing consolidated under one Billing surface. */}
+              <Route path="/billing" element={<Billing />} />
+              <Route path="/quoting" element={<Navigate to="/billing?view=quotes" replace />} />
+              <Route path="/invoicing" element={<Navigate to="/billing?view=invoices" replace />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
-              <Route path="/calendar" element={<Calendar />} />
-              <Route path="/invoicing" element={<Invoicing />} />
+              {/* Calendar dropped — native Schedule covers it (and syncs to GCal). */}
+              <Route path="/calendar" element={<Navigate to="/schedule" replace />} />
               <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/comms" element={<Comms />} />

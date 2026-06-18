@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Sparkles, Users, FileText, Calendar, CalendarDays, Receipt,
+  LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
   ChevronRight, Bell, Building2, LayoutGrid, LogOut, ChevronDown,
 } from 'lucide-react'
@@ -9,16 +9,14 @@ import { logout } from '../api'
 
 const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/today',       icon: CalendarDays,    label: 'Today' },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
-  { divider: true, label: 'Sales Pipeline' },
+  { divider: true, label: 'Sales' },
   { to: '/requests',    icon: Inbox,           label: 'Requests' },
   { to: '/pipeline',    icon: LayoutGrid,      label: 'Pipeline' },
-  { to: '/quoting',     icon: FileText,        label: 'Quoting' },
-  { to: '/invoicing',   icon: Receipt,         label: 'Invoicing' },
+  { to: '/billing',     icon: Receipt,         label: 'Billing' },
   { divider: true, label: 'Operations' },
   { to: '/clients',     icon: Users,           label: 'Clients' },
-  { to: '/calendar',    icon: Calendar,        label: 'Calendar' },
+  { to: '/schedule',    icon: Calendar,        label: 'Schedule' },
   { to: '/properties',  icon: Home,            label: 'Properties' },
   { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
   { divider: true, label: 'Team' },

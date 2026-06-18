@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Search, Download, Clock, Car } from 'lucide-react'
-import AgentWidget from '../components/AgentWidget'
 import { get } from '../api'
 
 export default function Payroll() {
@@ -102,14 +101,6 @@ export default function Payroll() {
         </>
       )}
 
-      <AgentWidget
-        pageContext="payroll"
-        prompts={[
-          'Summarize payroll for this pay period',
-          'Which employees logged the most hours?',
-          'What is the total mileage reimbursement?',
-        ]}
-      />
     </div>
   )
 }

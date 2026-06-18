@@ -31,8 +31,8 @@ export default function GlobalSearch() {
 
   // Quick actions — create + jump. `keywords` widen what the query matches.
   const ACTIONS = [
-    { id: 'new-quote',   label: 'New quote',       icon: FileText,         keywords: 'create quote estimate', run: () => go('/quoting') },
-    { id: 'new-invoice', label: 'New invoice',     icon: Receipt,          keywords: 'create invoice bill',    run: () => go('/invoicing') },
+    { id: 'new-quote',   label: 'New quote',       icon: FileText,         keywords: 'create quote estimate billing', run: () => go('/billing?view=quotes') },
+    { id: 'new-invoice', label: 'New invoice',     icon: Receipt,          keywords: 'create invoice bill billing',    run: () => go('/billing?view=invoices') },
     { id: 'schedule',    label: 'Schedule a job',  icon: Calendar,         keywords: 'create job visit book',  run: () => go('/schedule?new=1') },
     { id: 'go-pipeline', label: 'Go to Pipeline',  icon: LayoutGrid,       keywords: 'deals opportunities',    run: () => go('/pipeline') },
     { id: 'go-clients',  label: 'Go to Clients',   icon: Users,            keywords: 'customers contacts',     run: () => go('/clients') },

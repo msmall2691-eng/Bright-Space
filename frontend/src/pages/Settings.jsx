@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users, ChevronDown } from 'lucide-react'
-import AgentWidget from '../components/AgentWidget'
 import UsersAdmin from '../components/UsersAdmin'
 import GoogleAccountCard from '../components/GoogleAccountCard'
 import { del, get, post, patch } from "../api"
@@ -1583,14 +1582,6 @@ export default function Settings() {
 
       <Toast toasts={toasts} />
 
-      <AgentWidget
-        pageContext="settings"
-        prompts={[
-          'What custom fields should I add for clients?',
-          'Help me set up fields for job tracking',
-          'Check the system health',
-        ]}
-      />
     </div>
   )
 }

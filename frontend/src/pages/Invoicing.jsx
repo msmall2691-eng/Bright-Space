@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText, Sparkles } from 'lucide-react'
-import AgentWidget from '../components/AgentWidget'
 import { PageHeader, StatCard, EmptyState } from '../components/ui'
 import { del, get, post, patch } from "../api"
 
@@ -716,14 +715,6 @@ export default function Invoicing() {
 
       <Toast toasts={toasts} />
 
-      <AgentWidget
-        pageContext="invoicing"
-        prompts={[
-          'Which invoices are overdue?',
-          'How much revenue did I make this month?',
-          'Draft a payment reminder for overdue clients',
-        ]}
-      />
     </div>
   )
 }

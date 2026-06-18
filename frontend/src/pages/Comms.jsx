@@ -27,7 +27,6 @@ import {
   Filter, MapPin,
   Plus, MessageCircle, PenLine,
 } from 'lucide-react'
-import AgentWidget from '../components/AgentWidget'
 import { get, post } from "../api"
 import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
@@ -1316,11 +1315,6 @@ export default function Comms() {
 
 
       {/* ═══ Agent Widget ═══ */}
-      <AgentWidget pageContext="comms" prompts={[
-        'Draft a follow-up SMS for my recent leads',
-        'Summarize the selected conversation',
-        'Help me write a thank-you message after a job',
-      ]} />
 
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-sm ${

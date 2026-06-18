@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import RecordLink from '../components/RecordLink'
-import AgentWidget from '../components/AgentWidget'
 import ClientCRMSummary from '../components/ClientCRMSummary'
 import ActivityTimeline from '../components/ActivityTimeline'
 import OpportunityLinker from '../components/OpportunityLinker'
@@ -680,7 +679,7 @@ export default function ClientProfile() {
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 px-4 sm:px-6 py-3 bg-panel/50 border-b border-hairline shrink-0">
-        <button onClick={() => navigate('/quoting', { state: { openNew: true, clientId: parseInt(id) } })}
+        <button onClick={() => navigate('/billing?view=quotes', { state: { openNew: true, clientId: parseInt(id) } })}
           data-testid="client-action-new-quote"
           className="flex items-center justify-center sm:justify-start gap-1.5 text-xs bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-2 sm:py-1.5 rounded-lg transition-colors">
           <FileText className="w-3.5 h-3.5 text-blue-400" /> <span className="hidden sm:inline">New Quote</span>
@@ -1691,14 +1690,6 @@ export default function ClientProfile() {
       </div>
       </div>
 
-      <AgentWidget
-        pageContext="clients"
-        prompts={[
-          `Tell me about this client's history`,
-          'What services should I upsell to this client?',
-          'Draft a follow-up message for this client',
-        ]}
-      />
 
       {jobModal && (
         <JobCreateModal

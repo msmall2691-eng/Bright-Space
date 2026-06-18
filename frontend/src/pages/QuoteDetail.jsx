@@ -89,7 +89,7 @@ export default function QuoteDetail() {
   if (notFound || !quote) {
     return (
       <div className="p-6">
-        <button onClick={() => navigate('/quoting')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+        <button onClick={() => navigate('/billing?view=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
           <ArrowLeft className="w-4 h-4" /> Back to Quotes
         </button>
         <EmptyState icon={FileText} title="Quote not found" description="It may have been archived or moved to another workspace." />
@@ -102,7 +102,7 @@ export default function QuoteDetail() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-        <button onClick={() => navigate('/quoting')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+        <button onClick={() => navigate('/billing?view=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
           <ArrowLeft className="w-4 h-4" /> Back to Quotes
         </button>
 
