@@ -8,7 +8,7 @@ import { subscribe } from '../../utils/toastBus'
 const VARIANTS = {
   success: 'bg-emerald-600 text-white',
   error: 'bg-red-600 text-white',
-  info: 'bg-zinc-800 text-white',
+  info: 'bg-ink text-bg',
 }
 
 // Errors linger a touch longer than the 3s success toasts — a failure the user

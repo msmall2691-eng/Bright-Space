@@ -59,8 +59,8 @@ class ErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8 text-center">
-          <h1 className="text-xl font-semibold text-zinc-900">Something went wrong</h1>
-          <p className="text-sm text-zinc-500 max-w-md">{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <h1 className="text-xl font-semibold text-ink">Something went wrong</h1>
+          <p className="text-sm text-ink-3 max-w-md">{this.state.error?.message || 'An unexpected error occurred.'}</p>
           <button
             onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
