@@ -10,6 +10,7 @@ import { get, post, put, del } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
+import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
@@ -940,6 +941,9 @@ export default function Schedule() {
   const [properties, setProperties] = useState({})
   const [clients, setClients] = useState({})
   const [loading, setLoading] = useState(true)
+  // Set when the week aggregate fails entirely → show a retryable error instead
+  // of an empty calendar that looks broken.
+  const [loadError, setLoadError] = useState(false)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedPropertyType, setSelectedPropertyType] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
@@ -1001,6 +1005,7 @@ export default function Schedule() {
   useEffect(() => {
     const loadSchedule = async () => {
       setLoading(true)
+      setLoadError(false)
       try {
         const startDate = new Date(currentDate)
         startDate.setDate(startDate.getDate() - startDate.getDay())
@@ -1013,12 +1018,19 @@ export default function Schedule() {
         // One aggregate call returns the whole week (visits + jobs + properties
         // + clients + coverage) instead of five parallel round trips. Shapes are
         // identical to the standalone endpoints the server delegates to.
-        const week = await get(
-          `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`
-        ).catch(e => {
+        let week
+        try {
+          week = await get(
+            `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`
+          )
+        } catch (e) {
+          // Total failure (timeout / server down): surface a retryable error
+          // rather than rendering an empty week.
           console.error('[Schedule] Week API error:', e)
-          return null
-        })
+          setLoadError(true)
+          setLoading(false)
+          return
+        }
         const coverageRes = week?.coverage ?? null
 
         // Index jobs, properties, clients for quick lookup
@@ -1422,6 +1434,18 @@ export default function Schedule() {
     const d = new Date(currentDate)
     d.setDate(d.getDate() + (viewMode === 'agenda' ? 1 : 7))
     setCurrentDate(d)
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-bg">
+        <ErrorState
+          title="Couldn't load the schedule"
+          description="The server didn't respond. Check your connection and try again."
+          onRetry={refresh}
+        />
+      </div>
+    )
   }
 
   if (loading) {

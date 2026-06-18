@@ -10,6 +10,7 @@ from database.db import get_db
 from database.models import Visit, Job, Client, Property, RecurrenceException
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import log_visit_skipped
+from utils.ttl_cache import TTLCache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -172,13 +173,25 @@ def debug_all_visits(db: Session = Depends(get_db)):
     }
 
 
+_coverage_cache = TTLCache(ttl_seconds=30)
+
+
 @router.get("/admin/coverage-check", dependencies=[Depends(require_role("admin", "manager"))])
 def check_visits_coverage(db: Session = Depends(get_db)):
     """Check whether UPCOMING jobs have corresponding visits.
 
     Future-only: past jobs missing visits aren't actionable (we don't backfill
-    history), so they're excluded from the health signal."""
+    history), so they're excluded from the health signal.
+
+    Cached for 30s: this is a global health metric (no per-org/per-request
+    inputs) hit on every schedule-week load, and it tolerates a few seconds of
+    staleness — so repeated rapid loads (week navigation) reuse one computation
+    instead of re-running the count queries each time."""
     from datetime import date
+
+    cached = _coverage_cache.get("global")
+    if cached is not None:
+        return cached
 
     today = date.today()
     upcoming_jobs = db.query(Job).filter(Job.scheduled_date >= today).count()
@@ -189,12 +202,14 @@ def check_visits_coverage(db: Session = Depends(get_db)):
         .count()
     )
 
-    return {
+    result = {
         "total_jobs": upcoming_jobs,
         "jobs_without_visits": jobs_without_visits,
         "coverage_percent": int(((upcoming_jobs - jobs_without_visits) / upcoming_jobs * 100) if upcoming_jobs > 0 else 100),
         "healthy": jobs_without_visits == 0,
     }
+    _coverage_cache.set("global", result)
+    return result
 
 
 @router.post("/telemetry/drift-check")
