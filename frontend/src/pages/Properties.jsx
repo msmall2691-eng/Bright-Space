@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
@@ -244,21 +244,28 @@ export default function Properties() {
 
   const propType = (p) => (p?.property_type || '').toLowerCase()
 
-  const filteredProperties = (currentType === 'all'
-    ? properties
-    : properties.filter(p => propType(p) === currentType)
-  ).filter(p => {
+  // Memoized: re-filter only when the data, type tab, or search changes — not
+  // on every render of this state-heavy page (~30 useState).
+  const filteredProperties = useMemo(() => {
+    const base = currentType === 'all'
+      ? properties
+      : properties.filter(p => propType(p) === currentType)
     const q = search.trim().toLowerCase()
-    if (!q) return true
-    return [p.name, p.address, p.client_name].some(v => (v || '').toLowerCase().includes(q))
-  })
+    if (!q) return base
+    return base.filter(p =>
+      [p.name, p.address, p.client_name].some(v => (v || '').toLowerCase().includes(q))
+    )
+  }, [properties, currentType, search])
 
-  const typeCounts = {
-    all: properties.length,
-    residential: properties.filter(p => propType(p) === 'residential').length,
-    commercial: properties.filter(p => propType(p) === 'commercial').length,
-    str: properties.filter(p => propType(p) === 'str').length,
-  }
+  // One pass over properties (was three scans), recomputed only on data change.
+  const typeCounts = useMemo(() => {
+    const counts = { all: properties.length, residential: 0, commercial: 0, str: 0 }
+    for (const p of properties) {
+      const t = propType(p)
+      if (t in counts) counts[t] += 1
+    }
+    return counts
+  }, [properties])
 
   const save = async () => {
     setSaving(true)
