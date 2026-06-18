@@ -24,20 +24,15 @@ export default defineConfig({
           if (id.includes('node_modules/react-dom')) return 'vendor-react'
           if (id.includes('node_modules')) return 'vendor-other'
 
-          // Split feature pages into lazy-loaded chunks
-          if (id.includes('/pages/Schedule') || id.includes('/pages/Scheduling')) {
-            return 'pages-schedule'
-          }
-          if (id.includes('/pages/Invoicing') || id.includes('/pages/Quoting')) {
-            return 'pages-finance'
-          }
-          if (id.includes('/pages/Settings') || id.includes('/pages/Workspace')) {
-            return 'pages-admin'
-          }
-          if (id.includes('/pages/Clients') || id.includes('/pages/ClientProfile')) {
-            return 'pages-clients'
-          }
-          if (id.includes('/components')) return 'components-shared'
+          // App code (pages, components, hooks, utils) is left to Vite's
+          // automatic splitting. Because every page is lazy-loaded via
+          // React.lazy, Vite already emits one on-demand chunk per route,
+          // folds single-use components into the route that needs them, and
+          // hoists components shared by several routes into their own
+          // auto-generated shared chunk (loaded only when one of those routes
+          // is visited) — no duplication and a minimal eager payload. Manual
+          // page/component grouping previously fought this, pulling every
+          // component into the eager bundle and over-stuffing single routes.
         },
       },
     },
