@@ -240,14 +240,14 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                           )}
                         </div>
                       </div>
-                      {/* Meta footer — client + sync state (staff scheduling lives in Connecteam) */}
-                      <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3">
-                        {client?.name && <span className="truncate">{client.name}</span>}
-                        <span className="ml-auto flex items-center gap-1 shrink-0">
-                          <SyncBadge ok={!!(v.gcal_event_id || job?.gcal_event_id)} label="GCal" okTitle="On Google Calendar" offTitle="Not on Google Calendar yet" />
-                          <SyncBadge ok={(job?.connecteam_shift_ids || []).length > 0} label="Connecteam" okTitle="Shift in Connecteam" offTitle="Not sent to Connecteam yet" />
-                        </span>
-                      </div>
+                      {/* Meta footer — just the client. Calendar/Connecteam sync
+                          state lives in the visit drawer's "More details" now,
+                          so it doesn't clutter every card. */}
+                      {client?.name && (
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3">
+                          <span className="truncate">{client.name}</span>
+                        </div>
+                      )}
                       {/* Airbnb/STR turnover context (guests, immediate flag, next check-in) */}
                       <TurnoverInfo job={job} />
                     </div>
@@ -923,11 +923,11 @@ export default function Schedule() {
   // Stored in the URL via ?view= so reload + bookmarks survive. If the
   // URL is unset we default to agenda on phone viewports and list on
   // desktop — see the useEffect below.
-  const VALID_VIEWS = ['agenda', 'list', 'month']
+  // Two views only: the month Calendar (default) and a single-Day agenda. The
+  // old "Week" list view was a third, overlapping mode — dropped to cut the
+  // "too many views" clutter. A stale ?view=list falls back to the calendar.
+  const VALID_VIEWS = ['agenda', 'month']
   const rawView = searchParams.get('view')
-  // Default to the rich in-app calendar (month grid: color-by-service, drag to
-  // reschedule, click a day to book). A one-click view switcher jumps to
-  // Week / Day / the embedded Google Calendar. ?view= persists the choice.
   const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'month'
   const isGoogleOnly = viewMode === 'google'
   const setViewMode = (next) => {
@@ -947,6 +947,9 @@ export default function Schedule() {
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
+  // Visit drawer: secondary sections (calendar sync status, SMS reminder) fold
+  // behind a "More details" toggle so the drawer opens to the essentials.
+  const [showVisitMore, setShowVisitMore] = useState(false)
   // Integration audit rows for the open job (Google Calendar push outcomes), so
   // the detail drawer shows the *real* sync result, not just "has an event id".
   const [jobEvents, setJobEvents] = useState([])
@@ -1451,21 +1454,14 @@ export default function Schedule() {
             {/* View switcher — in-app calendar by default, one tap to Google.
                 Short labels on phones so the toolbar fits narrow viewports. */}
             <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
-              {[['month', 'Calendar', 'Cal'], ['list', 'Week', 'Wk'], ['agenda', 'Day', 'Day']].map(([v, label, short]) => (
+              {[['month', 'Calendar', 'Cal'], ['agenda', 'Day', 'Day']].map(([v, label, short]) => (
                 <button key={v} onClick={() => setViewMode(v)}
                   className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
                   <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
                 </button>
               ))}
             </div>
-            {/* Working schedule lives in Google; two-way synced, so just deep-link out. */}
-            <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-1 text-[11px] text-ink-3 hover:text-blue-500 shrink-0"
-              title="Open Google Calendar">
-              <CalendarIcon className="w-3.5 h-3.5" /> Open in Google
-            </a>
-
-            {/* Outer date nav — only for Week/Day. Month mode uses CalendarView's
+            {/* Outer date nav — only for Day. Month mode uses CalendarView's
                 own month nav, so these arrows would otherwise do nothing. */}
             {!isGoogleOnly && viewMode !== 'month' && (
               <div className="hidden sm:flex items-center gap-1 ml-1">
@@ -1525,6 +1521,12 @@ export default function Schedule() {
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
                       <Clock className="w-4 h-4" /> Fix missing times
                     </button>
+                    <div className="my-1 border-t border-hairline" />
+                    <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
+                      onClick={() => setToolsOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
+                      <CalendarIcon className="w-4 h-4" /> Open in Google Calendar
+                    </a>
                   </div>
                 </>
               )}
@@ -1885,7 +1887,14 @@ export default function Schedule() {
                   </div>
                 )}
 
-                {(jobEvents.length > 0 || selectedVisit.visit.gcal_event_id) && (
+                {/* Secondary details (calendar sync, SMS reminder) folded away. */}
+                <button type="button" onClick={() => setShowVisitMore(v => !v)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-ink-2 hover:text-ink border-t border-hairline pt-3 w-full">
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showVisitMore ? 'rotate-180' : ''}`} />
+                  More details
+                </button>
+
+                {showVisitMore && (jobEvents.length > 0 || selectedVisit.visit.gcal_event_id) && (
                   <div>
                     <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Google Calendar</p>
                     {(() => {
@@ -1924,7 +1933,7 @@ export default function Schedule() {
 
                 {/* SMS reminder toggle — reminders are on by default; staff can
                     suppress the 24h text for this booking only. */}
-                {selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
+                {showVisitMore && selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
                   <div className="border-t border-hairline pt-3 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold text-ink-2 uppercase mb-0.5">SMS reminder</p>
