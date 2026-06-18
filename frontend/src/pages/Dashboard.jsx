@@ -12,12 +12,12 @@
  * priorities" + "Unified inbox" split was collapsed into a single de-duped
  * inbox tile so the same conversation can't appear in three sections.
  */
-import { useState, useEffect, useMemo, Fragment } from 'react'
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
 import { htmlToText } from '../utils/format'
-import { StatCard, EmptyState, Skeleton } from '../components/ui'
+import { StatCard, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { AIFollowUps } from '../components/AIBriefing'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
@@ -212,52 +212,72 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null)
   const activeClients = summary?.active_clients ?? null
   const [loading, setLoading] = useState(true)
+  // Total-failure flag (backend down / everything timed out) → show a retryable
+  // error instead of a silently-empty dashboard. Partial failures still render.
+  const [error, setError] = useState(false)
 
   const t = today()
   const weekEnd = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [
-          jobsToday, jobsWeek, invoicesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll, summaryResp,
-        ] = await Promise.all([
-          get(`/api/jobs?date=${t}`).catch(() => []),
-          get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
-          get('/api/invoices?limit=200').catch(() => []),
-          get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`).catch(() => ({ items: [] })),
-          get('/api/comms/conversations?sla_state=breached&status=open&limit=20').catch(() => ({ items: [] })),
-          get('/api/comms/conversations?assignee=unassigned&status=open&limit=20').catch(() => ({ items: [] })),
-          get('/api/invoices/summary/by-service?period=mtd').catch(() => ({ by_service: [] })),
-          get('/api/comms/conversations/summary').catch(() => ({})),
-          get('/api/quotes/follow-ups').catch(() => []),
-          get('/api/dispatch/employees').catch(() => null),
-          // Aggregate KPI endpoint: quote funnel/pipeline, new-lead count and
-          // active-client count, computed server-side with indexed SQL. Replaces
-          // the old quotes(500) + intake(200) + clients(active) row-pulls.
-          get('/api/dashboard/summary').catch(() => null),
-        ])
-        setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
-        setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
-        setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
-        const tv = Array.isArray(visitsToday) ? visitsToday : (visitsToday?.items || [])
-        setTodayVisits(tv)
-        setOverdueConvs(Array.isArray(conversationsOverdue) ? conversationsOverdue : (conversationsOverdue?.items || []))
-        setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
-        setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
-        setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
-        setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
-        // null = roster fetch failed (Connecteam down / bad credentials). The
-        // tile still renders workload from job data; names degrade to IDs.
-        setRosterUnavailable(employeesAll === null)
-        setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
-        setSummary(summaryResp && typeof summaryResp === 'object' ? summaryResp : null)
-      } catch (e) { console.error('[Dashboard] load:', e) }
+  const reload = useCallback(async () => {
+    setLoading(true)
+    setError(false)
+    // No per-call .catch here: allSettled lets us tell "one tile failed"
+    // (degrade that tile) from "everything failed" (show the error screen).
+    const results = await Promise.allSettled([
+      get(`/api/jobs?date=${t}`),
+      get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`),
+      get('/api/invoices?limit=200'),
+      get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`),
+      get('/api/comms/conversations?sla_state=breached&status=open&limit=20'),
+      get('/api/comms/conversations?assignee=unassigned&status=open&limit=20'),
+      get('/api/invoices/summary/by-service?period=mtd'),
+      get('/api/comms/conversations/summary'),
+      get('/api/quotes/follow-ups'),
+      get('/api/dispatch/employees'),
+      // Aggregate KPI endpoint: quote funnel/pipeline, new-lead count and
+      // active-client count, computed server-side with indexed SQL. Replaces
+      // the old quotes(500) + intake(200) + clients(active) row-pulls.
+      get('/api/dashboard/summary'),
+    ])
+
+    if (results.every(r => r.status === 'rejected')) {
+      console.error('[Dashboard] load failed:', results[0]?.reason)
+      setError(true)
       setLoading(false)
+      return
     }
-    load()
-  }, [])
+
+    const val = (i, d) => (results[i].status === 'fulfilled' ? results[i].value : d)
+    const jobsToday = val(0, []), jobsWeek = val(1, []), invoicesAll = val(2, [])
+    const visitsToday = val(3, { items: [] })
+    const conversationsOverdue = val(4, { items: [] })
+    const conversationsUnassigned = val(5, { items: [] })
+    const svcRevenueResp = val(6, { by_service: [] })
+    const commsSummaryResp = val(7, {})
+    const followUpsResp = val(8, [])
+    const employeesAll = results[9].status === 'fulfilled' ? results[9].value : null
+    const summaryResp = val(10, null)
+
+    setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
+    setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
+    setInvoices(Array.isArray(invoicesAll) ? invoicesAll : [])
+    const tv = Array.isArray(visitsToday) ? visitsToday : (visitsToday?.items || [])
+    setTodayVisits(tv)
+    setOverdueConvs(Array.isArray(conversationsOverdue) ? conversationsOverdue : (conversationsOverdue?.items || []))
+    setUnassignedConvs(Array.isArray(conversationsUnassigned) ? conversationsUnassigned : (conversationsUnassigned?.items || []))
+    setSvcRevenue(Array.isArray(svcRevenueResp?.by_service) ? svcRevenueResp.by_service : [])
+    setCommsSummary(commsSummaryResp && typeof commsSummaryResp === 'object' ? commsSummaryResp : {})
+    setFollowUps(Array.isArray(followUpsResp) ? followUpsResp : (followUpsResp?.items || []))
+    // null = roster fetch failed (Connecteam down / bad credentials). The
+    // tile still renders workload from job data; names degrade to IDs.
+    setRosterUnavailable(employeesAll === null)
+    setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
+    setSummary(summaryResp && typeof summaryResp === 'object' ? summaryResp : null)
+    setLoading(false)
+  }, [t, weekEnd])
+
+  useEffect(() => { reload() }, [reload])
 
   /* ── Money calcs ── */
   const todayRevenue = useMemo(() => invoices
@@ -438,6 +458,18 @@ export default function Dashboard() {
   const longDate = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
   const paidCount = invoices.filter(i => i.status === 'paid').length
   const unpaidCount = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).length
+
+  if (error && !loading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <ErrorState
+          title="Couldn't load your dashboard"
+          description="The server didn't respond. Check your connection and try again."
+          onRetry={reload}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-bg">
