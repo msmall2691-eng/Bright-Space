@@ -32,10 +32,7 @@ const PRIORITY_CONFIG = {
 }
 
 // Source chip on every Lead row — makes it obvious whether a lead came
-// in via the website form, an SMS, or an email reply. Used by both
-// RequestCard (intake) and ConversationLeadCard (conversation) so the
-// /leads feed reads as one unified inbox even though the data lives in
-// two tables.
+// in via the website form, an SMS, or an email reply.
 const SOURCE_CONFIG = {
   website: { label: 'Website', icon: Globe,         badge: 'bg-blue-50 text-blue-700' },
   sms:     { label: 'SMS',     icon: Phone,         badge: 'bg-emerald-50 text-emerald-700' },
@@ -182,71 +179,10 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected
 }
 
 
-// Row variant for "lead" rows that came in via SMS/Email rather than the
-// website form — i.e. an existing open Conversation whose Client is still
-// in 'lead' status. Same visual rhythm as RequestCard so the unified feed
-// reads cohesively, but the actions are "Reply" (route to /comms) and
-// "Mark as resolved" instead of "Create Quote" / "Archive".
-function ConversationLeadCard({ conv, onReply, onCreateQuote }) {
-  const ch = conv.channel || 'sms'
-  const sourceConfig = SOURCE_CONFIG[ch] || SOURCE_CONFIG.sms
-  const SourceIcon = sourceConfig.icon
-  const name = conv.client?.name || conv.external_contact || 'Unknown'
-  const unread = (conv.unread_count || 0) > 0
-  return (
-    <div className="bg-panel rounded-lg border border-hairline p-4 hover:shadow-md transition-all">
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <div className={`p-2 rounded ${sourceConfig.badge}`}>
-            <SourceIcon className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h3 className="font-semibold text-ink truncate">{name}</h3>
-              <SourceChip source={ch} />
-              {unread && (
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white">
-                  {conv.unread_count > 9 ? '9+' : conv.unread_count} new
-                </span>
-              )}
-            </div>
-            {conv.preview && (
-              <p className="text-[13px] text-ink-2 line-clamp-2 mb-2">{htmlToText(conv.preview)}</p>
-            )}
-            <div className="flex items-center gap-3 text-xs text-ink-3 flex-wrap">
-              {conv.client?.phone && (
-                <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{conv.client.phone}</span>
-              )}
-              {conv.client?.email && (
-                <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" />{conv.client.email}</span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5 shrink-0">
-          <button
-            onClick={() => onReply(conv)}
-            className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-          >
-            Reply
-          </button>
-          <button
-            onClick={() => onCreateQuote(conv)}
-            className="px-3 py-1.5 rounded-md bg-panel hover:bg-bg border border-hairline text-ink-2 text-xs font-semibold transition-colors"
-          >
-            Quote
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 
 export default function Requests() {
   const navigate = useNavigate()
   const [requests, setRequests] = useState([])
-  const [leadConvs, setLeadConvs] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [selectedServiceType, setSelectedServiceType] = useState('all')
@@ -257,9 +193,10 @@ export default function Requests() {
   const [selectedIntakes, setSelectedIntakes] = useState(() => new Set()) // bulk-archive selection
   const [bulkArchiving, setBulkArchiving] = useState(false)
 
-  // Load both intakes AND open conversations belonging to clients still
-  // marked 'lead' — so SMS/email replies from people who aren't customers
-  // yet show up in the same feed as the website booking form submissions.
+  // Requests is real service leads only — website booking-form submissions and
+  // quote requests. Raw email/SMS conversations (vendor pitches, "thanks!"
+  // texts, sales outreach) belong in Comms, not here, so they no longer get
+  // merged into this feed.
   useEffect(() => {
     const load = async () => {
       setLoading(true)
@@ -269,20 +206,8 @@ export default function Requests() {
         if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
         if (selectedPriority !== 'all') params.append('priority', selectedPriority)
 
-        const [intakes, convs] = await Promise.all([
-          get(`/api/intake?${params.toString()}`).catch(() => []),
-          // Skip the lead-conversation fetch when the user has narrowed
-          // to an intake-specific filter; those filters don't apply to
-          // conversations and the mix would be confusing.
-          (selectedStatus === 'all' && selectedServiceType === 'all' && selectedPriority === 'all')
-            ? get('/api/comms/conversations?status=open&limit=50').catch(() => [])
-            : Promise.resolve([]),
-        ])
+        const intakes = await get(`/api/intake?${params.toString()}`).catch(() => [])
         setRequests(Array.isArray(intakes) ? intakes : [])
-        const convArr = Array.isArray(convs) ? convs : (convs?.items || [])
-        // Filter to conversations whose client is still in 'lead' status —
-        // we don't want active-customer convs cluttering the leads feed.
-        setLeadConvs(convArr.filter(c => c?.client?.status === 'lead'))
       } catch (err) {
         console.error('[Requests]', err)
       }
@@ -292,44 +217,34 @@ export default function Requests() {
     load()
   }, [selectedStatus, selectedServiceType, selectedPriority])
 
-  // Filter by search term
-  // Merge intakes + lead-status conversations into one chronological feed.
-  // Each entry is tagged with a `kind` discriminator so the render layer
-  // can pick the right card component without inspecting field shapes.
+  // De-duplicate then search. The same person can submit the booking form
+  // twice (two near-identical leads); collapse by normalized email+phone and
+  // keep the most recent, so the list reflects people, not raw submissions.
   const feed = useMemo(() => {
-    const items = []
+    const keyOf = (r) => {
+      const email = (r.email || '').trim().toLowerCase()
+      const phone = (r.phone || '').replace(/\D/g, '')
+      return (email || phone) ? `${email}|${phone}` : `id-${r.id}`
+    }
+    const byKey = new Map()
     for (const r of requests) {
-      items.push({ kind: 'intake', sortAt: r.created_at || '', data: r })
+      const k = keyOf(r)
+      const existing = byKey.get(k)
+      // Keep the most recent submission for each person.
+      if (!existing || (r.created_at || '') > (existing.created_at || '')) byKey.set(k, r)
     }
-    for (const c of leadConvs) {
-      items.push({
-        kind: 'conversation',
-        sortAt: c.last_message_at || c.created_at || '',
-        data: c,
-      })
-    }
-    items.sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
+    let items = Array.from(byKey.values())
+      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
 
     if (!searchTerm.trim()) return items
     const q = searchTerm.toLowerCase()
-    return items.filter(({ kind, data: r }) => {
-      if (kind === 'intake') {
-        return (
-          r.name?.toLowerCase().includes(q) ||
-          r.email?.toLowerCase().includes(q) ||
-          r.phone?.includes(q) ||
-          r.address?.toLowerCase().includes(q)
-        )
-      }
-      return (
-        r.client?.name?.toLowerCase().includes(q) ||
-        r.client?.email?.toLowerCase().includes(q) ||
-        r.client?.phone?.includes(q) ||
-        r.external_contact?.toLowerCase().includes(q) ||
-        r.preview?.toLowerCase().includes(q)
-      )
-    })
-  }, [requests, leadConvs, searchTerm])
+    return items.filter(r => (
+      r.name?.toLowerCase().includes(q) ||
+      r.email?.toLowerCase().includes(q) ||
+      r.phone?.includes(q) ||
+      r.address?.toLowerCase().includes(q)
+    ))
+  }, [requests, searchTerm])
 
   const handleViewDetails = (intake) => {
     setSelectedRequest(intake)
@@ -471,47 +386,22 @@ export default function Requests() {
               <div className="text-center py-12">
                 <AlertCircle className="w-12 h-12 text-ink-3 mx-auto mb-3" />
                 <p className="text-ink-2">
-                  {(requests.length === 0 && leadConvs.length === 0)
-                    ? 'No leads yet'
-                    : 'No leads match your filters'}
+                  {requests.length === 0 ? 'No leads yet' : 'No leads match your filters'}
                 </p>
               </div>
             </GlassCard>
           ) : (
             <div className="grid gap-3">
-              {feed.map(({ kind, data }) => (
-                kind === 'intake' ? (
-                  <RequestCard
-                    key={`intake-${data.id}`}
-                    intake={data}
-                    onViewDetails={handleViewDetails}
-                    onCreateQuote={handleCreateQuote}
-                    onArchive={handleArchive}
-                    selected={selectedIntakes.has(data.id)}
-                    onToggleSelect={toggleSelectIntake}
-                  />
-                ) : (
-                  <ConversationLeadCard
-                    key={`conv-${data.id}`}
-                    conv={data}
-                    onReply={() => navigate('/comms')}
-                    onCreateQuote={() => {
-                      // Synthesize a minimal intake-like object so /quoting
-                      // can pre-fill from the conversation's client.
-                      const synthetic = {
-                        id: null,
-                        client_id: data.client_id,
-                        name: data.client?.name || data.external_contact || 'Unknown',
-                        email: data.client?.email || '',
-                        phone: data.client?.phone || data.external_contact || '',
-                        address: '',
-                        service_type: 'residential',
-                        message: data.preview || '',
-                      }
-                      navigate('/quoting', { state: { openNewFromIntake: synthetic } })
-                    }}
-                  />
-                )
+              {feed.map(data => (
+                <RequestCard
+                  key={`intake-${data.id}`}
+                  intake={data}
+                  onViewDetails={handleViewDetails}
+                  onCreateQuote={handleCreateQuote}
+                  onArchive={handleArchive}
+                  selected={selectedIntakes.has(data.id)}
+                  onToggleSelect={toggleSelectIntake}
+                />
               ))}
             </div>
           )}
