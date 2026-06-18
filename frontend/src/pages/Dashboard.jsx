@@ -12,7 +12,7 @@
  * priorities" + "Unified inbox" split was collapsed into a single de-duped
  * inbox tile so the same conversation can't appear in three sections.
  */
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
@@ -109,6 +109,62 @@ function Tile({ icon: Icon, iconColor, title, badge, action, onAction, children 
   )
 }
 
+/* ── Lead → client funnel ────────────────────────────────────────────
+   A horizontal, visual conversion strip: New leads → Quoted → Accepted →
+   Won, with a relative-volume bar under each stage and arrows between. This
+   is the at-a-glance answer to "are we turning leads into clients?". ── */
+function FunnelStage({ label, n, tone, pct, sub, onClick, last }) {
+  return (
+    <Fragment>
+      <button onClick={onClick}
+        className="flex-1 min-w-0 text-left rounded-xl border border-slate-200/70 bg-white p-3.5 hover:shadow-md hover:border-slate-300 transition-all">
+        <div className={`text-[10px] font-bold uppercase tracking-wide ${tone.text}`}>{label}</div>
+        <div className="text-[26px] leading-none font-bold text-slate-900 tabular-nums mt-1.5">{n}</div>
+        <div className="mt-2.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(pct, n > 0 ? 8 : 0)}%` }} />
+        </div>
+        {sub && <div className="text-[10px] text-slate-400 mt-1.5 truncate">{sub}</div>}
+      </button>
+      {!last && (
+        <div className="hidden sm:flex items-center self-center shrink-0">
+          <ArrowRight className="w-4 h-4 text-slate-300" />
+        </div>
+      )}
+    </Fragment>
+  )
+}
+
+function Funnel({ stages, convRate, activeClients }) {
+  const max = Math.max(1, ...stages.map(s => s.n))
+  return (
+    <div className={`${SOFT_CARD} p-5`}>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <span className="grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-purple-50 text-purple-600">
+            <TrendingUp className="w-4 h-4" />
+          </span>
+          <h2 className="text-sm font-semibold text-slate-800">Lead → client funnel</h2>
+        </div>
+        <div className="flex items-center gap-4 text-[12px]">
+          <span className="text-slate-500">
+            <span className="font-bold text-slate-900 tabular-nums">{convRate}%</span> won
+          </span>
+          {activeClients != null && (
+            <span className="text-slate-500">
+              <span className="font-bold text-emerald-600 tabular-nums">{activeClients}</span> active clients
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        {stages.map((s, i) => (
+          <FunnelStage key={s.key} {...s} pct={Math.round((s.n / max) * 100)} last={i === stages.length - 1} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ── KPI card — the headline stat tiles across the top of the dashboard. ── */
 function KpiCard({ icon: Icon, chip, label, value, sub, accent }) {
   return (
@@ -152,6 +208,7 @@ export default function Dashboard() {
   const [commsSummary, setCommsSummary] = useState({})
   const [employees, setEmployees] = useState([])
   const [rosterUnavailable, setRosterUnavailable] = useState(false)
+  const [activeClients, setActiveClients] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const t = today()
@@ -162,7 +219,7 @@ export default function Dashboard() {
       try {
         const [
           jobsToday, jobsWeek, invoicesAll, quotesAll,
-          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll,
+          visitsToday, conversationsOverdue, conversationsUnassigned, leadsAll, svcRevenueResp, commsSummaryResp, followUpsResp, employeesAll, clientsActive,
         ] = await Promise.all([
           get(`/api/jobs?date=${t}`).catch(() => []),
           get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`).catch(() => []),
@@ -176,6 +233,7 @@ export default function Dashboard() {
           get('/api/comms/conversations/summary').catch(() => ({})),
           get('/api/quotes/follow-ups').catch(() => []),
           get('/api/dispatch/employees').catch(() => null),
+          get('/api/clients?status=active').catch(() => []),
         ])
         setTodayJobs(Array.isArray(jobsToday) ? jobsToday : [])
         setWeekJobs(Array.isArray(jobsWeek) ? jobsWeek : [])
@@ -193,6 +251,8 @@ export default function Dashboard() {
         // tile still renders workload from job data; names degrade to IDs.
         setRosterUnavailable(employeesAll === null)
         setEmployees(Array.isArray(employeesAll) ? employeesAll : (employeesAll?.items || []))
+        const clientArr = Array.isArray(clientsActive) ? clientsActive : (clientsActive?.items || [])
+        setActiveClients(clientArr.length)
       } catch (e) { console.error('[Dashboard] load:', e) }
       setLoading(false)
     }
@@ -222,6 +282,29 @@ export default function Dashboard() {
     newLeads: leads.filter(l => !l.status || ['new', 'received'].includes(l.status)).length,
     followUp: followUps.length,
   }), [quotes, leads, followUps])
+
+  // Lead → client funnel: the conversion pipeline as four ordered stages.
+  // "Quoted" = quotes out for response (sent/viewed/changes); "Won" = quotes
+  // that became jobs. convRate = won ÷ everyone who entered the funnel.
+  const funnel = useMemo(() => {
+    const quoted = quotes.filter(q => ['sent', 'viewed', 'changes_requested'].includes(q.status)).length
+    const accepted = quotes.filter(q => q.status === 'accepted').length
+    const won = quotes.filter(q => q.status === 'converted').length
+    const newLeads = quoteActions.newLeads
+    const entered = newLeads + quoted + accepted + won
+    const stages = [
+      { key: 'new', label: 'New leads', n: newLeads, tone: { text: 'text-purple-600', bar: 'bg-purple-500' },
+        sub: 'to quote', onClick: () => navigate('/quoting?tab=leads') },
+      { key: 'quoted', label: 'Quoted', n: quoted, tone: { text: 'text-blue-600', bar: 'bg-blue-500' },
+        sub: 'awaiting reply', onClick: () => navigate('/quoting?tab=quotes') },
+      { key: 'accepted', label: 'Accepted', n: accepted, tone: { text: 'text-amber-600', bar: 'bg-amber-500' },
+        sub: 'ready to schedule', onClick: () => navigate('/quoting?tab=quotes') },
+      { key: 'won', label: 'Won', n: won, tone: { text: 'text-emerald-600', bar: 'bg-emerald-500' },
+        sub: 'became jobs', onClick: () => navigate('/clients') },
+    ]
+    const convRate = entered > 0 ? Math.round((won / entered) * 100) : 0
+    return { stages, convRate }
+  }, [quotes, quoteActions.newLeads, navigate])
 
   // STR turnover coverage for the next 7 calendar days (today + 6; weekJobs is
   // fetched with an inclusive +7 end, so clamp here). "Covered" = a cleaner is
@@ -384,6 +467,11 @@ export default function Dashboard() {
         <KpiCard icon={FileText} chip="bg-violet-50 text-violet-600" label="Pipeline"
           value={fmtMoney(pipeline)} sub={`${quotes.filter(q => q.status === 'sent').length} sent`}
           accent="text-violet-700" />
+      </div>
+
+      {/* Lead → client funnel — the conversion pipeline at a glance */}
+      <div className="px-4 sm:px-6 pt-4">
+        <Funnel stages={funnel.stages} convRate={funnel.convRate} activeClients={activeClients} />
       </div>
 
       {/* Tiles grid */}
