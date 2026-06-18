@@ -7,6 +7,7 @@ from database.db import get_db
 from modules.auth.router import require_role
 from database.models import Job
 from integrations.connecteam import ConnecteamAuthError, create_shift, delete_shift, get_employees
+from utils.integration_log import log_integration_event as _log
 
 router = APIRouter()
 
@@ -71,14 +72,19 @@ async def dispatch_job(job_id: int, db: Session = Depends(get_db)):
                 address=job.address,
                 notes=job.notes,
             )
-            shift_ids.append(result.get("id") or result.get("shiftId", ""))
+            sid = result.get("id") or result.get("shiftId", "")
+            shift_ids.append(sid)
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="create", status="ok", external_id=sid, commit=False)
         except Exception as e:
             errors.append({"employee_id": employee_id, "error": str(e)})
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="create", status="failed", detail=str(e), commit=False)
 
     if shift_ids:
         job.dispatched = True
         job.connecteam_shift_ids = shift_ids
-        db.commit()
+    db.commit()
 
     return {
         "job_id": job_id,
@@ -100,8 +106,12 @@ async def undispatch_job(job_id: int, db: Session = Depends(get_db)):
     for shift_id in (job.connecteam_shift_ids or []):
         try:
             await delete_shift(shift_id)
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="delete", status="ok", external_id=shift_id, commit=False)
         except Exception as e:
             errors.append({"shift_id": shift_id, "error": str(e)})
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="delete", status="failed", external_id=shift_id, detail=str(e), commit=False)
 
     job.dispatched = False
     job.connecteam_shift_ids = []

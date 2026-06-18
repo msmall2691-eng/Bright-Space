@@ -31,7 +31,7 @@ def test_property_create_persists_custom_fields(client_row):
     out = create_property(PropertyCreate(
         client_id=c.id, name="Pier House", address="1 Pier Rd",
         property_type="str", custom_fields={"gate_code": "0508", "wifi": "guest123"},
-    ), db=db)
+    ), db=db, org_id=1)
     assert out["custom_fields"]["gate_code"] == "0508"
     assert out["custom_fields"]["wifi"] == "guest123"
     # Round-trips from the DB.
@@ -41,9 +41,9 @@ def test_property_create_persists_custom_fields(client_row):
 
 def test_property_update_sets_custom_fields(client_row):
     c, db = client_row
-    out = create_property(PropertyCreate(client_id=c.id, name="P2", address="2 Rd"), db=db)
+    out = create_property(PropertyCreate(client_id=c.id, name="P2", address="2 Rd"), db=db, org_id=1)
     assert out["custom_fields"] == {}
-    updated = update_property(out["id"], PropertyUpdate(custom_fields={"linens": "in closet"}), db=db)
+    updated = update_property(out["id"], PropertyUpdate(custom_fields={"linens": "in closet"}), db=db, org_id=1)
     assert updated["custom_fields"] == {"linens": "in closet"}
 
 

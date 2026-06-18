@@ -160,10 +160,13 @@ class GeneralSettings(BaseModel):
     quote_terms: Optional[str] = None
     # Header band color for every customer-facing quote surface.
     brand_color: Optional[str] = None
+    # Optional logo URL shown on the public quote page, email, and PDF.
+    company_logo_url: Optional[str] = None
 
 
 _GENERAL_KEYS = ("company_name", "company_email", "company_phone",
-                 "timezone", "currency", "quote_terms", "brand_color")
+                 "timezone", "currency", "quote_terms", "brand_color",
+                 "company_logo_url")
 
 
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
@@ -199,6 +202,8 @@ def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)
         if value is not None:
             if key == "brand_color" and value.strip():
                 value = _normalize_brand_color(value)
+            if key == "company_logo_url" and value.strip() and not value.strip().startswith(("http://", "https://")):
+                raise HTTPException(400, "Company Logo URL must start with http:// or https://")
             set_setting(db, key, value.strip())
     db.commit()
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}
@@ -288,6 +293,43 @@ def gcal_status():
     '✓ Connected' badge that lied when no token was present."""
     from integrations.google_calendar import connection_status
     return connection_status()
+
+
+@router.post("/gcal-watch/register", dependencies=[Depends(require_role("admin"))])
+def gcal_watch_register(db: Session = Depends(get_db)):
+    """Register (or refresh) Google Calendar push channels for the configured
+    business calendars, so external edits notify BrightBase in real time. Needs a
+    public https APP_BASE_URL."""
+    from integrations.gcal_watch import register_watches
+    from config import app_base_url
+    return register_watches(db, app_base_url())
+
+
+@router.get("/gmail-status")
+def gmail_status(db: Session = Depends(get_db)):
+    """Per-account Gmail connection health so Settings can surface
+    connected / token-expired / reconnect — the Gmail mirror of gcal-status.
+
+    Without this, a Gmail grant could silently expire and inbound email would
+    just stop syncing with no signal to the operator."""
+    from database.models import UserGoogleAccount
+    accounts, any_ok = [], False
+    for a in db.query(UserGoogleAccount).all():
+        scopes = a.scopes or []
+        if not (a.gmail_sync_enabled or any("gmail" in (s or "") for s in scopes)):
+            continue
+        needs_reconnect = a.status != "connected" or not a.refresh_token
+        any_ok = any_ok or not needs_reconnect
+        accounts.append({
+            "email": a.email,
+            "status": a.status,
+            "gmail_sync_enabled": a.gmail_sync_enabled,
+            "token_expiry": a.token_expiry.isoformat() if a.token_expiry else None,
+            "last_sync_at": a.last_sync_at.isoformat() if a.last_sync_at else None,
+            "last_sync_error": a.last_sync_error,
+            "needs_reconnect": needs_reconnect,
+        })
+    return {"connected": any_ok, "accounts": accounts}
 
 
 # ── Self-serve Google OAuth ── connect an admin's work Google account in-app.
@@ -407,6 +449,14 @@ def customer_invites_enabled(db: Session) -> bool:
     Defaults on — it's the headline "customers see their cleanings" behavior —
     and is the in-app kill switch (Settings → Automation)."""
     return _coerce_bool(get_setting(db, "invite_customers"), True)
+
+
+def freebusy_check_enabled(db: Session) -> bool:
+    """Whether to check Google Free/Busy when scheduling and block a booking that
+    would land on an already-busy slot (overridable per-booking via
+    allow_conflicts). Defaults on; in-app kill switch lives in
+    Settings → Automation. No-ops cleanly when Google isn't connected."""
+    return _coerce_bool(get_setting(db, "freebusy_check"), True)
 
 
 AUTOMATION_DEFAULTS = {

@@ -9,7 +9,7 @@ import logging
 from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal, Client
 from integrations.ical_sync import sync_property
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id
 
 
 log = logging.getLogger(__name__)
@@ -173,8 +173,12 @@ def get_properties(
     client_id: Optional[int] = None,
     property_type: Optional[str] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
-    q = db.query(Property).options(joinedload(Property.property_icals)).filter(Property.active == True)
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+    q = (db.query(Property).options(joinedload(Property.property_icals))
+         .filter(Property.active == True,
+                 or_(Property.org_id == org_id, Property.org_id.is_(None))))
     if client_id:
         q = q.filter(Property.client_id == client_id)
     if property_type:
@@ -183,11 +187,12 @@ def get_properties(
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_property(data: PropertyCreate, db: Session = Depends(get_db)):
+def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     d = data.model_dump()
     if not d.get("address"):
         d["address"] = ""
     prop = Property(**d)
+    prop.org_id = org_id  # MT-2: stamp the caller's workspace
     db.add(prop)
     db.commit()
     db.refresh(prop)
@@ -195,16 +200,22 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{property_id}")
-def get_property(property_id: int, db: Session = Depends(get_db)):
-    prop = db.query(Property).options(joinedload(Property.property_icals)).filter(Property.id == property_id).first()
+def get_property(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    prop = db.query(Property).options(joinedload(Property.property_icals)).filter(
+        Property.id == property_id,
+        or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     return prop_to_dict(prop)
 
 
 @router.patch("/{property_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_property(property_id: int, data: PropertyUpdate, db: Session = Depends(get_db)):
-    prop = db.query(Property).filter(Property.id == property_id).first()
+def update_property(property_id: int, data: PropertyUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     for field, value in data.model_dump(exclude_none=True).items():
@@ -598,8 +609,11 @@ def get_all_ical_events(
 
 
 @router.delete("/{property_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_property(property_id: int, db: Session = Depends(get_db)):
-    prop = db.query(Property).filter(Property.id == property_id).first()
+def delete_property(property_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     prop.active = False

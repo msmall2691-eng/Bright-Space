@@ -13,7 +13,23 @@ import StatusBadge from '../components/ui/StatusBadge'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
+import RecordLink from '../components/RecordLink'
+import StatCard from '../components/ui/StatCard'
 import { useToast } from '../components/ui/Toast'
+
+/** Small Google/Connecteam sync indicator chip. Green when synced, muted when
+ * not — the "is this on the working schedule / in staff scheduling?" signal. */
+const SyncBadge = ({ ok, label, okTitle, offTitle }) => (
+  <span
+    title={ok ? okTitle : offTitle}
+    className={`inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded border ${
+      ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-bg-2 text-ink-3 border-hairline'
+    }`}
+  >
+    {ok ? '✓' : '○'} {label}
+  </span>
+)
+
 
 // Property type colors (STR = amber, residential = blue, commercial = purple)
 const PROPERTY_TYPE_CONFIG = {
@@ -224,23 +240,13 @@ const AgendaDay = ({ currentDate, visits, jobs, properties, clients, onSelect, i
                           )}
                         </div>
                       </div>
-                      {/* Meta footer */}
-                      <div className="flex items-center gap-3 mt-2 text-[11px] text-ink-3">
-                        {client?.name && (
-                          <span className="truncate">{client.name}</span>
-                        )}
-                        {cleanerCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-700 truncate">
-                            <User className="w-3 h-3 shrink-0" />
-                            {cleanerCount === 1 && empName
-                              ? empName(v.cleaner_ids[0])
-                              : `${cleanerCount} cleaners`}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-amber-700">
-                            <AlertCircle className="w-3 h-3" /> no cleaner
-                          </span>
-                        )}
+                      {/* Meta footer — client + sync state (staff scheduling lives in Connecteam) */}
+                      <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3">
+                        {client?.name && <span className="truncate">{client.name}</span>}
+                        <span className="ml-auto flex items-center gap-1 shrink-0">
+                          <SyncBadge ok={!!(v.gcal_event_id || job?.gcal_event_id)} label="GCal" okTitle="On Google Calendar" offTitle="Not on Google Calendar yet" />
+                          <SyncBadge ok={(job?.connecteam_shift_ids || []).length > 0} label="Connecteam" okTitle="Shift in Connecteam" offTitle="Not sent to Connecteam yet" />
+                        </span>
                       </div>
                       {/* Airbnb/STR turnover context (guests, immediate flag, next check-in) */}
                       <TurnoverInfo job={job} />
@@ -269,7 +275,8 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
 
   const cleaners = visit.cleaner_ids || []
   const hasAssigned = cleaners.length > 0
-  const hasGcal = !!visit.gcal_event_id
+  const hasGcal = !!(visit.gcal_event_id || job?.gcal_event_id)
+  const hasConnecteam = (job?.connecteam_shift_ids || []).length > 0
   const hasSMS = !!job?.sms_reminder_sent
   const hasPhotos = (visit.photos || []).length > 0
   const isCompleted = visit.status === 'completed'
@@ -318,37 +325,32 @@ const VisitCard = ({ visit, job, property, client, onEdit, onDelete, onStatusCha
             </span>
           )}
         </div>
-        <div className="text-[11px] text-ink-3 truncate">
-          {property?.name || ''}
-          {property?.address && <span className="text-ink-3"> · {property.address}</span>}
-          {client?.name && <span className="text-ink-3"> · {client.name}</span>}
+        <div className="text-[11px] text-ink-3 truncate flex items-center gap-1">
+          {property && (
+            <span onClick={e => e.stopPropagation()}>
+              <RecordLink type="property" id={property.id} label={property.name || property.address} className="!text-ink-3 hover:!text-blue-500" />
+            </span>
+          )}
+          {client && (
+            <>
+              <span className="text-ink-3">·</span>
+              <span onClick={e => e.stopPropagation()}>
+                <RecordLink type="client" id={client.id} label={client.name} className="!text-ink-3 hover:!text-blue-500" />
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Status icons + pill + cleaner avatars */}
+      {/* Status icons + pill + sync badges */}
       <div className="hidden sm:flex items-center gap-1.5 shrink-0">
         <div className="flex items-center gap-1">
-          {hasGcal && <span title="On Google Calendar"><Calendar className="w-3.5 h-3.5 text-indigo-500" /></span>}
           {hasSMS && <span title="Reminder sent"><MessageCircle className="w-3.5 h-3.5 text-cyan-500" /></span>}
           {hasPhotos && <span title="Photos attached"><Camera className="w-3.5 h-3.5 text-emerald-500" /></span>}
         </div>
         <StatusBadge status={statusConfig.badge} className="text-[10px]">{statusConfig.label}</StatusBadge>
-        {hasAssigned ? (
-          <div className="flex items-center -space-x-1" title={cleaners.map(id => empName?.(id) || `Cleaner ${id}`).join(', ')}>
-            {cleaners.slice(0, 3).map((id, i) => (
-              <span key={i} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold border border-panel">
-                {cleanerInitials(empName?.(id) || `C${id}`)}
-              </span>
-            ))}
-            {cleaners.length > 3 && (
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-bg-2 text-ink-3 text-[9px] font-bold border border-panel">+{cleaners.length - 3}</span>
-            )}
-          </div>
-        ) : (
-          <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-            no cleaner
-          </span>
-        )}
+        <SyncBadge ok={hasGcal} label="GCal" okTitle="On Google Calendar" offTitle="Not on Google Calendar yet" />
+        <SyncBadge ok={hasConnecteam} label="Connecteam" okTitle="Shift in Connecteam" offTitle="Not sent to Connecteam yet" />
       </div>
 
       {/* Mobile-only status pill — replaces the bare dot so the status
@@ -921,7 +923,7 @@ export default function Schedule() {
   // Stored in the URL via ?view= so reload + bookmarks survive. If the
   // URL is unset we default to agenda on phone viewports and list on
   // desktop — see the useEffect below.
-  const VALID_VIEWS = ['agenda', 'list', 'month', 'google']
+  const VALID_VIEWS = ['agenda', 'list', 'month']
   const rawView = searchParams.get('view')
   // Default to the rich in-app calendar (month grid: color-by-service, drag to
   // reschedule, click a day to book). A one-click view switcher jumps to
@@ -952,6 +954,18 @@ export default function Schedule() {
   const [showJobModal, setShowJobModal] = useState(false)
   const [showNewJob, setShowNewJob] = useState(false)
   const [newJobDate, setNewJobDate] = useState('')
+
+  // Deep-link entry point (e.g. Cmd+K → "Schedule a job"): /schedule?new=1
+  // (optionally &date=YYYY-MM-DD) opens Quick-schedule, then strips the params.
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setNewJobDate(searchParams.get('date') || '')
+      setShowNewJob(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete('new'); next.delete('date')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   // Bumped after any create/edit so the month CalendarView (which holds its own
   // /api/jobs state) refetches and shows the change without a month switch.
   const [calRefresh, setCalRefresh] = useState(0)
@@ -1231,6 +1245,25 @@ export default function Schedule() {
     return grouped
   }, [filteredVisits])
 
+  // Schedule health for the summary strip + needs-attention banner. Computed
+  // over the loaded week of visits (active only — cancelled don't need syncing).
+  const scheduleStats = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const active = (visits || []).filter(v => v.status !== 'cancelled')
+    // The Google event id lives on the Job, not the Visit, so resolve through the
+    // linked job — otherwise every visit reads as "not on Google" (false 0/total).
+    const onGcal = (v) => !!(v.gcal_event_id || jobs[v.job_id]?.gcal_event_id)
+    const gcal = active.filter(onGcal).length
+    const connecteam = active.filter(v => (jobs[v.job_id]?.connecteam_shift_ids || []).length > 0).length
+    return {
+      today: active.filter(v => v.scheduled_date === todayStr).length,
+      week: active.length,
+      gcal, connecteam, total: active.length,
+      notGcal: active.length - gcal,
+      notConnecteam: active.length - connecteam,
+    }
+  }, [visits, jobs])
+
   const handleEdit = (visit, job, property) => {
     setSelectedVisit({ visit, job, property })
     setShowDetails(true)
@@ -1417,13 +1450,19 @@ export default function Schedule() {
             {/* View switcher — in-app calendar by default, one tap to Google.
                 Short labels on phones so the toolbar fits narrow viewports. */}
             <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
-              {[['month', 'Calendar', 'Cal'], ['list', 'Week', 'Wk'], ['agenda', 'Day', 'Day'], ['google', 'Google', 'GCal']].map(([v, label, short]) => (
+              {[['month', 'Calendar', 'Cal'], ['list', 'Week', 'Wk'], ['agenda', 'Day', 'Day']].map(([v, label, short]) => (
                 <button key={v} onClick={() => setViewMode(v)}
                   className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
                   <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
                 </button>
               ))}
             </div>
+            {/* Working schedule lives in Google; two-way synced, so just deep-link out. */}
+            <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
+              className="hidden sm:inline-flex items-center gap-1 text-[11px] text-ink-3 hover:text-blue-500 shrink-0"
+              title="Open Google Calendar">
+              <CalendarIcon className="w-3.5 h-3.5" /> Open in Google
+            </a>
 
             {/* Outer date nav — only for Week/Day. Month mode uses CalendarView's
                 own month nav, so these arrows would otherwise do nothing. */}
@@ -1531,24 +1570,6 @@ export default function Schedule() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <button
-              type="button"
-              onClick={() => setUnassignedOnly(v => !v)}
-              className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap transition-colors ${
-                unassignedOnly
-                  ? 'bg-amber-50 text-amber-700 border-amber-300'
-                  : 'bg-panel text-ink-3 border-hairline hover:bg-amber-50/40'
-              }`}
-              title="Show only visits with no cleaner assigned"
-            >
-              <AlertCircle className="w-3 h-3" />
-              Needs assignment
-              {unassignedCount > 0 && (
-                <span className="tabular-nums font-bold bg-amber-200 text-amber-800 rounded-full px-1.5">
-                  {unassignedCount}
-                </span>
-              )}
-            </button>
           </div>
           )}
         </div>
@@ -1577,6 +1598,27 @@ export default function Schedule() {
           </div>
         </div>
       )}
+
+      {/* Schedule health — summary strip */}
+      <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
+        <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          <StatCard className="bg-panel border border-hairline rounded-lg" label="Today" value={scheduleStats.today} icon={CalendarIcon} />
+          <StatCard className="bg-panel border border-hairline rounded-lg" label="This week" value={scheduleStats.week} icon={Clock} />
+          <StatCard className="bg-panel border border-hairline rounded-lg" label="On Google" value={`${scheduleStats.gcal}/${scheduleStats.total}`} icon={Calendar}
+            accent={scheduleStats.notGcal === 0 ? 'text-emerald-600' : 'text-ink'} />
+          <StatCard className="bg-panel border border-hairline rounded-lg" label="In Connecteam" value={`${scheduleStats.connecteam}/${scheduleStats.total}`} icon={Users}
+            accent={scheduleStats.notConnecteam === 0 ? 'text-emerald-600' : 'text-ink'} />
+        </div>
+        {(scheduleStats.notGcal > 0 || scheduleStats.notConnecteam > 0) && (
+          <div className="max-w-7xl mx-auto mt-2 flex flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-medium">Needs attention:</span>
+            {scheduleStats.notGcal > 0 && <span>{scheduleStats.notGcal} not on Google yet</span>}
+            {scheduleStats.notGcal > 0 && scheduleStats.notConnecteam > 0 && <span className="text-amber-300">·</span>}
+            {scheduleStats.notConnecteam > 0 && <span>{scheduleStats.notConnecteam} not in Connecteam</span>}
+          </div>
+        )}
+      </div>
 
       {/* Selection / bulk-action bar */}
       {!isGoogleOnly && (
@@ -1643,8 +1685,6 @@ export default function Schedule() {
             }}
           />
         </div>
-      ) : viewMode === 'google' ? (
-        <GoogleCalendarView />
       ) : (
       <>
       {/* Schedule Grid (list view) */}
@@ -1707,12 +1747,22 @@ export default function Schedule() {
             <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
-                <button
-                  onClick={() => setShowDetails(false)}
-                  className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-bg-2 -mr-2 sm:mr-0"
-                >
-                  <X className="w-5 sm:w-5 h-5 sm:h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {selectedVisit.job?.id && (
+                    <button
+                      onClick={() => navigate(`/jobs/${selectedVisit.job.id}`)}
+                      className="text-[12px] font-medium text-blue-500 hover:underline px-2 py-1"
+                    >
+                      Open full page
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowDetails(false)}
+                    className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-bg-2 -mr-2 sm:mr-0"
+                  >
+                    <X className="w-5 sm:w-5 h-5 sm:h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Details */}
@@ -1956,6 +2006,7 @@ export default function Schedule() {
           clients={Object.values(clients)}
           onClose={() => setShowJobModal(false)}
           onSave={handleJobSave}
+          notify={(m) => toast.success(m)}
         />
       )}
 

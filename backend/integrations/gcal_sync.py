@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone, date, time
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from database.models import Job, Client, Property
+from config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,92 @@ BUSINESS_TZ = ZoneInfo(os.getenv("BUSINESS_TIMEZONE", "America/New_York"))
 def _s(val) -> str:
     """Safely convert a value to a stripped string. Handles None from GCal API."""
     return str(val).strip() if val else ""
+
+
+def calendar_source_of_truth(db: Session) -> str:
+    """Who wins when a BrightBase-owned event is edited on both sides.
+
+    'brightbase' (default): Job/Visit is the system of record for the work —
+    a reschedule made directly in Google is SURFACED (drift logged) but NOT
+    applied over BrightBase; only a cancellation in Google propagates back.
+    'google': legacy two-way pull — Google edits override the job.
+    Settings row 'calendar_source_of_truth' overrides env CALENDAR_SOURCE_OF_TRUTH.
+    """
+    try:
+        from modules.settings.router import get_setting
+        val = get_setting(db, "calendar_source_of_truth")
+    except Exception:
+        val = None
+    val = (val or os.getenv("CALENDAR_SOURCE_OF_TRUTH", "brightbase")).strip().lower()
+    return "google" if val == "google" else "brightbase"
+
+
+def _parse_external_updated(event: dict):
+    """Google's RFC3339 'updated' instant -> aware datetime (for drift detection)."""
+    raw = event.get("updated")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+# ── Incremental sync (syncToken) ──────────────────────────────────────────
+# A per-calendar cursor: after the first bounded full list, Google returns only
+# CHANGED events (incl. cancellations) for that token, so polling is cheap and
+# can't miss an edit. Stored in AppSetting keyed by calendar id.
+def resolve_calendar_ids() -> list[str]:
+    """The configured business calendars (residential/commercial/STR), or
+    ['primary'] when none are set. Shared by sync + watch registration."""
+    ids = list(set(filter(None, [
+        os.getenv("GCAL_RESIDENTIAL_ID", "primary"),
+        os.getenv("GCAL_COMMERCIAL_ID"),
+        os.getenv("GCAL_STR_ID"),
+    ])))
+    return ids or ["primary"]
+
+
+def _synctoken_key(cal_id: str) -> str:
+    return f"gcal_synctoken:{cal_id}"
+
+
+def _get_synctoken(db: Session, cal_id: str):
+    from database.models import AppSetting
+    row = db.query(AppSetting).filter(AppSetting.key == _synctoken_key(cal_id)).first()
+    return row.value if (row and row.value) else None
+
+
+def _save_synctoken(db: Session, cal_id: str, token) -> None:
+    from database.models import AppSetting
+    key = _synctoken_key(cal_id)
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if not token:
+        if row:
+            db.delete(row)
+            db.flush()  # so a same-transaction re-save (410 → fresh token) doesn't collide
+        return
+    if row:
+        row.value = token
+    else:
+        db.add(AppSetting(key=key, value=token))
+
+
+def _is_gone(exc: Exception) -> bool:
+    """True for an HTTP 410 GONE — an expired/invalid syncToken (full resync)."""
+    resp = getattr(exc, "resp", None)
+    return bool(resp is not None and getattr(resp, "status", None) in (410,))
+
+
+def _list_events(service, cal_id: str, sync_token, time_min: str, time_max: str):
+    """events.list — incremental when a syncToken is held (syncToken can't be
+    combined with timeMin/timeMax/orderBy), otherwise a bounded full list."""
+    params = {"calendarId": cal_id, "singleEvents": True, "maxResults": 500}
+    if sync_token:
+        params["syncToken"] = sync_token
+    else:
+        params.update(timeMin=time_min, timeMax=time_max, orderBy="startTime")
+    return service.events().list(**params).execute()
 
 
 # Keys used in extendedProperties.private for BrightBase-created events
@@ -241,13 +328,7 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
 
     # Default to all configured business calendars
     if not calendar_ids:
-        calendar_ids = list(set(filter(None, [
-            os.getenv("GCAL_RESIDENTIAL_ID", "primary"),
-            os.getenv("GCAL_COMMERCIAL_ID"),
-            os.getenv("GCAL_STR_ID"),
-        ])))
-        if not calendar_ids:
-            calendar_ids = ["primary"]
+        calendar_ids = resolve_calendar_ids()
 
     # Time range: 30 days back, 90 days forward
     now = datetime.now(timezone.utc)
@@ -262,27 +343,40 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
         "jobs_cancelled": 0,
         "matched_by": {"extendedProperties": 0, "attendee_email": 0, "address_property": 0, "address_client": 0},
         "unmatched": 0,
+        "drift_detected": 0,
         "errors": [],
     }
+    source_of_truth = calendar_source_of_truth(db)
+
+    incremental = env_flag("GCAL_INCREMENTAL_SYNC", True)
 
     for cal_id in calendar_ids:
         if not cal_id:
             continue
+        token = _get_synctoken(db, cal_id) if incremental else None
         try:
-            events_result = service.events().list(
-                calendarId=cal_id,
-                timeMin=time_min,
-                timeMax=time_max,
-                singleEvents=True,
-                orderBy="startTime",
-                maxResults=500,
-            ).execute()
+            events_result = _list_events(service, cal_id, token, time_min, time_max)
         except Exception as e:
-            results["errors"].append({"calendar": cal_id, "error": str(e)})
-            continue
+            # An expired/invalid syncToken returns HTTP 410 — drop it and fall
+            # back to a bounded full resync (Google's prescribed recovery).
+            if token and _is_gone(e):
+                _save_synctoken(db, cal_id, None)
+                try:
+                    events_result = _list_events(service, cal_id, None, time_min, time_max)
+                except Exception as e2:
+                    results["errors"].append({"calendar": cal_id, "error": str(e2)})
+                    continue
+            else:
+                results["errors"].append({"calendar": cal_id, "error": str(e)})
+                continue
 
         results["calendars_synced"] += 1
         events = events_result.get("items", [])
+        # Persist the cursor for next time — only changed events come back after
+        # this, so polling is cheap and never misses an edit.
+        next_token = events_result.get("nextSyncToken")
+        if incremental and next_token:
+            _save_synctoken(db, cal_id, next_token)
 
         for event in events:
             results["events_scanned"] += 1
@@ -297,7 +391,16 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 # Event already linked — check for changes from GCal
                 changed = False
 
-                # Detect cancellation
+                # Idempotency: remember Google's stable iCalUID + last-modified so
+                # a future re-created/moved event can be re-matched as the same
+                # booking, and so we can detect drift.
+                if not existing_job.gcal_ical_uid and event.get("iCalUID"):
+                    existing_job.gcal_ical_uid = event.get("iCalUID")
+                ext_updated = _parse_external_updated(event)
+                if ext_updated:
+                    existing_job.gcal_external_updated_at = ext_updated
+
+                # Detect cancellation — ALWAYS wins, both directions.
                 if event.get("status") == "cancelled":
                     if existing_job.status != "cancelled":
                         existing_job.status = "cancelled"
@@ -307,6 +410,30 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                             if v.status not in ("cancelled", "completed"):
                                 v.status = "cancelled"
                         results["jobs_cancelled"] += 1
+                    continue
+
+                # Source-of-truth: when BrightBase is the master (default), a
+                # reschedule/edit made directly in Google does NOT overwrite the
+                # job — it's surfaced as drift. BrightBase re-asserts its values on
+                # the next push. Only with source='google' do we pull edits back.
+                if source_of_truth == "brightbase":
+                    start = event.get("start", {})
+                    parsed_start = _parse_event_datetime(start)
+                    gcal_title = _s(event.get("summary"))
+                    gcal_location = _s(event.get("location"))
+                    drift = bool(gcal_title and gcal_title != existing_job.title) \
+                        or bool(gcal_location and gcal_location != (existing_job.address or ""))
+                    if parsed_start:
+                        g_date, g_time = parsed_start
+                        drift = drift or g_date != existing_job.scheduled_date \
+                            or (g_time and g_time != existing_job.start_time)
+                    if drift:
+                        results.setdefault("drift_detected", 0)
+                        results["drift_detected"] += 1
+                        log.info(
+                            "[gcal-sync] drift on job %s (event %s) ignored — BrightBase is "
+                            "source of truth; will re-assert on next push", existing_job.id, gcal_id,
+                        )
                     continue
 
                 # Sync title
@@ -370,6 +497,19 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             sched_date, start_time = parsed_start
             end_time = parsed_end[1] if parsed_end else None
 
+            # Idempotency: an event we already know by its stable iCalUID — but
+            # whose event id changed (e.g. recreated) — is the SAME booking. Relink
+            # it instead of creating a duplicate job.
+            ical_uid = event.get("iCalUID")
+            if ical_uid:
+                known = db.query(Job).filter(Job.gcal_ical_uid == ical_uid).first()
+                if known:
+                    known.gcal_event_id = gcal_id
+                    ext_updated = _parse_external_updated(event)
+                    if ext_updated:
+                        known.gcal_external_updated_at = ext_updated
+                    continue
+
             # Try to match to a client (3-tier matching)
             match = (
                 _match_by_extended_properties(event, db)
@@ -396,6 +536,8 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 end_time=end_time or time(12, 0),
                 address=event.get("location", client.address or ""),
                 gcal_event_id=gcal_id,
+                gcal_ical_uid=event.get("iCalUID"),
+                gcal_external_updated_at=_parse_external_updated(event),
                 calendar_invite_sent=bool(event.get("attendees")),
                 status="scheduled",
                 notes=_s(event.get("description")),

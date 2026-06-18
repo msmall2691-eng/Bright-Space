@@ -13,6 +13,17 @@ export default function Login({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
+  // Set by the API client when a request 401s mid-session, so we can explain the
+  // bounce here (rather than a scary gateway error) and promise to restore work.
+  const [sessionExpired, setSessionExpired] = useState(false)
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('brightbase_session_expired') === '1') {
+        setSessionExpired(true)
+        localStorage.removeItem('brightbase_session_expired')
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   // Is unified Google sign-in configured on the server?
   useEffect(() => {
@@ -146,6 +157,14 @@ export default function Login({ onLoginSuccess }) {
 
           <h1 className="text-3xl font-bold text-ink text-center mb-2">BrightBase</h1>
           <p className="text-center text-ink-3 mb-8">Maine Cleaning Co.</p>
+
+          {/* Session-timeout notice — friendlier than the gateway error it replaces */}
+          {sessionExpired && !error && (
+            <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-700 font-medium">Your session timed out. Sign back in and we’ll restore anything you were working on.</p>
+            </div>
+          )}
 
           {/* Error Alert */}
           {error && (

@@ -4,10 +4,36 @@ Docs: https://developer.connecteam.com/
 """
 
 import os
+import asyncio
+import concurrent.futures
 import httpx
 from typing import Optional
 
 CONNECTEAM_BASE = "https://api.connecteam.com/v1"
+
+
+def is_configured() -> bool:
+    """True when Connecteam credentials are present, so callers can tell
+    "Connecteam isn't connected" apart from "connected but the call failed"
+    (mirrors integrations.google_calendar.is_configured)."""
+    return bool(os.getenv("CONNECTEAM_API_KEY", "").strip()
+                and os.getenv("CONNECTEAM_COMPANY_ID", "").strip())
+
+
+def _run_sync(coro):
+    """Run an async Connecteam coroutine from synchronous code.
+
+    The job lifecycle endpoints (create/update/delete_job) are sync `def`s run in
+    Starlette's threadpool, where there's no running loop — so asyncio.run works.
+    If a loop *is* already running (called from async code), fall back to a fresh
+    thread so we never error with "loop already running".
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(lambda: asyncio.run(coro)).result()
 
 
 class ConnecteamAuthError(Exception):
@@ -87,6 +113,16 @@ async def delete_shift(shift_id: str) -> None:
             headers=_headers(),
         )
         _raise_for_status(r)
+
+
+def create_shift_sync(**kwargs) -> dict:
+    """Synchronous wrapper around create_shift for the sync job endpoints."""
+    return _run_sync(create_shift(**kwargs))
+
+
+def delete_shift_sync(shift_id: str) -> None:
+    """Synchronous wrapper around delete_shift for the sync job endpoints."""
+    return _run_sync(delete_shift(shift_id))
 
 
 async def get_timesheets(

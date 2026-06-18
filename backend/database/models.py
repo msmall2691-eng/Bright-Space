@@ -136,7 +136,7 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
-    client = relationship("Client", back_populates="user")
+    client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
 
 
@@ -182,6 +182,7 @@ class UserGoogleAccount(Base):
 class Client(Base):
     """Central hub entity connected to all business records."""
     __tablename__ = "clients"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)          # full display name (derived or manually set)
@@ -208,6 +209,11 @@ class Client(Base):
     source = Column(String)
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
+    # Audit actor metadata (Twenty's ActorMetadata): who/what created and last
+    # updated the record, and when. Nullable — public/website writes have no user.
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # client_type column removed by migration 007 — duplicated property_type
     # semantically. The CRM summary endpoint now derives it from
@@ -219,7 +225,7 @@ class Client(Base):
     email_verified = Column(Boolean, default=False)
 
     # Relationships - all cascade delete with client
-    user = relationship("User", back_populates="client", uselist=False)  # One client per user (for role=client users)
+    user = relationship("User", back_populates="client", uselist=False, foreign_keys="User.client_id")  # One client per user (for role=client users)
     quotes = relationship("Quote", back_populates="client", cascade="all, delete-orphan", foreign_keys="Quote.client_id")
     jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
@@ -237,6 +243,7 @@ class Client(Base):
 class Property(Base):
     """A property (residential, commercial, or STR) belonging to a client."""
     __tablename__ = "properties"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -284,7 +291,15 @@ class Property(Base):
     custom_fields = Column(JSON, default=dict)
 
     active = Column(Boolean, default=True, nullable=False)
+    # Structured size details, carried over from the lead/intake on convert so a
+    # quote can pre-fill from the customer's request instead of re-typing.
+    bedrooms = Column(Integer, nullable=True)
+    bathrooms = Column(Integer, nullable=True)
+    square_footage = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     client = relationship("Client", back_populates="properties")
     ical_events = relationship("ICalEvent", back_populates="property", cascade="all, delete-orphan")
@@ -295,6 +310,7 @@ class Property(Base):
 class PropertyIcal(Base):
     """Multiple iCal URLs per property (Airbnb, VRBO, manual calendars, etc.)"""
     __tablename__ = "property_icals"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
@@ -323,6 +339,7 @@ class PropertyIcal(Base):
 class ICalEvent(Base):
     """A single event parsed from an STR property's iCal feed."""
     __tablename__ = "ical_events"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
@@ -349,6 +366,7 @@ class ICalEvent(Base):
 class RecurringSchedule(Base):
     """Defines a recurring cleaning engagement for residential or commercial clients."""
     __tablename__ = "recurring_schedules"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -394,6 +412,7 @@ class RecurrenceException(Base):
     actions are idempotent.
     """
     __tablename__ = "recurrence_exceptions"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     recurring_schedule_id = Column(
@@ -430,6 +449,7 @@ class RecurrenceException(Base):
 class Job(Base):
     """A cleaning job/task linked to a client, opportunity, and possibly quote."""
     __tablename__ = "jobs"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
@@ -457,6 +477,13 @@ class Job(Base):
     # shared business calendar token).
     gcal_account_id = Column(
         Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Stable Google identifier for idempotent matching (Twenty stores iCalUid on
+    # CalendarEvent). Matched on FIRST during sync — before extendedProperties,
+    # attendee, and address — so a re-created/moved event is recognized as the
+    # same booking instead of spawning a duplicate. externalUpdatedAt is Google's
+    # last-modified time, kept for drift detection.
+    gcal_ical_uid = Column(String, nullable=True, index=True)
+    gcal_external_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     title = Column(String, nullable=False)
     scheduled_date = Column(Date)       # ISO date
@@ -494,6 +521,7 @@ class Job(Base):
 class Visit(Base):
     """A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
     __tablename__ = "visits"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     # BIGINT on Postgres (prod); plain INTEGER on SQLite so the primary key
     # autoincrements there (SQLite only aliases rowid for INTEGER PRIMARY KEY,
@@ -548,6 +576,7 @@ class Visit(Base):
 class LeadIntake(Base):
     """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
@@ -584,6 +613,9 @@ class LeadIntake(Base):
     custom_fields = Column(JSON, default=dict)
     followed_up_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     client = relationship("Client", back_populates="lead_intakes")
     opportunity = relationship("Opportunity", back_populates="intake", uselist=False)
@@ -595,6 +627,7 @@ class LeadIntake(Base):
 class Invoice(Base):
     """Invoice linked to client, job, and opportunity."""
     __tablename__ = "invoices"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), index=True)
@@ -614,6 +647,8 @@ class Invoice(Base):
     custom_fields = Column(JSON, default=dict)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")
@@ -626,6 +661,7 @@ class Conversation(Base):
     Linked to client and opportunity for full context.
     """
     __tablename__ = "conversations"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -684,6 +720,7 @@ class Conversation(Base):
 class Message(Base):
     """Single message (email, SMS, chat, etc.) within a conversation."""
     __tablename__ = "messages"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -734,6 +771,7 @@ class Opportunity(Base):
     Inspired by Twenty CRM and Fieldcamp.
     """
     __tablename__ = "opportunities"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -768,6 +806,7 @@ class Opportunity(Base):
 class ContactEmail(Base):
     """Multiple email addresses per client (Twenty CRM pattern for enrichment)."""
     __tablename__ = "contact_emails"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -783,6 +822,7 @@ class ContactEmail(Base):
 class ContactPhone(Base):
     """Multiple phone numbers per client."""
     __tablename__ = "contact_phones"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
@@ -802,6 +842,7 @@ class Activity(Base):
     Tracks all interactions: emails, SMS, calls, notes, status changes, etc.
     """
     __tablename__ = "activities"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -891,6 +932,7 @@ class Quote(Base):
     sends and reads. Replaces the earlier UUID-keyed Quote + QuoteLineItem
     design that couldn't link to the integer Client/Job ids."""
     __tablename__ = "quotes"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -939,6 +981,9 @@ class Quote(Base):
     declined_at = Column(DateTime(timezone=True), nullable=True)
     # When an accepted quote was turned into a Job (conversion tracking).
     converted_at = Column(DateTime(timezone=True), nullable=True)
+    # Soft-delete: archived quotes are hidden from lists but recoverable, and
+    # their linked data (jobs/emails) is preserved.
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     # When a follow-up nudge was last sent on a stale sent/viewed quote.
     follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
     # Delivery visibility: the last send attempt and why it failed (cleared on
@@ -968,6 +1013,7 @@ class Quote(Base):
     property = relationship("Property", foreign_keys=[property_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
     emails = relationship("QuoteEmail", back_populates="quote", cascade="all, delete-orphan")
+    sms_messages = relationship("QuoteSMS", back_populates="quote", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("quote_number", name="uq_quote_number"),
@@ -977,6 +1023,7 @@ class Quote(Base):
 class QuoteRequest(Base):
     """Customer quote request via web form. Integer-keyed."""
     __tablename__ = "quote_requests"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -1021,6 +1068,7 @@ class QuoteEmailStatus(str, Enum):
 class QuoteEmail(Base):
     """Tracks email deliveries for quotes (when sent + delivery status)."""
     __tablename__ = "quote_emails"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -1038,6 +1086,36 @@ class QuoteEmail(Base):
         return f"<QuoteEmail(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_email}, status={self.delivery_status})>"
 
 
+class QuoteSMSStatus(str, Enum):
+    """SMS delivery status enum (mirrors Twilio message statuses)."""
+    QUEUED = "queued"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    UNDELIVERED = "undelivered"
+    FAILED = "failed"
+
+
+class QuoteSMS(Base):
+    """Tracks SMS deliveries for quotes (parallel to QuoteEmail)."""
+    __tablename__ = "quote_sms"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_phone = Column(String(30), nullable=False)
+    sent_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    delivery_status = Column(String(50), nullable=False, default="sent")
+    message_sid = Column(String(64), nullable=True, unique=True)  # Twilio message SID
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    quote = relationship("Quote", back_populates="sms_messages")
+
+    def __repr__(self):
+        return f"<QuoteSMS(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_phone}, status={self.delivery_status})>"
+
+
 class CleanerTimeOff(Base):
     """A date range a cleaner is unavailable (vacation, sick, etc.).
 
@@ -1046,6 +1124,7 @@ class CleanerTimeOff(Base):
     a cleaner can't be assigned to a job on a day they're off. Dates are
     inclusive (start_date..end_date)."""
     __tablename__ = "cleaner_time_off"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     cleaner_id = Column(String, nullable=False, index=True)
@@ -1076,6 +1155,7 @@ class IntegrationEvent(Base):
     model or used; this model adopts that exact schema (no new migration), so
     create_all (tests) and the existing prod table stay in lockstep."""
     __tablename__ = "integration_events"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
 
     id = Column(Integer, primary_key=True, index=True)
     entity_type = Column(String, nullable=False)   # 'job' | 'visit' | 'quote' | 'invoice'
@@ -1089,3 +1169,26 @@ class IntegrationEvent(Base):
     request_payload = Column(String, nullable=True)   # short human note (e.g. "to a@b.com")
     response_payload = Column(String, nullable=True)  # provider response summary, if any
     created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class SavedView(Base):
+    """A user's saved list-view preset (Twenty's "views"): a named bundle of a
+    list page's filters / sort / visible-columns / layout for one entity type.
+
+    Per-user AND per-workspace (org), so each member curates their own views
+    without affecting anyone else. `config` is an opaque JSON blob owned by the
+    frontend (e.g. {"statusFilter": "active", "viewMode": "table"}) — keeping it
+    schemaless lets each list page evolve what it persists without a migration.
+    At most one default per (user, entity_type)."""
+    __tablename__ = "saved_views"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=False, index=True)  # tenant scope (MT-1)
+    entity_type = Column(String(40), nullable=False, index=True)  # 'client' | 'opportunity' | ...
+    name = Column(String(120), nullable=False)
+    config = Column(JSON, default=dict, nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

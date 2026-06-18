@@ -50,9 +50,14 @@ def test_webhook_computes_canonical_estimate():
     try:
         lead = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
         assert lead is not None
-        # The canonical line is present — proving the engine actually ran (before
-        # the fix this line never appeared because estimate_price raised).
-        assert "Canonical estimate: $" in (lead.message or ""), lead.message
+        # The canonical estimate now lands in its own columns (not flattened into
+        # the message blob) — proving the engine ran and the data is structured.
+        assert lead.estimate_min is not None and lead.estimate_max is not None, lead.message
+        assert lead.estimate_max >= lead.estimate_min > 0
+        # The customer's structured answers are persisted as columns, not prose.
+        assert lead.square_footage == 2000
+        assert lead.bathrooms == 3
+        assert lead.frequency == "biweekly"
     finally:
         db.close()
         _cleanup(intake_id)

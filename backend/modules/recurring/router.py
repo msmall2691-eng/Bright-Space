@@ -426,6 +426,18 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db)):
     db.refresh(sched)
     # Auto-generate initial jobs
     jobs_created = generate_jobs(db, sched)
+    # If this schedule was set up from an accepted quote, convert that quote so
+    # it stops showing "Set up schedule" and revenue→schedule traceability is
+    # kept (mirrors scheduling.create_job / quoting.convert_quote_to_job).
+    if sched.quote_id:
+        from database.models import Quote
+        from datetime import datetime
+        q = db.query(Quote).filter(Quote.id == sched.quote_id).first()
+        if q and q.status != "converted":
+            q.status = "converted"
+            q.converted_at = datetime.now()
+            q.updated_at = datetime.now()
+            db.commit()
     result = sched_to_dict(sched)
     result["jobs_created"] = jobs_created
     return result

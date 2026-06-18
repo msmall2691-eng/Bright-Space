@@ -20,12 +20,15 @@ from reportlab.lib.enums import TA_RIGHT, TA_LEFT, TA_CENTER
 class QuotePDFService:
     """Generate professional PDF quotes"""
 
-    def __init__(self, company_name: str = "Bright-Space", company_email: str = "quotes@bright-space.com",
+    def __init__(self, company_name: str = "Bright-Space", company_email: Optional[str] = None,
                  company_phone: Optional[str] = None, brand_color: str = "#1f2937",
-                 terms: Optional[str] = None):
+                 terms: Optional[str] = None, logo_url: Optional[str] = None):
+        from config import DEFAULT_FROM_EMAIL
+        company_email = company_email or DEFAULT_FROM_EMAIL
         self.company_name = company_name
         self.company_email = company_email
         self.company_phone = company_phone
+        self.logo_url = logo_url
         # Guard the only consumer that RAISES on a bad color (CSS surfaces
         # just render nothing): a legacy/hand-edited setting must never make
         # PDF generation — and therefore quote sends — fail.
@@ -101,6 +104,13 @@ class QuotePDFService:
             spaceAfter=20
         )
 
+        # Logo at the top when configured — the strongest "real business"
+        # signal. Best-effort: a fetch/decode failure must never break the PDF
+        # (and therefore quote sending), so we silently fall back to the name.
+        logo_flowable = self._logo_flowable()
+        if logo_flowable is not None:
+            story.append(logo_flowable)
+            story.append(Spacer(1, 0.12 * inch))
         story.append(Paragraph(self.company_name, title_style))
         if quote_title:
             quote_title_style = ParagraphStyle(
@@ -111,14 +121,14 @@ class QuotePDFService:
         contact_bits = " · ".join(b for b in (self.company_email, self.company_phone) if b)
         story.append(Paragraph(contact_bits, subtitle_style))
 
-        # Quote header info
+        # Quote header info. No internal "Status: DRAFT/ACTIVE" row — that's an
+        # internal state the customer should never see on their quote.
         quote_header_data = [
             ['QUOTE', f'Quote #{quote_number}'],
             ['Date', datetime.now().strftime('%B %d, %Y')],
-            ['Status', 'DRAFT' if not expires_at else 'ACTIVE'],
         ]
         if expires_at:
-            quote_header_data.append(['Expires', expires_at.strftime('%B %d, %Y')])
+            quote_header_data.append(['Valid until', expires_at.strftime('%B %d, %Y')])
 
         quote_header_table = Table(quote_header_data, colWidths=[1.5*inch, 4*inch])
         quote_header_table.setStyle(TableStyle([
@@ -185,25 +195,27 @@ class QuotePDFService:
         story.append(line_items_table)
         story.append(Spacer(1, 0.2*inch))
 
-        # Totals section
-        totals_data = [
-            ['', 'Subtotal', f"${subtotal:.2f}"],
-            ['', 'Tax', f"${tax_amount:.2f}"],
-            ['', 'Discount', f"-${discount_amount:.2f}"],
-            ['', 'TOTAL', f"${total_amount:.2f}"],
-        ]
+        # Totals section. Only show Tax / Discount when non-zero so a simple
+        # quote isn't cluttered with $0.00 rows.
+        totals_data = [['', 'Subtotal', f"${subtotal:.2f}"]]
+        if tax_amount:
+            totals_data.append(['', 'Tax', f"${tax_amount:.2f}"])
+        if discount_amount:
+            totals_data.append(['', 'Discount', f"-${discount_amount:.2f}"])
+        totals_data.append(['', 'TOTAL', f"${total_amount:.2f}"])
+        total_row = len(totals_data) - 1  # TOTAL is always the last row
 
         totals_table = Table(totals_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
         totals_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, 2), 'Helvetica', 9),
-            ('FONT', (0, 3), (-1, 3), 'Helvetica-Bold', 12),
-            ('TEXTCOLOR', (0, 0), (-1, 2), colors.HexColor('#6b7280')),
-            ('TEXTCOLOR', (0, 3), (-1, 3), colors.HexColor('#1f2937')),
+            ('FONT', (0, 0), (-1, total_row - 1), 'Helvetica', 9),
+            ('FONT', (0, total_row), (-1, total_row), 'Helvetica-Bold', 12),
+            ('TEXTCOLOR', (0, 0), (-1, total_row - 1), colors.HexColor('#6b7280')),
+            ('TEXTCOLOR', (0, total_row), (-1, total_row), colors.HexColor('#1f2937')),
             ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 3), (-1, 3), 2, colors.HexColor('#1f2937')),
-            ('BACKGROUND', (0, 3), (-1, 3), colors.HexColor('#f3f4f6')),
+            ('GRID', (0, total_row), (-1, total_row), 2, colors.HexColor('#1f2937')),
+            ('BACKGROUND', (0, total_row), (-1, total_row), colors.HexColor('#f3f4f6')),
         ]))
         story.append(totals_table)
         story.append(Spacer(1, 0.3*inch))
@@ -240,8 +252,9 @@ class QuotePDFService:
             story.append(Spacer(1, 0.15*inch))
         contact = " or call ".join(b for b in (f"email {self.company_email}" if self.company_email else None,
                                                self.company_phone) if b)
-        validity = (f"This quote is valid until {expires_at.strftime('%B %d, %Y')}. "
-                    if expires_at else "")
+        # One consistent validity sentence (matches the email + page wording).
+        validity = (f"This quote is valid for 30 days from the date issued "
+                    f"(through {expires_at.strftime('%B %d, %Y')}). " if expires_at else "")
         story.append(Paragraph(f"{validity}Questions? {contact}".strip(), footer_style))
 
         # Build PDF
@@ -250,3 +263,28 @@ class QuotePDFService:
         buffer.close()
 
         return pdf_bytes
+
+    def _logo_flowable(self):
+        """Best-effort logo Image flowable from self.logo_url, or None.
+
+        Fetches over HTTP with a short timeout and never raises — a broken or
+        slow logo URL must not break quote PDF generation (and thus sending)."""
+        if not self.logo_url:
+            return None
+        try:
+            import urllib.request
+            from reportlab.platypus import Image
+            req = urllib.request.Request(self.logo_url, headers={"User-Agent": "BrightBase/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read()
+            img = Image(BytesIO(data))
+            # Scale to a max 1.6in height, preserving aspect ratio.
+            max_h = 1.6 * inch
+            if img.drawHeight > max_h:
+                ratio = max_h / float(img.drawHeight)
+                img.drawHeight = max_h
+                img.drawWidth = img.drawWidth * ratio
+            img.hAlign = 'LEFT'
+            return img
+        except Exception:
+            return None

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Literal
@@ -9,7 +10,7 @@ from datetime import datetime, date, timezone
 
 from database.db import get_db
 from database.models import Invoice, Client, Message
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 
 
 def _invoice_public_token(invoice_id: int) -> str:
@@ -88,8 +89,10 @@ def get_invoices(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
-    q = db.query(Invoice)
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+    q = db.query(Invoice).filter(or_(Invoice.org_id == resolve_org_id(org_id, db), Invoice.org_id.is_(None)))
     if client_id:
         q = q.filter(Invoice.client_id == client_id)
     if status:
@@ -126,13 +129,14 @@ def invoice_summary_by_service(
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
+def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     items = [i.model_dump() for i in data.items]
     subtotal, tax, total = calc_totals(items, data.tax_rate or 0)
     inv = Invoice(
         client_id=data.client_id,
         job_id=data.job_id,
         opportunity_id=data.opportunity_id,
+        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
         invoice_number=next_invoice_number(db),
         items=items,
         subtotal=subtotal,
@@ -150,16 +154,51 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
-    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+def get_invoice(invoice_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        or_(Invoice.org_id == resolve_org_id(org_id, db), Invoice.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return invoice_to_dict(inv)
 
 
+@router.get("/{invoice_id}/details", dependencies=[Depends(require_role("admin", "manager"))])
+def get_invoice_details(invoice_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Full invoice record for the detail page: the invoice (incl. line items)
+    plus its linked records — client, job, opportunity, and the originating
+    quote (reached via Job.quote_id when the invoice came from a job)."""
+    from database.models import Job, Opportunity, Quote
+    oid = resolve_org_id(org_id, db)
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        or_(Invoice.org_id == oid, Invoice.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    client = db.query(Client).filter(Client.id == inv.client_id).first()
+    job = db.query(Job).filter(Job.id == inv.job_id).first() if inv.job_id else None
+    opp = db.query(Opportunity).filter(Opportunity.id == inv.opportunity_id).first() if inv.opportunity_id else None
+    quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if (job and job.quote_id) else None
+
+    return {
+        **invoice_to_dict(inv),
+        "client_name": client.name if client else None,
+        "job": ({"id": job.id, "title": job.title, "status": job.status,
+                 "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None} if job else None),
+        "opportunity": ({"id": opp.id, "title": opp.title, "stage": opp.stage} if opp else None),
+        "quote": ({"id": quote.id, "quote_number": quote.quote_number, "total": quote.total} if quote else None),
+    }
+
+
 @router.patch("/{invoice_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(get_db)):
-    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        or_(Invoice.org_id == resolve_org_id(org_id, db), Invoice.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     if data.items is not None:
@@ -183,8 +222,11 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
 
 
 @router.delete("/{invoice_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
-    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+def delete_invoice(invoice_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    inv = db.query(Invoice).filter(
+        Invoice.id == invoice_id,
+        or_(Invoice.org_id == resolve_org_id(org_id, db), Invoice.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     db.delete(inv)

@@ -314,7 +314,7 @@ function MessageBubble({ m, isFirst, showTime, contactName }) {
             {m.author && <span className="font-normal text-amber-500">— {m.author}</span>}
             <span className="ml-auto font-normal text-amber-400">{fullTime(m.created_at)}</span>
           </div>
-          <div className="whitespace-pre-wrap leading-relaxed">{m.body}</div>
+          <div className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</div>
         </div>
       </div>
     )
@@ -324,7 +324,7 @@ function MessageBubble({ m, isFirst, showTime, contactName }) {
 
   return (
     <div className={`flex ${outbound ? 'justify-end' : 'justify-start'} ${isFirst ? 'mt-3' : 'mt-1'}`}>
-      <div className="max-w-[72%]">
+      <div className="max-w-[72%] min-w-0">
         {/* Sender label on first message in group */}
         {isFirst && (
           <div className={`text-[10px] font-semibold mb-1 px-1 ${outbound ? 'text-right text-ink-3' : 'text-ink-3'}`}>
@@ -344,7 +344,7 @@ function MessageBubble({ m, isFirst, showTime, contactName }) {
               {m.subject}
             </div>
           )}
-          <div className="whitespace-pre-wrap">{m.body}</div>
+          <div className="whitespace-pre-wrap break-words">{m.body}</div>
           <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-blue-100 justify-end' : 'text-ink-2'}`}>
             {fullTime(m.created_at)}
             {outbound && m.status === 'delivered' && <CheckCircle2 className="w-3 h-3" />}
@@ -560,7 +560,7 @@ function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
   }, [detail.messages, name])
 
   return (
-    <div className="hidden lg:flex w-[320px] border-l border-hairline bg-panel flex-col overflow-hidden">
+    <div className="hidden xl:flex w-[320px] border-l border-hairline bg-panel flex-col overflow-hidden shrink-0">
       {/* Contact header */}
       <div className="p-5 bg-gradient-to-b from-bg to-white border-b border-hairline">
         <div className="flex items-start gap-3">

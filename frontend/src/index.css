@@ -28,7 +28,7 @@
   --c-ok: oklch(0.55 0.12 155);
 
   --shadow-1: 0 1px 0 rgba(23,21,18,0.04), 0 2px 8px rgba(23,21,18,0.04);
-  --shadow-2: 0 8px 24px rgba(23,21,18,0.08);
+  --shadow-2: 0 1px 2px rgba(23,21,18,0.05), 0 2px 6px rgba(23,21,18,0.05);
 }
 
 /* Dark theme — toggled with body.theme-console */
@@ -53,7 +53,7 @@ body.theme-console {
   --c-alert: oklch(0.70 0.18 25);
   --c-alert-bg: oklch(0.30 0.10 25);
   --shadow-1: 0 1px 0 rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3);
-  --shadow-2: 0 8px 24px rgba(0,0,0,0.5);
+  --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.4);
 }
 
 /* Clean mode — softer + roomier; toggled with body.mode-clean */
@@ -69,8 +69,8 @@ body.mode-clean {
   --hairline-2: #e4e4e7;
   --accent: oklch(0.55 0.17 255);
   --accent-ink: #ffffff;
-  --shadow-1: 0 1px 2px rgba(10,10,11,0.04), 0 1px 3px rgba(10,10,11,0.06);
-  --shadow-2: 0 4px 12px rgba(10,10,11,0.06), 0 12px 32px rgba(10,10,11,0.08);
+  --shadow-1: 0 1px 1px rgba(10,10,11,0.03);
+  --shadow-2: 0 1px 2px rgba(10,10,11,0.05), 0 2px 6px rgba(10,10,11,0.05);
   font-size: 13px;
 }
 
@@ -284,4 +284,16 @@ body.mode-clean.theme-console {
   .shadow-glass { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
   .shadow-glass-lg { box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); }
   .shadow-glass-sm { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
+}
+
+/* Print: clean one-pager for the public quote (window.print / Save as PDF).
+   Hide toolbars/banners/buttons and flatten gradients so only the document
+   card prints. */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #ffffff !important; }
+  .quote-document { max-width: 100% !important; margin: 0 !important; }
+  .quote-document .shadow-sm { box-shadow: none !important; }
+  /* Drop background gradients (e.g. loading/error screens never print). */
+  [class*="bg-gradient"] { background: #ffffff !important; }
 }

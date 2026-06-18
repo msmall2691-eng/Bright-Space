@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List, Literal
@@ -7,7 +8,7 @@ from datetime import datetime, date, time, timezone
 
 from database.db import get_db
 from database.models import Visit, Job, Client, Property, RecurrenceException
-from modules.auth.router import get_current_user, require_role
+from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import log_visit_skipped
 
 logger = logging.getLogger(__name__)
@@ -315,12 +316,17 @@ def get_visits(
     offset: int = 0,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    org_id: int = Depends(current_org_id),
 ):
     """Get visits with date range and optional filters. Paginated for performance."""
     q = db.query(Visit).options(
         joinedload(Visit.job).joinedload(Job.client),
         joinedload(Visit.job).joinedload(Job.property)
     )
+
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+    org_id = resolve_org_id(org_id, db)
+    q = q.filter(or_(Visit.org_id == org_id, Visit.org_id.is_(None)))
 
     if scheduled_date_from:
         q = q.filter(Visit.scheduled_date >= scheduled_date_from)
@@ -391,6 +397,7 @@ def create_visit(data: VisitCreate, db: Session = Depends(get_db)):
         ical_source=data.ical_source,
         ical_uid=data.ical_uid,
         notes=data.notes,
+        org_id=job.org_id,  # MT-2: a visit inherits its parent job's workspace
     )
     db.add(visit)
     db.commit()
@@ -400,12 +407,17 @@ def create_visit(data: VisitCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{visit_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_visit(visit_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_visit(visit_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user),
+              org_id: int = Depends(current_org_id)):
     """Get a single visit by ID."""
+    org_id = resolve_org_id(org_id, db)
     visit = db.query(Visit).options(
         joinedload(Visit.job).joinedload(Job.client),
         joinedload(Visit.job).joinedload(Job.property)
-    ).filter(Visit.id == visit_id).first()
+    ).filter(
+        Visit.id == visit_id,
+        or_(Visit.org_id == org_id, Visit.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
 
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
@@ -422,12 +434,16 @@ def get_visit(visit_id: int, db: Session = Depends(get_db), current_user=Depends
 
 @router.put("/{visit_id}", response_model=VisitRead, dependencies=[Depends(require_role("admin", "manager"))])
 @router.patch("/{visit_id}", response_model=VisitRead, dependencies=[Depends(require_role("admin", "manager"))])
-def update_visit(visit_id: int, data: VisitUpdate, db: Session = Depends(get_db)):
+def update_visit(visit_id: int, data: VisitUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Update a visit."""
+    org_id = resolve_org_id(org_id, db)
     visit = db.query(Visit).options(
         joinedload(Visit.job).joinedload(Job.client),
         joinedload(Visit.job).joinedload(Job.property)
-    ).filter(Visit.id == visit_id).first()
+    ).filter(
+        Visit.id == visit_id,
+        or_(Visit.org_id == org_id, Visit.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
 
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
@@ -455,9 +471,13 @@ def update_visit(visit_id: int, data: VisitUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{visit_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_visit(visit_id: int, db: Session = Depends(get_db)):
+def delete_visit(visit_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Delete a visit."""
-    visit = db.query(Visit).filter(Visit.id == visit_id).first()
+    org_id = resolve_org_id(org_id, db)
+    visit = db.query(Visit).filter(
+        Visit.id == visit_id,
+        or_(Visit.org_id == org_id, Visit.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not visit:
         raise HTTPException(status_code=404, detail="Visit not found")
 

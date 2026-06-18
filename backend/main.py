@@ -40,6 +40,7 @@ from modules.integration_events.router import router as integration_events_route
 from modules.search import router as search_router
 from modules.geo.router import router as geo_router
 from modules.settings.router import router as settings_router
+from modules.views.router import router as views_router
 from modules.work import router as work_router
 from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
@@ -55,12 +56,10 @@ from slowapi.errors import RateLimitExceeded
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-_default_origins = (
-    "http://localhost:5173,http://localhost:3000,"
-    "https://www.maineclean.co,https://maineclean.co,"
-    "https://brightbase-production.up.railway.app"
-)
-_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
+from config import resolve_cors_origins
+# Force-merge the required production origins so a partial ALLOWED_ORIGINS env
+# override can't silently drop maineclean.co and lose inbound website leads.
+_allowed_origins = resolve_cors_origins(os.getenv("ALLOWED_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,11 +70,33 @@ app.add_middleware(
     # origin is added. Explicit lists match what the SPA actually sends.
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    # Sliding-session: let the SPA read the rotated token off the response.
+    expose_headers=["X-Refresh-Token"],
 )
 
 # API key authentication â must be added AFTER CORS middleware
 # (Starlette processes middleware in reverse order, so CORS runs first)
 app.add_middleware(APIKeyMiddleware)
+
+# Sliding-session refresh: when an authenticated request carries a token past
+# its half-life, hand back a fresh one via X-Refresh-Token so active users (e.g.
+# mid-booking) are never logged out underneath their work.
+from auth_jwt import maybe_refresh_jwt
+
+
+@app.middleware("http")
+async def sliding_session_refresh(request, call_next):
+    response = await call_next(request)
+    try:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            fresh = maybe_refresh_jwt(auth[7:])
+            if fresh:
+                response.headers["X-Refresh-Token"] = fresh
+    except Exception:
+        pass  # never let session-refresh bookkeeping break a response
+    return response
+
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
@@ -91,6 +112,8 @@ app.include_router(recurring_router, prefix="/api/recurring", tags=["recurring"]
 app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"])
 app.include_router(intake_router, prefix="/api/intake", tags=["intake"])
 app.include_router(booking_router, prefix="/api/booking", tags=["booking"])
+from modules.integrations.router import router as integrations_router
+app.include_router(integrations_router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
@@ -99,6 +122,7 @@ app.include_router(integration_events_router, prefix="/api/integration-events", 
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(geo_router, prefix="/api/geo", tags=["geo"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+app.include_router(views_router, prefix="/api/views", tags=["views"])
 app.include_router(work_router, prefix="/api/work", tags=["work"])
 app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
@@ -369,8 +393,13 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     except WebSocketDisconnect:
         agent_histories.pop(conn_key, None)
     except Exception as e:
+        # Don't leak the provider's raw error (billing JSON, request_id, etc.) to
+        # the operator — map it to a friendly message first.
+        import logging
+        from utils.ai_errors import friendly_ai_error
+        logging.getLogger(__name__).exception("agent websocket error for %s", agent_name)
         try:
-            await websocket.send_json({"type": "error", "content": str(e)})
+            await websocket.send_json({"type": "error", "content": friendly_ai_error(e)})
         except Exception:
             pass
         agent_histories.pop(conn_key, None)

@@ -27,6 +27,7 @@ def activity_to_dict(a):
 def list_activities(
     client_id: Optional[int] = None,
     opportunity_id: Optional[int] = None,
+    job_id: Optional[int] = None,
     activity_type: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -37,6 +38,8 @@ def list_activities(
         q = q.filter(Activity.client_id == client_id)
     if opportunity_id:
         q = q.filter(Activity.opportunity_id == opportunity_id)
+    if job_id:
+        q = q.filter(Activity.job_id == job_id)
     if activity_type:
         q = q.filter(Activity.activity_type == activity_type)
     return [activity_to_dict(a) for a in q.order_by(Activity.created_at.desc()).offset(offset).limit(limit).all()]

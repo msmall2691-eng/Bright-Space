@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import Job, Client, Visit, ICalEvent, CleanerTimeOff, Property
-from modules.auth.router import get_current_user, require_role
+from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
@@ -457,6 +457,7 @@ def get_jobs(
     job_type: Optional[str] = None,
     unassigned: Optional[bool] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     # Per-job earliest visit date. Used both for filtering AND for the
     # serialized response so that consumers (e.g. CalendarView) bucket by
@@ -473,6 +474,11 @@ def get_jobs(
           .options(joinedload(Job.client))
           .outerjoin(visit_min, visit_min.c.job_id == Job.id)
     )
+
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows
+    # (jobs created by internal paths — recurring, gcal sync — before backfill).
+    org_id = resolve_org_id(org_id, db)
+    q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
 
     if client_id:
         q = q.filter(Job.client_id == client_id)
@@ -555,7 +561,24 @@ def get_jobs(
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_job(data: JobCreate, db: Session = Depends(get_db)):
+def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    # ── QUOTE LINKAGE (P1-A) ──
+    # When a job is scheduled from an accepted quote, link it back and convert
+    # the quote. Idempotent: a double-submit (or a second click of "Set up
+    # schedule") returns the existing job instead of creating a duplicate, and
+    # preserves the revenue→job traceability that POST /api/jobs used to drop
+    # (quote_id was on JobCreate but never set, leaving jobs with quote_id null
+    # and quotes stuck at "accepted").
+    source_quote = None
+    if data.quote_id:
+        from database.models import Quote
+        source_quote = db.query(Quote).filter(Quote.id == data.quote_id).first()
+        if source_quote and source_quote.status == "converted":
+            existing = (db.query(Job).filter(Job.quote_id == source_quote.id)
+                        .order_by(Job.id.asc()).first())
+            if existing:
+                return job_to_dict(existing)
+
     # ── TIMING VALIDATION ── reject past dates / inverted windows up front.
     _validate_job_timing(data.scheduled_date, data.start_time, data.end_time, is_new=True)
 
@@ -599,10 +622,77 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
                        f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
             )
 
-    job = Job(**data.model_dump(exclude={"allow_conflicts"}))
+        # ── DON'T DOUBLE-BOOK THE SLOT ── Google Free/Busy guard: if the
+        # calendar this job_type lands on is already busy in this window, block
+        # (overridable via allow_conflicts). Fails open when Google isn't
+        # connected or the check errors, so it never wedges scheduling.
+        try:
+            from modules.settings.router import freebusy_check_enabled
+            if freebusy_check_enabled(db):
+                from integrations.google_calendar import free_busy_conflicts
+                busy = free_busy_conflicts(
+                    data.job_type, data.scheduled_date, data.start_time, data.end_time,
+                )
+                if busy:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(f"That slot is already booked on Google Calendar "
+                                f"({len(busy)} conflicting event(s) between {data.start_time} and "
+                                f"{data.end_time} on {data.scheduled_date}). Pick another time, "
+                                f"or resubmit with allow_conflicts=true to book anyway."),
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Free/Busy guard skipped for new job: {e}")
+
+    # ── PROPERTY DEFAULTING ──
+    # Every job needs a property (DB-level NOT NULL), but the one-screen
+    # Quick-schedule flow lets the user skip it. Resolve to the client's existing
+    # property, or create a sensible default, so a fast booking never fails here.
+    resolved_property_id = data.property_id
+    if not resolved_property_id:
+        existing_prop = (db.query(Property)
+                         .filter(Property.client_id == data.client_id)
+                         .order_by(Property.id.asc()).first())
+        if existing_prop:
+            resolved_property_id = existing_prop.id
+        else:
+            client = db.query(Client).filter(Client.id == data.client_id).first()
+            ptype = "str" if data.job_type == "str_turnover" else (
+                data.job_type if data.job_type in ("residential", "commercial") else "residential")
+            new_prop = Property(
+                client_id=data.client_id,
+                name=f"{client.name} — Main" if client and client.name else "Main location",
+                address=data.address or (getattr(client, "address", None) if client else "") or "",
+                property_type=ptype,
+            )
+            if hasattr(new_prop, "org_id"):
+                new_prop.org_id = resolve_org_id(org_id, db)
+            db.add(new_prop); db.commit(); db.refresh(new_prop)
+            resolved_property_id = new_prop.id
+
+    payload = data.model_dump(exclude={"allow_conflicts"})
+    payload["property_id"] = resolved_property_id
+    # Store real date/time objects (the columns are Date/Time) rather than
+    # relying on the DB to implicitly cast the inbound strings — keeps writes
+    # portable and matches what a post-refresh read returns anyway.
+    payload["scheduled_date"] = _to_date(payload.get("scheduled_date"))
+    payload["start_time"] = _to_time(payload.get("start_time"))
+    payload["end_time"] = _to_time(payload.get("end_time"))
+    job = Job(**payload)
+    job.org_id = resolve_org_id(org_id, db)  # MT-2: stamp the caller's workspace (robust to in-process calls)
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    # Convert the source quote now that its job exists (mirrors
+    # quoting.convert_quote_to_job so there's one definition of "converted").
+    if source_quote is not None and source_quote.status != "converted":
+        source_quote.status = "converted"
+        source_quote.converted_at = datetime.now()
+        source_quote.updated_at = datetime.now()
+        db.commit()
 
     # Log to unified activity timeline
     log_job_created(db, job)
@@ -677,8 +767,21 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
         _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
                          action="create", status="failed", detail=str(e))
 
+    # ── PUSH TO CONNECTEAM (auto-dispatch) ──
+    # If cleaners are already assigned, scheduling the job sends their shifts to
+    # Connecteam now — no separate "Dispatch" click. No-ops cleanly when
+    # Connecteam isn't configured or no one's assigned yet.
+    ct_status = {"dispatched": False, "reason": None}
+    try:
+        from integrations.connecteam_auto import auto_dispatch_job
+        ct_status = auto_dispatch_job(db, job)
+    except Exception as e:
+        logger.warning(f"Connecteam auto-dispatch failed for job {job.id}: {e}")
+        ct_status = {"dispatched": False, "reason": "error"}
+
     result = job_to_dict(job)
     result["gcal"] = gcal_status
+    result["connecteam"] = ct_status
     return result
 
 
@@ -1045,20 +1148,210 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_to_dict(job)
 
 
+@router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Full job record for the detail page: the job plus its linked records
+    (client, opportunity, property, originating quote), related invoices, and
+    the job-scoped activity timeline."""
+    from database.models import Invoice, Opportunity, Quote, Activity
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(
+        joinedload(Job.client), joinedload(Job.property), joinedload(Job.opportunity),
+    ).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    invoices = db.query(Invoice).filter(
+        Invoice.job_id == job.id,
+        or_(Invoice.org_id == org_id, Invoice.org_id.is_(None)),
+    ).all()
+    quote = None
+    if job.quote_id:
+        quote = db.query(Quote).filter(Quote.id == job.quote_id).first()
+    timeline = db.query(Activity).filter(
+        Activity.job_id == job.id,
+    ).order_by(Activity.created_at.desc()).limit(50).all()
+
+    return {
+        **job_to_dict(job),
+        "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
+                     if job.property else None),
+        "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
+                        if job.opportunity else None),
+        "quote": ({"id": quote.id, "quote_number": quote.quote_number, "status": quote.status, "total": quote.total}
+                  if quote else None),
+        "invoices": [
+            {"id": inv.id, "invoice_number": inv.invoice_number, "status": inv.status, "total": inv.total,
+             "created_at": inv.created_at.isoformat() if inv.created_at else None}
+            for inv in invoices
+        ],
+        "timeline": [
+            {"id": a.id, "activity_type": a.activity_type, "summary": a.summary, "actor": a.actor,
+             "created_at": a.created_at.isoformat() if a.created_at else None}
+            for a in timeline
+        ],
+    }
+
+
+@router.get("/{job_id}/timeline", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def get_job_timeline(
+    job_id: int,
+    source: Optional[str] = None,  # "activity" | "integration" | "message" | None (all)
+    limit: int = 150,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Unified, chronological activity timeline for a job — Pillar 3 connective
+    tissue. Merges three existing signals into one newest-first feed:
+
+    - **Activity** records (job created/completed, note added, quote/invoice
+      milestones) — the human-readable story.
+    - **IntegrationEvent** rows (Google Calendar / Connecteam / email / SMS
+      sync attempts, ok or failed) — "did it actually go out, and why not?".
+    - **Message** records (SMS/email to the client) — the conversation.
+
+    Every entry is normalised to a common shape so the frontend renders them in
+    a single stream. ``source`` narrows to one kind; ``limit``/``offset``
+    paginate the merged result.
+    """
+    from database.models import Activity, IntegrationEvent, Message
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    items: list[dict] = []
+
+    if source in (None, "activity"):
+        for a in db.query(Activity).filter(Activity.job_id == job_id).all():
+            items.append({
+                "kind": "activity",
+                "id": f"activity-{a.id}",
+                "icon_key": a.activity_type,
+                "label": a.summary,
+                "sub": None,
+                "actor": a.actor,
+                "status": None,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            })
+
+    if source in (None, "integration"):
+        events = db.query(IntegrationEvent).filter(
+            IntegrationEvent.entity_type == "job",
+            IntegrationEvent.entity_id == job_id,
+        ).all()
+        for e in events:
+            provider = (e.provider or "").lower()
+            pretty = {"gcal": "Google Calendar", "connecteam": "Connecteam",
+                      "email": "Email", "sms": "SMS"}.get(provider, e.provider or "Sync")
+            ok = (e.status or "").lower() == "ok"
+            items.append({
+                "kind": "integration",
+                "id": f"integration-{e.id}",
+                "icon_key": provider,
+                "label": f"{pretty} {e.action or 'sync'} {'succeeded' if ok else 'failed'}",
+                "sub": None if ok else (e.error_message or e.error_code),
+                "actor": None,
+                "status": e.status,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            })
+
+    if source in (None, "message"):
+        for m in db.query(Message).filter(Message.job_id == job_id).all():
+            snippet = (m.body or "").strip().replace("\n", " ")
+            if len(snippet) > 140:
+                snippet = snippet[:140] + "…"
+            channel = (m.channel or "message").lower()
+            direction = (m.direction or "").lower()
+            verb = {"inbound": "Received", "outbound": "Sent", "note": "Note"}.get(direction, "")
+            items.append({
+                "kind": "message",
+                "id": f"message-{m.id}",
+                "icon_key": channel,
+                "label": m.subject or f"{verb} {channel.upper()}".strip(),
+                "sub": snippet or None,
+                "actor": m.author,
+                "status": m.status,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            })
+
+    # Newest first; entries with no timestamp sink to the bottom.
+    items.sort(key=lambda x: x["created_at"] or "", reverse=True)
+    total = len(items)
+    return {
+        "job_id": job_id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items[offset:offset + limit],
+    }
+
+
+@router.post("/{job_id}/notes", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def add_job_note(job_id: int, data: dict, db: Session = Depends(get_db),
+                 current_user=Depends(get_current_user), org_id: int = Depends(current_org_id)):
+    """Jot an internal note on a job. Recorded as a NOTE_ADDED activity anchored
+    to the job (and its client) so it lands in the job's timeline."""
+    from database.models import ActivityType
+    from modules.activities.router import activity_to_dict
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    body = (data.get("body") or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Note body is required")
+
+    actor = getattr(current_user, "email", None) or getattr(current_user, "full_name", None) or "staff"
+    act = log_activity(
+        db, ActivityType.NOTE_ADDED.value,
+        client_id=job.client_id, job_id=job.id, actor=actor, summary=body,
+        extra_data={"note": True}, commit=False,
+    )
+    if not act:
+        raise HTTPException(status_code=500, detail="Could not record note")
+    db.commit()
+    db.refresh(act)
+    return activity_to_dict(act)
+
+
 @router.patch("/{job_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
-    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     prev_status = job.status
     prev_job_type = job.job_type or "residential"
+    # Signature of the shift-relevant fields BEFORE the edit. The edit modal
+    # sends every field, so we compare actual values (not "was it in the body")
+    # to decide whether Connecteam shifts need re-syncing.
+    prev_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
+                   tuple(str(c) for c in (job.cleaner_ids or [])))
 
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
@@ -1124,6 +1417,14 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
                            f"{CAPACITY_PER_CLEANER_PER_DAY}. Resubmit with allow_conflicts=true to override.",
                 )
 
+    # Store real date/time objects (the columns are Date/Time) instead of the
+    # inbound strings — portable across SQLite/Postgres, matches create_job.
+    if "scheduled_date" in updates:
+        updates["scheduled_date"] = _to_date(updates["scheduled_date"])
+    if "start_time" in updates:
+        updates["start_time"] = _to_time(updates["start_time"])
+    if "end_time" in updates:
+        updates["end_time"] = _to_time(updates["end_time"])
     for field, value in updates.items():
         setattr(job, field, value)
     db.commit()
@@ -1259,8 +1560,39 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db)):
             else:
                 update_event(job.gcal_event_id, job_dict, client_dict,
                              owner_account_id=getattr(job, "gcal_account_id", None))
+            # Record the reschedule/edit on the client timeline. Create and
+            # cancel were already logged; an in-place move/edit used to be silent,
+            # so "why did this job move?" had no answer on the profile.
+            if job.gcal_event_id:
+                log_calendar_event(
+                    db, "updated",
+                    client_id=job.client_id, job_id=job.id,
+                    title=job.title, gcal_event_id=job.gcal_event_id,
+                    scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                )
+                db.commit()
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
+
+    # ── CONNECTEAM SHIFT SYNC (independent of GCal) ──
+    # Cancelled → pull shifts. Active → push if newly assigned, or re-sync when
+    # the time/cleaners actually changed (delete old shifts, create fresh ones).
+    try:
+        from integrations.connecteam_auto import (
+            auto_dispatch_job, remove_job_from_connecteam, resync_job,
+        )
+        if job.status == "cancelled":
+            remove_job_from_connecteam(db, job)
+        else:
+            new_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
+                          tuple(str(c) for c in (job.cleaner_ids or [])))
+            if job.connecteam_shift_ids:
+                if new_ct_sig != prev_ct_sig:
+                    resync_job(db, job)
+            elif job.cleaner_ids:
+                auto_dispatch_job(db, job)
+    except Exception as e:
+        logger.warning(f"Connecteam sync failed for job {job.id}: {e}")
     return job_to_dict(job)
 
 
@@ -1307,8 +1639,12 @@ def update_reminder_settings(
 
 
 @router.delete("/{job_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_job(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
+def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     # Log to timeline before delete (FK rows are detached when job goes away,
@@ -1326,6 +1662,14 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
                          owner_account_id=getattr(job, "gcal_account_id", None))
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
+    # Remove any Connecteam shifts so deleting a job doesn't leave cleaners with
+    # orphaned shifts on their schedule.
+    if job.connecteam_shift_ids:
+        try:
+            from integrations.connecteam_auto import remove_job_from_connecteam
+            remove_job_from_connecteam(db, job, commit=False)
+        except Exception as e:
+            logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
     db.delete(job)
     db.commit()
 

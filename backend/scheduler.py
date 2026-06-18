@@ -363,6 +363,55 @@ def turnover_coverage_tick() -> dict:
         db.close()
 
 
+def quote_expiry_tick() -> dict:
+    """Flip past-due sent/viewed quotes to 'expired' so they drop out of the
+    follow-up list and customers can't accept a stale quote. Gated by
+    quote_auto_expire_enabled / QUOTE_AUTO_EXPIRE_ENABLED (default on)."""
+    from datetime import date
+    from database.models import Quote
+    from utils.dates import coerce_date
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "quote_auto_expire_enabled",
+                        env_flag("QUOTE_AUTO_EXPIRE_ENABLED", True)):
+            return {"skipped": True, "reason": "disabled"}
+        today = date.today()
+        expired = 0
+        # valid_until may be a str on drifted rows — coerce per row instead of
+        # filtering in SQL so the comparison is always date-vs-date.
+        for q in db.query(Quote).filter(Quote.status.in_(["sent", "viewed"])).all():
+            vu = coerce_date(q.valid_until)
+            if vu and vu < today:
+                q.status = "expired"
+                expired += 1
+        if expired:
+            db.commit()
+        return {"expired": expired}
+    except Exception as e:
+        log.error(f"[quote-expiry] sweep failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
+def gcal_watch_renew_tick() -> dict:
+    """Renew Google Calendar push channels before they expire (~weekly cap), so
+    real-time notifications don't silently lapse. Gated by GCAL_WATCH_ENABLED
+    (off by default — needs a public https base URL)."""
+    if not env_flag("GCAL_WATCH_ENABLED", False):
+        return {"skipped": True, "reason": "disabled"}
+    from integrations.gcal_watch import renew_expiring
+    from config import app_base_url
+    db = SessionLocal()
+    try:
+        return renew_expiring(db, app_base_url())
+    except Exception as e:
+        log.error(f"[gcal-watch] renew failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler."""
     global _scheduler
@@ -485,6 +534,33 @@ def start_scheduler():
         log.info(f"Turnover coverage check enabled (daily at {coverage_hour:02d}:30)")
     else:
         log.info("Turnover coverage check disabled via TURNOVER_COVERAGE_CHECK_ENABLED=0")
+
+    # Quote auto-expiry — daily sweep flipping past-due sent/viewed quotes to
+    # 'expired' so they leave the follow-up list and can't be accepted stale.
+    if env_flag("QUOTE_AUTO_EXPIRE_ENABLED", True):
+        expiry_hour = env_int("QUOTE_AUTO_EXPIRE_HOUR", 4)
+        _scheduler.add_job(
+            quote_expiry_tick,
+            CronTrigger(hour=expiry_hour, minute=0),
+            id="quote_auto_expire",
+            name="Quote auto-expiry sweep",
+            replace_existing=True,
+        )
+        log.info(f"Quote auto-expiry enabled (daily at {expiry_hour:02d}:00)")
+    else:
+        log.info("Quote auto-expiry disabled via QUOTE_AUTO_EXPIRE_ENABLED=0")
+
+    # Google Calendar push-channel renewal — re-registers watches before their
+    # ~weekly expiry so real-time sync doesn't lapse. Off by default.
+    if env_flag("GCAL_WATCH_ENABLED", False):
+        _scheduler.add_job(
+            gcal_watch_renew_tick,
+            IntervalTrigger(hours=env_int("GCAL_WATCH_RENEW_INTERVAL_HOURS", 12)),
+            id="gcal_watch_renew",
+            name="Google Calendar watch renewal",
+            replace_existing=True,
+        )
+        log.info("Google Calendar watch renewal enabled")
 
     _scheduler.start()
     return _scheduler

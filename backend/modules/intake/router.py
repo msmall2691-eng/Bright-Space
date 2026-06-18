@@ -6,42 +6,15 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import logging
-import re
 
 from database.db import get_db
-from modules.auth.router import require_role
-from database.models import LeadIntake, Client, Opportunity, Activity
-from utils.contacts import find_client_by_contact, normalize_phone
+from modules.auth.router import require_role, current_org_id, resolve_org_id
+from database.models import LeadIntake, Client
+from modules.intake.normalize import build_intake, upsert_lead
 from ratelimit import limiter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-# Names we treat as placeholders that should be overwritten when a real
-# website lead lands on the same client record. Without this, every fresh
-# lead whose email matches a generic test/import client keeps that client's
-# old name in the Quoting dropdown.
-_PLACEHOLDER_NAMES = (
-    "brightbase webhook test",
-    "test client",
-    "unknown",
-    "(unknown)",
-    "n/a",
-    "",
-)
-
-
-def _looks_placeholder_name(name: Optional[str]) -> bool:
-    if not name:
-        return True
-    n = name.strip().lower()
-    if n in _PLACEHOLDER_NAMES:
-        return True
-    # All-digits / phone-only "names" (e.g. "+12075551234")
-    if re.fullmatch(r"\+?\d[\d\s().-]{5,}", n):
-        return True
-    return False
 
 
 class IntakeSubmit(BaseModel):
@@ -53,8 +26,19 @@ class IntakeSubmit(BaseModel):
     state: Optional[str] = "ME"
     zip_code: Optional[str] = None
     service_type: Optional[str] = "residential"
+    # Full structured superset the website can send (the LeadIntake model has
+    # columns for all of these; the schema used to silently drop most of them).
     bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
     square_footage: Optional[int] = None
+    guests: Optional[int] = None
+    frequency: Optional[str] = None
+    requested_date: Optional[str] = None
+    check_in: Optional[str] = None
+    check_out: Optional[str] = None
+    estimate_min: Optional[float] = None
+    estimate_max: Optional[float] = None
+    property_name: Optional[str] = None
     message: Optional[str] = None
     preferred_date: Optional[str] = None
     source: Optional[str] = "website"
@@ -113,106 +97,23 @@ def intake_to_dict(i: LeadIntake) -> dict:
 def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(get_db)):
     """Public endpoint — called from maineclean.co contact/quote form.
 
-    Idempotency: if the same email/phone submitted an intake within the
-    last 5 minutes, return that intake instead of creating a duplicate.
-    The maineclean.co site is observed to call both /submit and /webhook
-    in rapid succession for a single user click.
+    Goes through the single canonical intake path (see modules.intake.normalize):
+    every structured field is persisted, the estimate is computed, and a visit
+    that also hits /booking/submit or /webhook within 5 minutes merges into one
+    lead instead of creating duplicates.
     """
-    normalized_phone = normalize_phone(data.phone)
-    name_in = (data.name or "").strip()
-    email_in = (data.email or "").strip() or None
-
-    # --- Idempotency window ---------------------------------------------------
-    if email_in or normalized_phone:
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-        dup_q = db.query(LeadIntake).filter(LeadIntake.created_at >= cutoff)
-        dup_filters = []
-        if email_in:
-            dup_filters.append(LeadIntake.email.ilike(email_in))
-        if normalized_phone:
-            dup_filters.append(LeadIntake.phone == normalized_phone)
-        if dup_filters:
-            recent = dup_q.filter(or_(*dup_filters)).order_by(LeadIntake.created_at.desc()).first()
-            if recent:
-                changed = False
-                merge_fields = [
-                    ("address", data.address),
-                    ("city", data.city),
-                    ("zip_code", data.zip_code),
-                    ("service_type", data.service_type),
-                    ("bedrooms", data.bedrooms),
-                    ("square_footage", data.square_footage),
-                    ("preferred_date", data.preferred_date),
-                ]
-                for field, val in merge_fields:
-                    if val and not getattr(recent, field, None):
-                        setattr(recent, field, val)
-                        changed = True
-                if data.message and (not recent.message or len(data.message) > len(recent.message or "")):
-                    recent.message = data.message
-                    changed = True
-                if changed:
-                    db.commit()
-                    db.refresh(recent)
-                return {
-                    "success": True,
-                    "intake_id": recent.id,
-                    "client_id": recent.client_id,
-                    "deduped": True,
-                }
-
-    # --- Client match / create -----------------------------------------------
-    client = find_client_by_contact(db, email=email_in, phone=normalized_phone)
-
-    if not client:
-        client = Client(
-            name=name_in or "Unknown",
-            email=email_in,
-            phone=normalized_phone,
-            address=data.address,
-            city=data.city,
-            state=data.state or "ME",
-            zip_code=data.zip_code,
-            status="lead",
-            source=data.source or "website",
-        )
-        db.add(client)
-        db.flush()  # get client.id without committing
-    else:
-        # We matched an existing client. If the existing record looks like a
-        # placeholder (e.g. "BrightBase Webhook Test", a bare phone number,
-        # "Unknown"), overwrite the name with the real lead's name so the
-        # Quoting dropdown and Send Quote modal show the right person.
-        if name_in and _looks_placeholder_name(client.name):
-            client.name = name_in
-        # Backfill missing contact fields so future lookups still match.
-        if email_in and not client.email:
-            client.email = email_in
-        if normalized_phone and not client.phone:
-            client.phone = normalized_phone
-        if data.address and not client.address:
-            client.address = data.address
-
-    intake = LeadIntake(
-        name=name_in or client.name,
-        email=email_in,
-        phone=normalized_phone,
-        address=data.address,
-        city=data.city,
-        state=data.state or "ME",
-        zip_code=data.zip_code,
-        service_type=data.service_type or "residential",
-        bedrooms=data.bedrooms,
-        square_footage=data.square_footage,
-        message=data.message,
-        preferred_date=data.preferred_date,
-        source=data.source or "website",
-        client_id=client.id,
+    payload = build_intake(
+        name=data.name, email=data.email, phone=data.phone, address=data.address,
+        city=data.city, state=data.state, zip_code=data.zip_code,
+        service_key=data.service_type, bedrooms=data.bedrooms,
+        bathrooms=data.bathrooms, square_footage=data.square_footage,
+        guests=data.guests, frequency=data.frequency,
+        requested_date=data.requested_date, check_in=data.check_in,
+        check_out=data.check_out, estimate_min=data.estimate_min,
+        estimate_max=data.estimate_max, property_name=data.property_name,
+        message=data.message, preferred_date=data.preferred_date, source=data.source,
     )
-    db.add(intake)
-    db.commit()
-    db.refresh(intake)
-    return {"success": True, "intake_id": intake.id, "client_id": client.id}
+    return upsert_lead(db, payload)
 
 
 @router.get("", dependencies=[Depends(require_role("admin", "manager"))])
@@ -224,9 +125,12 @@ def get_intakes(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """List intakes with filtering by status, source, service_type, priority."""
-    q = db.query(LeadIntake)
+    # MT-2: scope to the caller's workspace; tolerate legacy + public-submitted
+    # NULL-org leads (the contact form has no logged-in user).
+    q = db.query(LeadIntake).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)))
     if status:
         q = q.filter(LeadIntake.status == status)
     if source:
@@ -263,8 +167,11 @@ def get_intake_stats(db: Session = Depends(get_db)):
 
 
 @router.patch("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db)):
-    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
     updates = data.model_dump(exclude_none=True)
@@ -282,8 +189,11 @@ def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def delete_intake(intake_id: int, db: Session = Depends(get_db)):
-    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+def delete_intake(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
     db.delete(intake)
@@ -293,11 +203,14 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{intake_id}/convert-to-quote", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
+def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Convert an intake to a quote with sensible defaults."""
     from database.models import Quote
 
-    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
 
@@ -319,6 +232,40 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
         client_id = client.id
 
     address = " ".join(filter(None, [intake.address, intake.city, intake.state, intake.zip_code]))
+
+    # Carry the customer's structured request onto a Property so the quote (and
+    # later the job) start from real data instead of re-typing. Reuse an existing
+    # property at the same address; otherwise create one and back-fill size.
+    from database.models import Property
+    prop = None
+    if intake.address:
+        prop = (
+            db.query(Property)
+            .filter(Property.client_id == client_id, Property.address == intake.address)
+            .first()
+        )
+    if prop:
+        if intake.bedrooms and not prop.bedrooms:
+            prop.bedrooms = intake.bedrooms
+        if intake.bathrooms and not prop.bathrooms:
+            prop.bathrooms = intake.bathrooms
+        if intake.square_footage and not prop.square_footage:
+            prop.square_footage = intake.square_footage
+    else:
+        prop = Property(
+            client_id=client_id,
+            name=intake.property_name or intake.address or f"{intake.name}'s property",
+            address=intake.address or address or "(no address on file)",
+            city=intake.city,
+            state=intake.state,
+            zip_code=intake.zip_code,
+            property_type=intake.service_type or "residential",
+            bedrooms=intake.bedrooms,
+            bathrooms=intake.bathrooms,
+            square_footage=intake.square_footage,
+        )
+        db.add(prop)
+        db.flush()
 
     # Seed the first line item's price from the website "instant quote" estimate
     # (midpoint of the range) so the operator starts from the customer's number
@@ -342,6 +289,8 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
     quote = Quote(
         client_id=client_id,
         intake_id=intake_id,
+        property_id=prop.id,
+        org_id=intake.org_id or resolve_org_id(org_id, db),  # MT-2: inherit the lead's workspace
         # Temporary unique placeholder; replaced with QT-YYYY-#### after flush.
         quote_number=f"PENDING-{secrets.token_hex(8)}",
         address=address or None,
@@ -365,6 +314,17 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db)):
     _assign_quote_number(quote)
     intake.status = "quoted"
     intake.converted_quote_id = quote.id
+    # Pipeline: advance the lead's deal to "quoted" and link the quote.
+    from utils.opportunity_helper import ensure_opportunity, advance_opportunity
+    opp = ensure_opportunity(
+        db, client_id=client_id, org_id=intake.org_id,
+        title=quote.title or (intake.service_type or "Quote"),
+        amount=quote.total, service_type=intake.service_type,
+    )
+    if opp:
+        quote.opportunity_id = opp.id
+        intake.opportunity_id = opp.id
+        advance_opportunity(db, opp, "quoted", amount=quote.total)
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -399,24 +359,17 @@ class WebhookPayload(BaseModel):
         extra = "allow"
 
 
-SERVICE_TYPE_MAP = {
-    "standard": "residential",
-    "deep": "residential",
-    "move-in-out": "residential",
-    "str": "str",
-    "vacation-rental": "str",
-    "commercial": "commercial",
-    "residential": "residential",
-}
-
-
 @router.post("/webhook", status_code=201)  # PUBLIC: maineclean.co InstantEstimate webhook posts here
 @limiter.limit("30/hour")
 def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends(get_db)):
     """
     Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
-    Computes the canonical backend estimate so ops always sees the
-    authoritative number, and flags any drift from the site's reported value.
+
+    Maps the webhook's field names onto the canonical intake path, which computes
+    the authoritative backend estimate (so the website and webhook can never
+    disagree on the rate card). The customer's structured answers land in their
+    own columns; ``message`` keeps only the free-text note. Any drift from the
+    site-reported estimate is recorded in internal_notes for ops to review.
     """
     if not data.name and not data.email and not data.phone:
         return {"success": False, "error": "No contact info provided"}
@@ -424,70 +377,31 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
     service_key = data.serviceType or data.service or data.propertyType or ""
     sqft = data.sqft or data.squareFeet
     notes_text = data.notes or data.message or ""
-    service_type = SERVICE_TYPE_MAP.get(service_key, "residential")
 
-    parts = []
-    if service_key:
-        parts.append(f"Service: {service_key}")
-    if data.frequency:
-        parts.append(f"Frequency: {data.frequency}")
-    if sqft:
-        parts.append(f"Sq ft: {sqft}")
-    if data.bathrooms:
-        parts.append(f"Bathrooms: {data.bathrooms}")
-    if data.petHair and data.petHair != "none":
-        parts.append(f"Pet hair: {data.petHair}")
-    if data.condition:
-        parts.append(f"Condition: {data.condition}")
-
-    # Compute the canonical backend estimate so ops always sees the authoritative
-    # number - even if the maineclean.co site's pricing math has drifted. Uses the
-    # SAME engine the public booking form uses (modules.booking.pricing), so the
-    # website and the webhook can never disagree on the rate card.
-    canonical_min = canonical_max = None
-    try:
-        from modules.booking.pricing import estimate_price
-        canonical = estimate_price(
-            service_type=service_key or "residential",
-            bathrooms=data.bathrooms,
-            square_footage=sqft,
-            frequency=data.frequency,
-            # Free-text notes drive the deep-clean / move-in-out keyword sniff,
-            # exactly as the booking form passes its message field.
-            message=notes_text,
-        )
-        canonical_min = canonical["estimate_min"]
-        canonical_max = canonical["estimate_max"]
-    except Exception as e:
-        logger.warning("Canonical estimate computation failed: %s", e)
-        canonical_min = canonical_max = None
-
-    site_min, site_max = data.estimateMin, data.estimateMax
-    if canonical_min is not None and canonical_max is not None:
-        parts.append(f"Canonical estimate: ${canonical_min:.0f}-${canonical_max:.0f}")
-        if site_min and site_max and (
-            abs(float(site_min) - float(canonical_min)) > 10
-            or abs(float(site_max) - float(canonical_max)) > 10
-        ):
-            parts.append(f"Site reported: ${site_min:.0f}-${site_max:.0f} (review pricing)")
-    elif site_min and site_max:
-        parts.append(f"Estimate: ${site_min:.0f}-${site_max:.0f}")
-
-    if notes_text:
-        parts.append(f"Notes: {notes_text}")
-    message = " | ".join(parts) if parts else notes_text
-
-    normalized = IntakeSubmit(
-        name=data.name or "Unknown",
-        email=data.email,
-        phone=data.phone,
-        address=data.address,
-        zip_code=data.zip,
-        service_type=service_type,
-        square_footage=sqft,
-        message=message,
+    payload = build_intake(
+        name=data.name, email=data.email, phone=data.phone, address=data.address,
+        zip_code=data.zip, service_key=service_key, bathrooms=data.bathrooms,
+        square_footage=sqft, frequency=data.frequency, message=notes_text or None,
         source=data.source or "website",
+        pet_hair=data.petHair, condition=data.condition,
     )
-    # Forward the real Request: submit_intake is a @limiter.limit endpoint, so
-    # slowapi needs a starlette Request (not the IntakeSubmit) as the first arg.
-    return submit_intake(request, normalized, db)
+    result = upsert_lead(db, payload)
+
+    # Record drift between the site's reported estimate and our canonical one so
+    # ops can spot a stale rate card on the website — without polluting message.
+    site_min, site_max = data.estimateMin, data.estimateMax
+    if (
+        not result.get("deduped")
+        and payload.estimate_min is not None and payload.estimate_max is not None
+        and site_min and site_max
+        and (abs(float(site_min) - float(payload.estimate_min)) > 10
+             or abs(float(site_max) - float(payload.estimate_max)) > 10)
+    ):
+        intake = db.query(LeadIntake).filter(LeadIntake.id == result["intake_id"]).first()
+        if intake:
+            intake.internal_notes = (
+                f"Site reported ${site_min:.0f}-${site_max:.0f} vs canonical "
+                f"${payload.estimate_min:.0f}-${payload.estimate_max:.0f} (review pricing)"
+            )
+            db.commit()
+    return result

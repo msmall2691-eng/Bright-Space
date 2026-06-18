@@ -34,7 +34,7 @@ export default function Card({
   return (
     <Tag className={`bg-panel border border-hairline rounded-2xl flex flex-col ${className}`}>
       {hasHeader && (
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-hairline">
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-hairline">
           <div className="flex items-center gap-2 min-w-0">
             {Icon && <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} />}
             <div className="min-w-0">
@@ -50,7 +50,7 @@ export default function Card({
           {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      <div className={`${padded ? 'p-4' : ''} ${bodyClassName}`}>{children}</div>
+      <div className={`${padded ? 'p-3' : ''} ${bodyClassName}`}>{children}</div>
     </Tag>
   )
 }

@@ -223,6 +223,15 @@ export default function Settings() {
       .then(r => setGcalConn({ loading: false, ...r }))
       .catch(e => setGcalConn({ loading: false, connected: false, reason: 'error', detail: e?.message || 'Could not check status' }))
   }
+  // Live Gmail connection health (mirrors gcal-status) so an expired grant that
+  // silently stops inbound email sync surfaces a reconnect signal.
+  const [gmailConn, setGmailConn] = useState({ loading: true })
+  const refreshGmailStatus = () => {
+    setGmailConn({ loading: true })
+    return get('/api/settings/gmail-status')
+      .then(r => setGmailConn({ loading: false, ...r }))
+      .catch(e => setGmailConn({ loading: false, connected: false, accounts: [], detail: e?.message || 'Could not check status' }))
+  }
   // Live "are we auto-messaging customers?" state (read-only indicator).
   const [msgStatus, setMsgStatus] = useState({ loading: true })
   const [msgSaving, setMsgSaving] = useState(false)
@@ -242,6 +251,7 @@ export default function Settings() {
     if (section !== 'integrations') return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
     refreshGcalStatus()
+    refreshGmailStatus()
     get('/api/settings/messaging-status')
       .then(r => setMsgStatus({ loading: false, ...r }))
       .catch(() => setMsgStatus({ loading: false, error: true }))
@@ -1065,6 +1075,44 @@ export default function Settings() {
                       <div>Visible calendars on this account: {gcalConn.calendars.map(c => c.summary).filter(Boolean).join(', ') || '—'}</div>
                       <div className="text-ink-3/80">Tip: the account above must match the calendar you embed below. If you embed office@mainecleaningco.com but are connected as a different account, events won't appear.</div>
                     </div>
+                  )}
+                </div>
+
+                {/* Gmail — live per-account connection health. An expired grant
+                    silently stops inbound email sync, so surface a reconnect signal. */}
+                <div className="bg-panel rounded-xl border border-hairline p-4 mb-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl">📧</span>
+                      <div>
+                        <h3 className="font-semibold text-ink">Gmail</h3>
+                        <p className="text-xs text-ink-3">Inbound email is synced from connected Google accounts and linked to clients</p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                      gmailConn.loading
+                        ? 'bg-bg-2 text-ink-3 border-hairline'
+                        : gmailConn.connected
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      {gmailConn.loading ? 'Checking…' : gmailConn.connected ? '✓ Connected' : '✗ Not connected'}
+                    </span>
+                  </div>
+                  {!gmailConn.loading && Array.isArray(gmailConn.accounts) && gmailConn.accounts.length > 0 && (
+                    <div className="mt-3 text-[11px] text-ink-3 space-y-1">
+                      {gmailConn.accounts.map(a => (
+                        <div key={a.email} className="flex items-center gap-1.5">
+                          <code className="bg-bg-2 px-1 rounded text-ink-2">{a.email}</code>
+                          {a.needs_reconnect
+                            ? <span className="text-red-600 font-medium">— reconnect needed{a.last_sync_error ? ` (${a.last_sync_error})` : ''}</span>
+                            : <span className="text-emerald-600">✓ syncing</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!gmailConn.loading && (!gmailConn.accounts || gmailConn.accounts.length === 0) && (
+                    <div className="mt-3 text-[11px] text-ink-3">No Gmail-enabled Google account connected yet. Connect one above to sync inbound email.</div>
                   )}
                 </div>
 

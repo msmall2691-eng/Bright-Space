@@ -636,3 +636,88 @@ def get_event(event_id: str, job_type: str = "residential", owner_account_id: in
             # 410 Gone = event was permanently deleted. Treat same as 404.
             return None
         raise
+
+
+def free_busy_conflicts(job_type, scheduled_date, start_time, end_time, tz: str = "America/New_York") -> list:
+    """Query Google Free/Busy for the calendar this job_type lands on and return
+    any busy intervals overlapping [start, end] on the given date.
+
+    Used to stop double-booking a slot at scheduling time. Fails OPEN: if Google
+    isn't connected, the window is malformed, or the API errors, returns [] so a
+    Free/Busy hiccup can never block creating a job. Each returned item is the
+    raw Google busy block: {"start": ISO, "end": ISO}.
+    """
+    if not is_configured():
+        return []
+    try:
+        from zoneinfo import ZoneInfo
+
+        def _hm(t):
+            if t is None:
+                return "00:00"
+            if hasattr(t, "strftime"):
+                return t.strftime("%H:%M")
+            return str(t)[:5]
+
+        tzinfo = ZoneInfo(tz or "America/New_York")
+        start = datetime.fromisoformat(f"{scheduled_date}T{_hm(start_time)}:00").replace(tzinfo=tzinfo)
+        end = datetime.fromisoformat(f"{scheduled_date}T{_hm(end_time)}:00").replace(tzinfo=tzinfo)
+        if end <= start:
+            return []
+
+        service = _get_service()
+        cal_id = _calendar_id(job_type or "residential")
+        resp = service.freebusy().query(body={
+            "timeMin": start.isoformat(),
+            "timeMax": end.isoformat(),
+            "items": [{"id": cal_id}],
+        }).execute()
+        cal = (resp.get("calendars") or {}).get(cal_id, {})
+        # FreeBusy only returns blocks intersecting [timeMin, timeMax], so every
+        # entry here is a genuine overlap with the requested window.
+        return cal.get("busy", []) or []
+    except Exception as e:  # never block scheduling on a Free/Busy failure
+        print(f"[GCal] Free/Busy check failed (allowing booking): {e}")
+        return []
+
+
+def start_watch(calendar_id: str, address: str, token: str, ttl_seconds: int = 7 * 24 * 3600) -> dict | None:
+    """Register a Google push channel (events.watch) on a calendar.
+
+    Google will POST to ``address`` whenever the calendar changes; ``token`` is
+    echoed back as X-Goog-Channel-Token so we can authenticate the callback.
+    Returns {channel_id, resource_id, expiration_ms} or None on failure.
+    """
+    import uuid
+    from googleapiclient.errors import HttpError
+    try:
+        service = _get_service()
+        channel_id = f"bb-{uuid.uuid4().hex}"
+        body = {
+            "id": channel_id,
+            "type": "web_hook",
+            "address": address,
+            "token": token,
+            "params": {"ttl": str(int(ttl_seconds))},
+        }
+        res = service.events().watch(calendarId=calendar_id, body=body).execute()
+        return {
+            "channel_id": res.get("id", channel_id),
+            "resource_id": res.get("resourceId"),
+            "expiration_ms": int(res["expiration"]) if res.get("expiration") else None,
+        }
+    except (RuntimeError, HttpError, KeyError, ValueError) as e:
+        print(f"[GCal] watch registration failed for {calendar_id}: {e}")
+        return None
+
+
+def stop_watch(channel_id: str, resource_id: str) -> bool:
+    """Stop a previously registered push channel."""
+    from googleapiclient.errors import HttpError
+    try:
+        service = _get_service()
+        service.channels().stop(body={"id": channel_id, "resourceId": resource_id}).execute()
+        return True
+    except (RuntimeError, HttpError) as e:
+        print(f"[GCal] watch stop failed for {channel_id}: {e}")
+        return False

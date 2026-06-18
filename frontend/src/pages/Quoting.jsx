@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText } from 'lucide-react'
+import { Plus, Trash2, X, Calendar, CheckCircle, Send, Mail, MessageSquare, Eye, ChevronDown, Copy, Check, FileText, Search } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
+import SavedViewsBar from '../components/SavedViewsBar'
+import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
-import { get, post, patch, put } from "../api"
+import AddressAutocomplete from '../components/AddressAutocomplete'
+import { get, post, patch, put, del } from "../api"
+import { formatDate } from '../utils/format'
 
 
 const QUOTE_STATUS_COLORS = {
@@ -24,8 +28,21 @@ const LEAD_STATUS_COLORS = {
   converted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
+// Inline-edit status options (Twenty-style chips) for the leads/quotes tables.
+const QUOTE_STATUS_OPTIONS = ['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted']
+  .map(s => ({ value: s, label: s, chipClass: QUOTE_STATUS_COLORS[s] || QUOTE_STATUS_COLORS.draft }))
+const LEAD_STATUS_OPTIONS = ['new', 'reviewed', 'quoted', 'converted']
+  .map(s => ({ value: s, label: s, chipClass: LEAD_STATUS_COLORS[s] }))
+
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
+// Flat 30-day validity policy: a new quote's "Valid Until" defaults to 30 days
+// out (still editable) so it's never empty and matches the backend default.
+const defaultValidUntil = () => {
+  const d = new Date()
+  d.setDate(d.getDate() + 30)
+  return d.toISOString().slice(0, 10)
+}
 
 // Names that are really phone numbers / intake placeholders — never greet
 // with these ("Hello +12074329492" shipped to a real customer on June 11).
@@ -68,10 +85,12 @@ export default function Quoting() {
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
   const [selected, setSelected] = useState(null)
   const [selectedIntake, setSelectedIntake] = useState(null)
+  const [quoteSearch, setQuoteSearch] = useState('')
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState('')
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
-    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: ''
+    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil()
   })
   const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '' })
   const [saving, setSaving] = useState(false)
@@ -82,6 +101,8 @@ export default function Quoting() {
   // Live customer-facing preview alongside the editor (§7.2 #4 quote reader).
   const [previewMode, setPreviewMode] = useState(false)
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
+  const [archivedQuotes, setArchivedQuotes] = useState([])
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
   // Template manager (create/edit/delete reusable quote templates). Saving needs
   // admin/manager (PUT is role-gated), so only show the editor to those roles.
   const [editTemplates, setEditTemplates] = useState([])
@@ -189,6 +210,7 @@ export default function Quoting() {
   useEffect(() => {
     const t = new URLSearchParams(location.search).get('tab')
     if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
+    else if (t === 'archived') { setTab('archived'); loadArchived() }
   }, [location.search])
 
   // Guard (June 10 P1): one malformed row — legacy JSON shapes where items is
@@ -294,6 +316,15 @@ export default function Quoting() {
       const mid = (intake.estimate_min != null && intake.estimate_max != null)
         ? Math.round((intake.estimate_min + intake.estimate_max) / 2)
         : (intake.estimate_max ?? intake.estimate_min ?? 0)
+      // Surface the customer's structured details on the line item so the
+      // operator confirms against real data instead of re-deriving it.
+      const details = [
+        intake.square_footage && `${intake.square_footage.toLocaleString()} sqft`,
+        intake.bedrooms && `${intake.bedrooms} bd`,
+        intake.bathrooms && `${intake.bathrooms} ba`,
+        intake.frequency,
+      ].filter(Boolean).join(' · ')
+      const lineDesc = [mid ? 'From website instant quote' : '', details].filter(Boolean).join(' — ')
       setForm({
         client_id: intake.client_id || '', intake_id: intake.id,
         title: '', customer_message: '',
@@ -303,19 +334,19 @@ export default function Quoting() {
           ...EMPTY_ITEM,
           name: `${(intake.service_type || 'residential')} cleaning`,
           unit_price: mid || 0,
-          description: mid ? 'From website instant quote' : '',
+          description: lineDesc,
         }],
         tax_rate: 0,
         notes: '',
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
-        valid_until: ''
+        valid_until: defaultValidUntil()
       })
     } else {
       setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
         address: '', service_type: 'residential',
-        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: '' })
+        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil() })
     }
     setPanel('quote')
   }
@@ -412,6 +443,11 @@ export default function Quoting() {
     loadIntakes()
   }
 
+  const updateLeadStatus = async (id, status) => {
+    await patch(`/api/intake/${id}`, { status })
+    loadIntakes()
+  }
+
   const convertToJob = async (quoteId) => {
     setConverting(quoteId)
     try {
@@ -421,6 +457,66 @@ export default function Quoting() {
     } catch (e) { showToast(e.message || 'Error converting to job') }
     setConverting(null)
   }
+
+  const archiveQuote = async (quote) => {
+    if (!window.confirm(`Archive quote ${quote.quote_number || quote.id}? It will be hidden from this list.`)) return
+    try {
+      await del(`/api/quotes/${quote.id}`)
+      if (selected?.id === quote.id) { setSelected(null); setPanel(null) }
+      await loadQuotes()
+      showToast('Quote archived')
+    } catch (e) { showToast(e.message || 'Could not archive quote') }
+  }
+
+  // Permanent (hard) delete is admin-only and lives in the Archived view.
+  const isAdmin = (() => {
+    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+    catch { return false }
+  })()
+
+  const loadArchived = () => get('/api/quotes?status=archived')
+    .then(d => setArchivedQuotes(Array.isArray(d) ? d.map(safeQuote) : []))
+    .catch(err => console.error("[Quoting]", err))
+
+  // --- Bulk selection (quotes + archived tabs) ------------------------------
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const clearSelection = () => setSelectedIds(new Set())
+
+  const bulkArchive = async () => {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    if (!window.confirm(`Archive ${ids.length} quote${ids.length === 1 ? '' : 's'}? They'll be hidden from this list.`)) return
+    let failed = 0
+    for (const id of ids) { try { await del(`/api/quotes/${id}`) } catch { failed++ } }
+    clearSelection(); await loadQuotes()
+    showToast(failed
+      ? `Archived ${ids.length - failed} of ${ids.length} · ${failed} couldn't be archived (scheduled into a job?)`
+      : `Archived ${ids.length} quote${ids.length === 1 ? '' : 's'}`)
+  }
+
+  const bulkDeletePermanent = async () => {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    if (!window.confirm(`Permanently delete ${ids.length} quote${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    let failed = 0
+    for (const id of ids) { try { await del(`/api/quotes/${id}/permanent`) } catch { failed++ } }
+    clearSelection(); await loadArchived()
+    showToast(failed
+      ? `Deleted ${ids.length - failed} of ${ids.length} · ${failed} failed`
+      : `Deleted ${ids.length} quote${ids.length === 1 ? '' : 's'}`)
+  }
+
+  const deletePermanent = async (q) => {
+    if (!window.confirm(`Permanently delete quote ${q.quote_number || q.id}? This cannot be undone.`)) return
+    try { await del(`/api/quotes/${q.id}/permanent`); await loadArchived(); showToast('Quote deleted permanently') }
+    catch (e) { showToast(e.message || 'Could not delete quote') }
+  }
+
+  const switchTab = (t) => { clearSelection(); setTab(t); if (t === 'archived') loadArchived() }
 
   // Onboard an accepted quote: open the job modal (recurring by default,
   // pre-filled from the quote) to set up the repeating schedule + first job on
@@ -463,6 +559,16 @@ export default function Quoting() {
 
   const newLeads = intakes.filter(i => i.status === 'new').length
 
+  // Quotes-tab filtering, persisted by saved views (entityType="quote").
+  const quoteViewConfig = { search: quoteSearch, status: quoteStatusFilter }
+  const applyQuoteView = (cfg) => { setQuoteSearch(cfg.search ?? ''); setQuoteStatusFilter(cfg.status ?? '') }
+  const visibleQuotes = quotes.filter(q => {
+    if (quoteStatusFilter && q.status !== quoteStatusFilter) return false
+    const term = quoteSearch.trim().toLowerCase()
+    if (!term) return true
+    return [clientName(q.client_id), q.quote_number, q.address].some(v => (v || '').toLowerCase().includes(term))
+  })
+
   return (
     <div className="flex h-full">
       <div className="flex-1 p-6 flex flex-col min-w-0 overflow-hidden">
@@ -470,19 +576,23 @@ export default function Quoting() {
         {/* Tabs + action */}
         <div className="flex justify-between items-center mb-5 shrink-0">
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1">
-            <button onClick={() => setTab('leads')}
+            <button onClick={() => switchTab('leads')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'leads' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Leads
               {newLeads > 0 && <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{newLeads}</span>}
             </button>
-            <button onClick={() => setTab('quotes')}
+            <button onClick={() => switchTab('quotes')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Quotes
             </button>
-            <button onClick={() => setTab('follow-ups')}
+            <button onClick={() => switchTab('follow-ups')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Follow-ups
               {followUps.length > 0 && <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{followUps.length}</span>}
+            </button>
+            <button onClick={() => switchTab('archived')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              Archived
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -513,19 +623,42 @@ export default function Quoting() {
                 <p className="text-xs mt-1 text-ink-3">Submissions from maineclean.co will appear here</p>
               </div>
             )}
+            {intakes.length > 0 && (
+            <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
             {intakes.map(intake => (
-              <div key={intake.id} className="bg-panel border border-hairline rounded-xl p-4">
+              <div key={intake.id} className="p-3 hover:bg-bg-2/40 transition-colors">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span className="font-medium text-ink">{intake.name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border capitalize ${LEAD_STATUS_COLORS[intake.status]}`}>{intake.status}</span>
+                      <span onClick={e => e.stopPropagation()}>
+                        <InlineSelect value={intake.status} options={LEAD_STATUS_OPTIONS}
+                          onSelect={(s) => updateLeadStatus(intake.id, s)}
+                          disabled={!canEdit || intake.status === 'converted'} />
+                      </span>
                       <span className="text-xs text-ink-3 capitalize bg-bg-2 px-2 py-0.5 rounded-full">{intake.service_type}</span>
                     </div>
+                    {/* Structured request chips — the data the customer entered on
+                        the website (sqft/beds/baths/frequency/estimate), so the
+                        operator reads it at a glance instead of from the message blob. */}
+                    {(intake.square_footage || intake.bedrooms || intake.bathrooms || intake.frequency
+                      || intake.estimate_min != null) && (
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        {intake.square_footage ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.square_footage.toLocaleString()} sqft</span> : null}
+                        {intake.bedrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bedrooms} bd</span> : null}
+                        {intake.bathrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bathrooms} ba</span> : null}
+                        {intake.frequency ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2 capitalize">{intake.frequency}</span> : null}
+                        {(intake.estimate_min != null && intake.estimate_max != null) ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium">
+                            ${Math.round(intake.estimate_min)}–${Math.round(intake.estimate_max)}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                     <div className="text-xs text-ink-3 space-y-0.5">
                       {(intake.phone || intake.email) && <div>{[intake.phone, intake.email].filter(Boolean).join(' · ')}</div>}
                       {intake.address && <div>{[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}</div>}
-                      {intake.preferred_date && <div>Preferred: {intake.preferred_date}</div>}
+                      {intake.preferred_date && <div>Preferred: {formatDate(intake.preferred_date)}</div>}
                       {intake.message && <div className="text-ink-3 italic mt-1 line-clamp-2">"{intake.message}"</div>}
                     </div>
                     <div className="text-xs text-ink-3 mt-1.5">
@@ -555,21 +688,66 @@ export default function Quoting() {
                 </div>
               </div>
             ))}
+            </div>
+            )}
           </div>
         )}
 
         {/* Quotes tab */}
         {tab === 'quotes' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input value={quoteSearch} onChange={e => setQuoteSearch(e.target.value)} placeholder="Search quotes…"
+                  className="w-full bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
+              </div>
+              <select value={quoteStatusFilter} onChange={e => setQuoteStatusFilter(e.target.value)}
+                className="bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-[12px] text-ink-2 focus:outline-none focus:border-blue-400">
+                <option value="">All statuses</option>
+                {['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted'].map(s =>
+                  <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+              </select>
+              <SavedViewsBar entityType="quote" currentConfig={quoteViewConfig} onApply={applyQuoteView} defaultLabel="All quotes" />
+            </div>
+            {canEdit && selectedIds.size > 0 && (
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-2.5">
+                <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={bulkArchive}
+                    className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <Trash2 className="w-4 h-4" /> Archive {selectedIds.size}
+                  </button>
+                  <button onClick={clearSelection} className="text-sm px-2 py-1.5 text-ink-3 hover:text-ink">Clear</button>
+                </div>
+              </div>
+            )}
             {quotes.length === 0 && <div className="text-center py-16 text-ink-3 text-sm">No quotes yet</div>}
-            {quotes.map(q => (
-              <div key={q.id} className="bg-panel border border-hairline hover:border-hairline rounded-xl p-4 transition-colors">
+            {quotes.length > 0 && visibleQuotes.length === 0 && (
+              <div className="text-center py-16 text-ink-3 text-sm">No quotes match your filters</div>
+            )}
+            {visibleQuotes.length > 0 && (
+            <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
+            {visibleQuotes.map(q => (
+              <div key={q.id} className="p-3 hover:bg-bg-2/40 transition-colors">
                 <div className="flex items-center gap-3">
+                  {canEdit && (
+                    <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
+                      className="w-4 h-4 shrink-0 rounded border-hairline accent-blue-600 cursor-pointer"
+                      title="Select for bulk action" />
+                  )}
                   <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink">{clientName(q.client_id)}</span>
                       <span className="text-xs text-ink-3">{q.quote_number}</span>
-                      <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+                      {canEdit && ['draft', 'sent', 'viewed', 'accepted', 'declined'].includes(q.status) ? (
+                        <span onClick={e => e.stopPropagation()}>
+                          <InlineSelect value={q.status} options={QUOTE_STATUS_OPTIONS}
+                            onSelect={(s) => updateStatus(q.id, s)} />
+                        </span>
+                      ) : (
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
+                      )}
                       {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
                       {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
                         <span className="text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200"
@@ -584,6 +762,11 @@ export default function Quoting() {
                   </div>
                   <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
                   <div className="flex gap-1.5 shrink-0">
+                    <button onClick={() => navigate(`/quotes/${q.id}`)}
+                      className="text-xs px-2.5 py-1.5 bg-bg-2 text-ink-2 hover:bg-bg-3 rounded-lg transition-colors"
+                      title="Open full page">
+                      Open
+                    </button>
                     {canEdit && (q.status === 'draft' || q.status === 'sent') && (
                       <button onClick={() => openSendPanel(q)}
                         className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
@@ -616,10 +799,27 @@ export default function Quoting() {
                         Set up schedule
                       </button>
                     )}
+                    {q.status === 'converted' && (
+                      <span className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-green-50 text-green-500 rounded-lg"
+                        title="This quote has been scheduled">
+                        <Calendar className="w-3 h-3" />
+                        Scheduled ✓
+                      </span>
+                    )}
+                    {canEdit && q.status !== 'converted' && (
+                      <button onClick={() => archiveQuote(q)}
+                        title="Archive (hide) this quote"
+                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-ink-3 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 className="w-3 h-3" />
+                        Archive
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
+            </div>
+            )}
           </div>
         )}
 
@@ -670,6 +870,60 @@ export default function Quoting() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* Archived tab — soft-deleted quotes, viewable + permanently deletable */}
+        {tab === 'archived' && (
+          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            {isAdmin && selectedIds.size > 0 && (
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-red-600/10 border border-red-600/30 rounded-xl px-4 py-2.5">
+                <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={bulkDeletePermanent}
+                    className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors">
+                    <Trash2 className="w-4 h-4" /> Delete {selectedIds.size} permanently
+                  </button>
+                  <button onClick={clearSelection} className="text-sm px-2 py-1.5 text-ink-3 hover:text-ink">Clear</button>
+                </div>
+              </div>
+            )}
+            {archivedQuotes.length === 0 && (
+              <div className="text-center py-16 text-ink-3 text-sm">No archived quotes</div>
+            )}
+            {archivedQuotes.map(q => (
+              <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  {isAdmin && (
+                    <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
+                      className="w-4 h-4 shrink-0 rounded border-hairline accent-red-600 cursor-pointer"
+                      title="Select for permanent delete" />
+                  )}
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-ink">{clientName(q.client_id)}</span>
+                      <span className="text-xs text-ink-3">{q.quote_number}</span>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline">archived</span>
+                    </div>
+                    <div className="text-xs text-ink-3 mt-0.5">
+                      {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address,
+                        q.archived_at && `archived ${new Date(q.archived_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                  <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
+                  {isAdmin && (
+                    <button onClick={() => deletePermanent(q)}
+                      title="Delete permanently"
+                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {!isAdmin && archivedQuotes.length > 0 && (
+              <p className="text-xs text-ink-3 text-center pt-2">Permanent deletion is admin-only.</p>
+            )}
           </div>
         )}
       </div>
@@ -822,10 +1076,14 @@ export default function Quoting() {
               </div>
             </div>
 
-            {/* Address */}
+            {/* Address — structured autocomplete so city/state/zip are captured
+                consistently (better dedup + routing) instead of free text. */}
             <div>
               <label className="block text-xs text-ink-3 mb-1">Service Address</label>
-              <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+              <AddressAutocomplete
+                value={form.address}
+                onChange={v => setForm(f => ({ ...f, address: v }))}
+                onSelect={p => setForm(f => ({ ...f, address: p.address || f.address }))}
                 placeholder="123 Main St, Portland, ME 04101"
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>
@@ -911,7 +1169,7 @@ export default function Quoting() {
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-ink-3 mb-1">Valid Until</label>
+                <label className="block text-xs text-ink-3 mb-1">Valid Until <span className="text-ink-3/70">(30 days default)</span></label>
                 <input type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))}
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
               </div>
@@ -1188,6 +1446,7 @@ export default function Quoting() {
           initialPropertyId={scheduleQuote.property_id || null}
           initialJobType={quoteJobType(scheduleQuote.service_type)}
           initialTitle={scheduleQuote.title || `${clientName(scheduleQuote.client_id)} — Clean`}
+          initialQuoteId={scheduleQuote.id}
           defaultRecurring
           onClose={() => setScheduleQuote(null)}
           onCreated={finishOnboard}

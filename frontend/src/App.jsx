@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
 import Requests from './pages/Requests'
+import Pipeline from './pages/Pipeline'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
 import { useUnreadCount } from './hooks/useUnreadCount'
@@ -102,6 +103,10 @@ const Today = lazy(() => import('./pages/Today'))
 const Workspace = lazy(() => import('./pages/Workspace'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
+const OpportunityDetail = lazy(() => import('./pages/OpportunityDetail'))
+const JobDetail = lazy(() => import('./pages/JobDetail'))
+const QuoteDetail = lazy(() => import('./pages/QuoteDetail'))
+const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const Quoting = lazy(() => import('./pages/Quoting'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Invoicing = lazy(() => import('./pages/Invoicing'))
@@ -199,7 +204,11 @@ export default function App() {
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientProfile />} />
               <Route path="/requests" element={<Requests />} />
-              <Route path="/pipeline" element={<Requests />} />
+              <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/opportunities/:id" element={<OpportunityDetail />} />
+              <Route path="/jobs/:id" element={<JobDetail />} />
+              <Route path="/quotes/:id" element={<QuoteDetail />} />
+              <Route path="/invoices/:id" element={<InvoiceDetail />} />
               <Route path="/quoting" element={<Quoting />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />

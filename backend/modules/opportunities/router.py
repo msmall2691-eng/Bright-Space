@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from database.db import get_db
-from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message
-from modules.auth.router import require_role
+from database.models import Opportunity, Client, Activity, Quote, Invoice, Job, Message, User
+from modules.auth.router import require_role, current_org_id, resolve_org_id, get_current_user
 
 router = APIRouter()
 
@@ -82,8 +83,10 @@ def list_opportunities(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
-    q = db.query(Opportunity)
+    # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
+    q = db.query(Opportunity).filter(or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)))
     if stage:
         q = q.filter(Opportunity.stage == stage)
     if client_id:
@@ -96,8 +99,10 @@ def list_opportunities(
 
 
 @router.get("/summary")
-def opportunity_summary(db: Session = Depends(get_db)):
-    opps = db.query(Opportunity).all()
+def opportunity_summary(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    opps = db.query(Opportunity).filter(
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None))
+    ).all()
     stages = {}
     total_value = 0
     weighted_value = 0
@@ -118,35 +123,49 @@ def opportunity_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/{opp_id}")
-def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
+def get_opportunity(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     o = db.query(Opportunity).options(
         joinedload(Opportunity.client),
-        joinedload(Opportunity.quotes),
         joinedload(Opportunity.invoices),
         joinedload(Opportunity.jobs),
         joinedload(Opportunity.messages),
-    ).filter(Opportunity.id == opp_id).first()
+    ).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     return opp_to_dict(o)
 
 
 @router.get("/{opp_id}/details")
-def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
+def get_opportunity_details(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Get full opportunity details with all related entities and timeline."""
     o = db.query(Opportunity).options(
         joinedload(Opportunity.client),
-        joinedload(Opportunity.quotes),
         joinedload(Opportunity.invoices),
         joinedload(Opportunity.jobs),
         joinedload(Opportunity.messages),
         joinedload(Opportunity.activities),
-    ).filter(Opportunity.id == opp_id).first()
+    ).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
+    # Quotes link to an opportunity via Quote.opportunity_id (there's no ORM
+    # back-ref — it broke mapper init — so query the FK directly). Scoped to the
+    # caller's workspace (MT-2).
+    oid = resolve_org_id(org_id, db)
+    opp_quotes = db.query(Quote).filter(
+        Quote.opportunity_id == o.id,
+        or_(Quote.org_id == oid, Quote.org_id.is_(None)),
+    ).all()
+
     return {
         **opp_to_dict(o),
+        "quotes_count": len(opp_quotes),
         "quotes": [
             {
                 "id": q.id,
@@ -155,7 +174,7 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
                 "total": q.total,
                 "created_at": q.created_at.isoformat() if q.created_at else None,
             }
-            for q in o.quotes
+            for q in opp_quotes
         ],
         "invoices": [
             {
@@ -191,12 +210,13 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
+def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     client = db.query(Client).filter(Client.id == data.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     o = Opportunity(
         client_id=data.client_id,
+        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
         title=data.title,
         stage=data.stage,
         amount=data.amount,
@@ -228,8 +248,11 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{opp_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depends(get_db)):
-    o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    o = db.query(Opportunity).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
@@ -266,9 +289,50 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
 
 
 @router.delete("/{opp_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_opportunity(opp_id: int, db: Session = Depends(get_db)):
-    o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+def delete_opportunity(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    o = db.query(Opportunity).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not o:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     db.delete(o)
     db.commit()
+
+
+class OpportunityNoteRequest(BaseModel):
+    body: str
+
+
+@router.post("/{opp_id}/notes", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def add_opportunity_note(opp_id: int, data: OpportunityNoteRequest,
+                         db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_user),
+                         org_id: int = Depends(current_org_id)):
+    """Jot an internal note on a deal. Recorded as a NOTE_ADDED activity anchored
+    to the opportunity (and its client) so it lands in the deal's timeline."""
+    o = db.query(Opportunity).filter(
+        Opportunity.id == opp_id,
+        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),
+    ).first()
+    if not o:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    body = (data.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Note body is required")
+
+    from utils.activity_logger import log_activity as _log_activity
+    from database.models import ActivityType
+    from modules.activities.router import activity_to_dict
+
+    actor = getattr(current_user, "email", None) or getattr(current_user, "full_name", None) or "staff"
+    act = _log_activity(
+        db, ActivityType.NOTE_ADDED.value,
+        client_id=o.client_id, opportunity_id=o.id, actor=actor, summary=body,
+        extra_data={"note": True}, commit=False,
+    )
+    if not act:
+        raise HTTPException(status_code=500, detail="Could not record note")
+    db.commit()
+    db.refresh(act)
+    return activity_to_dict(act)

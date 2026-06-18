@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon } from 'lucide-react'
+import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check } from 'lucide-react'
 import { get, post } from '../api'
+import { toast } from '../utils/toastBus'
+import AddressAutocomplete from './AddressAutocomplete'
+
+// Where an in-progress booking is parked if the session expires mid-submit, so
+// it can be restored after re-login instead of being silently lost.
+const JOB_DRAFT_KEY = 'brightbase_job_draft'
 
 const JOB_TYPES = [
   { value: 'residential',  label: 'Residential' },
@@ -19,11 +25,51 @@ const FREQUENCIES = [
 
 const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+/** Amber "this slot conflicts" prompt with a one-click override. Shown when
+ *  create_job returns a 409 (cleaner double-booked, time off, over capacity, or
+ *  the slot is already busy on Google Calendar). */
+function ConflictPrompt({ conflict, saving, onCancel, onOverride }) {
+  if (!conflict) return null
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs">
+      <p className="font-semibold text-amber-800 mb-1">Scheduling conflict</p>
+      <p className="text-amber-900 mb-2">{conflict}</p>
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancel}
+          className="px-3 py-1.5 rounded-md bg-bg-2 text-ink-2 hover:bg-hairline">Pick another time</button>
+        <button type="button" onClick={onOverride} disabled={saving}
+          className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50">
+          {saving ? 'Booking…' : 'Book anyway'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function jobTypeFromProperty(propertyType) {
   const t = (propertyType || '').toLowerCase()
   if (t === 'commercial') return 'commercial'
   if (t === 'str') return 'str_turnover'
   return 'residential'
+}
+
+// Default visit length per service type (minutes); drives the auto-filled End.
+const JOB_DURATIONS = { residential: 180, commercial: 180, str_turnover: 180 }
+
+// Quick-schedule default date: the next business day (skip Sat/Sun), so a fast
+// booking doesn't silently land on today.
+function nextBusinessDay() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+}
+
+// "09:00" + minutes → "12:00" (24h, wraps within a day).
+function addMinutes(hhmm, mins) {
+  const [h, m] = String(hhmm || '09:00').split(':').map(Number)
+  const total = ((h * 60 + m + mins) % 1440 + 1440) % 1440
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }
 
 /**
@@ -45,6 +91,7 @@ export default function JobCreateModal({
   initialDate = '',
   initialJobType = null,
   initialTitle = null,
+  initialQuoteId = null,
   defaultRecurring = false,
   onClose,
   onCreated,
@@ -55,9 +102,9 @@ export default function JobCreateModal({
   const [form, setForm] = useState({
     title: initialTitle || (clientName ? `${clientName} — Clean` : ''),
     job_type: initialJobType || 'residential',
-    scheduled_date: initialDate,
+    scheduled_date: initialDate || nextBusinessDay(),
     start_time: '09:00',
-    end_time: '12:00',
+    end_time: addMinutes('09:00', JOB_DURATIONS[initialJobType || 'residential'] || 180),
     address: '',
     notes: '',
     property_id: initialPropertyId ? String(initialPropertyId) : '',
@@ -70,6 +117,22 @@ export default function JobCreateModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  // Quick-schedule: a single compact form is the default for the common path.
+  // "Advanced" reveals the full stepped wizard (property, recurring, address).
+  const [quick, setQuick] = useState(!defaultRecurring)
+  const [showNotes, setShowNotes] = useState(false)
+  // Once the user edits End by hand, stop auto-deriving it from Start + duration.
+  const [endTouched, setEndTouched] = useState(false)
+
+  const setStartTime = (v) => setForm(f => ({
+    ...f, start_time: v,
+    end_time: endTouched ? f.end_time : addMinutes(v, JOB_DURATIONS[f.job_type] || 180),
+  }))
+  const setEndTime = (v) => { setEndTouched(true); setForm(f => ({ ...f, end_time: v })) }
+  const setJobType = (v) => setForm(f => ({
+    ...f, job_type: v,
+    end_time: endTouched ? f.end_time : addMinutes(f.start_time, JOB_DURATIONS[v] || 180),
+  }))
   // Inline "new property" quick-add (a client may have none yet).
   const [addingProp, setAddingProp] = useState(false)
   const [newProp, setNewProp] = useState({ name: '', address: '' })
@@ -80,21 +143,53 @@ export default function JobCreateModal({
   // client here. When clientId is passed in (from a client profile) it's fixed.
   const standalone = !clientId
   const [activeClientId, setActiveClientId] = useState(clientId ? String(clientId) : '')
-  const [clients, setClients] = useState([])
+  const [selectedClient, setSelectedClient] = useState(null)
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
+  // Searchable typeahead state (replaces the old preload-everything dropdown,
+  // which silently 422'd on limit=1000 and rendered empty).
+  const [clientQuery, setClientQuery] = useState('')
+  const [clientResults, setClientResults] = useState([])
+  const [clientLoading, setClientLoading] = useState(false)
+  const [clientLoadErr, setClientLoadErr] = useState('')
+  const [clientRetry, setClientRetry] = useState(0)
 
-  // In standalone mode, load the client list for the picker. Raise the limit
-  // well above the API's default 50 so orgs with many clients can still pick an
-  // existing one (rather than being pushed into creating a duplicate).
+  // In standalone mode, search the client list as the user types. Empty query
+  // loads the most recent 20 so the list is never blank on open. Debounced;
+  // surfaces explicit loading / empty / error states (never a silent empty).
+  useEffect(() => {
+    if (!standalone || selectedClient || addingClient) return
+    const q = clientQuery.trim()
+    const t = setTimeout(() => {
+      setClientLoading(true); setClientLoadErr('')
+      const params = new URLSearchParams({ status: 'active', limit: '20' })
+      if (q) params.append('search', q)
+      get(`/api/clients?${params.toString()}`)
+        .then(d => setClientResults(Array.isArray(d) ? d : []))
+        .catch(e => { setClientLoadErr(e?.message || 'Could not load clients'); setClientResults([]) })
+        .finally(() => setClientLoading(false))
+    }, q ? 250 : 0)
+    return () => clearTimeout(t)
+  }, [standalone, selectedClient, addingClient, clientQuery, clientRetry])
+
+  // One-shot restore: if a prior submit hit an expired session, the booking was
+  // parked in localStorage (see save()). Bring it back so no work is lost. Only
+  // in standalone mode (the Schedule "New Job" flow).
   useEffect(() => {
     if (!standalone) return
-    get('/api/clients?status=active&limit=1000')
-      .then(d => setClients(Array.isArray(d) ? d : []))
-      .catch(() => setClients([]))
-  }, [standalone])
+    let draft = null
+    try { draft = JSON.parse(localStorage.getItem(JOB_DRAFT_KEY) || 'null') } catch { draft = null }
+    if (!draft) return
+    try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
+    if (draft.form) setForm(draft.form)
+    if (typeof draft.recurring === 'boolean') setRecurring(draft.recurring)
+    if (typeof draft.quick === 'boolean') setQuick(draft.quick)
+    if (draft.client) { setSelectedClient(draft.client); setActiveClientId(String(draft.client.id)) }
+    toast?.info?.('Restored your in-progress booking from before the session timed out.')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load the active client's properties whenever it changes.
   useEffect(() => {
@@ -116,22 +211,30 @@ export default function JobCreateModal({
       .finally(() => setLoadingProps(false))
   }, [activeClientId])
 
-  const selectClient = (idStr) => {
-    setActiveClientId(idStr)
+  const chooseClient = (c) => {
+    if (!c) return
+    setActiveClientId(String(c.id))
+    setSelectedClient(c)
     // Reset everything tied to the *previous* client's property — otherwise a
     // stale property_id/address/job_type could save a job for the new client
     // pointing at the old client's property (the endpoints don't cross-check).
     setProperties([])
     setAddingProp(false)
-    const c = clients.find(c => String(c.id) === String(idStr))
     setForm(f => ({
       ...f,
       property_id: '',
       job_type: 'residential',
-      address: c ? [c.address, c.city, c.state].filter(Boolean).join(', ') : '',
+      address: [c.address, c.city, c.state].filter(Boolean).join(', '),
       // Keep a user-typed title; otherwise default to the client's name.
-      title: (!f.title || /—\s*Clean$/.test(f.title)) && c ? `${c.name} — Clean` : f.title,
+      title: (!f.title || /—\s*Clean$/.test(f.title)) ? `${c.name} — Clean` : f.title,
     }))
+  }
+
+  const clearClient = () => {
+    setActiveClientId('')
+    setSelectedClient(null)
+    setClientQuery('')
+    setProperties([])
   }
 
   const createInlineClient = async () => {
@@ -144,8 +247,7 @@ export default function JobCreateModal({
         email: newClient.email.trim() || null,
         status: 'active',
       })
-      setClients(cs => [created, ...cs])
-      selectClient(String(created.id))
+      chooseClient(created)
       setAddingClient(false)
       setNewClient({ name: '', phone: '', email: '' })
     } catch (e) {
@@ -205,9 +307,27 @@ export default function JobCreateModal({
           : (form.days_of_week || []).length > 0)
     : form.title && form.scheduled_date && form.start_time && form.end_time)
 
-  const save = async () => {
+  // A 409 from create_job means a scheduling conflict (cleaner double-booked,
+  // time off, over capacity, or the slot is already busy on Google Calendar).
+  // The backend accepts allow_conflicts to override, so we surface a "Book
+  // anyway" prompt rather than a dead-end error.
+  const [conflict, setConflict] = useState(null)
+
+  const save = async (allowConflicts = false) => {
     setSaving(true)
     setError(null)
+    setConflict(null)
+    // Park the booking before we hit the network: if the session has expired,
+    // the 401 redirects to /login (this code never resumes), and this draft is
+    // what gets restored after re-auth. Cleared on a confirmed success below.
+    try {
+      localStorage.setItem(JOB_DRAFT_KEY, JSON.stringify({
+        form, recurring, quick,
+        client: selectedClient
+          ? { id: selectedClient.id, name: selectedClient.name, email: selectedClient.email }
+          : null,
+      }))
+    } catch { /* storage unavailable — proceed without a draft */ }
     try {
       if (recurring) {
         const body = {
@@ -227,8 +347,12 @@ export default function JobCreateModal({
           end_time: form.end_time,
           generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
           notes: form.notes || null,
+          // Link back to the source quote so it's converted (see one-time path).
+          quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
         }
         const sched = await post('/api/recurring', body)
+        if (!sched) return  // 401 → redirecting to /login; keep the draft to restore
+        try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
         onCreated?.({ kind: 'recurring', schedule: sched })
         onClose?.()
         return
@@ -243,15 +367,34 @@ export default function JobCreateModal({
         address: form.address || null,
         notes: form.notes || null,
         property_id: form.property_id ? parseInt(form.property_id) : null,
+        // When scheduling from an accepted quote, link the job back so the
+        // backend converts the quote and revenue→job traceability is kept.
+        quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
+        allow_conflicts: allowConflicts,
       }
       const job = await post('/api/jobs', body)
+      if (!job) return  // 401 → redirecting to /login; keep the draft to restore
+      try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
       onCreated?.({ kind: 'job', job, gcal: job?.gcal })
       onClose?.()
     } catch (e) {
-      setError(e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`)
+      const msg = e?.message || `Failed to create ${recurring ? 'schedule' : 'job'}`
+      // Conflict 409s (incl. the Google Free/Busy "already booked" guard) are
+      // overridable — route them to the "Book anyway" prompt, not a hard error.
+      if (!recurring && /conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
+        setConflict(msg)
+      } else {
+        setError(msg)
+      }
     } finally {
       setSaving(false)
     }
+  }
+
+  // Explicit dismissal abandons any parked draft so it isn't restored next open.
+  const handleCancel = () => {
+    try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
+    onClose?.()
   }
 
   // 3-step guided flow: Who (client + property) → What (title, type, repeat,
@@ -278,11 +421,12 @@ export default function JobCreateModal({
               {recurring ? 'Recurring Schedule' : 'Schedule Job'}
               {clientName && <span className="ml-2 text-xs text-ink-3 font-normal">· {clientName}</span>}
             </h2>
-            <button onClick={onClose} className="text-ink-3 hover:text-ink" aria-label="Close">
+            <button onClick={handleCancel} className="text-ink-3 hover:text-ink" aria-label="Close">
               <X className="w-5 h-5" />
             </button>
           </div>
-          {/* Step indicator */}
+          {/* Step indicator — advanced wizard only */}
+          {!quick && (
           <div className="flex items-center gap-1.5 mt-3">
             {STEPS.map((s, i) => (
               <div key={s.n} className="flex items-center gap-1.5 flex-1">
@@ -296,14 +440,13 @@ export default function JobCreateModal({
               </div>
             ))}
           </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
-          {/* ── Step 1 · Who ───────────────────────────────────────────── */}
-          {step === 1 && (<>
-          {/* Client picker — only in standalone mode (Schedule page). When opened
-              from a client profile the client is fixed and this is hidden. */}
-          {standalone && (
+          {/* Client picker — quick mode, or step 1 of the advanced wizard.
+              Only in standalone mode; from a client profile the client is fixed. */}
+          {standalone && (quick || step === 1) && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
@@ -314,11 +457,60 @@ export default function JobCreateModal({
                 </button>
               </div>
               {!addingClient ? (
-                <select value={activeClientId} onChange={e => selectClient(e.target.value)}
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
-                  <option value="">Select a client…</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                selectedClient ? (
+                  // A client is chosen — show it as a chip with a "Change" affordance.
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
+                    <span className="flex items-center gap-2 min-w-0 text-sm text-ink">
+                      <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="truncate font-medium">{selectedClient.name}</span>
+                      {selectedClient.email && <span className="truncate text-xs text-ink-3">· {selectedClient.email}</span>}
+                    </span>
+                    <button type="button" onClick={clearClient}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium shrink-0">Change</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3 pointer-events-none" />
+                      <input
+                        autoFocus
+                        value={clientQuery}
+                        onChange={e => setClientQuery(e.target.value)}
+                        placeholder="Search clients by name, email, or phone…"
+                        data-testid="job-create-client-search"
+                        className="w-full bg-panel border border-hairline rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                      />
+                    </div>
+                    <div className="mt-1 max-h-52 overflow-y-auto rounded-lg border border-hairline divide-y divide-hairline scrollbar-thin">
+                      {clientLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-4 text-xs text-ink-3">
+                          <Loader className="w-4 h-4 animate-spin" /> Searching…
+                        </div>
+                      ) : clientLoadErr ? (
+                        <div className="flex items-center justify-between gap-2 px-3 py-3 text-xs">
+                          <span className="text-red-600 truncate">{clientLoadErr}</span>
+                          <button type="button" onClick={() => setClientRetry(n => n + 1)}
+                            className="text-blue-600 hover:text-blue-700 font-medium shrink-0">Retry</button>
+                        </div>
+                      ) : clientResults.length === 0 ? (
+                        <div className="px-3 py-4 text-xs text-ink-3 text-center">
+                          {clientQuery.trim() ? 'No matching clients' : 'No active clients yet'}
+                          <span className="block mt-0.5">Use “+ New client” to add one.</span>
+                        </div>
+                      ) : (
+                        clientResults.map(c => (
+                          <button key={c.id} type="button" onClick={() => chooseClient(c)}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-bg transition-colors">
+                            <div className="font-medium text-ink truncate">{c.name}</div>
+                            {(c.email || c.phone) && (
+                              <div className="text-[11px] text-ink-3 truncate">{[c.email, c.phone].filter(Boolean).join(' · ')}</div>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
                   <input autoFocus value={newClient.name} onChange={e => setNewClient(n => ({ ...n, name: e.target.value }))}
@@ -342,7 +534,65 @@ export default function JobCreateModal({
             </div>
           )}
 
-          {/* Property picker (filtered by client) */}
+          {/* ── Quick schedule · one screen (client above) ──────────────── */}
+          {quick && (<>
+            {!standalone && clientName && (
+              <div className="text-xs text-ink-3">Scheduling for <span className="font-medium text-ink-2">{clientName}</span></div>
+            )}
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1">Service type</label>
+              <div className="flex gap-2">
+                {JOB_TYPES.map(t => (
+                  <button key={t.value} type="button" onClick={() => setJobType(t.value)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                      form.job_type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
+                    }`}>{t.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1"><Calendar className="w-3 h-3 inline mr-1" /> Date *</label>
+              <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-ink-2 font-medium mb-1"><Clock className="w-3 h-3 inline mr-1" /> Start *</label>
+                <input type="time" value={form.start_time} onChange={e => setStartTime(e.target.value)}
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
+                <input type="time" value={form.end_time} onChange={e => setEndTime(e.target.value)}
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              </div>
+            </div>
+            {showNotes ? (
+              <div>
+                <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                  placeholder="Special instructions, access codes, etc."
+                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowNotes(true)}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add notes</button>
+            )}
+            <button type="button" onClick={() => setQuick(false)}
+              className="w-full text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
+              Advanced options (property, recurring, address)…
+            </button>
+            {error && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
+              </div>
+            )}
+            <ConflictPrompt conflict={conflict} saving={saving}
+              onCancel={() => setConflict(null)} onOverride={() => save(true)} />
+          </>)}
+
+          {/* ── Advanced · Property (step 1; client handled above) ───────── */}
+          {!quick && step === 1 && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs text-ink-2 font-medium">Property</label>
@@ -378,7 +628,10 @@ export default function JobCreateModal({
                 <input autoFocus value={newProp.name} onChange={e => setNewProp(n => ({ ...n, name: e.target.value }))}
                   placeholder="Property name * (e.g. 4 Red Barn Circle)"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                <input value={newProp.address} onChange={e => setNewProp(n => ({ ...n, address: e.target.value }))}
+                <AddressAutocomplete
+                  value={newProp.address}
+                  onChange={v => setNewProp(n => ({ ...n, address: v }))}
+                  onSelect={p => setNewProp(n => ({ ...n, address: p.address || n.address }))}
                   placeholder="Address"
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 {propErr && <div className="text-xs text-red-600">{propErr}</div>}
@@ -389,10 +642,10 @@ export default function JobCreateModal({
               </div>
             )}
           </div>
-          </>)}
+          )}
 
           {/* ── Step 2 · What ──────────────────────────────────────────── */}
-          {step === 2 && (<>
+          {!quick && step === 2 && (<>
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">Title *</label>
             <input
@@ -410,7 +663,7 @@ export default function JobCreateModal({
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => setForm(f => ({ ...f, job_type: t.value }))}
+                  onClick={() => setJobType(t.value)}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
                     form.job_type === t.value
                       ? 'bg-blue-600 text-white border-blue-600'
@@ -457,7 +710,7 @@ export default function JobCreateModal({
           </>)}
 
           {/* ── Step 3 · When ──────────────────────────────────────────── */}
-          {step === 3 && (<>
+          {!quick && step === 3 && (<>
           {/* One-time mode: single Date */}
           {!recurring && (
             <div>
@@ -560,7 +813,7 @@ export default function JobCreateModal({
               <input
                 type="time"
                 value={form.start_time}
-                onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
+                onChange={e => setStartTime(e.target.value)}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               />
             </div>
@@ -569,7 +822,7 @@ export default function JobCreateModal({
               <input
                 type="time"
                 value={form.end_time}
-                onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
+                onChange={e => setEndTime(e.target.value)}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
               />
             </div>
@@ -618,12 +871,27 @@ export default function JobCreateModal({
               {error}
             </div>
           )}
+          <ConflictPrompt conflict={conflict} saving={saving}
+            onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           </>)}
         </div>
 
         <div className="p-6 border-t border-hairline flex items-center gap-3">
+          {quick ? (
+            <>
+              <button onClick={handleCancel} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
+              <button
+                onClick={() => save()}
+                disabled={saving || !canSave}
+                data-testid="job-create-submit"
+                className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
+              >
+                {saving ? 'Creating…' : 'Create job'}
+              </button>
+            </>
+          ) : (<>
           <button
-            onClick={step === 1 ? onClose : goBack}
+            onClick={step === 1 ? handleCancel : goBack}
             className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}
           >
             {step === 1 ? 'Cancel' : 'Back'}
@@ -639,13 +907,14 @@ export default function JobCreateModal({
             </button>
           ) : (
             <button
-              onClick={save}
+              onClick={() => save()}
               disabled={saving || !canSave}
               className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
             >
               {saving ? 'Creating...' : recurring ? 'Create & Generate Jobs' : 'Create Job'}
             </button>
           )}
+          </>)}
         </div>
       </div>
     </div>

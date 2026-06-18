@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import RecordLink from '../components/RecordLink'
 import AgentWidget from '../components/AgentWidget'
 import ClientCRMSummary from '../components/ClientCRMSummary'
 import ActivityTimeline from '../components/ActivityTimeline'
@@ -146,6 +147,16 @@ export default function ClientProfile() {
 
   // One-off job creation modal
   const [jobModal, setJobModal] = useState(null)  // null | { propertyId?: number }
+  // Deep-link "Schedule job for <client>" (e.g. from Cmd+K): /clients/:id?schedule=1
+  // opens the schedule modal pre-scoped to this client, then strips the param.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('schedule') === '1') {
+      setJobModal({})
+      const next = new URLSearchParams(searchParams); next.delete('schedule')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   // Bumped after add/edit/cancel/invite to force the embedded Google Calendar
   // iframe to reload (Google's embed caches, so a fresh event needs a nudge).
   const [gcalReload, setGcalReload] = useState(0)
@@ -542,6 +553,12 @@ export default function ClientProfile() {
                 <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border capitalize ${STATUS_COLORS[client.status]}`}>
                   {client.status}
                 </span>
+                {client.lifecycle_stage && client.lifecycle_stage !== client.status && (
+                  <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-3 capitalize"
+                    title="Lifecycle stage">
+                    {client.lifecycle_stage}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-x-3 gap-y-1 mt-1 flex-wrap">
                 {client.phone && <span className="flex items-center gap-1 text-xs sm:text-sm text-ink-3"><Phone className="w-3.5 h-3.5" />{client.phone}</span>}
@@ -1308,7 +1325,7 @@ export default function ClientProfile() {
                         <div className="text-xs text-blue-500">{j.start_time}</div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-ink">{j.title}</div>
+                        <RecordLink type="job" id={j.id} label={j.title} className="font-medium" />
                         {j.address && <div className="text-xs text-ink-3 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
                       </div>
                       <div className="flex items-center gap-2">
@@ -1343,7 +1360,7 @@ export default function ClientProfile() {
                         <div className="text-xs text-ink-3">{j.start_time}</div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-ink-3">{j.title}</div>
+                        <RecordLink type="job" id={j.id} label={j.title} className="font-medium" />
                         {j.address && <div className="text-xs text-ink-3 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{j.address}</div>}
                       </div>
                       <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${JOB_COLORS[j.status]}`}>{j.status.replace('_', ' ')}</span>
@@ -1361,7 +1378,7 @@ export default function ClientProfile() {
             {quotes.length === 0 && <p className="text-ink-3 text-sm text-center py-10">No quotes yet</p>}
             {quotes.map(q => (
               <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4 flex items-center justify-between">
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate('/quoting', { state: { quoteId: q.id } })}
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/quotes/${q.id}`)}
                   title="Open this quote">
                   <div className="font-medium text-ink">${q.total?.toFixed(2)} <span className="text-xs text-ink-3 font-normal">· {q.quote_number}</span></div>
                   <div className="text-xs text-ink-3 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
@@ -1389,7 +1406,7 @@ export default function ClientProfile() {
             {invoices.map(inv => (
               <div key={inv.id} className="bg-panel border border-hairline rounded-xl p-4 flex items-center justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-ink">{inv.invoice_number}</div>
+                  <RecordLink type="invoice" id={inv.id} label={inv.invoice_number} className="font-medium" />
                   <div className="text-xs text-ink-3 mt-0.5">Due {inv.due_date || 'N/A'} · ${inv.total?.toFixed(2)}</div>
                 </div>
                 <div className="flex items-center gap-2 ml-4">
@@ -1653,7 +1670,7 @@ export default function ClientProfile() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <TrendingUp className="w-4 h-4 text-amber-500" />
-                      <span className="font-medium text-ink">{opp.title}</span>
+                      <RecordLink type="opportunity" id={opp.id} label={opp.title} className="font-medium" />
                       <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${OPP_COLORS[opp.stage] || 'bg-bg-2 text-ink-3'}`}>
                         {opp.stage}
                       </span>

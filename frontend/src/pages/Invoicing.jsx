@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText, Sparkles } from 'lucide-react'
 import AgentWidget from '../components/AgentWidget'
@@ -57,6 +58,7 @@ function Toast({ toasts }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Invoicing() {
+  const navigate = useNavigate()
   const [invoices, setInvoices]   = useState([])
   const [clients, setClients]     = useState([])
   const [statusFilter, setStatusFilter] = useState('')
@@ -354,6 +356,11 @@ export default function Invoicing() {
                   {/* Row actions — visible on hover */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={e => e.stopPropagation()}>
+                    <button onClick={() => navigate(`/invoices/${inv.id}`)}
+                      className="text-[11px] px-2 py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors"
+                      title="Open full page">
+                      Open
+                    </button>
                     {inv.status !== 'paid' && (
                       <button onClick={() => openSend(inv)}
                         className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors">

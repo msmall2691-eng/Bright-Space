@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import Button from '../components/ui/Button'
+import RecordLink from '../components/RecordLink'
 import GlassCard from '../components/ui/GlassCard'
 // Normalize API responses — some endpoints return raw arrays, others return
 // paginated envelopes like { items, total, limit, offset }.
@@ -319,6 +320,15 @@ export default function PropertyDetail() {
                 <MapPin className="w-4 h-4 flex-shrink-0" />
                 <span>{property.address}</span>
               </div>
+              {property.client_id && (
+                <button
+                  onClick={() => navigate(`/clients/${property.client_id}`)}
+                  className="flex items-center gap-1.5 text-sm text-blue-500 hover:underline mt-1"
+                >
+                  <Building2 className="w-4 h-4 flex-shrink-0" />
+                  <span>View client</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -385,7 +395,9 @@ export default function PropertyDetail() {
                       <div className="flex-1 min-w-0">
                         {/* Title + Status */}
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <h3 className="font-semibold text-ink truncate">{job.title}</h3>
+                          <span onClick={e => e.stopPropagation()}>
+                            <RecordLink type="job" id={job.id} label={job.title} className="font-semibold" />
+                          </span>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
                             {statusConfig.label}
                           </span>

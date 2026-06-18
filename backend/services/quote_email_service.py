@@ -50,6 +50,25 @@ def format_money(amount) -> str:
         return "0.00"
 
 
+def phone_tel_href(phone: str | None) -> str:
+    """Digits-only (leading + kept) tel: target. Spaces/parens in a tel href
+    don't dial reliably, so the href must be normalized even though the visible
+    number stays formatted."""
+    if not phone:
+        return ""
+    cleaned = re.sub(r"[^\d+]", "", phone)
+    # Collapse any stray '+' to a single leading one.
+    if cleaned.count("+") > 1 or (cleaned and "+" in cleaned[1:]):
+        cleaned = ("+" if cleaned.startswith("+") else "") + cleaned.replace("+", "")
+    return cleaned
+
+
+def first_name_of(name: str | None) -> str:
+    """First name for a friendly greeting, or '' for placeholder/phone names."""
+    display = customer_display_name(name)
+    return display.split()[0] if display else ""
+
+
 class QuoteEmailService:
     """Send quote emails with PDF attachments over the shared SMTP config"""
 
@@ -59,7 +78,8 @@ class QuoteEmailService:
         self.smtp_pass = creds["smtp_pass"]
         self.smtp_host = creds["smtp_host"]
         self.smtp_port = creds["smtp_port"]
-        self.from_email = creds["from_email"] or "quotes@bright-space.com"
+        from config import DEFAULT_FROM_EMAIL
+        self.from_email = creds["from_email"] or DEFAULT_FROM_EMAIL
         self.company_name = (self._db_setting("company_name") or os.getenv("COMPANY_NAME")
                              or creds["from_name"] or "Bright-Space")
         # Shared customer-facing identity (same Settings rows as the public
@@ -69,6 +89,7 @@ class QuoteEmailService:
         self.company_phone = self._db_setting("company_phone") or os.getenv("COMPANY_PHONE")
         self.quote_terms = self._db_setting("quote_terms")
         self.brand_color = self._db_setting("brand_color") or "#1f2937"
+        self.company_logo_url = self._db_setting("company_logo_url")
 
         if not self.smtp_user or not self.smtp_pass:
             msg = ("Email credentials missing — set SMTP_USER + SMTP_PASS "
@@ -94,61 +115,58 @@ class QuoteEmailService:
             return None
 
     def get_email_template(self) -> str:
-        """Quote email HTML. Mirrors what the send panel promises: title,
-        intro message, every line item, formatted totals, and an expiry line
-        only when the quote actually has one (the old footer claimed "valid
-        for 30 days" regardless — contradicting the Expires row)."""
+        """Quote email HTML. Table-based layout (no flexbox) so it renders
+        consistently in Gmail, Apple Mail, and Outlook's Word engine. Shows the
+        money breakdown (subtotal + tax/discount when non-zero + total), the
+        service address, a brand-colored CTA, and a single 30-day validity line
+        that always agrees with the date."""
         return """
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f3f4f6; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: {{ brand_color }}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
-        .header p { margin: 8px 0 0; color: #d1d5db; font-size: 14px; }
         .content { background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
-        .content h2 { color: #1f2937; }
-        .quote-info { background: #f9fafb; padding: 16px; border-radius: 6px; margin: 20px 0; }
-        .quote-info-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px; }
+        .content h2 { color: #1f2937; margin-top: 0; }
+        .info-box { background: #f9fafb; border-radius: 6px; margin: 20px 0; }
         .items { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
         .items th { text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase; padding: 6px 0; border-bottom: 1px solid #e5e7eb; }
         .items th.amt, .items td.amt { text-align: right; }
         .items td { padding: 8px 0; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
         .items .desc { color: #6b7280; font-size: 12px; }
-        .totals td { padding: 4px 0; border: none; }
+        .totals td { padding: 4px 0; border: none; font-size: 14px; }
         .totals .label { color: #6b7280; }
-        .totals .grand { font-weight: bold; font-size: 16px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
-        .cta-button { display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 20px 0; font-weight: 600; }
+        .totals .grand td { font-weight: bold; font-size: 16px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
         .footer { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none; text-align: center; font-size: 12px; color: #6b7280; }
         .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>{{ company_name }}</h1>
-            {% if quote_title %}<p>{{ quote_title }}</p>{% else %}<p>Quote {{ quote_number }}</p>{% endif %}
-        </div>
+        <!-- Header (table, not flex, for Outlook) -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: {{ brand_color }}; border-radius: 8px 8px 0 0;">
+            <tr>
+                <td style="padding: 20px; text-align: center;">
+                    {% if company_logo_url %}<img src="{{ company_logo_url }}" alt="{{ company_name }}" height="48" style="max-height:48px; margin-bottom:8px; display:inline-block;"><br>{% endif %}
+                    <span style="color: #ffffff; font-size: 28px; font-weight: bold;">{{ company_name }}</span>
+                    <div style="color: #d1d5db; font-size: 14px; margin-top: 6px;">{% if quote_title %}{{ quote_title }}{% else %}Quote {{ quote_number }}{% endif %}</div>
+                </td>
+            </tr>
+        </table>
         <div class="content">
             <h2>{{ greeting_line }}</h2>
             {% if intro_message %}<p style="white-space: pre-wrap;">{{ intro_message }}</p>
             {% else %}<p>We've prepared a quote for your request. Please review it below and let us know if you have any questions.</p>{% endif %}
 
-            <div class="quote-info">
-                <div class="quote-info-row">
-                    <strong>Quote #:</strong>
-                    <span>{{ quote_number }}</span>
-                </div>
-                {% if expires_at %}
-                <div class="quote-info-row">
-                    <strong>Valid until:</strong>
-                    <span>{{ expires_at }}</span>
-                </div>
-                {% endif %}
-            </div>
+            <!-- Quote info (table rows, not flex) -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="info-box">
+                <tr><td style="padding: 12px 16px 4px;"><strong>Quote #:</strong></td><td style="padding: 12px 16px 4px; text-align: right;">{{ quote_number }}</td></tr>
+                {% if expires_at %}<tr><td style="padding: 4px 16px;"><strong>Valid until:</strong></td><td style="padding: 4px 16px; text-align: right;">{{ expires_at }}</td></tr>{% endif %}
+                {% if address %}<tr><td style="padding: 4px 16px 12px;"><strong>Service address:</strong></td><td style="padding: 4px 16px 12px; text-align: right;">{{ address }}</td></tr>{% endif %}
+            </table>
 
             {% if items %}
             <table class="items">
@@ -162,13 +180,21 @@ class QuoteEmailService:
                 {% endfor %}
             </table>
             {% endif %}
-            <table class="items totals">
-                <tr><td class="label">Total</td><td class="amt grand">${{ total_amount }}</td></tr>
+            <table class="items totals" role="presentation">
+                <tr><td class="label">Subtotal</td><td class="amt">${{ subtotal }}</td></tr>
+                {% if show_tax %}<tr><td class="label">Tax{% if tax_rate %} ({{ tax_rate }}%){% endif %}</td><td class="amt">${{ tax }}</td></tr>{% endif %}
+                {% if show_discount %}<tr><td class="label">Discount</td><td class="amt">-${{ discount }}</td></tr>{% endif %}
+                <tr class="grand"><td>Total</td><td class="amt">${{ total_amount }}</td></tr>
             </table>
 
             <p>You can view, accept, or request changes to this quote online{% if pdf_attached %} — a PDF copy is also attached{% endif %}:</p>
 
-            <a href="{{ quote_link }}" class="cta-button">View Quote Online</a>
+            <!-- Brand-colored CTA (table cell + bgcolor for Outlook) -->
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+                <tr><td bgcolor="{{ brand_color }}" style="border-radius: 6px;">
+                    <a href="{{ quote_link }}" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: 600;">View Quote Online</a>
+                </td></tr>
+            </table>
 
             <div class="divider"></div>
 
@@ -176,9 +202,9 @@ class QuoteEmailService:
         </div>
         <div class="footer">
             {% if company_email or company_phone %}
-            <p>Questions? {% if company_email %}Reply or email <a href="mailto:{{ company_email }}">{{ company_email }}</a>{% endif %}{% if company_phone %}{% if company_email %} · {% endif %}call <a href="tel:{{ company_phone }}">{{ company_phone }}</a>{% endif %}</p>
+            <p>Questions? {% if company_email %}Reply or email <a href="mailto:{{ company_email }}">{{ company_email }}</a>{% endif %}{% if company_phone %}{% if company_email %} · {% endif %}call <a href="tel:{{ company_phone_href }}">{{ company_phone }}</a>{% endif %}</p>
             {% endif %}
-            {% if expires_at %}<p>This quote is valid until {{ expires_at }}.</p>{% endif %}
+            {% if expires_at %}<p>This quote is valid for 30 days from the date issued (through {{ expires_at }}).</p>{% endif %}
             {% if terms %}<p style="text-align:left; white-space: pre-wrap;">{{ terms }}</p>{% endif %}
             <p>&copy; {{ company_name }} - All rights reserved</p>
         </div>
@@ -202,6 +228,11 @@ class QuoteEmailService:
         intro_message: Optional[str] = None,
         quote_title: Optional[str] = None,
         items: Optional[list] = None,
+        subtotal=None,
+        tax=None,
+        discount=None,
+        tax_rate=None,
+        address: Optional[str] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -213,13 +244,24 @@ class QuoteEmailService:
         try:
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = (subject or "").strip() or f"Your Quote {quote_number} from {self.company_name}"
+            # Subject includes the price — quotes with the amount get opened
+            # more — unless an explicit override is supplied.
+            default_subject = (f"Your ${format_money(total_amount)} quote from "
+                               f"{self.company_name} ({quote_number})")
+            msg['Subject'] = (subject or "").strip() or default_subject
             msg['From'] = f"{self.company_name} <{self.from_email}>"
             msg['To'] = to_email
 
-            # Greeting: explicit override > greet-able client name > neutral.
-            name = (greeting or "").strip() or customer_display_name(client_name)
-            greeting_line = f"Hello {name}," if name else "Hello,"
+            # Greeting: explicit override > friendly first name > greet-able
+            # full name > neutral. "Hi Megan," reads better than the full name.
+            override = (greeting or "").strip()
+            first = first_name_of(client_name)
+            if override:
+                greeting_line = f"Hello {override},"
+            elif first:
+                greeting_line = f"Hi {first},"
+            else:
+                greeting_line = "Hello,"
 
             def _qty(it):
                 """Default only when MISSING — an explicit 0 stays 0, matching
@@ -239,22 +281,37 @@ class QuoteEmailService:
                 "amount": format_money(_qty(it) * float(it.get("unit_price") or 0)),
             } for it in (items or []) if isinstance(it, dict)]
 
+            # Money breakdown: subtotal always; tax/discount only when non-zero.
+            tax_val = float(tax or 0)
+            discount_val = float(discount or 0)
+            subtotal_val = subtotal if subtotal is not None else total_amount
+            rate = float(tax_rate or 0)
+
             # Render HTML template
             template = Template(self.get_email_template())
             html_content = template.render(
                 company_name=self.company_name,
+                company_logo_url=self.company_logo_url,
                 quote_number=quote_number,
                 quote_title=(quote_title or "").strip() or None,
                 greeting_line=greeting_line,
                 intro_message=(intro_message or "").strip() or None,
                 items=line_items,
+                subtotal=format_money(subtotal_val),
+                tax=format_money(tax_val),
+                discount=format_money(discount_val),
+                tax_rate=("%g" % rate) if rate else None,
+                show_tax=bool(tax_val),
+                show_discount=bool(discount_val),
                 total_amount=format_money(total_amount),
                 expires_at=(expires_at or "").strip() or None,
+                address=(address or "").strip() or None,
                 quote_link=quote_link,
                 pdf_attached=bool(pdf_bytes),
                 brand_color=self.brand_color,
                 company_email=self.company_email,
                 company_phone=self.company_phone,
+                company_phone_href=phone_tel_href(self.company_phone),
                 terms=self.quote_terms,
             )
 

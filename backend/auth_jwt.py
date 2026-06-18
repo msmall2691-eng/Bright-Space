@@ -76,3 +76,27 @@ def verify_jwt(token: str) -> Optional[dict]:
         return None
     except jwt.InvalidTokenError:
         return None
+
+
+def maybe_refresh_jwt(token: str) -> Optional[str]:
+    """Sliding-session refresh: if ``token`` is still valid but has passed the
+    halfway point of its lifetime, return a freshly-minted token (same claims,
+    new 24h expiry); otherwise return None.
+
+    The HTTP middleware calls this on every authenticated request and, when a
+    new token comes back, hands it to the client via the X-Refresh-Token response
+    header. The effect: an actively-working user never gets logged out mid-task
+    (e.g. mid-booking), while a truly idle session still expires on schedule.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
+    exp = payload.get("exp")
+    if not exp:
+        return None
+    remaining = exp - datetime.now(timezone.utc).timestamp()
+    # Only refresh a live token that's past its half-life — never an expired one.
+    if 0 < remaining < (TOKEN_EXPIRE_HOURS * 3600) / 2:
+        return create_jwt(payload.get("user_id"), payload.get("email", ""), payload.get("role", "member"))
+    return None

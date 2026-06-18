@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import or_
 from pydantic import BaseModel
 from typing import Literal, Optional, List
 from datetime import datetime, date
@@ -14,7 +15,7 @@ from database.models import Client, Property, Job, ICalEvent, Opportunity, Quote
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 from utils.contacts import normalize_phone
 from utils.enrichment import enrich_client_data
-from modules.auth.router import get_current_user, require_role
+from modules.auth.router import get_current_user, require_role, current_org_id
 
 router = APIRouter()
 
@@ -471,24 +472,38 @@ def client_to_dict(c: Client) -> dict:
         "source": c.source,
         "custom_fields": c.custom_fields or {},
         "created_at": c.created_at.isoformat() if c.created_at else None,
+        "updated_at": getattr(c, "updated_at", None).isoformat() if getattr(c, "updated_at", None) else None,
+        "created_by": getattr(c, "created_by", None),
+        "updated_by": getattr(c, "updated_by", None),
     }
 
 
 @router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_clients(
     status: Optional[str] = None,
+    search: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
-    q = db.query(Client)
+    # MT-2: scope to the caller's workspace. Tolerate legacy NULL rows (none
+    # after MT-1's backfill, but defensive) so nothing silently disappears.
+    q = db.query(Client).filter(or_(Client.org_id == org_id, Client.org_id.is_(None)))
     if status:
         q = q.filter(Client.status == status)
+    # Typeahead support: case-insensitive match on name / email / phone so the
+    # job scheduler can search instead of preloading every client.
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        q = q.filter(or_(Client.name.ilike(like), Client.email.ilike(like), Client.phone.ilike(like)))
     return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_client(data: ClientCreate, db: Session = Depends(get_db)):
+def create_client(data: ClientCreate, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user),
+                  org_id: int = Depends(current_org_id)):
     payload = data.model_dump()
     _normalize_client_fields(payload)
     # Enrich with extracted data from email, name, etc.
@@ -497,6 +512,9 @@ def create_client(data: ClientCreate, db: Session = Depends(get_db)):
     if not payload["name"]:
         raise HTTPException(status_code=422, detail="name or first_name required")
     client = Client(**payload)
+    client.org_id = org_id  # MT-2: stamp the caller's workspace
+    # Audit actor: who created this record (Twenty's ActorMetadata).
+    client.created_by = client.updated_by = getattr(current_user, "id", None)
     db.add(client)
     db.commit()
     db.refresh(client)
@@ -553,15 +571,19 @@ def check_duplicate(
 
 
 @router.get("/{client_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
-def get_client(client_id: int, db: Session = Depends(get_db)):
-    client = db.query(Client).filter(Client.id == client_id).first()
+def get_client(client_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    # MT-2: a client in another workspace reads as 404 (not visible cross-tenant).
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     return client_to_dict(client)
 
 
 @router.get("/{client_id}/profile")
-def get_client_profile(client_id: int, db: Session = Depends(get_db)):
+def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """
     Get client's full profile including properties, upcoming/past visits, and GCal sync status.
     """
@@ -569,7 +591,10 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db)):
         joinedload(Client.properties).joinedload(Property.property_icals),
         joinedload(Client.properties).joinedload(Property.ical_events),
         joinedload(Client.jobs)
-    ).filter(Client.id == client_id).first()
+    ).filter(
+        Client.id == client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
 
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -754,11 +779,16 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{client_id}", dependencies=[Depends(require_role("admin", "manager"))])
-def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_db)):
-    client = db.query(Client).filter(Client.id == client_id).first()
+def update_client(client_id: int, data: ClientUpdate, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user), org_id: int = Depends(current_org_id)):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     updates = data.model_dump(exclude_none=True)
+    client.updated_by = getattr(current_user, "id", None)  # audit actor
     _normalize_client_fields(updates, existing_city=client.city)
     phone_changed = "phone" in updates and updates["phone"] and updates["phone"] != client.phone
     new_phone = updates.get("phone") if phone_changed else None
@@ -977,8 +1007,11 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
 
 
 @router.delete("/{client_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_client(client_id: int, db: Session = Depends(get_db)):
-    client = db.query(Client).filter(Client.id == client_id).first()
+def delete_client(client_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     db.delete(client)

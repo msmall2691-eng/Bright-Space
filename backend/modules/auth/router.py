@@ -1,10 +1,11 @@
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -85,11 +86,37 @@ def _default_org_id(db: Session) -> Optional[int]:
     return org.id
 
 
-def _active_admin_exists(db: Session) -> bool:
-    return db.query(User).filter(
+def _active_admin_exists(db: Session, org_id: Optional[int] = None) -> bool:
+    q = db.query(User).filter(
         User.role == "admin", User.active == True,  # noqa: E712
         (User.status == "active") | (User.status.is_(None)),
-    ).first() is not None
+    )
+    # MT-4: the bootstrap-first-admin decision is about a SPECIFIC workspace
+    # (the primary org). Scope to it so a stranger who self-founded an admin org
+    # of their own (below) doesn't suppress the primary install's bootstrap.
+    if org_id is not None:
+        q = q.filter(User.org_id == org_id)
+    return q.first() is not None
+
+
+def _slugify(value: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
+    return s[:48] or "workspace"
+
+
+def _create_org_for_signup(db: Session, name_hint: str):
+    """MT-4: a net-new self-signup founds its OWN workspace (and becomes its
+    admin). The slug is derived from the name and de-duped to stay unique."""
+    from database.models import Org
+    base = _slugify(name_hint)
+    slug, n = base, 1
+    while db.query(Org.id).filter(Org.slug == slug).first():
+        n += 1
+        slug = f"{base}-{n}"
+    org = Org(name=(name_hint or "My Workspace").strip()[:255] or "My Workspace", slug=slug)
+    db.add(org)
+    db.flush()
+    return org
 
 
 class UserResponse(BaseModel):
@@ -171,6 +198,49 @@ def get_current_user_optional(
     user_id = payload.get("user_id")
     user = db.query(User).filter(User.id == user_id).first()
     return user
+
+
+def current_org_id(current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> int:
+    """The caller's tenant (workspace) id — for scoping every read/write in the
+    multi-tenant model (MT-2).
+
+    JWT users carry their own org_id. The synthetic master-API-key admin has no
+    org_id, so it falls back to the default workspace (org 1) — i.e. the master
+    integration operates in the primary org. Never returns None, so a scope
+    filter can't accidentally become `WHERE org_id IS NULL` and hide everything.
+
+    Also sets the Postgres session var `app.current_org_id` so MT-3 Row-Level
+    Security can enforce isolation as a backstop even on a query that forgot its
+    org filter. No-op on SQLite / when not in Postgres.
+    """
+    oid = getattr(current_user, "org_id", None) or _default_org_id(db)
+    set_rls_org_context(db, oid)
+    return oid
+
+
+def set_rls_org_context(db: Session, org_id: int) -> None:
+    """Set the per-transaction Postgres GUC that MT-3 RLS policies read. Safe
+    no-op on non-Postgres (SQLite tests) and never raises into the request."""
+    try:
+        if db.bind and db.bind.dialect.name == "postgresql":
+            # SET LOCAL scopes to the current transaction; parameter binding isn't
+            # allowed for SET, so the int is interpolated (it's a validated int).
+            db.execute(text(f"SET LOCAL app.current_org_id = {int(org_id)}"))
+    except Exception:
+        # RLS context is a backstop; never break the request if it can't be set.
+        pass
+
+
+def resolve_org_id(org_id, db: Session) -> int:
+    """Coerce a current_org_id value to a real org id.
+
+    Endpoint functions that are also called in-process (e.g. quoting → create_job)
+    don't go through FastAPI, so their `org_id = Depends(current_org_id)` default
+    arrives as the unresolved Depends sentinel, not an int. Fall back to the
+    default workspace in that case so a direct call can't write/filter on a
+    Depends object."""
+    return org_id if isinstance(org_id, int) else _default_org_id(db)
 
 
 def require_role(*allowed_roles):
@@ -303,11 +373,10 @@ def _resolve_google_user(db: Session, email: str, sub: Optional[str], name: str)
     """Match or provision a verified Google identity (Twenty-style open signup).
 
     Existing users sign in regardless of allow-lists — pending/disabled is
-    enforced downstream by get_current_user. NEW users are provisioned as
-    role='member' — NEVER auto-admin — and start 'pending' unless their
-    email/domain is on the auto-approve lists. The only exception: a fresh
-    install with no active admin yet bootstraps an allow-listed signup as the
-    first admin (someone has to be able to approve everyone else)."""
+    enforced downstream by get_current_user. Allow-listed NEW users join the
+    primary workspace active (bootstrapping its first admin only when it has
+    none). MT-4: any other net-new signup founds their OWN workspace and becomes
+    its admin, in an empty org isolated from everyone else's data."""
     user = db.query(User).filter(User.google_sub == sub).first() if sub else None
     if not user:
         user = db.query(User).filter(User.email == email).first()
@@ -317,12 +386,17 @@ def _resolve_google_user(db: Session, email: str, sub: Optional[str], name: str)
             raise HTTPException(status_code=403, detail="This account is inactive.")
     else:
         approved = _auto_approved(email)
-        bootstrap_admin = approved and not _active_admin_exists(db)
+        if approved:
+            default_org = _default_org_id(db)
+            role = "admin" if not _active_admin_exists(db, default_org) else "member"
+            org_id, status = default_org, "active"
+        else:
+            # MT-4: net-new stranger founds their own workspace as its admin.
+            role, status = "admin", "active"
+            org_id = _create_org_for_signup(db, name or email.split("@")[0]).id
         user = User(email=email, password_hash=None, full_name=name or email,
-                    role="admin" if bootstrap_admin else "member",
-                    auth_provider="google", active=True,
-                    org_id=_default_org_id(db),
-                    status="active" if approved else "pending")
+                    role=role, auth_provider="google", active=True,
+                    org_id=org_id, status=status)
         db.add(user)
         db.flush()
 
@@ -435,15 +509,18 @@ def register(
 ):
     """
     Create a user. Three paths:
-      1. An authenticated admin creates a user (defaults to role=client).
+      1. An authenticated admin creates a user in their workspace (role=client).
       2. An auto-approved email (SIGNUP_ALLOWED_EMAILS / GOOGLE_ALLOWED_EMAILS /
-         GOOGLE_ALLOWED_DOMAINS) self-registers active — and bootstraps as the
-         FIRST admin only when no active admin exists yet.
-      3. Anyone else self-registers as role='member', status='pending' — a
-         valid identity with zero data access until an admin approves it.
+         GOOGLE_ALLOWED_DOMAINS) joins the PRIMARY workspace active — and
+         bootstraps as its FIRST admin only when it has no active admin yet.
+      3. MT-4 — anyone else (a net-new self-signup) founds their OWN workspace
+         and becomes its admin, active immediately. They start in an empty org
+         and can't see anyone else's data.
 
-    BB-SEC-07 still holds: open self-registration can never grab admin — the
-    bootstrap-admin path requires the allow-list AND an admin-less install.
+    BB-SEC-07 (revised for MT-4): open self-registration can never grab admin of
+    an EXISTING workspace — only of the brand-new empty org it founds. Joining an
+    existing workspace as admin still requires the allow-list AND an admin-less
+    primary install.
     """
     email_l = (data.email or "").strip().lower()
     is_admin_caller = bool(current_user and current_user.role == "admin")
@@ -474,16 +551,24 @@ def register(
             )
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # Roles: admin-created users default to the lowest-privilege role
-    # (promote later); self-signups are members — the bootstrap-admin
-    # exception only fires on an install with no active admin yet.
+    # Roles: admin-created users default to the lowest-privilege role (promote
+    # later) in the admin's primary workspace; allow-listed signups join the
+    # primary workspace (bootstrapping its first admin only when it has none);
+    # everyone else (MT-4) founds their own workspace as its admin.
     if is_admin_caller:
         role, status = "client", "active"
+        # Join the CREATING admin's workspace, not always the primary one — so an
+        # admin of any org adds users to their own tenant. (The synthetic
+        # master-API-key admin has no org_id and falls back to the primary org.)
+        org_id = getattr(current_user, "org_id", None) or _default_org_id(db)
     elif allowlisted:
-        role = "admin" if not _active_admin_exists(db) else "member"
+        default_org = _default_org_id(db)
+        role = "admin" if not _active_admin_exists(db, default_org) else "member"
         status = "active"
+        org_id = default_org
     else:
-        role, status = "member", "pending"
+        role, status = "admin", "active"
+        org_id = _create_org_for_signup(db, data.full_name or email_l.split("@")[0]).id
 
     new_user = User(
         email=data.email,
@@ -492,7 +577,7 @@ def register(
         role=role,
         auth_provider="password",
         active=True,
-        org_id=_default_org_id(db),
+        org_id=org_id,
         status=status,
     )
 
