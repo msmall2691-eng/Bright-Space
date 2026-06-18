@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
-import AgentWidget from '../components/AgentWidget'
 import { EmptyState } from '../components/ui'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, del } from "../api"
@@ -758,14 +757,6 @@ export default function Properties() {
         </div>
       </div>
 
-      <AgentWidget
-        pageContext="properties"
-        prompts={[
-          'Which properties need an iCal sync?',
-          'Show upcoming turnovers this week',
-          'Help me set up a new Airbnb property',
-        ]}
-      />
 
       {/* Type selector modal for new property */}
       {showTypeModal && (

@@ -294,11 +294,11 @@ export default function Dashboard() {
     const entered = newLeads + quoted + accepted + won
     const stages = [
       { key: 'new', label: 'New leads', n: newLeads, tone: { text: 'text-purple-600', bar: 'bg-purple-500' },
-        sub: 'to quote', onClick: () => navigate('/quoting?tab=leads') },
+        sub: 'to quote', onClick: () => navigate('/billing?view=quotes&tab=leads') },
       { key: 'quoted', label: 'Quoted', n: quoted, tone: { text: 'text-blue-600', bar: 'bg-blue-500' },
-        sub: 'awaiting reply', onClick: () => navigate('/quoting?tab=quotes') },
+        sub: 'awaiting reply', onClick: () => navigate('/billing?view=quotes&tab=quotes') },
       { key: 'accepted', label: 'Accepted', n: accepted, tone: { text: 'text-amber-600', bar: 'bg-amber-500' },
-        sub: 'ready to schedule', onClick: () => navigate('/quoting?tab=quotes') },
+        sub: 'ready to schedule', onClick: () => navigate('/billing?view=quotes&tab=quotes') },
       { key: 'won', label: 'Won', n: won, tone: { text: 'text-emerald-600', bar: 'bg-emerald-500' },
         sub: 'became jobs', onClick: () => navigate('/clients') },
     ]
@@ -531,7 +531,7 @@ export default function Dashboard() {
               )}
               {hiddenInvoices > 0 && (
                 <button
-                  onClick={() => navigate('/invoicing')}
+                  onClick={() => navigate('/billing?view=invoices')}
                   className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
                 >
                   +{hiddenInvoices} more past-due {hiddenInvoices === 1 ? 'invoice' : 'invoices'} · Open Invoicing →
@@ -593,7 +593,7 @@ export default function Dashboard() {
             </span>
           )}
           action="Open Quoting"
-          onAction={() => navigate('/quoting?tab=quotes')}
+          onAction={() => navigate('/billing?view=quotes&tab=quotes')}
         >
           {loading ? (
             <TileLoading />
@@ -603,11 +603,11 @@ export default function Dashboard() {
           ) : (
             <div className="flex-1 space-y-1.5">
               {[
-                { n: quoteActions.followUp, label: 'Need a follow-up nudge', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/quoting?tab=follow-ups') },
-                { n: quoteActions.changes, label: 'Changes requested', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/quoting?tab=quotes') },
-                { n: quoteActions.awaiting, label: 'Awaiting customer response', tone: 'text-blue-700 bg-blue-50 border-blue-200', go: () => navigate('/quoting?tab=quotes') },
-                { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', go: () => navigate('/quoting?tab=quotes') },
-                { n: quoteActions.newLeads, label: 'New leads to quote', tone: 'text-purple-700 bg-purple-50 border-purple-200', go: () => navigate('/quoting?tab=leads') },
+                { n: quoteActions.followUp, label: 'Need a follow-up nudge', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/billing?view=quotes&tab=follow-ups') },
+                { n: quoteActions.changes, label: 'Changes requested', tone: 'text-amber-700 bg-amber-50 border-amber-200', go: () => navigate('/billing?view=quotes&tab=quotes') },
+                { n: quoteActions.awaiting, label: 'Awaiting customer response', tone: 'text-blue-700 bg-blue-50 border-blue-200', go: () => navigate('/billing?view=quotes&tab=quotes') },
+                { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', go: () => navigate('/billing?view=quotes&tab=quotes') },
+                { n: quoteActions.newLeads, label: 'New leads to quote', tone: 'text-purple-700 bg-purple-50 border-purple-200', go: () => navigate('/billing?view=quotes&tab=leads') },
               ].filter(r => r.n > 0).map((r, i) => (
                 <button key={i} onClick={r.go}
                   className={`w-full flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm hover:opacity-90 transition-opacity ${r.tone}`}>
@@ -703,7 +703,7 @@ export default function Dashboard() {
           iconColor="text-emerald-500"
           title="Money"
           action="Open Invoicing"
-          onAction={() => navigate('/invoicing')}
+          onAction={() => navigate('/billing?view=invoices')}
         >
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100">
             <StatCard
@@ -724,7 +724,7 @@ export default function Dashboard() {
               value={fmtMoney(outstanding)}
               sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
               accent={overdueInvoiceCount > 0 ? 'text-amber-600' : 'text-ink'}
-              onClick={() => navigate('/invoicing')}
+              onClick={() => navigate('/billing?view=invoices')}
             />
             <StatCard
               className="bg-white"
@@ -732,7 +732,7 @@ export default function Dashboard() {
               value={fmtMoney(pipeline)}
               sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`}
               accent="text-emerald-600"
-              onClick={() => navigate('/quoting')}
+              onClick={() => navigate('/billing?view=quotes')}
             />
           </div>
 
@@ -742,19 +742,19 @@ export default function Dashboard() {
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Aging receivables</div>
               <div className="flex gap-3 text-[12px]">
                 {arAging['30'].length > 0 && (
-                  <button onClick={() => navigate('/invoicing')} className="flex items-baseline gap-1 hover:text-amber-700 transition-colors">
+                  <button onClick={() => navigate('/billing?view=invoices')} className="flex items-baseline gap-1 hover:text-amber-700 transition-colors">
                     <span className="text-amber-600 font-bold">{fmtMoney(arAging['30'].reduce((s, i) => s + (i.total || 0), 0))}</span>
                     <span className="text-ink-3">30-60d</span>
                   </button>
                 )}
                 {arAging['60'].length > 0 && (
-                  <button onClick={() => navigate('/invoicing')} className="flex items-baseline gap-1 hover:text-orange-700 transition-colors">
+                  <button onClick={() => navigate('/billing?view=invoices')} className="flex items-baseline gap-1 hover:text-orange-700 transition-colors">
                     <span className="text-orange-600 font-bold">{fmtMoney(arAging['60'].reduce((s, i) => s + (i.total || 0), 0))}</span>
                     <span className="text-ink-3">60-90d</span>
                   </button>
                 )}
                 {arAging['90'].length > 0 && (
-                  <button onClick={() => navigate('/invoicing')} className="flex items-baseline gap-1 hover:text-red-700 transition-colors">
+                  <button onClick={() => navigate('/billing?view=invoices')} className="flex items-baseline gap-1 hover:text-red-700 transition-colors">
                     <span className="text-red-600 font-bold">{fmtMoney(arAging['90'].reduce((s, i) => s + (i.total || 0), 0))}</span>
                     <span className="text-ink-3">90d+</span>
                   </button>
