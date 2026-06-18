@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText,
-  Mail, MessageSquare,
+  Mail, MessageSquare, ChevronRight,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
@@ -219,11 +219,17 @@ export default function QuoteDetail() {
               to={quote.property ? `/properties/${quote.property.id}` : null}
               primary={quote.property?.name} secondary={quote.property?.address} />
 
-            {/* Delivery history */}
+            {/* Delivery history — diagnostic, collapsed to a summary line. */}
             {deliveryHistory.length > 0 && (
-              <div className="bg-panel border border-hairline rounded-xl p-4">
-                <div className="text-[10px] uppercase tracking-wide text-ink-3 mb-2">Delivery history</div>
-                <div className="space-y-2">
+              <details className="group bg-panel border border-hairline rounded-xl p-4">
+                <summary className="flex items-center gap-1.5 cursor-pointer text-[10px] uppercase tracking-wide text-ink-3 select-none">
+                  <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                  Delivery history
+                  <span className="ml-auto normal-case tracking-normal text-ink-2">
+                    {deliveryHistory.length} attempt{deliveryHistory.length !== 1 ? 's' : ''}
+                  </span>
+                </summary>
+                <div className="space-y-2 mt-2">
                   {deliveryHistory.map((d, i) => (
                     <div key={i} className="flex items-start gap-2 text-[12px]">
                       {d.channel === 'email'
@@ -244,7 +250,7 @@ export default function QuoteDetail() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
           </div>
         </div>
