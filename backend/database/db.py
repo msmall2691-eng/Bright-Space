@@ -200,6 +200,9 @@ def _run_migrations():
         "ALTER TABLE quotes ADD COLUMN quote_number TEXT",
         "ALTER TABLE quotes ADD COLUMN address TEXT",
         "ALTER TABLE quotes ADD COLUMN service_type TEXT",
+        # Carry the customer's stated cleaning cadence from the lead onto the
+        # quote, so a won quote can pre-fill the recurring-plan setup.
+        "ALTER TABLE quotes ADD COLUMN frequency TEXT",
         # Custom fields
         "ALTER TABLE clients ADD COLUMN custom_fields TEXT DEFAULT '{}'",
         "ALTER TABLE jobs ADD COLUMN custom_fields TEXT DEFAULT '{}'",

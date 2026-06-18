@@ -23,7 +23,7 @@ from schemas.quotes import (
     QuoteCreate, QuoteUpdate, QuoteRequestCreate, QuoteRequestUpdate,
 )
 from database.models import (
-    Quote, QuoteRequest, QuoteEmail, QuoteSMS, Client, Job, Property,
+    Quote, QuoteRequest, QuoteEmail, QuoteSMS, Client, Job, Property, LeadIntake,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.integration_log import log_integration_event as _log_integration
@@ -105,6 +105,7 @@ def _quote_dict(q: Quote) -> dict:
         "customer_message": getattr(q, "customer_message", None),
         "internal_notes": getattr(q, "internal_notes", None),
         "service_type": q.service_type,
+        "frequency": getattr(q, "frequency", None),
         "address": q.address,
         "notes": q.notes,
         "items": q.items or [],
@@ -178,6 +179,14 @@ def create_quote(
     items = _items_to_dicts(quote_data.items)
     subtotal, tax, total = _compute_totals(items, quote_data.tax_rate, quote_data.discount)
 
+    # Carry the customer's stated cadence onto the quote: prefer an explicit
+    # value, else inherit it from the linked lead so a won quote can pre-fill
+    # the recurring-plan setup without re-asking.
+    frequency = quote_data.frequency
+    if not frequency and quote_data.intake_id:
+        intake = db.query(LeadIntake).filter(LeadIntake.id == quote_data.intake_id).first()
+        frequency = getattr(intake, "frequency", None) if intake else None
+
     quote = Quote(
         client_id=quote_data.client_id,
         intake_id=quote_data.intake_id,
@@ -191,6 +200,7 @@ def create_quote(
         customer_message=quote_data.customer_message,
         internal_notes=quote_data.internal_notes,
         service_type=quote_data.service_type or "residential",
+        frequency=frequency,
         address=quote_data.address,
         notes=quote_data.notes,
         items=items,
@@ -331,7 +341,7 @@ def _apply_update(quote: Quote, data: dict) -> None:
     """Apply a partial update dict, recomputing totals when pricing changes."""
     if "items" in data and data["items"] is not None:
         quote.items = _items_to_dicts(data["items"])
-    for field in ("title", "customer_message", "internal_notes", "service_type", "address",
+    for field in ("title", "customer_message", "internal_notes", "service_type", "frequency", "address",
                   "notes", "status",
                   "client_id", "intake_id", "opportunity_id", "property_id"):
         if field in data and data[field] is not None:

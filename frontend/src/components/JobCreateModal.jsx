@@ -92,6 +92,7 @@ export default function JobCreateModal({
   initialJobType = null,
   initialTitle = null,
   initialQuoteId = null,
+  initialFrequency = null,
   defaultRecurring = false,
   onClose,
   onCreated,
@@ -99,6 +100,10 @@ export default function JobCreateModal({
   const [properties, setProperties] = useState([])
   const [loadingProps, setLoadingProps] = useState(false)
   const [recurring, setRecurring] = useState(defaultRecurring)
+  // Pre-fill the recurring cadence from the customer's stated frequency (carried
+  // from the lead through the quote) so a won quote is one confirm away.
+  const seedFreq = ['weekly', 'biweekly', 'monthly'].includes((initialFrequency || '').toLowerCase())
+    ? initialFrequency.toLowerCase() : 'biweekly'
   const [form, setForm] = useState({
     title: initialTitle || (clientName ? `${clientName} — Clean` : ''),
     job_type: initialJobType || 'residential',
@@ -109,8 +114,8 @@ export default function JobCreateModal({
     notes: '',
     property_id: initialPropertyId ? String(initialPropertyId) : '',
     // Recurring-only fields
-    frequency: 'biweekly',
-    interval_weeks: 2,
+    frequency: seedFreq,
+    interval_weeks: seedFreq === 'weekly' ? 1 : 2,
     days_of_week: [0],
     day_of_month: 1,
     generate_weeks_ahead: 8,

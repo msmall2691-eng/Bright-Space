@@ -1478,6 +1478,7 @@ export default function Quoting() {
           initialJobType={quoteJobType(scheduleQuote.service_type)}
           initialTitle={scheduleQuote.title || `${clientName(scheduleQuote.client_id)} — Clean`}
           initialQuoteId={scheduleQuote.id}
+          initialFrequency={scheduleQuote.frequency || null}
           defaultRecurring
           onClose={() => setScheduleQuote(null)}
           onCreated={finishOnboard}

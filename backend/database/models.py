@@ -949,6 +949,9 @@ class Quote(Base):
     public_token = Column(String(64), nullable=True, unique=True, index=True)
     title = Column(String(255), nullable=True)
     service_type = Column(String(100), nullable=True)   # residential | commercial | str
+    # Customer's stated cleaning cadence (weekly | biweekly | monthly), carried
+    # from the lead so a won quote can pre-fill the recurring-plan setup.
+    frequency = Column(String(50), nullable=True)
     address = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
 
