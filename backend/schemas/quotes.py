@@ -27,6 +27,7 @@ class QuoteCreate(BaseModel):
     customer_message: Optional[str] = None
     internal_notes: Optional[str] = None
     service_type: Optional[str] = "residential"
+    frequency: Optional[str] = None   # weekly | biweekly | monthly (carried from the lead)
     address: Optional[str] = None
     notes: Optional[str] = None
     items: List[QuoteItem] = Field(default_factory=list)
@@ -46,6 +47,7 @@ class QuoteUpdate(BaseModel):
     customer_message: Optional[str] = None
     internal_notes: Optional[str] = None
     service_type: Optional[str] = None
+    frequency: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
     items: Optional[List[QuoteItem]] = None
