@@ -52,12 +52,12 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left flex items-start gap-3 px-5 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-100 last:border-b-0"
+      className="w-full text-left flex items-start gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
     >
       <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-slate-800 truncate">{title}</div>
-        {sub && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{sub}</div>}
+        <div className="text-[13px] font-medium text-ink truncate">{title}</div>
+        {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
       </div>
       {action && (
         <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{action}</span>
@@ -70,7 +70,7 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
 // Soft, airy card surface shared by the facelifted dashboard (white + blue,
 // rounded, gentle shadow — the look from the reference dashboard).
 const SOFT_CARD =
-  'bg-white rounded-2xl border border-slate-200/70 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-16px_rgba(15,23,42,0.12)]'
+  'bg-panel rounded-2xl border border-hairline shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-16px_rgba(15,23,42,0.12)]'
 
 // Map the existing iconColor tokens (passed by the tile call sites) to a tinted
 // chip so the icons read as colored badges without touching any call site.
@@ -88,14 +88,14 @@ const CHIP = {
 function Tile({ icon: Icon, iconColor, title, badge, action, onAction, children }) {
   return (
     <section className={`${SOFT_CARD} flex flex-col overflow-hidden`}>
-      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-hairline">
         <div className="flex items-center gap-2.5 min-w-0">
           {Icon && (
             <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${CHIP[iconColor] || 'bg-blue-50 text-blue-600'}`}>
               <Icon className="w-4 h-4" />
             </span>
           )}
-          <h2 className="text-sm font-semibold text-slate-800 truncate">{title}</h2>
+          <h2 className="text-sm font-semibold text-ink truncate">{title}</h2>
           {badge}
         </div>
         {action && (
@@ -117,17 +117,17 @@ function FunnelStage({ label, n, tone, pct, sub, onClick, last }) {
   return (
     <Fragment>
       <button onClick={onClick}
-        className="flex-1 min-w-0 text-left rounded-xl border border-slate-200/70 bg-white p-3.5 hover:shadow-md hover:border-slate-300 transition-all">
+        className="flex-1 min-w-0 text-left rounded-xl border border-hairline bg-panel p-3.5 hover:shadow-md hover:border-hairline-2 transition-all">
         <div className={`text-[10px] font-bold uppercase tracking-wide ${tone.text}`}>{label}</div>
-        <div className="text-[26px] leading-none font-bold text-slate-900 tabular-nums mt-1.5">{n}</div>
-        <div className="mt-2.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className="text-[26px] leading-none font-bold text-ink tabular-nums mt-1.5">{n}</div>
+        <div className="mt-2.5 h-1.5 rounded-full bg-bg-2 overflow-hidden">
           <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(pct, n > 0 ? 8 : 0)}%` }} />
         </div>
-        {sub && <div className="text-[10px] text-slate-400 mt-1.5 truncate">{sub}</div>}
+        {sub && <div className="text-[10px] text-ink-3 mt-1.5 truncate">{sub}</div>}
       </button>
       {!last && (
         <div className="hidden sm:flex items-center self-center shrink-0">
-          <ArrowRight className="w-4 h-4 text-slate-300" />
+          <ArrowRight className="w-4 h-4 text-ink-3" />
         </div>
       )}
     </Fragment>
@@ -143,14 +143,14 @@ function Funnel({ stages, convRate, activeClients }) {
           <span className="grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-purple-50 text-purple-600">
             <TrendingUp className="w-4 h-4" />
           </span>
-          <h2 className="text-sm font-semibold text-slate-800">Lead → client funnel</h2>
+          <h2 className="text-sm font-semibold text-ink">Lead → client funnel</h2>
         </div>
         <div className="flex items-center gap-4 text-[12px]">
-          <span className="text-slate-500">
-            <span className="font-bold text-slate-900 tabular-nums">{convRate}%</span> won
+          <span className="text-ink-3">
+            <span className="font-bold text-ink tabular-nums">{convRate}%</span> won
           </span>
           {activeClients != null && (
-            <span className="text-slate-500">
+            <span className="text-ink-3">
               <span className="font-bold text-emerald-600 tabular-nums">{activeClients}</span> active clients
             </span>
           )}
@@ -170,13 +170,13 @@ function KpiCard({ icon: Icon, chip, label, value, sub, accent }) {
   return (
     <div className={`${SOFT_CARD} p-4`}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide truncate">{label}</span>
+        <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide truncate">{label}</span>
         <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${chip}`}>
           <Icon className="w-4 h-4" />
         </span>
       </div>
-      <div className={`text-2xl font-bold mt-2 tabular-nums ${accent || 'text-slate-900'}`}>{value}</div>
-      {sub && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{sub}</div>}
+      <div className={`text-2xl font-bold mt-2 tabular-nums ${accent || 'text-ink'}`}>{value}</div>
+      {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
     </div>
   )
 }
@@ -441,11 +441,11 @@ export default function Dashboard() {
   const unpaidCount = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).length
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-bg">
       {/* Greeting */}
       <div className="px-4 sm:px-6 pt-6 pb-3">
-        <h1 className="text-2xl sm:text-[28px] font-bold text-slate-900 tracking-tight">{greeting} 👋</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-2xl sm:text-[28px] font-bold text-ink tracking-tight">{greeting} 👋</h1>
+        <p className="text-sm text-ink-3 mt-1">
           {longDate}
           {' · '}
           {todayCount === 0 ? 'no jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
@@ -565,15 +565,15 @@ export default function Dashboard() {
                 <button
                   key={j.id}
                   onClick={() => navigate(`/jobs/${j.id}`)}
-                  className="w-full text-left flex items-baseline gap-3 px-5 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors border-b border-slate-100 last:border-b-0"
+                  className="w-full text-left flex items-baseline gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
                 >
                   <span className="text-[12px] font-semibold text-blue-600 tabular-nums shrink-0 w-12">
                     {(j.start_time || '').slice(0, 5) || '—'}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] text-slate-800 truncate">{j.title}</span>
+                    <span className="block text-[13px] text-ink truncate">{j.title}</span>
                     {j.address && (
-                      <span className="block text-[11px] text-slate-500 truncate mt-0.5">{j.address}</span>
+                      <span className="block text-[11px] text-ink-3 truncate mt-0.5">{j.address}</span>
                     )}
                   </span>
                 </button>
@@ -705,21 +705,21 @@ export default function Dashboard() {
           action="Open Invoicing"
           onAction={() => navigate('/billing?view=invoices')}
         >
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-bg-2">
             <StatCard
-              className="bg-white"
+              className="bg-panel"
               label="Today"
               value={fmtMoney(todayRevenue)}
               sub={todayRevenue > 0 ? 'collected today' : 'nothing collected yet'}
             />
             <StatCard
-              className="bg-white"
+              className="bg-panel"
               label="Month to date"
               value={fmtMoney(mtdRevenue)}
               sub={`${invoices.filter(i => i.status === 'paid').length} paid`}
             />
             <StatCard
-              className="bg-white"
+              className="bg-panel"
               label="Outstanding"
               value={fmtMoney(outstanding)}
               sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
@@ -727,7 +727,7 @@ export default function Dashboard() {
               onClick={() => navigate('/billing?view=invoices')}
             />
             <StatCard
-              className="bg-white"
+              className="bg-panel"
               label="Pipeline"
               value={fmtMoney(pipeline)}
               sub={`${quotes.filter(q => q.status === 'sent').length} sent · ${quotes.filter(q => q.status === 'draft').length} draft`}
@@ -738,7 +738,7 @@ export default function Dashboard() {
 
           {/* AR Aging — who to call this morning */}
           {(arAging['30'].length + arAging['60'].length + arAging['90'].length) > 0 && (
-            <div className="border-t border-slate-100 px-5 py-3">
+            <div className="border-t border-hairline px-5 py-3">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Aging receivables</div>
               <div className="flex gap-3 text-[12px]">
                 {arAging['30'].length > 0 && (
@@ -765,7 +765,7 @@ export default function Dashboard() {
 
           {/* Revenue by service type (paid, month-to-date) */}
           {svcRevenue.length > 0 && (
-            <div className="border-t border-slate-100 px-5 py-3">
+            <div className="border-t border-hairline px-5 py-3">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Paid this month by service</div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
                 {svcRevenue.map(s => (
