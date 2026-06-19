@@ -1,7 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
-import { Mail, UserPlus, Paperclip, ArrowLeft, RefreshCw, Link2, Clock, Inbox, Search, Send, X, AlertCircle, Phone, MessageCircle, MapPin, Zap } from 'lucide-react'
+import { Mail, UserPlus, Paperclip, ArrowLeft, RefreshCw, Link2, Clock, Inbox, Search, Send, X, AlertCircle, Phone, MessageCircle, MapPin, Zap, ShieldAlert, EyeOff } from 'lucide-react'
 import { get, post } from '../api'
 import { htmlToText } from '../utils/format'
+
+// Why the inbound filter (PR #354) declined to auto-create a client. Surfaced so
+// a filtered-out real customer is recoverable in one click instead of silently lost.
+const REASON_LABELS = {
+  blocked_sender: 'Blocked sender',
+  bulk_mail: 'Bulk / marketing',
+  cold_outreach: 'Cold outreach',
+  no_cleaning_intent: 'No clear intent',
+  no_sender: 'No sender',
+}
+const reasonLabel = (r) => REASON_LABELS[r] || (r ? r.replace(/_/g, ' ') : 'Filtered')
 
 const QUICK_TEMPLATES = [
   { label: 'Confirm', text: 'Thank you! I\'ll confirm the details shortly.' },
@@ -174,6 +185,13 @@ function ContactCard({ email, client, onCreateLead, creating }) {
             {creating === email.id ? 'Creating...' : 'Create Lead'}
           </button>
         )}
+
+        {!client && email.lead_skip_reason && (
+          <div className="mt-2 flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-50 text-amber-700 text-[11px]">
+            <ShieldAlert className="w-3 h-3 shrink-0" />
+            <span>Auto-lead skipped: {reasonLabel(email.lead_skip_reason)}. Promote if this is a real customer.</span>
+          </div>
+        )}
       </div>
 
       {/* Contact Info */}
@@ -239,6 +257,10 @@ export default function GmailInbox() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [creating, setCreating] = useState(null)
+  // Session-local "I've looked at this" set for the review queue. Persists across
+  // manual refreshes but clears on a full page reload — dismiss here means "not
+  // now", not "block forever" (blocking belongs in the filter's domain list).
+  const [dismissed, setDismissed] = useState(() => new Set())
   const [showReplyPanel, setShowReplyPanel] = useState(false)
   const [connectionError, setConnectionError] = useState(null)
   const [fromEmail, setFromEmail] = useState(null)
@@ -311,9 +333,20 @@ export default function GmailInbox() {
     load()
   }
 
+  // A filtered-out sender awaiting a human call: the backend tagged it
+  // can_convert_to_client and we haven't dismissed it.
+  const needsReview = (em) => em.can_convert_to_client && !em.is_known_contact && !dismissed.has(em.id)
+  const reviewCount = emails.filter(needsReview).length
+
+  const dismiss = (em) => {
+    setDismissed(prev => new Set(prev).add(em.id))
+    if (selected?.id === em.id) setSelected(null)
+  }
+
   const filtered = emails.filter(em => {
     if (filter === 'linked' && !em.is_known_contact) return false
     if (filter === 'leads' && em.is_known_contact) return false
+    if (filter === 'review' && !needsReview(em)) return false
     if (search) {
       const q = search.toLowerCase()
       return (
@@ -378,22 +411,29 @@ export default function GmailInbox() {
           </div>
 
           {/* Filters */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {[
-              { key: 'all', label: 'All', count: summary.total },
-              { key: 'linked', label: 'Clients', count: summary.linked },
-              { key: 'leads', label: 'Leads', count: summary.unlinked },
+              { key: 'all', label: 'All' },
+              { key: 'linked', label: 'Clients' },
+              { key: 'leads', label: 'Leads' },
+              { key: 'review', label: 'Needs review', count: reviewCount },
             ].map(f => (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 ${
                   filter === f.key
                     ? 'bg-blue-100 text-blue-700'
                     : 'bg-bg-2 text-ink-2 hover:bg-bg-2'
                 }`}
               >
+                {f.key === 'review' && <ShieldAlert className="w-3 h-3" />}
                 {f.label}
+                {f.count > 0 && (
+                  <span className={`px-1.5 rounded-full text-[10px] font-bold ${
+                    filter === f.key ? 'bg-blue-200 text-blue-800' : 'bg-amber-100 text-amber-700'
+                  }`}>{f.count}</span>
+                )}
               </button>
             ))}
           </div>
@@ -450,6 +490,26 @@ export default function GmailInbox() {
                         {em.subject}
                       </p>
                       <p className="text-xs text-ink-3 truncate mt-0.5">{em.snippet}</p>
+                      {needsReview(em) && (
+                        <div className="flex items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-100 text-amber-700">
+                            <ShieldAlert className="w-2.5 h-2.5" /> {reasonLabel(em.lead_skip_reason)}
+                          </span>
+                          <button
+                            onClick={() => createLead(em)}
+                            disabled={creating === em.id}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+                          >
+                            <UserPlus className="w-2.5 h-2.5" /> {creating === em.id ? '…' : 'Promote'}
+                          </button>
+                          <button
+                            onClick={() => dismiss(em)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-bg-2 text-ink-3 hover:text-ink-2 transition-colors"
+                          >
+                            <EyeOff className="w-2.5 h-2.5" /> Dismiss
+                          </button>
+                        </div>
+                      )}
                     </div>
                     {em.has_attachments && <Paperclip className="w-3 h-3 text-ink-3 shrink-0" />}
                   </div>
