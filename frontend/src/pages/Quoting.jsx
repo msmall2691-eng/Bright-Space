@@ -6,6 +6,7 @@ import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
 import AddressAutocomplete from '../components/AddressAutocomplete'
+import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, put, del } from "../api"
 import { formatDate } from '../utils/format'
 
@@ -101,9 +102,10 @@ export default function Quoting() {
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
-    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil()
+    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil(),
+    custom_fields: {}
   })
-  const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '' })
+  const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '', copy_to: '' })
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [converting, setConverting] = useState(null)
@@ -283,6 +285,7 @@ export default function Quoting() {
         customer_message: '',
         internal_notes: '',
         items: [{ ...EMPTY_ITEM }],
+        custom_fields: {},
       }))
       setPanel('quote')
       setTab('quotes')
@@ -327,7 +330,7 @@ export default function Quoting() {
         address: q.address || '',
         service_type: q.service_type || 'residential', items: q.items?.length ? q.items : [{ ...EMPTY_ITEM }],
         tax_rate: q.tax_rate, notes: q.notes || '', internal_notes: q.internal_notes || '',
-        valid_until: q.valid_until || '' })
+        valid_until: q.valid_until || '', custom_fields: q.custom_fields || {} })
     } else if (intake) {
       // Seed the first line item's price from the lead's website "instant quote"
       // (midpoint of the estimate range) so pricing starts from their number.
@@ -359,12 +362,13 @@ export default function Quoting() {
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
-        valid_until: defaultValidUntil()
+        valid_until: defaultValidUntil(),
+        custom_fields: {}
       })
     } else {
       setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
         address: '', service_type: 'residential',
-        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil() })
+        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil(), custom_fields: {} })
     }
     setPanel('quote')
   }
@@ -385,6 +389,9 @@ export default function Quoting() {
       custom_message: '',
       subject: `Your Quote ${q.quote_number} from ${companyName}`,
       greeting: isPlaceholderName(clientName) ? '' : clientName,
+      // Owner copy: default to the business email so you always get a copy of
+      // what the customer received. Editable/clearable below.
+      copy_to: company.company_email || '',
     })
     setSelected(q)
     setPanel('send')
@@ -1244,6 +1251,14 @@ export default function Quoting() {
                 </div>
               </>
             )}
+
+            {/* Admin-defined custom fields for quotes (renders nothing when none
+                are configured in Settings → Custom Fields). */}
+            <CustomFieldsForm
+              entityType="quote"
+              values={form.custom_fields || {}}
+              onChange={(key, val) => setForm(f => ({ ...f, custom_fields: { ...(f.custom_fields || {}), [key]: val } }))}
+            />
           </div>
 
           {/* Preview column — the live customer-facing render. */}
@@ -1327,6 +1342,13 @@ export default function Quoting() {
                     placeholder="Leave blank for a plain “Hello,”"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                   <p className="text-[11px] text-ink-3 mt-1">The email opens with “Hello {sendForm.greeting.trim() || '…'},”</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Send a copy to me</label>
+                  <input type="email" value={sendForm.copy_to} onChange={e => setSendForm(f => ({ ...f, copy_to: e.target.value }))}
+                    placeholder="you@yourcompany.com"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  <p className="text-[11px] text-ink-3 mt-1">You'll get a blind copy of the quote email. Leave blank to skip.</p>
                 </div>
               </div>
             )}

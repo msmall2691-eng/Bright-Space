@@ -44,6 +44,21 @@ def test_money_formatting_never_python_float_repr():
     assert format_money("abc") == "0.00"
 
 
+def test_custom_fields_persist_and_serialize(ctx):
+    """Admin-defined custom fields save on update and round-trip through the
+    quote serialization the UI reads."""
+    db, c, q = ctx
+    # Nothing set yet → empty dict (never null) in the serialized shape.
+    assert _quote_dict(q)["custom_fields"] == {}
+    _apply_update(q, {"custom_fields": {"gate_code": "1234", "pets": "2 dogs"}})
+    db.commit(); db.refresh(q)
+    assert q.custom_fields == {"gate_code": "1234", "pets": "2 dogs"}
+    assert _quote_dict(q)["custom_fields"]["gate_code"] == "1234"
+    # An update that doesn't include custom_fields must not wipe them.
+    _apply_update(q, {"title": "New title"})
+    assert q.custom_fields == {"gate_code": "1234", "pets": "2 dogs"}
+
+
 def test_placeholder_names_are_not_greeted():
     assert customer_display_name("+12074329492") == ""   # "Hello +12074329492"
     assert customer_display_name("(207) 432-9492") == ""

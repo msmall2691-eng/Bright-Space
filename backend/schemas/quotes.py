@@ -36,6 +36,8 @@ class QuoteCreate(BaseModel):
     # Accepted as a string (date input) or empty; parsed to a date in the router.
     valid_until: Optional[str] = None
     status: Optional[str] = None
+    # Admin-defined custom fields (entity_type="quote"); free-form key→value.
+    custom_fields: Optional[dict] = None
 
 
 class QuoteUpdate(BaseModel):
@@ -55,6 +57,7 @@ class QuoteUpdate(BaseModel):
     discount: Optional[float] = None
     valid_until: Optional[str] = None
     status: Optional[str] = None
+    custom_fields: Optional[dict] = None
 
 
 class QuoteRequestCreate(BaseModel):

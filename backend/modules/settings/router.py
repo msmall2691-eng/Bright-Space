@@ -1,13 +1,17 @@
 """
 App Settings Router - email/IMAP credentials, integrations, etc.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from database.db import get_db
 from database.models import AppSetting
 from modules.auth.router import require_role
+from config import app_base_url
+import base64
+import hashlib
 import re
 import imaplib
 import smtplib
@@ -207,6 +211,69 @@ def save_general_settings(config: GeneralSettings, db: Session = Depends(get_db)
             set_setting(db, key, value.strip())
     db.commit()
     return {k: get_setting(db, k) for k in _GENERAL_KEYS}
+
+
+# Logo upload. The logo is consumed by three unauthenticated surfaces — the
+# quote email (<img src>), the PDF (fetched over HTTP), and the public quote
+# page — so it must be servable WITHOUT a login. We store the bytes in
+# app_settings (base64) and serve them from a stable public URL, then point
+# company_logo_url at it. This avoids depending on external image hosting or an
+# ephemeral filesystem (Railway wipes local disk on redeploy).
+_LOGO_DATA_KEY = "company_logo_data"        # base64-encoded image bytes
+_LOGO_MIME_KEY = "company_logo_mime"        # e.g. "image/png"
+_MAX_LOGO_BYTES = 2 * 1024 * 1024           # 2 MB — plenty for a logo
+_ALLOWED_LOGO_MIME = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+
+
+@router.post("/general/logo", dependencies=[Depends(require_role("admin"))])
+async def upload_company_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Store an uploaded logo image and point company_logo_url at our served
+    copy. Returns the new public logo URL (with a cache-busting version)."""
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    if content_type not in _ALLOWED_LOGO_MIME:
+        raise HTTPException(400, "Logo must be a PNG, JPG, GIF, WEBP, or SVG image")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "The uploaded file is empty")
+    if len(data) > _MAX_LOGO_BYTES:
+        raise HTTPException(400, "Logo is too large — please upload an image under 2 MB")
+
+    set_setting(db, _LOGO_DATA_KEY, base64.b64encode(data).decode("ascii"))
+    set_setting(db, _LOGO_MIME_KEY, content_type)
+    # Cache-bust so email/PDF/page pick up a replacement immediately.
+    version = hashlib.sha256(data).hexdigest()[:8]
+    logo_url = f"{app_base_url().rstrip('/')}/api/settings/logo?v={version}"
+    set_setting(db, "company_logo_url", logo_url)
+    db.commit()
+    return {"company_logo_url": logo_url}
+
+
+@router.delete("/general/logo", dependencies=[Depends(require_role("admin"))])
+def delete_company_logo(db: Session = Depends(get_db)):
+    """Remove the stored logo and clear company_logo_url."""
+    for key in (_LOGO_DATA_KEY, _LOGO_MIME_KEY, "company_logo_url"):
+        row = db.query(AppSetting).filter(AppSetting.key == key).first()
+        if row:
+            row.value = None
+    db.commit()
+    return {"company_logo_url": None}
+
+
+@router.get("/logo")
+def serve_company_logo(db: Session = Depends(get_db)):
+    """Serve the stored logo bytes. PUBLIC (no auth) — email clients, the PDF
+    generator, and the public quote page all load it without a session."""
+    data_b64 = get_setting(db, _LOGO_DATA_KEY)
+    if not data_b64:
+        raise HTTPException(404, "No logo set")
+    mime = get_setting(db, _LOGO_MIME_KEY) or "image/png"
+    try:
+        raw = base64.b64decode(data_b64)
+    except Exception:
+        raise HTTPException(404, "No logo set")
+    # Long cache; the URL carries a ?v= content hash so replacements bust it.
+    return Response(content=raw, media_type=mime,
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/from-email")

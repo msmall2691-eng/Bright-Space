@@ -233,6 +233,7 @@ class QuoteEmailService:
         discount=None,
         tax_rate=None,
         address: Optional[str] = None,
+        bcc: Optional[str] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -240,6 +241,10 @@ class QuoteEmailService:
         valid-until (no expiry text is shown at all — never a made-up "30
         days"). subject/greeting are per-send overrides from the Send panel;
         intro_message is the personal note / stored customer message.
+
+        bcc: optional owner copy address(es) — the business owner gets a blind
+        copy of exactly what the customer received. Invalid/blank values are
+        ignored rather than failing the send.
         """
         try:
             # Create message
@@ -251,6 +256,13 @@ class QuoteEmailService:
             msg['Subject'] = (subject or "").strip() or default_subject
             msg['From'] = f"{self.company_name} <{self.from_email}>"
             msg['To'] = to_email
+            # Owner copy: a Bcc so the customer never sees the internal address.
+            # smtplib.send_message() adds Bcc recipients to the envelope and
+            # strips the header before transmission, so it stays blind. Only set
+            # it when it's a real, distinct address.
+            bcc_addr = (bcc or "").strip()
+            if bcc_addr and "@" in bcc_addr and bcc_addr.lower() != to_email.strip().lower():
+                msg['Bcc'] = bcc_addr
 
             # Greeting: explicit override > friendly first name > greet-able
             # full name > neutral. "Hi Megan," reads better than the full name.

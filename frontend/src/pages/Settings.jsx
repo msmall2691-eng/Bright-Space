@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, X, GripVertical, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users, ChevronDown } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
 import GoogleAccountCard from '../components/GoogleAccountCard'
-import { del, get, post, patch } from "../api"
+import { del, get, post, patch, upload } from "../api"
 import { applyTheme, getTheme } from '../theme'
 
 
@@ -452,6 +452,33 @@ export default function Settings() {
     setGeneralSaving(false)
   }
 
+  const [logoUploading, setLogoUploading] = useState(false)
+  const uploadLogo = async (file) => {
+    if (!file) return
+    setLogoUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const data = await upload('/api/settings/general/logo', fd)
+      setGeneralSettings(s => ({ ...s, company_logo_url: data.company_logo_url }))
+      toast('Logo uploaded')
+    } catch (err) {
+      toast(err.message || 'Failed to upload logo', 'error')
+    }
+    setLogoUploading(false)
+  }
+  const removeLogo = async () => {
+    setLogoUploading(true)
+    try {
+      await del('/api/settings/general/logo')
+      setGeneralSettings(s => ({ ...s, company_logo_url: '' }))
+      toast('Logo removed')
+    } catch (err) {
+      toast(err.message || 'Failed to remove logo', 'error')
+    }
+    setLogoUploading(false)
+  }
+
   const saveAutomationSettings = async () => {
     setAutomationSaving(true)
     try {
@@ -602,6 +629,33 @@ export default function Settings() {
                         placeholder="#1f2937" className={inp + ' w-32'} />
                     </div>
                     <p className="text-[11px] text-ink-3 mt-1">Header color on the quote email, public quote page, and PDF.</p>
+                  </div>
+                  <div className="mt-4">
+                    <label className={lbl}>Company Logo</label>
+                    <div className="flex items-center gap-4">
+                      <div className="h-16 w-16 shrink-0 rounded-lg border border-hairline bg-bg-2 flex items-center justify-center overflow-hidden">
+                        {generalSettings.company_logo_url ? (
+                          <img src={generalSettings.company_logo_url} alt="Logo" className="max-h-full max-w-full object-contain" />
+                        ) : (
+                          <span className="text-[10px] text-ink-3 text-center px-1">No logo</span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${logoUploading ? 'bg-bg-2 text-ink-3 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                            {logoUploading ? 'Uploading…' : 'Upload logo'}
+                            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="hidden"
+                              disabled={logoUploading}
+                              onChange={e => { uploadLogo(e.target.files?.[0]); e.target.value = '' }} />
+                          </label>
+                          {generalSettings.company_logo_url && (
+                            <button type="button" onClick={removeLogo} disabled={logoUploading}
+                              className="px-3 py-2 rounded-lg text-sm font-medium bg-bg-2 text-ink-2 hover:bg-bg-2 disabled:opacity-50">Remove</button>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-ink-3">PNG, JPG, GIF, WEBP, or SVG up to 2&nbsp;MB. Shown on the quote email, public quote page, and PDF.</p>
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-4">
                     <label className={lbl}>Quote Terms &amp; Conditions (optional)</label>

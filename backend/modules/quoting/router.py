@@ -109,6 +109,7 @@ def _quote_dict(q: Quote) -> dict:
         "address": q.address,
         "notes": q.notes,
         "items": q.items or [],
+        "custom_fields": q.custom_fields or {},
         "subtotal": q.subtotal,
         "tax_rate": q.tax_rate,
         "tax": q.tax,
@@ -204,6 +205,7 @@ def create_quote(
         address=quote_data.address,
         notes=quote_data.notes,
         items=items,
+        custom_fields=quote_data.custom_fields or {},
         subtotal=subtotal,
         tax_rate=float(quote_data.tax_rate or 0),
         tax=tax,
@@ -341,6 +343,8 @@ def _apply_update(quote: Quote, data: dict) -> None:
     """Apply a partial update dict, recomputing totals when pricing changes."""
     if "items" in data and data["items"] is not None:
         quote.items = _items_to_dicts(data["items"])
+    if "custom_fields" in data and data["custom_fields"] is not None:
+        quote.custom_fields = dict(data["custom_fields"])
     for field in ("title", "customer_message", "internal_notes", "service_type", "frequency", "address",
                   "notes", "status",
                   "client_id", "intake_id", "opportunity_id", "property_id"):
@@ -443,6 +447,9 @@ class QuoteSendRequest(BaseModel):
     # Optional per-send overrides for the email envelope.
     subject: Optional[str] = None
     greeting: Optional[str] = None
+    # Owner copy: blind-copy the business on the customer email. When omitted,
+    # the configured company email is used; pass "" to explicitly skip the copy.
+    copy_to: Optional[str] = None
 
 
 @router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
@@ -484,6 +491,11 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         else:
             try:
                 company = _company_info(db)
+                # Owner copy: default to the configured company email so the
+                # owner always gets a copy; an explicit "" from the UI skips it,
+                # and an explicit address overrides the default.
+                owner_copy = (company.get("company_email") or "") if body.copy_to is None \
+                    else (body.copy_to or "")
                 pdf_bytes = QuotePDFService(
                     company_name=company["company_name"], company_email=company["company_email"] or "",
                     company_phone=company["company_phone"], brand_color=company["brand_color"],
@@ -511,6 +523,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     items=quote.items or [],
                     subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
                     tax_rate=quote.tax_rate, address=quote.address,
+                    bcc=owner_copy,
                 )
                 if res.get("success"):
                     results["email"] = "sent"
