@@ -143,6 +143,32 @@ export async function api(url, options = {}) {
 /** GET helper */
 export const get = (url) => api(url);
 
+/**
+ * GET helper that de-duplicates concurrent and rapidly-repeated fetches of the
+ * same URL. While a request is in flight, subsequent calls share its promise;
+ * after it resolves, the result is cached for `ttlMs` so the next caller within
+ * that window also reuses it. Use for read-only endpoints that several callers
+ * load on the same navigation (e.g. /api/comms/conversations/summary fetched
+ * by the dashboard, the unread-count poller, and the Comms page).
+ */
+const _getCachedInFlight = new Map() // url -> Promise
+const _getCachedResults = new Map()  // url -> { value, expiresAt }
+export function getCached(url, ttlMs = 5000) {
+  const now = Date.now()
+  const cached = _getCachedResults.get(url)
+  if (cached && cached.expiresAt > now) return Promise.resolve(cached.value)
+  const inFlight = _getCachedInFlight.get(url)
+  if (inFlight) return inFlight
+  const p = api(url)
+    .then((value) => {
+      _getCachedResults.set(url, { value, expiresAt: Date.now() + ttlMs })
+      return value
+    })
+    .finally(() => { _getCachedInFlight.delete(url) })
+  _getCachedInFlight.set(url, p)
+  return p
+}
+
 /** POST helper */
 export const post = (url, body) =>
   api(url, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });

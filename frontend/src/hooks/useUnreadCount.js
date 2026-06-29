@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { get } from '../api'
+import { getCached } from '../api'
 
 /**
  * Polls /api/comms/conversations/summary on an interval and exposes:
@@ -29,7 +29,7 @@ export function useUnreadCount({ intervalMs = 30000, onIncrease } = {}) {
       if (inFlight) return
       inFlight = true
       try {
-        const data = await get('/api/comms/conversations/summary')
+        const data = await getCached('/api/comms/conversations/summary')
         if (cancelled) return
         const total = data.unread_messages ?? 0
         const convs = data.unread ?? 0

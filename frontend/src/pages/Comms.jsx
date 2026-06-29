@@ -27,7 +27,7 @@ import {
   Filter, MapPin,
   Plus, MessageCircle, PenLine,
 } from 'lucide-react'
-import { get, post } from "../api"
+import { get, post, getCached } from "../api"
 import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
 
@@ -760,7 +760,7 @@ export default function Comms() {
   }, [folder, chipFilters, channelFilter, search])
 
   const loadSummary = useCallback(async () => {
-    try { setSummary(await get('/api/comms/conversations/summary')) }
+    try { setSummary(await getCached('/api/comms/conversations/summary')) }
     catch (e) { console.error('[Comms] loadSummary:', e) }
   }, [])
 
