@@ -384,8 +384,22 @@ export default function Quoting() {
       const freq = freqLabel(intake.frequency)
       const lineName = [freq, serviceLabel(svcType).replace(/^STR \/ Vacation rental cleaning$/, 'STR / vacation rental clean')]
         .filter(Boolean).join(' ')
+      // Resolve a client so "Create Quote" is never stuck on an empty client:
+      // use the linked client, else match an existing one by email/phone, else
+      // pre-fill + open the inline new-client form so it's a one-tap create.
+      const digits = (p) => (p || '').replace(/\D/g, '')
+      const matchedClient = clients.find(c =>
+        (intake.email && c.email && c.email.toLowerCase() === intake.email.toLowerCase()) ||
+        (intake.phone && c.phone && digits(c.phone) === digits(intake.phone)))
+      const resolvedClientId = intake.client_id || matchedClient?.id || ''
+      if (!resolvedClientId) {
+        setNewClient({ name: intake.name || '', phone: intake.phone || '', email: intake.email || '' })
+        setAddingClient(true)
+      } else {
+        setAddingClient(false)
+      }
       setForm({
-        client_id: intake.client_id || '', intake_id: intake.id,
+        client_id: resolvedClientId, intake_id: intake.id,
         // Auto-fill a sensible title and customer-facing scope so the quote is
         // mostly built — the admin just reviews, tweaks, and sends.
         title: titleFromIntake(intake), customer_message: '',
@@ -468,11 +482,34 @@ export default function Quoting() {
   }
 
   const save = async () => {
-    if (!form.client_id) { showToast('Please select a client first'); return }
-    if (!form.items.length || form.items.every(i => !i.name || !i.name.trim())) { showToast('Add at least one line item with a name'); return }
+    let clientId = form.client_id
+    // No client picked yet, but we have new-client details (e.g. a fresh
+    // request) — create the client on the fly so "Create Quote" always works
+    // instead of dead-ending on a disabled button.
+    if (!clientId && newClient.name.trim()) {
+      setSaving(true)
+      try {
+        const created = await post('/api/clients', {
+          name: newClient.name.trim(),
+          phone: newClient.phone.trim() || null,
+          email: newClient.email.trim() || null,
+          status: 'active',
+        })
+        setClients(cs => [created, ...cs])
+        clientId = created.id
+        setForm(f => ({ ...f, client_id: created.id }))
+        setAddingClient(false)
+      } catch (e) {
+        setSaving(false)
+        showToast(e.message || 'Could not create the client')
+        return
+      }
+    }
+    if (!clientId) { showToast('Please select a client first'); return }
+    if (!form.items.length || form.items.every(i => !i.name || !i.name.trim())) { setSaving(false); showToast('Add at least one line item with a name'); return }
     setSaving(true)
     try {
-      const body = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
+      const body = { ...form, client_id: parseInt(clientId), tax_rate: parseFloat(form.tax_rate) || 0 }
       if (selected) {
         await patch(`/api/quotes/${selected.id}`, body)
       } else {
@@ -1357,7 +1394,7 @@ export default function Quoting() {
 
           {canEdit ? (
             <div className="p-6 border-t border-hairline flex gap-3 shrink-0">
-              <button onClick={save} disabled={saving || !form.client_id}
+              <button onClick={save} disabled={saving || (!form.client_id && !newClient.name.trim())}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
                 {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
               </button>
