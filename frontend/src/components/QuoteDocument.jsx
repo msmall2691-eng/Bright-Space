@@ -42,16 +42,19 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
           <img src={quote.company_logo_url} alt={quote.company_name || 'Logo'}
                className="h-10 mb-3 object-contain" style={{ maxHeight: '40px' }} />
         )}
-        <p className="text-xs font-semibold uppercase tracking-widest text-white/70 mb-2">{quote.company_name || 'Quote'}</p>
-        <h1 className="text-2xl sm:text-3xl font-bold leading-tight">
+        {/* text-white is set explicitly on each line: a global `h1 { color }`
+            base rule (index.css) overrides the band's inherited white and would
+            otherwise render the title dark-on-dark. */}
+        <p className="text-xs font-semibold uppercase tracking-widest text-white/80 mb-2">{quote.company_name || 'Quote'}</p>
+        <h1 className="text-2xl sm:text-3xl font-bold leading-tight text-white">
           {quote.title || 'Your Cleaning Quote'}
         </h1>
-        <p className="text-sm text-white/70 mt-2">
+        <p className="text-sm text-white/80 mt-2">
           {[quote.quote_number, quote.quote_date].filter(Boolean).join(' · ')}
         </p>
         {quote.valid_until && (
-          <span className="inline-block mt-3 text-[11px] font-medium bg-white/15 border border-white/20 rounded-full px-3 py-1">
-            Valid for 30 days — expires {quote.valid_until}
+          <span className="inline-block mt-3 text-[11px] font-medium text-white bg-white/15 border border-white/20 rounded-full px-3 py-1">
+            Valid until {quote.valid_until}
           </span>
         )}
       </div>

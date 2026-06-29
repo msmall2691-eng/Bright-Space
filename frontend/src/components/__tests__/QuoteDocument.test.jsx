@@ -60,7 +60,7 @@ describe('QuoteDocument — fully populated', () => {
     expect(screen.getByText('Bi-weekly residential cleaning — Falmouth, ME')).toBeDefined()
     expect(screen.getAllByText(/Maine Cleaning Co/).length).toBeGreaterThan(0)
     expect(screen.getByText(/QT-2026-0014 · June 12, 2026/)).toBeDefined()
-    expect(screen.getByText('Valid for 30 days — expires June 30, 2026')).toBeDefined()
+    expect(screen.getByText('Valid until June 30, 2026')).toBeDefined()
     expect(screen.getByText(/Great speaking with you/)).toBeDefined()
     expect(screen.getByText('Service Address')).toBeDefined()
     expect(screen.getByText('12 Lighthouse Rd, Falmouth, ME')).toBeDefined()

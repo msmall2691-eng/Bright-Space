@@ -388,7 +388,8 @@ export default function Quoting() {
       phone: preferPhone,
       custom_message: '',
       subject: `Your Quote ${q.quote_number} from ${companyName}`,
-      greeting: isPlaceholderName(clientName) ? '' : clientName,
+      // First name only — friendlier and matches the email/SMS greeting.
+      greeting: isPlaceholderName(clientName) ? '' : clientName.split(/\s+/)[0],
       // Owner copy: default to the business email so you always get a copy of
       // what the customer received. Editable/clearable below.
       copy_to: company.company_email || '',

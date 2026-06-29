@@ -252,10 +252,9 @@ class QuotePDFService:
             story.append(Spacer(1, 0.15*inch))
         contact = " or call ".join(b for b in (f"email {self.company_email}" if self.company_email else None,
                                                self.company_phone) if b)
-        # One consistent validity sentence (matches the email + page wording).
-        validity = (f"This quote is valid for 30 days from the date issued "
-                    f"(through {expires_at.strftime('%B %d, %Y')}). " if expires_at else "")
-        story.append(Paragraph(f"{validity}Questions? {contact}".strip(), footer_style))
+        # Validity is already shown once in the header ("Valid until …"); don't
+        # repeat it here. Footer is just the contact prompt.
+        story.append(Paragraph(f"Questions? {contact}".strip(), footer_style))
 
         # Build PDF
         doc.build(story)

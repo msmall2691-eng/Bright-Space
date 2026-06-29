@@ -51,6 +51,17 @@ def test_send_sms_actually_delivers(quote_ctx):
     assert "/quote/" in body  # the accept link is included
 
 
+def test_default_sms_greets_by_first_name_only(quote_ctx):
+    """The text should say "Hi Meg," not "Hi Meg Small," — first name only."""
+    db, c, q = quote_ctx
+    c.name = "Meg Small"; db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM2", "status": "queued"}) as sms:
+        send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)  # no custom_message → default
+    body = sms.call_args.kwargs.get("body") or sms.call_args.args[1]
+    assert body.startswith("Hi Meg,")
+    assert "Meg Small" not in body
+
+
 def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     db, c, q = quote_ctx
     c.email = None; c.phone = None; db.commit()

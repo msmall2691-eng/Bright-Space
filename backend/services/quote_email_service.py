@@ -151,8 +151,9 @@ class QuoteEmailService:
             <tr>
                 <td style="padding: 20px; text-align: center;">
                     {% if company_logo_url %}<img src="{{ company_logo_url }}" alt="{{ company_name }}" height="48" style="max-height:48px; margin-bottom:8px; display:inline-block;"><br>{% endif %}
-                    <span style="color: #ffffff; font-size: 28px; font-weight: bold;">{{ company_name }}</span>
-                    <div style="color: #d1d5db; font-size: 14px; margin-top: 6px;">{% if quote_title %}{{ quote_title }}{% else %}Quote {{ quote_number }}{% endif %}</div>
+                    <span style="color: #ffffff; font-size: 24px; font-weight: bold;">{{ company_name }}</span>
+                    {% if quote_title %}<div style="color: #ffffff; font-size: 18px; font-weight: 600; margin-top: 8px;">{{ quote_title }}</div>{% endif %}
+                    <div style="color: #e5e7eb; font-size: 13px; margin-top: 6px;">Quote {{ quote_number }}</div>
                 </td>
             </tr>
         </table>
@@ -204,7 +205,6 @@ class QuoteEmailService:
             {% if company_email or company_phone %}
             <p>Questions? {% if company_email %}Reply or email <a href="mailto:{{ company_email }}">{{ company_email }}</a>{% endif %}{% if company_phone %}{% if company_email %} · {% endif %}call <a href="tel:{{ company_phone_href }}">{{ company_phone }}</a>{% endif %}</p>
             {% endif %}
-            {% if expires_at %}<p>This quote is valid for 30 days from the date issued (through {{ expires_at }}).</p>{% endif %}
             {% if terms %}<p style="text-align:left; white-space: pre-wrap;">{{ terms }}</p>{% endif %}
             <p>&copy; {{ company_name }} - All rights reserved</p>
         </div>
