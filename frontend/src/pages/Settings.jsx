@@ -76,6 +76,10 @@ export default function Settings() {
     currency: 'USD',
     quote_terms: '',
     brand_color: '#1f2937',
+    // Must be in the initial state: the /general loader only copies keys that
+    // already exist here, so without this the saved logo wouldn't re-hydrate
+    // on reload (preview would wrongly show "No logo").
+    company_logo_url: '',
     service_scope_residential: '',
     service_scope_commercial: '',
     service_scope_str: '',

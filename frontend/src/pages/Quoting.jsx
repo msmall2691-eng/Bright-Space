@@ -415,18 +415,20 @@ export default function Quoting() {
           .then(r => {
             const s = r?.specs
             if (!s) return
-            const extra = [
-              s.square_footage && `${s.square_footage.toLocaleString()} sqft`,
-              s.bedrooms != null && `${s.bedrooms} bd`,
-              s.bathrooms != null && `${s.bathrooms} ba`,
-              s.year_built && `built ${s.year_built}`,
-            ].filter(Boolean).join(' · ')
-            if (!extra) return
             setForm(f => {
               const items = [...f.items]
-              if (items[0] && !/sqft|\bbd\b|\bba\b/.test(items[0].description || '')) {
-                items[0] = { ...items[0], description: [items[0].description, extra].filter(Boolean).join(' — ') }
-              }
+              const desc = items[0]?.description || ''
+              // Merge each spec individually — only add the ones the lead didn't
+              // already provide, instead of skipping the whole lookup when any
+              // one spec is already present.
+              const extra = [
+                s.square_footage && !/sqft/i.test(desc) && `${s.square_footage.toLocaleString()} sqft`,
+                s.bedrooms != null && !/\bbd\b|bedroom/i.test(desc) && `${s.bedrooms} bd`,
+                s.bathrooms != null && !/\bba\b|bathroom/i.test(desc) && `${s.bathrooms} ba`,
+                s.year_built && !/built/i.test(desc) && `built ${s.year_built}`,
+              ].filter(Boolean).join(' · ')
+              if (!extra || !items[0]) return f
+              items[0] = { ...items[0], description: [desc, extra].filter(Boolean).join(' — ') }
               return { ...f, items }
             })
           })
@@ -488,7 +490,12 @@ export default function Quoting() {
     setSending(true)
     try {
       await post(`/api/quotes/${selected.id}/generate-token`, {})
-      const data = await post(`/api/quotes/${selected.id}/send`, sendForm)
+      // A blank copy field means "use the default owner copy" — send null so the
+      // backend falls back to the company email (which itself falls back to the
+      // from/SMTP address). An empty string would be read as "skip the copy",
+      // silently dropping the owner copy on a setup with no Company Email set.
+      const payload = { ...sendForm, copy_to: (sendForm.copy_to || '').trim() || null }
+      const data = await post(`/api/quotes/${selected.id}/send`, payload)
       if (data.delivered) {
         const channels = Object.entries(data.results || {})
           .filter(([, v]) => v === 'sent').map(([k]) => k)
@@ -1416,7 +1423,7 @@ export default function Quoting() {
                   <input type="email" value={sendForm.copy_to} onChange={e => setSendForm(f => ({ ...f, copy_to: e.target.value }))}
                     placeholder="you@yourcompany.com"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-                  <p className="text-[11px] text-ink-3 mt-1">You'll get a blind copy of the quote email. Leave blank to skip.</p>
+                  <p className="text-[11px] text-ink-3 mt-1">You'll get a blind copy of the quote email. Leave blank to use your company email.</p>
                 </div>
               </div>
             )}
