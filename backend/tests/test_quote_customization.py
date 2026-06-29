@@ -172,6 +172,23 @@ def test_email_contents_fix_all_june11_findings(monkeypatch):
     assert "Deep clean — 5 Elm St" in msg["Subject"] or "QT-CUST-1" in msg["Subject"]
 
 
+def test_email_with_pdf_is_mixed_so_body_renders(monkeypatch):
+    """Regression: with a PDF attached, the message must be multipart/mixed —
+    HTML body part AND a separate PDF attachment. Under multipart/alternative,
+    iOS Mail rendered the PDF and hid the body (so the customer never saw the
+    'View & Accept' button / link)."""
+    msg, html = _rendered_email(monkeypatch)
+    assert msg.get_content_type() == "multipart/mixed"
+    parts = msg.get_payload()
+    assert parts[0].get_content_type() == "text/html"
+    # The PDF is a real, separate attachment — not an alternative to the body.
+    pdfs = [p for p in parts if p.get_content_type() == "application/pdf"]
+    assert len(pdfs) == 1
+    assert pdfs[0].get("Content-Disposition", "").startswith("attachment")
+    # The clickable button + its link survive in the (now-rendered) body.
+    assert "View &amp; Accept Your Quote" in html and "https://x/quote/tok" in html
+
+
 def test_email_subject_greeting_and_expiry_overrides(monkeypatch):
     msg, html = _rendered_email(
         monkeypatch, subject="Custom subject line", greeting="Jane",
