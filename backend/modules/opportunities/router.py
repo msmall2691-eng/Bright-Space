@@ -241,8 +241,8 @@ def create_opportunity(data: OpportunityCreate, db: Session = Depends(get_db), o
     db.add(o)
     db.flush()
 
-    if client.lifecycle_stage in (None, "new"):
-        client.lifecycle_stage = "opportunity"
+    # Lifecycle is derived from client.opportunities in the CRM summary
+    # endpoint; no need to write a denormalized copy here.
 
     log_activity(
         db,
@@ -283,7 +283,9 @@ def update_opportunity(opp_id: int, data: OpportunityUpdate, db: Session = Depen
             extra_data={"old_stage": old_stage, "new_stage": updates["stage"]},
         )
         if updates["stage"] == "won" and o.client:
-            o.client.lifecycle_stage = "customer"
+            # Lifecycle "customer" is now derived from opportunities; only the
+            # canonical Client.status still needs flipping so the client
+            # appears in active-customer queries.
             o.client.status = "active"
             log_activity(
                 db,

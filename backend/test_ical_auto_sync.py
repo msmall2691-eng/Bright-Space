@@ -43,17 +43,22 @@ def _make_test_client(db: Session) -> Client:
 
 
 def _make_test_property(db: Session, client_id: int, ical_url: str = None) -> Property:
-    """Create a test property."""
+    """Create a test property. When ``ical_url`` is given, attach a PropertyIcal
+    feed for it — the legacy single-column Property.ical_url was retired."""
     prop = Property(
         client_id=client_id,
         name="Test Property",
         address="123 Test St",
         property_type="str",
-        ical_url=ical_url,
     )
     db.add(prop)
     db.commit()
     db.refresh(prop)
+    if ical_url:
+        from database.models import PropertyIcal
+        db.add(PropertyIcal(property_id=prop.id, url=ical_url, source="test", active=True))
+        db.commit()
+        db.refresh(prop)
     return prop
 
 
@@ -450,7 +455,7 @@ def test_10_property_last_synced_timestamp():
 
 
 def test_11_property_without_ical_url_skipped():
-    """Properties without ical_url are not synced."""
+    """Properties without any PropertyIcal feed are not synced."""
     init_db()
     _cleanup_db()
 

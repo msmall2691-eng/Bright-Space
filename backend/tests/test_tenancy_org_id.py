@@ -9,7 +9,7 @@ from database import models as m
 _DOMAIN_MODELS = [
     m.Client, m.Property, m.Job, m.Visit, m.LeadIntake, m.Invoice,
     m.Conversation, m.Message, m.Opportunity, m.ContactEmail, m.ContactPhone,
-    m.Activity, m.Quote, m.QuoteRequest, m.RecurringSchedule,
+    m.Activity, m.Quote, m.RecurringSchedule,
 ]
 
 

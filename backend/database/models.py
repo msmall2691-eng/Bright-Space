@@ -221,7 +221,9 @@ class Client(Base):
     # semantically. The CRM summary endpoint now derives it from
     # client.properties (single type → that type, multiple → "mixed",
     # none → "residential" default).
-    lifecycle_stage = Column(String, default="new")     # new | qualified | opportunity | customer | churned
+    # lifecycle_stage was dropped by migration 036: it duplicated
+    # Opportunity.stage and the value is now derived from client.opportunities
+    # (won → customer, any → opportunity, none → new).
     source_detail = Column(String, nullable=True)       # "maineclean.co contact form", "gmail auto-create"
     last_contacted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, default=False)
@@ -267,7 +269,10 @@ class Property(Base):
     # (`ck_properties_property_type`) to one of: residential | commercial | str.
     property_type = Column(String, default="residential", nullable=False)
 
-    ical_url = Column(String, nullable=True)        # Legacy: single iCal (backward compat)
+    # Property.ical_url (single-feed legacy column) was dropped by migration
+    # 037; iCal feeds live exclusively in the PropertyIcal table now.
+    # ical_last_synced_at still tracks "last time we ran a property-wide sync"
+    # (across all PropertyIcal feeds), so it stays.
     ical_last_synced_at = Column(DateTime, nullable=True)
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
     default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs
@@ -615,9 +620,11 @@ class LeadIntake(Base):
     check_out = Column(String, nullable=True)
     estimate_min = Column(Float, nullable=True)
     estimate_max = Column(Float, nullable=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
     property_name = Column(String, nullable=True)
     message = Column(Text)
     preferred_date = Column(String)
+    preferred_time = Column(String, nullable=True)
     source = Column(String, default="website")
     status = Column(String, default="new")  # new/reviewed/quoted/converted/archived
     priority = Column(String, default="normal")  # low/normal/high/urgent
@@ -807,8 +814,12 @@ class Opportunity(Base):
     # Relationships
     client = relationship("Client", back_populates="opportunities")
     intake = relationship("LeadIntake", back_populates="opportunity", uselist=False)
-    # NOTE: Quote uses UUID FKs and doesn't map cleanly to Integer Opportunity.id.
-    # Removed Opportunity.quotes back_populates — broke mapper init.
+    # Quote is now Integer-keyed (since migration 018), so the back-reference
+    # binds cleanly. The earlier "Quote uses UUID FKs" removal note was stale.
+    quotes = relationship(
+        "Quote", back_populates="opportunity",
+        foreign_keys="Quote.opportunity_id",
+    )
     invoices = relationship("Invoice", back_populates="opportunity")
     jobs = relationship("Job", back_populates="opportunity")
     conversations = relationship("Conversation", back_populates="opportunity")
@@ -928,14 +939,6 @@ class QuoteStatus(str, Enum):
     ARCHIVED = "archived"
 
 
-class QuoteRequestStatus(str, Enum):
-    """Quote request status."""
-    PENDING = "pending"
-    ASSIGNED = "assigned"
-    QUOTED = "quoted"
-    ARCHIVED = "archived"
-
-
 class Quote(Base):
     """A customer quote.
 
@@ -1028,108 +1031,15 @@ class Quote(Base):
     client = relationship("Client", back_populates="quotes", foreign_keys=[client_id])
     property = relationship("Property", foreign_keys=[property_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
-    emails = relationship("QuoteEmail", back_populates="quote", cascade="all, delete-orphan")
-    sms_messages = relationship("QuoteSMS", back_populates="quote", cascade="all, delete-orphan")
+    opportunity = relationship(
+        "Opportunity", back_populates="quotes", foreign_keys=[opportunity_id],
+    )
+    # Delivery history (email + SMS sends) lives on IntegrationEvent rather
+    # than per-channel tables — see migration 035.
 
     __table_args__ = (
         UniqueConstraint("quote_number", name="uq_quote_number"),
     )
-
-
-class QuoteRequest(Base):
-    """Customer quote request via web form. Integer-keyed."""
-    __tablename__ = "quote_requests"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # Requestor info
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
-    requester_name = Column(String(255), nullable=False)
-    requester_email = Column(String(255), nullable=False)
-    requester_phone = Column(String(20), nullable=True)
-
-    # Request details
-    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
-    service_type = Column(String(100), nullable=True)
-    description = Column(Text, nullable=True)
-    preferred_date = Column(Date, nullable=True)
-    preferred_time = Column(String(50), nullable=True)
-
-    # Status & link to created quote
-    status = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
-    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-
-    client = relationship("Client", foreign_keys=[client_id])
-    property = relationship("Property", foreign_keys=[property_id])
-    quote = relationship("Quote", foreign_keys=[quote_id])
-
-
-# ============================================
-# Quote Email Models (Phase 2)
-# ============================================
-
-class QuoteEmailStatus(str, Enum):
-    """Email delivery status enum"""
-    SENT = "sent"
-    DELIVERED = "delivered"
-    BOUNCED = "bounced"
-    COMPLAINED = "complained"
-    FAILED = "failed"
-
-
-class QuoteEmail(Base):
-    """Tracks email deliveries for quotes (when sent + delivery status)."""
-    __tablename__ = "quote_emails"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
-    recipient_email = Column(String(255), nullable=False)
-    sent_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    delivery_status = Column(String(50), nullable=False, default="sent")
-    email_id = Column(String(255), nullable=True, unique=True)
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-
-    quote = relationship("Quote", back_populates="emails")
-
-    def __repr__(self):
-        return f"<QuoteEmail(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_email}, status={self.delivery_status})>"
-
-
-class QuoteSMSStatus(str, Enum):
-    """SMS delivery status enum (mirrors Twilio message statuses)."""
-    QUEUED = "queued"
-    SENT = "sent"
-    DELIVERED = "delivered"
-    UNDELIVERED = "undelivered"
-    FAILED = "failed"
-
-
-class QuoteSMS(Base):
-    """Tracks SMS deliveries for quotes (parallel to QuoteEmail)."""
-    __tablename__ = "quote_sms"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
-    recipient_phone = Column(String(30), nullable=False)
-    sent_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    delivery_status = Column(String(50), nullable=False, default="sent")
-    message_sid = Column(String(64), nullable=True, unique=True)  # Twilio message SID
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-
-    quote = relationship("Quote", back_populates="sms_messages")
-
-    def __repr__(self):
-        return f"<QuoteSMS(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_phone}, status={self.delivery_status})>"
 
 
 class CleanerTimeOff(Base):

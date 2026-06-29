@@ -779,15 +779,13 @@ def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
 
 def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict:
     """
-    Sync a property's iCal feeds (both legacy ical_url and PropertyIcal entries).
-    Returns summary dict.
-    Designed to be called from an API route or background task.
+    Sync a property's iCal feeds. Returns a summary dict. Designed to be called
+    from an API route or background task.
 
-    If ``only_ical_id`` is given, only that PropertyIcal feed is synced (used by
-    the per-feed retry endpoint) — the legacy ical_url and other feeds are
-    skipped.
+    If ``only_ical_id`` is given, only that PropertyIcal feed is synced — used
+    by the per-feed retry endpoint.
     """
-    if not prop.ical_url and not prop.property_icals:
+    if not prop.property_icals:
         return {"error": "No iCal URLs configured for this property"}
 
     total_seen = 0
@@ -800,28 +798,9 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     total_future_bookings = 0
     missing_turnovers = []
     sources_synced = []
-    # Per-source failures. The legacy ical_url has no PropertyIcal row to record
-    # its status on, so a failed legacy feed would otherwise be invisible to
-    # callers (e.g. the turnover sweep) and the property could be reported
-    # healthy off stale events. Collect every source's error here and expose it.
+    # Per-feed failures collected for the turnover sweep / health checks so a
+    # broken feed doesn't leave the property looking healthy off stale events.
     sync_errors = []
-
-    # Sync legacy ical_url first if it exists (skipped in single-feed mode)
-    if prop.ical_url and only_ical_id is None:
-        result = _sync_ical_url(db, prop, prop.ical_url, ical_source_label="legacy")
-        if "error" not in result:
-            total_seen += result["events_seen"]
-            total_created_events += result["events_created"]
-            total_created_jobs += result["jobs_created"]
-            total_cancelled_jobs += result.get("jobs_cancelled", 0)
-            total_rescheduled_jobs += result.get("jobs_rescheduled", 0)
-            total_skipped_host_blocks += result["skipped_host_blocks"]
-            total_skipped_not_reserved += result["skipped_not_reserved"]
-            total_future_bookings += result.get("future_bookings", 0)
-            missing_turnovers.extend(result.get("missing_turnovers", []))
-            sources_synced.append("legacy_ical_url")
-        else:
-            sync_errors.append({"source": "legacy_ical_url", "error": str(result.get("error", ""))[:200]})
 
     # Sync all PropertyIcal entries (or just one, in single-feed retry mode)
     for prop_ical in (prop.property_icals or []):

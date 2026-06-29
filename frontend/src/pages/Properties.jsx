@@ -112,7 +112,7 @@ function IcalFeedRow({ ical, onRemove }) {
 
 const EMPTY = {
   client_id: '', property_type: 'residential', name: '', address: '', city: '', state: '',
-  zip_code: '', ical_url: '', default_duration_hours: 3, default_crew_size: null,
+  zip_code: '', default_duration_hours: 3, default_crew_size: null,
   access_notes: '', parking_notes: '',
   check_in_time: '14:00', check_out_time: '10:00', house_code: '', timezone: '',
   business_name: '', hours_of_operation: '',

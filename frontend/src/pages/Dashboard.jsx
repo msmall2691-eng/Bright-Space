@@ -14,7 +14,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { get } from '../api'
+import { get, getCached } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
 import { htmlToText } from '../utils/format'
 import { StatCard, EmptyState, ErrorState, Skeleton } from '../components/ui'
@@ -232,7 +232,7 @@ export default function Dashboard() {
       get('/api/comms/conversations?sla_state=breached&status=open&limit=20'),
       get('/api/comms/conversations?assignee=unassigned&status=open&limit=20'),
       get('/api/invoices/summary/by-service?period=mtd'),
-      get('/api/comms/conversations/summary'),
+      getCached('/api/comms/conversations/summary'),
       get('/api/quotes/follow-ups'),
       get('/api/dispatch/employees'),
       // Aggregate KPI endpoint: quote funnel/pipeline, new-lead count and

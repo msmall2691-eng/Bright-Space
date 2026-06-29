@@ -1159,7 +1159,7 @@ export default function ClientProfile() {
               {properties.map(p => {
                 const pType = (p.property_type || '').toLowerCase()
                 const isStr = pType === 'str'
-                const feedCount = (p.icals?.length || 0) + (p.ical_url ? 1 : 0)
+                const feedCount = p.icals?.length || 0
                 const icalPill = isStr
                   ? feedCount > 0
                     ? { label: `${feedCount} iCal feed${feedCount !== 1 ? 's' : ''}`, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }

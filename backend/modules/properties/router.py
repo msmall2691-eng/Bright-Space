@@ -25,7 +25,6 @@ class PropertyCreate(BaseModel):
     state: Optional[str] = None
     zip_code: Optional[str] = None
     property_type: Optional[str] = "residential"  # residential | commercial | str
-    ical_url: Optional[str] = None
     default_duration_hours: Optional[float] = 3.0
     default_crew_size: Optional[int] = None
     access_notes: Optional[str] = None
@@ -47,7 +46,6 @@ class PropertyUpdate(BaseModel):
     state: Optional[str] = None
     zip_code: Optional[str] = None
     property_type: Optional[str] = None
-    ical_url: Optional[str] = None
     default_duration_hours: Optional[float] = None
     default_crew_size: Optional[int] = None
     access_notes: Optional[str] = None
@@ -123,7 +121,6 @@ def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
         "state": p.state,
         "zip_code": p.zip_code,
         "property_type": p.property_type,
-        "ical_url": p.ical_url,
         "ical_last_synced_at": p.ical_last_synced_at.isoformat() if p.ical_last_synced_at else None,
         "default_duration_hours": p.default_duration_hours,
         "default_crew_size": getattr(p, 'default_crew_size', None),
@@ -316,23 +313,15 @@ def sync_single_ical(property_id: int, ical_id: int, db: Session = Depends(get_d
 
 @router.post("/sync-all", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_all_ical(db: Session = Depends(get_db)):
-    """Sync all active properties that have a feed (legacy ical_url OR a
-    PropertyIcal row). Previously this matched only ical_url, so properties
-    linked via the multi-feed UI were silently skipped."""
+    """Sync all active properties that have at least one active PropertyIcal feed."""
     # Dedupe on Property.id only, then load the rows. A `.distinct()` over full
     # Property rows fails on Postgres ("could not identify an equality operator
     # for type json") because Property has JSON columns.
     prop_ids = [
         row[0] for row in (
             db.query(Property.id)
-            .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
-            .filter(
-                Property.active == True,
-                or_(
-                    Property.ical_url.isnot(None),
-                    and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
-                ),
-            )
+            .join(PropertyIcal, PropertyIcal.property_id == Property.id)
+            .filter(Property.active == True, PropertyIcal.active == True)
             .distinct()
             .all()
         )
@@ -362,14 +351,8 @@ def turnover_sweep(db: Session = Depends(get_db)):
     prop_ids = [
         row[0] for row in (
             db.query(Property.id)
-            .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
-            .filter(
-                Property.active == True,
-                or_(
-                    Property.ical_url.isnot(None),
-                    and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
-                ),
-            )
+            .join(PropertyIcal, PropertyIcal.property_id == Property.id)
+            .filter(Property.active == True, PropertyIcal.active == True)
             .distinct()
             .all()
         )
@@ -394,9 +377,9 @@ def turnover_sweep(db: Session = Depends(get_db)):
             if isinstance(result, dict) and result.get("error"):
                 sync_error = str(result["error"])[:200]
             elif isinstance(result, dict) and result.get("sync_errors"):
-                # Per-source failures — notably the legacy ical_url, which has no
-                # PropertyIcal row for the feed-status check below to inspect
-                # (Codex review follow-up).
+                # Per-feed failures surfaced even without inspecting each
+                # PropertyIcal row, in case sync_property returned errors
+                # before reaching the per-feed status writes.
                 errs = result["sync_errors"]
                 detail = "; ".join(f"{e.get('source', 'feed')}: {e.get('error', '')}" for e in errs[:3])
                 sync_error = f"feed sync failed ({detail})"
@@ -504,8 +487,6 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
     prop_tz = prop.timezone or "America/New_York"
 
     feeds = []
-    if prop.ical_url:
-        feeds.append(("legacy", prop.ical_url))
     for pi in (prop.property_icals or []):
         if pi.active and pi.url:
             feeds.append((pi.source or "feed", pi.url))
@@ -751,16 +732,13 @@ STATE_ABBREVIATIONS = {
 def _infer_property_type(prop: Property, db: Session) -> str:
     """Infer correct property_type from STR-specific signals only.
 
-    STR is inferred from an iCal feed (ical_url or an active PropertyIcal) — that
-    is the booking/turnover model. check_in_time/check_out_time are STR-only
-    DATA, not a classification signal: residential and commercial properties use
-    normal recurring scheduling, so a stray check_in_time on a non-STR property
-    is cleaned up elsewhere (see the null-out step) rather than reclassifying it.
+    STR is inferred from an active PropertyIcal feed — that is the
+    booking/turnover model. check_in_time/check_out_time are STR-only DATA,
+    not a classification signal: residential and commercial properties use
+    normal recurring scheduling, so a stray check_in_time on a non-STR
+    property is cleaned up elsewhere (see the null-out step) rather than
+    reclassifying it.
     """
-    # If has ical_url or PropertyIcal entries → definitely STR
-    if prop.ical_url:
-        return 'str'
-
     if prop.property_icals and any(p.active for p in prop.property_icals):
         return 'str'
 
@@ -858,7 +836,7 @@ def normalize_properties(
                     'name': prop.name,
                     'old': prop.property_type,
                     'new': inferred_type,
-                    'reason': 'inferred from ical_url or PropertyIcal feed'
+                    'reason': 'inferred from PropertyIcal feed'
                 })
 
         # Check 2: Normalize property name

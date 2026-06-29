@@ -230,7 +230,6 @@ def run_inbox_sync(
                     last_name=parts[1] if len(parts) > 1 else "",
                     email=addr.lower(),
                     status="lead",
-                    lifecycle_stage="new",
                     source="email",
                     # Trace WHY this lead was auto-created (reply vs cleaning intent).
                     source_detail=f"gmail auto-enrich:{reason}",
@@ -384,7 +383,6 @@ def create_lead_from_email(
         last_name=parts[1] if len(parts) > 1 else "",
         email=from_email.lower(),
         status="lead",
-        lifecycle_stage="new",
         source="email",
         source_detail="gmail manual create",
         email_verified=True,

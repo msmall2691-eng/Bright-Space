@@ -28,8 +28,11 @@ def ctx():
     db.add(q); db.commit(); db.refresh(q)
     yield db, c, q
     db.rollback()
-    from database.models import QuoteEmail
-    db.query(QuoteEmail).filter(QuoteEmail.quote_id == q.id).delete(synchronize_session=False)
+    from database.models import IntegrationEvent
+    db.query(IntegrationEvent).filter(
+        IntegrationEvent.entity_type == "quote",
+        IntegrationEvent.entity_id == q.id,
+    ).delete(synchronize_session=False)
     db.query(Quote).filter(Quote.client_id == c.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
     for k in ("company_name", "company_email", "company_phone", "quote_terms"):

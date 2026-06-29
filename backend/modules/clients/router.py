@@ -705,7 +705,6 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: in
             "id": prop.id,
             "name": prop.name,
             "address": prop.address,
-            "ical_url": prop.ical_url,
             "type": prop.property_type,
         })
     profile["properties"] = properties_data
@@ -790,10 +789,20 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
 
     base = client_to_dict(client)
 
-    # Add lifecycle and contact info
+    # Add lifecycle and contact info. lifecycle_stage is derived from the
+    # client's opportunities — Opportunity.stage is the single source of truth
+    # for pipeline state. Any won opportunity → "customer"; any opportunity at
+    # all → "opportunity"; otherwise the client is still a fresh lead.
+    has_won = any((o.stage or "").lower() == "won" for o in client.opportunities)
+    if has_won:
+        derived_lifecycle = "customer"
+    elif client.opportunities:
+        derived_lifecycle = "opportunity"
+    else:
+        derived_lifecycle = "new"
     base.update({
         "client_type": _derive_property_type(client),
-        "lifecycle_stage": client.lifecycle_stage,
+        "lifecycle_stage": derived_lifecycle,
         "source_detail": client.source_detail,
         "email_verified": client.email_verified,
         "last_contacted_at": client.last_contacted_at.isoformat() if client.last_contacted_at else None,

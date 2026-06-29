@@ -2,7 +2,7 @@
 import pytest
 from datetime import datetime, date, timedelta
 from unittest.mock import Mock, patch, MagicMock
-from database.models import Property, ICalEvent, Job, Client
+from database.models import Property, ICalEvent, Job, Client, PropertyIcal
 from database.db import SessionLocal
 from integrations.ical_sync import _extract_guest_metadata, _make_end_time, _sync_ical_url
 
@@ -376,9 +376,11 @@ class TestPreviewDiagnostic:
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
-                            address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/7.ics?s=abc")
+                            address="1 Pier Rd", property_type="str")
             db.add(prop); db.commit(); db.refresh(prop)
+            db.add(PropertyIcal(property_id=prop.id, source="airbnb", active=True,
+                                url="https://www.airbnb.com/calendar/ical/7.ics?s=abc"))
+            db.commit(); db.refresh(prop)
 
             checkin = date.today() + timedelta(days=18)
             checkout = date.today() + timedelta(days=20)
@@ -422,8 +424,7 @@ class TestResurrectCancelledTurnover:
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
-                            address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/5.ics?s=abc")
+                            address="1 Pier Rd", property_type="str")
             db.add(prop); db.commit(); db.refresh(prop)
 
             checkin = date.today() + timedelta(days=10)
@@ -444,7 +445,7 @@ END:VCALENDAR""".encode()
                     mc.return_value.__enter__.return_value.get.return_value = resp
                     with patch("integrations.google_calendar.create_event") as gc:
                         gc.return_value = None
-                        return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+                        return _sync_ical_url(db, prop, "https://www.airbnb.com/calendar/ical/5.ics?s=abc", ical_source_label="airbnb")
 
             # First sync creates the turnover and links the iCal event to it.
             r1 = run_sync()
@@ -481,8 +482,7 @@ END:VCALENDAR""".encode()
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
-                            address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/6.ics?s=abc")
+                            address="1 Pier Rd", property_type="str")
             db.add(prop); db.commit(); db.refresh(prop)
 
             checkin = date.today() + timedelta(days=10)
@@ -503,7 +503,7 @@ END:VCALENDAR""".encode()
                     mc.return_value.__enter__.return_value.get.return_value = resp
                     with patch("integrations.google_calendar.create_event") as gc:
                         gc.return_value = None
-                        return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+                        return _sync_ical_url(db, prop, "https://www.airbnb.com/calendar/ical/6.ics?s=abc", ical_source_label="airbnb")
 
             run_sync()
             job = db.query(Job).filter_by(property_id=prop.id).first()
@@ -554,8 +554,7 @@ class TestTurnoverHardening:
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
-                            address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/8.ics?s=abc")
+                            address="1 Pier Rd", property_type="str")
             db.add(prop); db.commit(); db.refresh(prop)
 
             checkin = date.today() + timedelta(days=10)
@@ -578,8 +577,8 @@ END:VCALENDAR""".encode()
                         gc.return_value = None
                         if update_mock is not None:
                             with patch("integrations.google_calendar.update_event", update_mock):
-                                return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
-                        return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+                                return _sync_ical_url(db, prop, "https://www.airbnb.com/calendar/ical/8.ics?s=abc", ical_source_label="airbnb")
+                        return _sync_ical_url(db, prop, "https://www.airbnb.com/calendar/ical/8.ics?s=abc", ical_source_label="airbnb")
 
             run_sync()
             job = db.query(Job).filter_by(property_id=prop.id).first()
@@ -613,9 +612,11 @@ class TestRebuildTurnovers:
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
-                            address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/9.ics?s=abc")
+                            address="1 Pier Rd", property_type="str")
             db.add(prop); db.commit(); db.refresh(prop)
+            db.add(PropertyIcal(property_id=prop.id, source="airbnb", active=True,
+                                url="https://www.airbnb.com/calendar/ical/9.ics?s=abc"))
+            db.commit(); db.refresh(prop)
 
             checkin = date.today() + timedelta(days=10)
             checkout = date.today() + timedelta(days=12)
@@ -641,7 +642,7 @@ END:VCALENDAR""".encode()
 
             # Seed a turnover, then cancel it (the stuck state).
             with _mock_feed():
-                _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+                _sync_ical_url(db, prop, "https://www.airbnb.com/calendar/ical/9.ics?s=abc", ical_source_label="airbnb")
             job = db.query(Job).filter_by(property_id=prop.id).first()
             job.status = "cancelled"; db.commit()
 
@@ -675,8 +676,7 @@ class TestMetadataRefreshOnReconcile:
             client = Client(name="Test Client", email="t@example.com")
             db.add(client); db.commit(); db.refresh(client)
             prop = Property(client_id=client.id, name="Pier House",
-                            address="1 Pier Rd", property_type="str",
-                            ical_url="https://www.airbnb.com/calendar/ical/m.ics?s=abc")
+                            address="1 Pier Rd", property_type="str")
             db.add(prop); db.commit(); db.refresh(prop)
 
             checkin = date.today() + timedelta(days=10)
@@ -697,7 +697,7 @@ END:VCALENDAR""".encode()
                      patch("integrations.google_calendar.update_event", return_value=True):
                     resp = MagicMock(); resp.content = ics; resp.raise_for_status = MagicMock()
                     mc.return_value.__enter__.return_value.get.return_value = resp
-                    return _sync_ical_url(db, prop, prop.ical_url, ical_source_label="airbnb")
+                    return _sync_ical_url(db, prop, "https://www.airbnb.com/calendar/ical/m.ics?s=abc", ical_source_label="airbnb")
 
             run_sync()
             job = db.query(Job).filter_by(property_id=prop.id).first()

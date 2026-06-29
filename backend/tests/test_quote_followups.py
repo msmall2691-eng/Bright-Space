@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from database.db import SessionLocal
-from database.models import Client, Quote, QuoteEmail, Property, LeadIntake
+from database.models import Client, Quote, IntegrationEvent, Property, LeadIntake
 from modules.quoting.router import (
     convert_quote_to_job, quotes_needing_follow_up, send_quote, QuoteSendRequest,
     _apply_update,
@@ -128,5 +128,8 @@ def test_resend_records_follow_up_without_resetting_sent(client_ctx):
     assert q.follow_up_sent_at is not None          # nudge recorded
     # original sent_at preserved (sent->accepted clock intact)
     assert abs((q.sent_at.replace(tzinfo=None) - original_sent).total_seconds()) < 2
-    db.query(QuoteEmail).filter_by(quote_id=q.id).delete(synchronize_session=False)
+    db.query(IntegrationEvent).filter(
+        IntegrationEvent.entity_type == "quote",
+        IntegrationEvent.entity_id == q.id,
+    ).delete(synchronize_session=False)
     db.commit()

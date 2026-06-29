@@ -14,9 +14,13 @@ def _seed(db):
     c = Client(name="Coverage Tick Test", email="ct@example.com", status="active")
     db.add(c); db.commit(); db.refresh(c)
     p = Property(client_id=c.id, name="Pier House", address="1 Pier Rd",
-                 property_type="str", active=True,
-                 ical_url="https://example.com/feed.ics")
+                 property_type="str", active=True)
     db.add(p); db.commit(); db.refresh(p)
+    # turnover_coverage_tick only considers properties that have an active
+    # PropertyIcal feed — give the test property one.
+    db.add(PropertyIcal(property_id=p.id, url="https://example.com/cov.ics",
+                        source="airbnb", active=True))
+    db.commit(); db.refresh(p)
     return c, p
 
 
@@ -50,6 +54,7 @@ def test_flags_uncovered_checkout_then_clears_when_turnover_exists():
         db.rollback()
         db.query(Job).filter(Job.property_id == p.id).delete(synchronize_session=False)
         db.query(ICalEvent).filter(ICalEvent.property_id == p.id).delete(synchronize_session=False)
+        db.query(PropertyIcal).filter(PropertyIcal.property_id == p.id).delete(synchronize_session=False)
         db.query(Property).filter(Property.id == p.id).delete(synchronize_session=False)
         db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
         db.commit()

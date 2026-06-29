@@ -299,7 +299,7 @@ def reset_data(payload: ResetDataRequest, db: Session = Depends(get_db)):
 class UnlinkCalendarsRequest(BaseModel):
     confirm: str  # must equal "UNLINK"
     clear_gcal: bool = True            # null out gcal_event_id on jobs + visits
-    deactivate_ical_feeds: bool = True  # set property_icals.active = false; null out properties.ical_url
+    deactivate_ical_feeds: bool = True  # set property_icals.active = false
 
 
 @router.post("/unlink-calendars", dependencies=[Depends(require_role("admin"))])
@@ -310,8 +310,8 @@ def unlink_calendars(payload: UnlinkCalendarsRequest, db: Session = Depends(get_
 
     - clear_gcal: null out `jobs.gcal_event_id` and `visits.gcal_event_id` so
       future deletes won't try to also remove events from Google Calendar.
-    - deactivate_ical_feeds: set `property_icals.active = false` and null out
-      `properties.ical_url` (legacy field) so no new iCal pulls happen.
+    - deactivate_ical_feeds: set `property_icals.active = false` so no new
+      iCal pulls happen.
 
     Local data (clients, properties, jobs, visits) is preserved.
     """
@@ -321,7 +321,7 @@ def unlink_calendars(payload: UnlinkCalendarsRequest, db: Session = Depends(get_
             detail='Confirmation token must be exactly "UNLINK"',
         )
 
-    result = {"jobs_unlinked": 0, "visits_unlinked": 0, "ical_feeds_deactivated": 0, "properties_ical_url_cleared": 0}
+    result = {"jobs_unlinked": 0, "visits_unlinked": 0, "ical_feeds_deactivated": 0}
     try:
         if payload.clear_gcal:
             n = db.query(Job).filter(Job.gcal_event_id.isnot(None)).update(
@@ -339,10 +339,6 @@ def unlink_calendars(payload: UnlinkCalendarsRequest, db: Session = Depends(get_
                 {PropertyIcal.active: False}, synchronize_session=False,
             )
             result["ical_feeds_deactivated"] = n
-            n = db.query(Property).filter(Property.ical_url.isnot(None)).update(
-                {Property.ical_url: None}, synchronize_session=False,
-            )
-            result["properties_ical_url_cleared"] = n
 
         db.commit()
     except Exception as e:

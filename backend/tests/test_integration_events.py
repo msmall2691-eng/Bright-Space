@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import patch
 
 from database.db import SessionLocal
-from database.models import Client, Quote, QuoteEmail, IntegrationEvent
+from database.models import Client, Quote, IntegrationEvent
 from utils.integration_log import log_integration_event
 from modules.integration_events.router import list_integration_events
 from modules.quoting.router import send_quote, QuoteSendRequest
@@ -134,9 +134,6 @@ def test_send_quote_records_email_event(db_session):
         assert rows[0].status == "ok"
     finally:
         db.query(IntegrationEvent).filter(IntegrationEvent.entity_id == q.id).delete(
-            synchronize_session=False
-        )
-        db.query(QuoteEmail).filter(QuoteEmail.quote_id == q.id).delete(
             synchronize_session=False
         )
         db.query(Quote).filter(Quote.id == q.id).delete(synchronize_session=False)
