@@ -102,7 +102,8 @@ export default function GoogleAccountCard() {
           )}
           {acct && acct.encryption_available === false && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
-              The server is missing TOKEN_ENCRYPTION_KEY — ask your admin to set it before connecting.
+              Connecting Google needs a stable server secret. Set <code>JWT_SECRET</code> in your
+              server environment (Railway → Variables), then redeploy and try again.
             </p>
           )}
           <button onClick={connect}
