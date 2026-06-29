@@ -221,7 +221,9 @@ class Client(Base):
     # semantically. The CRM summary endpoint now derives it from
     # client.properties (single type → that type, multiple → "mixed",
     # none → "residential" default).
-    lifecycle_stage = Column(String, default="new")     # new | qualified | opportunity | customer | churned
+    # lifecycle_stage was dropped by migration 036: it duplicated
+    # Opportunity.stage and the value is now derived from client.opportunities
+    # (won → customer, any → opportunity, none → new).
     source_detail = Column(String, nullable=True)       # "maineclean.co contact form", "gmail auto-create"
     last_contacted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, default=False)
@@ -809,8 +811,12 @@ class Opportunity(Base):
     # Relationships
     client = relationship("Client", back_populates="opportunities")
     intake = relationship("LeadIntake", back_populates="opportunity", uselist=False)
-    # NOTE: Quote uses UUID FKs and doesn't map cleanly to Integer Opportunity.id.
-    # Removed Opportunity.quotes back_populates — broke mapper init.
+    # Quote is now Integer-keyed (since migration 018), so the back-reference
+    # binds cleanly. The earlier "Quote uses UUID FKs" removal note was stale.
+    quotes = relationship(
+        "Quote", back_populates="opportunity",
+        foreign_keys="Quote.opportunity_id",
+    )
     invoices = relationship("Invoice", back_populates="opportunity")
     jobs = relationship("Job", back_populates="opportunity")
     conversations = relationship("Conversation", back_populates="opportunity")
@@ -1022,6 +1028,9 @@ class Quote(Base):
     client = relationship("Client", back_populates="quotes", foreign_keys=[client_id])
     property = relationship("Property", foreign_keys=[property_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
+    opportunity = relationship(
+        "Opportunity", back_populates="quotes", foreign_keys=[opportunity_id],
+    )
     # Delivery history (email + SMS sends) lives on IntegrationEvent rather
     # than per-channel tables — see migration 035.
 
