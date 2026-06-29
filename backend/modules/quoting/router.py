@@ -524,6 +524,8 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     tax_amount=quote.tax, discount_amount=quote.discount,
                     total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
                     quote_title=quote.title, property_photo_url=photo_url,
+                    quote_link=quote_link, address=quote.address,
+                    service_type=quote.service_type, customer_message=quote.customer_message,
                 )
                 # For the EMAIL we only embed the photo when Google actually has
                 # imagery (a 404 proxy would show a broken image in mail clients).
@@ -1134,6 +1136,9 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         discount_amount=quote.discount, total_amount=quote.total, notes=quote.notes,
         expires_at=quote.valid_until, quote_title=quote.title,
         property_photo_url=_property_photo_url(quote, db),
+        quote_link=f"{app_base_url().rstrip('/')}/quote/{token}",
+        address=quote.address, service_type=quote.service_type,
+        customer_message=quote.customer_message,
     )
     disp = "attachment" if download else "inline"
     return StreamingResponse(
@@ -1315,7 +1320,10 @@ from services.quote_email_service import QuoteEmailService
 def _pdf_line_items(quote: Quote) -> list:
     return [
         {
-            "description": i.get("name") or i.get("description") or "",
+            "name": (i.get("name") or "").strip() or (i.get("description") or "").strip() or "Service",
+            # Keep the sub-description separate from the name so the PDF can show
+            # it as a secondary line, matching the customer web view.
+            "description": (i.get("description") or "").strip() if i.get("name") else "",
             "quantity": float(i.get("qty", 1) or 0),
             "unit": None,
             "unit_price": float(i.get("unit_price", 0) or 0),

@@ -7,6 +7,19 @@ from io import BytesIO
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from xml.sax.saxutils import escape as _xml_escape, quoteattr
+
+
+def _esc(text) -> str:
+    """Escape user-controlled text for a ReportLab Paragraph, which parses its
+    input as XML markup. Without this, an item name like 'Clean <b>' or pasted
+    HTML raises a parse error and breaks PDF generation (and thus quote sends)."""
+    return _xml_escape("" if text is None else str(text))
+
+
+def _esc_ml(text) -> str:
+    """Escape, then turn newlines into <br/> for multi-line Paragraph text."""
+    return _esc(text).replace("\n", "<br/>")
 
 from utils.dates import coerce_date
 from reportlab.lib.pagesizes import letter
@@ -54,216 +67,196 @@ class QuotePDFService:
         expires_at: Optional[datetime] = None,
         quote_title: Optional[str] = None,
         property_photo_url: Optional[str] = None,
+        quote_link: Optional[str] = None,
+        address: Optional[str] = None,
+        service_type: Optional[str] = None,
+        customer_message: Optional[str] = None,
     ) -> bytes:
-        """
-        Generate a professional quote PDF
+        """Generate a professional quote PDF that mirrors the customer web view.
 
-        Args:
-            quote_number: Quote number (e.g., "QT-2026-0001")
-            client_name: Client name
-            client_email: Client email
-            client_phone: Client phone (optional)
-            line_items: List of dicts with {description, quantity, unit, unit_price, line_total}
-            subtotal: Quote subtotal
-            tax_amount: Tax amount
-            discount_amount: Discount amount
-            total_amount: Total amount
-            notes: Additional notes
-            expires_at: Quote expiration date
-
-        Returns:
-            PDF as bytes
+        The layout matches the public quote page (QuoteDocument): a brand-colored
+        header band with the logo / company / title / validity, an "accept or
+        request changes online" link (since a PDF can't have live buttons), the
+        front-of-house photo, a service-address card, the itemized table, totals,
+        and terms — so the printed/attached quote looks the same as the link.
         """
 
         # Prod schema drift can hand us a str (or even a human-formatted
-        # string) instead of a date; coerce once so both .strftime() sites
-        # below are safe and an unparseable value just hides the Expires row
-        # rather than 500-ing the whole quote send.
+        # string) instead of a date; coerce once so the .strftime() sites below
+        # are safe and an unparseable value just hides the validity line.
         expires_at = coerce_date(expires_at)
 
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
-
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch,
+                                bottomMargin=0.6*inch, leftMargin=0.6*inch, rightMargin=0.6*inch)
         styles = getSampleStyleSheet()
         story = []
+        brand = colors.HexColor(self.brand_color)
+        CONTENT_W = 7.3 * inch
+        white = colors.white
 
-        # Header with company branding
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor(self.brand_color),
-            spaceAfter=6,
-            fontName='Helvetica-Bold'
-        )
+        # ── Brand header band (logo / COMPANY / title / quote# · date / validity)
+        band_company = ParagraphStyle('bandCompany', parent=styles['Normal'], fontSize=10,
+                                      textColor=white, fontName='Helvetica-Bold', leading=13)
+        band_title = ParagraphStyle('bandTitle', parent=styles['Normal'], fontSize=22,
+                                    textColor=white, fontName='Helvetica-Bold', leading=26)
+        band_meta = ParagraphStyle('bandMeta', parent=styles['Normal'], fontSize=10,
+                                   textColor=colors.HexColor('#e5e7eb'), leading=15)
 
-        subtitle_style = ParagraphStyle(
-            'Subtitle',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.HexColor('#6b7280'),
-            spaceAfter=20
-        )
-
-        # Logo at the top when configured — the strongest "real business"
-        # signal. Best-effort: a fetch/decode failure must never break the PDF
-        # (and therefore quote sending), so we silently fall back to the name.
+        band_rows = []
         logo_flowable = self._logo_flowable()
         if logo_flowable is not None:
-            story.append(logo_flowable)
-            story.append(Spacer(1, 0.12 * inch))
-        story.append(Paragraph(self.company_name, title_style))
-        if quote_title:
-            quote_title_style = ParagraphStyle(
-                'QuoteTitle', parent=styles['Heading2'], fontSize=14,
-                textColor=colors.HexColor('#374151'), spaceAfter=4,
-            )
-            story.append(Paragraph(quote_title, quote_title_style))
-        contact_bits = " · ".join(b for b in (self.company_email, self.company_phone) if b)
-        story.append(Paragraph(contact_bits, subtitle_style))
+            band_rows.append([logo_flowable])
+        band_rows.append([Paragraph(_esc(self.company_name.upper()), band_company)])
+        band_rows.append([Paragraph(_esc(quote_title) or 'Your Cleaning Quote', band_title)])
+        band_rows.append([Paragraph(f"Quote #{_esc(quote_number)} &middot; {datetime.now().strftime('%B %d, %Y')}", band_meta)])
+        if expires_at:
+            band_rows.append([Paragraph(f"Valid until {expires_at.strftime('%B %d, %Y')}", band_meta)])
 
-        # Front-of-house photo (Street View) when available. Best-effort: a
-        # broken/missing image just doesn't render — never breaks the PDF.
+        band = Table(band_rows, colWidths=[CONTENT_W])
+        band.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), brand),
+            ('LEFTPADDING', (0, 0), (-1, -1), 22),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 22),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('TOPPADDING', (0, 0), (0, 0), 22),
+            ('BOTTOMPADDING', (0, -1), (-1, -1), 22),
+        ]))
+        story.append(band)
+
+        # ── "Accept / request changes online" link (a PDF can't have buttons)
+        if quote_link:
+            cta_style = ParagraphStyle('cta', parent=styles['Normal'], fontSize=10.5,
+                                       textColor=colors.HexColor('#1f2937'), leading=15)
+            cta = Table([[Paragraph(
+                f'<b>To accept or request changes, view your quote online:</b><br/>'
+                f'<a href={quoteattr(quote_link)} color="#1d4ed8">{_esc(quote_link)}</a>', cta_style)]],
+                colWidths=[CONTENT_W])
+            cta.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#eff6ff')),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#bfdbfe')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14), ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+                ('TOPPADDING', (0, 0), (-1, -1), 10), ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            story.append(Spacer(1, 0.18 * inch))
+            story.append(cta)
+
+        # ── Front-of-house photo (Street View) when available
         photo_flowable = self._photo_flowable(property_photo_url)
         if photo_flowable is not None:
-            story.append(Spacer(1, 0.1 * inch))
+            story.append(Spacer(1, 0.18 * inch))
             story.append(photo_flowable)
-            story.append(Spacer(1, 0.05 * inch))
 
-        # Quote header info. No internal "Status: DRAFT/ACTIVE" row — that's an
-        # internal state the customer should never see on their quote.
-        quote_header_data = [
-            ['QUOTE', f'Quote #{quote_number}'],
-            ['Date', datetime.now().strftime('%B %d, %Y')],
-        ]
-        if expires_at:
-            quote_header_data.append(['Valid until', expires_at.strftime('%B %d, %Y')])
+        label_style = ParagraphStyle('lbl', parent=styles['Normal'], fontSize=8,
+                                     textColor=colors.HexColor('#6b7280'), fontName='Helvetica-Bold')
+        val_style = ParagraphStyle('val', parent=styles['Normal'], fontSize=10,
+                                   textColor=colors.HexColor('#1f2937'), leading=14)
 
-        quote_header_table = Table(quote_header_data, colWidths=[1.5*inch, 4*inch])
-        quote_header_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 10),
-            ('FONT', (1, 0), (1, -1), 'Helvetica', 10),
-            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#1f2937')),
-            ('TEXTCOLOR', (1, 0), (1, -1), colors.HexColor('#6b7280')),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
-        ]))
-        story.append(quote_header_table)
-        story.append(Spacer(1, 0.3*inch))
+        # ── Service address + service type card (matches the web view)
+        svc_label = ('STR / Vacation rental' if service_type == 'str'
+                     else (f"{service_type.capitalize()} cleaning" if service_type else ''))
+        if address or svc_label:
+            left = [Paragraph('SERVICE ADDRESS', label_style), Spacer(1, 2), Paragraph(_esc(address), val_style)] if address else ''
+            right = [Paragraph('SERVICE TYPE', label_style), Spacer(1, 2), Paragraph(_esc(svc_label), val_style)] if svc_label else ''
+            card = Table([[left, right]], colWidths=[CONTENT_W / 2, CONTENT_W / 2])
+            card.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f9fafb')),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14), ('RIGHTPADDING', (0, 0), (-1, -1), 14),
+                ('TOPPADDING', (0, 0), (-1, -1), 12), ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            story.append(Spacer(1, 0.22 * inch))
+            story.append(card)
 
-        # Client info
-        client_data = [
-            ['BILL TO', 'CONTACT'],
-            [client_name, client_email],
-        ]
-        if client_phone:
-            client_data.append(['', client_phone])
+        # ── Customer message (the personal intro, like the web view)
+        if customer_message:
+            msg_style = ParagraphStyle('msg', parent=styles['Normal'], fontSize=10.5,
+                                       textColor=colors.HexColor('#374151'), leading=15)
+            story.append(Spacer(1, 0.22 * inch))
+            story.append(Paragraph(_esc_ml(customer_message), msg_style))
 
-        client_table = Table(client_data, colWidths=[2.5*inch, 4*inch])
-        client_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 10),
-            ('FONT', (0, 1), (-1, -1), 'Helvetica', 9),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#1f2937')),
-            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#6b7280')),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 0), (-1, 0), 1, colors.HexColor('#1f2937')),
-        ]))
-        story.append(client_table)
-        story.append(Spacer(1, 0.3*inch))
-
-        # Line items table
-        line_items_data = [['Description', 'Qty', 'Unit', 'Unit Price', 'Total']]
-        for item in line_items:
-            line_items_data.append([
-                item.get('description', ''),
-                str(item.get('quantity', 1)),
-                item.get('unit', ''),
-                f"${item.get('unit_price', 0):.2f}",
-                f"${item.get('line_total', 0):.2f}",
-            ])
-
-        line_items_table = Table(
-            line_items_data,
-            colWidths=[2.5*inch, 0.75*inch, 0.75*inch, 1.25*inch, 1.25*inch]
-        )
-        line_items_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 10),
-            ('FONT', (0, 1), (-1, -1), 'Helvetica', 9),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f2937')),
-            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#374151')),
-            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f9fafb')]),
-        ]))
-        story.append(line_items_table)
-        story.append(Spacer(1, 0.2*inch))
-
-        # Totals section. Only show Tax / Discount when non-zero so a simple
-        # quote isn't cluttered with $0.00 rows.
-        totals_data = [['', 'Subtotal', f"${subtotal:.2f}"]]
-        if tax_amount:
-            totals_data.append(['', 'Tax', f"${tax_amount:.2f}"])
-        if discount_amount:
-            totals_data.append(['', 'Discount', f"-${discount_amount:.2f}"])
-        totals_data.append(['', 'TOTAL', f"${total_amount:.2f}"])
-        total_row = len(totals_data) - 1  # TOTAL is always the last row
-
-        totals_table = Table(totals_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
-        totals_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, total_row - 1), 'Helvetica', 9),
-            ('FONT', (0, total_row), (-1, total_row), 'Helvetica-Bold', 12),
-            ('TEXTCOLOR', (0, 0), (-1, total_row - 1), colors.HexColor('#6b7280')),
-            ('TEXTCOLOR', (0, total_row), (-1, total_row), colors.HexColor('#1f2937')),
-            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, total_row), (-1, total_row), 2, colors.HexColor('#1f2937')),
-            ('BACKGROUND', (0, total_row), (-1, total_row), colors.HexColor('#f3f4f6')),
-        ]))
-        story.append(totals_table)
-        story.append(Spacer(1, 0.3*inch))
-
-        # Notes section
+        # ── Customer-facing scope / details
         if notes:
-            notes_style = ParagraphStyle(
-                'Notes',
-                parent=styles['Normal'],
-                fontSize=9,
-                textColor=colors.HexColor('#6b7280'),
-                spaceAfter=12
-            )
-            story.append(Paragraph(f"<b>Notes:</b> {notes}", notes_style))
+            story.append(Spacer(1, 0.2 * inch))
+            story.append(Paragraph('SCOPE &amp; DETAILS', label_style))
+            story.append(Spacer(1, 3))
+            story.append(Paragraph(_esc_ml(notes), val_style))
 
-        # Footer
-        footer_style = ParagraphStyle(
-            'Footer',
-            parent=styles['Normal'],
-            fontSize=8,
-            textColor=colors.HexColor('#9ca3af'),
-            alignment=TA_CENTER
-        )
-        story.append(Spacer(1, 0.2*inch))
-        if self.terms:
-            terms_style = ParagraphStyle(
-                'Terms', parent=styles['Normal'], fontSize=8,
-                textColor=colors.HexColor('#6b7280'),
-            )
-            story.append(Paragraph("<b>Terms &amp; Conditions</b>", terms_style))
-            for line in self.terms.splitlines():
-                if line.strip():
-                    story.append(Paragraph(line.strip(), terms_style))
-            story.append(Spacer(1, 0.15*inch))
+        # ── Itemized table (Service / Qty / Amount — same columns as the web)
+        name_style = ParagraphStyle('itemName', parent=styles['Normal'], fontSize=10,
+                                    textColor=colors.HexColor('#1f2937'), fontName='Helvetica-Bold', leading=13)
+        desc_style = ParagraphStyle('itemDesc', parent=styles['Normal'], fontSize=8.5,
+                                    textColor=colors.HexColor('#6b7280'), leading=11)
+        head_style = ParagraphStyle('itemHead', parent=styles['Normal'], fontSize=8,
+                                    textColor=colors.HexColor('#6b7280'), fontName='Helvetica-Bold')
+        amt_style = ParagraphStyle('itemAmt', parent=styles['Normal'], fontSize=10,
+                                   textColor=colors.HexColor('#1f2937'), alignment=TA_RIGHT, leading=13)
+
+        rows = [[Paragraph('SERVICE', head_style),
+                 Paragraph('QTY', ParagraphStyle('h2', parent=head_style, alignment=TA_RIGHT)),
+                 Paragraph('AMOUNT', ParagraphStyle('h3', parent=head_style, alignment=TA_RIGHT))]]
+        for item in line_items:
+            cell = [Paragraph(_esc(item.get('name') or 'Service'), name_style)]
+            if item.get('description'):
+                cell.append(Paragraph(_esc(item['description']), desc_style))
+            qty = item.get('quantity', 1)
+            qty_str = ('%g' % qty) if isinstance(qty, (int, float)) else str(qty)
+            rows.append([cell,
+                         Paragraph(qty_str, ParagraphStyle('q', parent=val_style, alignment=TA_RIGHT)),
+                         Paragraph(f"${item.get('line_total', 0):,.2f}", amt_style)])
+
+        items_table = Table(rows, colWidths=[CONTENT_W - 2.6*inch, 0.9*inch, 1.7*inch])
+        items_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 9), ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.75, colors.HexColor('#e5e7eb')),
+            ('LINEBELOW', (0, 1), (-1, -1), 0.5, colors.HexColor('#f0f0f0')),
+        ]))
+        story.append(Spacer(1, 0.22 * inch))
+        story.append(items_table)
+
+        # ── Totals (subtotal, optional tax/discount, bold total) right-aligned
+        totals_data = [['Subtotal', f"${subtotal:,.2f}"]]
+        if tax_amount:
+            totals_data.append(['Tax', f"${tax_amount:,.2f}"])
+        if discount_amount:
+            totals_data.append(['Discount', f"-${discount_amount:,.2f}"])
+        totals_data.append(['Total', f"${total_amount:,.2f}"])
+        total_row = len(totals_data) - 1
+
+        totals_table = Table(totals_data, colWidths=[1.4*inch, 1.7*inch], hAlign='RIGHT')
+        totals_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, total_row - 1), 'Helvetica', 10),
+            ('FONT', (0, total_row), (-1, total_row), 'Helvetica-Bold', 13),
+            ('TEXTCOLOR', (0, 0), (-1, total_row - 1), colors.HexColor('#6b7280')),
+            ('TEXTCOLOR', (0, total_row), (0, total_row), colors.HexColor('#1f2937')),
+            ('TEXTCOLOR', (1, total_row), (1, total_row), brand),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LINEABOVE', (0, total_row), (-1, total_row), 1, colors.HexColor('#e5e7eb')),
+            ('TOPPADDING', (0, total_row), (-1, total_row), 9),
+        ]))
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(totals_table)
+
+        # ── Contact + terms (trust block, like the web footer)
+        story.append(Spacer(1, 0.35 * inch))
         contact = " or call ".join(b for b in (f"email {self.company_email}" if self.company_email else None,
                                                self.company_phone) if b)
-        # Validity is already shown once in the header ("Valid until …"); don't
-        # repeat it here. Footer is just the contact prompt.
-        story.append(Paragraph(f"Questions? {contact}".strip(), footer_style))
+        if contact:
+            contact_style = ParagraphStyle('contact', parent=styles['Normal'], fontSize=9,
+                                           textColor=colors.HexColor('#6b7280'), alignment=TA_CENTER)
+            story.append(Paragraph(f"Questions? {_esc(contact)}", contact_style))
+        if self.terms:
+            story.append(Spacer(1, 0.15 * inch))
+            terms_label = ParagraphStyle('termsLabel', parent=label_style, fontSize=8)
+            terms_style = ParagraphStyle('Terms', parent=styles['Normal'], fontSize=8,
+                                         textColor=colors.HexColor('#9ca3af'), leading=12)
+            story.append(Paragraph('TERMS &amp; CONDITIONS', terms_label))
+            story.append(Spacer(1, 3))
+            story.append(Paragraph(_esc_ml(self.terms), terms_style))
 
         # Build PDF
         doc.build(story)
