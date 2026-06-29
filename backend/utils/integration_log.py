@@ -20,6 +20,7 @@ def log_integration_event(
     status: str,
     external_id=None,
     detail=None,
+    recipient=None,
     commit: bool = True,
 ) -> None:
     """Record an outbound integration attempt. Best-effort, never raises.
@@ -28,11 +29,20 @@ def log_integration_event(
     existing integration_events table (scaffolded in 001): on a failed status it
     lands in error_message; otherwise it's kept as a request note (e.g. the
     recipient address). Truncated to 1000 chars.
+
+    `recipient` is the address/phone the action was sent to. When provided it is
+    always stored in request_payload as "to <recipient>" — even on failures —
+    so the quote delivery history can show who the send attempt targeted
+    regardless of outcome.
     """
     try:
         from database.models import IntegrationEvent
         note = (str(detail)[:1000] if detail is not None else None)
         is_failure = str(status).lower() in ("failed", "error")
+        recipient_note = f"to {recipient}" if recipient else None
+        # request_payload prefers the structured recipient; falls back to the
+        # caller's free-text note when no recipient is given.
+        rp = recipient_note or (note if not is_failure else None)
         row = IntegrationEvent(
             entity_type=entity_type,
             entity_id=entity_id,
@@ -41,7 +51,7 @@ def log_integration_event(
             status=status,
             external_id=str(external_id) if external_id is not None else None,
             error_message=note if (is_failure and note) else None,
-            request_payload=note if (not is_failure and note) else None,
+            request_payload=rp,
         )
         if commit:
             db.add(row)

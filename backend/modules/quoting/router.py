@@ -23,7 +23,7 @@ from schemas.quotes import (
     QuoteCreate, QuoteUpdate, QuoteRequestCreate, QuoteRequestUpdate,
 )
 from database.models import (
-    Quote, QuoteEmail, QuoteSMS, Client, Job, Property, LeadIntake,
+    Quote, Client, Job, Property, LeadIntake, IntegrationEvent,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.integration_log import log_integration_event as _log_integration
@@ -406,9 +406,10 @@ def permanently_delete_quote(quote_id: int, db: Session = Depends(get_db)):
     """Hard-delete an archived quote (admin only) — for clearing test/junk quotes.
 
     Requires the quote be archived first (so this can't be a one-click way to
-    destroy a live quote), and still refuses anything scheduled into a job. Sent
-    emails (QuoteEmail) cascade; recurring-schedule links are detached first so
-    the delete can't be FK-blocked."""
+    destroy a live quote), and still refuses anything scheduled into a job.
+    Recurring-schedule links are detached first so the delete can't be FK-blocked.
+    Delivery audit rows in integration_events keep the historical send record
+    intact (no FK back to quotes)."""
     from database.models import RecurringSchedule
 
     quote = _get_quote_or_404(quote_id, db)
@@ -514,13 +515,9 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 )
                 if res.get("success"):
                     results["email"] = "sent"
-                    db.add(QuoteEmail(
-                        quote_id=quote.id, recipient_email=to_email, sent_at=_utcnow(),
-                        delivery_status="sent", email_id=res.get("email_id"),
-                    ))
                     _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
                                      action="send", status="ok", external_id=res.get("email_id"),
-                                     detail=f"to {to_email}", commit=False)
+                                     recipient=to_email, commit=False)
                 else:
                     results["email"] = "failed"
                     # Surface the REAL reason (not a generic string) so the
@@ -529,7 +526,8 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     errors.append(real_error)
                     logger.error(f"Quote {quote.id} email send failed: {real_error}")
                     _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
-                                     action="send", status="failed", detail=real_error, commit=False)
+                                     action="send", status="failed", recipient=to_email,
+                                     detail=real_error, commit=False)
             except Exception as e:
                 results["email"] = "failed"
                 # PDF build / service construction can raise (e.g. the date
@@ -538,7 +536,8 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 errors.append(str(e) or "email could not be sent")
                 logger.exception(f"Quote {quote.id} email send error")
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="email",
-                                 action="send", status="failed", detail=str(e), commit=False)
+                                 action="send", status="failed", recipient=to_email,
+                                 detail=str(e), commit=False)
 
     if want_sms:
         to_phone = (body.phone or client.phone or "").strip()
@@ -556,24 +555,16 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
                 sms_result = send_sms(to=to_phone, body=msg)
                 results["sms"] = "sent"
-                db.add(QuoteSMS(
-                    quote_id=quote.id, recipient_phone=to_phone, sent_at=_utcnow(),
-                    delivery_status=sms_result.get("status", "sent"),
-                    message_sid=sms_result.get("sid"),
-                ))
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
                                  action="send", status="ok", external_id=sms_result.get("sid"),
-                                 detail=f"to {to_phone}", commit=False)
+                                 recipient=to_phone, commit=False)
             except Exception as e:
                 results["sms"] = "failed"
                 errors.append("text message could not be sent")
                 logger.warning(f"Quote {quote.id} SMS send error: {e}")
-                db.add(QuoteSMS(
-                    quote_id=quote.id, recipient_phone=to_phone, sent_at=_utcnow(),
-                    delivery_status="failed", error_message=str(e),
-                ))
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
-                                 action="send", status="failed", detail=str(e), commit=False)
+                                 action="send", status="failed", recipient=to_phone,
+                                 detail=str(e), commit=False)
 
     delivered = any(v == "sent" for v in results.values())
     # Delivery visibility: a failed send must not leave a silent "draft" —
@@ -1395,13 +1386,11 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
         quote.status = "sent"
         quote.sent_at = _utcnow()
 
-    db.add(QuoteEmail(
-        quote_id=quote.id,
-        recipient_email=recipient_email,
-        sent_at=_utcnow(),
-        delivery_status="sent",
-        email_id=result.get("email_id"),
-    ))
+    _log_integration(
+        db, entity_type="quote", entity_id=quote.id, provider="email",
+        action="send", status="ok", external_id=result.get("email_id"),
+        recipient=recipient_email, commit=False,
+    )
     db.commit()
     return {
         "success": True,
@@ -1415,80 +1404,110 @@ def send_quote_email(quote_id: int, recipient_email: str = Query(...), db: Sessi
     }
 
 
+def _extract_recipient(row: IntegrationEvent) -> Optional[str]:
+    """Pull the 'to <recipient>' note out of a quote-send IntegrationEvent row.
+    Falls back to None when the row pre-dates the recipient convention."""
+    rp = row.request_payload
+    if rp and rp.startswith("to "):
+        return rp[3:].strip() or None
+    return None
+
+
+def _ie_status(row: IntegrationEvent) -> str:
+    """Map IntegrationEvent.status ('ok' | 'failed') back to the quote-delivery
+    vocabulary ('sent' | 'failed') the UI used to read off QuoteEmail/QuoteSMS."""
+    return "sent" if row.status == "ok" else (row.status or "failed")
+
+
 @router.get("/{quote_id}/email-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote_email_history(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
-    emails = (
-        db.query(QuoteEmail)
-        .filter(QuoteEmail.quote_id == quote_id)
-        .order_by(QuoteEmail.sent_at.desc())
+    rows = (
+        db.query(IntegrationEvent)
+        .filter(
+            IntegrationEvent.entity_type == "quote",
+            IntegrationEvent.entity_id == quote_id,
+            IntegrationEvent.provider == "email",
+            IntegrationEvent.action == "send",
+        )
+        .order_by(IntegrationEvent.created_at.desc())
         .all()
     )
     return {
         "quote_id": quote.id,
         "quote_number": quote.quote_number,
-        "total_emails_sent": len(emails),
+        "total_emails_sent": len(rows),
         "emails": [
             {
-                "recipient": e.recipient_email,
-                "sent_at": e.sent_at.isoformat() if e.sent_at else None,
-                "status": e.delivery_status,
-                "email_id": e.email_id,
+                "recipient": _extract_recipient(r),
+                "sent_at": r.created_at.isoformat() if r.created_at else None,
+                "status": _ie_status(r),
+                "email_id": r.external_id,
             }
-            for e in emails
+            for r in rows
         ],
     }
+
 
 @router.get("/{quote_id}/sms-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote_sms_history(quote_id: int, db: Session = Depends(get_db)):
     quote = _get_quote_or_404(quote_id, db)
-    messages = (
-        db.query(QuoteSMS)
-        .filter(QuoteSMS.quote_id == quote_id)
-        .order_by(QuoteSMS.sent_at.desc())
+    rows = (
+        db.query(IntegrationEvent)
+        .filter(
+            IntegrationEvent.entity_type == "quote",
+            IntegrationEvent.entity_id == quote_id,
+            IntegrationEvent.provider == "sms",
+            IntegrationEvent.action == "send",
+        )
+        .order_by(IntegrationEvent.created_at.desc())
         .all()
     )
     return {
         "quote_id": quote.id,
         "quote_number": quote.quote_number,
-        "total_sms_sent": len(messages),
+        "total_sms_sent": len(rows),
         "messages": [
             {
-                "recipient": m.recipient_phone,
-                "sent_at": m.sent_at.isoformat() if m.sent_at else None,
-                "status": m.delivery_status,
-                "message_sid": m.message_sid,
-                "error": m.error_message,
+                "recipient": _extract_recipient(r),
+                "sent_at": r.created_at.isoformat() if r.created_at else None,
+                "status": _ie_status(r),
+                "message_sid": r.external_id,
+                "error": r.error_message,
             }
-            for m in messages
+            for r in rows
         ],
     }
 
 
 @router.get("/{quote_id}/delivery-history", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote_delivery_history(quote_id: int, db: Session = Depends(get_db)):
-    """Combined email + SMS delivery history, sorted newest first."""
+    """Combined email + SMS delivery history, sorted newest first.
+
+    Backed by IntegrationEvent — the same audit log the GCal sync writes to —
+    after the per-channel quote_emails/quote_sms tables were retired."""
     quote = _get_quote_or_404(quote_id, db)
-    emails = db.query(QuoteEmail).filter(QuoteEmail.quote_id == quote_id).all()
-    sms_msgs = db.query(QuoteSMS).filter(QuoteSMS.quote_id == quote_id).all()
-    history = []
-    for e in emails:
-        history.append({
-            "channel": "email",
-            "recipient": e.recipient_email,
-            "sent_at": e.sent_at.isoformat() if e.sent_at else None,
-            "status": e.delivery_status,
-            "external_id": e.email_id,
-        })
-    for m in sms_msgs:
-        history.append({
-            "channel": "sms",
-            "recipient": m.recipient_phone,
-            "sent_at": m.sent_at.isoformat() if m.sent_at else None,
-            "status": m.delivery_status,
-            "external_id": m.message_sid,
-            "error": m.error_message,
-        })
+    rows = (
+        db.query(IntegrationEvent)
+        .filter(
+            IntegrationEvent.entity_type == "quote",
+            IntegrationEvent.entity_id == quote_id,
+            IntegrationEvent.provider.in_(("email", "sms")),
+            IntegrationEvent.action == "send",
+        )
+        .all()
+    )
+    history = [
+        {
+            "channel": r.provider,
+            "recipient": _extract_recipient(r),
+            "sent_at": r.created_at.isoformat() if r.created_at else None,
+            "status": _ie_status(r),
+            "external_id": r.external_id,
+            "error": r.error_message,
+        }
+        for r in rows
+    ]
     history.sort(key=lambda h: h["sent_at"] or "", reverse=True)
     return {
         "quote_id": quote.id,

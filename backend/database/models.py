@@ -1022,76 +1022,12 @@ class Quote(Base):
     client = relationship("Client", back_populates="quotes", foreign_keys=[client_id])
     property = relationship("Property", foreign_keys=[property_id])
     created_by_user = relationship("User", foreign_keys=[created_by])
-    emails = relationship("QuoteEmail", back_populates="quote", cascade="all, delete-orphan")
-    sms_messages = relationship("QuoteSMS", back_populates="quote", cascade="all, delete-orphan")
+    # Delivery history (email + SMS sends) lives on IntegrationEvent rather
+    # than per-channel tables — see migration 035.
 
     __table_args__ = (
         UniqueConstraint("quote_number", name="uq_quote_number"),
     )
-
-
-# ============================================
-# Quote Email Models (Phase 2)
-# ============================================
-
-class QuoteEmailStatus(str, Enum):
-    """Email delivery status enum"""
-    SENT = "sent"
-    DELIVERED = "delivered"
-    BOUNCED = "bounced"
-    COMPLAINED = "complained"
-    FAILED = "failed"
-
-
-class QuoteEmail(Base):
-    """Tracks email deliveries for quotes (when sent + delivery status)."""
-    __tablename__ = "quote_emails"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
-    recipient_email = Column(String(255), nullable=False)
-    sent_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    delivery_status = Column(String(50), nullable=False, default="sent")
-    email_id = Column(String(255), nullable=True, unique=True)
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-
-    quote = relationship("Quote", back_populates="emails")
-
-    def __repr__(self):
-        return f"<QuoteEmail(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_email}, status={self.delivery_status})>"
-
-
-class QuoteSMSStatus(str, Enum):
-    """SMS delivery status enum (mirrors Twilio message statuses)."""
-    QUEUED = "queued"
-    SENT = "sent"
-    DELIVERED = "delivered"
-    UNDELIVERED = "undelivered"
-    FAILED = "failed"
-
-
-class QuoteSMS(Base):
-    """Tracks SMS deliveries for quotes (parallel to QuoteEmail)."""
-    __tablename__ = "quote_sms"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
-    recipient_phone = Column(String(30), nullable=False)
-    sent_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    delivery_status = Column(String(50), nullable=False, default="sent")
-    message_sid = Column(String(64), nullable=True, unique=True)  # Twilio message SID
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-
-    quote = relationship("Quote", back_populates="sms_messages")
-
-    def __repr__(self):
-        return f"<QuoteSMS(id={self.id}, quote_id={self.quote_id}, recipient={self.recipient_phone}, status={self.delivery_status})>"
 
 
 class CleanerTimeOff(Base):
