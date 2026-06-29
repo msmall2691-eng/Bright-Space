@@ -166,11 +166,18 @@ class GeneralSettings(BaseModel):
     brand_color: Optional[str] = None
     # Optional logo URL shown on the public quote page, email, and PDF.
     company_logo_url: Optional[str] = None
+    # Default customer-facing "what's included" scope per service type. Used to
+    # pre-fill a new quote's scope; the admin can still edit it per quote.
+    service_scope_residential: Optional[str] = None
+    service_scope_commercial: Optional[str] = None
+    service_scope_str: Optional[str] = None
 
 
 _GENERAL_KEYS = ("company_name", "company_email", "company_phone",
                  "timezone", "currency", "quote_terms", "brand_color",
-                 "company_logo_url")
+                 "company_logo_url",
+                 "service_scope_residential", "service_scope_commercial",
+                 "service_scope_str")
 
 
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
@@ -274,6 +281,41 @@ def serve_company_logo(db: Session = Depends(get_db)):
     # Long cache; the URL carries a ?v= content hash so replacements bust it.
     return Response(content=raw, media_type=mime,
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+class PropertyMediaConfig(BaseModel):
+    property_photo_enabled: Optional[bool] = None
+    google_maps_api_key: Optional[str] = None      # blank = leave unchanged
+    property_enrichment_enabled: Optional[bool] = None
+    rentcast_api_key: Optional[str] = None          # blank = leave unchanged
+
+
+@router.get("/property-media", dependencies=[Depends(require_role("admin", "manager"))])
+def get_property_media(db: Session = Depends(get_db)):
+    """Property photo + data integration status. Never returns the raw keys —
+    only whether each is configured."""
+    return {
+        "property_photo_enabled": (get_setting(db, "property_photo_enabled") or "").lower() == "true",
+        "google_maps_key_set": bool(get_setting(db, "google_maps_api_key")),
+        "property_enrichment_enabled": (get_setting(db, "property_enrichment_enabled") or "").lower() == "true",
+        "rentcast_key_set": bool(get_setting(db, "rentcast_api_key")),
+    }
+
+
+@router.post("/property-media", dependencies=[Depends(require_role("admin"))])
+def save_property_media(config: PropertyMediaConfig, db: Session = Depends(get_db)):
+    """Save the Street View / property-data toggles and keys. A blank key field
+    leaves the stored key unchanged (so the UI never has to round-trip secrets)."""
+    if config.property_photo_enabled is not None:
+        set_setting(db, "property_photo_enabled", "true" if config.property_photo_enabled else "false")
+    if config.property_enrichment_enabled is not None:
+        set_setting(db, "property_enrichment_enabled", "true" if config.property_enrichment_enabled else "false")
+    if config.google_maps_api_key and config.google_maps_api_key.strip():
+        set_setting(db, "google_maps_api_key", config.google_maps_api_key.strip())
+    if config.rentcast_api_key and config.rentcast_api_key.strip():
+        set_setting(db, "rentcast_api_key", config.rentcast_api_key.strip())
+    db.commit()
+    return get_property_media(db)
 
 
 @router.get("/from-email")

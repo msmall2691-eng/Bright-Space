@@ -398,13 +398,40 @@ export default function Quoting() {
           description: lineDesc,
         }],
         tax_rate: 0,
-        notes: SERVICE_SCOPE[svcType] || '',
+        // Admin-configured scope (Settings → Service Descriptions) wins; fall
+        // back to the built-in default for the service type.
+        notes: (company[`service_scope_${svcType}`] || '').trim() || SERVICE_SCOPE[svcType] || '',
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
         valid_until: defaultValidUntil(),
         custom_fields: {}
       })
+      // Best-effort: when property-data enrichment is on, fill missing specs
+      // (sqft/beds/baths/year) into the line description by address.
+      const fullAddr = [intake.address, intake.city, intake.state].filter(Boolean).join(', ')
+      if (fullAddr) {
+        get(`/api/quotes/property-lookup?address=${encodeURIComponent(fullAddr)}`)
+          .then(r => {
+            const s = r?.specs
+            if (!s) return
+            const extra = [
+              s.square_footage && `${s.square_footage.toLocaleString()} sqft`,
+              s.bedrooms != null && `${s.bedrooms} bd`,
+              s.bathrooms != null && `${s.bathrooms} ba`,
+              s.year_built && `built ${s.year_built}`,
+            ].filter(Boolean).join(' · ')
+            if (!extra) return
+            setForm(f => {
+              const items = [...f.items]
+              if (items[0] && !/sqft|\bbd\b|\bba\b/.test(items[0].description || '')) {
+                items[0] = { ...items[0], description: [items[0].description, extra].filter(Boolean).join(' — ') }
+              }
+              return { ...f, items }
+            })
+          })
+          .catch(() => {})
+      }
     } else {
       setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
         address: '', service_type: 'residential',

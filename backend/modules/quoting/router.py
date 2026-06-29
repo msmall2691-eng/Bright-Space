@@ -308,6 +308,19 @@ def quotes_needing_follow_up(
     return out
 
 
+@router.get("/property-lookup", dependencies=[Depends(require_role("admin", "manager"))])
+def property_lookup(address: str = Query(...), db: Session = Depends(get_db)):
+    """Look up property specs (sqft/beds/baths/year) for an address to pre-fill a
+    quote. Returns {enabled, specs}. Best-effort — disabled or no match yields
+    specs=None and never errors. Defined before /{quote_id} so the static path
+    wins over the int route."""
+    from services.property_media import enrichment_enabled, property_specs
+    from modules.settings.router import get_setting
+    if not (address or "").strip() or not enrichment_enabled(db):
+        return {"enabled": enrichment_enabled(db), "specs": None}
+    return {"enabled": True, "specs": property_specs(address.strip(), get_setting(db, "rentcast_api_key"))}
+
+
 @router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))
@@ -496,6 +509,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 # and an explicit address overrides the default.
                 owner_copy = (company.get("company_email") or "") if body.copy_to is None \
                     else (body.copy_to or "")
+                # Front-of-house photo proxy URL (when enabled + address). The
+                # PDF fetch and the email both skip gracefully if there's no
+                # Street View coverage.
+                photo_url = _property_photo_url(quote, db)
                 pdf_bytes = QuotePDFService(
                     company_name=company["company_name"], company_email=company["company_email"] or "",
                     company_phone=company["company_phone"], brand_color=company["brand_color"],
@@ -506,8 +523,19 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
                     tax_amount=quote.tax, discount_amount=quote.discount,
                     total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
-                    quote_title=quote.title,
+                    quote_title=quote.title, property_photo_url=photo_url,
                 )
+                # For the EMAIL we only embed the photo when Google actually has
+                # imagery (a 404 proxy would show a broken image in mail clients).
+                email_photo_url = None
+                if photo_url:
+                    try:
+                        from services.property_media import has_street_view
+                        from modules.settings.router import get_setting
+                        if has_street_view(quote.address, get_setting(db, "google_maps_api_key")):
+                            email_photo_url = photo_url
+                    except Exception:
+                        email_photo_url = None
                 res = QuoteEmailService().send_quote_email(
                     to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
                     total_amount=float(quote.total or 0),
@@ -523,7 +551,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     items=quote.items or [],
                     subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
                     tax_rate=quote.tax_rate, address=quote.address,
-                    bcc=owner_copy,
+                    bcc=owner_copy, property_photo_url=email_photo_url,
                 )
                 if res.get("success"):
                     results["email"] = "sent"
@@ -866,7 +894,23 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "valid_until": fmt_long_date(quote.valid_until),
         # Let the page render an "expired" state instead of letting Accept 409.
         "is_expired": _is_quote_expired(quote),
+        # Front-of-house Street View photo (when enabled + a key + an address).
+        # The page loads it through our proxy and hides it on error, so this is
+        # a cheap "maybe" flag — no Google call happens here.
+        "property_photo_url": _property_photo_url(quote, db),
     }
+
+
+def _property_photo_url(quote: Quote, db: Session) -> Optional[str]:
+    """Absolute URL to this quote's Street View photo proxy, or None when the
+    feature is off / unconfigured / the quote has no address."""
+    try:
+        from services.property_media import street_view_enabled
+        if quote.public_token and quote.address and street_view_enabled(db):
+            return f"{app_base_url().rstrip('/')}/api/quotes/public/{quote.public_token}/property-photo"
+    except Exception:
+        pass
+    return None
 
 
 def _is_quote_expired(quote: Quote) -> bool:
@@ -1089,11 +1133,33 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         line_items=_pdf_line_items(quote), subtotal=quote.subtotal, tax_amount=quote.tax,
         discount_amount=quote.discount, total_amount=quote.total, notes=quote.notes,
         expires_at=quote.valid_until, quote_title=quote.title,
+        property_photo_url=_property_photo_url(quote, db),
     )
     disp = "attachment" if download else "inline"
     return StreamingResponse(
         BytesIO(pdf_bytes), media_type="application/pdf",
         headers={"Content-Disposition": f'{disp}; filename="{quote.quote_number}.pdf"'},
+    )
+
+
+@router.get("/public/{token}/property-photo", dependencies=[Depends(rate_limit(120, 3600, "quote_photo"))])
+def public_quote_property_photo(token: str, db: Session = Depends(get_db)):
+    """Stream the front-of-house Street View photo for the quote's address.
+
+    Public (loaded by the quote page, email, and PDF). 404 when the feature is
+    off, no key is set, or Google has no imagery — callers hide the image on a
+    failed load, so a 404 is a normal, expected outcome."""
+    from services.property_media import street_view_enabled, street_view_bytes
+    quote = _quote_by_token(token, db)
+    if not (quote.address and street_view_enabled(db)):
+        raise HTTPException(status_code=404, detail="No photo")
+    from modules.settings.router import get_setting
+    img = street_view_bytes(quote.address, get_setting(db, "google_maps_api_key"))
+    if not img:
+        raise HTTPException(status_code=404, detail="No photo")
+    return StreamingResponse(
+        BytesIO(img), media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

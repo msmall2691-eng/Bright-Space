@@ -157,6 +157,7 @@ class QuoteEmailService:
                 </td>
             </tr>
         </table>
+        {% if property_photo_url %}<img src="{{ property_photo_url }}" alt="Property" width="600" style="width:100%; max-width:600px; height:auto; display:block;">{% endif %}
         <div class="content">
             <h2>{{ greeting_line }}</h2>
             {% if intro_message %}<p style="white-space: pre-wrap;">{{ intro_message }}</p>
@@ -234,6 +235,7 @@ class QuoteEmailService:
         tax_rate=None,
         address: Optional[str] = None,
         bcc: Optional[str] = None,
+        property_photo_url: Optional[str] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -325,6 +327,7 @@ class QuoteEmailService:
                 company_phone=self.company_phone,
                 company_phone_href=phone_tel_href(self.company_phone),
                 terms=self.quote_terms,
+                property_photo_url=(property_photo_url or "").strip() or None,
             )
 
             # Attach HTML content

@@ -61,6 +61,13 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
 
       {/* Document body */}
       <div className="bg-panel border border-hairline border-t-0 rounded-b-2xl shadow-sm">
+        {/* Front-of-house photo (Street View) — hides itself if it can't load,
+            so a missing photo never leaves a broken image. */}
+        {quote.property_photo_url && (
+          <img src={quote.property_photo_url} alt="Property"
+               onError={(e) => { e.currentTarget.style.display = 'none' }}
+               className="w-full h-44 sm:h-56 object-cover border-b border-hairline" />
+        )}
         <div className="px-6 py-6 sm:px-8 sm:py-7">
 
           {/* Letter opening — the customer message, not a detached gray card */}
