@@ -705,7 +705,6 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: in
             "id": prop.id,
             "name": prop.name,
             "address": prop.address,
-            "ical_url": prop.ical_url,
             "type": prop.property_type,
         })
     profile["properties"] = properties_data

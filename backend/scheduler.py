@@ -64,26 +64,15 @@ def sync_all_ical_feeds_tick() -> dict:
         if not _db_flag(db, "ical_auto_sync_enabled", env_flag("ICAL_AUTO_SYNC_ENABLED", True)):
             log.debug("iCal auto-sync disabled via app_settings; skipping tick")
             return {"skipped": True, "reason": "disabled"}
-        # Sync any active property that has a feed — either the legacy single
-        # ical_url OR one+ PropertyIcal rows (the multi-feed model the bulk
-        # linking UI writes to). The old query only matched ical_url, so
-        # properties linked solely through the newer UI never auto-synced and
-        # only updated on a manual "Sync" click.
-        #
-        # NB: dedupe on Property.id only, then load the rows. A `.distinct()`
-        # over full Property rows fails on Postgres ("could not identify an
-        # equality operator for type json") because Property has JSON columns.
+        # Sync any active property with at least one active PropertyIcal feed.
+        # Dedupe on Property.id only, then load the rows. A `.distinct()` over
+        # full Property rows fails on Postgres ("could not identify an equality
+        # operator for type json") because Property has JSON columns.
         prop_ids = [
             row[0] for row in (
                 db.query(Property.id)
-                .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
-                .filter(
-                    Property.active == True,
-                    or_(
-                        Property.ical_url.isnot(None),
-                        and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
-                    ),
-                )
+                .join(PropertyIcal, PropertyIcal.property_id == Property.id)
+                .filter(Property.active == True, PropertyIcal.active == True)
                 .distinct()
                 .all()
             )
@@ -295,14 +284,8 @@ def turnover_coverage_tick() -> dict:
         prop_ids = [
             r[0] for r in (
                 db.query(Property.id)
-                .outerjoin(PropertyIcal, PropertyIcal.property_id == Property.id)
-                .filter(
-                    Property.active == True,
-                    or_(
-                        Property.ical_url.isnot(None),
-                        and_(PropertyIcal.id.isnot(None), PropertyIcal.active == True),
-                    ),
-                )
+                .join(PropertyIcal, PropertyIcal.property_id == Property.id)
+                .filter(Property.active == True, PropertyIcal.active == True)
                 .distinct()
                 .all()
             )

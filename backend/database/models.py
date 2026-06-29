@@ -269,7 +269,10 @@ class Property(Base):
     # (`ck_properties_property_type`) to one of: residential | commercial | str.
     property_type = Column(String, default="residential", nullable=False)
 
-    ical_url = Column(String, nullable=True)        # Legacy: single iCal (backward compat)
+    # Property.ical_url (single-feed legacy column) was dropped by migration
+    # 037; iCal feeds live exclusively in the PropertyIcal table now.
+    # ical_last_synced_at still tracks "last time we ran a property-wide sync"
+    # (across all PropertyIcal feeds), so it stays.
     ical_last_synced_at = Column(DateTime, nullable=True)
     default_duration_hours = Column(Float, default=3.0)  # turnover duration
     default_crew_size = Column(Integer, nullable=True)    # default crew size for jobs

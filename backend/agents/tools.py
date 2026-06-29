@@ -342,13 +342,23 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
                 if count == 0:
                     issues.append(f"Recurring schedule '{s.title}' has 0 upcoming jobs generated")
 
-            # STR properties without recent iCal sync
-            str_props = db.query(Property).filter(
-                Property.property_type == "str",
-                Property.ical_url != None,
-                Property.active == True
-            ).all()
-            for p in str_props:
+            # STR properties (those with at least one PropertyIcal feed) that
+            # have never been synced.
+            from database.models import PropertyIcal
+            str_prop_ids = [
+                row[0] for row in (
+                    db.query(Property.id)
+                    .join(PropertyIcal, PropertyIcal.property_id == Property.id)
+                    .filter(
+                        Property.property_type == "str",
+                        Property.active == True,
+                        PropertyIcal.active == True,
+                    )
+                    .distinct()
+                    .all()
+                )
+            ]
+            for p in db.query(Property).filter(Property.id.in_(str_prop_ids)).all():
                 if not p.ical_last_synced_at:
                     issues.append(f"STR property '{p.name}' has never been synced")
 
@@ -414,10 +424,17 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
 
             elif op == "sync_all_ical":
                 from integrations.ical_sync import sync_property
-                props = db.query(Property).filter(
-                    Property.active == True,
-                    Property.ical_url != None,
-                ).all()
+                from database.models import PropertyIcal
+                prop_ids = [
+                    row[0] for row in (
+                        db.query(Property.id)
+                        .join(PropertyIcal, PropertyIcal.property_id == Property.id)
+                        .filter(Property.active == True, PropertyIcal.active == True)
+                        .distinct()
+                        .all()
+                    )
+                ]
+                props = db.query(Property).filter(Property.id.in_(prop_ids)).all() if prop_ids else []
                 results = []
                 for p in props:
                     r = sync_property(db, p)

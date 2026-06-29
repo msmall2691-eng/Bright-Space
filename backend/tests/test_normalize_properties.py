@@ -9,7 +9,8 @@ class TestNormalizePropertiesEndpoint:
     """Test the normalize-properties admin endpoint."""
 
     def test_infer_str_from_ical_url(self):
-        """CRITICAL: Should infer property_type='str' from ical_url."""
+        """CRITICAL: Should infer property_type='str' from a PropertyIcal feed
+        (replaces the legacy single-column ical_url)."""
         db = SessionLocal()
         try:
             # Create a client
@@ -21,17 +22,22 @@ class TestNormalizePropertiesEndpoint:
             db.commit()
             db.refresh(client)
 
-            # Create property with ical_url but property_type='residential'
+            # Create property with a PropertyIcal feed but property_type='residential'
             prop = Property(
                 client_id=client.id,
                 name="Monthly Residential Turnover",
                 address="123 Main St",
                 property_type="residential",
-                ical_url="https://www.airbnb.com/calendar/ical/12345.ics",
             )
             db.add(prop)
             db.commit()
             db.refresh(prop)
+            db.add(PropertyIcal(
+                property_id=prop.id,
+                url="https://www.airbnb.com/calendar/ical/12345.ics",
+                source="airbnb", active=True,
+            ))
+            db.commit(); db.refresh(prop)
 
             # Call normalize in dry-run
             from modules.properties.router import normalize_properties
@@ -61,7 +67,6 @@ class TestNormalizePropertiesEndpoint:
                 name="Residential Property",
                 address="456 Oak Ave",
                 property_type="residential",
-                ical_url=None
             )
             db.add(prop)
             db.commit()
@@ -274,9 +279,14 @@ class TestNormalizePropertiesEndpoint:
                 name="Weekly Cleaning",
                 address="777 Birch Ln",
                 property_type="residential",
-                ical_url="https://airbnb.com/ical/123.ics"
             )
             db.add(prop)
+            db.commit(); db.refresh(prop)
+            db.add(PropertyIcal(
+                property_id=prop.id,
+                url="https://airbnb.com/ical/123.ics",
+                source="airbnb", active=True,
+            ))
             db.commit()
 
             from modules.properties.router import normalize_properties

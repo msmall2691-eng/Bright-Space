@@ -736,7 +736,6 @@ export default function Settings() {
                         <li>Jobs cleared: {unlinkResult.jobs_unlinked}</li>
                         <li>Visits cleared: {unlinkResult.visits_unlinked}</li>
                         <li>iCal feeds deactivated: {unlinkResult.ical_feeds_deactivated}</li>
-                        <li>Property iCal URLs cleared: {unlinkResult.properties_ical_url_cleared}</li>
                       </ul>
                     </div>
                   )}
