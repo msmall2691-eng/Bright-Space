@@ -254,8 +254,13 @@ class QuoteEmailService:
         ignored rather than failing the send.
         """
         try:
-            # Create message
-            msg = MIMEMultipart('alternative')
+            # 'mixed', NOT 'alternative': the message carries an HTML body AND a
+            # PDF attachment. In multipart/alternative a client renders only ONE
+            # part (the "best" alternative) — iOS Mail picked the PDF and hid the
+            # HTML body entirely, so the customer never saw the clickable
+            # "View & Accept" button. multipart/mixed renders the body and shows
+            # the PDF as a separate attachment.
+            msg = MIMEMultipart('mixed')
             # Subject includes the price — quotes with the amount get opened
             # more — unless an explicit override is supplied.
             default_subject = (f"Your ${format_money(total_amount)} quote from "
@@ -335,16 +340,17 @@ class QuoteEmailService:
                 property_photo_url=(property_photo_url or "").strip() or None,
             )
 
-            # Attach HTML content
+            # Body first (so it's the message content), attachment second.
             html_part = MIMEText(html_content, 'html')
             msg.attach(html_part)
 
-            # Attach PDF if provided
+            # Attach PDF if provided — application/pdf so clients show it as a
+            # recognizable PDF attachment rather than a generic download.
             if pdf_bytes:
-                pdf_part = MIMEBase('application', 'octet-stream')
+                pdf_part = MIMEBase('application', 'pdf')
                 pdf_part.set_payload(pdf_bytes)
                 encoders.encode_base64(pdf_part)
-                pdf_part.add_header('Content-Disposition', f'attachment; filename= {pdf_filename}')
+                pdf_part.add_header('Content-Disposition', f'attachment; filename="{pdf_filename}"')
                 msg.attach(pdf_part)
 
             # Send over the shared SMTP config (STARTTLS, like send_email()).
