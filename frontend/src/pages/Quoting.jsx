@@ -48,6 +48,36 @@ const QUOTE_NEXT_STEP = {
 
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
+
+// Customer-facing label for a service type.
+const serviceLabel = (t) => t === 'str' ? 'STR / Vacation rental cleaning'
+  : `${(t || 'residential').charAt(0).toUpperCase()}${(t || 'residential').slice(1)} cleaning`
+// Friendly cadence label, or '' when one-time / unknown.
+const freqLabel = (f) => {
+  const map = { weekly: 'Weekly', biweekly: 'Biweekly', 'bi-weekly': 'Biweekly',
+    monthly: 'Monthly', 'one-time': '', onetime: '', once: '' }
+  const key = (f || '').toLowerCase().trim()
+  return map[key] ?? (key ? key.charAt(0).toUpperCase() + key.slice(1) : '')
+}
+// Default customer-facing scope per service type — a sensible starting point
+// the admin can edit. Keeps the quote from going out with an empty "what's
+// included" section.
+const SERVICE_SCOPE = {
+  residential: 'Full home cleaning: kitchen, bathrooms, bedrooms, and living areas — dusting, vacuuming, mopping, and surface sanitizing. Trash removed and floors finished throughout.',
+  commercial: 'Commercial cleaning of all common and work areas: restrooms, break areas, floors, and high-touch surfaces sanitized. Trash removed and entryways finished.',
+  str: 'Turnover clean between guests: full kitchen and bathroom reset, fresh linens and towels staged, floors cleaned, trash removed, and the space restocked and guest-ready.',
+}
+// Build a quote title from a lead/request: "Biweekly Residential Cleaning — 24 Pine Street".
+const titleFromIntake = (intake) => {
+  const freq = freqLabel(intake.frequency)
+  const svc = serviceLabel(intake.service_type)
+  const where = (intake.address || intake.property_name || intake.city || '').split(',')[0].trim()
+  const lead = [freq, svc].filter(Boolean).join(' ')
+  return where ? `${lead} — ${where}` : lead
+}
+// Round to the nearest $5 — matches the website instant-quote rounding so the
+// pre-filled price lands on the same clean number the customer was shown.
+const roundTo5 = (n) => Math.round((Number(n) || 0) / 5) * 5
 // Flat 30-day validity policy: a new quote's "Valid Until" defaults to 30 days
 // out (still editable) so it's never empty and matches the backend default.
 const defaultValidUntil = () => {
@@ -323,7 +353,9 @@ export default function Quoting() {
     setSelectedIntake(intake)
     // Auto-expand the optional-copy section when there's already something in it
     // (editing an existing quote, or a lead whose message seeds internal notes).
-    setShowQuoteAdvanced(Boolean(q?.notes || q?.internal_notes || q?.customer_message || intake?.message))
+    // Expand the scope/notes section when there's already content — editing an
+    // existing quote, or a new quote from a request (we pre-fill scope + notes).
+    setShowQuoteAdvanced(Boolean(q?.notes || q?.internal_notes || q?.customer_message || intake))
     if (q) {
       setForm({ client_id: q.client_id, intake_id: q.intake_id,
         title: q.title || '', customer_message: q.customer_message || '',
@@ -332,33 +364,41 @@ export default function Quoting() {
         tax_rate: q.tax_rate, notes: q.notes || '', internal_notes: q.internal_notes || '',
         valid_until: q.valid_until || '', custom_fields: q.custom_fields || {} })
     } else if (intake) {
-      // Seed the first line item's price from the lead's website "instant quote"
-      // (midpoint of the estimate range) so pricing starts from their number.
+      // Seed the price from the lead's website "instant quote" (midpoint of the
+      // estimate range, rounded to $5 like the site) so the quote starts from
+      // the SAME number the customer was shown.
       const mid = (intake.estimate_min != null && intake.estimate_max != null)
-        ? Math.round((intake.estimate_min + intake.estimate_max) / 2)
-        : (intake.estimate_max ?? intake.estimate_min ?? 0)
+        ? roundTo5((intake.estimate_min + intake.estimate_max) / 2)
+        : roundTo5(intake.estimate_max ?? intake.estimate_min ?? 0)
+      const svcType = intake.service_type || 'residential'
       // Surface the customer's structured details on the line item so the
       // operator confirms against real data instead of re-deriving it.
       const details = [
         intake.square_footage && `${intake.square_footage.toLocaleString()} sqft`,
         intake.bedrooms && `${intake.bedrooms} bd`,
         intake.bathrooms && `${intake.bathrooms} ba`,
-        intake.frequency,
+        freqLabel(intake.frequency) || intake.frequency,
       ].filter(Boolean).join(' · ')
       const lineDesc = [mid ? 'From website instant quote' : '', details].filter(Boolean).join(' — ')
+      // Friendly line name: "Biweekly residential cleaning".
+      const freq = freqLabel(intake.frequency)
+      const lineName = [freq, serviceLabel(svcType).replace(/^STR \/ Vacation rental cleaning$/, 'STR / vacation rental clean')]
+        .filter(Boolean).join(' ')
       setForm({
         client_id: intake.client_id || '', intake_id: intake.id,
-        title: '', customer_message: '',
+        // Auto-fill a sensible title and customer-facing scope so the quote is
+        // mostly built — the admin just reviews, tweaks, and sends.
+        title: titleFromIntake(intake), customer_message: '',
         address: [intake.address, intake.city, intake.state].filter(Boolean).join(', '),
-        service_type: intake.service_type || 'residential',
+        service_type: svcType,
         items: [{
           ...EMPTY_ITEM,
-          name: `${(intake.service_type || 'residential')} cleaning`,
+          name: lineName || serviceLabel(svcType),
           unit_price: mid || 0,
           description: lineDesc,
         }],
         tax_rate: 0,
-        notes: '',
+        notes: SERVICE_SCOPE[svcType] || '',
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
