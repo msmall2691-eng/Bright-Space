@@ -36,9 +36,32 @@ def test_crypto_roundtrip_and_key_required(monkeypatch):
     assert token != "ya29.secret"
     assert decrypt_secret(token) == "ya29.secret"
 
+    # With no dedicated key, encryption still works by deriving from JWT_SECRET
+    # (set in conftest) — so connecting Google needs no extra config.
     monkeypatch.delenv("TOKEN_ENCRYPTION_KEY")
+    monkeypatch.setenv("JWT_SECRET", "stable-secret-for-derivation")
+    derived = encrypt_secret("ya29.derived")
+    assert derived != "ya29.derived"
+    assert decrypt_secret(derived) == "ya29.derived"
+
+    # Only truly unavailable when NEITHER secret exists.
+    monkeypatch.delenv("JWT_SECRET", raising=False)
     with pytest.raises(TokenEncryptionUnavailable):
         encrypt_secret("x")
+
+
+def test_jwt_derived_key_is_stable_and_distinct(monkeypatch):
+    """Deriving from JWT_SECRET is deterministic (so tokens survive restarts)
+    and the derived key differs from the raw secret."""
+    from utils.crypto import _derived_key_from_jwt
+    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("JWT_SECRET", "abc123")
+    k1 = _derived_key_from_jwt()
+    monkeypatch.setenv("JWT_SECRET", "abc123")
+    assert _derived_key_from_jwt() == k1            # stable for the same secret
+    monkeypatch.setenv("JWT_SECRET", "different")
+    assert _derived_key_from_jwt() != k1            # changes with the secret
+    assert b"abc123" not in (k1 or b"")             # not the raw secret
 
 
 def test_login_scopes_are_identity_only():
