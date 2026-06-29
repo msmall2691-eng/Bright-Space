@@ -93,17 +93,17 @@ The frontend is ~34,800 lines across 26 page files. Same pattern: real, working,
 
 ### C1. Delete orphaned page files — do this first (near-zero risk)
 
-These page files are **no longer imported as components** anywhere — their routes were already converted to redirects (`/quoting`→`/billing`, `/invoicing`→`/billing`, `/calendar`→`/schedule`, `/today`→`/dashboard`):
+These page files are **no longer imported as components** anywhere — their routes were already converted to redirects (`/calendar`→`/schedule`, `/today`→`/dashboard`):
 
 | File | Lines | Replaced by |
 |---|---|---|
-| `pages/Quoting.jsx` | 1,491 | `Billing.jsx` |
-| `pages/Invoicing.jsx` | 720 | `Billing.jsx` |
 | `pages/Today.jsx` | 215 | `Dashboard.jsx` |
 | `pages/Calendar.jsx` | 192 | `Schedule.jsx` |
 | `components/PropertyProfileForm.tsx` | — | (dead feature, see B1) |
 
-That's **~2,600 lines of dead code**. The redirects in `App.jsx` stay; only the unreferenced files go. **Risk: very low** (confirmed no real imports — only string labels and a stale test). **Effort: ~1 hour.** Worth deleting `pages/__tests__/Quoting.guards.test.jsx` with it.
+That's **~400+ lines of dead page code** plus the dead form. The redirects in `App.jsx` stay; only the unreferenced files go. **Risk: very low** (verified: no `import` of either page anywhere). **Effort: ~30 min.**
+
+> **Note — `Quoting.jsx` and `Invoicing.jsx` are NOT dead.** Despite their routes being redirects, `Billing.jsx` imports and renders them as child components (`{view === 'invoices' ? <Invoicing /> : <Quoting />}`). They are the actual content of the consolidated Billing page. Leave them in place. (They're large — 1,491 and 720 lines — so they're candidates for C3 "split mega-pages," not deletion.)
 
 ### C2. Merge the two timeline components (low)
 
@@ -118,10 +118,10 @@ A handful of pages are large enough to be hard to work in safely:
 | `ClientProfile.jsx` | 2,233 |
 | `Schedule.jsx` | 2,198 |
 | `Settings.jsx` | 1,617 |
-| `Quoting.jsx`* | 1,491 |
+| `Quoting.jsx` | 1,491 |
 | `Comms.jsx` | 1,333 |
 
-*Quoting.jsx is being deleted in C1.* Break the others into section components (e.g., Settings → one component per tab). **Risk: low if done section-by-section. Effort: ongoing.**
+Break these into section components (e.g., Settings → one component per tab; Billing's `Quoting`/`Invoicing` children into smaller pieces). **Risk: low if done section-by-section. Effort: ongoing.**
 
 ### C4. Unify the scheduling data path (couples to B2)
 
@@ -139,7 +139,7 @@ Grouped so the safe, high-clarity wins come first and the risky structural chang
 
 **Phase 0 — Quick wins, do now (≈1 day, near-zero risk)**
 - B1: delete dead `property_intelligence` (models + module + `.tsx`)
-- C1: delete 4 orphaned page files (~2,600 lines) + stale test
+- C1: delete 2 orphaned page files (`Today.jsx`, `Calendar.jsx`) — *not* Quoting/Invoicing (they're live inside Billing)
 - A-caveats: remove the duplicate `db_bootstrap` call; confirm Connecteam env var
 
 **Phase 1 — Consolidations, low/medium risk (≈1 week)**
@@ -177,6 +177,6 @@ Grouped so the safe, high-clarity wins come first and the risky structural chang
 ## Appendix — How these findings were verified
 
 - **Live app:** loaded Dashboard, Clients, Schedule, Billing in-browser; checked network (`200`s except the Connecteam `503`) and console (no errors).
-- **Dead code:** confirmed `models_property_intelligence` and `PropertyProfileForm.tsx` have zero inbound imports; confirmed no `crews` table exists; confirmed the 4 page files have no real `import` statements (only redirect routes and string labels).
+- **Dead code:** confirmed `models_property_intelligence` and `PropertyProfileForm.tsx` have zero inbound imports; confirmed no `crews` table exists; confirmed `Today.jsx` and `Calendar.jsx` have zero `import` statements anywhere. Correction after a second pass: `Quoting.jsx`/`Invoicing.jsx` ARE live — `Billing.jsx` imports and renders them — so they are explicitly excluded from deletion.
 - **Job/Visit:** confirmed duplicate scheduling columns in the models, the `/api/health` `jobs_without_visits == 0` check, and the split `/api/jobs` vs `/api/visits` usage across frontend components.
 - **Usage weighting:** counted backend references to gauge what's load-bearing (e.g. `Visit` 87, `Opportunity` 69, `ContactPhone` 62, `LeadIntake` 58 vs `QuoteRequest` 6) so nothing load-bearing is recommended for deletion.
