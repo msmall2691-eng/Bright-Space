@@ -53,6 +53,7 @@ class QuotePDFService:
         notes: Optional[str] = None,
         expires_at: Optional[datetime] = None,
         quote_title: Optional[str] = None,
+        property_photo_url: Optional[str] = None,
     ) -> bytes:
         """
         Generate a professional quote PDF
@@ -120,6 +121,14 @@ class QuotePDFService:
             story.append(Paragraph(quote_title, quote_title_style))
         contact_bits = " · ".join(b for b in (self.company_email, self.company_phone) if b)
         story.append(Paragraph(contact_bits, subtitle_style))
+
+        # Front-of-house photo (Street View) when available. Best-effort: a
+        # broken/missing image just doesn't render — never breaks the PDF.
+        photo_flowable = self._photo_flowable(property_photo_url)
+        if photo_flowable is not None:
+            story.append(Spacer(1, 0.1 * inch))
+            story.append(photo_flowable)
+            story.append(Spacer(1, 0.05 * inch))
 
         # Quote header info. No internal "Status: DRAFT/ACTIVE" row — that's an
         # internal state the customer should never see on their quote.
@@ -252,10 +261,9 @@ class QuotePDFService:
             story.append(Spacer(1, 0.15*inch))
         contact = " or call ".join(b for b in (f"email {self.company_email}" if self.company_email else None,
                                                self.company_phone) if b)
-        # One consistent validity sentence (matches the email + page wording).
-        validity = (f"This quote is valid for 30 days from the date issued "
-                    f"(through {expires_at.strftime('%B %d, %Y')}). " if expires_at else "")
-        story.append(Paragraph(f"{validity}Questions? {contact}".strip(), footer_style))
+        # Validity is already shown once in the header ("Valid until …"); don't
+        # repeat it here. Footer is just the contact prompt.
+        story.append(Paragraph(f"Questions? {contact}".strip(), footer_style))
 
         # Build PDF
         doc.build(story)
@@ -285,6 +293,31 @@ class QuotePDFService:
                 img.drawHeight = max_h
                 img.drawWidth = img.drawWidth * ratio
             img.hAlign = 'LEFT'
+            return img
+        except Exception:
+            return None
+
+    def _photo_flowable(self, photo_url: Optional[str]):
+        """Best-effort front-of-house photo, scaled to the page width, or None.
+
+        Fetches over HTTP with a short timeout and never raises — no coverage
+        (our proxy returns 404) or a slow URL simply skips the photo."""
+        if not photo_url:
+            return None
+        try:
+            import urllib.request
+            from reportlab.platypus import Image
+            req = urllib.request.Request(photo_url, headers={"User-Agent": "BrightBase/1.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = resp.read()
+            img = Image(BytesIO(data))
+            # Fit to ~6.5in content width, preserving aspect ratio.
+            max_w = 6.5 * inch
+            if img.drawWidth > max_w:
+                ratio = max_w / float(img.drawWidth)
+                img.drawWidth = max_w
+                img.drawHeight = img.drawHeight * ratio
+            img.hAlign = 'CENTER'
             return img
         except Exception:
             return None

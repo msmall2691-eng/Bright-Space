@@ -48,6 +48,9 @@ _PUBLIC_PREFIXES = (
     # HMAC token themselves, so they don't need (and must not require) the master
     # key now that the SPA is JWT-only.
     "/api/invoices/public/",
+    # Company logo image — loaded unauthenticated by the quote email (<img>),
+    # the PDF generator, and the public quote page. Read-only; serves bytes only.
+    "/api/settings/logo",
     "/assets/",
 )
 

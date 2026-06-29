@@ -6,6 +6,7 @@ import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import QuotePreview from '../components/QuotePreview'
 import AddressAutocomplete from '../components/AddressAutocomplete'
+import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, put, del } from "../api"
 import { formatDate } from '../utils/format'
 
@@ -47,6 +48,36 @@ const QUOTE_NEXT_STEP = {
 
 const SERVICE_TYPES = ['residential', 'commercial', 'str']
 const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
+
+// Customer-facing label for a service type.
+const serviceLabel = (t) => t === 'str' ? 'STR / Vacation rental cleaning'
+  : `${(t || 'residential').charAt(0).toUpperCase()}${(t || 'residential').slice(1)} cleaning`
+// Friendly cadence label, or '' when one-time / unknown.
+const freqLabel = (f) => {
+  const map = { weekly: 'Weekly', biweekly: 'Biweekly', 'bi-weekly': 'Biweekly',
+    monthly: 'Monthly', 'one-time': '', onetime: '', once: '' }
+  const key = (f || '').toLowerCase().trim()
+  return map[key] ?? (key ? key.charAt(0).toUpperCase() + key.slice(1) : '')
+}
+// Default customer-facing scope per service type — a sensible starting point
+// the admin can edit. Keeps the quote from going out with an empty "what's
+// included" section.
+const SERVICE_SCOPE = {
+  residential: 'Full home cleaning: kitchen, bathrooms, bedrooms, and living areas — dusting, vacuuming, mopping, and surface sanitizing. Trash removed and floors finished throughout.',
+  commercial: 'Commercial cleaning of all common and work areas: restrooms, break areas, floors, and high-touch surfaces sanitized. Trash removed and entryways finished.',
+  str: 'Turnover clean between guests: full kitchen and bathroom reset, fresh linens and towels staged, floors cleaned, trash removed, and the space restocked and guest-ready.',
+}
+// Build a quote title from a lead/request: "Biweekly Residential Cleaning — 24 Pine Street".
+const titleFromIntake = (intake) => {
+  const freq = freqLabel(intake.frequency)
+  const svc = serviceLabel(intake.service_type)
+  const where = (intake.address || intake.property_name || intake.city || '').split(',')[0].trim()
+  const lead = [freq, svc].filter(Boolean).join(' ')
+  return where ? `${lead} — ${where}` : lead
+}
+// Round to the nearest $5 — matches the website instant-quote rounding so the
+// pre-filled price lands on the same clean number the customer was shown.
+const roundTo5 = (n) => Math.round((Number(n) || 0) / 5) * 5
 // Flat 30-day validity policy: a new quote's "Valid Until" defaults to 30 days
 // out (still editable) so it's never empty and matches the backend default.
 const defaultValidUntil = () => {
@@ -101,9 +132,10 @@ export default function Quoting() {
   const [form, setForm] = useState({
     client_id: '', intake_id: null, title: '', customer_message: '',
     address: '', service_type: 'residential',
-    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil()
+    items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil(),
+    custom_fields: {}
   })
-  const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '' })
+  const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '', copy_to: '' })
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [converting, setConverting] = useState(null)
@@ -283,6 +315,7 @@ export default function Quoting() {
         customer_message: '',
         internal_notes: '',
         items: [{ ...EMPTY_ITEM }],
+        custom_fields: {},
       }))
       setPanel('quote')
       setTab('quotes')
@@ -320,51 +353,91 @@ export default function Quoting() {
     setSelectedIntake(intake)
     // Auto-expand the optional-copy section when there's already something in it
     // (editing an existing quote, or a lead whose message seeds internal notes).
-    setShowQuoteAdvanced(Boolean(q?.notes || q?.internal_notes || q?.customer_message || intake?.message))
+    // Expand the scope/notes section when there's already content — editing an
+    // existing quote, or a new quote from a request (we pre-fill scope + notes).
+    setShowQuoteAdvanced(Boolean(q?.notes || q?.internal_notes || q?.customer_message || intake))
     if (q) {
       setForm({ client_id: q.client_id, intake_id: q.intake_id,
         title: q.title || '', customer_message: q.customer_message || '',
         address: q.address || '',
         service_type: q.service_type || 'residential', items: q.items?.length ? q.items : [{ ...EMPTY_ITEM }],
         tax_rate: q.tax_rate, notes: q.notes || '', internal_notes: q.internal_notes || '',
-        valid_until: q.valid_until || '' })
+        valid_until: q.valid_until || '', custom_fields: q.custom_fields || {} })
     } else if (intake) {
-      // Seed the first line item's price from the lead's website "instant quote"
-      // (midpoint of the estimate range) so pricing starts from their number.
+      // Seed the price from the lead's website "instant quote" (midpoint of the
+      // estimate range, rounded to $5 like the site) so the quote starts from
+      // the SAME number the customer was shown.
       const mid = (intake.estimate_min != null && intake.estimate_max != null)
-        ? Math.round((intake.estimate_min + intake.estimate_max) / 2)
-        : (intake.estimate_max ?? intake.estimate_min ?? 0)
+        ? roundTo5((intake.estimate_min + intake.estimate_max) / 2)
+        : roundTo5(intake.estimate_max ?? intake.estimate_min ?? 0)
+      const svcType = intake.service_type || 'residential'
       // Surface the customer's structured details on the line item so the
       // operator confirms against real data instead of re-deriving it.
       const details = [
         intake.square_footage && `${intake.square_footage.toLocaleString()} sqft`,
         intake.bedrooms && `${intake.bedrooms} bd`,
         intake.bathrooms && `${intake.bathrooms} ba`,
-        intake.frequency,
+        freqLabel(intake.frequency) || intake.frequency,
       ].filter(Boolean).join(' · ')
       const lineDesc = [mid ? 'From website instant quote' : '', details].filter(Boolean).join(' — ')
+      // Friendly line name: "Biweekly residential cleaning".
+      const freq = freqLabel(intake.frequency)
+      const lineName = [freq, serviceLabel(svcType).replace(/^STR \/ Vacation rental cleaning$/, 'STR / vacation rental clean')]
+        .filter(Boolean).join(' ')
       setForm({
         client_id: intake.client_id || '', intake_id: intake.id,
-        title: '', customer_message: '',
+        // Auto-fill a sensible title and customer-facing scope so the quote is
+        // mostly built — the admin just reviews, tweaks, and sends.
+        title: titleFromIntake(intake), customer_message: '',
         address: [intake.address, intake.city, intake.state].filter(Boolean).join(', '),
-        service_type: intake.service_type || 'residential',
+        service_type: svcType,
         items: [{
           ...EMPTY_ITEM,
-          name: `${(intake.service_type || 'residential')} cleaning`,
+          name: lineName || serviceLabel(svcType),
           unit_price: mid || 0,
           description: lineDesc,
         }],
         tax_rate: 0,
-        notes: '',
+        // Admin-configured scope (Settings → Service Descriptions) wins; fall
+        // back to the built-in default for the service type.
+        notes: (company[`service_scope_${svcType}`] || '').trim() || SERVICE_SCOPE[svcType] || '',
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
-        valid_until: defaultValidUntil()
+        valid_until: defaultValidUntil(),
+        custom_fields: {}
       })
+      // Best-effort: when property-data enrichment is on, fill missing specs
+      // (sqft/beds/baths/year) into the line description by address.
+      const fullAddr = [intake.address, intake.city, intake.state].filter(Boolean).join(', ')
+      if (fullAddr) {
+        get(`/api/quotes/property-lookup?address=${encodeURIComponent(fullAddr)}`)
+          .then(r => {
+            const s = r?.specs
+            if (!s) return
+            setForm(f => {
+              const items = [...f.items]
+              const desc = items[0]?.description || ''
+              // Merge each spec individually — only add the ones the lead didn't
+              // already provide, instead of skipping the whole lookup when any
+              // one spec is already present.
+              const extra = [
+                s.square_footage && !/sqft/i.test(desc) && `${s.square_footage.toLocaleString()} sqft`,
+                s.bedrooms != null && !/\bbd\b|bedroom/i.test(desc) && `${s.bedrooms} bd`,
+                s.bathrooms != null && !/\bba\b|bathroom/i.test(desc) && `${s.bathrooms} ba`,
+                s.year_built && !/built/i.test(desc) && `built ${s.year_built}`,
+              ].filter(Boolean).join(' · ')
+              if (!extra || !items[0]) return f
+              items[0] = { ...items[0], description: [desc, extra].filter(Boolean).join(' — ') }
+              return { ...f, items }
+            })
+          })
+          .catch(() => {})
+      }
     } else {
       setForm({ client_id: '', intake_id: null, title: '', customer_message: '',
         address: '', service_type: 'residential',
-        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil() })
+        items: [{ ...EMPTY_ITEM }], tax_rate: 0, notes: '', internal_notes: '', valid_until: defaultValidUntil(), custom_fields: {} })
     }
     setPanel('quote')
   }
@@ -384,7 +457,11 @@ export default function Quoting() {
       phone: preferPhone,
       custom_message: '',
       subject: `Your Quote ${q.quote_number} from ${companyName}`,
-      greeting: isPlaceholderName(clientName) ? '' : clientName,
+      // First name only — friendlier and matches the email/SMS greeting.
+      greeting: isPlaceholderName(clientName) ? '' : clientName.split(/\s+/)[0],
+      // Owner copy: default to the business email so you always get a copy of
+      // what the customer received. Editable/clearable below.
+      copy_to: company.company_email || '',
     })
     setSelected(q)
     setPanel('send')
@@ -413,11 +490,27 @@ export default function Quoting() {
     setSending(true)
     try {
       await post(`/api/quotes/${selected.id}/generate-token`, {})
-      const data = await post(`/api/quotes/${selected.id}/send`, sendForm)
+      // A blank copy field means "use the default owner copy" — send null so the
+      // backend falls back to the company email (which itself falls back to the
+      // from/SMTP address). An empty string would be read as "skip the copy",
+      // silently dropping the owner copy on a setup with no Company Email set.
+      const payload = { ...sendForm, copy_to: (sendForm.copy_to || '').trim() || null }
+      const data = await post(`/api/quotes/${selected.id}/send`, payload)
       if (data.delivered) {
-        const channels = Object.entries(data.results || {})
+        const sent = Object.entries(data.results || {})
           .filter(([, v]) => v === 'sent').map(([k]) => k)
-        showToast(`Quote sent via ${channels.join(' & ')} ✓`)
+        const failed = Object.entries(data.results || {})
+          .filter(([, v]) => v !== 'sent')
+        if (failed.length) {
+          // Partial send: one channel went out but another FAILED. Surface it
+          // loudly with the reason — a silent "sent ✓" hid email failures so
+          // the owner thought a both-channel send fully delivered when it didn't.
+          const failNames = failed.map(([k, v]) => `${k} ${v === 'failed' ? 'failed' : `(${v})`}`).join(', ')
+          const reason = (data.errors || []).join('; ')
+          showToast(`Sent via ${sent.join(' & ') || 'none'}, but ${failNames}${reason ? ` — ${reason}` : ''}`)
+        } else {
+          showToast(`Quote sent via ${sent.join(' & ')} ✓`)
+        }
       } else {
         // Nothing went out (e.g. email server hiccup), but the link is ready —
         // copy it so the owner can still share the quote manually.
@@ -1244,6 +1337,14 @@ export default function Quoting() {
                 </div>
               </>
             )}
+
+            {/* Admin-defined custom fields for quotes (renders nothing when none
+                are configured in Settings → Custom Fields). */}
+            <CustomFieldsForm
+              entityType="quote"
+              values={form.custom_fields || {}}
+              onChange={(key, val) => setForm(f => ({ ...f, custom_fields: { ...(f.custom_fields || {}), [key]: val } }))}
+            />
           </div>
 
           {/* Preview column — the live customer-facing render. */}
@@ -1327,6 +1428,13 @@ export default function Quoting() {
                     placeholder="Leave blank for a plain “Hello,”"
                     className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                   <p className="text-[11px] text-ink-3 mt-1">The email opens with “Hello {sendForm.greeting.trim() || '…'},”</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-3 mb-1">Send a copy to me</label>
+                  <input type="email" value={sendForm.copy_to} onChange={e => setSendForm(f => ({ ...f, copy_to: e.target.value }))}
+                    placeholder="you@yourcompany.com"
+                    className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                  <p className="text-[11px] text-ink-3 mt-1">You'll get a blind copy of the quote email. Leave blank to use your company email.</p>
                 </div>
               </div>
             )}

@@ -109,6 +109,7 @@ def _quote_dict(q: Quote) -> dict:
         "address": q.address,
         "notes": q.notes,
         "items": q.items or [],
+        "custom_fields": q.custom_fields or {},
         "subtotal": q.subtotal,
         "tax_rate": q.tax_rate,
         "tax": q.tax,
@@ -204,6 +205,7 @@ def create_quote(
         address=quote_data.address,
         notes=quote_data.notes,
         items=items,
+        custom_fields=quote_data.custom_fields or {},
         subtotal=subtotal,
         tax_rate=float(quote_data.tax_rate or 0),
         tax=tax,
@@ -306,6 +308,19 @@ def quotes_needing_follow_up(
     return out
 
 
+@router.get("/property-lookup", dependencies=[Depends(require_role("admin", "manager"))])
+def property_lookup(address: str = Query(...), db: Session = Depends(get_db)):
+    """Look up property specs (sqft/beds/baths/year) for an address to pre-fill a
+    quote. Returns {enabled, specs}. Best-effort — disabled or no match yields
+    specs=None and never errors. Defined before /{quote_id} so the static path
+    wins over the int route."""
+    from services.property_media import enrichment_enabled, property_specs
+    from modules.settings.router import get_setting
+    if not (address or "").strip() or not enrichment_enabled(db):
+        return {"enabled": enrichment_enabled(db), "specs": None}
+    return {"enabled": True, "specs": property_specs(address.strip(), get_setting(db, "rentcast_api_key"))}
+
+
 @router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))
@@ -341,6 +356,8 @@ def _apply_update(quote: Quote, data: dict) -> None:
     """Apply a partial update dict, recomputing totals when pricing changes."""
     if "items" in data and data["items"] is not None:
         quote.items = _items_to_dicts(data["items"])
+    if "custom_fields" in data and data["custom_fields"] is not None:
+        quote.custom_fields = dict(data["custom_fields"])
     for field in ("title", "customer_message", "internal_notes", "service_type", "frequency", "address",
                   "notes", "status",
                   "client_id", "intake_id", "opportunity_id", "property_id"):
@@ -443,6 +460,9 @@ class QuoteSendRequest(BaseModel):
     # Optional per-send overrides for the email envelope.
     subject: Optional[str] = None
     greeting: Optional[str] = None
+    # Owner copy: blind-copy the business on the customer email. When omitted,
+    # the configured company email is used; pass "" to explicitly skip the copy.
+    copy_to: Optional[str] = None
 
 
 @router.post("/{quote_id}/send", dependencies=[Depends(require_role("admin", "manager"))])
@@ -484,6 +504,15 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         else:
             try:
                 company = _company_info(db)
+                # Owner copy: default to the configured company email so the
+                # owner always gets a copy; an explicit "" from the UI skips it,
+                # and an explicit address overrides the default.
+                owner_copy = (company.get("company_email") or "") if body.copy_to is None \
+                    else (body.copy_to or "")
+                # Front-of-house photo proxy URL (when enabled + address). The
+                # PDF fetch and the email both skip gracefully if there's no
+                # Street View coverage.
+                photo_url = _property_photo_url(quote, db)
                 pdf_bytes = QuotePDFService(
                     company_name=company["company_name"], company_email=company["company_email"] or "",
                     company_phone=company["company_phone"], brand_color=company["brand_color"],
@@ -494,8 +523,19 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
                     tax_amount=quote.tax, discount_amount=quote.discount,
                     total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
-                    quote_title=quote.title,
+                    quote_title=quote.title, property_photo_url=photo_url,
                 )
+                # For the EMAIL we only embed the photo when Google actually has
+                # imagery (a 404 proxy would show a broken image in mail clients).
+                email_photo_url = None
+                if photo_url:
+                    try:
+                        from services.property_media import has_street_view
+                        from modules.settings.router import get_setting
+                        if has_street_view(quote.address, get_setting(db, "google_maps_api_key")):
+                            email_photo_url = photo_url
+                    except Exception:
+                        email_photo_url = None
                 res = QuoteEmailService().send_quote_email(
                     to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
                     total_amount=float(quote.total or 0),
@@ -511,6 +551,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     items=quote.items or [],
                     subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
                     tax_rate=quote.tax_rate, address=quote.address,
+                    bcc=owner_copy, property_photo_url=email_photo_url,
                 )
                 if res.get("success"):
                     results["email"] = "sent"
@@ -548,8 +589,8 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         else:
             try:
                 from integrations.twilio_client import send_sms
-                from services.quote_email_service import customer_display_name
-                nice_name = customer_display_name(client.name)
+                from services.quote_email_service import first_name_of
+                nice_name = first_name_of(client.name)
                 default_sms = (f"Hi {nice_name}, your quote {quote.quote_number} is ready."
                                if nice_name else f"Hi, your quote {quote.quote_number} is ready.")
                 base = (body.custom_message or "").strip() or default_sms
@@ -853,7 +894,23 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "valid_until": fmt_long_date(quote.valid_until),
         # Let the page render an "expired" state instead of letting Accept 409.
         "is_expired": _is_quote_expired(quote),
+        # Front-of-house Street View photo (when enabled + a key + an address).
+        # The page loads it through our proxy and hides it on error, so this is
+        # a cheap "maybe" flag — no Google call happens here.
+        "property_photo_url": _property_photo_url(quote, db),
     }
+
+
+def _property_photo_url(quote: Quote, db: Session) -> Optional[str]:
+    """Absolute URL to this quote's Street View photo proxy, or None when the
+    feature is off / unconfigured / the quote has no address."""
+    try:
+        from services.property_media import street_view_enabled
+        if quote.public_token and quote.address and street_view_enabled(db):
+            return f"{app_base_url().rstrip('/')}/api/quotes/public/{quote.public_token}/property-photo"
+    except Exception:
+        pass
+    return None
 
 
 def _is_quote_expired(quote: Quote) -> bool:
@@ -917,9 +974,10 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
         return
     try:
         from integrations.email import _load_smtp_creds, send_email
+        from services.quote_email_service import first_name_of
         creds = _load_smtp_creds()
         company = creds.get("from_name") or "Our team"
-        name = quote.accepted_by_name or (quote.client.name if quote.client else "there")
+        name = first_name_of(quote.accepted_by_name or (quote.client.name if quote.client else "")) or "there"
         total = f"${float(quote.total or 0):,.2f}"
         lines = [
             f"Hi {name},",
@@ -1075,11 +1133,33 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         line_items=_pdf_line_items(quote), subtotal=quote.subtotal, tax_amount=quote.tax,
         discount_amount=quote.discount, total_amount=quote.total, notes=quote.notes,
         expires_at=quote.valid_until, quote_title=quote.title,
+        property_photo_url=_property_photo_url(quote, db),
     )
     disp = "attachment" if download else "inline"
     return StreamingResponse(
         BytesIO(pdf_bytes), media_type="application/pdf",
         headers={"Content-Disposition": f'{disp}; filename="{quote.quote_number}.pdf"'},
+    )
+
+
+@router.get("/public/{token}/property-photo", dependencies=[Depends(rate_limit(120, 3600, "quote_photo"))])
+def public_quote_property_photo(token: str, db: Session = Depends(get_db)):
+    """Stream the front-of-house Street View photo for the quote's address.
+
+    Public (loaded by the quote page, email, and PDF). 404 when the feature is
+    off, no key is set, or Google has no imagery — callers hide the image on a
+    failed load, so a 404 is a normal, expected outcome."""
+    from services.property_media import street_view_enabled, street_view_bytes
+    quote = _quote_by_token(token, db)
+    if not (quote.address and street_view_enabled(db)):
+        raise HTTPException(status_code=404, detail="No photo")
+    from modules.settings.router import get_setting
+    img = street_view_bytes(quote.address, get_setting(db, "google_maps_api_key"))
+    if not img:
+        raise HTTPException(status_code=404, detail="No photo")
+    return StreamingResponse(
+        BytesIO(img), media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

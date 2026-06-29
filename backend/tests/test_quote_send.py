@@ -51,6 +51,17 @@ def test_send_sms_actually_delivers(quote_ctx):
     assert "/quote/" in body  # the accept link is included
 
 
+def test_default_sms_greets_by_first_name_only(quote_ctx):
+    """The text should say "Hi Meg," not "Hi Meg Small," — first name only."""
+    db, c, q = quote_ctx
+    c.name = "Meg Small"; db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM2", "status": "queued"}) as sms:
+        send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)  # no custom_message → default
+    body = sms.call_args.kwargs.get("body") or sms.call_args.args[1]
+    assert body.startswith("Hi Meg,")
+    assert "Meg Small" not in body
+
+
 def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     db, c, q = quote_ctx
     c.email = None; c.phone = None; db.commit()
@@ -86,6 +97,50 @@ def test_send_with_string_valid_until_does_not_crash(quote_ctx):
     # The pre-formatted expiry string is what the email service receives.
     _, kwargs = Email.return_value.send_quote_email.call_args
     assert kwargs["expires_at"] == "July 13, 2026"
+
+
+def test_send_bccs_owner_copy_by_default(quote_ctx):
+    """The owner gets a blind copy of the quote email: with no explicit copy_to,
+    the configured company email is BCC'd."""
+    db, c, q = quote_ctx
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email, \
+         patch("modules.quoting.router._company_info",
+               return_value={"company_name": "Co", "company_email": "owner@co.com",
+                             "company_phone": None, "quote_terms": None,
+                             "brand_color": "#1f2937", "company_logo_url": None}):
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "bcc-default"}
+        send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
+    _, kwargs = Email.return_value.send_quote_email.call_args
+    assert kwargs["bcc"] == "owner@co.com"
+
+
+def test_send_copy_to_override_and_explicit_skip(quote_ctx):
+    """An explicit copy_to overrides the default; an empty string skips the
+    owner copy entirely."""
+    db, c, q = quote_ctx
+    company = {"company_name": "Co", "company_email": "owner@co.com",
+               "company_phone": None, "quote_terms": None,
+               "brand_color": "#1f2937", "company_logo_url": None}
+    # Override address
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email, \
+         patch("modules.quoting.router._company_info", return_value=company):
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "bcc-override"}
+        send_quote(q.id, QuoteSendRequest(channel="email", copy_to="boss@co.com"), db=db)
+    _, kwargs = Email.return_value.send_quote_email.call_args
+    assert kwargs["bcc"] == "boss@co.com"
+    # Explicit skip
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email, \
+         patch("modules.quoting.router._company_info", return_value=company):
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "bcc-skip"}
+        send_quote(q.id, QuoteSendRequest(channel="email", copy_to=""), db=db)
+    _, kwargs = Email.return_value.send_quote_email.call_args
+    assert kwargs["bcc"] == ""
 
 
 def test_failed_send_surfaces_real_error(quote_ctx):

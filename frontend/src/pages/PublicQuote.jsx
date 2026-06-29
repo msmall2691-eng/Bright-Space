@@ -352,7 +352,7 @@ export default function PublicQuote() {
             Decline quote
           </button>
           <p className="text-xs text-ink-3 text-center">
-            By accepting, you agree to the terms above.
+            By accepting, you agree to the quote's terms &amp; conditions.
           </p>
         </>
       )}

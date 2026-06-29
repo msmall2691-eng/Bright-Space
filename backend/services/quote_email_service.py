@@ -151,11 +151,13 @@ class QuoteEmailService:
             <tr>
                 <td style="padding: 20px; text-align: center;">
                     {% if company_logo_url %}<img src="{{ company_logo_url }}" alt="{{ company_name }}" height="48" style="max-height:48px; margin-bottom:8px; display:inline-block;"><br>{% endif %}
-                    <span style="color: #ffffff; font-size: 28px; font-weight: bold;">{{ company_name }}</span>
-                    <div style="color: #d1d5db; font-size: 14px; margin-top: 6px;">{% if quote_title %}{{ quote_title }}{% else %}Quote {{ quote_number }}{% endif %}</div>
+                    <span style="color: #ffffff; font-size: 24px; font-weight: bold;">{{ company_name }}</span>
+                    {% if quote_title %}<div style="color: #ffffff; font-size: 18px; font-weight: 600; margin-top: 8px;">{{ quote_title }}</div>{% endif %}
+                    <div style="color: #e5e7eb; font-size: 13px; margin-top: 6px;">Quote {{ quote_number }}</div>
                 </td>
             </tr>
         </table>
+        {% if property_photo_url %}<img src="{{ property_photo_url }}" alt="Property" width="600" style="width:100%; max-width:600px; height:auto; display:block;">{% endif %}
         <div class="content">
             <h2>{{ greeting_line }}</h2>
             {% if intro_message %}<p style="white-space: pre-wrap;">{{ intro_message }}</p>
@@ -187,12 +189,17 @@ class QuoteEmailService:
                 <tr class="grand"><td>Total</td><td class="amt">${{ total_amount }}</td></tr>
             </table>
 
-            <p>You can view, accept, or request changes to this quote online{% if pdf_attached %} — a PDF copy is also attached{% endif %}:</p>
+            <p>Open your quote online to <strong>accept it</strong>, request changes, or download a PDF{% if pdf_attached %} (a copy is also attached to this email){% endif %}.</p>
 
-            <!-- Brand-colored CTA (table cell + bgcolor for Outlook) -->
-            <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
-                <tr><td bgcolor="{{ brand_color }}" style="border-radius: 6px;">
-                    <a href="{{ quote_link }}" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: 600;">View Quote Online</a>
+            <!-- Brand-colored CTA (table cell + bgcolor for Outlook), centered -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 24px 0;">
+                <tr><td align="center">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                        <tr><td bgcolor="{{ brand_color }}" style="border-radius: 8px;">
+                            <a href="{{ quote_link }}" style="display: inline-block; padding: 16px 36px; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px;">View &amp; Accept Your Quote</a>
+                        </td></tr>
+                    </table>
+                    <div style="margin-top: 10px; font-size: 13px;"><a href="{{ quote_link }}" style="color: {{ brand_color }}; text-decoration: underline;">or open it in your browser</a></div>
                 </td></tr>
             </table>
 
@@ -204,7 +211,6 @@ class QuoteEmailService:
             {% if company_email or company_phone %}
             <p>Questions? {% if company_email %}Reply or email <a href="mailto:{{ company_email }}">{{ company_email }}</a>{% endif %}{% if company_phone %}{% if company_email %} · {% endif %}call <a href="tel:{{ company_phone_href }}">{{ company_phone }}</a>{% endif %}</p>
             {% endif %}
-            {% if expires_at %}<p>This quote is valid for 30 days from the date issued (through {{ expires_at }}).</p>{% endif %}
             {% if terms %}<p style="text-align:left; white-space: pre-wrap;">{{ terms }}</p>{% endif %}
             <p>&copy; {{ company_name }} - All rights reserved</p>
         </div>
@@ -233,6 +239,8 @@ class QuoteEmailService:
         discount=None,
         tax_rate=None,
         address: Optional[str] = None,
+        bcc: Optional[str] = None,
+        property_photo_url: Optional[str] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -240,6 +248,10 @@ class QuoteEmailService:
         valid-until (no expiry text is shown at all — never a made-up "30
         days"). subject/greeting are per-send overrides from the Send panel;
         intro_message is the personal note / stored customer message.
+
+        bcc: optional owner copy address(es) — the business owner gets a blind
+        copy of exactly what the customer received. Invalid/blank values are
+        ignored rather than failing the send.
         """
         try:
             # Create message
@@ -251,6 +263,13 @@ class QuoteEmailService:
             msg['Subject'] = (subject or "").strip() or default_subject
             msg['From'] = f"{self.company_name} <{self.from_email}>"
             msg['To'] = to_email
+            # Owner copy: a Bcc so the customer never sees the internal address.
+            # smtplib.send_message() adds Bcc recipients to the envelope and
+            # strips the header before transmission, so it stays blind. Only set
+            # it when it's a real, distinct address.
+            bcc_addr = (bcc or "").strip()
+            if bcc_addr and "@" in bcc_addr and bcc_addr.lower() != to_email.strip().lower():
+                msg['Bcc'] = bcc_addr
 
             # Greeting: explicit override > friendly first name > greet-able
             # full name > neutral. "Hi Megan," reads better than the full name.
@@ -313,6 +332,7 @@ class QuoteEmailService:
                 company_phone=self.company_phone,
                 company_phone_href=phone_tel_href(self.company_phone),
                 terms=self.quote_terms,
+                property_photo_url=(property_photo_url or "").strip() or None,
             )
 
             # Attach HTML content
