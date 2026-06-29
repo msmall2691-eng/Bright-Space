@@ -7,6 +7,19 @@ from io import BytesIO
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from xml.sax.saxutils import escape as _xml_escape, quoteattr
+
+
+def _esc(text) -> str:
+    """Escape user-controlled text for a ReportLab Paragraph, which parses its
+    input as XML markup. Without this, an item name like 'Clean <b>' or pasted
+    HTML raises a parse error and breaks PDF generation (and thus quote sends)."""
+    return _xml_escape("" if text is None else str(text))
+
+
+def _esc_ml(text) -> str:
+    """Escape, then turn newlines into <br/> for multi-line Paragraph text."""
+    return _esc(text).replace("\n", "<br/>")
 
 from utils.dates import coerce_date
 from reportlab.lib.pagesizes import letter
@@ -94,9 +107,9 @@ class QuotePDFService:
         logo_flowable = self._logo_flowable()
         if logo_flowable is not None:
             band_rows.append([logo_flowable])
-        band_rows.append([Paragraph(self.company_name.upper(), band_company)])
-        band_rows.append([Paragraph(quote_title or 'Your Cleaning Quote', band_title)])
-        band_rows.append([Paragraph(f"Quote #{quote_number} &middot; {datetime.now().strftime('%B %d, %Y')}", band_meta)])
+        band_rows.append([Paragraph(_esc(self.company_name.upper()), band_company)])
+        band_rows.append([Paragraph(_esc(quote_title) or 'Your Cleaning Quote', band_title)])
+        band_rows.append([Paragraph(f"Quote #{_esc(quote_number)} &middot; {datetime.now().strftime('%B %d, %Y')}", band_meta)])
         if expires_at:
             band_rows.append([Paragraph(f"Valid until {expires_at.strftime('%B %d, %Y')}", band_meta)])
 
@@ -118,7 +131,7 @@ class QuotePDFService:
                                        textColor=colors.HexColor('#1f2937'), leading=15)
             cta = Table([[Paragraph(
                 f'<b>To accept or request changes, view your quote online:</b><br/>'
-                f'<a href="{quote_link}" color="#1d4ed8">{quote_link}</a>', cta_style)]],
+                f'<a href={quoteattr(quote_link)} color="#1d4ed8">{_esc(quote_link)}</a>', cta_style)]],
                 colWidths=[CONTENT_W])
             cta.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#eff6ff')),
@@ -144,8 +157,8 @@ class QuotePDFService:
         svc_label = ('STR / Vacation rental' if service_type == 'str'
                      else (f"{service_type.capitalize()} cleaning" if service_type else ''))
         if address or svc_label:
-            left = [Paragraph('SERVICE ADDRESS', label_style), Spacer(1, 2), Paragraph(address, val_style)] if address else ''
-            right = [Paragraph('SERVICE TYPE', label_style), Spacer(1, 2), Paragraph(svc_label, val_style)] if svc_label else ''
+            left = [Paragraph('SERVICE ADDRESS', label_style), Spacer(1, 2), Paragraph(_esc(address), val_style)] if address else ''
+            right = [Paragraph('SERVICE TYPE', label_style), Spacer(1, 2), Paragraph(_esc(svc_label), val_style)] if svc_label else ''
             card = Table([[left, right]], colWidths=[CONTENT_W / 2, CONTENT_W / 2])
             card.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f9fafb')),
@@ -162,14 +175,14 @@ class QuotePDFService:
             msg_style = ParagraphStyle('msg', parent=styles['Normal'], fontSize=10.5,
                                        textColor=colors.HexColor('#374151'), leading=15)
             story.append(Spacer(1, 0.22 * inch))
-            story.append(Paragraph(customer_message.replace('\n', '<br/>'), msg_style))
+            story.append(Paragraph(_esc_ml(customer_message), msg_style))
 
         # ── Customer-facing scope / details
         if notes:
             story.append(Spacer(1, 0.2 * inch))
             story.append(Paragraph('SCOPE &amp; DETAILS', label_style))
             story.append(Spacer(1, 3))
-            story.append(Paragraph(notes.replace('\n', '<br/>'), val_style))
+            story.append(Paragraph(_esc_ml(notes), val_style))
 
         # ── Itemized table (Service / Qty / Amount — same columns as the web)
         name_style = ParagraphStyle('itemName', parent=styles['Normal'], fontSize=10,
@@ -185,9 +198,9 @@ class QuotePDFService:
                  Paragraph('QTY', ParagraphStyle('h2', parent=head_style, alignment=TA_RIGHT)),
                  Paragraph('AMOUNT', ParagraphStyle('h3', parent=head_style, alignment=TA_RIGHT))]]
         for item in line_items:
-            cell = [Paragraph(item.get('name') or 'Service', name_style)]
+            cell = [Paragraph(_esc(item.get('name') or 'Service'), name_style)]
             if item.get('description'):
-                cell.append(Paragraph(item['description'], desc_style))
+                cell.append(Paragraph(_esc(item['description']), desc_style))
             qty = item.get('quantity', 1)
             qty_str = ('%g' % qty) if isinstance(qty, (int, float)) else str(qty)
             rows.append([cell,
@@ -235,7 +248,7 @@ class QuotePDFService:
         if contact:
             contact_style = ParagraphStyle('contact', parent=styles['Normal'], fontSize=9,
                                            textColor=colors.HexColor('#6b7280'), alignment=TA_CENTER)
-            story.append(Paragraph(f"Questions? {contact}", contact_style))
+            story.append(Paragraph(f"Questions? {_esc(contact)}", contact_style))
         if self.terms:
             story.append(Spacer(1, 0.15 * inch))
             terms_label = ParagraphStyle('termsLabel', parent=label_style, fontSize=8)
@@ -243,7 +256,7 @@ class QuotePDFService:
                                          textColor=colors.HexColor('#9ca3af'), leading=12)
             story.append(Paragraph('TERMS &amp; CONDITIONS', terms_label))
             story.append(Spacer(1, 3))
-            story.append(Paragraph(self.terms.replace('\n', '<br/>'), terms_style))
+            story.append(Paragraph(_esc_ml(self.terms), terms_style))
 
         # Build PDF
         doc.build(story)

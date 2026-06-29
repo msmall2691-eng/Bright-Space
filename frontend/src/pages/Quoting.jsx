@@ -487,22 +487,36 @@ export default function Quoting() {
     // request) — create the client on the fly so "Create Quote" always works
     // instead of dead-ending on a disabled button.
     if (!clientId && newClient.name.trim()) {
-      setSaving(true)
-      try {
-        const created = await post('/api/clients', {
-          name: newClient.name.trim(),
-          phone: newClient.phone.trim() || null,
-          email: newClient.email.trim() || null,
-          status: 'active',
-        })
-        setClients(cs => [created, ...cs])
-        clientId = created.id
-        setForm(f => ({ ...f, client_id: created.id }))
+      // The clients list may have loaded only after the form opened (the request
+      // hand-off mounts this page fresh, so the email/phone match in
+      // openQuoteForm ran against an empty list). Re-match here to reuse an
+      // existing client instead of creating a duplicate.
+      const digits = (p) => (p || '').replace(/\D/g, '')
+      const match = clients.find(c =>
+        (newClient.email.trim() && c.email && c.email.toLowerCase() === newClient.email.trim().toLowerCase()) ||
+        (newClient.phone.trim() && c.phone && digits(c.phone) === digits(newClient.phone)))
+      if (match) {
+        clientId = match.id
+        setForm(f => ({ ...f, client_id: match.id }))
         setAddingClient(false)
-      } catch (e) {
-        setSaving(false)
-        showToast(e.message || 'Could not create the client')
-        return
+      } else {
+        setSaving(true)
+        try {
+          const created = await post('/api/clients', {
+            name: newClient.name.trim(),
+            phone: newClient.phone.trim() || null,
+            email: newClient.email.trim() || null,
+            status: 'active',
+          })
+          setClients(cs => [created, ...cs])
+          clientId = created.id
+          setForm(f => ({ ...f, client_id: created.id }))
+          setAddingClient(false)
+        } catch (e) {
+          setSaving(false)
+          showToast(e.message || 'Could not create the client')
+          return
+        }
       }
     }
     if (!clientId) { showToast('Please select a client first'); return }
