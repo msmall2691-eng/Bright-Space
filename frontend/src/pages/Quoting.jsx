@@ -497,9 +497,20 @@ export default function Quoting() {
       const payload = { ...sendForm, copy_to: (sendForm.copy_to || '').trim() || null }
       const data = await post(`/api/quotes/${selected.id}/send`, payload)
       if (data.delivered) {
-        const channels = Object.entries(data.results || {})
+        const sent = Object.entries(data.results || {})
           .filter(([, v]) => v === 'sent').map(([k]) => k)
-        showToast(`Quote sent via ${channels.join(' & ')} ✓`)
+        const failed = Object.entries(data.results || {})
+          .filter(([, v]) => v !== 'sent')
+        if (failed.length) {
+          // Partial send: one channel went out but another FAILED. Surface it
+          // loudly with the reason — a silent "sent ✓" hid email failures so
+          // the owner thought a both-channel send fully delivered when it didn't.
+          const failNames = failed.map(([k, v]) => `${k} ${v === 'failed' ? 'failed' : `(${v})`}`).join(', ')
+          const reason = (data.errors || []).join('; ')
+          showToast(`Sent via ${sent.join(' & ') || 'none'}, but ${failNames}${reason ? ` — ${reason}` : ''}`)
+        } else {
+          showToast(`Quote sent via ${sent.join(' & ')} ✓`)
+        }
       } else {
         // Nothing went out (e.g. email server hiccup), but the link is ready —
         // copy it so the owner can still share the quote manually.

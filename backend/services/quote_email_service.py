@@ -189,12 +189,17 @@ class QuoteEmailService:
                 <tr class="grand"><td>Total</td><td class="amt">${{ total_amount }}</td></tr>
             </table>
 
-            <p>You can view, accept, or request changes to this quote online{% if pdf_attached %} — a PDF copy is also attached{% endif %}:</p>
+            <p>Open your quote online to <strong>accept it</strong>, request changes, or download a PDF{% if pdf_attached %} (a copy is also attached to this email){% endif %}.</p>
 
-            <!-- Brand-colored CTA (table cell + bgcolor for Outlook) -->
-            <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
-                <tr><td bgcolor="{{ brand_color }}" style="border-radius: 6px;">
-                    <a href="{{ quote_link }}" style="display: inline-block; padding: 12px 24px; color: #ffffff; text-decoration: none; font-weight: 600;">View Quote Online</a>
+            <!-- Brand-colored CTA (table cell + bgcolor for Outlook), centered -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 24px 0;">
+                <tr><td align="center">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                        <tr><td bgcolor="{{ brand_color }}" style="border-radius: 8px;">
+                            <a href="{{ quote_link }}" style="display: inline-block; padding: 16px 36px; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 16px;">View &amp; Accept Your Quote</a>
+                        </td></tr>
+                    </table>
+                    <div style="margin-top: 10px; font-size: 13px;"><a href="{{ quote_link }}" style="color: {{ brand_color }}; text-decoration: underline;">or open it in your browser</a></div>
                 </td></tr>
             </table>
 
