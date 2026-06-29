@@ -17,7 +17,7 @@ TENANT_TABLES = [
     "clients", "properties", "property_icals", "ical_events", "recurring_schedules",
     "recurrence_exceptions", "jobs", "visits", "lead_intakes", "invoices",
     "conversations", "messages", "opportunities", "contact_emails", "contact_phones",
-    "activities", "quotes", "quote_requests", "quote_emails", "cleaner_time_off",
+    "activities", "quotes", "quote_emails", "cleaner_time_off",
     "integration_events", "saved_views",
 ]
 

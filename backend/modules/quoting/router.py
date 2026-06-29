@@ -23,7 +23,7 @@ from schemas.quotes import (
     QuoteCreate, QuoteUpdate, QuoteRequestCreate, QuoteRequestUpdate,
 )
 from database.models import (
-    Quote, QuoteRequest, QuoteEmail, QuoteSMS, Client, Job, Property, LeadIntake,
+    Quote, QuoteEmail, QuoteSMS, Client, Job, Property, LeadIntake,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.integration_log import log_integration_event as _log_integration
@@ -1178,15 +1178,53 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
 
 # ========================
 # Quote Requests (web form intake)
+#
+# Backed by LeadIntake (source='quote_request') after consolidating the old
+# quote_requests table into the canonical intake table. The public API shape is
+# preserved (requester_name/email/phone/description/quote_id) so external
+# callers don't break; internally each row is a LeadIntake.
 # ========================
+
+_QR_SOURCE = "quote_request"
+
+
+def _qr_to_response(row: LeadIntake) -> dict:
+    """Translate a LeadIntake row back into the quote_request response shape."""
+    return {
+        "id": row.id,
+        "client_id": row.client_id,
+        "requester_name": row.name,
+        "requester_email": row.email,
+        "requester_phone": row.phone,
+        "service_type": row.service_type,
+        "description": row.message,
+        "status": row.status,
+        "quote_id": row.converted_quote_id,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
 
 @router.post("/requests/", status_code=201)
 def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends(get_db)):
-    qr = QuoteRequest(**request_data.dict())
-    db.add(qr)
+    data = request_data.dict()
+    pref = data.get("preferred_date")
+    row = LeadIntake(
+        client_id=data.get("client_id"),
+        name=data["requester_name"],
+        email=data.get("requester_email"),
+        phone=data.get("requester_phone"),
+        property_id=data.get("property_id"),
+        service_type=data.get("service_type"),
+        message=data.get("description"),
+        preferred_date=pref.isoformat() if pref else None,
+        preferred_time=data.get("preferred_time"),
+        source=_QR_SOURCE,
+        status="new",
+    )
+    db.add(row)
     db.commit()
-    db.refresh(qr)
-    return {"id": qr.id, "status": qr.status, "requester_name": qr.requester_name}
+    db.refresh(row)
+    return {"id": row.id, "status": row.status, "requester_name": row.name}
 
 
 @router.get("/requests/", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
@@ -1196,32 +1234,36 @@ def list_quote_requests(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
-    query = db.query(QuoteRequest)
+    query = db.query(LeadIntake).filter(LeadIntake.source == _QR_SOURCE)
     if status:
-        query = query.filter(QuoteRequest.status == status)
-    rows = query.order_by(QuoteRequest.created_at.desc()).offset(offset).limit(limit).all()
-    return [
-        {
-            "id": r.id, "client_id": r.client_id, "requester_name": r.requester_name,
-            "requester_email": r.requester_email, "requester_phone": r.requester_phone,
-            "service_type": r.service_type, "description": r.description,
-            "status": r.status, "quote_id": r.quote_id,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in rows
-    ]
+        query = query.filter(LeadIntake.status == status)
+    rows = query.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()
+    return [_qr_to_response(r) for r in rows]
 
 
 @router.put("/requests/{request_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: Session = Depends(get_db)):
-    qr = db.query(QuoteRequest).filter(QuoteRequest.id == request_id).first()
-    if not qr:
+    row = (
+        db.query(LeadIntake)
+        .filter(LeadIntake.id == request_id, LeadIntake.source == _QR_SOURCE)
+        .first()
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="Quote request not found")
-    for field, value in request_data.dict(exclude_unset=True).items():
-        setattr(qr, field, value)
-    qr.updated_at = _utcnow()
+    updates = request_data.dict(exclude_unset=True)
+    # Translate the public-API field names onto LeadIntake columns.
+    if "quote_id" in updates:
+        row.converted_quote_id = updates.pop("quote_id")
+    if "description" in updates:
+        row.message = updates.pop("description")
+    if "preferred_date" in updates:
+        pd = updates.pop("preferred_date")
+        row.preferred_date = pd.isoformat() if pd else None
+    for field, value in updates.items():
+        setattr(row, field, value)
+    row.updated_at = _utcnow()
     db.commit()
-    return {"id": qr.id, "status": qr.status}
+    return {"id": row.id, "status": row.status}
 
 
 # ========================

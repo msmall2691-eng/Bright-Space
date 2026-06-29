@@ -615,9 +615,11 @@ class LeadIntake(Base):
     check_out = Column(String, nullable=True)
     estimate_min = Column(Float, nullable=True)
     estimate_max = Column(Float, nullable=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
     property_name = Column(String, nullable=True)
     message = Column(Text)
     preferred_date = Column(String)
+    preferred_time = Column(String, nullable=True)
     source = Column(String, default="website")
     status = Column(String, default="new")  # new/reviewed/quoted/converted/archived
     priority = Column(String, default="normal")  # low/normal/high/urgent
@@ -928,14 +930,6 @@ class QuoteStatus(str, Enum):
     ARCHIVED = "archived"
 
 
-class QuoteRequestStatus(str, Enum):
-    """Quote request status."""
-    PENDING = "pending"
-    ASSIGNED = "assigned"
-    QUOTED = "quoted"
-    ARCHIVED = "archived"
-
-
 class Quote(Base):
     """A customer quote.
 
@@ -1034,38 +1028,6 @@ class Quote(Base):
     __table_args__ = (
         UniqueConstraint("quote_number", name="uq_quote_number"),
     )
-
-
-class QuoteRequest(Base):
-    """Customer quote request via web form. Integer-keyed."""
-    __tablename__ = "quote_requests"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # Requestor info
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
-    requester_name = Column(String(255), nullable=False)
-    requester_email = Column(String(255), nullable=False)
-    requester_phone = Column(String(20), nullable=True)
-
-    # Request details
-    property_id = Column(Integer, ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
-    service_type = Column(String(100), nullable=True)
-    description = Column(Text, nullable=True)
-    preferred_date = Column(Date, nullable=True)
-    preferred_time = Column(String(50), nullable=True)
-
-    # Status & link to created quote
-    status = Column(String(50), nullable=False, default=QuoteRequestStatus.PENDING)
-    quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
-
-    client = relationship("Client", foreign_keys=[client_id])
-    property = relationship("Property", foreign_keys=[property_id])
-    quote = relationship("Quote", foreign_keys=[quote_id])
 
 
 # ============================================
