@@ -1216,7 +1216,7 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
     )
     existing = _existing_job_for_quote(db, quote)
     if existing:
-        # Re-date the already-created job (keeps one job per quote) + sync Visit/GCal.
+        # Re-date the already-created job (keeps one job per quote) + sync GCal.
         update_job(existing.id, JobUpdate(
             scheduled_date=d.isoformat(), start_time=start, end_time=end), db=db)
         job_id = existing.id

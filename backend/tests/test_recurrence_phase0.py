@@ -31,7 +31,6 @@ from database.models import (
     Property,
     RecurringSchedule,
     Job,
-    Visit,
     ICalEvent,
 )
 from modules.recurring.router import (
@@ -79,12 +78,7 @@ def fresh_client_property():
 
     yield client, prop
 
-    # Cleanup: visits → jobs → schedules → ical_events → property → client
-    db.query(Visit).filter(
-        Visit.job_id.in_(
-            db.query(Job.id).filter(Job.client_id == client.id)
-        )
-    ).delete(synchronize_session=False)
+    # Cleanup: jobs → schedules → ical_events → property → client
     db.query(Job).filter(Job.client_id == client.id).delete(synchronize_session=False)
     db.query(RecurringSchedule).filter(
         RecurringSchedule.client_id == client.id
@@ -242,54 +236,10 @@ _REQUIRES_POSTGRES = pytest.mark.skipif(
 )
 
 
-# ---------------------------------------------------------------------------
-# Fix 0.1: cancellation persists across regenerate, even after Job deletion
-# ---------------------------------------------------------------------------
-@_REQUIRES_POSTGRES
-def test_cancelled_visit_blocks_regeneration_after_job_deletion(fresh_client_property):
-    client, prop = fresh_client_property
-    db = SessionLocal()
-    try:
-        sched = _make_schedule(
-            db, client, prop,
-            days_of_week=[date.today().weekday()],
-            day_of_week=date.today().weekday(),
-            weeks_ahead=2,
-        )
-        first_run = generate_jobs(db, sched)
-        assert first_run > 0
-
-        # Pick the earliest visit and cancel it.
-        first_visit = (
-            db.query(Visit)
-            .join(Job)
-            .filter(Job.recurring_schedule_id == sched.id)
-            .order_by(Visit.scheduled_date)
-            .first()
-        )
-        cancelled_date = first_visit.scheduled_date
-        first_visit.status = "cancelled"
-        # Hard-delete the parent Job to simulate the "admin tools nuked the row"
-        # case that previously broke dedup.
-        db.query(Job).filter(Job.id == first_visit.job_id).delete()
-        db.commit()
-
-        # Re-run generate. The cancelled date must NOT come back.
-        generate_jobs(db, sched)
-        regenerated = (
-            db.query(Job)
-            .filter(
-                Job.recurring_schedule_id == sched.id,
-                Job.scheduled_date == cancelled_date,
-            )
-            .first()
-        )
-        assert regenerated is None, (
-            f"Cancelled date {cancelled_date} regenerated after Job deletion — "
-            "the cancelled-Visit dedup is not working."
-        )
-    finally:
-        db.close()
+# The "cancelled-Visit-blocks-regen after Job deletion" case was retired with
+# the Job/Visit unification (migration 039). Durable skip protection now lives
+# in the RecurrenceException table — see test_skip_exception_blocks_regeneration
+# in test_recurrence_phase1.py.
 
 
 # ---------------------------------------------------------------------------

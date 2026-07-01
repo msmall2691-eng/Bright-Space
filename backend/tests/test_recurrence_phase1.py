@@ -28,7 +28,6 @@ from database.models import (
     Property,
     RecurringSchedule,
     Job,
-    Visit,
     RecurrenceException,
 )
 from modules.recurring.router import (
@@ -81,11 +80,6 @@ def fresh_client_property():
     db.query(RecurrenceException).filter(
         RecurrenceException.recurring_schedule_id.in_(
             db.query(RecurringSchedule.id).filter(RecurringSchedule.client_id == client.id)
-        )
-    ).delete(synchronize_session=False)
-    db.query(Visit).filter(
-        Visit.job_id.in_(
-            db.query(Job.id).filter(Job.client_id == client.id)
         )
     ).delete(synchronize_session=False)
     db.query(Job).filter(Job.client_id == client.id).delete(synchronize_session=False)
@@ -352,23 +346,21 @@ def test_skip_exception_blocks_regeneration(fresh_client_property):
         sched = _make_schedule(db, client, prop, weeks_ahead=2)
         generate_jobs(db, sched)
 
-        first_visit = (
-            db.query(Visit)
-            .join(Job)
+        first_job = (
+            db.query(Job)
             .filter(Job.recurring_schedule_id == sched.id)
-            .order_by(Visit.scheduled_date)
+            .order_by(Job.scheduled_date)
             .first()
         )
-        target = first_visit.scheduled_date
+        target = first_job.scheduled_date
 
-        # Add a skip exception, hard-delete the Job and Visit, regenerate.
+        # Add a skip exception, hard-delete the Job, regenerate.
         db.add(RecurrenceException(
             recurring_schedule_id=sched.id,
             exception_date=target,
             exception_type="skip",
         ))
-        db.query(Visit).filter(Visit.job_id == first_visit.job_id).delete()
-        db.query(Job).filter(Job.id == first_visit.job_id).delete()
+        db.query(Job).filter(Job.id == first_job.id).delete()
         db.commit()
 
         generate_jobs(db, sched)
@@ -404,7 +396,6 @@ def test_reschedule_exception_creates_job_on_new_date(fresh_client_property):
             exception_type="reschedule",
             rescheduled_date=new,
         ))
-        db.query(Visit).filter(Visit.job_id == first_job.id).delete()
         db.query(Job).filter(Job.id == first_job.id).delete()
         db.commit()
 
