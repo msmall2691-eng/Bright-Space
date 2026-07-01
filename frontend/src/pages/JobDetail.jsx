@@ -8,7 +8,7 @@ import { toast } from '../utils/toastBus'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
-import UnifiedTimeline from '../components/UnifiedTimeline'
+import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
@@ -210,7 +210,7 @@ export default function JobDetail() {
               </div>
             </div>
             <div className="bg-panel border border-hairline rounded-xl p-4">
-              <UnifiedTimeline key={timelineKey} jobId={id} />
+              <Timeline key={timelineKey} source={jobTimelineSource(id)} limit={150} />
             </div>
           </div>
 

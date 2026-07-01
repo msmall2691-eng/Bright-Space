@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { get } from '../api'
 import {
   Mail, MessageSquare, Phone, Calendar, FileText, Receipt, TrendingUp,
@@ -6,18 +6,23 @@ import {
 } from 'lucide-react'
 
 /**
- * UnifiedTimeline — the Pillar 3 connective-tissue feed for a job.
+ * Timeline — one component for both the CRM activity feed and the per-job
+ * unified timeline. Renders items normalized to a common shape:
  *
- * Renders the merged stream from GET /api/jobs/:id/timeline, which blends three
- * sources into one chronological list:
- *   - activity    → the human story (created, completed, notes, milestones)
- *   - integration → sync attempts (Google / Connecteam / email / SMS), ok|failed
- *   - message     → SMS/email to the client
+ *   { id, kind, icon_key, label, sub?, actor?, status?, created_at }
  *
- * A small source filter (All · Activity · Sync · Messages) narrows the view.
+ * Pass a `source` object describing how to fetch and filter:
+ *
+ *   <Timeline source={activitiesSource({ clientId })} />
+ *   <Timeline source={activitiesSource({ opportunityId })} />
+ *   <Timeline source={jobTimelineSource(jobId)} />
+ *
+ * Consolidates the earlier ActivityTimeline (activities endpoint) and
+ * UnifiedTimeline (job timeline endpoint) — same rendering, day grouping,
+ * and filter chips.
  */
 
-// Per activity_type icon/color (mirrors ActivityTimeline so the two read alike).
+// activity_type -> icon
 const ACTIVITY_ICONS = {
   email_sent: Mail, email_received: Mail,
   sms_sent: MessageSquare, sms_received: MessageSquare,
@@ -26,16 +31,21 @@ const ACTIVITY_ICONS = {
   job_completed: CheckCircle, job_cancelled: XCircle,
   quote_created: FileText, quote_sent: FileText, quote_accepted: CheckCircle,
   invoice_created: Receipt, invoice_sent: Receipt, invoice_paid: CheckCircle,
-  opportunity_created: TrendingUp, status_changed: RefreshCw, note_added: FileText,
+  opportunity_created: TrendingUp, opportunity_won: CheckCircle, opportunity_lost: AlertCircle,
+  status_changed: RefreshCw, note_added: FileText,
 }
 const ACTIVITY_COLORS = {
-  job_completed: 'text-emerald-600 bg-emerald-50', quote_accepted: 'text-emerald-600 bg-emerald-50',
-  invoice_paid: 'text-emerald-600 bg-emerald-50', job_cancelled: 'text-red-600 bg-red-50',
   email_sent: 'text-blue-600 bg-blue-50', email_received: 'text-blue-600 bg-blue-50',
   sms_sent: 'text-purple-600 bg-purple-50', sms_received: 'text-purple-600 bg-purple-50',
+  call_logged: 'text-green-600 bg-green-50',
+  job_created: 'text-yellow-600 bg-yellow-50',
+  job_completed: 'text-emerald-600 bg-emerald-50', quote_accepted: 'text-emerald-600 bg-emerald-50',
+  invoice_paid: 'text-emerald-600 bg-emerald-50', job_cancelled: 'text-red-600 bg-red-50',
+  quote_sent: 'text-orange-600 bg-orange-50', invoice_sent: 'text-cyan-600 bg-cyan-50',
+  opportunity_created: 'text-pink-600 bg-pink-50',
+  opportunity_won: 'text-emerald-600 bg-emerald-50', opportunity_lost: 'text-red-600 bg-red-50',
   note_added: 'text-ink-2 bg-bg',
 }
-// Provider icon/color for integration (sync) events.
 const PROVIDER_ICONS = { gcal: Calendar, connecteam: Users, email: Mail, sms: MessageSquare }
 const CHANNEL_ICONS = { email: Mail, sms: MessageSquare, chat: MessageSquare, whatsapp: MessageSquare }
 
@@ -82,52 +92,43 @@ function TimelineItem({ item, isLast }) {
   )
 }
 
-const FILTERS = [
-  { value: 'all', label: 'All', source: null },
-  { value: 'activity', label: 'Activity', source: 'activity' },
-  { value: 'integration', label: 'Sync', source: 'integration' },
-  { value: 'message', label: 'Messages', source: 'message' },
-]
+function dayLabel(key) {
+  if (key === 'Unknown') return 'Undated'
+  const d = new Date(key)
+  const today = new Date()
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  if (new Date(d.getTime() + 86400000).toDateString() === today.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+}
 
-export default function UnifiedTimeline({ jobId, limit = 150 }) {
+export default function Timeline({ source, limit = 50 }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState(source.filters[0]?.value || 'all')
 
   useEffect(() => {
-    if (!jobId) return
     let cancelled = false
     setLoading(true)
-    const src = FILTERS.find(f => f.value === filter)?.source
-    const params = new URLSearchParams({ limit: String(limit) })
-    if (src) params.append('source', src)
-    get(`/api/jobs/${jobId}/timeline?${params.toString()}`)
-      .then(d => { if (!cancelled) setItems(d?.items || []) })
+    source.fetch(filter, limit)
+      .then(list => { if (!cancelled) setItems(list || []) })
       .catch(() => { if (!cancelled) setItems([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [jobId, filter, limit])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source.key, filter, limit])
 
-  // Group by calendar day (newest first), with friendly Today/Yesterday labels.
   const groups = items.reduce((acc, it) => {
     const key = it.created_at ? new Date(it.created_at).toDateString() : 'Unknown'
     ;(acc[key] = acc[key] || []).push(it)
     return acc
   }, {})
-  const dayLabel = (key) => {
-    if (key === 'Unknown') return 'Undated'
-    const d = new Date(key), today = new Date()
-    if (d.toDateString() === today.toDateString()) return 'Today'
-    if (new Date(d.getTime() + 86400000).toDateString() === today.toDateString()) return 'Yesterday'
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-  }
   const dayKeys = Object.keys(groups)
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         <Filter className="w-4 h-4 text-ink-3 shrink-0" />
-        {FILTERS.map(f => (
+        {source.filters.map(f => (
           <button key={f.value} onClick={() => setFilter(f.value)}
             className={`px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap transition-colors ${
               filter === f.value ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-2 hover:bg-bg-3'
@@ -161,4 +162,64 @@ export default function UnifiedTimeline({ jobId, limit = 150 }) {
       )}
     </div>
   )
+}
+
+// ─── Sources ──────────────────────────────────────────────────────────────
+
+const ACTIVITY_FILTERS = [
+  { value: 'all', label: 'All Activities', activity_type: null },
+  { value: 'email_sent', label: 'Emails Sent', activity_type: 'email_sent' },
+  { value: 'email_received', label: 'Emails Received', activity_type: 'email_received' },
+  { value: 'sms_sent', label: 'SMS Sent', activity_type: 'sms_sent' },
+  { value: 'quote_sent', label: 'Quotes Sent', activity_type: 'quote_sent' },
+  { value: 'invoice_sent', label: 'Invoices Sent', activity_type: 'invoice_sent' },
+  { value: 'job_completed', label: 'Jobs Completed', activity_type: 'job_completed' },
+  { value: 'opportunity_won', label: 'Opportunities Won', activity_type: 'opportunity_won' },
+]
+
+export function activitiesSource({ clientId, opportunityId, jobId } = {}) {
+  return {
+    key: `activities:${clientId || ''}:${opportunityId || ''}:${jobId || ''}`,
+    filters: ACTIVITY_FILTERS,
+    async fetch(filter, limit) {
+      const params = new URLSearchParams()
+      if (clientId) params.append('client_id', clientId)
+      if (opportunityId) params.append('opportunity_id', opportunityId)
+      if (jobId) params.append('job_id', jobId)
+      if (limit) params.append('limit', limit)
+      const f = ACTIVITY_FILTERS.find(x => x.value === filter)
+      if (f?.activity_type) params.append('activity_type', f.activity_type)
+      const data = await get('/api/activities?' + params.toString())
+      return (data || []).map(a => ({
+        id: a.id,
+        kind: 'activity',
+        icon_key: a.activity_type,
+        label: a.summary,
+        sub: (a.activity_type || '').replace(/_/g, ' '),
+        actor: a.actor,
+        created_at: a.created_at,
+      }))
+    },
+  }
+}
+
+const JOB_TIMELINE_FILTERS = [
+  { value: 'all', label: 'All', source: null },
+  { value: 'activity', label: 'Activity', source: 'activity' },
+  { value: 'integration', label: 'Sync', source: 'integration' },
+  { value: 'message', label: 'Messages', source: 'message' },
+]
+
+export function jobTimelineSource(jobId) {
+  return {
+    key: `job-timeline:${jobId || ''}`,
+    filters: JOB_TIMELINE_FILTERS,
+    async fetch(filter, limit) {
+      const params = new URLSearchParams({ limit: String(limit) })
+      const f = JOB_TIMELINE_FILTERS.find(x => x.value === filter)
+      if (f?.source) params.append('source', f.source)
+      const d = await get(`/api/jobs/${jobId}/timeline?${params.toString()}`)
+      return d?.items || []
+    },
+  }
 }
