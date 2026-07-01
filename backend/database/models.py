@@ -512,6 +512,16 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     connecteam_shift_ids = Column(JSON, default=list)
+
+    # Completion tracking — set when the cleaner marks the job done. Migrated
+    # from the Visit table as part of the Job/Visit unification (see
+    # docs/job-visit-unification.md and migration 038); Visit is retained until
+    # PR-C drops it, but Job is now the single source of truth for completion.
+    completed_at = Column(DateTime, nullable=True)
+    completed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    checklist_results = Column(JSON, nullable=True)
+    photos = Column(JSON, default=list)
+
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

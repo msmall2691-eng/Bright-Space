@@ -9,7 +9,9 @@ from datetime import datetime, timezone, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 from database.db import get_db
-from database.models import Job, Client, Visit, ICalEvent, CleanerTimeOff, Property
+from database.models import (
+    Job, Client, Visit, ICalEvent, CleanerTimeOff, Property, RecurrenceException,
+)
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
@@ -1970,5 +1972,186 @@ def rehydrate_job_dates_from_gcal(
         "errors": errors,
         "dry_run": dry_run,
         "sample_updates": sample_updates,
+    }
+
+
+# ============================================================================
+# Job/Visit unification (PR-A)
+#
+# These endpoints port the four Visit-only capabilities onto /api/jobs so the
+# frontend can migrate off /api/visits (PR-B) before the Visit table itself is
+# retired (PR-C). See docs/job-visit-unification.md for the full plan.
+# ============================================================================
+
+
+class JobCompleteRequest(BaseModel):
+    """Payload for POST /api/jobs/{id}/complete — one call sets the job as done."""
+    completed_by: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    checklist_results: Optional[dict] = None
+    photos: Optional[List[dict]] = None
+    notes: Optional[str] = None
+
+
+@router.post("/{job_id}/complete", dependencies=[Depends(require_role("admin", "manager", "cleaner"))])
+def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
+                 db: Session = Depends(get_db)):
+    """Mark a job as completed in a single call.
+
+    Sets status='completed' and stamps completed_at / completed_by / checklist /
+    photos on the Job row itself — closing the audit gap where the old flow
+    updated Visit but never synced Job.status back. Idempotent: calling again
+    just refreshes the fields with the latest payload (or defaults).
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    prev_status = job.status
+    job.status = "completed"
+    job.completed_at = data.completed_at or datetime.now(timezone.utc)
+    if data.completed_by is not None:
+        job.completed_by = data.completed_by
+    if data.checklist_results is not None:
+        job.checklist_results = data.checklist_results
+    if data.photos is not None:
+        job.photos = data.photos
+    if data.notes is not None:
+        job.notes = data.notes
+
+    if prev_status != "completed":
+        try:
+            log_job_status_change(db, job, prev_status=prev_status, actor="admin")
+        except Exception:
+            logger.exception("log_job_status_change failed on complete_job")
+
+    db.commit()
+    db.refresh(job)
+    return {
+        "id": job.id,
+        "status": job.status,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "completed_by": job.completed_by,
+        "checklist_results": job.checklist_results or {},
+        "photos": job.photos or [],
+    }
+
+
+@router.post("/{job_id}/skip", dependencies=[Depends(require_role("admin", "manager"))])
+def skip_job(job_id: int, reason: Optional[str] = None, db: Session = Depends(get_db)):
+    """Cancel a single occurrence without affecting the recurring schedule.
+
+    Mirrors the old POST /api/visits/{id}/skip: mark this job cancelled, keep
+    the RecurringSchedule running, and record a RecurrenceException so the skip
+    is durable even if the row is later hard-deleted."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    prev_status = job.status
+    job.status = "cancelled"
+    if reason:
+        job.notes = (job.notes or "") + f"\n[Skipped: {reason}]"
+
+    if job.recurring_schedule_id and job.scheduled_date:
+        existing = (
+            db.query(RecurrenceException)
+            .filter(
+                RecurrenceException.recurring_schedule_id == job.recurring_schedule_id,
+                RecurrenceException.exception_date == job.scheduled_date,
+            )
+            .first()
+        )
+        if existing is None:
+            db.add(RecurrenceException(
+                recurring_schedule_id=job.recurring_schedule_id,
+                exception_date=job.scheduled_date,
+                exception_type="skip",
+                reason=reason or "Job skipped via /api/jobs/{id}/skip",
+            ))
+
+    if prev_status != "cancelled":
+        try:
+            log_job_status_change(db, job, prev_status=prev_status, actor="admin")
+        except Exception:
+            logger.exception("log_job_status_change failed on skip_job")
+
+    db.commit()
+    db.refresh(job)
+    return {
+        "id": job.id,
+        "status": job.status,
+        "message": "Job skipped — recurring schedule unchanged",
+    }
+
+
+@router.get("/{job_id}/crew-suggestions", dependencies=[Depends(require_role("admin", "manager"))])
+def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
+    """Suggest crew for a job based on recent assignments at the same property.
+
+    Mirrors /api/visits/{id}/crew-suggestions — sorted by frequency, top 5."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.property_id:
+        return {"job_id": job_id, "property_id": None, "suggestions": []}
+
+    recent_jobs = db.query(Job).filter(
+        Job.property_id == job.property_id,
+        Job.cleaner_ids.isnot(None),
+    ).limit(20).all()
+
+    crew_freq: dict = {}
+    for j in recent_jobs:
+        for cleaner_id in (j.cleaner_ids or []):
+            crew_freq[cleaner_id] = crew_freq.get(cleaner_id, 0) + 1
+
+    suggestions = sorted(crew_freq.items(), key=lambda x: x[1], reverse=True)
+    return {
+        "job_id": job_id,
+        "property_id": job.property_id,
+        "suggestions": [
+            {"cleaner_id": cid, "frequency": freq}
+            for cid, freq in suggestions[:5]
+        ],
+    }
+
+
+@router.post("/{job_id}/auto-assign", dependencies=[Depends(require_role("admin", "manager"))])
+def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db)):
+    """Assign the most-frequent cleaner at this property to the job.
+
+    Mirrors /api/visits/{id}/auto-assign — no history means the job is
+    unassigned (cleaner_ids cleared), matching the old semantics."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.property_id:
+        return {"status": "no_property", "message": "Job has no associated property"}
+
+    recent_jobs = db.query(Job).filter(
+        Job.property_id == job.property_id,
+        Job.cleaner_ids.isnot(None),
+    ).limit(30).all()
+
+    crew_freq: dict = {}
+    for j in recent_jobs:
+        for cleaner_id in (j.cleaner_ids or []):
+            crew_freq[cleaner_id] = crew_freq.get(cleaner_id, 0) + 1
+
+    if not crew_freq:
+        job.cleaner_ids = []
+        db.commit()
+        return {"status": "no_history", "message": "No crew history for this property"}
+
+    top_cleaner = max(crew_freq.items(), key=lambda x: x[1])[0]
+    job.cleaner_ids = [top_cleaner]
+    db.commit()
+    db.refresh(job)
+    return {
+        "status": "assigned",
+        "job_id": job.id,
+        "assigned_cleaner_id": top_cleaner,
+        "message": f"Auto-assigned based on property history (appeared {crew_freq[top_cleaner]} times)",
     }
 
