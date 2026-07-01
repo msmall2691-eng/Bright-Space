@@ -8,7 +8,7 @@ import { toast } from '../utils/toastBus'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
-import ActivityTimeline from '../components/ActivityTimeline'
+import Timeline, { activitiesSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
@@ -202,7 +202,7 @@ export default function OpportunityDetail() {
             </div>
 
             <div className="bg-panel border border-hairline rounded-xl p-4">
-              <ActivityTimeline key={timelineKey} opportunityId={id} />
+              <Timeline key={timelineKey} source={activitiesSource({ opportunityId: id })} />
             </div>
           </div>
 
