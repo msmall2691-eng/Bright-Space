@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from database.db import SessionLocal
-from database.models import Client, Property, Quote, Job, Visit
+from database.models import Client, Property, Quote, Job
 from modules.quoting.router import delete_quote, list_quotes, _existing_job_for_quote
 
 
@@ -16,9 +16,6 @@ def ctx():
     db.add(c); db.commit(); db.refresh(c)
     yield db, c
     db.rollback()
-    job_ids = [j.id for j in db.query(Job).filter(Job.client_id == c.id).all()]
-    if job_ids:
-        db.query(Visit).filter(Visit.job_id.in_(job_ids)).delete(synchronize_session=False)
     db.query(Job).filter(Job.client_id == c.id).delete(synchronize_session=False)
     db.query(Quote).filter(Quote.client_id == c.id).delete(synchronize_session=False)
     db.query(Property).filter(Property.client_id == c.id).delete(synchronize_session=False)

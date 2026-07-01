@@ -9,7 +9,7 @@ Covers:
 """
 import pytest
 from datetime import date, time
-from database.models import Client, Job, Activity, Visit, ActivityType, Property
+from database.models import Client, Job, Activity, ActivityType, Property
 from database.db import SessionLocal
 from utils.activity_logger import (
     log_activity, log_job_created, log_job_status_change,
@@ -33,7 +33,6 @@ def client_and_job():
     db.add(j); db.commit(); db.refresh(j)
     yield c, j
     db.query(Activity).filter(Activity.client_id == c.id).delete(synchronize_session=False)
-    db.query(Visit).filter(Visit.job_id == j.id).delete(synchronize_session=False)
     db.query(Job).filter(Job.id == j.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
     db.commit(); db.close()
@@ -151,19 +150,11 @@ def test_log_calendar_event_tags_gcal_id(client_and_job):
 
 
 def test_log_visit_skipped_carries_reason(client_and_job):
+    """log_visit_skipped now takes a Job directly (post-Visit unification)."""
     c, j = client_and_job
     db = SessionLocal()
     try:
-        v = Visit(
-            job_id=j.id, scheduled_date=date.today(),
-            start_time=time(9, 0), end_time=time(11, 0),
-            status="cancelled",
-        )
-        db.add(v); db.commit(); db.refresh(v)
-        # The helper expects v.job to be loadable
-        v.job  # ensure relationship is hydrated for the helper
-
-        result = log_visit_skipped(db, v, reason="client out of town")
+        result = log_visit_skipped(db, j, reason="client out of town")
         db.commit()
         assert result is not None
         assert result.activity_type == ActivityType.JOB_CANCELLED.value

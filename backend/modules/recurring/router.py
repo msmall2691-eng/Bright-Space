@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from database.db import get_db
 from modules.auth.router import require_role
-from database.models import RecurringSchedule, Job, Visit, RecurrenceException
+from database.models import RecurringSchedule, Job, RecurrenceException
 from utils.activity_logger import log_job_created, log_calendar_event
 
 router = APIRouter()
@@ -212,7 +212,8 @@ def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[date]) 
 
 
 def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
-    """Create Job + Visit records for dates that don't already have one. Returns count created."""
+    """Create Job records for schedule dates that don't already have one.
+    Returns count created."""
     from database.models import Client
     from integrations.google_calendar import create_event
 
@@ -222,16 +223,17 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     created = 0
     new_jobs = []
 
-    # Dates already cancelled at the Visit level should NOT regenerate even if
-    # the parent Job row is later hard-deleted. Visit is the durable cancellation
-    # record until Phase 1 introduces a proper RecurrenceException table.
+    # Dates already cancelled at the Job level should NOT regenerate. After
+    # the Job/Visit unification (migration 039), Job.status is the durable
+    # cancellation record; RecurrenceException also blocks known-skipped dates
+    # via _apply_exceptions above.
     cancelled_dates = {
-        _as_date(v.scheduled_date)
-        for v in db.query(Visit)
-        .join(Job, Visit.job_id == Job.id)
+        _as_date(j.scheduled_date)
+        for j in db.query(Job)
         .filter(
             Job.recurring_schedule_id == sched.id,
-            Visit.status == "cancelled",
+            Job.status == "cancelled",
+            Job.scheduled_date.isnot(None),
         )
         .all()
     }
@@ -338,20 +340,11 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
 
     db.commit()
 
-    # Pre-materialize a Visit per new Job + log to unified timeline so the
-    # client profile sees each scheduled occurrence.
+    # Log each generated Job to the unified activity timeline so the client
+    # profile sees the occurrence. (The old Visit dual-write here was removed
+    # by migration 039 — occurrences are Jobs now.)
     for job in new_jobs:
         db.refresh(job)
-        visit = Visit(
-            job_id=job.id,
-            scheduled_date=job.scheduled_date,
-            start_time=job.start_time,
-            end_time=job.end_time,
-            cleaner_ids=job.cleaner_ids or [],
-            status="scheduled",
-            notes=job.notes,
-        )
-        db.add(visit)
         log_job_created(db, job, actor="recurring_schedule")
     if new_jobs:
         db.commit()

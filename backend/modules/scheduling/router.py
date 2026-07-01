@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import (
-    Job, Client, Visit, ICalEvent, CleanerTimeOff, Property, RecurrenceException,
+    Job, Client, ICalEvent, CleanerTimeOff, Property, RecurrenceException,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
@@ -413,11 +413,9 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     # a dict for perf; single-job endpoints fall back to the joined attr.
     if property_name is None and getattr(j, "property", None) is not None:
         property_name = j.property.name
-    # Phase 3 calendar fix: prefer the COALESCE(Job.scheduled_date,
-    # earliest Visit.scheduled_date) computed by get_jobs() so consumers
-    # like CalendarView can bucket by date even when the Job column is
-    # NULL (some startup tasks null it out at boot; Visit is the durable
-    # source of truth).
+    # `effective_date` used to be COALESCE(Job.scheduled_date, min Visit date);
+    # after the Job/Visit unification (migration 039) Job.scheduled_date is the
+    # single source. The kwarg is kept for callers that still pass an override.
     sched = effective_date if effective_date is not None else j.scheduled_date
     return {
         "id": j.id,
@@ -471,21 +469,11 @@ def get_jobs(
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
-    # Per-job earliest visit date. Used both for filtering AND for the
-    # serialized response so that consumers (e.g. CalendarView) bucket by
-    # the right date when Job.scheduled_date is NULL — the durable date
-    # lives on the Visit row.
-    visit_min = (
-        db.query(Visit.job_id, func.min(Visit.scheduled_date).label("min_date"))
-          .group_by(Visit.job_id)
-          .subquery()
-    )
-    effective_date = func.coalesce(Job.scheduled_date, visit_min.c.min_date).label("effective_date")
-    q = (
-        db.query(Job, effective_date)
-          .options(joinedload(Job.client))
-          .outerjoin(visit_min, visit_min.c.job_id == Job.id)
-    )
+    # Job/Visit unification (PR-C): the pre-migration code had a `visit_min`
+    # subquery so consumers could bucket by the earliest Visit date when
+    # Job.scheduled_date was NULL. Job is now the sole source of scheduling
+    # truth, so the fallback is gone — a NULL Job.scheduled_date is just NULL.
+    q = db.query(Job).options(joinedload(Job.client))
 
     # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows
     # (jobs created by internal paths — recurring, gcal sync — before backfill).
@@ -499,24 +487,15 @@ def get_jobs(
     if status:
         q = q.filter(Job.status == status)
     if date:
-        q = q.filter(or_(
-            Job.scheduled_date == date,
-            and_(Job.scheduled_date.is_(None), visit_min.c.min_date == date),
-        ))
+        q = q.filter(Job.scheduled_date == date)
     if date_from:
-        q = q.filter(or_(
-            Job.scheduled_date >= date_from,
-            and_(Job.scheduled_date.is_(None), visit_min.c.min_date >= date_from),
-        ))
+        q = q.filter(Job.scheduled_date >= date_from)
     if date_to:
-        q = q.filter(or_(
-            Job.scheduled_date <= date_to,
-            and_(Job.scheduled_date.is_(None), visit_min.c.min_date <= date_to),
-        ))
+        q = q.filter(Job.scheduled_date <= date_to)
     if job_type:
         q = q.filter(Job.job_type == job_type)
 
-    rows = q.order_by(effective_date, Job.start_time).all()
+    rows = [(j, j.scheduled_date) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
 
     # Unassigned filter: cleaner_ids is JSON, so filter in Python (cross-dialect
     # safe). A job "needs assignment" when it has no cleaners and isn't done/
@@ -719,22 +698,8 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     log_job_created(db, job)
     db.commit()
 
-    # Create primary Visit for this job (dual-write pattern)
-    try:
-        visit = Visit(
-            job_id=job.id,
-            scheduled_date=job.scheduled_date,
-            start_time=job.start_time,
-            end_time=job.end_time,
-            status=job.status or "scheduled",
-            cleaner_ids=job.cleaner_ids or [],
-            gcal_event_id=job.gcal_event_id,
-            notes=job.notes,
-        )
-        db.add(visit)
-        db.commit()
-    except Exception as e:
-        logger.error(f"Failed to create primary Visit for job {job.id}: {e}")
+    # (The old Visit dual-write was removed by migration 039; occurrences are
+    # the Job row itself now.)
 
     # ── WRITE TO GOOGLE CALENDAR (source of truth) ──
     # Creating an appointment writes the event straight to Google Calendar.
@@ -1089,9 +1054,8 @@ def diagnose_missing_times(db: Session = Depends(get_db)):
             "jobs_missing_start_time": len(rows),
             "upcoming_missing": sum(1 for r in rows if r["upcoming"]),
             "by_source": by_source,
-            "note": ("Visit.start_time is NOT NULL at the DB level, so blank times "
-                     "come from Jobs with start_time IS NULL rendered via the "
-                     "job→visit fallback. Fix the source(s) listed in by_source."),
+            "note": ("Blank times come from Jobs with start_time IS NULL. Fix the "
+                     "source(s) listed in by_source."),
         },
         "jobs": rows,
     }
@@ -1104,8 +1068,7 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
     (the records that render as '– –'). Uses the same rule iCal sync uses:
     turnovers get the property's check-out time (fallback 10:00), other jobs
     get 09:00; end = start + the property's default duration (fallback 3h).
-    Pass ?dry_run=true to preview without writing. Review-first; mirrors the
-    new time onto the job's visits too so the Schedule reflects it."""
+    Pass ?dry_run=true to preview without writing. Review-first."""
     from integrations.ical_sync import _make_end_time
     missing = (
         db.query(Job)
@@ -1119,50 +1082,31 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
     changes = []
     for j in missing:
         prop = prop_map.get(j.property_id)
-        visits = db.query(Visit).filter(Visit.job_id == j.id).all()
-
-        # If a terminal (completed/cancelled) visit exists, it IS the historical
-        # record — use its real window as the source of truth for the whole job
-        # rather than a generated default. This keeps Job.start_time (read by
-        # /api/jobs + client past-visit views) consistent with /api/visits and
-        # preserves that history everywhere. Otherwise fall back to the property
-        # check-out time (turnovers) / 09:00, + the property default duration.
-        terminal = next((v for v in visits
-                         if v.status in ("completed", "cancelled") and v.start_time is not None), None)
-        if terminal is not None:
-            st, et = terminal.start_time, terminal.end_time
-            new_start, new_end = str(terminal.start_time)[:5], str(terminal.end_time or "")[:5]
-            time_source = "completed/cancelled visit"
+        # After the Job/Visit unification (migration 039), completion state is
+        # on the Job row itself — a completed job never lands here anyway (it
+        # already has a real start_time), so pick a sensible default: STR uses
+        # the property's checkout time; everything else is 09:00 + property
+        # default duration.
+        if j.job_type == "str_turnover":
+            start_str = (prop.check_out_time if prop and prop.check_out_time else None) or "10:00"
         else:
-            if j.job_type == "str_turnover":
-                start_str = (prop.check_out_time if prop and prop.check_out_time else None) or "10:00"
-            else:
-                start_str = "09:00"
-            dur = (prop.default_duration_hours if prop and prop.default_duration_hours else None) or 3.0
-            end_str = _make_end_time(start_str, dur)
-            st, et = _to_time(start_str), _to_time(end_str)
-            new_start, new_end = start_str, end_str
-            time_source = "default"
+            start_str = "09:00"
+        dur = (prop.default_duration_hours if prop and prop.default_duration_hours else None) or 3.0
+        end_str = _make_end_time(start_str, dur)
+        st, et = _to_time(start_str), _to_time(end_str)
+        new_start, new_end = start_str, end_str
 
         changes.append({
             "job_id": j.id, "title": j.title, "job_type": j.job_type,
             "scheduled_date": str(j.scheduled_date) if j.scheduled_date else None,
             "property_name": prop.name if prop else None,
             "source": _job_source(j),
-            "time_source": time_source,
+            "time_source": "default",
             "new_start": new_start, "new_end": new_end,
         })
         if not dry_run:
             j.start_time = st
             j.end_time = et
-            # Mirror onto active visits so the board reflects it; terminal visits
-            # are the immutable historical record and are left untouched (and now
-            # already agree with the job when they were the source).
-            for v in visits:
-                if v.status in ("completed", "cancelled"):
-                    continue
-                v.start_time = st
-                v.end_time = et
     if not dry_run and changes:
         db.commit()
     return {"dry_run": dry_run, "count": len(changes), "jobs": changes}
@@ -1497,27 +1441,13 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
         except Exception as e:
             logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
-    # Visit lifecycle follows editable status changes: the schedule and its
-    # action controls read Visit.status, so a job completed via the edit modal
-    # must not keep its visits looking scheduled and actionable (Codex P1 on
-    # #271). Cancellation already had this sync below.
-    if job.status != prev_status and job.status in ("completed", "in_progress"):
-        active = ("scheduled", "dispatched", "en_route") if job.status == "in_progress" \
-            else ("scheduled", "dispatched", "en_route", "in_progress")
-        for v in getattr(job, "visits", []) or []:
-            if v.status in active:
-                v.status = job.status
-        db.commit()
-        db.refresh(job)
+    # (The old Visit-status-sync loop was dropped by migration 039; Job.status
+    # is the single source of scheduling-lifecycle truth now.)
 
-    # Google Calendar + visits sync.
+    # Google Calendar sync. Cancelling pulls the job off the schedule everywhere
+    # (Job.status='cancelled' is now the single truth after migration 039) and
+    # removes the Google Calendar event.
     if job.status == "cancelled":
-        # Cancelling pulls the job off the schedule everywhere: cancel its active
-        # visits (so the agenda/list views drop it too) and remove the Google
-        # Calendar event entirely instead of re-pushing it.
-        for v in getattr(job, "visits", []) or []:
-            if v.status not in ("cancelled", "completed"):
-                v.status = "cancelled"
         if job.gcal_event_id:
             old_event_id = job.gcal_event_id
             try:

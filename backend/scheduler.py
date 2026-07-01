@@ -125,7 +125,7 @@ def recurring_jobs_tick() -> dict:
     Calls the same generate_jobs function used by /api/recurring/generate-all,
     so recurring residential/commercial cleanings get jobs auto-created on the
     schedule going forward. Idempotent — generate_jobs already skips dates
-    that already have a Job or a cancelled Visit.
+    that already have a Job (cancelled or otherwise).
     """
     from modules.recurring.router import generate_jobs
     db = SessionLocal()

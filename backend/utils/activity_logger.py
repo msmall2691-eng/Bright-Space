@@ -176,9 +176,11 @@ def log_calendar_event(
     )
 
 
-def log_visit_skipped(db: Session, visit, reason: Optional[str] = None) -> Optional[Activity]:
-    job = getattr(visit, "job", None)
-    if not job:
+def log_visit_skipped(db: Session, job, reason: Optional[str] = None) -> Optional[Activity]:
+    """Record a single-occurrence skip on the unified activity timeline. The
+    argument is a Job now (post-Job/Visit unification); the function keeps its
+    old name so tests + the archived visits_router shim still resolve it."""
+    if job is None:
         return None
     return log_activity(
         db,
@@ -186,10 +188,10 @@ def log_visit_skipped(db: Session, visit, reason: Optional[str] = None) -> Optio
         client_id=job.client_id,
         job_id=job.id,
         actor="admin",
-        summary=f"Visit skipped on {visit.scheduled_date}" + (f": {reason}" if reason else ""),
+        summary=f"Skipped on {job.scheduled_date}" + (f": {reason}" if reason else ""),
         extra_data={
-            "visit_id": visit.id,
-            "scheduled_date": str(visit.scheduled_date) if visit.scheduled_date else None,
+            "job_id": job.id,
+            "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None,
             "reason": reason,
             "single_occurrence": True,
         },

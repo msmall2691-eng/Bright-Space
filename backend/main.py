@@ -23,7 +23,6 @@ from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
 from modules.scheduling.router import router as scheduling_router
-from modules.scheduling.visits_router import router as visits_router
 from modules.invoicing.router import router as invoicing_router
 from modules.dispatch.router import router as dispatch_router
 from modules.payroll.router import router as payroll_router
@@ -145,7 +144,6 @@ app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
 app.include_router(quoting_router, prefix="/api/quotes", tags=["quotes"])
 app.include_router(scheduling_router, prefix="/api/jobs", tags=["scheduling"])
-app.include_router(visits_router, prefix="/api/visits", tags=["visits"])
 app.include_router(invoicing_router, prefix="/api/invoices", tags=["invoicing"])
 app.include_router(dispatch_router, prefix="/api/dispatch", tags=["dispatch"])
 app.include_router(payroll_router, prefix="/api/payroll", tags=["payroll"])
@@ -202,39 +200,6 @@ def load_agent_config(agent_name: str) -> dict:
         return yaml.safe_load(f)
 
 
-def check_visits_coverage(db_session):
-    """Check whether UPCOMING jobs have corresponding visits, and log gaps.
-
-    Future-only: past jobs missing visits are not actionable (we don't backfill
-    history) so they're excluded — the warning only fires for upcoming jobs,
-    which is the only drift worth a human's attention. The startup backfill
-    self-heals these, so a non-zero count here is genuinely unexpected."""
-    from datetime import date
-    from database.models import Job, Visit
-
-    today = date.today()
-    upcoming_jobs = db_session.query(Job).filter(Job.scheduled_date >= today).count()
-    jobs_without_visits = (
-        db_session.query(Job)
-        .outerjoin(Visit)
-        .filter(Visit.id.is_(None), Job.scheduled_date >= today)
-        .count()
-    )
-
-    if jobs_without_visits > 0:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(
-            f"VISITS COVERAGE DRIFT: {jobs_without_visits}/{upcoming_jobs} UPCOMING jobs missing visits. "
-            f"Run POST /api/visits/admin/backfill-visits-from-jobs to fix."
-        )
-    return {
-        "total_jobs": upcoming_jobs,
-        "jobs_without_visits": jobs_without_visits,
-        "healthy": jobs_without_visits == 0,
-    }
-
-
 @app.on_event("startup")
 async def startup():
     init_db()
@@ -253,20 +218,9 @@ async def startup():
     else:
         print(f"⚠️  Schema-drift check skipped: {drift.get('error')}")
 
-    # Check for visits/jobs drift. Wrapped so a missing table (fresh DB,
-    # mid-migration) doesn't take down the whole app at startup.
-    from database.db import SessionLocal
-    db = SessionLocal()
-    try:
-        coverage = check_visits_coverage(db)
-        if not coverage["healthy"]:
-            print(f"⚠️  VISITS COVERAGE DRIFT: {coverage['jobs_without_visits']}/{coverage['total_jobs']} upcoming jobs missing visits")
-        else:
-            print(f"✓ Visits coverage healthy: {coverage['total_jobs']} upcoming jobs all have visits")
-    except Exception as e:
-        print(f"⚠️  Visits coverage check skipped: {e}")
-    finally:
-        db.close()
+    # The startup visits-coverage check was removed by the Job/Visit
+    # unification (docs/job-visit-unification.md). Occurrences are Jobs now;
+    # there is nothing to drift.
 
     print("BrightBase backend started")
 

@@ -404,11 +404,6 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 if event.get("status") == "cancelled":
                     if existing_job.status != "cancelled":
                         existing_job.status = "cancelled"
-                        # Mirror onto the visits the Schedule page renders, so a
-                        # cancel in GCal doesn't leave a stale 'scheduled' visit.
-                        for v in existing_job.visits:
-                            if v.status not in ("cancelled", "completed"):
-                                v.status = "cancelled"
                         results["jobs_cancelled"] += 1
                     continue
 
@@ -468,15 +463,6 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                     changed = True
 
                 if changed:
-                    # Mirror date/time onto the job's visits so the Schedule
-                    # board (which renders Visits, not Jobs) reflects the GCal
-                    # move. Only touch active visits; leave done/cancelled ones.
-                    for v in existing_job.visits:
-                        if v.status in ("cancelled", "completed"):
-                            continue
-                        v.scheduled_date = existing_job.scheduled_date
-                        v.start_time = existing_job.start_time
-                        v.end_time = existing_job.end_time
                     results["jobs_updated"] += 1
                 continue
 
@@ -571,7 +557,7 @@ def sync_gcal_cancellations(db: Session) -> dict:
 
     Returns a stats dict with how many were touched.
     """
-    from database.models import Job, Visit, RecurrenceException
+    from database.models import Job, RecurrenceException
     from integrations.google_calendar import get_event
 
     out = {
@@ -646,16 +632,10 @@ def sync_gcal_cancellations(db: Session) -> dict:
             out["still_present"] += 1
             continue
 
-        # Event is gone (None) or marked cancelled. Soft-cancel.
+        # Event is gone (None) or marked cancelled. Soft-cancel the Job.
         out["deleted_or_cancelled"] += 1
         job.status = "cancelled"
-        for v in db.query(Visit).filter(Visit.job_id == job.id).all():
-            if v.status not in ("completed", "cancelled"):
-                v.status = "cancelled"
-                if v.notes:
-                    v.notes = (v.notes or "") + "\n[Cancelled via Google Calendar deletion]"
-                else:
-                    v.notes = "Cancelled via Google Calendar deletion"
+        job.notes = ((job.notes or "") + "\n[Cancelled via Google Calendar deletion]").strip()
 
         # If recurring, write a durable exception so the next /generate-all
         # doesn't resurrect the date. Idempotent via the unique

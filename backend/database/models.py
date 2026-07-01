@@ -534,7 +534,8 @@ class Job(Base):
         foreign_keys="ICalEvent.job_id", uselist=False
     )
     assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
-    visits = relationship("Visit", back_populates="job", cascade="all, delete-orphan")
+    # Job.visits relationship was dropped by migration 039; the Visit table is
+    # retired and completion state now lives on Job itself.
 
     __table_args__ = (
         Index("idx_job_property_date", property_id, scheduled_date),
@@ -542,60 +543,6 @@ class Job(Base):
         Index("idx_job_scheduled_date_status", scheduled_date, status),
     )
 
-
-class Visit(Base):
-    """A single physical visit/occurrence of a Job. One job can have many visits (recurring cleans, multi-day projects)."""
-    __tablename__ = "visits"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
-
-    # BIGINT on Postgres (prod); plain INTEGER on SQLite so the primary key
-    # autoincrements there (SQLite only aliases rowid for INTEGER PRIMARY KEY,
-    # not BIGINT) — needed for the test suite to insert visits.
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
-
-    # When is this visit scheduled?
-    scheduled_date = Column(Date, nullable=False, index=True)
-    start_time = Column(Time, nullable=False)
-    end_time = Column(Time, nullable=False)
-
-    # Who is assigned?
-    cleaner_ids = Column(JSON, default=list)  # [user_id, ...] for backcompat; will migrate to dedicated assignment table later
-
-    # Visit lifecycle
-    status = Column(String, nullable=False, default="scheduled")
-    # scheduled | dispatched | en_route | in_progress | completed | no_show | cancelled
-
-    # iCal source (for STR turnovers)
-    ical_source = Column(String, nullable=True)  # "airbnb", "vrbo", "hospitable", etc.
-    ical_uid = Column(String, nullable=True, index=True)  # RFC 5545 UID for idempotency
-    ical_synced_at = Column(DateTime, nullable=True)  # When this visit was imported from iCal
-
-    # GCal integration
-    gcal_event_id = Column(String, nullable=True)
-
-    # Completion tracking
-    completed_at = Column(DateTime, nullable=True)
-    completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Which user marked it complete
-    notes = Column(Text)
-
-    # Photos, checklist (structured data)
-    checklist_results = Column(JSON, nullable=True)  # {"task_id": "done"/"skipped"/"failed", ...}
-    photos = Column(JSON, default=list)  # [{"url": "...", "timestamp": "...", "label": "before"}, ...]
-
-    # Audit trail
-    created_at = Column(DateTime, nullable=False, default=_utcnow)
-    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint("ical_source", "ical_uid", name="uq_visit_ical_source_uid"),  # iCal idempotency
-        Index("idx_visit_scheduled_date_status", scheduled_date, status),
-        Index("idx_visit_job_date", job_id, scheduled_date),
-    )
-
-    job = relationship("Job", back_populates="visits")
-    completed_by_user = relationship("User", foreign_keys=[completed_by], uselist=False)
 
 
 class LeadIntake(Base):

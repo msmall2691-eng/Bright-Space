@@ -15,7 +15,7 @@ import sqlalchemy as sa
 # Every table that carries org_id (migration 027) plus saved_views (029).
 TENANT_TABLES = [
     "clients", "properties", "property_icals", "ical_events", "recurring_schedules",
-    "recurrence_exceptions", "jobs", "visits", "lead_intakes", "invoices",
+    "recurrence_exceptions", "jobs", "lead_intakes", "invoices",
     "conversations", "messages", "opportunities", "contact_emails", "contact_phones",
     "activities", "quotes", "cleaner_time_off",
     "integration_events", "saved_views",
