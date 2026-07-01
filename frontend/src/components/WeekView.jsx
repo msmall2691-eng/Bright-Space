@@ -76,21 +76,24 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
     const to = isoDate(new Date(weekStart.getTime() + 6 * 86400000))
     setLoading(true)
     setError(null)
-    get(`/api/visits?scheduled_date_from=${from}&scheduled_date_to=${to}&limit=500`)
+    // Job/Visit unification (PR-B): /api/jobs is now the single scheduling
+    // endpoint. Response is a flat array of jobs with property_name /
+    // job_type / title inlined (no more visit.job.* / visit.property.* nesting).
+    get(`/api/jobs?date_from=${from}&date_to=${to}`)
       .then(data => {
         const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
         setVisits(items)
       })
-      .catch(e => setError(e?.message || 'Failed to load visits'))
+      .catch(e => setError(e?.message || 'Failed to load jobs'))
       .finally(() => setLoading(false))
   }, [weekStart, refreshKey, internalRefresh])
 
   // Apply filters in JS (job_type, status, property_id) — same as month view does
   const filteredVisits = useMemo(() => {
     return visits.filter(v => {
-      if (filters.job_type && v.job?.job_type !== filters.job_type) return false
+      if (filters.job_type && v.job_type !== filters.job_type) return false
       if (filters.status && v.status !== filters.status) return false
-      if (filters.property_id && String(v.property?.id) !== String(filters.property_id)) return false
+      if (filters.property_id && String(v.property_id) !== String(filters.property_id)) return false
       return true
     })
   }, [visits, filters])
@@ -160,7 +163,7 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
     const reason = window.prompt('Reason to skip this visit? (optional)')
     if (reason === null) return  // user cancelled the prompt itself
     try {
-      await post(`/api/visits/${visitId}/skip${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`)
+      await post(`/api/jobs/${visitId}/skip${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`)
       setInternalRefresh(k => k + 1)
     } catch (e) {
       alert('Failed to skip visit: ' + (e?.message || 'unknown error'))
@@ -175,7 +178,7 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
       const newCleanerIds = targetCleanerId === 'unassigned' ? [] : [targetCleanerId]
       // Use PATCH to update visit with new cleaner assignment
       const updateFn = async () => {
-        const response = await fetch(`/api/visits/${visitId}`, {
+        const response = await fetch(`/api/jobs/${visitId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cleaner_ids: newCleanerIds })
@@ -324,10 +327,10 @@ export default function WeekView({ filters = {}, onVisitClick, refreshKey = 0, e
 }
 
 function VisitCard({ visit, onClick, onSkip, isDragging, onDragStart }) {
-  const jobType = visit.job?.job_type || 'residential'
+  const jobType = visit.job_type || 'residential'
   const status = visit.status || 'scheduled'
-  const title = visit.job?.title || 'Visit'
-  const propName = visit.property?.name
+  const title = visit.title || 'Job'
+  const propName = visit.property_name
   const isCancelled = status === 'cancelled'
 
   return (

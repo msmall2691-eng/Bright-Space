@@ -228,7 +228,8 @@ export default function Dashboard() {
       get(`/api/jobs?date=${t}`),
       get(`/api/jobs?date_from=${t}&date_to=${weekEnd}`),
       get('/api/invoices?limit=200'),
-      get(`/api/visits?scheduled_date_from=${t}&scheduled_date_to=${t}&limit=100`),
+      // Job/Visit unification (PR-B): today's occurrences read from /api/jobs.
+      get(`/api/jobs?date=${t}`),
       get('/api/comms/conversations?sla_state=breached&status=open&limit=20'),
       get('/api/comms/conversations?assignee=unassigned&status=open&limit=20'),
       get('/api/invoices/summary/by-service?period=mtd'),
@@ -250,7 +251,9 @@ export default function Dashboard() {
 
     const val = (i, d) => (results[i].status === 'fulfilled' ? results[i].value : d)
     const jobsToday = val(0, []), jobsWeek = val(1, []), invoicesAll = val(2, [])
-    const visitsToday = val(3, { items: [] })
+    // /api/jobs returns a plain array; the old `{ items: [] }` shape came
+    // from /api/visits and is no longer produced (fallback still tolerated).
+    const visitsToday = val(3, [])
     const conversationsOverdue = val(4, { items: [] })
     const conversationsUnassigned = val(5, { items: [] })
     const svcRevenueResp = val(6, { by_service: [] })
@@ -405,8 +408,8 @@ export default function Dashboard() {
       .forEach(v => items.push({
         key: `late-${v.id}`,
         tone: 'amber',
-        title: `Late start · ${v.job?.title || `Visit #${v.id}`}`,
-        sub: `${(v.start_time || '').slice(0, 5)} · ${v.property?.name || ''}`,
+        title: `Late start · ${v.title || `Job #${v.id}`}`,
+        sub: `${(v.start_time || '').slice(0, 5)} · ${v.property_name || ''}`,
         action: 'Open',
         onClick: () => navigate('/schedule'),
       }))

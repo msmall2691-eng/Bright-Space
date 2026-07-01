@@ -29,4 +29,4 @@ type ListJobsResponse =
 
 ## Known gaps
 
-GET responses currently return `unknown` for endpoints whose handlers return `list[dict]` rather than a Pydantic `response_model`. Step 2 of the typing rollout will add `response_model=` to the hot routes (`/api/jobs`, `/api/recurring`, `/api/visits`) so consumers get concrete types. Today's typed surface is mostly request bodies + a few endpoints that already use Pydantic models.
+GET responses currently return `unknown` for endpoints whose handlers return `list[dict]` rather than a Pydantic `response_model`. Step 2 of the typing rollout will add `response_model=` to the hot routes (`/api/jobs`, `/api/recurring`) so consumers get concrete types. (`/api/visits` is being retired as part of the Job/Visit unification — see `docs/job-visit-unification.md`.) Today's typed surface is mostly request bodies + a few endpoints that already use Pydantic models.

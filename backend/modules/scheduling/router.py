@@ -87,6 +87,10 @@ class JobResponse(BaseModel):
     opportunity_id: Optional[int] = None
     job_type: str
     property_id: Optional[int] = None
+    # Denormalized property.name so WeekView / Dashboard / PropertyDetail can
+    # render the property label without a second fetch (was on Visit responses;
+    # ported here as part of the Job/Visit unification PR-B).
+    property_name: Optional[str] = None
     recurring_schedule_id: Optional[int] = None
     calendar_invite_sent: Optional[bool] = None
     sms_reminder_sent: Optional[bool] = None
@@ -397,13 +401,18 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
 
 
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
-                booking_event: ICalEvent = None, next_arrival: ICalEvent = None) -> dict:
+                booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
+                property_name: Optional[str] = None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
         client_name = client.name or ""
     elif j.client and hasattr(j, "client"):
         client_name = j.client.name if j.client else ""
+    # Property name is optional at the caller: get_jobs bulk-fetches names into
+    # a dict for perf; single-job endpoints fall back to the joined attr.
+    if property_name is None and getattr(j, "property", None) is not None:
+        property_name = j.property.name
     # Phase 3 calendar fix: prefer the COALESCE(Job.scheduled_date,
     # earliest Visit.scheduled_date) computed by get_jobs() so consumers
     # like CalendarView can bucket by date even when the Job column is
@@ -418,6 +427,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "opportunity_id": j.opportunity_id,
         "job_type": j.job_type or "residential",
         "property_id": j.property_id,
+        "property_name": property_name,
         "recurring_schedule_id": j.recurring_schedule_id,
         "calendar_invite_sent": j.calendar_invite_sent,
         "sms_reminder_sent": j.sms_reminder_sent,
@@ -521,6 +531,14 @@ def get_jobs(
     # direct ical_event_id (production data is currently mostly unlinked).
     rendered = []
     if rows:
+        # Bulk-fetch property names for the property_name field on JobResponse
+        # (needed by WeekView / Dashboard after the Job/Visit unification).
+        all_prop_ids = {j.property_id for j, _ in rows if j.property_id}
+        prop_names = (
+            {p.id: p.name for p in
+             db.query(Property.id, Property.name).filter(Property.id.in_(all_prop_ids)).all()}
+            if all_prop_ids else {}
+        )
         prop_ids = {j.property_id for j, _ in rows if j.property_id and j.job_type == "str_turnover"}
         events_by_prop = {}
         if prop_ids:
@@ -558,7 +576,8 @@ def get_jobs(
                     )
             rendered.append(job_to_dict(j, effective_date=eff,
                                         booking_event=booking,
-                                        next_arrival=next_arrival))
+                                        next_arrival=next_arrival,
+                                        property_name=prop_names.get(j.property_id)))
     return rendered
 
 
