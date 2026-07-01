@@ -6,7 +6,7 @@ import {
   Calendar as CalendarIcon, Navigation2, Trash2, Edit2, GripVertical, Zap, LogIn,
   List, Grid3x3, AlignLeft, Wand2, Wrench, ChevronDown, Camera
 } from 'lucide-react'
-import { get, post, put, del } from '../api'
+import { get, post, put, patch, del } from '../api'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -978,8 +978,10 @@ export default function Schedule() {
   // /api/jobs state) refetches and shows the change without a month switch.
   const [calRefresh, setCalRefresh] = useState(0)
   const navigate = useNavigate()
+  // `coverage` is still populated from /api/schedule/week but no longer
+  // rendered — see the removed Coverage banner. Leaving the state in place
+  // avoids touching the aggregate parser.
   const [coverage, setCoverage] = useState(null)
-  const [backfilling, setBackfilling] = useState(false)
   const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [hardDelete, setHardDelete] = useState(false)
@@ -1290,8 +1292,13 @@ export default function Schedule() {
   const handleDelete = async (visitId) => {
     if (!confirm('Delete this visit?')) return
     try {
-      await put(`/api/visits/${visitId}`, { status: 'cancelled' })
-      await setVisits(visits.filter(v => v.id !== visitId))
+      // Job/Visit unification (PR-B): occurrences are the Job row itself now.
+      // The visits list still uses `id` as the visit id; when the row is a
+      // mapped-job fallback, `job_id` is the real job id — prefer that.
+      const v = visits.find(x => x.id === visitId)
+      const targetId = v?.job_id ?? visitId
+      await patch(`/api/jobs/${targetId}`, { status: 'cancelled' })
+      await setVisits(visits.filter(x => x.id !== visitId))
       setShowDetails(false)
     } catch (err) {
       toast.error('Error deleting visit: ' + err.message)
@@ -1311,19 +1318,19 @@ export default function Schedule() {
     }
   }
 
-  // Persist a visit completion (checklist + photo URLs + status=completed).
-  // Uses the existing PUT /api/visits/{id} which already accepts these fields.
+  // Persist a job completion (checklist + photo URLs + status=completed) via
+  // POST /api/jobs/{id}/complete — one call stamps every field, and Job.status
+  // moves with completion (the audit gap the Job/Visit unification closes).
   const handleCompleteVisit = async (visitId, { checklist_results, photos }) => {
     try {
-      const payload = {
-        status: 'completed',
-        completed_at: new Date().toISOString(),
+      const v = visits.find(x => x.id === visitId)
+      const targetId = v?.job_id ?? visitId
+      const updated = await post(`/api/jobs/${targetId}/complete`, {
         checklist_results,
         photos,
-      }
-      const updated = await put(`/api/visits/${visitId}`, payload)
-      setVisits(visits.map(v => v.id === visitId
-        ? { ...v, status: 'completed', checklist_results, photos } : v))
+      })
+      setVisits(visits.map(x => x.id === visitId
+        ? { ...x, status: 'completed', checklist_results, photos } : x))
       setCompletingVisit(null)
       setShowDetails(false)
       toast.success('Visit marked complete')
@@ -1372,7 +1379,11 @@ export default function Schedule() {
         await post('/api/admin/visits/hard-delete', { ids })
       } else {
         const results = await Promise.allSettled(
-          ids.map(id => put(`/api/visits/${id}`, { status: 'cancelled' }))
+          ids.map(id => {
+            const v = visits.find(x => x.id === id)
+            const targetId = v?.job_id ?? id
+            return patch(`/api/jobs/${targetId}`, { status: 'cancelled' })
+          })
         )
         const failed = results.filter(r => r.status === 'rejected').length
         if (failed > 0) toast.error(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
@@ -1400,29 +1411,25 @@ export default function Schedule() {
     endDate.setDate(endDate.getDate() + 6)
     const start = startDate.toISOString().split('T')[0]
     const end = endDate.toISOString().split('T')[0]
-    const visitsRes = await get(`/api/visits?scheduled_date_from=${start}&scheduled_date_to=${end}&limit=500`)
-    const visitsData = visitsRes?.items || visitsRes || []
-    setVisits(visitsData)
+    // Reload via /api/jobs; downstream code accepts the same shape via the
+    // job-as-visit fallback in the main loader.
+    const jobsRes = await get(`/api/jobs?date_from=${start}&date_to=${end}`)
+    const jobsList = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.items || [])
+    setVisits(jobsList.map(j => ({
+      ...j,
+      job_id: j.id,
+      scheduled_date: j.scheduled_date,
+      start_time: j.start_time,
+      end_time: j.end_time,
+      cleaner_ids: j.cleaner_ids || [],
+      status: j.status,
+    })))
     setCalRefresh(k => k + 1)  // make the month CalendarView refetch its jobs too
   }
 
-  const handleBackfill = async () => {
-    setBackfilling(true)
-    try {
-      const result = await post('/api/visits/admin/backfill-visits-from-jobs', {})
-      // Reload everything so new visits appear immediately
-      const newCoverage = await get('/api/visits/admin/coverage-check')
-      setCoverage(newCoverage)
-      // Re-run the main schedule loader to pick up new visits
-      setCurrentDate(new Date(currentDate))
-      toast.success(`Backfill complete: ${result.created} visits created, ${result.skipped} already had visits, ${result.skipped_no_date || 0} skipped (no date).${result.errors?.length ? ` ${result.errors.length} errors.` : ''}`)
-    } catch (err) {
-      console.error('[Schedule] Backfill failed:', err)
-      toast.error('Backfill failed: ' + (err?.message || 'unknown error'))
-    } finally {
-      setBackfilling(false)
-    }
-  }
+  // The Backfill button + coverage banner were removed as part of the
+  // Job/Visit unification (PR-B): coverage is trivially 100% once occurrences
+  // are just Jobs, so the "N jobs missing visits" surface is dead weight.
 
   const prevWeek = () => {
     const d = new Date(currentDate)
@@ -1604,30 +1611,6 @@ export default function Schedule() {
           )}
         </div>
       </div>
-
-      {/* Coverage banner — only when actually problematic. A 98%/1-missing
-          state was triggering a giant warning that operators dismissed and
-          ignored, eating prime header real estate. Now: thin pill, only
-          renders if coverage drops below 95% AND >2 jobs are unbacked. */}
-      {!isGoogleOnly && coverage && !coverage.healthy && coverage.coverage_percent < 95 && coverage.jobs_without_visits > 2 && (
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 pt-2">
-          <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <p className="text-[11px] text-amber-800 truncate">
-                {coverage.jobs_without_visits} jobs without visits ({coverage.coverage_percent}% coverage)
-              </p>
-            </div>
-            <button
-              onClick={handleBackfill}
-              disabled={backfilling}
-              className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 disabled:opacity-50 whitespace-nowrap"
-            >
-              {backfilling ? 'Backfilling…' : 'Backfill →'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Schedule health — just the two operational counts. The Google /
           Connecteam sync ratios used to sit here as always-on diagnostic cards;
@@ -1819,10 +1802,9 @@ export default function Schedule() {
                 {/* On-site access details (house code, entry/parking notes, site
                     contact, STR check-in/out) — what a crew needs to get in. */}
                 {(() => {
-                  // Prefer the visit's enriched property (from /api/visits, which
-                  // carries house_code/access/site-contact); the /api/properties
-                  // copy omits site_contact_*.
-                  const p = selectedVisit.visit?.property || selectedVisit.property || {}
+                  // Access details come from the property lookup in state
+                  // (populated by /api/schedule/week's aggregated properties).
+                  const p = selectedVisit.property || {}
                   if (!(p.house_code || p.access_notes || p.parking_notes || p.site_contact_name || p.site_contact_phone || p.check_in_time || p.check_out_time)) return null
                   return (
                     <div>

@@ -227,15 +227,23 @@ export default function PropertyDetail() {
     const loadData = async () => {
       setLoading(true)
       try {
-        const [propRes, jobsRes, visitsRes] = await Promise.all([
+        const [propRes, jobsRes] = await Promise.all([
           get(`/api/properties/${propertyId}`).catch(() => null),
-          get(`/api/jobs?property_id=${propertyId}`).catch(() => []),
-          get(`/api/visits?limit=500`).catch(() => []),
+          get(`/api/jobs?property_id=${propertyId}&limit=500`).catch(() => []),
         ])
 
         setProperty(propRes)
-        setJobs(toArray(jobsRes))
-        setVisits(toArray(visitsRes))
+        // Job/Visit unification (PR-B): the separate Visit fetch is gone —
+        // jobs carry completion state (status/completed_at/checklist_results/
+        // photos) directly. `visits` still mirrors jobs 1:1 so the existing
+        // getJobVisits + VisitChecklistRow rendering keeps working unchanged.
+        const jobsList = toArray(jobsRes)
+        setJobs(jobsList)
+        setVisits(jobsList.map(j => ({
+          ...j,
+          job_id: j.id,
+          visit_id: j.id,
+        })))
       } catch (err) {
         console.error('[PropertyDetail]', err)
         setError('Failed to load property details')
@@ -521,13 +529,14 @@ export default function PropertyDetail() {
                         visit={visit}
                         checklistTemplate={property?.checklist_template}
                         onComplete={async (results) => {
-                          await patch(`/api/visits/${visit.id}`, {
+                          // POST /api/jobs/{id}/complete moves Job.status too —
+                          // the Job/Visit unification's headline fix.
+                          await post(`/api/jobs/${visit.id}/complete`, {
                             checklist_results: results,
-                            status: 'completed',
-                            completed_at: new Date().toISOString(),
                           })
+                          const nowIso = new Date().toISOString()
                           setVisits(prev => prev.map(v => v.id === visit.id
-                            ? { ...v, checklist_results: results, status: 'completed', completed_at: new Date().toISOString() }
+                            ? { ...v, checklist_results: results, status: 'completed', completed_at: nowIso }
                             : v
                           ))
                         }}
