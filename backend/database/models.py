@@ -139,7 +139,9 @@ class User(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
-    jobs_assigned = relationship("Job", back_populates="assigned_cleaner", foreign_keys="Job.assigned_cleaner_user_id")
+    # User.jobs_assigned was dropped by migration 040 — its FK column
+    # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is
+    # the single assignment source.
 
 
 class UserGoogleAccount(Base):
@@ -479,7 +481,9 @@ class Job(Base):
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property
     recurring_schedule_id = Column(Integer, ForeignKey("recurring_schedules.id"), nullable=True)
     ical_event_id = Column(Integer, ForeignKey("ical_events.id"), nullable=True, index=True)
-    assigned_cleaner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # Future: replace cleaner_ids JSON
+    # Job.assigned_cleaner_user_id was dropped by migration 040 — it was a
+    # never-used placeholder ("Future: replace cleaner_ids JSON") that had
+    # sat unread since 001. Job.cleaner_ids is the single assignment source.
 
     # Notification tracking
     calendar_invite_sent = Column(Boolean, default=False, nullable=False)
@@ -533,9 +537,9 @@ class Job(Base):
         "ICalEvent", back_populates="job",
         foreign_keys="ICalEvent.job_id", uselist=False
     )
-    assigned_cleaner = relationship("User", back_populates="jobs_assigned", foreign_keys=[assigned_cleaner_user_id])
     # Job.visits relationship was dropped by migration 039; the Visit table is
     # retired and completion state now lives on Job itself.
+    # Job.assigned_cleaner was dropped by migration 040 (see the column note).
 
     __table_args__ = (
         Index("idx_job_property_date", property_id, scheduled_date),
