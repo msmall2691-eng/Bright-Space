@@ -24,6 +24,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/google/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Signin Config
+         * @description Public: tells the login page whether Google sign-in is available and the
+         *     client id to initialize the Google button with. The client id is not secret.
+         */
+        get: operations["google_signin_config_api_auth_google_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Google Signin
+         * @description Sign in with Google. Verifies the Google ID token, then matches a known
+         *     user (default-deny): existing admin/manager users, or emails/domains on the
+         *     allow-list (GOOGLE_ALLOWED_EMAILS / GOOGLE_ALLOWED_DOMAINS) which are
+         *     auto-provisioned as admins. Returns the same JWT as password login.
+         */
+        post: operations["google_signin_api_auth_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google/login-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Login Url
+         * @description Start the unified sign-in: returns the Google consent URL (identity +
+         *     calendar). A one-time state nonce guards the callback.
+         */
+        get: operations["google_login_url_api_auth_google_login_url_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google/login-callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Login Callback
+         * @description OAuth redirect target. Verifies the ID token (login) AND stores the
+         *     calendar token (connect) in one step, then bounces back with a one-time code.
+         */
+        get: operations["google_login_callback_api_auth_google_login_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Google Exchange
+         * @description Trade the one-time code from the login redirect for the JWT.
+         */
+        post: operations["google_exchange_api_auth_google_exchange_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/register": {
         parameters: {
             query?: never;
@@ -35,9 +141,19 @@ export interface paths {
         put?: never;
         /**
          * Register
-         * @description Register a new user.
-         *     - First user: self-register (no auth needed)
-         *     - Subsequent users: admin-only (requires JWT with admin role)
+         * @description Create a user. Three paths:
+         *       1. An authenticated admin creates a user in their workspace (role=client).
+         *       2. An auto-approved email (SIGNUP_ALLOWED_EMAILS / GOOGLE_ALLOWED_EMAILS /
+         *          GOOGLE_ALLOWED_DOMAINS) joins the PRIMARY workspace active — and
+         *          bootstraps as its FIRST admin only when it has no active admin yet.
+         *       3. MT-4 — anyone else (a net-new self-signup) founds their OWN workspace
+         *          and becomes its admin, active immediately. They start in an empty org
+         *          and can't see anyone else's data.
+         *
+         *     BB-SEC-07 (revised for MT-4): open self-registration can never grab admin of
+         *     an EXISTING workspace — only of the brand-new empty org it founds. Joining an
+         *     existing workspace as admin still requires the allow-list AND an admin-less
+         *     primary install.
          */
         post: operations["register_api_auth_register_post"];
         delete?: never;
@@ -66,6 +182,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/session-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Session Status
+         * @description Pending-tolerant status probe for the waiting screen. A pending user's
+         *     JWT can't pass get_current_user (every data endpoint 403s), but they still
+         *     need a way to learn that an admin approved them.
+         */
+        get: operations["session_status_api_auth_session_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspace Users
+         * @description All workspace users for the admin Users screen. Customer logins
+         *     (role=client) are hidden by default — they're portal accounts, not staff.
+         */
+        get: operations["list_workspace_users_api_auth_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve User
+         * @description Approve a pending signup: they keep their role (member) and gain access.
+         */
+        post: operations["approve_user_api_auth_users__user_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}/deny": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deny User
+         * @description Deny a pending signup (or shut off an account): status=disabled.
+         */
+        post: operations["deny_user_api_auth_users__user_id__deny_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Workspace User
+         * @description Change a user's role or active flag. Guarded so the workspace can never
+         *     lose its last active admin.
+         */
+        patch: operations["update_workspace_user_api_auth_users__user_id__patch"];
+        trace?: never;
+    };
+    "/api/auth/google-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Google Account
+         * @description The signed-in user's connected Google account (or what's blocking one).
+         */
+        get: operations["get_google_account_api_auth_google_account_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect Google Account
+         * @description Disconnect: best-effort revoke at Google, then wipe the stored grant.
+         */
+        delete: operations["disconnect_google_account_api_auth_google_account_delete"];
+        options?: never;
+        head?: never;
+        /** Update Google Account */
+        patch: operations["update_google_account_api_auth_google_account_patch"];
+        trace?: never;
+    };
+    "/api/auth/google-account/connect-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Account Connect Url
+         * @description Start the per-user grant: returns the Google consent URL (Gmail +
+         *     Calendar, offline). The state nonce binds the callback to this user.
+         */
+        get: operations["google_account_connect_url_api_auth_google_account_connect_url_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/google-account/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Account Callback
+         * @description OAuth redirect target for the per-user grant. No Bearer header here (a
+         *     browser redirect) — the user is resolved from the one-time state nonce.
+         */
+        get: operations["google_account_callback_api_auth_google_account_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients": {
         parameters: {
             query?: never;
@@ -78,6 +365,67 @@ export interface paths {
         put?: never;
         /** Create Client */
         post: operations["create_client_api_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clients/check-duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Duplicate
+         * @description Find existing clients that look like duplicates of the given details —
+         *     same phone (by last-10 tail), same email (case-insensitive), or same name.
+         *     Used by the new-client form to warn (non-blocking) before creating a dup.
+         *
+         *     NB: declared before GET /{client_id} so the literal path isn't swallowed by
+         *     the int path-param route.
+         */
+        get: operations["check_duplicate_api_clients_check_duplicate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clients/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crm Health
+         * @description Read-only CRM health snapshot. Classifies every client in the workspace
+         *     into one primary bucket so you can SEE the breakdown — "how many of these 47
+         *     leads are real?" — BEFORE running any cleanup or merge. Mutates nothing.
+         *
+         *     Buckets are mutually exclusive (priority order below) so counts sum to total:
+         *       test           — name matches an obvious test/junk pattern
+         *       spam_marketing — email is a no-reply / marketing / cold-outreach sender
+         *                         (same rule that now blocks inbound auto-create)
+         *       duplicate      — shares a normalized email or phone with another client
+         *       incomplete     — no reachable email/phone, or an SMS phone-number placeholder
+         *                         standing in for a real name
+         *       real           — everything else (contactable, named, unique)
+         *
+         *     `by_source` / `by_status` are independent tallies (each sums to total).
+         *
+         *     NB: declared before GET /{client_id} so the literal path isn't swallowed by
+         *     the int path-param route.
+         */
+        get: operations["crm_health_api_clients_health_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -144,6 +492,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clients/{winner_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Clients
+         * @description Collapse a duplicate: merge `loser_id` INTO `winner_id`.
+         *
+         *     Re-parents every record the loser owns onto the winner — jobs, invoices,
+         *     properties, recurring schedules, opportunities, lead intakes, activities,
+         *     messages, SMS conversations (folded so the (client_id, channel) unique index
+         *     can't blow up), and contact phones/emails (deduped) — backfills the winner's
+         *     empty contact fields from the loser, then deletes the loser.
+         *
+         *     Quotes are intentionally NOT touched: that table's client_id is a UUID column
+         *     (the quoting system is UUID-based and decoupled from the integer Client
+         *     table), so it never references an integer client id.
+         */
+        post: operations["merge_clients_api_clients__winner_id__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients/{client_id}/phones": {
         parameters: {
             query?: never;
@@ -177,6 +555,29 @@ export interface paths {
          *     Useful for fixing clients with unlinked SMS threads after adding phone numbers.
          */
         post: operations["relink_conversations_api_clients__client_id__relink_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clients/{client_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Client Note
+         * @description Jot an internal note on a client. Recorded as a NOTE_ADDED activity so it
+         *     lands in the client's unified timeline — works even when there's no SMS/email
+         *     conversation to hang a note off of (the old /conversations/{id}/notes path
+         *     required one).
+         */
+        post: operations["add_client_note_api_clients__client_id__notes_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -243,6 +644,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clients/cleanup-duplicates-by-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Duplicates By Email
+         * @description Merge placeholder-named Client rows into properly-named clients that
+         *     share the same (case-insensitive) email. Default dry_run=true returns a
+         *     preview without applying changes.
+         *
+         *     Reassigns these to the keeper before deleting the placeholder:
+         *       - leads (LeadIntake.client_id)
+         *       - quotes (Quote.client_id)
+         *       - jobs (Job.client_id)
+         *       - properties (Property.client_id)
+         *       - opportunities (Opportunity.client_id)
+         *       - activities (Activity.client_id)
+         *       - messages (Message.client_id)
+         */
+        post: operations["cleanup_duplicates_by_email_api_clients_cleanup_duplicates_by_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quotes": {
         parameters: {
             query?: never;
@@ -250,11 +682,67 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Quotes */
-        get: operations["get_quotes_api_quotes_get"];
+        /**
+         * List Quotes
+         * @description List quotes (most recent first), optionally filtered.
+         */
+        get: operations["list_quotes_api_quotes_get"];
         put?: never;
-        /** Create Quote */
+        /**
+         * Create Quote
+         * @description Create a quote from the Quoting UI (integer client_id + inline items).
+         */
         post: operations["create_quote_api_quotes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/follow-ups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quotes Needing Follow Up
+         * @description Quotes that are waiting on the customer and due for a nudge (Journey E).
+         *
+         *     Read-only — surfaces the list so the operator can act; it does NOT send
+         *     anything. Two buckets, mirroring the audit's rules:
+         *       - 'sent_not_viewed': sent > sent_hours ago and never opened.
+         *       - 'viewed_not_accepted': opened > viewed_hours ago, still not accepted.
+         *     A quote already nudged more recently than its bucket's window is suppressed
+         *     (so it doesn't reappear every poll right after you follow up).
+         */
+        get: operations["quotes_needing_follow_up_api_quotes_follow_ups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/property-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Lookup
+         * @description Look up property specs (sqft/beds/baths/year) for an address to pre-fill a
+         *     quote. Returns {enabled, specs}. Best-effort — disabled or no match yields
+         *     specs=None and never errors. Defined before /{quote_id} so the static path
+         *     wins over the int route.
+         */
+        get: operations["property_lookup_api_quotes_property_lookup_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -270,14 +758,71 @@ export interface paths {
         };
         /** Get Quote */
         get: operations["get_quote_api_quotes__quote_id__get"];
-        put?: never;
+        /** Update Quote */
+        put: operations["update_quote_api_quotes__quote_id__put"];
         post?: never;
-        /** Delete Quote */
+        /**
+         * Delete Quote
+         * @description Soft-delete (archive) a quote: hidden from lists but recoverable, and its
+         *     linked data is preserved. Refuses to archive a quote already converted into a
+         *     job — that would orphan the revenue→job link; cancel the job first.
+         */
         delete: operations["delete_quote_api_quotes__quote_id__delete"];
         options?: never;
         head?: never;
-        /** Update Quote */
-        patch: operations["update_quote_api_quotes__quote_id__patch"];
+        /**
+         * Patch Quote
+         * @description Partial update (the Quoting UI uses PATCH for both edits and status).
+         */
+        patch: operations["patch_quote_api_quotes__quote_id__patch"];
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quote Details
+         * @description Full quote record for the detail page: the quote (incl. line items) plus
+         *     its linked records — client, opportunity, property — and the job it was
+         *     converted into, if any (Job.quote_id back-link).
+         */
+        get: operations["get_quote_details_api_quotes__quote_id__details_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/permanent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Permanently Delete Quote
+         * @description Hard-delete an archived quote (admin only) — for clearing test/junk quotes.
+         *
+         *     Requires the quote be archived first (so this can't be a one-click way to
+         *     destroy a live quote), and still refuses anything scheduled into a job.
+         *     Recurring-schedule links are detached first so the delete can't be FK-blocked.
+         *     Delivery audit rows in integration_events keep the historical send record
+         *     intact (no FK back to quotes).
+         */
+        delete: operations["permanently_delete_quote_api_quotes__quote_id__permanent_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/quotes/{quote_id}/send": {
@@ -291,29 +836,14 @@ export interface paths {
         put?: never;
         /**
          * Send Quote
-         * @description Send a quote to a client via email and/or SMS.
+         * @description Actually DELIVER the quote to the customer over the chosen channel(s), then
+         *     mark it sent. Email attaches the PDF; SMS texts the public accept-link.
+         *
+         *     Previously this only flipped the status and minted the link — nothing was
+         *     delivered — so the UI's email/SMS picker was ignored and customers never
+         *     received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
          */
         post: operations["send_quote_api_quotes__quote_id__send_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/quotes/{quote_id}/convert-to-job": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Convert To Job
-         * @description Convert an accepted quote into a scheduled job. Links quote → job for revenue traceability.
-         */
-        post: operations["convert_to_job_api_quotes__quote_id__convert_to_job_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -330,10 +860,66 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Generate Public Token
-         * @description Generate or return existing public token for a quote.
+         * Generate Quote Token
+         * @description Ensure a public token exists and return it + the shareable link.
          */
-        post: operations["generate_public_token_api_quotes__quote_id__generate_token_post"];
+        post: operations["generate_quote_token_api_quotes__quote_id__generate_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Quote */
+        post: operations["accept_quote_api_quotes__quote_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decline Quote */
+        post: operations["decline_quote_api_quotes__quote_id__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/convert-to-job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert Quote To Job
+         * @description Create a Job from a quote. The date/time is left unset for the user to
+         *     fill in on the Scheduling page; every Job needs a Property, so we reuse the
+         *     client's existing property or create one from the quote address.
+         */
+        post: operations["convert_quote_to_job_api_quotes__quote_id__convert_to_job_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -348,10 +934,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Public Quote
-         * @description Fetch a quote by public token (no auth required). Tracks first view.
+         * Public View Quote
+         * @description Client-facing quote view. Marks the quote VIEWED on first open.
          */
-        get: operations["get_public_quote_api_quotes_public__token__get"];
+        get: operations["public_view_quote_api_quotes_public__token__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -370,10 +956,268 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept Public Quote
-         * @description Accept a quote via public token (no auth required). Creates a Job.
+         * Public Accept Quote
+         * @description Client accepts the quote from the public link.
          */
-        post: operations["accept_public_quote_api_quotes_public__token__accept_post"];
+        post: operations["public_accept_quote_api_quotes_public__token__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/public/{token}/request-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Public Request Changes
+         * @description Client asks for changes instead of accepting — logged for staff.
+         */
+        post: operations["public_request_changes_api_quotes_public__token__request_changes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/public/{token}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Public Decline Quote
+         * @description Client declines the quote from the public link.
+         */
+        post: operations["public_decline_quote_api_quotes_public__token__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/public/{token}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Quote Pdf
+         * @description Stream the quote PDF from the public link so the customer can view/save it.
+         *
+         *     The email only ever attached the PDF; this lets a customer who opened the
+         *     link from an SMS (or wants it again later) download/print the same document.
+         *     ``?download=1`` forces a save dialog; default opens inline in the browser.
+         */
+        get: operations["public_quote_pdf_api_quotes_public__token__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/public/{token}/property-photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Quote Property Photo
+         * @description Stream the front-of-house Street View photo for the quote's address.
+         *
+         *     Public (loaded by the quote page, email, and PDF). 404 when the feature is
+         *     off, no key is set, or Google has no imagery — callers hide the image on a
+         *     failed load, so a 404 is a normal, expected outcome.
+         */
+        get: operations["public_quote_property_photo_api_quotes_public__token__property_photo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/public/{token}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Quote Availability
+         * @description Bookable days + arrival windows for customer self-scheduling on accept.
+         */
+        get: operations["public_quote_availability_api_quotes_public__token__availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/public/{token}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Public Schedule Quote
+         * @description Accept + self-schedule in one step: the customer picks a date and an
+         *     arrival window; we accept the quote, convert it to a Job on that date (left
+         *     unassigned for the owner), and push it to Google Calendar. Idempotent — if a
+         *     job already exists for the quote (e.g. auto-converted on accept) it's re-dated
+         *     rather than duplicated.
+         */
+        post: operations["public_schedule_quote_api_quotes_public__token__schedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Quote Requests */
+        get: operations["list_quote_requests_api_quotes_requests__get"];
+        put?: never;
+        /** Create Quote Request */
+        post: operations["create_quote_request_api_quotes_requests__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Quote Request */
+        put: operations["update_quote_request_api_quotes_requests__request_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/generate-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Quote Pdf */
+        post: operations["generate_quote_pdf_api_quotes__quote_id__generate_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/send-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Quote Email */
+        post: operations["send_quote_email_api_quotes__quote_id__send_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/email-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quote Email History */
+        get: operations["get_quote_email_history_api_quotes__quote_id__email_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/sms-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quote Sms History */
+        get: operations["get_quote_sms_history_api_quotes__quote_id__sms_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quotes/{quote_id}/delivery-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quote Delivery History
+         * @description Combined email + SMS delivery history, sorted newest first.
+         *
+         *     Backed by IntegrationEvent — the same audit log the GCal sync writes to —
+         *     after the per-channel quote_emails/quote_sms tables were retired.
+         */
+        get: operations["get_quote_delivery_history_api_quotes__quote_id__delivery_history_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -392,6 +1236,57 @@ export interface paths {
         put?: never;
         /** Create Job */
         post: operations["create_job_api_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/client/{client_id}/gcal-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client Gcal Events
+         * @description Live Google Calendar events linked to this client (Twenty-style timeline).
+         *
+         *     Matches events by the client's email (attendee) or our brightbase_client_id
+         *     tag, across every configured calendar. Returns {connected, events} so the
+         *     profile can show the real linked timeline, or a connect prompt when Google
+         *     isn't linked yet.
+         */
+        get: operations["client_gcal_events_api_jobs_client__client_id__gcal_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/gcal-sync-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gcal Sync Status
+         * @description How many upcoming jobs aren't on Google Calendar yet.
+         *
+         *     The Calendar page is a read-only Google embed, so it only shows jobs that
+         *     were actually pushed to GCal. This drives a "reconcile" banner there: when
+         *     app jobs (often created before Google was connected, or whose push failed)
+         *     have no gcal_event_id, they're invisible on that page — surfacing the count
+         *     + a Push button lets the operator close the gap in one click.
+         */
+        get: operations["gcal_sync_status_api_jobs_gcal_sync_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -460,6 +1355,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/time-off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Time Off
+         * @description List cleaner time-off entries. Defaults to current + future ranges.
+         */
+        get: operations["list_time_off_api_jobs_time_off_get"];
+        put?: never;
+        /**
+         * Create Time Off
+         * @description Mark a cleaner unavailable for a date range (inclusive).
+         */
+        post: operations["create_time_off_api_jobs_time_off_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/time-off/{time_off_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Time Off
+         * @description Remove a time-off entry.
+         */
+        delete: operations["delete_time_off_api_jobs_time_off__time_off_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/auto-assign-turnovers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auto Assign Turnovers
+         * @description Assign available cleaners to upcoming unassigned STR turnover jobs.
+         *     Pass ?dry_run=true to preview the picks without writing them.
+         */
+        post: operations["auto_assign_turnovers_api_jobs_auto_assign_turnovers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/diagnostics/missing-times": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diagnose Missing Times
+         * @description Diagnostic: list jobs with no start_time — the records that render as
+         *     '– –' on the schedule. Visits can't be null (DB constraint), so a blank time
+         *     always traces to a Job with start_time IS NULL shown via the job→visit
+         *     fallback. Each row is tagged with the likely source so we can fix the
+         *     actual producer rather than guess. Read-only; writes nothing.
+         */
+        get: operations["diagnose_missing_times_api_jobs_diagnostics_missing_times_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/backfill-missing-times": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backfill Missing Times
+         * @description Fill a sensible time on every non-cancelled job that has no start_time
+         *     (the records that render as '– –'). Uses the same rule iCal sync uses:
+         *     turnovers get the property's check-out time (fallback 10:00), other jobs
+         *     get 09:00; end = start + the property's default duration (fallback 3h).
+         *     Pass ?dry_run=true to preview without writing. Review-first.
+         */
+        post: operations["backfill_missing_times_api_jobs_backfill_missing_times_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -477,6 +1485,103 @@ export interface paths {
         head?: never;
         /** Update Job */
         patch: operations["update_job_api_jobs__job_id__patch"];
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Details
+         * @description Full job record for the detail page: the job plus its linked records
+         *     (client, opportunity, property, originating quote), related invoices, and
+         *     the job-scoped activity timeline.
+         */
+        get: operations["get_job_details_api_jobs__job_id__details_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Timeline
+         * @description Unified, chronological activity timeline for a job — Pillar 3 connective
+         *     tissue. Merges three existing signals into one newest-first feed:
+         *
+         *     - **Activity** records (job created/completed, note added, quote/invoice
+         *       milestones) — the human-readable story.
+         *     - **IntegrationEvent** rows (Google Calendar / Connecteam / email / SMS
+         *       sync attempts, ok or failed) — "did it actually go out, and why not?".
+         *     - **Message** records (SMS/email to the client) — the conversation.
+         *
+         *     Every entry is normalised to a common shape so the frontend renders them in
+         *     a single stream. ``source`` narrows to one kind; ``limit``/``offset``
+         *     paginate the merged result.
+         */
+        get: operations["get_job_timeline_api_jobs__job_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Job Note
+         * @description Jot an internal note on a job. Recorded as a NOTE_ADDED activity anchored
+         *     to the job (and its client) so it lands in the job's timeline.
+         */
+        post: operations["add_job_note_api_jobs__job_id__notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/reminder-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Reminder Settings
+         * @description Toggle SMS reminder suppression for a single job (hybrid model).
+         *
+         *     Reminders are on by default; setting skip_reminder=true suppresses the 24h
+         *     SMS for this job only, without disabling the system-wide reminder job.
+         */
+        patch: operations["update_reminder_settings_api_jobs__job_id__reminder_settings_patch"];
         trace?: never;
     };
     "/api/jobs/{job_id}/invite-client": {
@@ -548,47 +1653,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/visits/debug/all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Debug All Visits
-         * @description DEBUG: Return ALL visits in database (no filters) to diagnose issues.
-         */
-        get: operations["debug_all_visits_api_visits_debug_all_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/visits/admin/coverage-check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Visits Coverage
-         * @description Check if all jobs have corresponding visits.
-         */
-        get: operations["check_visits_coverage_api_visits_admin_coverage_check_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/visits/telemetry/drift-check": {
+    "/api/jobs/{job_id}/complete": {
         parameters: {
             query?: never;
             header?: never;
@@ -598,140 +1663,22 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Report Drift Check
-         * @description Report visits/jobs drift metrics for monitoring/alerting systems.
-         */
-        post: operations["report_drift_check_api_visits_telemetry_drift_check_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/visits/admin/backfill-visits-from-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Backfill Visits From Jobs
-         * @description Create one Visit per Job, inheriting job's scheduled_date/times/status/cleaner_ids.
-         */
-        post: operations["backfill_visits_from_jobs_api_visits_admin_backfill_visits_from_jobs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/visits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Visits
-         * @description Get visits with date range and optional filters. Paginated for performance.
-         */
-        get: operations["get_visits_api_visits_get"];
-        put?: never;
-        /**
-         * Create Visit
-         * @description Create a new visit.
-         */
-        post: operations["create_visit_api_visits_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/visits/{visit_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Visit
-         * @description Get a single visit by ID.
-         */
-        get: operations["get_visit_api_visits__visit_id__get"];
-        /**
-         * Update Visit
-         * @description Update a visit.
-         */
-        put: operations["update_visit_api_visits__visit_id__put"];
-        post?: never;
-        /**
-         * Delete Visit
-         * @description Delete a visit.
-         */
-        delete: operations["delete_visit_api_visits__visit_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Visit
-         * @description Update a visit.
-         */
-        patch: operations["update_visit_api_visits__visit_id__patch"];
-        trace?: never;
-    };
-    "/api/visits/{visit_id}/skip": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Skip Visit
-         * @description Cancel a single visit occurrence without affecting the recurring schedule.
+         * Complete Job
+         * @description Mark a job as completed in a single call.
          *
-         *     This is the "skip just next Tuesday" action — the visit is marked cancelled,
-         *     its parent Job is cancelled, but the RecurringSchedule keeps running so future
-         *     occurrences continue to be generated.
+         *     Sets status='completed' and stamps completed_at / completed_by / checklist /
+         *     photos on the Job row itself — closing the audit gap where the old flow
+         *     updated Visit but never synced Job.status back. Idempotent: calling again
+         *     just refreshes the fields with the latest payload (or defaults).
          */
-        post: operations["skip_visit_api_visits__visit_id__skip_post"];
+        post: operations["complete_job_api_jobs__job_id__complete_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/visits/{visit_id}/crew-suggestions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Crew Suggestions
-         * @description Get suggested crew for a visit based on recent assignments at the same property.
-         *
-         *     Returns crew members who have worked at this property recently, sorted by frequency.
-         *     Helps admins quickly assign visits using the auto-assignment feature.
-         */
-        get: operations["get_crew_suggestions_api_visits__visit_id__crew_suggestions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/visits/{visit_id}/auto-assign": {
+    "/api/jobs/{job_id}/skip": {
         parameters: {
             query?: never;
             header?: never;
@@ -741,13 +1688,59 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Auto Assign Crew
-         * @description Automatically assign crew to a visit based on property history.
+         * Skip Job
+         * @description Cancel a single occurrence without affecting the recurring schedule.
          *
-         *     Finds the crew member who has most frequently worked at this property
-         *     and assigns them to this visit. If no history exists, unassigns.
+         *     Mirrors the old POST /api/visits/{id}/skip: mark this job cancelled, keep
+         *     the RecurringSchedule running, and record a RecurrenceException so the skip
+         *     is durable even if the row is later hard-deleted.
          */
-        post: operations["auto_assign_crew_api_visits__visit_id__auto_assign_post"];
+        post: operations["skip_job_api_jobs__job_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/crew-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Crew Suggestions
+         * @description Suggest crew for a job based on recent assignments at the same property.
+         *
+         *     Mirrors /api/visits/{id}/crew-suggestions — sorted by frequency, top 5.
+         */
+        get: operations["get_job_crew_suggestions_api_jobs__job_id__crew_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/auto-assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auto Assign Job Crew
+         * @description Assign the most-frequent cleaner at this property to the job.
+         *
+         *     Mirrors /api/visits/{id}/auto-assign — no history means the job is
+         *     unassigned (cleaner_ids cleared), matching the old semantics.
+         */
+        post: operations["auto_assign_job_crew_api_jobs__job_id__auto_assign_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -766,6 +1759,28 @@ export interface paths {
         put?: never;
         /** Create Invoice */
         post: operations["create_invoice_api_invoices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/summary/by-service": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invoice Summary By Service
+         * @description Paid-revenue split by service type (residential/commercial/str_turnover),
+         *     joined through the invoice's job. `period=mtd` (default) limits to this month
+         *     by paid_at; `all` is all-time. Powers the dashboard's revenue breakdown.
+         */
+        get: operations["invoice_summary_by_service_api_invoices_summary_by_service_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -791,6 +1806,28 @@ export interface paths {
         patch: operations["update_invoice_api_invoices__invoice_id__patch"];
         trace?: never;
     };
+    "/api/invoices/{invoice_id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Invoice Details
+         * @description Full invoice record for the detail page: the invoice (incl. line items)
+         *     plus its linked records — client, job, opportunity, and the originating
+         *     quote (reached via Job.quote_id when the invoice came from a job).
+         */
+        get: operations["get_invoice_details_api_invoices__invoice_id__details_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/{invoice_id}/send": {
         parameters: {
             query?: never;
@@ -811,7 +1848,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/invoices/public/{token}": {
+    "/api/invoices/public/{invoice_id}/{token}": {
         parameters: {
             query?: never;
             header?: never;
@@ -820,12 +1857,9 @@ export interface paths {
         };
         /**
          * Get Public Invoice
-         * @description Get invoice details for public payment portal (via payment token).
-         *
-         *     Token format: base64(invoice_id:secret_key) for security.
-         *     For now, accepting the invoice ID directly as a simplified token.
+         * @description Get invoice details for public payment portal (via HMAC token).
          */
-        get: operations["get_public_invoice_api_invoices_public__token__get"];
+        get: operations["get_public_invoice_api_invoices_public__invoice_id___token__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -845,10 +1879,9 @@ export interface paths {
         put?: never;
         /**
          * Process Payment
-         * @description Record a payment for an invoice (payment processing via Stripe should be done client-side).
+         * @description Record a payment for an invoice. Requires admin/manager auth.
          *
-         *     In production, Stripe Checkout or Elements should be used on the client for PCI compliance.
-         *     This endpoint records the successful payment and updates invoice status.
+         *     In production, Stripe webhooks should confirm payment server-side.
          */
         post: operations["process_payment_api_invoices__invoice_id__pay_post"];
         delete?: never;
@@ -992,6 +2025,13 @@ export interface paths {
         /**
          * Conversations Summary
          * @description Quick counts for inbox filter badges.
+         *
+         *     Returns global totals (back-compat for the unread chime poller) PLUS a
+         *     ``by_channel`` breakdown so the inbox can show per-channel counts and keep
+         *     the folder/chip badges in sync with whichever channel tab is selected.
+         *     Computed in one pass over the (small) conversation set — derived fields
+         *     like ``breached`` aren't columns, so a single Python scan is simplest and
+         *     avoids a fan-out of COUNT queries.
          */
         get: operations["conversations_summary_api_comms_conversations_summary_get"];
         put?: never;
@@ -1164,6 +2204,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/comms/client/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client Comms
+         * @description Unified, contact-linked communications for one client (Twenty-style).
+         *
+         *     Returns every email + SMS message linked to the client by client_id OR by a
+         *     matching contact (their email, or any of their phone numbers normalized to
+         *     E.164) — so messages that were never explicitly tied to the client_id still
+         *     surface, the same way calendar events link by email. The frontend splits the
+         *     flat ``messages`` list by channel for the SMS and Email tabs.
+         */
+        get: operations["client_comms_api_comms_client__client_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/comms/sms": {
         parameters: {
             query?: never;
@@ -1282,6 +2348,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/rebuild-turnovers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Turnovers
+         * @description Rebuild this property's turnovers from its calendar feeds — the safety net.
+         *
+         *     Force-reconciles against the feeds (Google/iCal are the source of truth):
+         *     recreates cancelled/deleted turnovers for still-active bookings, fixes
+         *     stale/empty dates, and pushes changes to Google. Returns a clear before→after
+         *     so you can trust nothing was missed. `still_missing` should be empty; if not,
+         *     it lists the exact checkouts that couldn't be rebuilt (e.g. a failing feed).
+         */
+        post: operations["rebuild_turnovers_api_properties__property_id__rebuild_turnovers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/icals/{ical_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Single Ical
+         * @description Re-sync a single iCal feed — lets staff retry one failing feed without
+         *     re-running every feed on the property.
+         */
+        post: operations["sync_single_ical_api_properties__property_id__icals__ical_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/sync-all": {
         parameters: {
             query?: never;
@@ -1293,9 +2406,36 @@ export interface paths {
         put?: never;
         /**
          * Sync All Ical
-         * @description Sync all active properties that have an iCal URL.
+         * @description Sync all active properties that have at least one active PropertyIcal feed.
          */
         post: operations["sync_all_ical_api_properties_sync_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/turnover-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turnover Sweep
+         * @description Re-sync every property that has a feed, then report per-property whether
+         *     every expected turnover exists and is on Google Calendar — so the whole
+         *     portfolio can be trusted at a glance, not just one property.
+         *
+         *     For each property: expected = future reservation checkouts in the feed
+         *     (from stored iCal events), scheduled = future turnover jobs, on_google =
+         *     those with a calendar event. Flags missing dates (booking but no job) and
+         *     jobs not yet on Google.
+         */
+        post: operations["turnover_sweep_api_properties_turnover_sweep_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1314,6 +2454,28 @@ export interface paths {
          * @description Return iCal booking events for a property (for calendar display).
          */
         get: operations["get_ical_events_api_properties__property_id__ical_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/{property_id}/ical-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ical Preview
+         * @description Live diagnostic: fetch the property's iCal feed(s) and show, per booking,
+         *     what the turnover sync would decide — so you can see exactly why a given
+         *     checkout did or didn't become a turnover (e.g. a missing June 26).
+         */
+        get: operations["ical_preview_api_properties__property_id__ical_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1717,6 +2879,11 @@ export interface paths {
         /**
          * Submit Intake
          * @description Public endpoint — called from maineclean.co contact/quote form.
+         *
+         *     Goes through the single canonical intake path (see modules.intake.normalize):
+         *     every structured field is persisted, the estimate is computed, and a visit
+         *     that also hits /booking/submit or /webhook within 5 minutes merges into one
+         *     lead instead of creating duplicates.
          */
         post: operations["submit_intake_api_intake_submit_post"];
         delete?: never;
@@ -1815,6 +2982,12 @@ export interface paths {
         /**
          * Webhook Intake
          * @description Accepts the maineclean.co InstantEstimate payload OR CRM-forward payload.
+         *
+         *     Maps the webhook's field names onto the canonical intake path, which computes
+         *     the authoritative backend estimate (so the website and webhook can never
+         *     disagree on the rate card). The customer's structured answers land in their
+         *     own columns; ``message`` keeps only the free-text note. Any drift from the
+         *     site-reported estimate is recorded in internal_notes for ops to review.
          */
         post: operations["webhook_intake_api_intake_webhook_post"];
         delete?: never;
@@ -1835,7 +3008,12 @@ export interface paths {
         /**
          * Submit Booking
          * @description Public endpoint — called from maineclean.co booking/quote request form.
-         *     Creates a LeadIntake + Client record and returns a booking confirmation.
+         *
+         *     Routes through the single canonical intake path (modules.intake.normalize),
+         *     which persists every structured field, computes the estimate (now including
+         *     the customer's frequency, which used to be hard-coded to None so the cadence
+         *     AND its discount were dropped), and dedupes against the other public
+         *     endpoints so one visit doesn't create two leads.
          */
         post: operations["submit_booking_api_booking_submit_post"];
         delete?: never;
@@ -1892,6 +3070,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/gcal/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Gcal Notification
+         * @description Google Calendar push channel callback. Always 200s (a non-2xx makes Google
+         *     retry); authentication + the actual work happen in handle_notification.
+         */
+        post: operations["gcal_notification_api_integrations_gcal_notifications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fields": {
         parameters: {
             query?: never;
@@ -1935,7 +3134,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Gmail Inbox */
+        /**
+         * Gmail Inbox
+         * @description Fetch + thread the Gmail inbox on demand. Thin wrapper over the shared
+         *     run_inbox_sync so manual refreshes and the background scheduler agree.
+         */
         get: operations["gmail_inbox_api_gmail_inbox_get"];
         put?: never;
         post?: never;
@@ -2087,6 +3290,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/opportunities/{opp_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Opportunity Note
+         * @description Jot an internal note on a deal. Recorded as a NOTE_ADDED activity anchored
+         *     to the opportunity (and its client) so it lands in the deal's timeline.
+         */
+        post: operations["add_opportunity_note_api_opportunities__opp_id__notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities": {
         parameters: {
             query?: never;
@@ -2096,6 +3320,110 @@ export interface paths {
         };
         /** List Activities */
         get: operations["list_activities_api_activities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integration-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Integration Events
+         * @description List integration events, newest first. Filterable by entity/provider/status.
+         */
+        get: operations["list_integration_events_api_integration_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global Search
+         * @description Search clients, properties, invoices, and jobs by name/number/contact.
+         *
+         *     Returns a flat list of {type, id, title, subtitle, path} grouped-friendly
+         *     results. Each type is capped at ``limit`` so one noisy entity can't crowd
+         *     out the others.
+         */
+        get: operations["global_search_api_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/geo/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Geo Config
+         * @description Tells the UI whether address autocomplete is available.
+         */
+        get: operations["geo_config_api_geo_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/geo/autocomplete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autocomplete
+         * @description Street-address suggestions for a partial query (US only).
+         */
+        get: operations["autocomplete_api_geo_autocomplete_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/geo/place": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Place
+         * @description Resolve a place_id to standardized street/city/state/zip + lat/lng.
+         */
+        get: operations["place_api_geo_place_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2156,6 +3484,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/general": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get General Settings */
+        get: operations["get_general_settings_api_settings_general_get"];
+        put?: never;
+        /**
+         * Save General Settings
+         * @description Persist company identity + quote terms. The Settings UI was already
+         *     POSTing here — the endpoint just never existed, so 'Company Information'
+         *     silently failed to save. These rows feed the public quote page and the
+         *     quote email (settings first, env fallback).
+         */
+        post: operations["save_general_settings_api_settings_general_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/general/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Company Logo
+         * @description Store an uploaded logo image and point company_logo_url at our served
+         *     copy. Returns the new public logo URL (with a cache-busting version).
+         */
+        post: operations["upload_company_logo_api_settings_general_logo_post"];
+        /**
+         * Delete Company Logo
+         * @description Remove the stored logo and clear company_logo_url.
+         */
+        delete: operations["delete_company_logo_api_settings_general_logo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Company Logo
+         * @description Serve the stored logo bytes. PUBLIC (no auth) — email clients, the PDF
+         *     generator, and the public quote page all load it without a session.
+         */
+        get: operations["serve_company_logo_api_settings_logo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/property-media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Property Media
+         * @description Property photo + data integration status. Never returns the raw keys —
+         *     only whether each is configured.
+         */
+        get: operations["get_property_media_api_settings_property_media_get"];
+        put?: never;
+        /**
+         * Save Property Media
+         * @description Save the Street View / property-data toggles and keys. A blank key field
+         *     leaves the stored key unchanged (so the UI never has to round-trip secrets).
+         */
+        post: operations["save_property_media_api_settings_property_media_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/from-email": {
         parameters: {
             query?: never;
@@ -2170,6 +3594,205 @@ export interface paths {
         get: operations["get_from_email_api_settings_from_email_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/gcal-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gcal Status
+         * @description Live Google Calendar connection check — tells the operator whether the
+         *     server's Google credentials actually work, and which calendars the token
+         *     can see vs. which the app writes to. Replaces the old hardcoded
+         *     '✓ Connected' badge that lied when no token was present.
+         */
+        get: operations["gcal_status_api_settings_gcal_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/gcal-watch/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Gcal Watch Register
+         * @description Register (or refresh) Google Calendar push channels for the configured
+         *     business calendars, so external edits notify BrightBase in real time. Needs a
+         *     public https APP_BASE_URL.
+         */
+        post: operations["gcal_watch_register_api_settings_gcal_watch_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/gmail-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gmail Status
+         * @description Per-account Gmail connection health so Settings can surface
+         *     connected / token-expired / reconnect — the Gmail mirror of gcal-status.
+         *
+         *     Without this, a Gmail grant could silently expire and inbound email would
+         *     just stop syncing with no signal to the operator.
+         */
+        get: operations["gmail_status_api_settings_gmail_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/google/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Connect
+         * @description Start the OAuth web flow. Returns the Google consent URL the browser
+         *     should navigate to. A one-time state nonce is stored to verify the callback.
+         */
+        get: operations["google_connect_api_settings_google_connect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Callback
+         * @description OAuth redirect target. Verifies the state nonce, exchanges the code for a
+         *     token, persists it (app_settings 'google_token'), then bounces back to the app.
+         */
+        get: operations["google_callback_api_settings_google_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/gcal-embed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gcal Embed
+         * @description Embeddable Google Calendar URL for the in-app calendar views.
+         *     Returns the computed embed_url plus the raw saved override (so the Settings
+         *     field can show/edit it).
+         *
+         *     overlay="all" → the dedicated Calendar page wants EVERY calendar stacked
+         *     (the work account's primary + each configured GCAL_*), ignoring the single
+         *     pasted override so nothing is hidden.
+         */
+        get: operations["get_gcal_embed_api_settings_gcal_embed_get"];
+        put?: never;
+        /**
+         * Save Gcal Embed
+         * @description Set (or clear) the Google Calendar embed URL. Accepts a pasted <iframe>
+         *     tag or a bare URL; only google.com calendar embed URLs are stored (it's
+         *     rendered in an iframe, so we don't allow arbitrary src values).
+         */
+        post: operations["save_gcal_embed_api_settings_gcal_embed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/messaging-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Messaging Status
+         * @description Live state of AUTOMATIC customer-facing messaging — for an at-a-glance
+         *     "are we texting customers?" indicator.
+         *
+         *     The ONLY automatic path that can message a customer is the job SMS reminder
+         *     tick. Crucially, that tick is REGISTERED at boot only when the env flag
+         *     JOB_SMS_REMINDERS_ENABLED is on (scheduler.start_scheduler); the DB setting
+         *     job_sms_reminders_enabled can only *further disable* it from inside the tick.
+         *     So messaging is actually ON iff the env gate is on AND the DB setting hasn't
+         *     turned it off — we report the real scheduler state, not just intent, so a DB
+         *     toggle flipped without the env flag/restart doesn't show a false ON. Manual
+         *     sends (per-appointment invite, invoice, inbox reply) are operator-initiated
+         *     and intentionally not reflected here.
+         */
+        get: operations["messaging_status_api_settings_messaging_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/messaging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Messaging
+         * @description Turn automatic customer SMS reminders on/off from the UI.
+         *
+         *     Writes the job_sms_reminders_enabled app-setting, which the reminder tick
+         *     checks every run — so setting it false stops reminders immediately, even if
+         *     the JOB_SMS_REMINDERS_ENABLED env flag is on (no redeploy needed). This is
+         *     the in-app kill switch for customer messaging.
+         */
+        post: operations["set_messaging_api_settings_messaging_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2198,6 +3821,70 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/settings/quote-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quote Templates
+         * @description Return the saved quote templates list. Seeds with defaults if empty.
+         */
+        get: operations["get_quote_templates_api_settings_quote_templates_get"];
+        /**
+         * Update Quote Templates
+         * @description Overwrite the quote templates list. Caller sends the full array.
+         */
+        put: operations["update_quote_templates_api_settings_quote_templates_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Views
+         * @description The caller's saved views, optionally filtered to one entity type.
+         *     Defaults float to the top, then alphabetical.
+         */
+        get: operations["list_views_api_views_get"];
+        put?: never;
+        /** Create View */
+        post: operations["create_view_api_views_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/views/{view_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete View */
+        delete: operations["delete_view_api_views__view_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update View */
+        patch: operations["update_view_api_views__view_id__patch"];
         trace?: never;
     };
     "/api/work/board": {
@@ -2295,39 +3982,12 @@ export interface paths {
          *
          *     - clear_gcal: null out `jobs.gcal_event_id` and `visits.gcal_event_id` so
          *       future deletes won't try to also remove events from Google Calendar.
-         *     - deactivate_ical_feeds: set `property_icals.active = false` and null out
-         *       `properties.ical_url` (legacy field) so no new iCal pulls happen.
+         *     - deactivate_ical_feeds: set `property_icals.active = false` so no new
+         *       iCal pulls happen.
          *
          *     Local data (clients, properties, jobs, visits) is preserved.
          */
         post: operations["unlink_calendars_api_admin_unlink_calendars_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/delete-scheduled-visits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Delete Scheduled Visits
-         * @description Bulk-delete scheduled (uncompleted) visits. By default removes only visits
-         *     in `status = 'scheduled'`. Useful after disabling iCal sync to clear out
-         *     auto-generated turnover visits that are no longer wanted.
-         *
-         *     - only_ical: restrict deletion to visits where `ical_source` is set
-         *       (i.e. created from an iCal feed).
-         *     - include_dispatched: also delete dispatched/en_route/in_progress visits.
-         *       Completed, no_show, and cancelled visits are always preserved.
-         */
-        post: operations["delete_scheduled_visits_api_admin_delete_scheduled_visits_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2349,26 +4009,6 @@ export interface paths {
          *     active=false). Removes property_icals rows first to satisfy FK.
          */
         post: operations["hard_delete_properties_api_admin_properties_hard_delete_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/visits/hard-delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Hard Delete Visits
-         * @description Hard-delete visits by ID (vs. the default cancel-by-status).
-         */
-        post: operations["hard_delete_visits_api_admin_visits_hard_delete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2478,6 +4118,207 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings
+         * @description Return current sync flags (DB-backed) and read-only env-derived config
+         *     so the Settings page can render company info, calendar IDs, and webhook
+         *     URLs without exposing secrets.
+         */
+        get: operations["get_settings_api_admin_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/sync-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Sync Flags
+         * @description Update DB-backed sync feature flags. These override env defaults at
+         *     runtime (see scheduler._db_flag).
+         */
+        patch: operations["update_sync_flags_api_admin_settings_sync_flags_patch"];
+        trace?: never;
+    };
+    "/api/ai/quick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quick Query
+         * @description One-shot question answered with live business data. Returns {answer}.
+         */
+        post: operations["quick_query_api_ai_quick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/daily-briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daily Briefing
+         * @description Morning briefing. Returns {greeting, summary, priorities[], alerts[], tip}.
+         *
+         *     Served from a once-a-day cache (refreshed by the 6am scheduler job) so the
+         *     dashboard loads instantly and the briefing stays consistent through the day.
+         *     Pass ?refresh=true to force a fresh generation.
+         */
+        get: operations["daily_briefing_api_ai_daily_briefing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/draft-invoice-reminder/{invoice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Invoice Reminder
+         * @description Draft a friendly payment-reminder note for one invoice. Review-first:
+         *     this only writes a draft, it does not send anything. Returns
+         *     {subject, message}. The message is meant to drop into the invoice send
+         *     panel's note field, so it works for email or SMS.
+         */
+        post: operations["draft_invoice_reminder_api_ai_draft_invoice_reminder__invoice_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/overdue-reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overdue Reminders
+         * @description Batch chaser: draft a reminder for every overdue invoice at once.
+         *     Review-first — returns drafts only, sends nothing. Each item carries the
+         *     data the UI needs to review and then send via the existing invoice send
+         *     endpoint. {total, truncated, reminders:[...]}.
+         */
+        get: operations["overdue_reminders_api_ai_overdue_reminders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/followup-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Followup Check
+         * @description Deterministic scan for things needing attention. {total, followups[]}.
+         */
+        get: operations["followup_check_api_ai_followup_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Summary
+         * @description Pre-computed dashboard KPIs: quote funnel/pipeline, new leads, active clients.
+         *
+         *     Mirrors the derivations the frontend used to run over the full lists:
+         *       pipeline_value = Σ total where status in (sent, draft)
+         *       awaiting       = sent + viewed          (quotes out for reply)
+         *       changes        = changes_requested
+         *       to_schedule    = accepted
+         *       quoted         = sent + viewed + changes_requested  (funnel "Quoted")
+         *       won            = converted                          (funnel "Won")
+         */
+        get: operations["dashboard_summary_api_dashboard_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/schedule/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Schedule Week
+         * @description Everything the Schedule page needs for one week, in a single response.
+         */
+        get: operations["schedule_week_api_schedule_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ical-sync-now": {
         parameters: {
             query?: never;
@@ -2515,26 +4356,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Config
-         * @description Public endpoint that provides the API key to the SPA frontend.
-         */
-        get: operations["get_config_api_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/agents": {
         parameters: {
             query?: never;
@@ -2556,8 +4377,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AcceptQuoteRequest */
-        AcceptQuoteRequest: Record<string, never>;
         /** AddressValidate */
         AddressValidate: {
             /** Address */
@@ -2571,6 +4390,13 @@ export interface components {
             distanceMiles?: number | null;
             /** Message */
             message: string;
+        };
+        /** AdminUserUpdate */
+        AdminUserUpdate: {
+            /** Role */
+            role?: string | null;
+            /** Active */
+            active?: boolean | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -2587,6 +4413,10 @@ export interface components {
             gcal_auto_sync_enabled?: boolean | null;
             /** Gcal Sync Interval */
             gcal_sync_interval?: number | null;
+            /** Recurring Auto Generate Enabled */
+            recurring_auto_generate_enabled?: boolean | null;
+            /** Invite Customers */
+            invite_customers?: boolean | null;
         };
         /** Body_import_clients_api_admin_import_clients_post */
         Body_import_clients_api_admin_import_clients_post: {
@@ -2598,6 +4428,14 @@ export interface components {
         };
         /** Body_import_clients_xlsx_api_clients_import_xlsx_post */
         Body_import_clients_xlsx_api_clients_import_xlsx_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** Body_upload_company_logo_api_settings_general_logo_post */
+        Body_upload_company_logo_api_settings_general_logo_post: {
             /**
              * File
              * Format: binary
@@ -2660,6 +4498,8 @@ export interface components {
             bathrooms?: number | null;
             /** Guests */
             guests?: number | null;
+            /** Frequency */
+            frequency?: string | null;
             /** Checkin */
             checkIn?: string | null;
             /** Checkout */
@@ -2672,6 +4512,10 @@ export interface components {
             notes?: string | null;
             /** Message */
             message?: string | null;
+            /** Pethair */
+            petHair?: string | null;
+            /** Condition */
+            condition?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -2725,6 +4569,16 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ClientMergeRequest */
+        ClientMergeRequest: {
+            /** Loser Id */
+            loser_id: number;
+        };
+        /** ClientNoteRequest */
+        ClientNoteRequest: {
+            /** Body */
+            body: string;
+        };
         /** ClientUpdate */
         ClientUpdate: {
             /** Name */
@@ -2754,7 +4608,7 @@ export interface components {
             /** Billing Zip */
             billing_zip?: string | null;
             /** Status */
-            status?: string | null;
+            status?: ("lead" | "active" | "inactive") | null;
             /** Notes */
             notes?: string | null;
             /** Source */
@@ -2819,21 +4673,6 @@ export interface components {
             /** Phone Type */
             phone_type?: string | null;
         };
-        /** DeleteScheduledVisitsRequest */
-        DeleteScheduledVisitsRequest: {
-            /** Confirm */
-            confirm: string;
-            /**
-             * Only Ical
-             * @default false
-             */
-            only_ical: boolean;
-            /**
-             * Include Dispatched
-             * @default false
-             */
-            include_dispatched: boolean;
-        };
         /** DispatchError */
         DispatchError: {
             /** Employee Id */
@@ -2889,6 +4728,17 @@ export interface components {
              * @default true
              */
             email_auto_enrich: string | null;
+        };
+        /** EmailReplyRequest */
+        EmailReplyRequest: {
+            /** To Email */
+            to_email: string;
+            /** Subject */
+            subject: string;
+            /** Body */
+            body: string;
+            /** In Reply To Message Id */
+            in_reply_to_message_id?: string | null;
         };
         /** EmailRequest */
         EmailRequest: {
@@ -2962,6 +4812,53 @@ export interface components {
             /** Sort Order */
             sort_order?: number | null;
         };
+        /** GcalEmbedConfig */
+        GcalEmbedConfig: {
+            /** Embed Url */
+            embed_url?: string | null;
+        };
+        /** GeneralSettings */
+        GeneralSettings: {
+            /** Company Name */
+            company_name?: string | null;
+            /** Company Email */
+            company_email?: string | null;
+            /** Company Phone */
+            company_phone?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Quote Terms */
+            quote_terms?: string | null;
+            /** Brand Color */
+            brand_color?: string | null;
+            /** Company Logo Url */
+            company_logo_url?: string | null;
+            /** Service Scope Residential */
+            service_scope_residential?: string | null;
+            /** Service Scope Commercial */
+            service_scope_commercial?: string | null;
+            /** Service Scope Str */
+            service_scope_str?: string | null;
+        };
+        /** GoogleAccountUpdate */
+        GoogleAccountUpdate: {
+            /** Gmail Sync Enabled */
+            gmail_sync_enabled?: boolean | null;
+            /** Gcal Sync Enabled */
+            gcal_sync_enabled?: boolean | null;
+        };
+        /** GoogleExchangeRequest */
+        GoogleExchangeRequest: {
+            /** Code */
+            code: string;
+        };
+        /** GoogleSignInRequest */
+        GoogleSignInRequest: {
+            /** Credential */
+            credential: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2991,6 +4888,10 @@ export interface components {
             frequency?: string | null;
             /** Message */
             message?: string | null;
+            /** Pethair */
+            petHair?: string | null;
+            /** Condition */
+            condition?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -3033,8 +4934,26 @@ export interface components {
             service_type: string | null;
             /** Bedrooms */
             bedrooms?: number | null;
+            /** Bathrooms */
+            bathrooms?: number | null;
             /** Square Footage */
             square_footage?: number | null;
+            /** Guests */
+            guests?: number | null;
+            /** Frequency */
+            frequency?: string | null;
+            /** Requested Date */
+            requested_date?: string | null;
+            /** Check In */
+            check_in?: string | null;
+            /** Check Out */
+            check_out?: string | null;
+            /** Estimate Min */
+            estimate_min?: number | null;
+            /** Estimate Max */
+            estimate_max?: number | null;
+            /** Property Name */
+            property_name?: string | null;
             /** Message */
             message?: string | null;
             /** Preferred Date */
@@ -3124,7 +5043,7 @@ export interface components {
             /** Tax Rate */
             tax_rate?: number | null;
             /** Status */
-            status?: string | null;
+            status?: ("draft" | "sent" | "paid" | "overdue" | "void") | null;
             /** Due Date */
             due_date?: string | null;
             /** Notes */
@@ -3135,6 +5054,26 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * JobCompleteRequest
+         * @description Payload for POST /api/jobs/{id}/complete — one call sets the job as done.
+         */
+        JobCompleteRequest: {
+            /** Completed By */
+            completed_by?: number | null;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Checklist Results */
+            checklist_results?: {
+                [key: string]: unknown;
+            } | null;
+            /** Photos */
+            photos?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** JobCreate */
         JobCreate: {
@@ -3175,6 +5114,11 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Allow Conflicts
+             * @default false
+             */
+            allow_conflicts: boolean | null;
         };
         /**
          * JobResponse
@@ -3202,12 +5146,16 @@ export interface components {
             job_type: string;
             /** Property Id */
             property_id?: number | null;
+            /** Property Name */
+            property_name?: string | null;
             /** Recurring Schedule Id */
             recurring_schedule_id?: number | null;
             /** Calendar Invite Sent */
             calendar_invite_sent?: boolean | null;
             /** Sms Reminder Sent */
             sms_reminder_sent?: boolean | null;
+            /** Skip Sms Reminder */
+            skip_sms_reminder?: boolean | null;
             /** Title */
             title: string;
             /** Scheduled Date */
@@ -3280,6 +5228,15 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+            /** Job Type */
+            job_type?: string | null;
+            /** Property Id */
+            property_id?: number | null;
+            /**
+             * Allow Conflicts
+             * @default false
+             */
+            allow_conflicts: boolean | null;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -3303,6 +5260,11 @@ export interface components {
             email: string;
             /** Role */
             role: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
         };
         /**
          * MessageRead
@@ -3341,6 +5303,11 @@ export interface components {
             /** Created At */
             created_at?: string | null;
         };
+        /** MessagingConfig */
+        MessagingConfig: {
+            /** Customer Sms Reminders */
+            customer_sms_reminders: boolean;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /** Client Id */
@@ -3371,6 +5338,11 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** OpportunityNoteRequest */
+        OpportunityNoteRequest: {
+            /** Body */
+            body: string;
         };
         /** OpportunityUpdate */
         OpportunityUpdate: {
@@ -3421,8 +5393,6 @@ export interface components {
              * @default residential
              */
             property_type: string | null;
-            /** Ical Url */
-            ical_url?: string | null;
             /**
              * Default Duration Hours
              * @default 3
@@ -3448,6 +5418,13 @@ export interface components {
             hours_of_operation?: string | null;
             /** Notes */
             notes?: string | null;
+            /**
+             * Custom Fields
+             * @default {}
+             */
+            custom_fields: {
+                [key: string]: unknown;
+            } | null;
         };
         /** PropertyIcalSchema */
         PropertyIcalSchema: {
@@ -3475,6 +5452,17 @@ export interface components {
             /** Instructions */
             instructions?: string | null;
         };
+        /** PropertyMediaConfig */
+        PropertyMediaConfig: {
+            /** Property Photo Enabled */
+            property_photo_enabled?: boolean | null;
+            /** Google Maps Api Key */
+            google_maps_api_key?: string | null;
+            /** Property Enrichment Enabled */
+            property_enrichment_enabled?: boolean | null;
+            /** Rentcast Api Key */
+            rentcast_api_key?: string | null;
+        };
         /** PropertyUpdate */
         PropertyUpdate: {
             /** Name */
@@ -3489,8 +5477,6 @@ export interface components {
             zip_code?: string | null;
             /** Property Type */
             property_type?: string | null;
-            /** Ical Url */
-            ical_url?: string | null;
             /** Default Duration Hours */
             default_duration_hours?: number | null;
             /** Default Crew Size */
@@ -3515,6 +5501,52 @@ export interface components {
             notes?: string | null;
             /** Active */
             active?: boolean | null;
+            /** Checklist Template */
+            checklist_template?: unknown[] | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** PublicAcceptRequest */
+        PublicAcceptRequest: {
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+        };
+        /** PublicChangeRequest */
+        PublicChangeRequest: {
+            /** Message */
+            message: string;
+        };
+        /** PublicDeclineRequest */
+        PublicDeclineRequest: {
+            /** Name */
+            name?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** PublicScheduleRequest */
+        PublicScheduleRequest: {
+            /** Date */
+            date: string;
+            /**
+             * Window
+             * @default morning
+             */
+            window: string;
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+        };
+        /** QuickQuery */
+        QuickQuery: {
+            /** Question */
+            question: string;
+            /** Page Context */
+            page_context?: string | null;
         };
         /** QuoteCreate */
         QuoteCreate: {
@@ -3524,35 +5556,55 @@ export interface components {
             intake_id?: number | null;
             /** Opportunity Id */
             opportunity_id?: number | null;
-            /** Address */
-            address?: string | null;
+            /** Property Id */
+            property_id?: number | null;
+            /** Title */
+            title?: string | null;
+            /** Customer Message */
+            customer_message?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /**
              * Service Type
              * @default residential
              */
             service_type: string | null;
+            /** Frequency */
+            frequency?: string | null;
+            /** Address */
+            address?: string | null;
+            /** Notes */
+            notes?: string | null;
             /** Items */
-            items: components["schemas"]["QuoteItem"][];
+            items?: components["schemas"]["QuoteItem"][];
             /**
              * Tax Rate
              * @default 0
              */
-            tax_rate: number | null;
-            /** Notes */
-            notes?: string | null;
+            tax_rate: number;
             /**
-             * Custom Fields
-             * @default {}
+             * Discount
+             * @default 0
              */
-            custom_fields: {
-                [key: string]: unknown;
-            } | null;
+            discount: number;
             /** Valid Until */
             valid_until?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            } | null;
         };
-        /** QuoteItem */
+        /**
+         * QuoteItem
+         * @description A single line item. Mirrors the shape the frontend builds.
+         */
         QuoteItem: {
-            /** Name */
+            /**
+             * Name
+             * @default
+             */
             name: string;
             /**
              * Description
@@ -3564,29 +5616,111 @@ export interface components {
              * @default 1
              */
             qty: number;
-            /** Unit Price */
+            /**
+             * Unit Price
+             * @default 0
+             */
             unit_price: number;
+        };
+        /** QuoteRequestCreate */
+        QuoteRequestCreate: {
+            /** Client Id */
+            client_id?: number | null;
+            /** Requester Name */
+            requester_name: string;
+            /** Requester Email */
+            requester_email: string;
+            /** Requester Phone */
+            requester_phone?: string | null;
+            /** Property Id */
+            property_id?: number | null;
+            /** Service Type */
+            service_type?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Preferred Date */
+            preferred_date?: string | null;
+            /** Preferred Time */
+            preferred_time?: string | null;
+        };
+        /** QuoteRequestUpdate */
+        QuoteRequestUpdate: {
+            /** Status */
+            status?: string | null;
+            /** Quote Id */
+            quote_id?: number | null;
+            /** Service Type */
+            service_type?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Preferred Date */
+            preferred_date?: string | null;
+            /** Preferred Time */
+            preferred_time?: string | null;
+        };
+        /** QuoteSendRequest */
+        QuoteSendRequest: {
+            /**
+             * Channel
+             * @default email
+             */
+            channel: string;
+            /** Email */
+            email?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Custom Message */
+            custom_message?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /** Greeting */
+            greeting?: string | null;
+            /** Copy To */
+            copy_to?: string | null;
+        };
+        /** QuoteTemplatesUpdate */
+        QuoteTemplatesUpdate: {
+            /** Templates */
+            templates: unknown[];
         };
         /** QuoteUpdate */
         QuoteUpdate: {
-            /** Address */
-            address?: string | null;
+            /** Client Id */
+            client_id?: number | null;
+            /** Intake Id */
+            intake_id?: number | null;
+            /** Opportunity Id */
+            opportunity_id?: number | null;
+            /** Property Id */
+            property_id?: number | null;
+            /** Title */
+            title?: string | null;
+            /** Customer Message */
+            customer_message?: string | null;
+            /** Internal Notes */
+            internal_notes?: string | null;
             /** Service Type */
             service_type?: string | null;
+            /** Frequency */
+            frequency?: string | null;
+            /** Address */
+            address?: string | null;
+            /** Notes */
+            notes?: string | null;
             /** Items */
             items?: components["schemas"]["QuoteItem"][] | null;
             /** Tax Rate */
             tax_rate?: number | null;
-            /** Notes */
-            notes?: string | null;
-            /** Custom Fields */
-            custom_fields?: {
-                [key: string]: unknown;
-            } | null;
+            /** Discount */
+            discount?: number | null;
             /** Valid Until */
             valid_until?: string | null;
             /** Status */
             status?: string | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ReassignJobPropertyRequest */
         ReassignJobPropertyRequest: {
@@ -3641,6 +5775,23 @@ export interface components {
             full_name: string;
             /** Role */
             role: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Access Token */
+            access_token?: string | null;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
+        /** ReminderSettings */
+        ReminderSettings: {
+            /** Skip Reminder */
+            skip_reminder: boolean;
         };
         /** ResetDataRequest */
         ResetDataRequest: {
@@ -3678,6 +5829,48 @@ export interface components {
             body: string;
             /** Client Id */
             client_id?: number | null;
+        };
+        /** SavedViewCreate */
+        SavedViewCreate: {
+            /** Entity Type */
+            entity_type: string;
+            /** Name */
+            name: string;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+        };
+        /** SavedViewResponse */
+        SavedViewResponse: {
+            /** Id */
+            id: number;
+            /** Entity Type */
+            entity_type: string;
+            /** Name */
+            name: string;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Is Default */
+            is_default: boolean;
+        };
+        /** SavedViewUpdate */
+        SavedViewUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Is Default */
+            is_default?: boolean | null;
         };
         /** ScheduleCreate */
         ScheduleCreate: {
@@ -3774,17 +5967,6 @@ export interface components {
             /** Custom Message */
             custom_message?: string | null;
         };
-        /** SendQuoteRequest */
-        SendQuoteRequest: {
-            /** Channel */
-            channel: string;
-            /** Email */
-            email?: string | null;
-            /** Phone */
-            phone?: string | null;
-            /** Custom Message */
-            custom_message?: string | null;
-        };
         /** SendReplyRequest */
         SendReplyRequest: {
             /** Body */
@@ -3801,10 +5983,32 @@ export interface components {
             /** Snoozed Until */
             snoozed_until?: string | null;
         };
+        /** SyncFlagsBody */
+        SyncFlagsBody: {
+            /** Ical Auto Sync Enabled */
+            ical_auto_sync_enabled?: boolean | null;
+            /** Gcal Auto Sync Enabled */
+            gcal_auto_sync_enabled?: boolean | null;
+            /** Recurring Auto Generate Enabled */
+            recurring_auto_generate_enabled?: boolean | null;
+        };
         /** TagsRequest */
         TagsRequest: {
             /** Tags */
             tags: string[];
+        };
+        /** TimeOffCreate */
+        TimeOffCreate: {
+            /** Cleaner Id */
+            cleaner_id: string;
+            /** Cleaner Name */
+            cleaner_name?: string | null;
+            /** Start Date */
+            start_date: string;
+            /** End Date */
+            end_date: string;
+            /** Reason */
+            reason?: string | null;
         };
         /** UndispatchError */
         UndispatchError: {
@@ -3847,6 +6051,11 @@ export interface components {
             role: string;
             /** Active */
             active: boolean;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -3856,139 +6065,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-        };
-        /**
-         * VisitCreate
-         * @description Request body for POST /api/visits.
-         */
-        VisitCreate: {
-            /** Job Id */
-            job_id: number;
-            /**
-             * Scheduled Date
-             * Format: date
-             */
-            scheduled_date: string;
-            /**
-             * Start Time
-             * Format: time
-             */
-            start_time: string;
-            /**
-             * End Time
-             * Format: time
-             */
-            end_time: string;
-            /**
-             * Status
-             * @default scheduled
-             * @enum {string}
-             */
-            status: "scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "cancelled" | "no_show";
-            /**
-             * Cleaner Ids
-             * @default []
-             */
-            cleaner_ids: number[];
-            /** Gcal Event Id */
-            gcal_event_id?: string | null;
-            /** Ical Source */
-            ical_source?: string | null;
-            /** Ical Uid */
-            ical_uid?: string | null;
-            /** Notes */
-            notes?: string | null;
-        };
-        /**
-         * VisitRead
-         * @description Response model for GET /api/visits and POST/PATCH responses.
-         */
-        VisitRead: {
-            /** Id */
-            id: number;
-            /** Job Id */
-            job_id: number;
-            /**
-             * Scheduled Date
-             * Format: date
-             */
-            scheduled_date: string;
-            /**
-             * Start Time
-             * Format: time
-             */
-            start_time: string;
-            /**
-             * End Time
-             * Format: time
-             */
-            end_time: string;
-            /** Status */
-            status: string;
-            /** Cleaner Ids */
-            cleaner_ids: number[];
-            /** Gcal Event Id */
-            gcal_event_id: string | null;
-            /** Ical Source */
-            ical_source: string | null;
-            /** Ical Uid */
-            ical_uid: string | null;
-            /** Completed At */
-            completed_at: string | null;
-            /** Completed By */
-            completed_by: number | null;
-            /** Checklist Results */
-            checklist_results: {
-                [key: string]: unknown;
-            } | null;
-            /** Photos */
-            photos: string[] | null;
-            /** Notes */
-            notes: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * VisitUpdate
-         * @description Request body for PATCH /api/visits/{id}.
-         */
-        VisitUpdate: {
-            /** Scheduled Date */
-            scheduled_date?: string | null;
-            /** Start Time */
-            start_time?: string | null;
-            /** End Time */
-            end_time?: string | null;
-            /** Status */
-            status?: ("scheduled" | "dispatched" | "en_route" | "in_progress" | "completed" | "cancelled" | "no_show") | null;
-            /** Cleaner Ids */
-            cleaner_ids?: number[] | null;
-            /** Gcal Event Id */
-            gcal_event_id?: string | null;
-            /** Ical Source */
-            ical_source?: string | null;
-            /** Ical Uid */
-            ical_uid?: string | null;
-            /** Completed At */
-            completed_at?: string | null;
-            /** Completed By */
-            completed_by?: number | null;
-            /** Checklist Results */
-            checklist_results?: {
-                [key: string]: unknown;
-            } | null;
-            /** Photos */
-            photos?: string[] | null;
-            /** Notes */
-            notes?: string | null;
         };
         /** WebhookPayload */
         WebhookPayload: {
@@ -4078,6 +6154,144 @@ export interface operations {
             };
         };
     };
+    google_signin_config_api_auth_google_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    google_signin_api_auth_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleSignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    google_login_url_api_auth_google_login_url_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    google_login_callback_api_auth_google_login_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    google_exchange_api_auth_google_exchange_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     register_api_auth_register_post: {
         parameters: {
             query?: never;
@@ -4131,10 +6345,286 @@ export interface operations {
             };
         };
     };
+    session_status_api_auth_session_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_workspace_users_api_auth_users_get: {
+        parameters: {
+            query?: {
+                include_clients?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_user_api_auth_users__user_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deny_user_api_auth_users__user_id__deny_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_workspace_user_api_auth_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_google_account_api_auth_google_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    disconnect_google_account_api_auth_google_account_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_google_account_api_auth_google_account_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleAccountUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    google_account_connect_url_api_auth_google_account_connect_url_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    google_account_callback_api_auth_google_account_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_clients_api_clients_get: {
         parameters: {
             query?: {
                 status?: string | null;
+                search?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -4177,6 +6667,71 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_duplicate_api_clients_check_duplicate_get: {
+        parameters: {
+            query?: {
+                name?: string | null;
+                phone?: string | null;
+                email?: string | null;
+                exclude_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crm_health_api_clients_health_get: {
+        parameters: {
+            query?: {
+                sample?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4352,6 +6907,41 @@ export interface operations {
             };
         };
     };
+    merge_clients_api_clients__winner_id__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                winner_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_client_phones_api_clients__client_id__phones_get: {
         parameters: {
             query?: never;
@@ -4431,6 +7021,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_client_note_api_clients__client_id__notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4568,11 +7193,44 @@ export interface operations {
             };
         };
     };
-    get_quotes_api_quotes_get: {
+    cleanup_duplicates_by_email_api_clients_cleanup_duplicates_by_email_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_quotes_api_quotes_get: {
         parameters: {
             query?: {
                 client_id?: number | null;
                 status?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -4633,6 +7291,71 @@ export interface operations {
             };
         };
     };
+    quotes_needing_follow_up_api_quotes_follow_ups_get: {
+        parameters: {
+            query?: {
+                /** @description Flag sent-but-unviewed quotes older than this many hours */
+                sent_hours?: number;
+                /** @description Flag viewed-but-unaccepted quotes older than this many hours */
+                viewed_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    property_lookup_api_quotes_property_lookup_get: {
+        parameters: {
+            query: {
+                address: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_quote_api_quotes__quote_id__get: {
         parameters: {
             query?: never;
@@ -4664,36 +7387,7 @@ export interface operations {
             };
         };
     };
-    delete_quote_api_quotes__quote_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                quote_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_quote_api_quotes__quote_id__patch: {
+    update_quote_api_quotes__quote_id__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -4728,7 +7422,38 @@ export interface operations {
             };
         };
     };
-    send_quote_api_quotes__quote_id__send_post: {
+    delete_quote_api_quotes__quote_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_quote_api_quotes__quote_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -4739,7 +7464,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SendQuoteRequest"];
+                "application/json": components["schemas"]["QuoteUpdate"];
             };
         };
         responses: {
@@ -4763,7 +7488,7 @@ export interface operations {
             };
         };
     };
-    convert_to_job_api_quotes__quote_id__convert_to_job_post: {
+    get_quote_details_api_quotes__quote_id__details_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4773,6 +7498,528 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    permanently_delete_quote_api_quotes__quote_id__permanent_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_quote_api_quotes__quote_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["QuoteSendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_quote_token_api_quotes__quote_id__generate_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_quote_api_quotes__quote_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_quote_api_quotes__quote_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_quote_to_job_api_quotes__quote_id__convert_to_job_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_view_quote_api_quotes_public__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_accept_quote_api_quotes_public__token__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_request_changes_api_quotes_public__token__request_changes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_decline_quote_api_quotes_public__token__decline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicDeclineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_quote_pdf_api_quotes_public__token__pdf_get: {
+        parameters: {
+            query?: {
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_quote_property_photo_api_quotes_public__token__property_photo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_quote_availability_api_quotes_public__token__availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_schedule_quote_api_quotes_public__token__schedule_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_quote_requests_api_quotes_requests__get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_quote_request_api_quotes_requests__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteRequestCreate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -4794,7 +8041,42 @@ export interface operations {
             };
         };
     };
-    generate_public_token_api_quotes__quote_id__generate_token_post: {
+    update_quote_request_api_quotes_requests__request_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteRequestUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_quote_pdf_api_quotes__quote_id__generate_pdf_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4825,12 +8107,14 @@ export interface operations {
             };
         };
     };
-    get_public_quote_api_quotes_public__token__get: {
+    send_quote_email_api_quotes__quote_id__send_email_post: {
         parameters: {
-            query?: never;
+            query: {
+                recipient_email: string;
+            };
             header?: never;
             path: {
-                token: string;
+                quote_id: number;
             };
             cookie?: never;
         };
@@ -4856,20 +8140,78 @@ export interface operations {
             };
         };
     };
-    accept_public_quote_api_quotes_public__token__accept_post: {
+    get_quote_email_history_api_quotes__quote_id__email_history_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                token: string;
+                quote_id: number;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcceptQuoteRequest"];
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
+    };
+    get_quote_sms_history_api_quotes__quote_id__sms_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quote_delivery_history_api_quotes__quote_id__delivery_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -4895,11 +8237,13 @@ export interface operations {
         parameters: {
             query?: {
                 client_id?: number | null;
+                property_id?: number | null;
                 status?: string | null;
                 date?: string | null;
                 date_from?: string | null;
                 date_to?: string | null;
                 job_type?: string | null;
+                unassigned?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -4960,6 +8304,60 @@ export interface operations {
             };
         };
     };
+    client_gcal_events_api_jobs_client__client_id__gcal_events_get: {
+        parameters: {
+            query?: {
+                days_back?: number;
+                days_ahead?: number;
+            };
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gcal_sync_status_api_jobs_gcal_sync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     push_to_gcal_api_jobs_push_to_gcal_post: {
         parameters: {
             query?: never;
@@ -5016,6 +8414,182 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_time_off_api_jobs_time_off_get: {
+        parameters: {
+            query?: {
+                cleaner_id?: string | null;
+                upcoming_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_time_off_api_jobs_time_off_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimeOffCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_time_off_api_jobs_time_off__time_off_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                time_off_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auto_assign_turnovers_api_jobs_auto_assign_turnovers_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diagnose_missing_times_api_jobs_diagnostics_missing_times_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backfill_missing_times_api_jobs_backfill_missing_times_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5092,6 +8666,144 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["JobUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_details_api_jobs__job_id__details_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_timeline_api_jobs__job_id__timeline_get: {
+        parameters: {
+            query?: {
+                source?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_job_note_api_jobs__job_id__notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_reminder_settings_api_jobs__job_id__reminder_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderSettings"];
             };
         };
         responses: {
@@ -5209,166 +8921,20 @@ export interface operations {
             };
         };
     };
-    debug_all_visits_api_visits_debug_all_get: {
+    complete_job_api_jobs__job_id__complete_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                job_id: number;
+            };
             cookie?: never;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    check_visits_coverage_api_visits_admin_coverage_check_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    report_drift_check_api_visits_telemetry_drift_check_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    backfill_visits_from_jobs_api_visits_admin_backfill_visits_from_jobs_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_visits_api_visits_get: {
-        parameters: {
-            query?: {
-                scheduled_date_from?: string | null;
-                scheduled_date_to?: string | null;
-                status?: string | null;
-                property_type?: string | null;
-                job_id?: number | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_visit_api_visits_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": components["schemas"]["VisitCreate"];
+                "application/json": components["schemas"]["JobCompleteRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VisitRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_visit_api_visits__visit_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                visit_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5390,113 +8956,14 @@ export interface operations {
             };
         };
     };
-    update_visit_api_visits__visit_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                visit_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VisitUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VisitRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_visit_api_visits__visit_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                visit_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_visit_api_visits__visit_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                visit_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VisitUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VisitRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    skip_visit_api_visits__visit_id__skip_post: {
+    skip_job_api_jobs__job_id__skip_post: {
         parameters: {
             query?: {
                 reason?: string | null;
             };
             header?: never;
             path: {
-                visit_id: number;
+                job_id: number;
             };
             cookie?: never;
         };
@@ -5522,12 +8989,12 @@ export interface operations {
             };
         };
     };
-    get_crew_suggestions_api_visits__visit_id__crew_suggestions_get: {
+    get_job_crew_suggestions_api_jobs__job_id__crew_suggestions_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                visit_id: number;
+                job_id: number;
             };
             cookie?: never;
         };
@@ -5553,12 +9020,12 @@ export interface operations {
             };
         };
     };
-    auto_assign_crew_api_visits__visit_id__auto_assign_post: {
+    auto_assign_job_crew_api_jobs__job_id__auto_assign_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                visit_id: number;
+                job_id: number;
             };
             cookie?: never;
         };
@@ -5589,6 +9056,8 @@ export interface operations {
             query?: {
                 client_id?: number | null;
                 status?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -5631,6 +9100,37 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invoice_summary_by_service_api_invoices_summary_by_service_get: {
+        parameters: {
+            query?: {
+                period?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5744,6 +9244,37 @@ export interface operations {
             };
         };
     };
+    get_invoice_details_api_invoices__invoice_id__details_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     send_invoice_api_invoices__invoice_id__send_post: {
         parameters: {
             query?: never;
@@ -5779,11 +9310,12 @@ export interface operations {
             };
         };
     };
-    get_public_invoice_api_invoices_public__token__get: {
+    get_public_invoice_api_invoices_public__invoice_id___token__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                invoice_id: number;
                 token: string;
             };
             cookie?: never;
@@ -6029,6 +9561,8 @@ export interface operations {
                 assignee?: string | null;
                 channel?: string | null;
                 unread_only?: boolean;
+                /** @description none|met|on_track|at_risk|breached */
+                sla_state?: string | null;
                 q?: string | null;
                 tag?: string | null;
                 limit?: number;
@@ -6383,6 +9917,37 @@ export interface operations {
             };
         };
     };
+    client_comms_api_comms_client__client_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     send_sms_message_api_comms_sms_post: {
         parameters: {
             query?: never;
@@ -6660,7 +10225,90 @@ export interface operations {
             };
         };
     };
+    rebuild_turnovers_api_properties__property_id__rebuild_turnovers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_single_ical_api_properties__property_id__icals__ical_id__sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: number;
+                ical_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     sync_all_ical_api_properties_sync_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    turnover_sweep_api_properties_turnover_sweep_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -6686,6 +10334,37 @@ export interface operations {
                 start?: string | null;
                 end?: string | null;
             };
+            header?: never;
+            path: {
+                property_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ical_preview_api_properties__property_id__ical_preview_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 property_id: number;
@@ -7424,6 +11103,8 @@ export interface operations {
                 source?: string | null;
                 service_type?: string | null;
                 priority?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -7700,6 +11381,26 @@ export interface operations {
             };
         };
     };
+    gcal_notification_api_integrations_gcal_notifications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_fields_api_fields_get: {
         parameters: {
             query?: {
@@ -7958,17 +11659,16 @@ export interface operations {
     };
     send_email_reply_api_gmail_send_reply_post: {
         parameters: {
-            query: {
-                to_email: string;
-                subject: string;
-                body: string;
-                in_reply_to_message_id?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailReplyRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -7997,6 +11697,8 @@ export interface operations {
                 client_id?: number | null;
                 owner?: string | null;
                 service_type?: string | null;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -8203,13 +11905,202 @@ export interface operations {
             };
         };
     };
+    add_opportunity_note_api_opportunities__opp_id__notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opp_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpportunityNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_activities_api_activities_get: {
         parameters: {
             query?: {
                 client_id?: number | null;
                 opportunity_id?: number | null;
+                job_id?: number | null;
                 activity_type?: string | null;
                 limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_integration_events_api_integration_events_get: {
+        parameters: {
+            query?: {
+                entity_type?: string | null;
+                entity_id?: number | null;
+                provider?: string | null;
+                status?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    global_search_api_search_get: {
+        parameters: {
+            query: {
+                /** @description Search term */
+                q: string;
+                /** @description Max results per entity type */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    geo_config_api_geo_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    autocomplete_api_geo_autocomplete_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    place_api_geo_place_get: {
+        parameters: {
+            query: {
+                place_id: string;
             };
             header?: never;
             path?: never;
@@ -8330,6 +12221,185 @@ export interface operations {
             };
         };
     };
+    get_general_settings_api_settings_general_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_general_settings_api_settings_general_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_company_logo_api_settings_general_logo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_company_logo_api_settings_general_logo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_company_logo_api_settings_general_logo_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    serve_company_logo_api_settings_logo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_property_media_api_settings_property_media_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_property_media_api_settings_property_media_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PropertyMediaConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_from_email_api_settings_from_email_get: {
         parameters: {
             query?: never;
@@ -8346,6 +12416,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    gcal_status_api_settings_gcal_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    gcal_watch_register_api_settings_gcal_watch_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    gmail_status_api_settings_gmail_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    google_connect_api_settings_google_connect_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    google_callback_api_settings_google_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gcal_embed_api_settings_gcal_embed_get: {
+        parameters: {
+            query?: {
+                overlay?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_gcal_embed_api_settings_gcal_embed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GcalEmbedConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    messaging_status_api_settings_messaging_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_messaging_api_settings_messaging_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessagingConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8390,6 +12689,187 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quote_templates_api_settings_quote_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_quote_templates_api_settings_quote_templates_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteTemplatesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_views_api_views_get: {
+        parameters: {
+            query?: {
+                entity_type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedViewResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_view_api_views_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedViewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedViewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_view_api_views__view_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_view_api_views__view_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedViewUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedViewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8526,73 +13006,7 @@ export interface operations {
             };
         };
     };
-    delete_scheduled_visits_api_admin_delete_scheduled_visits_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeleteScheduledVisitsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     hard_delete_properties_api_admin_properties_hard_delete_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BulkIdsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    hard_delete_visits_api_admin_visits_hard_delete_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -8718,6 +13132,246 @@ export interface operations {
             };
         };
     };
+    get_settings_api_admin_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_sync_flags_api_admin_settings_sync_flags_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncFlagsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quick_query_api_ai_quick_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuickQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    daily_briefing_api_ai_daily_briefing_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_invoice_reminder_api_ai_draft_invoice_reminder__invoice_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overdue_reminders_api_ai_overdue_reminders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    followup_check_api_ai_followup_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    dashboard_summary_api_dashboard_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    schedule_week_api_schedule_week_get: {
+        parameters: {
+            query: {
+                scheduled_date_from: string;
+                scheduled_date_to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     manual_ical_sync_api_admin_ical_sync_now_post: {
         parameters: {
             query?: never;
@@ -8739,26 +13393,6 @@ export interface operations {
         };
     };
     health_api_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_config_api_config_get: {
         parameters: {
             query?: never;
             header?: never;
