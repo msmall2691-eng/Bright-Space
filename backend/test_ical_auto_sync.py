@@ -686,8 +686,8 @@ def test_19_scheduler_lifecycle():
 def test_20_invalid_env_int():
     """Invalid ICAL_AUTO_SYNC_INTERVAL_MINUTES defaults to 15."""
     with patch.dict(os.environ, {"ICAL_AUTO_SYNC_INTERVAL_MINUTES": "invalid"}):
-        from scheduler import _env_int
-        val = _env_int("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15)
+        from config import env_int
+        val = env_int("ICAL_AUTO_SYNC_INTERVAL_MINUTES", 15)
         assert val == 15
 
 

@@ -54,7 +54,3 @@ def send_sms(to: str, body: str) -> dict:
         raise RuntimeError(f"Twilio API error: {e}")
 
 
-def get_sms_status(sid: str) -> dict:
-    """Check delivery status of a sent message."""
-    message = _client().messages(sid).fetch()
-    return {"sid": message.sid, "status": message.status, "error_code": message.error_code}

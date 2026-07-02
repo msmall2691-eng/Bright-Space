@@ -5,9 +5,9 @@ Uses ContactEmail table for multi-email matching and enrichment.
 
 CHANGE (2026-04-18): Gmail auto-enrich no longer creates a Client record for
 every unknown sender. It now delegates the decision to
-integrations.email_filter.should_create_client_from_email(), which blocks
-no-reply / marketing senders and only creates clients for senders whose
-message looks like an actual cleaning-service inquiry.
+integrations.email_filter.evaluate_inbound_email(), which blocks no-reply /
+marketing senders and only creates clients for senders whose message looks
+like an actual cleaning-service inquiry.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
