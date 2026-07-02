@@ -132,12 +132,6 @@ export default function Settings() {
   // Stop iCal sync (Integrations tab) — flips iCal auto-sync off + deactivates feeds
   const [stoppingIcal, setStoppingIcal] = useState(false)
 
-  // Delete all scheduled visits (Integrations tab)
-  const [deleteVisitsConfirm, setDeleteVisitsConfirm] = useState('')
-  const [deleteVisitsOnlyIcal, setDeleteVisitsOnlyIcal] = useState(true)
-  const [deleteVisitsIncludeDispatched, setDeleteVisitsIncludeDispatched] = useState(false)
-  const [deletingVisits, setDeletingVisits] = useState(false)
-  const [deleteVisitsResult, setDeleteVisitsResult] = useState(null)
   const runResetData = async () => {
     if (resetConfirmText !== 'RESET') return
     if (!confirm('This will permanently delete ALL clients, properties, jobs, visits, quotes, invoices, conversations, messages, leads, opportunities, and activities. Users and settings are preserved. Continue?')) return
@@ -207,30 +201,6 @@ export default function Settings() {
       toast('Failed to update iCal sync: ' + (e?.message || 'unknown'), 'error')
     } finally {
       setStoppingIcal(false)
-    }
-  }
-
-  const deleteScheduledVisits = async () => {
-    if (deleteVisitsConfirm !== 'DELETE') return
-    const scope = deleteVisitsOnlyIcal ? 'iCal-sourced' : 'all'
-    const lifecycle = deleteVisitsIncludeDispatched ? 'scheduled, dispatched, en-route, and in-progress' : 'scheduled'
-    if (!confirm(`This will permanently delete ${scope} visits in status: ${lifecycle}. Completed and cancelled visits are preserved. Continue?`)) return
-    setDeletingVisits(true)
-    setDeleteVisitsResult(null)
-    try {
-      const data = await post('/api/admin/delete-scheduled-visits', {
-        confirm: 'DELETE',
-        only_ical: deleteVisitsOnlyIcal,
-        include_dispatched: deleteVisitsIncludeDispatched,
-      })
-      setDeleteVisitsResult(data)
-      setDeleteVisitsConfirm('')
-      toast(`Deleted ${data.deleted} scheduled visits`)
-    } catch (e) {
-      setDeleteVisitsResult({ error: e?.message || 'Delete failed' })
-      toast('Delete failed: ' + (e?.message || 'unknown'), 'error')
-    } finally {
-      setDeletingVisits(false)
     }
   }
 
@@ -1098,76 +1068,11 @@ export default function Settings() {
                   </div>
                 </div>
 
-                {/* Maintenance — delete all scheduled visits */}
-                <div className="mt-4 bg-panel rounded-xl border border-red-200 p-5 space-y-4" data-testid="delete-visits-card">
-                  <div>
-                    <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
-                      <Trash2 className="w-4 h-4 text-red-600" /> Delete scheduled visits
-                    </h3>
-                    <p className="text-xs text-ink-3 mt-1">
-                      Clear out future visits that haven't been completed yet. Useful right after
-                      stopping iCal sync to wipe auto-generated turnover visits. Completed,
-                      no-show, and cancelled visits are always preserved.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs text-ink-2">
-                      <input
-                        type="checkbox"
-                        checked={deleteVisitsOnlyIcal}
-                        onChange={e => setDeleteVisitsOnlyIcal(e.target.checked)}
-                        className="w-4 h-4 rounded border-hairline"
-                        data-testid="delete-visits-only-ical"
-                      />
-                      Only delete visits sourced from iCal feeds
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-ink-2">
-                      <input
-                        type="checkbox"
-                        checked={deleteVisitsIncludeDispatched}
-                        onChange={e => setDeleteVisitsIncludeDispatched(e.target.checked)}
-                        className="w-4 h-4 rounded border-hairline"
-                        data-testid="delete-visits-include-dispatched"
-                      />
-                      Also delete dispatched / en-route / in-progress visits
-                    </label>
-                  </div>
-                  <div>
-                    <label className={lbl}>Type DELETE to enable the button</label>
-                    <input
-                      type="text"
-                      value={deleteVisitsConfirm}
-                      onChange={e => setDeleteVisitsConfirm(e.target.value)}
-                      placeholder="DELETE"
-                      data-testid="delete-visits-confirm-input"
-                      className={inp}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <button
-                    onClick={deleteScheduledVisits}
-                    disabled={deletingVisits || deleteVisitsConfirm !== 'DELETE'}
-                    data-testid="delete-visits-button"
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-                  >
-                    {deletingVisits ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    {deletingVisits ? 'Deleting...' : 'Delete scheduled visits'}
-                  </button>
-                  {deleteVisitsResult && !deleteVisitsResult.error && (
-                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs">
-                      <div className="font-semibold mb-1">✓ Deleted {deleteVisitsResult.deleted} visits</div>
-                      <div className="text-emerald-700">
-                        Statuses targeted: {(deleteVisitsResult.statuses_targeted || []).join(', ')}
-                        {deleteVisitsResult.only_ical ? ' · iCal-sourced only' : ''}
-                      </div>
-                    </div>
-                  )}
-                  {deleteVisitsResult?.error && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs">
-                      Delete failed: {deleteVisitsResult.error}
-                    </div>
-                  )}
-                </div>
+                {/* The "Delete scheduled visits" card was removed alongside
+                    its backend endpoint (POST /api/admin/delete-scheduled-visits)
+                    when the Visit table was retired in the Job/Visit unification.
+                    Occurrences are Jobs now; cancelling a job's schedule is done
+                    via the schedule/agenda cancel flows. */}
               </div>
 
               {/* Other connected services */}

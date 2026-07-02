@@ -984,7 +984,9 @@ export default function Schedule() {
   const [coverage, setCoverage] = useState(null)
   const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [hardDelete, setHardDelete] = useState(false)
+  // The "Hard delete" bulk-cancel toggle was removed alongside its backend
+  // endpoint (POST /api/admin/visits/hard-delete) in the Job/Visit unification.
+  // Bulk cancel is soft-only now (PATCH /api/jobs/{id} status=cancelled).
   const [refreshKey, setRefreshKey] = useState(0)
   // Auto-assign turnovers: null | { loading } | { preview:{assigned,unassignable} } | { running }
   const [autoAssign, setAutoAssign] = useState(null)
@@ -1371,23 +1373,18 @@ export default function Schedule() {
   const bulkDeleteVisits = async () => {
     const ids = Array.from(selectedVisitIds)
     if (ids.length === 0) return
-    const verb = hardDelete ? 'permanently delete' : 'cancel'
-    if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} visit${ids.length === 1 ? '' : 's'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be marked cancelled (status=cancelled).'} `)) return
+    if (!confirm(`Cancel ${ids.length} visit${ids.length === 1 ? '' : 's'}? They will be marked cancelled (status=cancelled).`)) return
     setBulkDeleting(true)
     try {
-      if (hardDelete) {
-        await post('/api/admin/visits/hard-delete', { ids })
-      } else {
-        const results = await Promise.allSettled(
-          ids.map(id => {
-            const v = visits.find(x => x.id === id)
-            const targetId = v?.job_id ?? id
-            return patch(`/api/jobs/${targetId}`, { status: 'cancelled' })
-          })
-        )
-        const failed = results.filter(r => r.status === 'rejected').length
-        if (failed > 0) toast.error(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
-      }
+      const results = await Promise.allSettled(
+        ids.map(id => {
+          const v = visits.find(x => x.id === id)
+          const targetId = v?.job_id ?? id
+          return patch(`/api/jobs/${targetId}`, { status: 'cancelled' })
+        })
+      )
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed > 0) toast.error(`Cancelled ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       setVisits(visits.filter(v => !selectedVisitIds.has(v.id)))
       clearVisitSelection()
     } catch (e) {
@@ -1649,12 +1646,6 @@ export default function Schedule() {
           {selectedVisitIds.size > 0 && (
             <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
               <span className="text-xs text-ink-2 font-medium">{selectedVisitIds.size} selected</span>
-              <label className="flex items-center gap-1 text-[11px] text-ink-2 cursor-pointer select-none" title="Permanently remove from database (vs. mark cancelled)">
-                <input type="checkbox" checked={hardDelete}
-                  onChange={e => setHardDelete(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-hairline cursor-pointer" />
-                Hard delete
-              </label>
               <button onClick={clearVisitSelection}
                 className="text-xs text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
                 Clear
@@ -1663,9 +1654,7 @@ export default function Schedule() {
                 data-testid="visits-bulk-delete"
                 className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                 <Trash2 className="w-3.5 h-3.5" />
-                {bulkDeleting
-                  ? 'Working...'
-                  : `${hardDelete ? 'Hard delete' : 'Cancel'} ${selectedVisitIds.size}`}
+                {bulkDeleting ? 'Working...' : `Cancel ${selectedVisitIds.size}`}
               </button>
             </div>
           )}
