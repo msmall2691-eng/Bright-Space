@@ -575,12 +575,6 @@ def reassign_job_property(payload: ReassignJobPropertyRequest, db: Session = Dep
     }
 
 
-class SyncFlagsBody(BaseModel):
-    ical_auto_sync_enabled: Optional[bool] = None
-    gcal_auto_sync_enabled: Optional[bool] = None
-    recurring_auto_generate_enabled: Optional[bool] = None
-
-
 @router.get("/settings", dependencies=[Depends(require_role("admin", "manager"))])
 def get_settings(db: Session = Depends(get_db)):
     """Return current sync flags (DB-backed) and read-only env-derived config
@@ -624,25 +618,3 @@ def get_settings(db: Session = Depends(get_db)):
     }
 
 
-@router.patch("/settings/sync-flags", dependencies=[Depends(require_role("admin", "manager"))])
-def update_sync_flags(body: SyncFlagsBody, db: Session = Depends(get_db)):
-    """Update DB-backed sync feature flags. These override env defaults at
-    runtime (see scheduler._db_flag)."""
-    from database.models import AppSetting
-
-    payload = body.model_dump(exclude_none=True)
-    if not payload:
-        return {"updated": []}
-
-    updated = []
-    for key, value in payload.items():
-        row = db.query(AppSetting).filter(AppSetting.key == key).first()
-        val_str = "1" if value else "0"
-        if row:
-            row.value = val_str
-        else:
-            row = AppSetting(key=key, value=val_str)
-            db.add(row)
-        updated.append({"key": key, "value": value})
-    db.commit()
-    return {"updated": updated}

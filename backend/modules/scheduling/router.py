@@ -907,14 +907,6 @@ def sync_from_gcal(db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/sync-gcal-cancellations", dependencies=[Depends(require_role("admin", "manager"))])
-def sync_gcal_cancellations_endpoint(db: Session = Depends(get_db)):
-    """Manual trigger for the GCal-cancellation reverse linkage check.
-    Useful for testing without waiting for the scheduler tick."""
-    from integrations.gcal_sync import sync_gcal_cancellations
-    return sync_gcal_cancellations(db)
-
-
 # ---------------------------------------------------------------------------
 # Cleaner availability (time-off)
 # Defined BEFORE /{job_id} so the literal "/time-off" path isn't captured by
@@ -1683,60 +1675,6 @@ def invite_client(job_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"GCal error: {e}")
-
-
-@router.post("/{job_id}/convert-to-invoice", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def convert_job_to_invoice(job_id: int, db: Session = Depends(get_db)):
-    """Convert a completed job to an invoice."""
-    from database.models import Invoice, Quote
-    from datetime import datetime, timedelta
-
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    if job.status != "completed":
-        raise HTTPException(status_code=409, detail="Only completed jobs can be converted to invoices")
-
-    # Pull line items + tax from the originating quote when the job came from
-    # one (quotes are now integer-keyed, matching Job.quote_id); otherwise build
-    # a default single-line invoice from the job.
-    quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
-    if quote and quote.items:
-        items = quote.items
-    else:
-        items = [{
-            "name": job.title,
-            "qty": 1,
-            "unit_price": 0,
-            "description": ""
-        }]
-
-    subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
-    tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate) else 5.5
-    tax = round(subtotal * (tax_rate / 100), 2)
-    total = round(subtotal + tax, 2)
-    due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
-
-    invoice = Invoice(
-        client_id=job.client_id,
-        job_id=job.id,
-        opportunity_id=job.opportunity_id,
-        items=items,
-        subtotal=round(subtotal, 2),
-        tax_rate=tax_rate,
-        tax=tax,
-        total=total,
-        status="draft",
-        due_date=due_date,
-        notes=job.notes or "",
-    )
-    db.add(invoice)
-    db.commit()
-    db.refresh(invoice)
-
-    from modules.invoicing.router import invoice_to_dict
-    return invoice_to_dict(invoice)
 
 
 @router.post("/admin/rehydrate-job-dates-from-gcal", dependencies=[Depends(require_role("admin", "manager"))])
