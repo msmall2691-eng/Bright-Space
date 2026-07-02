@@ -59,7 +59,7 @@ system_prompt: |
 
   Common patterns:
   - New backend module: create modules/name/__init__.py + modules/name/router.py, then add to main.py
-  - DB model change: edit models.py + add ALTER TABLE to db.py _run_migrations()
+  - DB model change: edit models.py + add an Alembic migration under backend/alembic/versions/ (Alembic is the single source of truth for schema)
   - Fix a bug: read_file to find it, edit_file to fix it, explain what was wrong
   - New frontend page: write_file the .jsx, then check App.jsx routing with read_file
 

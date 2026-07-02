@@ -1,22 +1,21 @@
 #!/usr/bin/env python
-"""Production schema reconciliation (P0, 2026-06-08; extended 2026-06-10/11).
+"""Production schema reconciliation — EMERGENCY UTILITY.
 
-WHY: prod Postgres was built with Base.metadata.create_all(), so tables/enum
-types exist without matching Alembic history (alembic_version=011), and the
-migration chain itself is structurally broken (see
-docs/recover-prod-schema-2026-06-08.sql), so we DON'T run `alembic upgrade head`.
-Originally this reconciled only the quote tables (missing columns from 013-022
-made quoting 500). On 2026-06-10 properties.custom_fields turned up missing in
-prod too (/api/visits 500, UndefinedColumn) — so this diffs EVERY model table.
-On 2026-06-11 a second drift CLASS surfaced: column TYPES (prod
-integration_events payload columns were json while the model says String,
-500ing quote-send after successful delivery) — so the diff now also compares
-types against the model.
+Originally written 2026-06-08 (extended 2026-06-10/11) when prod Postgres had
+diverged from Alembic history: tables built by ``Base.metadata.create_all``
+and the migration chain was structurally broken. Prod has since been
+reconciled and the app now runs ``alembic upgrade head`` on every deploy
+(``scripts/db_bootstrap.py``, Railway ``preDeployCommand``). Alembic is the
+single source of truth for schema.
 
-SAFE + idempotent + re-runnable. It only ADDs missing tables/columns/FK by
-default; type drift is REPORTED, and only fixed with the opt-in --fix-types
-(and then only where the model wants the text family — ::text casts are
-lossless from any type; anything else needs a human-reviewed cast).
+Keep this script as a break-glass tool for the next time prod ends up ahead
+of migrations (an out-of-band SQL change, a botched deploy). It diffs the DB
+against ``Base.metadata`` and can ADD missing tables/columns/FK idempotently
+(and, with ``--fix-types``, coerce text-family type drift). It stamps
+Alembic at revision 022 — the point at which prod was originally reconciled —
+so a subsequent ``alembic upgrade head`` can carry the DB forward through
+everything after that. If you're running this in 2026-Q4+, the stamp target
+almost certainly needs updating to something more recent.
 
   0. GATE: aborts unless quotes.id is integer/bigint. If it's uuid the table
      predates 018_integerize_quotes and needs a real migration, not this.
