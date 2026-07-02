@@ -1051,25 +1051,11 @@ export default function Schedule() {
         propsList.forEach(p => propsMap[p.id] = p)
         clientsList.forEach(c => clientsMap[c.id] = c)
 
-        const visitsData = Array.isArray(week?.visits) ? week.visits : []
-
-        console.log('[Schedule] Loaded:', { visitsCount: visitsData.length, jobsCount: jobsList.length, propsCount: propsList.length })
-
-        // FALLBACK: If no visits exist, use jobs as visits (they have the same structure)
-        // This handles the case where Visit records haven't been created yet
-        const displayData = visitsData.length > 0
-          ? visitsData
-          : jobsList.map(j => ({
-              ...j,
-              id: `job-${j.id}`,
-              job_id: j.id,
-              scheduled_date: j.scheduled_date,
-              start_time: j.start_time,
-              end_time: j.end_time,
-              cleaner_ids: j.cleaner_ids || [],
-              status: j.status,
-            }))
-
+        // /api/schedule/week's `visits` array is derived from jobs by the
+        // backend since the Job/Visit unification (see modules/schedule/router.py).
+        // The pre-migration fallback that mapped jobs into a visit shape here is
+        // gone — the backend always returns the shape we want.
+        const displayData = Array.isArray(week?.visits) ? week.visits : []
         setVisits(displayData)
         setJobs(jobsMap)
         setProperties(propsMap)

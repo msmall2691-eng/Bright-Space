@@ -6,8 +6,8 @@ the full intake list (limit=200) and the active-clients list purely to count
 rows and sum totals on the client. This endpoint computes those numbers with
 indexed SQL aggregates in one round trip — no large payloads, no client-side
 counting. The dashboard still fetches row-level detail (invoices for AR aging,
-jobs/visits/conversations for the schedule + attention list) separately, since
-those need the actual records.
+jobs/conversations for the schedule + attention list) separately, since those
+need the actual records.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, or_
