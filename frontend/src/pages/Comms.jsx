@@ -918,8 +918,8 @@ export default function Comms() {
      ═══════════════════════════════════════════════════════════════════════ */
 
   // Email now threads into the unified inbox (same UI as SMS) — backend
-  // run_inbox_sync attaches inbound Gmail to Conversations. The old separate
-  // GmailInbox view has been retired so All / SMS / Email all use one list.
+  // run_inbox_sync attaches inbound Gmail to Conversations. Email uses the
+  // same conversation list as SMS.
 
   return (
     <div className="flex h-full bg-bg">
