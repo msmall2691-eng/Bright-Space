@@ -19,10 +19,12 @@ Re-run after any backend change that touches a route handler signature, response
 ## Consume
 
 ```ts
-import type { JobCreate, ScheduleUpdate } from '@/api/helpers'
-import type { paths } from '@/api/types'
+import type { paths, components } from './types'
 
-// Path-driven type:
+// Request body from the Pydantic model:
+type JobCreate = components['schemas']['JobCreate']
+
+// Path-driven response type:
 type ListJobsResponse =
   paths['/api/jobs']['get']['responses']['200']['content']['application/json']
 ```

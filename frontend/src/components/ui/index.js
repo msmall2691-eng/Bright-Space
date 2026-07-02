@@ -8,7 +8,6 @@
  * zinc/neutral markup when building or refactoring pages.
  */
 export { default as Button } from './Button'
-export { default as FormInput } from './FormInput'
 export { default as GlassCard } from './GlassCard'
 export { default as StatusBadge } from './StatusBadge'
 export { default as PageHeader } from './PageHeader'
