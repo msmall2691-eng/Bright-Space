@@ -132,7 +132,7 @@ def push_to_gcal(job_id: int, db: Session = Depends(get_db)):
 
     event_id = create_event(_job_dict(job), _client_dict(client))
     if not event_id:
-        raise HTTPException(status_code=502, detail="Failed to create Google Calendar event. Run auth_google.py first.")
+        raise HTTPException(status_code=502, detail="Failed to create Google Calendar event. Connect a Google account in Settings → Integrations first.")
 
     job.calendar_invite_sent = True
     db.commit()

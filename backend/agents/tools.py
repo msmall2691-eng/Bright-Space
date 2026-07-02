@@ -308,7 +308,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             if has_token_file or has_token_env:
                 ok.append("Google Calendar credentials present")
             else:
-                issues.append("CRITICAL: No Google Calendar credentials — set GOOGLE_TOKEN_B64 env var or run auth_google.py")
+                issues.append("CRITICAL: No Google Calendar credentials — connect a Google account in Settings → Integrations, or set GOOGLE_TOKEN_B64")
 
             # Env vars
             gcal_id = os.getenv("GCAL_RESIDENTIAL_ID", "")
