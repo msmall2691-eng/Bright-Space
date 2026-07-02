@@ -18,7 +18,7 @@ import { get, getCached } from '../api'
 import { displayContactName, formatPhone } from '../utils/display'
 import { htmlToText } from '../utils/format'
 import { StatCard, EmptyState, ErrorState, Skeleton } from '../components/ui'
-import { AIFollowUps } from '../components/AIBriefing'
+import { AIFollowUps } from '../components/AIFollowUps'
 import {
   Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
   CheckCircle2, Clock, ArrowRight, Zap, FileText, Users, TrendingUp,
