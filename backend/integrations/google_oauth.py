@@ -1,7 +1,7 @@
 """Self-serve Google OAuth (web flow).
 
 Lets an admin connect their work Google account from inside the app — one click
-in Settings → Integrations instead of running auth_google.py locally and pasting
+in Settings → Integrations instead of running a local one-off script and pasting
 a base64 token into Railway.
 
 The resulting token is persisted in the app_settings table (key ``google_token``)

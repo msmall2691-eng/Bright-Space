@@ -3887,26 +3887,6 @@ export interface paths {
         patch: operations["update_view_api_views__view_id__patch"];
         trace?: never;
     };
-    "/api/work/board": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Work Board
-         * @description Get unified work board with all active pipeline stages.
-         */
-        get: operations["get_work_board_api_work_board_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/import/clients": {
         parameters: {
             query?: never;
@@ -12879,26 +12859,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_work_board_api_work_board_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
