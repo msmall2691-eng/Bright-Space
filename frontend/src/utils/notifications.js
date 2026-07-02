@@ -2,22 +2,12 @@
 // the API is unavailable, the user hasn't granted permission, or the tab
 // is already focused (in which case the in-app toast/badge is enough).
 
-const STORAGE_KEY = 'brightbase_notif_dismissed'
-
 export function isSupported() {
   return typeof window !== 'undefined' && 'Notification' in window
 }
 
 export function getPermission() {
   return isSupported() ? Notification.permission : 'denied'
-}
-
-export function isDismissed() {
-  try { return localStorage.getItem(STORAGE_KEY) === '1' } catch { return false }
-}
-
-export function dismiss() {
-  try { localStorage.setItem(STORAGE_KEY, '1') } catch {}
 }
 
 export async function requestPermission() {
