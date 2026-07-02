@@ -87,7 +87,7 @@ class JobResponse(BaseModel):
     opportunity_id: Optional[int] = None
     job_type: str
     property_id: Optional[int] = None
-    # Denormalized property.name so WeekView / Dashboard / PropertyDetail can
+    # Denormalized property.name so Schedule / Dashboard / PropertyDetail can
     # render the property label without a second fetch (was on Visit responses;
     # ported here as part of the Job/Visit unification PR-B).
     property_name: Optional[str] = None
@@ -511,7 +511,7 @@ def get_jobs(
     rendered = []
     if rows:
         # Bulk-fetch property names for the property_name field on JobResponse
-        # (needed by WeekView / Dashboard after the Job/Visit unification).
+        # (needed by Schedule / Dashboard after the Job/Visit unification).
         all_prop_ids = {j.property_id for j, _ in rows if j.property_id}
         prop_names = (
             {p.id: p.name for p in
