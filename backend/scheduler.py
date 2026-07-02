@@ -241,26 +241,6 @@ def str_turnover_autoassign_tick() -> dict:
         db.close()
 
 
-def daily_briefing_tick() -> dict:
-    """Pre-generate the AI daily briefing and cache it, so the dashboard loads
-    it instantly (and it stays consistent through the day). Gated behind
-    ai_daily_briefing_enabled (app_settings) / AI_DAILY_BRIEFING_ENABLED env."""
-    db = SessionLocal()
-    try:
-        if not _db_flag(db, "ai_daily_briefing_enabled", env_flag("AI_DAILY_BRIEFING_ENABLED", True)):
-            return {"skipped": True}
-        # Imported lazily so the scheduler doesn't hard-depend on the AI module.
-        from modules.ai.router import generate_and_cache_briefing
-        generate_and_cache_briefing(db)
-        log.info("AI daily briefing pre-generated and cached")
-        return {"ok": True}
-    except Exception as e:
-        log.error(f"AI daily briefing pre-generation failed: {e}")
-        return {"error": str(e)}
-    finally:
-        db.close()
-
-
 def turnover_coverage_tick() -> dict:
     """Proactive daily safety net: every upcoming guest checkout should have an
     active turnover. Read-only — the iCal tick already syncs feeds; this just
@@ -487,21 +467,6 @@ def start_scheduler():
         log.info(f"STR turnover auto-assign enabled (interval: {autoassign_interval_minutes} min)")
     else:
         log.info("STR turnover auto-assign disabled (set STR_TURNOVER_AUTOASSIGN_ENABLED=1 to enable)")
-
-    # AI daily briefing — pre-generate once each morning so the dashboard
-    # briefing is instant and consistent all day. Hour configurable.
-    if env_flag("AI_DAILY_BRIEFING_ENABLED", True):
-        briefing_hour = env_int("AI_DAILY_BRIEFING_HOUR", 6)
-        _scheduler.add_job(
-            daily_briefing_tick,
-            CronTrigger(hour=briefing_hour, minute=0),
-            id="ai_daily_briefing",
-            name="AI daily briefing pre-generate",
-            replace_existing=True,
-        )
-        log.info(f"AI daily briefing pre-generate enabled (daily at {briefing_hour:02d}:00)")
-    else:
-        log.info("AI daily briefing pre-generate disabled via AI_DAILY_BRIEFING_ENABLED=0")
 
     # Turnover coverage check — proactive daily safety net that logs loudly if any
     # upcoming guest checkout is missing a turnover.

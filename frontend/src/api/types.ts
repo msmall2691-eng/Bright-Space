@@ -4161,30 +4161,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ai/daily-briefing": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Daily Briefing
-         * @description Morning briefing. Returns {greeting, summary, priorities[], alerts[], tip}.
-         *
-         *     Served from a once-a-day cache (refreshed by the 6am scheduler job) so the
-         *     dashboard loads instantly and the briefing stays consistent through the day.
-         *     Pass ?refresh=true to force a fresh generation.
-         */
-        get: operations["daily_briefing_api_ai_daily_briefing_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/draft-invoice-reminder/{invoice_id}": {
         parameters: {
             query?: never;
@@ -13157,37 +13133,6 @@ export interface operations {
                 "application/json": components["schemas"]["QuickQuery"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    daily_briefing_api_ai_daily_briefing_get: {
-        parameters: {
-            query?: {
-                refresh?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

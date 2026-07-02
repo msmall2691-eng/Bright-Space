@@ -1,16 +1,14 @@
 """AI assistant REST endpoints.
 
-These back three frontend features that were already shipped in the UI but had
+These back two frontend features that were already shipped in the UI but had
 no server behind them (the buttons were dead):
 
   - POST /api/ai/quick          — the Cmd+K "Ask AI" command bar
-  - GET  /api/ai/daily-briefing — the dashboard's morning briefing
   - GET  /api/ai/followup-check — the "needs attention" alert list
 
-`quick` and `daily-briefing` use the Anthropic client plus the existing
-read-only business tools (agents/tools.py), so the assistant can pull live data
-(jobs, clients, invoices) before answering. Both degrade gracefully when
-ANTHROPIC_API_KEY is unset.
+`quick` uses the Anthropic client plus the existing read-only business tools
+(agents/tools.py), so the assistant can pull live data (jobs, clients, invoices)
+before answering. Degrades gracefully when ANTHROPIC_API_KEY is unset.
 
 `followup-check` is intentionally deterministic — no LLM. The UI hits it on
 every command-bar open and on dashboard mount, so it must be fast, free, and
@@ -28,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import Client, Job, RecurringSchedule, Property, Invoice, AppSetting
+from database.models import Client, Job, RecurringSchedule, Property, Invoice
 from modules.auth.router import get_current_user
 from agents.tools import get_tools_for_agent, execute_tool
 
@@ -132,115 +130,6 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
         logger.exception("ai/quick failed")
         from utils.ai_errors import friendly_ai_error
         return {"answer": friendly_ai_error(e), "error": True}
-
-
-# ── GET /api/ai/daily-briefing ──────────────────────────────────────────────
-
-BRIEFING_CACHE_KEY = "ai_daily_briefing_cache"
-
-
-def _generate_briefing(db: Session, name: str = "there") -> dict:
-    """Produce the briefing dict from live data + LLM (or deterministic
-    fallback). This is the expensive part; callers cache the result."""
-    snapshot = execute_tool("get_business_snapshot", {}, _AGENT)
-    followups = _compute_followups(db)
-
-    client = _anthropic_client()
-    if client is None:
-        return _fallback_briefing(name, snapshot, followups)
-
-    system = (
-        "You are the BrightBase assistant writing a short morning briefing for "
-        "the owner of a cleaning business. Be warm but concise. Respond with "
-        "ONLY a JSON object, no prose, with keys: greeting (string, 1 sentence), "
-        "summary (string, 1-2 sentences on today's workload and money), "
-        "priorities (array of 2-4 short action strings), alerts (array of 0-3 "
-        "urgent strings), tip (string, 1 short suggestion). Base everything on "
-        "the data provided — do not invent figures."
-    )
-    payload = {
-        "owner_name": name,
-        "today": date.today().isoformat(),
-        "snapshot": snapshot,
-        "items_needing_attention": followups["followups"],
-    }
-    try:
-        text = _run_tool_loop(client, system, json.dumps(payload, default=str),
-                              max_tokens=900, max_iters=2)
-        data = json.loads(_strip_json(text))
-        return {
-            "greeting": data.get("greeting", f"Good morning, {name}."),
-            "summary": data.get("summary", ""),
-            "priorities": data.get("priorities", []) or [],
-            "alerts": data.get("alerts", []) or [],
-            "tip": data.get("tip", ""),
-        }
-    except Exception:
-        logger.exception("ai/daily-briefing generation failed; using fallback")
-        return _fallback_briefing(name, snapshot, followups)
-
-
-def generate_and_cache_briefing(db: Session) -> dict:
-    """(Re)generate today's briefing and persist it in app_settings. Called by
-    the 6am scheduler job and on-demand when the cache is stale/missing."""
-    briefing = _generate_briefing(db)
-    row = db.query(AppSetting).filter(AppSetting.key == BRIEFING_CACHE_KEY).first()
-    value = json.dumps({"date": date.today().isoformat(), "briefing": briefing}, default=str)
-    if row:
-        row.value = value
-    else:
-        db.add(AppSetting(key=BRIEFING_CACHE_KEY, value=value))
-    db.commit()
-    return briefing
-
-
-def _personalize(briefing: dict, name: str) -> dict:
-    """Swap in the requesting user's name so a cached/scheduler-generated
-    greeting still reads personally."""
-    if name and name != "there":
-        return {**briefing, "greeting": f"Good morning, {name}."}
-    return briefing
-
-
-@router.get("/daily-briefing")
-def daily_briefing(refresh: bool = False, db: Session = Depends(get_db),
-                   user=Depends(get_current_user)):
-    """Morning briefing. Returns {greeting, summary, priorities[], alerts[], tip}.
-
-    Served from a once-a-day cache (refreshed by the 6am scheduler job) so the
-    dashboard loads instantly and the briefing stays consistent through the day.
-    Pass ?refresh=true to force a fresh generation."""
-    name = getattr(user, "full_name", None) or "there"
-    if not refresh:
-        row = db.query(AppSetting).filter(AppSetting.key == BRIEFING_CACHE_KEY).first()
-        if row and row.value:
-            try:
-                cached = json.loads(row.value)
-                if cached.get("date") == date.today().isoformat() and cached.get("briefing"):
-                    return _personalize(cached["briefing"], name)
-            except Exception:
-                pass  # fall through and regenerate
-    return _personalize(generate_and_cache_briefing(db), name)
-
-
-def _fallback_briefing(name, snapshot, followups):
-    s = snapshot if isinstance(snapshot, dict) else {}
-    jobs_today = s.get("jobs_today", 0)
-    outstanding = s.get("outstanding_invoices", 0)
-    summary = (
-        f"You have {jobs_today} job(s) scheduled today and "
-        f"{s.get('jobs_this_week', 0)} this week. "
-        f"Outstanding invoices total ${outstanding:,.0f}."
-    )
-    alerts = [f["title"] for f in followups["followups"] if f["severity"] == "high"][:3]
-    priorities = [f["action"] for f in followups["followups"]][:4]
-    return {
-        "greeting": f"Good morning, {name}.",
-        "summary": summary,
-        "priorities": priorities or ["You're all caught up — nice work."],
-        "alerts": alerts,
-        "tip": "Press ⌘K anytime to ask the assistant about your business.",
-    }
 
 
 # ── POST /api/ai/draft-invoice-reminder/{invoice_id} ────────────────────────
