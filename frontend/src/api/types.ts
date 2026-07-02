@@ -1334,27 +1334,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/sync-gcal-cancellations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sync Gcal Cancellations Endpoint
-         * @description Manual trigger for the GCal-cancellation reverse linkage check.
-         *     Useful for testing without waiting for the scheduler tick.
-         */
-        post: operations["sync_gcal_cancellations_endpoint_api_jobs_sync_gcal_cancellations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/jobs/time-off": {
         parameters: {
             query?: never;
@@ -1599,26 +1578,6 @@ export interface paths {
          *     Use this when you've finalized the schedule and are ready for the client to see it.
          */
         post: operations["invite_client_api_jobs__job_id__invite_client_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}/convert-to-invoice": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Convert Job To Invoice
-         * @description Convert a completed job to an invoice.
-         */
-        post: operations["convert_job_to_invoice_api_jobs__job_id__convert_to_invoice_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2178,26 +2137,6 @@ export interface paths {
         put?: never;
         /** Mark Read */
         post: operations["mark_read_api_comms_conversations__conv_id__read_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/comms/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Messages
-         * @description Flat message feed — kept for backward compat with older UI code.
-         */
-        get: operations["get_messages_api_comms_messages_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2780,87 +2719,6 @@ export interface paths {
         get: operations["download_ics_api_reminders_jobs__job_id__invite_ics_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reminders/jobs/{job_id}/sms-reminder": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send Job Reminder
-         * @description Send a 24hr SMS reminder to the client for a specific job.
-         */
-        post: operations["send_job_reminder_api_reminders_jobs__job_id__sms_reminder_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reminders/send-daily-reminders": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Send Daily Reminders
-         * @description Send SMS reminders for all jobs scheduled tomorrow that haven't been reminded yet.
-         *     Call this daily (manually or via a cron/scheduler).
-         */
-        post: operations["send_daily_reminders_api_reminders_send_daily_reminders_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reminders/jobs/{job_id}/gcal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Push To Gcal
-         * @description Create or update this job's Google Calendar event.
-         */
-        post: operations["push_to_gcal_api_reminders_jobs__job_id__gcal_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reminders/push-upcoming-to-gcal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Push Upcoming To Gcal
-         * @description Push all upcoming scheduled jobs that don't have a calendar invite yet.
-         */
-        post: operations["push_upcoming_to_gcal_api_reminders_push_upcoming_to_gcal_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4118,27 +3976,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/admin/settings/sync-flags": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Sync Flags
-         * @description Update DB-backed sync feature flags. These override env defaults at
-         *     runtime (see scheduler._db_flag).
-         */
-        patch: operations["update_sync_flags_api_admin_settings_sync_flags_patch"];
         trace?: never;
     };
     "/api/ai/quick": {
@@ -5938,15 +5775,6 @@ export interface components {
             status: string;
             /** Snoozed Until */
             snoozed_until?: string | null;
-        };
-        /** SyncFlagsBody */
-        SyncFlagsBody: {
-            /** Ical Auto Sync Enabled */
-            ical_auto_sync_enabled?: boolean | null;
-            /** Gcal Auto Sync Enabled */
-            gcal_auto_sync_enabled?: boolean | null;
-            /** Recurring Auto Generate Enabled */
-            recurring_auto_generate_enabled?: boolean | null;
         };
         /** TagsRequest */
         TagsRequest: {
@@ -8354,26 +8182,6 @@ export interface operations {
             };
         };
     };
-    sync_gcal_cancellations_endpoint_api_jobs_sync_gcal_cancellations_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     list_time_off_api_jobs_time_off_get: {
         parameters: {
             query?: {
@@ -8796,37 +8604,6 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    convert_job_to_invoice_api_jobs__job_id__convert_to_invoice_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9817,38 +9594,6 @@ export interface operations {
             path: {
                 conv_id: number;
             };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_messages_api_comms_messages_get: {
-        parameters: {
-            query?: {
-                client_id?: number | null;
-                channel?: string | null;
-            };
-            header?: never;
-            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -10913,108 +10658,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_job_reminder_api_reminders_jobs__job_id__sms_reminder_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_daily_reminders_api_reminders_send_daily_reminders_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    push_to_gcal_api_reminders_jobs__job_id__gcal_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    push_upcoming_to_gcal_api_reminders_push_upcoming_to_gcal_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -13084,39 +12727,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    update_sync_flags_api_admin_settings_sync_flags_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SyncFlagsBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -715,25 +715,6 @@ def mark_read(conv_id: int, db: Session = Depends(get_db)):
     return conv_to_dict(conv)
 
 
-# ---------------------------------------------------------------------------
-# Legacy endpoints (backward-compatible)
-# ---------------------------------------------------------------------------
-
-@router.get("/messages", dependencies=[Depends(require_role("admin", "manager"))])
-def get_messages(
-    client_id: Optional[int] = None,
-    channel: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    """Flat message feed — kept for backward compat with older UI code."""
-    q = db.query(Message)
-    if client_id:
-        q = q.filter(Message.client_id == client_id)
-    if channel:
-        q = q.filter(Message.channel == channel)
-    return [msg_to_dict(m) for m in q.order_by(Message.created_at.desc()).limit(200).all()]
-
-
 @router.get("/client/{client_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def client_comms(client_id: int, db: Session = Depends(get_db)):
     """Unified, contact-linked communications for one client (Twenty-style).
