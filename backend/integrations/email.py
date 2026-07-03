@@ -393,26 +393,3 @@ def build_invoice_sms(invoice: dict, client_name: str, company_phone: str = "") 
     return "\n".join(lines)
 
 
-def build_quote_sms(quote: dict, client_name: str, company_phone: str = "", public_url: str = "") -> str:
-    q_num = quote.get("quote_number") or f"QT-{quote['id']}"
-    service_type = (quote.get("service_type") or "residential").title()
-    address = quote.get("address") or ""
-    total = float(quote.get("total", 0))
-    valid_until = quote.get("valid_until") or ""
-    from_name = os.getenv("FROM_NAME", "Maine Cleaning Co")
-
-    lines = [
-        f"{from_name} — Quote {q_num}",
-        f"{service_type} clean{f' at {address}' if address else ''}",
-        f"Total: ${total:.2f}",
-    ]
-    if valid_until:
-        lines.append(f"Valid until: {valid_until}")
-    lines.append("")
-    if public_url:
-        lines.append(f"Accept your quote: {public_url}")
-    else:
-        lines.append("Reply YES to accept or ask any questions.")
-    if company_phone:
-        lines.append(f"Call/text: {company_phone}")
-    return "\n".join(lines)

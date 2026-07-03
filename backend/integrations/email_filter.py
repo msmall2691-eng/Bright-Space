@@ -1,20 +1,22 @@
 """
 Filter that decides whether an inbound email should auto-create a Client row.
 
-The default Gmail ingestion flow in modules/gmail/router.py currently creates
-a Client for every unknown sender, which has filled BrightBase with ~40
+The default Gmail ingestion flow in modules/gmail/router.py used to create a
+Client for every unknown sender, which filled BrightBase with ~40
 marketing/no-reply addresses (Indeed, Attio, Octoparse, LeaseVille, Replit,
-etc.). This module provides should_create_client_from_email() which returns
-False for that kind of address and True only when the email looks like it
-came from a real prospect.
+etc.). This module provides evaluate_inbound_email(), which returns
+(create: bool, reason: str) — False for that kind of address and True only
+when the email looks like it came from a real prospect. The `reason` string
+is logged so we can tune the classifier over time.
 
 Usage in gmail/router.py:
 
-    from integrations.email_filter import should_create_client_from_email
+    from integrations.email_filter import evaluate_inbound_email
 
     ...
     elif auto_enrich and addr:
-        if not should_create_client_from_email(em):
+        create_lead, reason = evaluate_inbound_email(em)
+        if not create_lead:
             # Leave as an unlinked inbox item; user can convert manually.
             continue
         # existing Client(...) creation follows here
@@ -249,7 +251,3 @@ def evaluate_inbound_email(email: dict) -> tuple[bool, str]:
     return (False, "no_cleaning_intent")
 
 
-def should_create_client_from_email(email: dict) -> bool:
-    """Boolean wrapper around evaluate_inbound_email (backwards-compatible)."""
-    create, _reason = evaluate_inbound_email(email)
-    return create
