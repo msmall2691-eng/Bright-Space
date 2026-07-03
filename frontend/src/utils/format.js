@@ -44,3 +44,15 @@ export function formatDate(value, opts) {
     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
   })
 }
+
+/**
+ * Compact locale date used across the record-detail pages
+ * (Opportunity, Job, Invoice, Quote). Returns null for empty input so the
+ * caller can chain `formatDateShort(x) && <p>…</p>`; returns the raw value
+ * back if it can't be parsed, matching the historical inline behavior.
+ */
+export function formatDateShort(value) {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
+}
