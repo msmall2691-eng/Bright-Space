@@ -80,7 +80,7 @@ def _items_to_dicts(items) -> list:
     """Normalize incoming Pydantic items (or dicts) to plain dicts."""
     out = []
     for i in (items or []):
-        d = i.dict() if hasattr(i, "dict") else dict(i)
+        d = i.model_dump() if hasattr(i, "model_dump") else dict(i)
         out.append({
             "name": d.get("name", "") or "",
             "description": d.get("description", "") or "",
@@ -388,7 +388,7 @@ def _apply_update(quote: Quote, data: dict) -> None:
 def patch_quote(quote_id: int, quote_data: QuoteUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Partial update (the Quoting UI uses PATCH for both edits and status)."""
     quote = _get_quote_or_404(quote_id, db, resolve_org_id(org_id, db))
-    _apply_update(quote, quote_data.dict(exclude_unset=True))
+    _apply_update(quote, quote_data.model_dump(exclude_unset=True))
     db.commit()
     db.refresh(quote)
     return _quote_dict(quote)
@@ -1282,7 +1282,7 @@ def _qr_to_response(row: LeadIntake) -> dict:
 
 @router.post("/requests/", status_code=201)
 def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends(get_db)):
-    data = request_data.dict()
+    data = request_data.model_dump()
     pref = data.get("preferred_date")
     row = LeadIntake(
         client_id=data.get("client_id"),
@@ -1326,7 +1326,7 @@ def update_quote_request(request_id: int, request_data: QuoteRequestUpdate, db: 
     )
     if not row:
         raise HTTPException(status_code=404, detail="Quote request not found")
-    updates = request_data.dict(exclude_unset=True)
+    updates = request_data.model_dump(exclude_unset=True)
     # Translate the public-API field names onto LeadIntake columns.
     if "quote_id" in updates:
         row.converted_quote_id = updates.pop("quote_id")
