@@ -26,9 +26,7 @@ def _event_to_dict(e: IntegrationEvent) -> dict:
         "status": e.status,
         "external_id": e.external_id,
         "error_message": e.error_message,
-        "error_code": e.error_code,
         "request_payload": e.request_payload,
-        "response_payload": e.response_payload,
         "created_at": e.created_at.isoformat() if e.created_at else None,
     }
 
