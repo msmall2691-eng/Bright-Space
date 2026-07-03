@@ -15,6 +15,7 @@ import ClientDetailsTab from '../components/client/ClientDetailsTab'
 import {
   RecurringTab, JobsListTab, QuotesListTab, InvoicesListTab, OpportunitiesTab,
 } from '../components/client/ClientListTabs'
+import { useClientProfileData } from '../hooks/useClientProfileData'
 import {
   STATUS_COLORS, JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS,
   PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS, INPUT_CLASS,
@@ -73,16 +74,15 @@ export default function ClientProfile() {
       window.location.hash = `tab=${tab}`
     }
   }, [])
-  const [client, setClient] = useState(null)
-  const [jobs, setJobs] = useState([])
-  const [quotes, setQuotes] = useState([])
-  const [invoices, setInvoices] = useState([])
-  const [messages, setMessages] = useState([])
-  const [properties, setProperties] = useState([])
-  const [schedules, setSchedules] = useState([])
-  const [opportunities, setOpportunities] = useState([])
-  const [activities, setActivities] = useState([])
-  const [emails, setEmails] = useState([])
+  const {
+    client, setClient,
+    jobs, quotes, invoices, messages, emails,
+    properties, schedules, opportunities,
+    visitStats, timelineEvents,
+    load, reloadActivities, reloadProperties,
+    totalRevenue, outstanding, upcomingJobs, pastJobs, allActivity,
+  } = useClientProfileData(id)
+
   const [tab, setTab] = useState('activity')  // Twenty leads with the Timeline
   const [activityFilter, setActivityFilter] = useState('all')
   const [noteText, setNoteText] = useState('')
@@ -132,68 +132,24 @@ export default function ClientProfile() {
   const [gcalReload, setGcalReload] = useState(0)
   const [editJob, setEditJob] = useState(null)  // appointment being edited in the side panel
   const [commsFilter, setCommsFilter] = useState('all')  // all | sms | email
-  const [timelineEvents, setTimelineEvents] = useState([])  // linked Google Calendar events for the timeline
-
-  const [visitStats, setVisitStats] = useState(null)
-  const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
-
-  const load = async () => {
-    try {
-      // Load client first (blocking)
-      const profile = await get(`/api/clients/${id}/profile`).catch(() => null)
-      const c = profile || await get(`/api/clients/${id}`)
-      setClient(c)
-
-      // Backfill name
-      const formFill = { ...c }
-      if ((!formFill.first_name || !formFill.first_name.trim())
-          && (!formFill.last_name || !formFill.last_name.trim())
-          && c.name) {
-        const parts = c.name.trim().split(/\s+/)
-        formFill.first_name = parts[0] || ''
-        formFill.last_name = parts.slice(1).join(' ') || ''
-      }
-      setForm(formFill)
-      const hasBilling = !!(c.billing_address || c.billing_city || c.billing_state || c.billing_zip)
-      if (hasBilling) setShowBilling(true)
-      if (profile?.visit_stats) setVisitStats(profile.visit_stats)
-      if (profile?.upcoming_visits || profile?.past_visits) {
-        setProfileVisits({
-          upcoming: profile.upcoming_visits || [],
-          past: profile.past_visits || [],
-        })
-      }
-
-      // Load other data in background (non-blocking)
-      Promise.all([
-        get(`/api/jobs?client_id=${id}`).then(j => setJobs(Array.isArray(j) ? j : [])).catch(() => {}),
-        get(`/api/quotes?client_id=${id}`).then(q => setQuotes(Array.isArray(q) ? q : [])).catch(() => {}),
-        get(`/api/invoices?client_id=${id}`).then(inv => setInvoices(Array.isArray(inv) ? inv : [])).catch(() => {}),
-        // Unified, contact-linked comms: emails + SMS matched by client_id OR
-        // the client's email/phone (server-side), split by channel here.
-        get(`/api/comms/client/${id}`).then(r => {
-          const all = Array.isArray(r?.messages) ? r.messages : []
-          setMessages(all.filter(m => m.channel === 'sms'))
-          setEmails(all.filter(m => m.channel === 'email').reverse())  // newest first
-        }).catch(() => {}),
-        get(`/api/properties?client_id=${id}`).then(props => setProperties(Array.isArray(props) ? props : [])).catch(() => {}),
-        get(`/api/recurring?client_id=${id}`).then(scheds => setSchedules(Array.isArray(scheds) ? scheds : [])).catch(() => {}),
-        get(`/api/opportunities?client_id=${id}`).then(opps => setOpportunities(Array.isArray(opps) ? opps : [])).catch(() => {}),
-        get(`/api/activities?client_id=${id}&limit=50`).then(acts => setActivities(Array.isArray(acts) ? acts : [])).catch(() => {}),
-        // Linked Google Calendar events — interleaved into the unified timeline.
-        get(`/api/jobs/client/${id}/gcal-events`).then(r => setTimelineEvents(Array.isArray(r?.events) ? r.events : [])).catch(() => {}),
-      ])
-    } catch (e) {
-      console.error('[ClientProfile load error]', e)
+  // Seed the form / billing-showing state from the loaded client. This lives in
+  // the page (not the data hook) because `form` and `showBilling` are UI state
+  // — the same client can render with different form drafts across tabs.
+  useEffect(() => {
+    if (!client) return
+    const formFill = { ...client }
+    if ((!formFill.first_name || !formFill.first_name.trim())
+        && (!formFill.last_name || !formFill.last_name.trim())
+        && client.name) {
+      const parts = client.name.trim().split(/\s+/)
+      formFill.first_name = parts[0] || ''
+      formFill.last_name = parts.slice(1).join(' ') || ''
     }
-  }
-
-  const reloadActivities = async () => {
-    try {
-      const acts = await get(`/api/activities?client_id=${id}&limit=50`)
-      setActivities(Array.isArray(acts) ? acts : [])
-    } catch { /* non-fatal */ }
-  }
+    setForm(formFill)
+    if (client.billing_address || client.billing_city || client.billing_state || client.billing_zip) {
+      setShowBilling(true)
+    }
+  }, [client])
 
   const submitNote = async () => {
     if (savingNote) return  // guard against ⌘/Ctrl+Enter repeats while in flight
@@ -209,12 +165,6 @@ export default function ClientProfile() {
       toast.error(e.message || 'Could not add note')
     }
     setSavingNote(false)
-  }
-
-  const reloadProperties = async () => {
-    const props = await get(`/api/properties?client_id=${id}`)
-    setProperties(Array.isArray(props) ? props : [])
-    return Array.isArray(props) ? props : []
   }
 
   const saveProp = async () => {
@@ -328,8 +278,6 @@ export default function ClientProfile() {
   const openNewProp = () => { setPropForm(EMPTY_PROP); setEditingProp(null); setShowIcalForm(false); setIcalForm(EMPTY_ICAL); setShowPropForm(true) }
   const openEditProp = (p) => { setPropForm({ ...p }); setEditingProp(p); setShowIcalForm(false); setIcalForm(EMPTY_ICAL); setShowPropForm(true) }
 
-  useEffect(() => { load() }, [id])
-
   const save = async () => {
     setSaving(true)
     try {
@@ -363,58 +311,6 @@ export default function ClientProfile() {
   if (!client) return (
     <div className="flex items-center justify-center h-full text-ink-3 text-sm">Loading...</div>
   )
-
-  // Revenue from this client
-  const totalRevenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.total || 0), 0)
-  const outstanding = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).reduce((s, i) => s + (i.total || 0), 0)
-  const completedJobs = jobs.filter(j => j.status === 'completed').length
-
-  // Upcoming and past cleanings
-  const todayStr = new Date().toISOString().slice(0, 10)
-  // Null-safe: some jobs (legacy / unscheduled) have a null scheduled_date —
-  // calling .localeCompare on null crashed the whole profile page.
-  const upcomingJobs = jobs
-    .filter(j => j.scheduled_date && j.scheduled_date >= todayStr && j.status !== 'cancelled')
-    .sort((a, b) => (a.scheduled_date || '').localeCompare(b.scheduled_date || '') || (a.start_time || '').localeCompare(b.start_time || ''))
-  const pastJobs = jobs
-    .filter(j => (j.scheduled_date && j.scheduled_date < todayStr) || j.status === 'cancelled')
-    .sort((a, b) => (b.scheduled_date || '').localeCompare(a.scheduled_date || ''))
-  const nextJob = upcomingJobs[0] || null
-
-  // Build activity feed (all records sorted by date).
-  //
-  // Dedupe: PR 1 auto-logs JOB_CREATED / JOB_SCHEDULED activities for every
-  // job, but those jobs are already in the `jobs` array — so we exclude
-  // job_* activity_log entries to avoid duplicate rows. Email and visit
-  // activities still pass through since they don't have a sibling source.
-  const JOB_SHADOWED_TYPES = new Set([
-    'job_created', 'job_scheduled', 'job_started', 'job_completed', 'job_cancelled',
-  ])
-  const activityLogVisible = activities.filter(a => {
-    if (a.activity_type === 'email_received') return false
-    // Drop job_* events that mirror a job already shown — UNLESS the row was
-    // emitted by the GCal source (event created/updated/cancelled in calendar)
-    // or it's a single-occurrence visit skip, both of which add real signal.
-    if (JOB_SHADOWED_TYPES.has(a.activity_type)) {
-      const fromGcal = a.extra_data?.source === 'gcal'
-      const visitSkip = a.extra_data?.single_occurrence === true
-      return fromGcal || visitSkip
-    }
-    return true
-  })
-
-  const allActivity = [
-    ...jobs.map(j => ({ type: 'job', date: j.created_at, data: j })),
-    ...quotes.map(q => ({ type: 'quote', date: q.created_at, data: q })),
-    ...invoices.map(i => ({ type: 'invoice', date: i.created_at, data: i })),
-    ...messages.map(m => ({ type: 'message', date: m.created_at, data: m })),
-    ...opportunities.map(o => ({ type: 'opportunity', date: o.created_at, data: o })),
-    ...activityLogVisible.map(a => ({ type: 'activity_log', date: a.created_at, data: a })),
-    ...emails.map(e => ({ type: 'email', date: e.created_at, data: e })),
-    // Real Google Calendar events linked by email. Skip ones that mirror an app
-    // job (they already appear as a 'job' item) to avoid double entries.
-    ...timelineEvents.filter(ev => !ev.job_id).map(ev => ({ type: 'gcal_event', date: ev.start, data: ev })),
-  ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
   return (
     <div className="flex h-full overflow-hidden" data-testid="client-profile-root">
