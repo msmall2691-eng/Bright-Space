@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { get, patch, post, download } from '../api'
 import { toast } from '../utils/toastBus'
+import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
@@ -27,7 +28,6 @@ const JOB_TYPE_OPTIONS = [
 
 const money = (n) => n == null || n === '' ? null :
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
-const fmtDate = (d) => { if (!d) return null; const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString() }
 const STATUS_CHIP = 'text-[10px] px-2 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline capitalize'
 
 function RelatedList({ icon: Icon, title, items, render, empty }) {

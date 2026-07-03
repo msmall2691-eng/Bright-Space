@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
@@ -31,7 +32,6 @@ const SERVICE_OPTIONS = [
 
 const money = (n) => n == null || n === '' ? '$0' :
   `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const fmtDate = (d) => { if (!d) return null; const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString() }
 
 function LinkedCard({ icon: Icon, label, to, primary, secondary }) {
   if (!primary) return null
