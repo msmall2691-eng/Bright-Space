@@ -24,7 +24,8 @@ def test_other_org_opportunity_is_invisible():
     try:
         ids = {r["id"] for r in client.get("/api/opportunities?limit=200").json()}
         assert o.id not in ids, "cross-tenant opportunity leaked into the list/board"
-        assert client.get(f"/api/opportunities/{o.id}").status_code == 404
+        # No bare GET-by-id (frontend uses /details); confirm tenant scope there.
+        assert client.get(f"/api/opportunities/{o.id}/details").status_code == 404
         assert client.patch(f"/api/opportunities/{o.id}", json={"stage": "won"}).status_code == 404
     finally:
         db.query(Opportunity).filter(Opportunity.id == o.id).delete(synchronize_session=False)

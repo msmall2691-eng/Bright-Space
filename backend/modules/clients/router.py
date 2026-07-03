@@ -1167,30 +1167,6 @@ def add_client_phone(client_id: int, data: ContactPhoneCreate, db: Session = Dep
     return {**_phone_to_dict(phone), "linked": link_report}
 
 
-@router.post("/{client_id}/relink-conversations", dependencies=[Depends(require_role("admin", "manager"))])
-def relink_conversations(client_id: int, db: Session = Depends(get_db)):
-    """
-    Re-run linking/merging of SMS threads for this client based on all their phone numbers.
-    Useful for fixing clients with unlinked SMS threads after adding phone numbers.
-    """
-    client = db.query(Client).filter(Client.id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-
-    combined_report = {"linked_conversations": 0, "linked_messages": 0, "merged_conversations": 0}
-    phones = [client.phone] if client.phone else []
-    phones += [p.phone for p in db.query(ContactPhone).filter(ContactPhone.client_id == client_id).all()]
-    phones = [p for p in phones if p]
-
-    for ph in set(phones):
-        rep = _link_and_merge_conversations(db, client_id, ph)
-        for k in combined_report:
-            combined_report[k] += rep[k]
-
-    db.commit()
-    return combined_report
-
-
 class ClientNoteRequest(BaseModel):
     body: str
 
@@ -1303,66 +1279,6 @@ def _parse_address(raw: str):
     if len(parts) == 2:
         return {"address": parts[0], "city": parts[1], "state": state, "zip_code": zip_code}
     return {"address": parts[0], "city": "", "state": state, "zip_code": zip_code}
-
-
-@router.post("/cleanup", dependencies=[Depends(require_role("admin", "manager"))])
-def cleanup_clients(db: Session = Depends(get_db)):
-    """
-    Data cleanup endpoint: audit clients, backfill first/last names,
-    flag SMS placeholders, and identify test records.
-    Does NOT delete anything â returns a report + applies safe fixes.
-    """
-    clients = db.query(Client).all()
-    report = {
-        "total": len(clients),
-        "names_backfilled": 0,
-        "sms_placeholders": [],
-        "test_records": [],
-        "missing_email": 0,
-        "missing_phone": 0,
-        "fixes_applied": [],
-    }
-
-    TEST_PATTERNS = {"test", "asdf", "sample", "demo", "xxx"}
-
-    for c in clients:
-        # 1. Backfill first_name / last_name from name if not set
-        if c.name and (not c.first_name and not c.last_name):
-            parts = c.name.strip().split()
-            if len(parts) >= 2 and not c.name.startswith("+"):
-                c.first_name = parts[0]
-                c.last_name = " ".join(parts[1:])
-                report["names_backfilled"] += 1
-                report["fixes_applied"].append(
-                    f"Client #{c.id} '{c.name}': set first_name='{c.first_name}', last_name='{c.last_name}'"
-                )
-            elif len(parts) == 1 and not c.name.startswith("+"):
-                c.first_name = parts[0]
-                report["names_backfilled"] += 1
-                report["fixes_applied"].append(
-                    f"Client #{c.id} '{c.name}': set first_name='{c.first_name}'"
-                )
-
-        # 2. Flag SMS placeholders (name looks like a phone number)
-        if c.name and (c.name.startswith("+") or c.name.replace("-", "").replace("(", "").replace(")", "").replace(" ", "").isdigit()):
-            report["sms_placeholders"].append({
-                "id": c.id, "name": c.name, "phone": c.phone, "status": c.status
-            })
-
-        # 3. Flag test/junk records
-        if c.name and any(t in c.name.lower() for t in TEST_PATTERNS):
-            report["test_records"].append({
-                "id": c.id, "name": c.name, "status": c.status
-            })
-
-        # 4. Count missing contact info
-        if not c.email:
-            report["missing_email"] += 1
-        if not c.phone:
-            report["missing_phone"] += 1
-
-    db.commit()
-    return report
 
 
 @router.post("/import-xlsx", dependencies=[Depends(require_role("admin", "manager"))])
