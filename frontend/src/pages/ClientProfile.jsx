@@ -6,6 +6,8 @@ import OpportunityLinker from '../components/OpportunityLinker'
 import JobCreateModal from '../components/JobCreateModal'
 import JobEditModal from '../components/JobEditModal'
 import ClientCalendarTab from '../components/client/ClientCalendarTab'
+import ClientLeftRail from '../components/client/ClientLeftRail'
+import MessagesTab from '../components/client/MessagesTab'
 import {
   STATUS_COLORS, JOB_COLORS, INVOICE_COLORS, QUOTE_COLORS,
   PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS, INPUT_CLASS,
@@ -429,68 +431,13 @@ export default function ClientProfile() {
   return (
     <div className="flex h-full overflow-hidden" data-testid="client-profile-root">
       {/* Twenty-style left record rail (desktop): identity, fields, related. */}
-      <aside className="hidden lg:flex lg:flex-col w-80 shrink-0 border-r border-hairline bg-panel overflow-y-auto scrollbar-thin">
-        <div className="p-4 border-b border-hairline">
-          <button onClick={() => navigate('/clients')}
-            className="flex items-center gap-1.5 text-xs text-ink-3 hover:text-ink mb-4 transition-colors">
-            <ArrowLeft className="w-3.5 h-3.5" /> Clients
-          </button>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
-              <span className="text-blue-500 font-bold text-lg">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-base font-bold text-ink truncate">{client.name}</h1>
-              {/* Inline status edit (Twenty-style) */}
-              <select
-                value={client.status || 'lead'}
-                onChange={e => saveField('status', e.target.value)}
-                className={`mt-1 text-[10px] px-2 py-0.5 rounded-full border capitalize cursor-pointer focus:outline-none ${STATUS_COLORS[client.status] || ''}`}
-                title="Change status"
-              >
-                <option value="lead">lead</option>
-                <option value="active">active</option>
-                <option value="inactive">inactive</option>
-              </select>
-            </div>
-          </div>
-          <button onClick={() => setTab('details')}
-            className="mt-4 w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-hairline border border-hairline px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
-            <Edit2 className="w-3.5 h-3.5" /> Edit details
-          </button>
-        </div>
-
-        <div className="p-4 border-b border-hairline space-y-3">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">Contact — click to edit</div>
-          <EditableField icon={Mail}  label="Email" value={client.email} type="email" placeholder="Add email"
-            saving={savingField === 'email'} onSave={v => saveField('email', v)} />
-          <EditableField icon={Phone} label="Phone" value={client.phone} type="tel" placeholder="Add phone"
-            saving={savingField === 'phone'} onSave={v => saveField('phone', v)} />
-          <EditableField icon={MapPin} label="Address" value={client.address} placeholder="Add street address"
-            saving={savingField === 'address'} onSave={v => saveField('address', v)} />
-        </div>
-
-        <div className="p-4 border-b border-hairline space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Pipeline</div>
-          <div className="flex justify-between text-xs"><span className="text-ink-3">Upcoming</span><span className="font-semibold text-ink">{visitStats?.upcoming ?? upcomingJobs.length}</span></div>
-          <div className="flex justify-between text-xs"><span className="text-ink-3">Revenue</span><span className="font-semibold text-emerald-600">${totalRevenue.toFixed(0)}</span></div>
-          <div className="flex justify-between text-xs"><span className="text-ink-3">Outstanding</span><span className={`font-semibold ${outstanding > 0 ? 'text-amber-600' : 'text-ink'}`}>${outstanding.toFixed(0)}</span></div>
-          <div className="flex justify-between text-xs"><span className="text-ink-3">Google Cal synced</span><span className="font-semibold text-indigo-600">{visitStats?.gcal_synced ?? 0}</span></div>
-        </div>
-
-        <div className="p-4 space-y-1.5">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">Properties</div>
-          {properties.length === 0
-            ? <p className="text-xs text-ink-3">No properties yet</p>
-            : properties.map(p => (
-                <button key={p.id} onClick={() => navigate(`/properties/${p.id}`)}
-                  className="w-full flex items-center gap-2 text-left text-xs text-ink-2 hover:text-ink py-1">
-                  <Home className="w-3.5 h-3.5 text-ink-3 shrink-0" />
-                  <span className="truncate">{p.name || p.address}</span>
-                </button>
-              ))}
-        </div>
-      </aside>
+      <ClientLeftRail
+        client={client} navigate={navigate} setTab={setTab}
+        savingField={savingField} saveField={saveField}
+        visitStats={visitStats} upcomingJobs={upcomingJobs}
+        totalRevenue={totalRevenue} outstanding={outstanding}
+        properties={properties}
+      />
 
       {/* Main column: tabs + Timeline/content */}
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-y-auto sm:overflow-hidden">
@@ -1381,88 +1328,12 @@ export default function ClientProfile() {
 
         {/* Messages */}
         {tab === 'messages' && (
-          <div className="max-w-2xl">
-            {/* Channel filter — all aspects linked by email/phone, in one place. */}
-            <div className="flex items-center gap-2 mb-4">
-              {[
-                { value: 'all',   label: 'All',   count: messages.length + emails.length },
-                { value: 'sms',   label: 'SMS',   count: messages.length },
-                { value: 'email', label: 'Email', count: emails.length },
-              ].map(f => (
-                <button key={f.value} onClick={() => setCommsFilter(f.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    commsFilter === f.value
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
-                  }`}>
-                  {f.label} <span className={commsFilter === f.value ? 'text-sky-100' : 'text-ink-3'}>{f.count}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* SMS compose (visible on All + SMS) */}
-            {commsFilter !== 'email' && (client.phone ? (
-              <div className="bg-panel border border-hairline rounded-xl p-4 mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare className="w-4 h-4 text-purple-400" />
-                  <span className="text-sm font-medium text-ink">Send SMS to {client.phone}</span>
-                </div>
-                <div className="flex gap-2">
-                  <input value={smsText} onChange={e => setSmsText(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && sendSms()}
-                    placeholder="Type a message..."
-                    className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline" />
-                  <button onClick={sendSms} disabled={sending || !smsText.trim()}
-                    className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm transition-colors">
-                    <Send className="w-3.5 h-3.5" />{sending ? '...' : 'Send'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-sm rounded-xl p-4 mb-4">
-                Add a phone number to this client to enable SMS.
-              </div>
-            ))}
-
-            {/* Unified message feed. SMS render as chat bubbles, emails as cards. */}
-            {(() => {
-              let items = commsFilter === 'sms' ? messages
-                        : commsFilter === 'email' ? emails
-                        : [...messages, ...emails]
-              // SMS-only reads as a chat (oldest→newest); everything else newest-first.
-              items = [...items].sort((a, b) =>
-                commsFilter === 'sms'
-                  ? new Date(a.created_at) - new Date(b.created_at)
-                  : new Date(b.created_at) - new Date(a.created_at)
-              )
-              if (items.length === 0) {
-                return <p className="text-ink-3 text-sm text-center py-8">
-                  No {commsFilter === 'all' ? 'messages' : commsFilter === 'sms' ? 'SMS' : 'emails'} linked to this client yet
-                </p>
-              }
-              return (
-                <div className="space-y-2">
-                  {items.map(m => m.channel === 'email'
-                    ? <EmailCard key={`e${m.id}`} em={m} />
-                    : (
-                      <div key={`s${m.id}`} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
-                          m.direction === 'outbound'
-                            ? 'bg-blue-600 text-white rounded-br-sm'
-                            : 'bg-bg-2 text-ink-2 rounded-bl-sm'
-                        }`}>
-                          <div>{m.body}</div>
-                          <div className={`text-xs mt-1 ${m.direction === 'outbound' ? 'text-sky-200' : 'text-ink-3'}`}>
-                            {new Date(m.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-              )
-            })()}
-          </div>
+          <MessagesTab
+            client={client} messages={messages} emails={emails}
+            commsFilter={commsFilter} setCommsFilter={setCommsFilter}
+            smsText={smsText} setSmsText={setSmsText}
+            sendSms={sendSms} sending={sending}
+          />
         )}
 
         {/* Details / Edit */}
@@ -1685,78 +1556,6 @@ export default function ClientProfile() {
       )}
 
       <ToastContainer />
-    </div>
-  )
-}
-
-/** Twenty-style click-to-edit field for the record rail. Click the value to
- *  edit in place; Enter or blur saves via onSave, Escape cancels. */
-function EditableField({ icon: Icon, label, value, placeholder = 'Add', type = 'text', saving = false, onSave }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value || '')
-  useEffect(() => { setDraft(value || '') }, [value])
-  const commit = () => {
-    setEditing(false)
-    const v = (draft || '').trim()
-    if (v !== (value || '')) onSave(v)
-  }
-  return (
-    <div className="flex items-start gap-2 group">
-      <Icon className="w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="text-[10px] text-ink-3 flex items-center gap-1">
-          {label}{saving && <span className="text-ink-3/70">· saving…</span>}
-        </div>
-        {editing ? (
-          <input
-            autoFocus type={type} value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={e => {
-              if (e.key === 'Enter') commit()
-              else if (e.key === 'Escape') { setDraft(value || ''); setEditing(false) }
-            }}
-            className="w-full bg-panel border border-blue-400 rounded px-1.5 py-0.5 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30"
-          />
-        ) : (
-          <button
-            onClick={() => setEditing(true)}
-            title="Click to edit"
-            className="text-left text-xs text-ink-2 hover:bg-bg-2 rounded px-1 -mx-1 py-0.5 w-full truncate transition-colors"
-          >
-            {value || <span className="text-ink-3 italic">{placeholder}</span>}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** A single linked email (from the unified comms tables), Twenty-style. */
-function EmailCard({ em }) {
-  const outbound = em.direction === 'outbound'
-  return (
-    <div className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-sm transition-all">
-      <div className="flex items-start gap-3">
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${outbound ? 'bg-blue-100' : 'bg-cyan-100'}`}>
-          <Mail className={`w-4 h-4 ${outbound ? 'text-blue-600' : 'text-cyan-600'}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm truncate flex-1 font-medium text-ink">{em.subject || '(no subject)'}</span>
-            <span className="text-[10px] text-ink-3 shrink-0">
-              {em.created_at ? new Date(em.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
-            </span>
-          </div>
-          <div className="text-xs text-ink-3 mt-0.5 flex items-center gap-1.5">
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${outbound ? 'bg-blue-50 text-blue-600' : 'bg-cyan-50 text-cyan-600'}`}>
-              {outbound ? 'Sent' : 'Received'}
-            </span>
-            <span className="truncate">{outbound ? `To: ${em.to_addr || ''}` : (em.from_addr || '')}</span>
-          </div>
-          {em.body && <p className="text-xs text-ink-3 mt-1.5 line-clamp-2">{em.body}</p>}
-        </div>
-      </div>
     </div>
   )
 }
