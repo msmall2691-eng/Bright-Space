@@ -74,3 +74,8 @@ export const STATUS_PILL = {
   completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
 }
+
+export const EMPTY_ICAL = {
+  url: '', source: '', checkout_time: '', duration_hours: '',
+  house_code: '', instructions: '',
+}
