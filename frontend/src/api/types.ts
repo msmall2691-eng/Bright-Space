@@ -540,27 +540,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/clients/{client_id}/relink-conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Relink Conversations
-         * @description Re-run linking/merging of SMS threads for this client based on all their phone numbers.
-         *     Useful for fixing clients with unlinked SMS threads after adding phone numbers.
-         */
-        post: operations["relink_conversations_api_clients__client_id__relink_conversations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/clients/{client_id}/notes": {
         parameters: {
             query?: never;
@@ -600,28 +579,6 @@ export interface paths {
         head?: never;
         /** Update Client Phone */
         patch: operations["update_client_phone_api_clients__client_id__phones__phone_id__patch"];
-        trace?: never;
-    };
-    "/api/clients/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cleanup Clients
-         * @description Data cleanup endpoint: audit clients, backfill first/last names,
-         *     flag SMS placeholders, and identify test records.
-         *     Does NOT delete anything â returns a report + applies safe fixes.
-         */
-        post: operations["cleanup_clients_api_clients_cleanup_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/clients/import-xlsx": {
@@ -1126,74 +1083,6 @@ export interface paths {
         get?: never;
         /** Update Quote Request */
         put: operations["update_quote_request_api_quotes_requests__request_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/quotes/{quote_id}/generate-pdf": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Generate Quote Pdf */
-        post: operations["generate_quote_pdf_api_quotes__quote_id__generate_pdf_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/quotes/{quote_id}/send-email": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Send Quote Email */
-        post: operations["send_quote_email_api_quotes__quote_id__send_email_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/quotes/{quote_id}/email-history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Quote Email History */
-        get: operations["get_quote_email_history_api_quotes__quote_id__email_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/quotes/{quote_id}/sms-history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Quote Sms History */
-        get: operations["get_quote_sms_history_api_quotes__quote_id__sms_history_get"];
-        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1869,30 +1758,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dispatch/jobs/{job_id}/dispatch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Dispatch Job
-         * @description Push a job as shifts to Connecteam for all assigned cleaners.
-         */
-        post: operations["dispatch_job_api_dispatch_jobs__job_id__dispatch_post"];
-        /**
-         * Undispatch Job
-         * @description Remove Connecteam shifts for a job.
-         */
-        delete: operations["undispatch_job_api_dispatch_jobs__job_id__dispatch_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/payroll/timesheets": {
         parameters: {
             query?: never;
@@ -1925,27 +1790,6 @@ export interface paths {
          * @description Pull mileage data from Connecteam and calculate reimbursements.
          */
         get: operations["fetch_mileage_api_payroll_mileage_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/comms/_health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Comms Health
-         * @description Cheap schema + connectivity smoke test. Surfaces the actual exception
-         *     instead of a generic 500 so we can diagnose deploy issues in the browser.
-         */
-        get: operations["comms_health_api_comms__health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3003,42 +2847,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/opportunities/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Opportunity Summary */
-        get: operations["opportunity_summary_api_opportunities_summary_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/opportunities/{opp_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Opportunity */
-        get: operations["get_opportunity_api_opportunities__opp_id__get"];
-        put?: never;
-        post?: never;
-        /** Delete Opportunity */
-        delete: operations["delete_opportunity_api_opportunities__opp_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Opportunity */
-        patch: operations["update_opportunity_api_opportunities__opp_id__patch"];
-        trace?: never;
-    };
     "/api/opportunities/{opp_id}/details": {
         parameters: {
             query?: never;
@@ -3057,6 +2865,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/opportunities/{opp_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Opportunity */
+        delete: operations["delete_opportunity_api_opportunities__opp_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Opportunity */
+        patch: operations["update_opportunity_api_opportunities__opp_id__patch"];
         trace?: never;
     };
     "/api/opportunities/{opp_id}/notes": {
@@ -3764,109 +3590,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/comms/merge-duplicate-threads": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Merge Duplicate Threads
-         * @description Phase 5 — one-time backfill. Iterate every client's phone numbers
-         *     (primary + ContactPhone rows) and run the existing per-phone merge
-         *     helper to:
-         *       - absorb SMS-auto-created placeholder clients into the real client
-         *       - link orphan Conversations / Messages by phone-tail match
-         *       - collapse multiple SMS conversations for the same client into one
-         *
-         *     Run this after deploying so historical duplicates from before the
-         *     auto-merge-on-webhook hook get cleaned up. Idempotent.
-         */
-        post: operations["merge_duplicate_threads_api_admin_comms_merge_duplicate_threads_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/properties/duplicates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find Duplicate Properties
-         * @description Group Property rows by normalized name and return any group with
-         *     more than one row. The most common source of duplicates is an iCal
-         *     feed import: the listing's address didn't string-match an existing
-         *     property, so a second Property got created.
-         */
-        get: operations["find_duplicate_properties_api_admin_properties_duplicates_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/jobs/property-mismatches": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find Job Property Mismatches
-         * @description Find Jobs where the title doesn't appear to reference the linked
-         *     Property's name. Heuristic — looks for ANY normalized-name token of
-         *     the property name inside the normalized job title. Skips Jobs with
-         *     no property_id (no property to compare to). False positives are
-         *     fine since this is just a manual-review surface.
-         */
-        get: operations["find_job_property_mismatches_api_admin_jobs_property_mismatches_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/jobs/reassign-property": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reassign Job Property
-         * @description Bulk-update Job.property_id for the given job_ids. Companion to the
-         *     /jobs/property-mismatches diagnostic — once a misrouting is confirmed
-         *     (e.g. 12 Spin Drift turnovers pointing at property_id=3 when they
-         *     should point at property_id=5), this endpoint applies the fix
-         *     transactionally.
-         *
-         *     Validates that the target property exists and that the requested job
-         *     ids actually exist; returns which IDs were updated vs skipped. Safe
-         *     to retry — re-running on already-updated rows is a no-op.
-         */
-        post: operations["reassign_job_property_api_admin_jobs_reassign_property_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/settings": {
         parameters: {
             query?: never;
@@ -4376,26 +4099,6 @@ export interface components {
             is_primary?: boolean | null;
             /** Phone Type */
             phone_type?: string | null;
-        };
-        /** DispatchError */
-        DispatchError: {
-            /** Employee Id */
-            employee_id: string;
-            /** Error */
-            error: string;
-        };
-        /** DispatchResponse */
-        DispatchResponse: {
-            /** Job Id */
-            job_id: number;
-            /** Dispatched */
-            dispatched: boolean;
-            /** Dispatched Count */
-            dispatched_count: number;
-            /** Shift Ids */
-            shift_ids: string[];
-            /** Errors */
-            errors: components["schemas"]["DispatchError"][];
         };
         /** EmailConfig */
         EmailConfig: {
@@ -5415,13 +5118,6 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /** ReassignJobPropertyRequest */
-        ReassignJobPropertyRequest: {
-            /** Job Ids */
-            job_ids: number[];
-            /** To Property Id */
-            to_property_id: number;
-        };
         /**
          * RecurrenceExceptionRead
          * @description Phase 6 step 2: response model for the exception endpoints. Matches
@@ -5693,20 +5389,6 @@ export interface components {
             end_date: string;
             /** Reason */
             reason?: string | null;
-        };
-        /** UndispatchError */
-        UndispatchError: {
-            /** Shift Id */
-            shift_id: string;
-            /** Error */
-            error: string;
-        };
-        /** UndispatchResponse */
-        UndispatchResponse: {
-            /** Job Id */
-            job_id: number;
-            /** Errors */
-            errors: components["schemas"]["UndispatchError"][];
         };
         /** UnlinkCalendarsRequest */
         UnlinkCalendarsRequest: {
@@ -6692,37 +6374,6 @@ export interface operations {
             };
         };
     };
-    relink_conversations_api_clients__client_id__relink_conversations_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                client_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     add_client_note_api_clients__client_id__notes_post: {
         parameters: {
             query?: never;
@@ -6820,26 +6471,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cleanup_clients_api_clients_cleanup_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -7739,132 +7370,6 @@ export interface operations {
                 "application/json": components["schemas"]["QuoteRequestUpdate"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    generate_quote_pdf_api_quotes__quote_id__generate_pdf_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                quote_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_quote_email_api_quotes__quote_id__send_email_post: {
-        parameters: {
-            query: {
-                recipient_email: string;
-            };
-            header?: never;
-            path: {
-                quote_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_quote_email_history_api_quotes__quote_id__email_history_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                quote_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_quote_sms_history_api_quotes__quote_id__sms_history_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                quote_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -9032,68 +8537,6 @@ export interface operations {
             };
         };
     };
-    dispatch_job_api_dispatch_jobs__job_id__dispatch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DispatchResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    undispatch_job_api_dispatch_jobs__job_id__dispatch_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UndispatchResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     fetch_timesheets_api_payroll_timesheets_get: {
         parameters: {
             query: {
@@ -9162,26 +8605,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    comms_health_api_comms__health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -11097,27 +10520,7 @@ export interface operations {
             };
         };
     };
-    opportunity_summary_api_opportunities_summary_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_opportunity_api_opportunities__opp_id__get: {
+    get_opportunity_details_api_opportunities__opp_id__details_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -11191,37 +10594,6 @@ export interface operations {
                 "application/json": components["schemas"]["OpportunityUpdate"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_opportunity_details_api_opportunities__opp_id__details_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                opp_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -12334,99 +11706,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BulkIdsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    merge_duplicate_threads_api_admin_comms_merge_duplicate_threads_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    find_duplicate_properties_api_admin_properties_duplicates_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    find_job_property_mismatches_api_admin_jobs_property_mismatches_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    reassign_job_property_api_admin_jobs_reassign_property_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReassignJobPropertyRequest"];
             };
         };
         responses: {

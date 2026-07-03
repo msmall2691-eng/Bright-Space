@@ -109,46 +109,6 @@ def list_opportunities(
     return [opp_to_dict(o) for o in q.order_by(Opportunity.created_at.desc()).offset(offset).limit(limit).all()]
 
 
-@router.get("/summary")
-def opportunity_summary(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    opps = db.query(Opportunity).filter(
-        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None))
-    ).all()
-    stages = {}
-    total_value = 0
-    weighted_value = 0
-    for o in opps:
-        s = o.stage or "new"
-        if s not in stages:
-            stages[s] = {"count": 0, "value": 0}
-        stages[s]["count"] += 1
-        stages[s]["value"] += o.amount or 0
-        total_value += o.amount or 0
-        weighted_value += (o.amount or 0) * (o.probability or 0) / 100
-    return {
-        "stages": stages,
-        "total_count": len(opps),
-        "total_value": total_value,
-        "weighted_value": round(weighted_value, 2),
-    }
-
-
-@router.get("/{opp_id}")
-def get_opportunity(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    o = db.query(Opportunity).options(
-        joinedload(Opportunity.client),
-        joinedload(Opportunity.invoices),
-        joinedload(Opportunity.jobs),
-        joinedload(Opportunity.messages),
-    ).filter(
-        Opportunity.id == opp_id,
-        or_(Opportunity.org_id == resolve_org_id(org_id, db), Opportunity.org_id.is_(None)),  # MT-2 tenant scope
-    ).first()
-    if not o:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
-    return opp_to_dict(o)
-
-
 @router.get("/{opp_id}/details")
 def get_opportunity_details(opp_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Get full opportunity details with all related entities and timeline."""
