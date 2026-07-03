@@ -4378,8 +4378,6 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
-            /** Followed Up At */
-            followed_up_at?: string | null;
         };
         /** InternalNoteRequest */
         InternalNoteRequest: {

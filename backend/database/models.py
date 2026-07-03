@@ -587,7 +587,6 @@ class LeadIntake(Base):
     assigned_to = Column(String, nullable=True)
     internal_notes = Column(Text, nullable=True)
     custom_fields = Column(JSON, default=dict)
-    followed_up_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

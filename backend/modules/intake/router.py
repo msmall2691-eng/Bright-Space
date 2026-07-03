@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timedelta, timezone
 import logging
 
 from database.db import get_db
@@ -52,7 +51,6 @@ class IntakeUpdate(BaseModel):
     assigned_to: Optional[str] = None
     internal_notes: Optional[str] = None
     custom_fields: Optional[dict] = None
-    followed_up_at: Optional[str] = None  # ISO datetime string
 
 
 def intake_to_dict(i: LeadIntake) -> dict:
@@ -85,7 +83,6 @@ def intake_to_dict(i: LeadIntake) -> dict:
         "assigned_to": getattr(i, "assigned_to", None),
         "internal_notes": getattr(i, "internal_notes", None),
         "custom_fields": getattr(i, "custom_fields", None) or {},
-        "followed_up_at": getattr(i, "followed_up_at", None).isoformat() if getattr(i, "followed_up_at", None) else None,
         "client_id": i.client_id,
         "opportunity_id": getattr(i, "opportunity_id", None),
         "created_at": i.created_at.isoformat() if i.created_at else None,
@@ -175,12 +172,6 @@ def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
     updates = data.model_dump(exclude_none=True)
-    # Convert followed_up_at string to datetime
-    if "followed_up_at" in updates and updates["followed_up_at"]:
-        try:
-            updates["followed_up_at"] = datetime.fromisoformat(updates["followed_up_at"])
-        except (ValueError, TypeError):
-            updates["followed_up_at"] = datetime.now(timezone.utc)
     for field, value in updates.items():
         setattr(intake, field, value)
     db.commit()
