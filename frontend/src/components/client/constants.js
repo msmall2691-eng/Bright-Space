@@ -37,6 +37,14 @@ export const QUOTE_COLORS = {
   declined: 'bg-red-500/20 text-red-400',
 }
 
+export const OPP_COLORS = {
+  new: 'bg-amber-500/20 text-amber-500',
+  qualified: 'bg-blue-500/20 text-blue-400',
+  quoted: 'bg-purple-500/20 text-purple-400',
+  won: 'bg-green-500/20 text-green-400',
+  lost: 'bg-red-500/20 text-red-400',
+}
+
 export const PROPERTY_TYPE_COLORS = {
   residential: 'bg-blue-50 text-blue-700 border-blue-200',
   commercial:  'bg-emerald-50 text-emerald-700 border-emerald-200',
