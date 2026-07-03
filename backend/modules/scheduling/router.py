@@ -1225,7 +1225,7 @@ def get_job_timeline(
                 "id": f"integration-{e.id}",
                 "icon_key": provider,
                 "label": f"{pretty} {e.action or 'sync'} {'succeeded' if ok else 'failed'}",
-                "sub": None if ok else (e.error_message or e.error_code),
+                "sub": None if ok else e.error_message,
                 "actor": None,
                 "status": e.status,
                 "created_at": e.created_at.isoformat() if e.created_at else None,

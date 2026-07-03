@@ -56,17 +56,6 @@ def calendar_source_of_truth(db: Session) -> str:
     return "google" if val == "google" else "brightbase"
 
 
-def _parse_external_updated(event: dict):
-    """Google's RFC3339 'updated' instant -> aware datetime (for drift detection)."""
-    raw = event.get("updated")
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None
-
-
 # ── Incremental sync (syncToken) ──────────────────────────────────────────
 # A per-calendar cursor: after the first bounded full list, Google returns only
 # CHANGED events (incl. cancellations) for that token, so polling is cheap and
@@ -391,14 +380,10 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 # Event already linked — check for changes from GCal
                 changed = False
 
-                # Idempotency: remember Google's stable iCalUID + last-modified so
-                # a future re-created/moved event can be re-matched as the same
-                # booking, and so we can detect drift.
+                # Idempotency: remember Google's stable iCalUID so a future
+                # re-created/moved event can be re-matched as the same booking.
                 if not existing_job.gcal_ical_uid and event.get("iCalUID"):
                     existing_job.gcal_ical_uid = event.get("iCalUID")
-                ext_updated = _parse_external_updated(event)
-                if ext_updated:
-                    existing_job.gcal_external_updated_at = ext_updated
 
                 # Detect cancellation — ALWAYS wins, both directions.
                 if event.get("status") == "cancelled":
@@ -491,9 +476,6 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 known = db.query(Job).filter(Job.gcal_ical_uid == ical_uid).first()
                 if known:
                     known.gcal_event_id = gcal_id
-                    ext_updated = _parse_external_updated(event)
-                    if ext_updated:
-                        known.gcal_external_updated_at = ext_updated
                     continue
 
             # Try to match to a client (3-tier matching)
@@ -523,7 +505,6 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
                 address=event.get("location", client.address or ""),
                 gcal_event_id=gcal_id,
                 gcal_ical_uid=event.get("iCalUID"),
-                gcal_external_updated_at=_parse_external_updated(event),
                 calendar_invite_sent=bool(event.get("attendees")),
                 status="scheduled",
                 notes=_s(event.get("description")),

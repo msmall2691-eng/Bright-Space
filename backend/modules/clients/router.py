@@ -859,7 +859,7 @@ def get_client_crm_summary(client_id: int, db: Session = Depends(get_db)):
 
     # Contact methods
     base["contact_emails"] = [
-        {"email": ce.email, "is_primary": ce.is_primary, "verified": ce.verified_at is not None}
+        {"email": ce.email, "is_primary": ce.is_primary, "verified": False}
         for ce in client.contact_emails
     ]
     base["contact_phones"] = [

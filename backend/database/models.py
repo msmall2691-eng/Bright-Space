@@ -168,10 +168,7 @@ class UserGoogleAccount(Base):
 
     # Per-channel sync state (Twenty's message/calendar channels).
     gmail_sync_enabled = Column(Boolean, default=False, nullable=False)
-    gmail_history_id = Column(String(32), nullable=True)   # incremental Gmail cursor
     gcal_sync_enabled = Column(Boolean, default=False, nullable=False)
-    gcal_calendar_id = Column(String(255), nullable=True)
-    gcal_sync_token = Column(Text, nullable=True)          # incremental events cursor
     last_sync_at = Column(DateTime, nullable=True)
     last_sync_error = Column(Text, nullable=True)
     connected_at = Column(DateTime, default=_utcnow)
@@ -499,10 +496,8 @@ class Job(Base):
     # Stable Google identifier for idempotent matching (Twenty stores iCalUid on
     # CalendarEvent). Matched on FIRST during sync — before extendedProperties,
     # attendee, and address — so a re-created/moved event is recognized as the
-    # same booking instead of spawning a duplicate. externalUpdatedAt is Google's
-    # last-modified time, kept for drift detection.
+    # same booking instead of spawning a duplicate.
     gcal_ical_uid = Column(String, nullable=True, index=True)
-    gcal_external_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     title = Column(String, nullable=False)
     scheduled_date = Column(Date)       # ISO date
@@ -798,7 +793,6 @@ class ContactEmail(Base):
     email = Column(String, nullable=False, index=True)
     is_primary = Column(Boolean, default=False)
     source = Column(String, nullable=True)             # website | gmail_sync | manual
-    verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="contact_emails")
@@ -1052,9 +1046,7 @@ class IntegrationEvent(Base):
     status = Column(String, nullable=False)        # 'ok' | 'failed'
     external_id = Column(String, nullable=True)    # gcal_event_id, message sid, email id, ...
     error_message = Column(String, nullable=True)  # failure reason (status='failed')
-    error_code = Column(String, nullable=True)     # provider error code, if any
     request_payload = Column(String, nullable=True)   # short human note (e.g. "to a@b.com")
-    response_payload = Column(String, nullable=True)  # provider response summary, if any
     created_at = Column(DateTime, default=_utcnow, index=True)
 
 
