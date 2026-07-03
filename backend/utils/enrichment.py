@@ -54,14 +54,6 @@ def suggest_name_from_email(email: Optional[str], current_name: Optional[str]) -
     return None
 
 
-def validate_phone_format(phone: Optional[str]) -> bool:
-    """Check if phone looks like valid format (at least 7 digits)"""
-    if not phone:
-        return False
-    digits = re.sub(r'\D', '', phone)
-    return len(digits) >= 7
-
-
 def enrich_client_data(client_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
     Enrich client data with extracted information.

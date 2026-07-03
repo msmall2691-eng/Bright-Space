@@ -21,28 +21,6 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class ClientImportPreview(BaseModel):
-    """Preview of clients to be imported."""
-    total_rows: int
-    valid_clients: int
-    duplicates: List[dict]
-    invalid_rows: List[dict]
-    clients_to_create: List[dict]
-
-
-class ClientImportResult(BaseModel):
-    """Result of client import."""
-    created: int
-    updated: int
-    skipped: int
-    errors: List[str]
-
-
-def _normalize_phone(phone_str: str) -> Optional[str]:
-    """Normalize phone to E.164, handling various input formats."""
-    return normalize_e164(phone_str)
-
-
 @router.post(
     "/import/clients",
     response_model=dict,
@@ -102,7 +80,7 @@ async def import_clients(
                 continue
 
             # Normalize phone
-            normalized_phone = _normalize_phone(phone) if phone else None
+            normalized_phone = normalize_e164(phone) if phone else None
 
             # Skip internal entries
             if any(skip_word in name for skip_word in ['Unit inventory', 'Team Resources', 'maintenance']):
