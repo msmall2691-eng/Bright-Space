@@ -1,30 +1,32 @@
 """
-Gmail Inbox API Router
-Fetches inbox, matches senders to clients, creates leads from unknown contacts.
-Uses ContactEmail table for multi-email matching and enrichment.
+Gmail sync module (no HTTP surface).
 
-CHANGE (2026-04-18): Gmail auto-enrich no longer creates a Client record for
-every unknown sender. It now delegates the decision to
-integrations.email_filter.evaluate_inbound_email(), which blocks no-reply /
-marketing senders and only creates clients for senders whose message looks
-like an actual cleaning-service inquiry.
+Historically this was mounted at /api/gmail and served the GmailInbox UI
+(fetch inbox / open message / create-lead / link-client / send-reply).
+The UI was retired when email threading moved into the unified Conversation
+list — see the note in pages/Comms.jsx — so those HTTP endpoints have no
+callers. What's left is the sync pipeline the scheduler calls on a tick:
+
+  - `run_inbox_sync`         — pull the shared business inbox (IMAP + App
+                               Password) and thread new messages into
+                               Conversations.
+  - `run_account_inbox_sync` — same idea for a per-user connected Google
+                               account (Gmail API path).
+
+Both use `evaluate_inbound_email` to decide whether an unknown sender is
+a real prospect worth auto-creating a Client for.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import Optional
-from database.db import get_db
-from modules.auth.router import require_role
+
 from database.models import Client, ContactEmail, Activity, Message
-from integrations.gmail_inbox import fetch_inbox, fetch_email_by_id, send_reply
+from integrations.gmail_inbox import fetch_inbox
 from integrations.email_filter import evaluate_inbound_email
 from utils.activity_logger import log_email
 from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
 
 def _match_email_to_client(email_addr: str, db: Session):
@@ -338,165 +340,3 @@ def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> di
     return result
 
 
-@router.get("/inbox")
-def gmail_inbox(
-    max_results: int = Query(30, ge=1, le=100),
-    skip_automated: bool = Query(True),
-    auto_enrich: bool = Query(True),
-    db: Session = Depends(get_db),
-):
-    """Fetch + thread the Gmail inbox on demand. Thin wrapper over the shared
-    run_inbox_sync so manual refreshes and the background scheduler agree."""
-    return run_inbox_sync(
-        db,
-        max_results=max_results,
-        skip_automated=skip_automated,
-        auto_enrich=auto_enrich,
-    )
-
-
-@router.get("/message/{email_id}")
-def gmail_message(email_id: str, db: Session = Depends(get_db)):
-    em = fetch_email_by_id(email_id)
-    if not em:
-        raise HTTPException(404, "Email not found")
-    c = _match_email_to_client(em["from_email"], db)
-    em["client"] = {"id": c.id, "name": c.name, "status": c.status} if c else None
-    em["is_known_contact"] = c is not None
-    return em
-
-
-@router.post("/create-lead", dependencies=[Depends(require_role("admin", "manager"))])
-def create_lead_from_email(
-    from_name: str = Query(...),
-    from_email: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    existing = _match_email_to_client(from_email, db)
-    if existing:
-        return {"status": "exists", "client": {"id": existing.id, "name": existing.name}}
-
-    parts = from_name.strip().split(" ", 1)
-    new_client = Client(
-        name=from_name.strip() or from_email,
-        first_name=parts[0] if parts else from_name,
-        last_name=parts[1] if len(parts) > 1 else "",
-        email=from_email.lower(),
-        status="lead",
-        source="email",
-        source_detail="gmail manual create",
-        email_verified=True,
-    )
-    db.add(new_client)
-    db.flush()
-
-    _ensure_contact_email(new_client.id, from_email, "gmail_sync", db)
-    _log_activity(
-        db,
-        client_id=new_client.id,
-        activity_type="email_received",
-        summary=f"Lead created from Gmail: {from_name}",
-        extra_data={"from_email": from_email},
-    )
-    db.commit()
-    db.refresh(new_client)
-
-    logger.info(f"Lead created from email: {from_name} <{from_email}> -> #{new_client.id}")
-    return {"status": "created", "client": {"id": new_client.id, "name": new_client.name}}
-
-
-@router.post("/link-client", dependencies=[Depends(require_role("admin", "manager"))])
-def link_email_to_client(
-    from_email: str = Query(...),
-    client_id: int = Query(...),
-    db: Session = Depends(get_db),
-):
-    client = db.query(Client).filter(Client.id == client_id).first()
-    if not client:
-        raise HTTPException(404, "Client not found")
-    client.email = from_email.lower()
-    _ensure_contact_email(client.id, from_email, "gmail_link", db)
-    db.commit()
-    return {"status": "linked", "client": {"id": client.id, "name": client.name}}
-
-
-def _get_app_setting(db: Session, key: str):
-    from database.models import AppSetting
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    return row.value if row else None
-
-
-class EmailReplyRequest(BaseModel):
-    to_email: str
-    subject: str
-    body: str
-    in_reply_to_message_id: Optional[str] = None
-
-@router.post("/send-reply", dependencies=[Depends(require_role("admin", "manager"))])
-def send_email_reply(
-    data: EmailReplyRequest,
-    db: Session = Depends(get_db),
-):
-    from_email = _get_app_setting(db, "from_email")
-    if not from_email:
-        raise HTTPException(400, "from_email not configured in settings")
-
-    try:
-        result = send_reply(
-            to_email=data.to_email,
-            from_email=from_email,
-            subject=data.subject,
-            body=data.body,
-            in_reply_to_message_id=data.in_reply_to_message_id,
-        )
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error sending reply: {e}")
-        raise HTTPException(500, "Failed to send email reply")
-
-    client = _match_email_to_client(data.to_email, db)
-    if client:
-        client.last_contacted_at = datetime.now(timezone.utc)
-
-        # Thread the outbound reply into the same email Conversation so it
-        # appears in the unified inbox. (Previously this referenced undefined
-        # `to_email`/`subject`/`body` locals and crashed with NameError on
-        # every reply to a known client.)
-        from modules.comms.router import find_or_create_conversation, _apply_outbound
-        conv = find_or_create_conversation(
-            db, channel="email",
-            client_id=client.id,
-            external_contact=data.to_email,
-            subject=data.subject,
-        )
-        if conv.client_id is None:
-            conv.client_id = client.id
-
-        message = Message(
-            client_id=client.id,
-            conversation_id=conv.id,
-            channel="email",
-            direction="outbound",
-            from_addr=from_email,
-            to_addr=data.to_email,
-            subject=data.subject,
-            body=data.body,
-            status="sent",
-        )
-        db.add(message)
-        db.flush()
-        _apply_outbound(conv, message)
-
-        log_email(
-            db,
-            "sent",
-            client_id=client.id,
-            subject=data.subject,
-            from_email=from_email,
-            to_email=data.to_email,
-            message_id=message.id,
-        )
-
-    db.commit()
-    return {"status": "sent", "message": result}

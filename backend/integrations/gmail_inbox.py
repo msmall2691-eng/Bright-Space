@@ -4,11 +4,9 @@ Uses existing SMTP credentials (App Password) to read emails.
 No additional OAuth required.
 """
 import imaplib
-import smtplib
 import email as email_lib
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 import os, re, logging
@@ -285,37 +283,3 @@ def fetch_email_by_id(email_id: str, folder="INBOX"):
         return None
 
 
-def send_reply(to_email: str, from_email: str, subject: str, body: str, in_reply_to_message_id: str = None):
-    """Send an email reply via SMTP with proper threading headers."""
-    user, passwd, _, _, smtp_host, smtp_port = _get_credentials()
-
-    if not user or not passwd:
-        raise ValueError("No email credentials configured")
-
-    if from_email.lower() != user.lower():
-        raise ValueError(f"from_email '{from_email}' does not match configured SMTP user '{user}'")
-
-    try:
-        msg = MIMEText(body, "plain", "utf-8")
-        msg["Subject"] = subject
-        msg["From"] = from_email
-        msg["To"] = to_email
-
-        if in_reply_to_message_id:
-            msg["In-Reply-To"] = in_reply_to_message_id
-            msg["References"] = in_reply_to_message_id
-
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-            server.starttls()
-            server.login(user, passwd)
-            server.send_message(msg)
-
-        logger.info(f"Reply sent from {from_email} to {to_email}")
-        return {"status": "sent", "to": to_email, "subject": subject, "timestamp": datetime.now(timezone.utc).isoformat()}
-
-    except smtplib.SMTPException as e:
-        logger.error(f"SMTP error sending reply: {e}")
-        raise ValueError(f"Failed to send email: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error sending reply: {e}")
-        raise ValueError(f"Failed to send email: {str(e)}")

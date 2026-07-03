@@ -33,7 +33,6 @@ from modules.reminders.router import router as reminders_router
 from modules.intake.router import router as intake_router
 from modules.booking.router import router as booking_router
 from modules.fields.router import router as fields_router
-from modules.gmail.router import router as gmail_router
 from modules.opportunities.router import router as opportunities_router
 from modules.activities.router import router as activities_router
 from modules.integration_events.router import router as integration_events_router
@@ -155,7 +154,6 @@ app.include_router(booking_router, prefix="/api/booking", tags=["booking"])
 from modules.integrations.router import router as integrations_router
 app.include_router(integrations_router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
-app.include_router(gmail_router, prefix="/api/gmail", tags=["gmail"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
 app.include_router(activities_router, prefix="/api/activities", tags=["activities"])
 app.include_router(integration_events_router, prefix="/api/integration-events", tags=["integration-events"])
