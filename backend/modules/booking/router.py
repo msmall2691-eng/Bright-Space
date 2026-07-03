@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 from database.db import get_db
@@ -56,8 +56,7 @@ class BookingSubmit(BaseModel):
     petHair: Optional[str] = None
     condition: Optional[str] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class AddressValidate(BaseModel):
@@ -94,8 +93,7 @@ class InstantQuoteRequest(BaseModel):
     petHair: Optional[str] = None          # "none" | "some" | "heavy"
     condition: Optional[str] = None        # "maintenance" | "moderate" | "heavy"
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class InstantQuoteResponse(BaseModel):

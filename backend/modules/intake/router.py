@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 import logging
 
@@ -346,8 +346,7 @@ class WebhookPayload(BaseModel):
     squareFeet: Optional[int] = None
     message: Optional[str] = None
     propertyType: Optional[str] = None
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 @router.post("/webhook", status_code=201)  # PUBLIC: maineclean.co InstantEstimate webhook posts here
