@@ -30,12 +30,12 @@ export const VISIT_ACCENT = {
 }
 
 export const DEFAULT_CHECKLIST = [
-  { key: 'kitchen', label: 'Kitchen' },
-  { key: 'bathrooms', label: 'Bathrooms' },
-  { key: 'bedrooms', label: 'Bedrooms' },
-  { key: 'living_areas', label: 'Living areas' },
-  { key: 'linens', label: 'Linens changed' },
-  { key: 'trash', label: 'Trash out' },
+  'Kitchen cleaned',
+  'Bathrooms cleaned',
+  'Floors vacuumed/mopped',
+  'Trash removed',
+  'Surfaces wiped',
+  'Final walkthrough',
 ]
 
 /** "Jun 5" style date label for booking check-in/out timestamps. */
