@@ -6,6 +6,7 @@ import { del, get, post, upload } from "../api"
 import { applyTheme, getTheme } from '../theme'
 import Toast from '../components/settings/Toast'
 import { useCustomFieldsTab, CustomFieldsBody, CustomFieldsSidePanel } from '../components/settings/CustomFieldsTab'
+import AutomationTab, { useAutomationSettings } from '../components/settings/AutomationTab'
 
 export default function Settings() {
   const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations' | 'users'
@@ -156,15 +157,6 @@ export default function Settings() {
   }
 
   // Automation settings
-  const [automationSettings, setAutomationSettings] = useState({
-    ical_auto_sync_enabled: true,
-    ical_sync_interval: 15,
-    gcal_auto_sync_enabled: true,
-    gcal_sync_interval: 10,
-    recurring_auto_generate_enabled: true,
-    invite_customers: true,
-  })
-  const [automationSaving, setAutomationSaving] = useState(false)
 
   // Google Calendar embed override (paste an embed URL or full <iframe>).
   const [gcalEmbed, setGcalEmbed] = useState('')
@@ -281,19 +273,7 @@ export default function Settings() {
 
   useEffect(() => { if (section === 'email') loadEmailSettings() }, [section, loadEmailSettings])
 
-  const loadAutomationSettings = useCallback(async () => {
-    try {
-      const data = await get('/api/settings/automation')
-      setAutomationSettings(s => ({ ...s, ...data }))
-    } catch (err) {
-      console.error('[Settings] failed to load automation settings', err)
-    }
-  }, [])
-
   useEffect(() => {
-    if (section === 'integrations' || section === 'automation' || section === 'general') {
-      loadAutomationSettings()
-    }
     if (section === 'general') {
       get('/api/settings/general')
         .then(d => setGeneralSettings(s => {
@@ -306,7 +286,7 @@ export default function Settings() {
         .then(d => setPropertyMedia(m => ({ ...m, ...d })))
         .catch(() => {})
     }
-  }, [section, loadAutomationSettings])
+  }, [section])
 
   const toast = useCallback((message, type = 'success') => {
     const id = Date.now()
@@ -315,6 +295,11 @@ export default function Settings() {
   }, [])
 
   const customFields = useCustomFieldsTab({ toast })
+  const automation = useAutomationSettings({
+    toast,
+    active: section === 'integrations' || section === 'automation' || section === 'general',
+  })
+  const { automationSettings, setAutomationSettings } = automation
 
   const saveEmailConfig = async () => {
     setEmailSaving(true)
@@ -375,18 +360,6 @@ export default function Settings() {
     setLogoUploading(false)
   }
 
-  const saveAutomationSettings = async () => {
-    setAutomationSaving(true)
-    try {
-      await post('/api/settings/automation', automationSettings)
-      toast('Automation settings saved')
-    } catch (err) {
-      toast('Failed to save automation settings', 'error')
-    }
-    setAutomationSaving(false)
-  }
-
-  const currentEntity = ENTITY_TABS.find(t => t.key === entityTab)
 
   return (
     <div className="flex h-full">
@@ -1116,104 +1089,7 @@ export default function Settings() {
         )}
 
         {/* === AUTOMATION SECTION === */}
-        {section === 'automation' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-            <div className="max-w-2xl pt-6">
-              <div className="mb-6">
-                <h2 className="text-lg font-bold text-ink">Auto-Sync Settings</h2>
-                <p className="text-sm text-ink-2 mt-1">Configure how often your calendar and feeds sync automatically</p>
-              </div>
-
-              <div className="bg-panel rounded-xl border border-hairline p-6 space-y-6">
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-ink">iCal Auto-Sync</h3>
-                      <p className="text-xs text-ink-3 mt-1">Sync iCal feeds to your schedule</p>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={automationSettings.ical_auto_sync_enabled}
-                        onChange={e => setAutomationSettings(s => ({ ...s, ical_auto_sync_enabled: e.target.checked }))}
-                        className="w-4 h-4 rounded" />
-                    </label>
-                  </div>
-                  {automationSettings.ical_auto_sync_enabled && (
-                    <div className="mt-3">
-                      <label className={lbl}>Sync Interval (minutes)</label>
-                      <input type="number" min="5" max="240" value={automationSettings.ical_sync_interval}
-                        onChange={e => setAutomationSettings(s => ({ ...s, ical_sync_interval: parseInt(e.target.value) || 15 }))}
-                        className={inp} />
-                      <p className="text-xs text-ink-3 mt-1">Recommended: 15 minutes</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-hairline pt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-ink">Google Calendar Auto-Sync</h3>
-                      <p className="text-xs text-ink-3 mt-1">Sync jobs to your Google Calendar</p>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={automationSettings.gcal_auto_sync_enabled}
-                        onChange={e => setAutomationSettings(s => ({ ...s, gcal_auto_sync_enabled: e.target.checked }))}
-                        className="w-4 h-4 rounded" />
-                    </label>
-                  </div>
-                  {automationSettings.gcal_auto_sync_enabled && (
-                    <div className="mt-3">
-                      <label className={lbl}>Sync Interval (minutes)</label>
-                      <input type="number" min="5" max="240" value={automationSettings.gcal_sync_interval}
-                        onChange={e => setAutomationSettings(s => ({ ...s, gcal_sync_interval: parseInt(e.target.value) || 10 }))}
-                        className={inp} />
-                      <p className="text-xs text-ink-3 mt-1">Recommended: 10 minutes</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-hairline pt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-ink">Recurring Jobs Auto-Generate</h3>
-                      <p className="text-xs text-ink-3 mt-1">Auto-create scheduled jobs from active recurring schedules every day. Backfills missed dates so you never run out of upcoming jobs.</p>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={automationSettings.recurring_auto_generate_enabled}
-                        onChange={e => setAutomationSettings(s => ({ ...s, recurring_auto_generate_enabled: e.target.checked }))}
-                        className="w-4 h-4 rounded" />
-                    </label>
-                  </div>
-                  {automationSettings.recurring_auto_generate_enabled && (
-                    <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
-                  )}
-                </div>
-
-                <div className="border-t border-hairline pt-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-ink">Invite customers to their cleanings</h3>
-                      <p className="text-xs text-ink-3 mt-1">Add the customer (by email) to each cleaning's Google Calendar event, so they get an invite and see all their upcoming cleanings on their own calendar. Their copy never shows gate codes, crew, or internal notes.</p>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={automationSettings.invite_customers}
-                        onChange={e => setAutomationSettings(s => ({ ...s, invite_customers: e.target.checked }))}
-                        className="w-4 h-4 rounded" />
-                    </label>
-                  </div>
-                  {automationSettings.invite_customers && (
-                    <p className="text-xs text-ink-3 mt-1">Applies to new cleanings and to the Calendar page's “Push to Google” backfill (which emails each client an invite for their upcoming cleanings). Only clients with an email on file are invited.</p>
-                  )}
-                </div>
-              </div>
-
-              <button onClick={saveAutomationSettings} disabled={automationSaving}
-                className="mt-6 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
-                {automationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Save Changes
-              </button>
-            </div>
-          </div>
-        )}
+        {section === 'automation' && <AutomationTab state={automation} />}
 
         {/* === EMAIL SETTINGS SECTION === */}
         {section === 'email' && (
