@@ -130,9 +130,28 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
     setCtPushing(true)
     try {
       const r = await post('/api/settings/connecteam/push-open-shifts', {})
-      const err = r.errors?.length ? ` (${r.errors.length} failed)` : ''
-      toast(`Pushed ${r.pushed} open shift${r.pushed === 1 ? '' : 's'} to Connecteam · ${r.skipped} skipped${err}`,
-        r.errors?.length ? 'error' : undefined)
+      // Diagnostic toast: the base case ("Pushed 0 · 0 skipped") gave no signal
+      // for why nothing went over. Split the message by outcome so the operator
+      // knows whether to create jobs, un-dispatch, or check a real error.
+      const range = r.range ? ` (${r.range.start_date}→${r.range.end_date})` : ''
+      const firstErr = r.errors?.[0]?.error ? ` — first failure: ${r.errors[0].error}` : ''
+      let msg
+      let tone
+      if (r.pushed > 0) {
+        msg = `Pushed ${r.pushed} open shift${r.pushed === 1 ? '' : 's'} to Connecteam · ${r.skipped} skipped${r.errors?.length ? ` · ${r.errors.length} failed` : ''}`
+        tone = r.errors?.length ? 'error' : undefined
+      } else if (r.considered === 0) {
+        msg = `No Bright Space jobs found${range}. Create jobs on the Schedule page first — this endpoint only pushes real jobs, not iCal turnovers that haven't been materialised.`
+        tone = 'error'
+      } else if (r.errors?.length) {
+        msg = `Connecteam rejected all ${r.errors.length} job push${r.errors.length === 1 ? '' : 'es'}${firstErr}`
+        tone = 'error'
+      } else {
+        // considered > 0, pushed = 0, no errors → all skipped
+        msg = `All ${r.considered} job${r.considered === 1 ? '' : 's'} in the window were skipped (already dispatched or missing date/time). Nothing to do.`
+        tone = 'error'
+      }
+      toast(msg, tone)
     } catch (e) {
       toast(e?.message || 'Could not push schedule', 'error')
     } finally {
