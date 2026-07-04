@@ -1,27 +1,18 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import {
-  Calendar, Clock, AlertCircle, Filter,
-  Calendar as CalendarIcon, Trash2,
-} from 'lucide-react'
 import { get, post, put, patch } from '../api'
 import Button from '../components/ui/Button'
-import GlassCard from '../components/ui/GlassCard'
-import StatusBadge from '../components/ui/StatusBadge'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
-import RecordLink from '../components/RecordLink'
-import StatCard from '../components/ui/StatCard'
 import { useToast } from '../components/ui/Toast'
-import { SyncBadge, TurnoverInfo } from '../components/schedule/SyncBadge'
 import AgendaDay from '../components/schedule/AgendaDay'
-import VisitCard from '../components/schedule/VisitCard'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
+import { ScheduleHealthStrip, ScheduleBulkBar, ScheduleListView } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
@@ -509,57 +500,19 @@ export default function Schedule() {
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
       />
 
-      {/* Schedule health — just the two operational counts. The Google /
-          Connecteam sync ratios used to sit here as always-on diagnostic cards;
-          they're now surfaced only when something is actually out of sync, via
-          the "Needs attention" strip below. */}
-      <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
-        <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
-          <StatCard className="bg-panel border border-hairline rounded-lg" label="Today" value={scheduleStats.today} icon={CalendarIcon} />
-          <StatCard className="bg-panel border border-hairline rounded-lg" label="This week" value={scheduleStats.week} icon={Clock} />
-        </div>
-        {(scheduleStats.notGcal > 0 || scheduleStats.notConnecteam > 0) && (
-          <div className="max-w-7xl mx-auto mt-2 flex flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-medium">Needs attention:</span>
-            {scheduleStats.notGcal > 0 && <span>{scheduleStats.notGcal} not on Google yet</span>}
-            {scheduleStats.notGcal > 0 && scheduleStats.notConnecteam > 0 && <span className="text-amber-300">·</span>}
-            {scheduleStats.notConnecteam > 0 && <span>{scheduleStats.notConnecteam} not in Connecteam</span>}
-          </div>
-        )}
-      </div>
+      <ScheduleHealthStrip stats={scheduleStats} />
 
       {/* Selection / bulk-action bar */}
       {!isGoogleOnly && (
-      <div className="bg-panel border-b border-hairline px-4 py-2">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <label className="flex items-center gap-2 text-xs text-ink-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
-              onChange={selectAllVisible}
-              className="w-3.5 h-3.5 rounded border-hairline cursor-pointer"
-              data-testid="visits-select-all"
-            />
-            <span>Select all visible ({currentlyVisibleVisits.length})</span>
-          </label>
-          {selectedVisitIds.size > 0 && (
-            <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
-              <span className="text-xs text-ink-2 font-medium">{selectedVisitIds.size} selected</span>
-              <button onClick={clearVisitSelection}
-                className="text-xs text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
-                Clear
-              </button>
-              <button onClick={bulkDeleteVisits} disabled={bulkDeleting}
-                data-testid="visits-bulk-delete"
-                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
-                <Trash2 className="w-3.5 h-3.5" />
-                {bulkDeleting ? 'Working...' : `Cancel ${selectedVisitIds.size}`}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+        <ScheduleBulkBar
+          visibleCount={currentlyVisibleVisits.length}
+          allSelected={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
+          onSelectAllVisible={selectAllVisible}
+          selectedCount={selectedVisitIds.size}
+          onClear={clearVisitSelection}
+          onBulkDelete={bulkDeleteVisits}
+          bulkDeleting={bulkDeleting}
+        />
       )}
 
       {/* Render branch: agenda (single-day cards) / list (week, grouped) / month (CalendarView) */}
@@ -587,58 +540,17 @@ export default function Schedule() {
           />
         </div>
       ) : (
-      <>
-      {/* Schedule Grid (list view) */}
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-3 sm:p-4">
-          {Object.keys(visitsByDate).length === 0 ? (
-            <GlassCard>
-              <div className="text-center py-12">
-                <CalendarIcon className="w-12 h-12 text-ink-3 mx-auto mb-3" />
-                <p className="text-ink-2">No visits scheduled for this week</p>
-              </div>
-            </GlassCard>
-          ) : (
-            <div className="space-y-4 sm:space-y-6">
-              {Object.entries(visitsByDate)
-                .sort(([dateA], [dateB]) => {
-                  // "unscheduled" bucket sorts to the bottom.
-                  if (dateA === 'unscheduled') return 1
-                  if (dateB === 'unscheduled') return -1
-                  return dateA.localeCompare(dateB)
-                })
-                .map(([date, dateVisits]) => (
-                  <div key={date}>
-                    <h2 className="text-base sm:text-lg font-bold text-ink mb-2 sm:mb-3">
-                      {date === 'unscheduled'
-                        ? `Unscheduled — pick a date in Edit Job (${dateVisits.length})`
-                        : new Date(`${date}T00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                      }
-                    </h2>
-                    <div className="space-y-2 sm:space-y-3">
-                      {dateVisits.map((visit) => (
-                        <VisitCard
-                          key={visit.id}
-                          visit={visit}
-                          job={jobs[visit.job_id]}
-                          property={properties[jobs[visit.job_id]?.property_id]}
-                          client={clients[jobs[visit.job_id]?.client_id]}
-                          onEdit={handleEdit}
-                          onDelete={handleDelete}
-                          selected={selectedVisitIds.has(visit.id)}
-                          onToggleSelect={toggleVisitSelect}
-                          empName={empName}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      </>
+      <ScheduleListView
+        visitsByDate={visitsByDate}
+        jobs={jobs}
+        properties={properties}
+        clients={clients}
+        selectedVisitIds={selectedVisitIds}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onToggleSelect={toggleVisitSelect}
+        empName={empName}
+      />
       )}
 
       {/* Visit Details Drawer */}
