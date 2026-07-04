@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, X, Settings2, Mail, CheckCircle, AlertTriangle, Loader2, Shield, Plug, RefreshCw, Zap, Users, ChevronDown } from 'lucide-react'
+import { X, Settings2, Mail, Loader2, Plug, RefreshCw, Users } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
 import GoogleAccountCard from '../components/GoogleAccountCard'
-import { del, get, post, upload } from "../api"
-import { applyTheme, getTheme } from '../theme'
+import { get, post } from "../api"
 import Toast from '../components/settings/Toast'
 import { useCustomFieldsTab, CustomFieldsBody, CustomFieldsSidePanel } from '../components/settings/CustomFieldsTab'
 import AutomationTab, { useAutomationSettings } from '../components/settings/AutomationTab'
 import EmailTab from '../components/settings/EmailTab'
 import DangerZone from '../components/settings/DangerZone'
+import GeneralTab from '../components/settings/GeneralTab'
 
 export default function Settings() {
   const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations' | 'users'
@@ -17,53 +17,7 @@ export default function Settings() {
     try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
     catch { return false }
   })()
-  const [themeChoice, setThemeChoice] = useState(getTheme())
-  const [showScout, setShowScout] = useState(() => localStorage.getItem('brightbase_hide_scout') !== '1')
   const [toasts, setToasts] = useState([])
-
-  // General settings
-  const [generalSettings, setGeneralSettings] = useState({
-    company_name: 'Maine Cleaning Co.',
-    company_email: '',
-    company_phone: '',
-    timezone: 'America/New_York',
-    currency: 'USD',
-    quote_terms: '',
-    brand_color: '#1f2937',
-    // Must be in the initial state: the /general loader only copies keys that
-    // already exist here, so without this the saved logo wouldn't re-hydrate
-    // on reload (preview would wrongly show "No logo").
-    company_logo_url: '',
-    service_scope_residential: '',
-    service_scope_commercial: '',
-    service_scope_str: '',
-  })
-  const [generalSaving, setGeneralSaving] = useState(false)
-
-  // Property photos (Google Street View) + property-data (RentCast) integration.
-  // Keys are write-only: the API never returns them, only whether each is set.
-  const [propertyMedia, setPropertyMedia] = useState({
-    property_photo_enabled: false, google_maps_key_set: false, google_maps_api_key: '',
-    property_enrichment_enabled: false, rentcast_key_set: false, rentcast_api_key: '',
-  })
-  const [propertyMediaSaving, setPropertyMediaSaving] = useState(false)
-  const savePropertyMedia = async () => {
-    setPropertyMediaSaving(true)
-    try {
-      const body = {
-        property_photo_enabled: propertyMedia.property_photo_enabled,
-        property_enrichment_enabled: propertyMedia.property_enrichment_enabled,
-      }
-      if (propertyMedia.google_maps_api_key?.trim()) body.google_maps_api_key = propertyMedia.google_maps_api_key.trim()
-      if (propertyMedia.rentcast_api_key?.trim()) body.rentcast_api_key = propertyMedia.rentcast_api_key.trim()
-      const d = await post('/api/settings/property-media', body)
-      setPropertyMedia(m => ({ ...m, ...d, google_maps_api_key: '', rentcast_api_key: '' }))
-      toast('Property photo & data settings saved')
-    } catch (err) {
-      toast(err.message || 'Failed to save', 'error')
-    }
-    setPropertyMediaSaving(false)
-  }
 
   // Stop iCal sync (Integrations tab) — flips iCal auto-sync off + deactivates feeds
   const [stoppingIcal, setStoppingIcal] = useState(false)
@@ -163,22 +117,6 @@ export default function Settings() {
     setGcalEmbedSaving(false)
   }
 
-  // Email settings state
-  useEffect(() => {
-    if (section === 'general') {
-      get('/api/settings/general')
-        .then(d => setGeneralSettings(s => {
-          const next = { ...s }
-          for (const k of Object.keys(next)) if (d?.[k] != null) next[k] = d[k]
-          return next
-        }))
-        .catch(() => {})
-      get('/api/settings/property-media')
-        .then(d => setPropertyMedia(m => ({ ...m, ...d })))
-        .catch(() => {})
-    }
-  }, [section])
-
   const toast = useCallback((message, type = 'success') => {
     const id = Date.now()
     setToasts(t => [...t, { id, message, type }])
@@ -191,45 +129,6 @@ export default function Settings() {
     active: section === 'integrations' || section === 'automation' || section === 'general',
   })
   const { automationSettings, setAutomationSettings } = automation
-
-  const saveGeneralSettings = async () => {
-    setGeneralSaving(true)
-    try {
-      await post('/api/settings/general', generalSettings)
-      toast('General settings saved')
-    } catch (err) {
-      toast('Failed to save general settings', 'error')
-    }
-    setGeneralSaving(false)
-  }
-
-  const [logoUploading, setLogoUploading] = useState(false)
-  const uploadLogo = async (file) => {
-    if (!file) return
-    setLogoUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const data = await upload('/api/settings/general/logo', fd)
-      setGeneralSettings(s => ({ ...s, company_logo_url: data.company_logo_url }))
-      toast('Logo uploaded')
-    } catch (err) {
-      toast(err.message || 'Failed to upload logo', 'error')
-    }
-    setLogoUploading(false)
-  }
-  const removeLogo = async () => {
-    setLogoUploading(true)
-    try {
-      await del('/api/settings/general/logo')
-      setGeneralSettings(s => ({ ...s, company_logo_url: '' }))
-      toast('Logo removed')
-    } catch (err) {
-      toast(err.message || 'Failed to remove logo', 'error')
-    }
-    setLogoUploading(false)
-  }
-
 
   return (
     <div className="flex h-full">
@@ -286,245 +185,11 @@ export default function Settings() {
 
         {/* === GENERAL SETTINGS SECTION === */}
         {section === 'general' && (
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-            <div className="max-w-2xl pt-6 space-y-6">
-              <div>
-                <h2 className="text-lg font-bold text-ink mb-4">Appearance</h2>
-                <div className="bg-panel rounded-xl border border-hairline p-6">
-                  <label className={lbl}>Theme</label>
-                  <div className="flex gap-2 mt-1">
-                    {[
-                      { value: 'light', label: 'Light' },
-                      { value: 'dark', label: 'Dark' },
-                    ].map(opt => (
-                      <button key={opt.value} type="button"
-                        onClick={() => setThemeChoice(applyTheme(opt.value))}
-                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
-                          themeChoice === opt.value
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-bg-2 text-ink-2 border-hairline hover:border-hairline-2'
-                        }`}>
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-ink-3 mt-2">Applies instantly and is remembered on this device.</p>
-
-                  <div className="border-t border-hairline mt-5 pt-5">
-                    <label className="flex items-center justify-between gap-3 cursor-pointer">
-                      <span>
-                        <span className={lbl}>AI assistant</span>
-                        <span className="block text-xs text-ink-3 mt-0.5">Show the floating "Ask Scout" button on every page.</span>
-                      </span>
-                      <input type="checkbox" checked={showScout}
-                        onChange={e => {
-                          const show = e.target.checked
-                          setShowScout(show)
-                          if (show) localStorage.removeItem('brightbase_hide_scout')
-                          else localStorage.setItem('brightbase_hide_scout', '1')
-                          window.dispatchEvent(new Event('scout-visibility'))
-                        }}
-                        className="w-4 h-4 shrink-0 cursor-pointer" />
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-bold text-ink mb-4">Company Information</h2>
-                <div className="bg-panel rounded-xl border border-hairline p-6">
-                  <div>
-                    <label className={lbl}>Company Name</label>
-                    <input type="text" value={generalSettings.company_name}
-                      onChange={e => setGeneralSettings(s => ({ ...s, company_name: e.target.value }))}
-                      placeholder="Maine Cleaning Co."
-                      className={inp} />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                    <div>
-                      <label className={lbl}>Company Email</label>
-                      <input type="email" value={generalSettings.company_email}
-                        onChange={e => setGeneralSettings(s => ({ ...s, company_email: e.target.value }))}
-                        placeholder="office@mainecleaningco.com"
-                        className={inp} />
-                    </div>
-                    <div>
-                      <label className={lbl}>Company Phone</label>
-                      <input type="tel" value={generalSettings.company_phone}
-                        onChange={e => setGeneralSettings(s => ({ ...s, company_phone: e.target.value }))}
-                        placeholder="+1 (207) 555-0100"
-                        className={inp} />
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-ink-3 mt-2">Shown on the public quote page ("Questions?") and used across customer-facing email.</p>
-                  <div className="mt-4">
-                    <label className={lbl}>Brand Color</label>
-                    <div className="flex items-center gap-2">
-                      <input type="color" value={generalSettings.brand_color || '#1f2937'}
-                        onChange={e => setGeneralSettings(s => ({ ...s, brand_color: e.target.value }))}
-                        className="h-9 w-12 rounded border border-hairline cursor-pointer bg-panel" />
-                      <input type="text" value={generalSettings.brand_color || ''}
-                        onChange={e => setGeneralSettings(s => ({ ...s, brand_color: e.target.value }))}
-                        placeholder="#1f2937" className={inp + ' w-32'} />
-                    </div>
-                    <p className="text-[11px] text-ink-3 mt-1">Header color on the quote email, public quote page, and PDF.</p>
-                  </div>
-                  <div className="mt-4">
-                    <label className={lbl}>Company Logo</label>
-                    <div className="flex items-center gap-4">
-                      <div className="h-16 w-16 shrink-0 rounded-lg border border-hairline bg-bg-2 flex items-center justify-center overflow-hidden">
-                        {generalSettings.company_logo_url ? (
-                          <img src={generalSettings.company_logo_url} alt="Logo" className="max-h-full max-w-full object-contain" />
-                        ) : (
-                          <span className="text-[10px] text-ink-3 text-center px-1">No logo</span>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${logoUploading ? 'bg-bg-2 text-ink-3 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-                            {logoUploading ? 'Uploading…' : 'Upload logo'}
-                            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="hidden"
-                              disabled={logoUploading}
-                              onChange={e => { uploadLogo(e.target.files?.[0]); e.target.value = '' }} />
-                          </label>
-                          {generalSettings.company_logo_url && (
-                            <button type="button" onClick={removeLogo} disabled={logoUploading}
-                              className="px-3 py-2 rounded-lg text-sm font-medium bg-bg-2 text-ink-2 hover:bg-bg-2 disabled:opacity-50">Remove</button>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-ink-3">PNG, JPG, GIF, WEBP, or SVG up to 2&nbsp;MB. Shown on the quote email, public quote page, and PDF.</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <label className={lbl}>Quote Terms &amp; Conditions (optional)</label>
-                    <textarea rows={4} value={generalSettings.quote_terms}
-                      onChange={e => setGeneralSettings(s => ({ ...s, quote_terms: e.target.value }))}
-                      placeholder="Payment due upon completion. Cancellations require 24h notice. …"
-                      className={inp + ' resize-none'} />
-                    <p className="text-[11px] text-ink-3 mt-1">Appears at the bottom of every public quote page. Leave blank to hide.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-bold text-ink mb-4">Service Descriptions</h2>
-                <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4">
-                  <p className="text-[11px] text-ink-3 -mt-1">Default "what's included" text per service type. Pre-fills the scope on a new quote — you can still edit it per quote. Leave blank to use the built-in default.</p>
-                  <div>
-                    <label className={lbl}>Residential</label>
-                    <textarea rows={3} value={generalSettings.service_scope_residential}
-                      onChange={e => setGeneralSettings(s => ({ ...s, service_scope_residential: e.target.value }))}
-                      placeholder="Full home cleaning: kitchen, bathrooms, bedrooms, and living areas — dusting, vacuuming, mopping, and surface sanitizing…"
-                      className={inp + ' resize-none'} />
-                  </div>
-                  <div>
-                    <label className={lbl}>Commercial</label>
-                    <textarea rows={3} value={generalSettings.service_scope_commercial}
-                      onChange={e => setGeneralSettings(s => ({ ...s, service_scope_commercial: e.target.value }))}
-                      placeholder="Commercial cleaning of all common and work areas: restrooms, break areas, floors, and high-touch surfaces sanitized…"
-                      className={inp + ' resize-none'} />
-                  </div>
-                  <div>
-                    <label className={lbl}>STR / Vacation rental</label>
-                    <textarea rows={3} value={generalSettings.service_scope_str}
-                      onChange={e => setGeneralSettings(s => ({ ...s, service_scope_str: e.target.value }))}
-                      placeholder="Turnover clean between guests: full kitchen and bathroom reset, fresh linens and towels staged…"
-                      className={inp + ' resize-none'} />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-bold text-ink mb-4">Property Photos &amp; Data</h2>
-                <div className="bg-panel rounded-xl border border-hairline p-6 space-y-5">
-                  {/* Street View photo */}
-                  <div>
-                    <label className="flex items-center justify-between gap-3 cursor-pointer">
-                      <span>
-                        <span className={lbl + ' !mb-0'}>Front-of-house photo (Google Street View)</span>
-                        <span className="block text-xs text-ink-3 mt-0.5">Shows a photo of the property address on the quote page, email, and PDF.</span>
-                      </span>
-                      <input type="checkbox" checked={!!propertyMedia.property_photo_enabled}
-                        onChange={e => setPropertyMedia(m => ({ ...m, property_photo_enabled: e.target.checked }))}
-                        className="w-4 h-4 shrink-0 cursor-pointer" />
-                    </label>
-                    <div className="mt-3">
-                      <label className={lbl}>Google Maps API key {propertyMedia.google_maps_key_set && <span className="text-emerald-600 normal-case font-medium">· saved</span>}</label>
-                      <input type="password" autoComplete="off" value={propertyMedia.google_maps_api_key}
-                        onChange={e => setPropertyMedia(m => ({ ...m, google_maps_api_key: e.target.value }))}
-                        placeholder={propertyMedia.google_maps_key_set ? '•••••••••• (leave blank to keep)' : 'Paste your Google Maps API key'}
-                        className={inp} />
-                      <p className="text-[11px] text-ink-3 mt-1">Needs the Street View Static API enabled. A small per-image cost applies on Google's side.</p>
-                    </div>
-                  </div>
-                  <div className="border-t border-hairline" />
-                  {/* RentCast property data */}
-                  <div>
-                    <label className="flex items-center justify-between gap-3 cursor-pointer">
-                      <span>
-                        <span className={lbl + ' !mb-0'}>Auto-fill property specs (RentCast)</span>
-                        <span className="block text-xs text-ink-3 mt-0.5">Looks up square footage, beds, and baths by address to pre-fill the quote.</span>
-                      </span>
-                      <input type="checkbox" checked={!!propertyMedia.property_enrichment_enabled}
-                        onChange={e => setPropertyMedia(m => ({ ...m, property_enrichment_enabled: e.target.checked }))}
-                        className="w-4 h-4 shrink-0 cursor-pointer" />
-                    </label>
-                    <div className="mt-3">
-                      <label className={lbl}>RentCast API key {propertyMedia.rentcast_key_set && <span className="text-emerald-600 normal-case font-medium">· saved</span>}</label>
-                      <input type="password" autoComplete="off" value={propertyMedia.rentcast_api_key}
-                        onChange={e => setPropertyMedia(m => ({ ...m, rentcast_api_key: e.target.value }))}
-                        placeholder={propertyMedia.rentcast_key_set ? '•••••••••• (leave blank to keep)' : 'Paste your RentCast API key'}
-                        className={inp} />
-                      <p className="text-[11px] text-ink-3 mt-1">Free tier available at rentcast.io. Used only to fill missing specs — the customer's submitted details always win.</p>
-                    </div>
-                  </div>
-                  <button onClick={savePropertyMedia} disabled={propertyMediaSaving}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60">
-                    {propertyMediaSaving ? 'Saving…' : 'Save property settings'}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-bold text-ink mb-4">Regional Settings</h2>
-                <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4">
-                  <div>
-                    <label className={lbl}>Timezone</label>
-                    <select value={generalSettings.timezone}
-                      onChange={e => setGeneralSettings(s => ({ ...s, timezone: e.target.value }))}
-                      className={inp}>
-                      <option value="America/New_York">Eastern Time (ET)</option>
-                      <option value="America/Chicago">Central Time (CT)</option>
-                      <option value="America/Denver">Mountain Time (MT)</option>
-                      <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                      <option value="UTC">UTC</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={lbl}>Currency</label>
-                    <select value={generalSettings.currency}
-                      onChange={e => setGeneralSettings(s => ({ ...s, currency: e.target.value }))}
-                      className={inp}>
-                      <option value="USD">USD ($)</option>
-                      <option value="EUR">EUR (€)</option>
-                      <option value="GBP">GBP (£)</option>
-                      <option value="CAD">CAD (C$)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <button onClick={saveGeneralSettings} disabled={generalSaving}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
-                {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Save Changes
-              </button>
-
-              {/* Danger zone — sync controls + reset, collapsed by default */}
-              <DangerZone toast={toast} automationSettings={automationSettings} setAutomationSettings={setAutomationSettings} />
-            </div>
-          </div>
+          <GeneralTab
+            toast={toast}
+            active={section === 'general'}
+            dangerZone={<DangerZone toast={toast} automationSettings={automationSettings} setAutomationSettings={setAutomationSettings} />}
+          />
         )}
 
         {/* === INTEGRATIONS SECTION === */}
