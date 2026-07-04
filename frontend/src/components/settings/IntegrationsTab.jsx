@@ -113,7 +113,11 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
     setCtTesting(true)
     try {
       const r = await post('/api/settings/connecteam/test', {})
-      toast(`Connecteam OK — ${r.employee_count} employee${r.employee_count === 1 ? '' : 's'} visible`)
+      // Stash the schedulers list so the picker underneath can offer them.
+      setConnecteam(c => ({ ...c, schedulers: r.schedulers || [] }))
+      const acct = r.account?.name || r.account?.email || 'Connecteam'
+      const n = (r.schedulers || []).length
+      toast(`Connecteam OK — connected as ${acct}${n ? ` · ${n} scheduler${n === 1 ? '' : 's'} available` : ''}`)
     } catch (e) {
       toast(e?.message || 'Connecteam test call failed', 'error')
     } finally {
@@ -443,7 +447,7 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                     {!connecteam.loading && connecteam.configured && (
                       <p className="text-[11px] text-ink-3 mt-1">
                         Key <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.api_key_masked}</code>
-                        {connecteam.company_id ? <> · Company <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.company_id}</code></> : null}
+                        {(connecteam.scheduler_id || connecteam.company_id) ? <> · Scheduler <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.scheduler_id || connecteam.company_id}</code></> : null}
                         {connecteam.source === 'env' && <span className="ml-1 text-ink-3">(from server env)</span>}
                       </p>
                     )}
@@ -476,18 +480,31 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-ink-2 mb-1">Company ID</label>
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      value={ctForm.company_id}
-                      onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
-                      placeholder="e.g. 123456"
-                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
-                    />
+                    <label className="block text-xs font-medium text-ink-2 mb-1">Scheduler ID</label>
+                    {Array.isArray(connecteam.schedulers) && connecteam.schedulers.length > 0 ? (
+                      <select
+                        value={ctForm.company_id}
+                        onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
+                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="">— pick a scheduler —</option>
+                        {connecteam.schedulers.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} (ID {s.id})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        value={ctForm.company_id}
+                        onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
+                        placeholder="numeric scheduler id, e.g. 12345"
+                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
+                      />
+                    )}
                   </div>
                   <p className="text-[11px] text-ink-3">
-                    Find these in Connecteam under Developer → API Keys. The Company ID is the numeric account identifier shown next to the key.
+                    Get the API key from Connecteam → <b>Integrations Center → API keys</b>. The Scheduler ID is the numeric id of the specific schedule you want shifts pushed into — save the key first, hit <b>Test connection</b>, and this field turns into a picker of every scheduler on your account.
                   </p>
                   <div className="flex items-center gap-2">
                     <button onClick={saveConnecteam} disabled={ctSaving || (!ctForm.company_id.trim() && !ctForm.api_key.trim())}

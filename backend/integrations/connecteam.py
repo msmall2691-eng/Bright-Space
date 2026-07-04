@@ -1,15 +1,40 @@
 """
-Connecteam API integration.
+Connecteam public API integration.
+
 Docs: https://developer.connecteam.com/
+
+The initial version of this module used the wrong header and URL shape
+(`Authorization: Bearer …` + `/v1/companies/{cid}/…`), which is why every
+call 401'd regardless of which key was pasted in Settings. Connecteam's
+public API actually wants:
+
+  * Base URL: https://api.connecteam.com  (no `/v1` prefix; each product
+    module carries its own version segment, e.g. `/scheduler/v1/…`,
+    `/users/v1/…`)
+  * Auth:     X-API-KEY: <key>            (NOT Authorization: Bearer)
+  * Verify:   GET /me                     (cheap smoke test)
+  * Users:    GET /users/v1/users
+  * Shifts:   POST /scheduler/v1/schedulers/{schedulerId}/shifts
+              (body is an ARRAY of up to 500 shifts; startTime/endTime
+              are Unix seconds, ints)
+  * Delete:   DELETE /scheduler/v1/schedulers/{schedulerId}/shifts/{shiftId}
+  * List schedulers: GET /scheduler/v1/schedulers   (returns { data: { schedulers: [{ id, name, … }] } })
+
+Everything the CRM stores as a "company id" is really the **scheduler id**
+— the numeric id of the schedule you want shifts pushed into. The setting
+key is kept as `connecteam_company_id` for backward compatibility (env vars
++ existing DB rows), but the UI now labels it "Scheduler ID".
 """
 
 import os
 import asyncio
 import concurrent.futures
+from datetime import datetime, timezone
+
 import httpx
 from typing import Optional
 
-CONNECTEAM_BASE = "https://api.connecteam.com/v1"
+CONNECTEAM_BASE = "https://api.connecteam.com"
 
 
 def _db_setting(key: str) -> str:
@@ -35,15 +60,25 @@ def _get_api_key() -> str:
     return _db_setting("connecteam_api_key") or os.getenv("CONNECTEAM_API_KEY", "").strip()
 
 
-def _get_company_id() -> str:
+def _get_scheduler_id() -> str:
+    """Scheduler ID: prefer DB, fall back to env. Kept under the legacy
+    `connecteam_company_id` / `CONNECTEAM_COMPANY_ID` keys so existing installs
+    don't need to re-enter it — but the value semantically is a scheduler id,
+    which is what the Connecteam scheduler API path requires."""
     return _db_setting("connecteam_company_id") or os.getenv("CONNECTEAM_COMPANY_ID", "").strip()
+
+
+# Public alias for callers that used to say "company_id"; kept so the auto
+# dispatcher and any external readers keep compiling.
+def _company_id() -> str:  # noqa: N802 — backward compat name
+    return _get_scheduler_id()
 
 
 def is_configured() -> bool:
     """True when Connecteam credentials are present, so callers can tell
     "Connecteam isn't connected" apart from "connected but the call failed"
     (mirrors integrations.google_calendar.is_configured)."""
-    return bool(_get_api_key() and _get_company_id())
+    return bool(_get_api_key() and _get_scheduler_id())
 
 
 def _run_sync(coro):
@@ -63,12 +98,9 @@ def _run_sync(coro):
 
 
 class ConnecteamAuthError(Exception):
-    """Connecteam rejected our credentials.
-
-    Connecteam answers auth failures with a 302 redirect to '/' instead of a
-    401, so a redirect (or explicit 401/403) on an API call means the API key
-    is invalid or expired — not that the service is down.
-    """
+    """Connecteam rejected our credentials (401/403) or bounced us to a login
+    redirect. Callers turn this into a 401 with 'rotate your API key' guidance
+    — distinct from a transient 5xx which should retry."""
 
 
 def _raise_for_status(r: httpx.Response) -> None:
@@ -81,99 +113,168 @@ def _raise_for_status(r: httpx.Response) -> None:
 
 def _headers() -> dict:
     return {
-        "Authorization": f"Bearer {_get_api_key()}",
+        "X-API-KEY": _get_api_key(),
+        "Accept": "application/json",
         "Content-Type": "application/json",
     }
 
 
-def _company_id() -> str:
-    return _get_company_id()
+def _to_epoch_seconds(value) -> int:
+    """Coerce a datetime / ISO string / int-ish into Unix seconds. Connecteam's
+    scheduler API rejects millisecond values (anything > 1e12), so pre-1970
+    dates and JS timestamps both need normalising here."""
+    if isinstance(value, int):
+        return value if value < 10**12 else value // 1000
+    if isinstance(value, float):
+        return int(value if value < 10**12 else value / 1000)
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    # String path — try ISO first, then a bare "YYYY-MM-DDTHH:MM:SS" (no tz);
+    # local naive datetimes are treated as UTC to keep the code Railway-safe.
+    s = str(value).strip()
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
+# ─── Auth-smoke-test + directory endpoints ─────────────────────────────────
+
+async def get_me() -> dict:
+    """Cheapest possible authenticated call — verifies the API key AND the
+    account it belongs to. Connecteam recommends `GET /me` as the "is my key
+    live?" endpoint; a 200 here means everything downstream will authenticate."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{CONNECTEAM_BASE}/me", headers=_headers())
+        _raise_for_status(r)
+        return r.json()
+
+
+async def list_schedulers() -> list:
+    """List all schedulers on the account. Used by the Settings UI's Test
+    button to help the operator pick the right schedulerId (the numeric id
+    that goes into CONNECTEAM_COMPANY_ID / the 'Scheduler ID' field).
+
+    Response shape: { "data": { "schedulers": [{ "id": 12345, "name": "Ops" }] } }
+    We flatten to a plain list of {id, name}."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{CONNECTEAM_BASE}/scheduler/v1/schedulers",
+                             headers=_headers())
+        _raise_for_status(r)
+        data = r.json()
+    schedulers = ((data.get("data") or {}).get("schedulers")) or data.get("schedulers") or []
+    return [
+        {"id": s.get("id"), "name": s.get("name") or f"Scheduler #{s.get('id')}"}
+        for s in schedulers if s.get("id") is not None
+    ]
 
 
 async def get_employees() -> list:
-    """Fetch all employees from Connecteam."""
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{CONNECTEAM_BASE}/companies/{_company_id()}/users",
+    """Fetch all users from Connecteam via /users/v1/users. Kept because the
+    /connecteam/test settings endpoint's original implementation called it —
+    now largely superseded by get_me() but retained so anything that imported
+    it keeps working."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{CONNECTEAM_BASE}/users/v1/users", headers=_headers())
+        _raise_for_status(r)
+        data = r.json()
+    users = ((data.get("data") or {}).get("users")) or data.get("users") or []
+    return users
+
+
+# ─── Shifts ────────────────────────────────────────────────────────────────
+
+def _shift_payload(*, start_datetime, end_datetime, title,
+                   address=None, notes=None, user_id=None,
+                   open_shift=False, is_published=True) -> dict:
+    """Shape a single shift the way Connecteam expects. Bulk-create takes an
+    ARRAY of these — call sites wrap accordingly."""
+    payload = {
+        "startTime": _to_epoch_seconds(start_datetime),
+        "endTime": _to_epoch_seconds(end_datetime),
+        "title": title,
+        "isPublished": is_published,
+    }
+    if open_shift:
+        payload["isOpenShift"] = True
+        payload["assignedUserIds"] = []  # required to stay empty for open shifts
+    elif user_id is not None:
+        payload["assignedUserIds"] = [int(user_id)] if str(user_id).isdigit() else [user_id]
+    if address:
+        # locationData is a structured object; when we only have a free-text
+        # address, put it in the `address` sub-field. Connecteam ignores unknown
+        # keys, so extra fields are safe.
+        payload["locationData"] = {"address": address}
+    if notes:
+        payload["notes"] = [{"html": notes}]
+    return payload
+
+
+def _extract_shift_ids(data: dict) -> list:
+    """Bulk-create response is {"data": {"shifts": [{"id": "..."}]}}; pull the
+    ids out defensively so a shape change doesn't crash our caller."""
+    shifts = ((data.get("data") or {}).get("shifts")) or data.get("shifts") or []
+    return [str(s.get("id")) for s in shifts if s.get("id")]
+
+
+async def create_shifts(shifts: list) -> list:
+    """Bulk-create shifts. Returns the created shift ids in the same order."""
+    if not shifts:
+        return []
+    sched = _get_scheduler_id()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{CONNECTEAM_BASE}/scheduler/v1/schedulers/{sched}/shifts",
             headers=_headers(),
+            json=shifts,
         )
         _raise_for_status(r)
-        return r.json().get("users", [])
+        data = r.json()
+    return _extract_shift_ids(data)
 
 
 async def create_shift(
     employee_id: str,
-    start_datetime: str,   # ISO 8601: 2025-04-10T08:00:00
-    end_datetime: str,
+    start_datetime,
+    end_datetime,
     title: str,
     address: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> dict:
-    """Create a single shift in Connecteam for one employee."""
-    payload = {
-        "userId": employee_id,
-        "startTime": start_datetime,
-        "endTime": end_datetime,
-        "title": title,
-    }
-    if address:
-        payload["location"] = address
-    if notes:
-        payload["notes"] = notes
-
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"{CONNECTEAM_BASE}/companies/{_company_id()}/shifts",
-            headers=_headers(),
-            json=payload,
-        )
-        _raise_for_status(r)
-        return r.json()
+    """Create a single ASSIGNED shift for one cleaner. Returns {"id": "..."}
+    so callers that read `res["id"]` (like connecteam_auto.auto_dispatch_job)
+    keep working."""
+    payload = _shift_payload(
+        start_datetime=start_datetime, end_datetime=end_datetime,
+        title=title, address=address, notes=notes, user_id=employee_id,
+    )
+    ids = await create_shifts([payload])
+    return {"id": ids[0]} if ids else {}
 
 
 async def create_open_shift(
-    start_datetime: str,   # ISO 8601: 2025-04-10T08:00:00
-    end_datetime: str,
+    start_datetime,
+    end_datetime,
     title: str,
     address: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> dict:
-    """Create an OPEN shift in Connecteam (no assigned employee).
-
-    An open shift shows up in the Connecteam schedule as "up for grabs" so
-    cleaners can claim it themselves — that's what lets Bright Space push the
-    week's schedule over without pre-assigning who works what."""
-    payload = {
-        "startTime": start_datetime,
-        "endTime": end_datetime,
-        "title": title,
-        "isOpenShift": True,
-    }
-    if address:
-        payload["location"] = address
-    if notes:
-        payload["notes"] = notes
-
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"{CONNECTEAM_BASE}/companies/{_company_id()}/shifts",
-            headers=_headers(),
-            json=payload,
-        )
-        _raise_for_status(r)
-        return r.json()
-
-
-def create_open_shift_sync(**kwargs) -> dict:
-    """Synchronous wrapper around create_open_shift for the sync job endpoints."""
-    return _run_sync(create_open_shift(**kwargs))
+    """Create a single OPEN shift (unassigned, cleaners can self-claim)."""
+    payload = _shift_payload(
+        start_datetime=start_datetime, end_datetime=end_datetime,
+        title=title, address=address, notes=notes, open_shift=True,
+    )
+    ids = await create_shifts([payload])
+    return {"id": ids[0]} if ids else {}
 
 
 async def delete_shift(shift_id: str) -> None:
-    """Delete a shift from Connecteam."""
-    async with httpx.AsyncClient() as client:
+    """Delete a shift by id."""
+    sched = _get_scheduler_id()
+    async with httpx.AsyncClient(timeout=15) as client:
         r = await client.delete(
-            f"{CONNECTEAM_BASE}/companies/{_company_id()}/shifts/{shift_id}",
+            f"{CONNECTEAM_BASE}/scheduler/v1/schedulers/{sched}/shifts/{shift_id}",
             headers=_headers(),
         )
         _raise_for_status(r)
@@ -184,54 +285,36 @@ def create_shift_sync(**kwargs) -> dict:
     return _run_sync(create_shift(**kwargs))
 
 
+def create_open_shift_sync(**kwargs) -> dict:
+    """Synchronous wrapper around create_open_shift for the sync job endpoints."""
+    return _run_sync(create_open_shift(**kwargs))
+
+
 def delete_shift_sync(shift_id: str) -> None:
     """Synchronous wrapper around delete_shift for the sync job endpoints."""
     return _run_sync(delete_shift(shift_id))
 
 
-async def get_timesheets(
-    start_date: str,   # YYYY-MM-DD
-    end_date: str,
-    employee_id: Optional[str] = None,
-) -> list:
-    """Fetch timesheet entries from Connecteam for a date range."""
-    params = {
-        "startDate": start_date,
-        "endDate": end_date,
-        "companyId": _company_id(),
-    }
-    if employee_id:
-        params["userId"] = employee_id
+# ─── Payroll helpers (not-yet-re-implemented) ──────────────────────────────
+# The pre-rewrite code exposed get_timesheets / get_mileage against the wrong
+# URL shape (/v1/timesheets etc), so those calls have always 401'd since day
+# one — nothing was actually pulling payroll data. Keep the symbols so
+# modules/payroll/router.py still imports, but raise a clear error until the
+# Time Clock (/timeclock/v1/…) endpoints get wired up properly. The payroll
+# router catches this as a ConnecteamAuthError → 503, so the UI shows
+# "Connecteam error" instead of crashing.
 
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{CONNECTEAM_BASE}/timesheets",
-            headers=_headers(),
-            params=params,
-        )
-        _raise_for_status(r)
-        return r.json().get("timesheets", [])
+async def get_timesheets(start_date: str, end_date: str,
+                         employee_id: Optional[str] = None) -> list:
+    raise ConnecteamAuthError(
+        "Connecteam timesheet pull isn't wired to the /timeclock/v1 API yet. "
+        "Reach out to update backend/integrations/connecteam.py.get_timesheets."
+    )
 
 
-async def get_mileage(
-    start_date: str,
-    end_date: str,
-    employee_id: Optional[str] = None,
-) -> list:
-    """Fetch mileage entries from Connecteam for a date range."""
-    params = {
-        "startDate": start_date,
-        "endDate": end_date,
-        "companyId": _company_id(),
-    }
-    if employee_id:
-        params["userId"] = employee_id
-
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{CONNECTEAM_BASE}/mileage",
-            headers=_headers(),
-            params=params,
-        )
-        _raise_for_status(r)
-        return r.json().get("entries", [])
+async def get_mileage(start_date: str, end_date: str,
+                      employee_id: Optional[str] = None) -> list:
+    raise ConnecteamAuthError(
+        "Connecteam mileage pull isn't wired to the current API yet. "
+        "Reach out to update backend/integrations/connecteam.py.get_mileage."
+    )
