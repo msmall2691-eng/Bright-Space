@@ -4,7 +4,7 @@ import { Plus, Trash2, Calendar, FileText, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
-import { get, post, patch, put, del } from "../api"
+import { get, post, patch } from "../api"
 import { formatDate } from '../utils/format'
 import Toast from '../components/quoting/Toast'
 import LeadRow from '../components/quoting/LeadRow'
@@ -15,6 +15,7 @@ import SendQuotePanel from '../components/quoting/SendQuotePanel'
 import TemplateManagerModal from '../components/quoting/TemplateManagerModal'
 import QuoteEditPanel from '../components/quoting/QuoteEditPanel'
 import { useQuotingData, safeQuote } from '../hooks/useQuotingData'
+import { useQuotingMutations } from '../hooks/useQuotingMutations'
 import {
   QUOTE_STATUS_COLORS, LEAD_STATUS_COLORS,
   QUOTE_STATUS_OPTIONS, LEAD_STATUS_OPTIONS, QUOTE_NEXT_STEP,
@@ -34,7 +35,6 @@ export default function Quoting() {
   const navigate = useNavigate()
   const location = useLocation()
   const [tab, setTab] = useState('leads')
-  const [nudging, setNudging] = useState(null)
   const {
     quotes, setQuotes,
     followUps, setFollowUps,
@@ -66,7 +66,6 @@ export default function Quoting() {
   // scope/internal/message text areas live behind this toggle so the form
   // opens short.
   const [showQuoteAdvanced, setShowQuoteAdvanced] = useState(false)
-  const [copiedQuoteId, setCopiedQuoteId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   // Template manager (create/edit/delete reusable quote templates). Saving needs
   // admin/manager (PUT is role-gated), so only show the editor to those roles.
@@ -414,37 +413,6 @@ export default function Quoting() {
     setSending(false)
   }
 
-  // One-click follow-up nudge: re-send the quote by email to the address on
-  // file. The backend records it as a follow-up (keeps the original sent/viewed
-  // state intact) — nothing is auto-sent; this only fires when the owner clicks.
-  const sendFollowUp = async (q) => {
-    setNudging(q.id)
-    try {
-      await post(`/api/quotes/${q.id}/generate-token`, {})
-      const data = await post(`/api/quotes/${q.id}/send`, { channel: 'email' })
-      const channels = Object.entries(data.results || {}).filter(([, v]) => v === 'sent').map(([k]) => k)
-      showToast(`Follow-up sent via ${channels.join(' & ') || 'email'} ✓`)
-      await Promise.all([loadQuotes(), loadFollowUps()])
-    } catch (e) { showToast(e.message || 'Could not send follow-up') }
-    setNudging(null)
-  }
-
-  const updateStatus = async (id, status) => {
-    await patch(`/api/quotes/${id}`, { status })
-    loadQuotes()
-    loadFollowUps()
-  }
-
-  const markIntakeReviewed = async (id) => {
-    await patch(`/api/intake/${id}`, { status: 'reviewed' })
-    loadIntakes()
-  }
-
-  const updateLeadStatus = async (id, status) => {
-    await patch(`/api/intake/${id}`, { status })
-    loadIntakes()
-  }
-
   const convertToJob = async (quoteId) => {
     setConverting(quoteId)
     try {
@@ -453,16 +421,6 @@ export default function Quoting() {
       navigate(`/scheduling`)
     } catch (e) { showToast(e.message || 'Error converting to job') }
     setConverting(null)
-  }
-
-  const archiveQuote = async (quote) => {
-    if (!window.confirm(`Archive quote ${quote.quote_number || quote.id}? It will be hidden from this list.`)) return
-    try {
-      await del(`/api/quotes/${quote.id}`)
-      if (selected?.id === quote.id) { setSelected(null); setPanel(null) }
-      await loadQuotes()
-      showToast('Quote archived')
-    } catch (e) { showToast(e.message || 'Could not archive quote') }
   }
 
   // Permanent (hard) delete is admin-only and lives in the Archived view.
@@ -479,35 +437,18 @@ export default function Quoting() {
   })
   const clearSelection = () => setSelectedIds(new Set())
 
-  const bulkArchive = async () => {
-    const ids = [...selectedIds]
-    if (!ids.length) return
-    if (!window.confirm(`Archive ${ids.length} quote${ids.length === 1 ? '' : 's'}? They'll be hidden from this list.`)) return
-    let failed = 0
-    for (const id of ids) { try { await del(`/api/quotes/${id}`) } catch { failed++ } }
-    clearSelection(); await loadQuotes()
-    showToast(failed
-      ? `Archived ${ids.length - failed} of ${ids.length} · ${failed} couldn't be archived (scheduled into a job?)`
-      : `Archived ${ids.length} quote${ids.length === 1 ? '' : 's'}`)
-  }
-
-  const bulkDeletePermanent = async () => {
-    const ids = [...selectedIds]
-    if (!ids.length) return
-    if (!window.confirm(`Permanently delete ${ids.length} quote${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
-    let failed = 0
-    for (const id of ids) { try { await del(`/api/quotes/${id}/permanent`) } catch { failed++ } }
-    clearSelection(); await loadArchived()
-    showToast(failed
-      ? `Deleted ${ids.length - failed} of ${ids.length} · ${failed} failed`
-      : `Deleted ${ids.length} quote${ids.length === 1 ? '' : 's'}`)
-  }
-
-  const deletePermanent = async (q) => {
-    if (!window.confirm(`Permanently delete quote ${q.quote_number || q.id}? This cannot be undone.`)) return
-    try { await del(`/api/quotes/${q.id}/permanent`); await loadArchived(); showToast('Quote deleted permanently') }
-    catch (e) { showToast(e.message || 'Could not delete quote') }
-  }
+  const {
+    updateStatus, markIntakeReviewed, updateLeadStatus,
+    archiveQuote, bulkArchive, bulkDeletePermanent, deletePermanent,
+    sendFollowUp, copyPublicLink,
+    nudging, copiedQuoteId,
+  } = useQuotingMutations({
+    toast: showToast,
+    loadQuotes, loadIntakes, loadFollowUps, loadArchived,
+    selectedIds, clearSelection,
+    currentSelectedId: selected?.id,
+    onSelectedCleared: () => { setSelected(null); setPanel(null) },
+  })
 
   const switchTab = (t) => { clearSelection(); setTab(t); if (t === 'archived') loadArchived() }
 
@@ -524,23 +465,6 @@ export default function Quoting() {
     showToast('Client onboarded — schedule created ✓')
   }
 
-  const copyPublicLink = async (quote) => {
-    if (!quote.public_token) {
-      try {
-        const token = await post(`/api/quotes/${quote.id}/generate-token`, {})
-        quote = { ...quote, public_token: token.public_token }
-      } catch (e) {
-        showToast('Error generating link')
-        return
-      }
-    }
-    const appUrl = window.location.origin
-    const link = `${appUrl}/quote/${quote.public_token}`
-    await navigator.clipboard.writeText(link)
-    setCopiedQuoteId(quote.id)
-    showToast('Link copied!')
-    setTimeout(() => setCopiedQuoteId(null), 2000)
-  }
 
   const newLeads = intakes.filter(i => i.status === 'new').length
 
