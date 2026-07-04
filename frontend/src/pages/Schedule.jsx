@@ -23,6 +23,7 @@ import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
+import { useScheduleData } from '../hooks/useScheduleData'
 
 export default function Schedule() {
   const { toast, ToastContainer } = useToast()
@@ -49,15 +50,15 @@ export default function Schedule() {
     params.set('view', next)
     setSearchParams(params, { replace: true })
   }
-  const [visits, setVisits] = useState([])
-  const [jobs, setJobs] = useState({})
-  const [properties, setProperties] = useState({})
-  const [clients, setClients] = useState({})
-  const [loading, setLoading] = useState(true)
-  // Set when the week aggregate fails entirely → show a retryable error instead
-  // of an empty calendar that looks broken.
-  const [loadError, setLoadError] = useState(false)
   const [currentDate, setCurrentDate] = useState(new Date())
+  const {
+    visits, setVisits,
+    jobs, setJobs,
+    properties, clients,
+    loading, loadError,
+    refresh,
+    empName,
+  } = useScheduleData(currentDate)
   const [selectedPropertyType, setSelectedPropertyType] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
@@ -91,97 +92,17 @@ export default function Schedule() {
   // /api/jobs state) refetches and shows the change without a month switch.
   const [calRefresh, setCalRefresh] = useState(0)
   const navigate = useNavigate()
-  // `coverage` is still populated from /api/schedule/week but no longer
-  // rendered — see the removed Coverage banner. Leaving the state in place
-  // avoids touching the aggregate parser.
-  const [coverage, setCoverage] = useState(null)
   const [selectedVisitIds, setSelectedVisitIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   // The "Hard delete" bulk-cancel toggle was removed alongside its backend
   // endpoint (POST /api/admin/visits/hard-delete) in the Job/Visit unification.
   // Bulk cancel is soft-only now (PATCH /api/jobs/{id} status=cancelled).
-  const [refreshKey, setRefreshKey] = useState(0)
   // Auto-assign turnovers: null | { loading } | { preview:{assigned,unassignable} } | { running }
   const [autoAssign, setAutoAssign] = useState(null)
   // Fix-missing-times tool: null | { loading } | { preview } | { running }
   const [fixTimes, setFixTimes] = useState(null)
-  const refresh = () => setRefreshKey(k => k + 1)
-
-  // Connecteam roster, so cleaner IDs can be shown as names. Fails to [] silently.
-  const [employees, setEmployees] = useState([])
-  useEffect(() => {
-    get('/api/dispatch/employees').then(r => setEmployees(Array.isArray(r) ? r : [])).catch(() => {})
-  }, [])
-  const empName = (id) =>
-    employees.find(e => String(e.id) === String(id) || String(e.userId) === String(id))?.name
-    || `Cleaner ${id}`
 
   const dateStr = currentDate.toISOString().split('T')[0]
-
-  // Load visits for current week
-  useEffect(() => {
-    const loadSchedule = async () => {
-      setLoading(true)
-      setLoadError(false)
-      try {
-        const startDate = new Date(currentDate)
-        startDate.setDate(startDate.getDate() - startDate.getDay())
-        const endDate = new Date(startDate)
-        endDate.setDate(endDate.getDate() + 6)
-
-        const start = startDate.toISOString().split('T')[0]
-        const end = endDate.toISOString().split('T')[0]
-
-        // One aggregate call returns the whole week (visits + jobs + properties
-        // + clients + coverage) instead of five parallel round trips. Shapes are
-        // identical to the standalone endpoints the server delegates to.
-        let week
-        try {
-          week = await get(
-            `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`
-          )
-        } catch (e) {
-          // Total failure (timeout / server down): surface a retryable error
-          // rather than rendering an empty week.
-          console.error('[Schedule] Week API error:', e)
-          setLoadError(true)
-          setLoading(false)
-          return
-        }
-        const coverageRes = week?.coverage ?? null
-
-        // Index jobs, properties, clients for quick lookup
-        const jobsMap = {}
-        const propsMap = {}
-        const clientsMap = {}
-
-        // Parse responses safely
-        const jobsList = Array.isArray(week?.jobs) ? week.jobs : []
-        const propsList = Array.isArray(week?.properties) ? week.properties : []
-        const clientsList = Array.isArray(week?.clients) ? week.clients : []
-
-        jobsList.forEach(j => jobsMap[j.id] = j)
-        propsList.forEach(p => propsMap[p.id] = p)
-        clientsList.forEach(c => clientsMap[c.id] = c)
-
-        // /api/schedule/week's `visits` array is derived from jobs by the
-        // backend since the Job/Visit unification (see modules/schedule/router.py).
-        // The pre-migration fallback that mapped jobs into a visit shape here is
-        // gone — the backend always returns the shape we want.
-        const displayData = Array.isArray(week?.visits) ? week.visits : []
-        setVisits(displayData)
-        setJobs(jobsMap)
-        setProperties(propsMap)
-        setClients(clientsMap)
-        setCoverage(coverageRes)
-      } catch (err) {
-        console.error('[Schedule]', err)
-      }
-      setLoading(false)
-    }
-
-    loadSchedule()
-  }, [currentDate, refreshKey])
 
   // Auto-assign: preview (dry-run) the picks, then confirm to apply.
   const previewAutoAssign = async () => {
