@@ -20,24 +20,24 @@
  */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
-  Send, MessageSquare, Mail, Phone, Search, User, Clock,
-  CheckCircle2, AlertTriangle, StickyNote,
-  UserPlus, Inbox, X,
+  MessageSquare, Mail, Phone, Search, User, Clock,
+  CheckCircle2, AlertTriangle,
+  UserPlus, Inbox,
   ArrowLeft, Bell,
-  Filter,
   Plus, MessageCircle, PenLine,
 } from 'lucide-react'
 import { get, post, getCached } from "../api"
 import { formatPhone } from '../utils/display'
 import { CHANNEL_CONFIG } from '../components/comms/constants'
-import { relTime, fullTime, dayLabel, isPhoneNumber, contactDisplay } from '../components/comms/utils'
+import { relTime, dayLabel, contactDisplay } from '../components/comms/utils'
 import {
-  NotifPermissionButton, Avatar, ChannelBadge, SlaBadge, PriorityDot, Kbd, DaySeparator,
+  NotifPermissionButton, Avatar, ChannelBadge, SlaBadge, DaySeparator,
 } from '../components/comms/primitives'
 import { ConvItem } from '../components/comms/ConvItem'
 import { MessageBubble } from '../components/comms/MessageBubble'
 import { ComposeModal } from '../components/comms/ComposeModal'
 import { ContactPanel } from '../components/comms/ContactPanel'
+import { ComposeBar } from '../components/comms/ComposeBar'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -78,7 +78,6 @@ export default function Comms() {
   }, [])
 
   const threadRef = useRef(null)
-  const replyRef = useRef(null)
 
   // ──────── Data fetching ────────
 
@@ -536,93 +535,15 @@ export default function Comms() {
               )}
             </div>
 
-            {/* Compose bar */}
-            <div className="border-t border-hairline bg-panel p-4">
-              {/* Mode toggle */}
-              <div className="flex items-center gap-1.5 mb-3">
-                <button onClick={() => setNoteMode(false)}
-                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                    !noteMode ? 'bg-blue-600 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
-                  }`}>
-                  <Send className="w-3 h-3" /> Reply
-                </button>
-                <button onClick={() => setNoteMode(true)}
-                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                    noteMode ? 'bg-amber-500 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
-                  }`}>
-                  <StickyNote className="w-3 h-3" /> Note
-                </button>
-
-                <div className="flex-1" />
-
-                {flash && (
-                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg animate-fade-in ${
-                    flash.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                  }`}>{flash.msg}</span>
-                )}
-              </div>
-
-              {/* Email subject line */}
-              {detail.channel === 'email' && !noteMode && (
-                <input value={replySubject} onChange={e => setReplySubject(e.target.value)}
-                  placeholder={detail.subject ? `Re: ${detail.subject}` : 'Subject'}
-                  className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
-              )}
-
-              {/* Canned responses — one-tap fills the reply box */}
-              {!noteMode && (
-                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
-                  {[
-                    "On our way!",
-                    "Running 10 min late",
-                    "All done!",
-                    "Can we reschedule?",
-                    "Thanks for your business!",
-                    "Your access code is ",
-                  ].map(t => (
-                    <button key={t} onClick={() => setReply(prev => prev ? prev + ' ' + t : t)}
-                      className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-hairline bg-panel text-ink-2 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors whitespace-nowrap">
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Reply input */}
-              <div className="flex gap-2">
-                <textarea ref={replyRef} value={reply} onChange={e => setReply(e.target.value)} rows={2}
-                  placeholder={noteMode
-                    ? 'Write an internal note (not sent to customer)...'
-                    : `Reply via ${(detail.channel || 'sms').toUpperCase()}...`
-                  }
-                  className={`flex-1 border rounded-xl px-4 py-3 text-[13px] resize-none focus:outline-none focus:ring-2 transition-all leading-relaxed ${
-                    noteMode
-                      ? 'border-amber-200 bg-amber-50/50 focus:ring-amber-500/20 placeholder-amber-400'
-                      : 'border-hairline bg-bg focus:ring-blue-500/20 focus:bg-panel placeholder-ink-3'
-                  }`}
-                  onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendReply() }} />
-                <button onClick={sendReply} disabled={sending || !reply.trim()}
-                  className={`px-5 rounded-xl text-[13px] font-semibold self-stretch disabled:opacity-40 transition-all active:scale-95 shadow-sm ${
-                    noteMode
-                      ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}>
-                  {sending
-                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : noteMode ? 'Save' : 'Send'
-                  }
-                </button>
-              </div>
-
-              <div className="flex items-center mt-2">
-                <div className="text-[10px] text-ink-3 flex items-center gap-1">
-                  <Kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</Kbd>
-                  <span>+</span>
-                  <Kbd>Enter</Kbd>
-                  <span className="ml-1">to send</span>
-                </div>
-              </div>
-            </div>
+            <ComposeBar
+              detail={detail}
+              reply={reply} setReply={setReply}
+              replySubject={replySubject} setReplySubject={setReplySubject}
+              noteMode={noteMode} setNoteMode={setNoteMode}
+              sending={sending}
+              flash={flash}
+              onSend={sendReply}
+            />
           </>
         )}
       </div>
