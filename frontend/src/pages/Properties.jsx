@@ -7,6 +7,7 @@ import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, del } from "../api"
 import { ICAL_SOURCES, EMPTY, PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { IcalFeedRow } from '../components/properties/IcalFeedRow'
+import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
 
 
 export default function Properties() {
@@ -649,45 +650,13 @@ export default function Properties() {
       </div>
 
 
-      {/* Type selector modal for new property */}
       {showTypeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-panel rounded-xl shadow-xl max-w-sm w-full mx-4">
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-ink mb-4">What kind of property?</h2>
-              <div className="space-y-2">
-                {['residential', 'commercial', 'str'].map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setNewPropertyType(type)}
-                    className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
-                      newPropertyType === type
-                        ? `border-blue-600 bg-blue-50`
-                        : 'border-hairline hover:border-hairline'
-                    }`}
-                  >
-                    <div className="font-medium text-ink">{PROPERTY_TYPE_CONFIG[type].label}</div>
-                    <div className="text-sm text-ink-3 mt-1">
-                      {type === 'residential' && 'Home or apartment'}
-                      {type === 'commercial' && 'Business or office space'}
-                      {type === 'str' && 'Airbnb, VRBO, or vacation rental'}
-                    </div>
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2 mt-6">
-                <button onClick={() => setShowTypeModal(false)}
-                  className="flex-1 bg-bg-2 hover:bg-bg-2 text-ink px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  Cancel
-                </button>
-                <button onClick={confirmNewProperty}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  Continue
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TypeSelectorModal
+          selected={newPropertyType}
+          onSelect={setNewPropertyType}
+          onCancel={() => setShowTypeModal(false)}
+          onConfirm={confirmNewProperty}
+        />
       )}
 
       {/* Edit/Create Form */}
