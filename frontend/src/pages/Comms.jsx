@@ -20,10 +20,8 @@
  */
 import { useState, useMemo, useCallback } from 'react'
 import {
-  MessageSquare, Clock,
+  MessageSquare,
   CheckCircle2, AlertTriangle,
-  UserPlus,
-  Bell,
   MessageCircle, PenLine,
 } from 'lucide-react'
 import { dayLabel, contactDisplay } from '../components/comms/utils'
@@ -36,6 +34,7 @@ import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
 import { useCommsData } from '../hooks/useCommsData'
 import { useCommsMutations } from '../hooks/useCommsMutations'
+import { useCommsFilters } from '../hooks/useCommsFilters'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -43,14 +42,16 @@ import { useCommsMutations } from '../hooks/useCommsMutations'
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function Comms() {
-  // Phase 8 IA: 3 folders ('active' | 'mine' | 'done') + multi-select chip
-  // filters that are additive on top of the folder. Replaces the prior 6
-  // single-select folders (Open / Breached / Mine / Unassigned / Unread /
-  // Resolved). Old `filter` state name kept for minimal diff; values renamed.
+  // ──────── Filter state ────────
+  // Phase 8 IA: 3 folders + additive chip filters. Old `filter` state name
+  // kept for minimal diff; values renamed. State stays inline (small) so the
+  // data hook and filter-config hook can share it without a circular dep.
   const [folder, setFolder] = useState('active')
-  const [chipFilters, setChipFilters] = useState(() => new Set()) // 'overdue' | 'unassigned' | 'unread'
+  const [chipFilters, setChipFilters] = useState(() => new Set())
   const [channelFilter, setChannelFilter] = useState('')
   const [search, setSearch] = useState('')
+
+  // ──────── Data ────────
 
   const {
     convs, summary,
@@ -59,6 +60,12 @@ export default function Comms() {
     threadRef,
     loadList, loadSummary, loadDetail,
   } = useCommsData({ folder, chipFilters, channelFilter, search })
+
+  // ──────── Filter config (memos over summary + state) ────────
+
+  const { channelCount, FOLDERS, CHIPS, toggleChip } = useCommsFilters({
+    summary, channelFilter, setChipFilters,
+  })
 
   const [reply, setReply] = useState('')
   const [replySubject, setReplySubject] = useState('')
@@ -96,48 +103,6 @@ export default function Comms() {
   const selectConversation = (id) => {
     setSelectedId(id)
     setMobileView('thread')
-  }
-
-  // ──────── Filter config ────────
-
-  // Phase 8 IA: 3 folders + 3 additive filter chips. The chips can stack
-  // (e.g. "Active + Overdue" or "Mine + Unread"). 'Unassigned' chip is
-  // hidden when the active folder is 'Mine' since they're contradictory.
-  // When a channel tab (SMS/Email) is active, scope the folder + chip badge
-  // counts to that channel so the numbers match the list actually shown.
-  // 'All' (channelFilter === '') uses the global totals. This fixes the
-  // confusing case where "Active 15" showed above an empty SMS list because
-  // all 15 conversations were on the email channel.
-  const scoped = useMemo(
-    () => (channelFilter ? (summary.by_channel?.[channelFilter] || {}) : summary),
-    [summary, channelFilter],
-  )
-
-  // open+resolved per channel, for the All/SMS/Email tab badges — so the user
-  // can see at a glance where their messages live (e.g. "Email 34").
-  const channelCount = useCallback((ch) => {
-    const src = ch ? (summary.by_channel?.[ch] || {}) : summary
-    return (src.open || 0) + (src.resolved || 0)
-  }, [summary])
-
-  const FOLDERS = useMemo(() => ([
-    { key: 'active', label: 'Active', count: scoped.open },
-    { key: 'mine',   label: 'Mine',   count: null },
-    { key: 'done',   label: 'Done',   count: scoped.resolved },
-  ]), [scoped])
-
-  const CHIPS = useMemo(() => ([
-    { key: 'overdue',    label: 'Overdue',    icon: Clock,    count: scoped.breached },
-    { key: 'unassigned', label: 'Unassigned', icon: UserPlus, count: scoped.unassigned, hideOn: 'mine' },
-    { key: 'unread',     label: 'Unread',     icon: Bell,     count: scoped.unread },
-  ]), [scoped])
-
-  const toggleChip = (key) => {
-    setChipFilters(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
   }
 
   // ──────── Message grouping with day separators ────────
