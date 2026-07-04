@@ -12,34 +12,7 @@ import ColumnsButton from "../components/ColumnsButton"
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
-
-const STATUS_COLORS = {
-  lead:     'bg-amber-500/15 text-amber-500 border-amber-500/20',
-  active:   'bg-emerald-500/15 text-emerald-500 border-emerald-500/20',
-  inactive: 'bg-bg-2 text-ink-3 border-hairline',
-}
-
-// Options for the inline-editable status chip in the table (Twenty-style).
-const STATUS_OPTIONS = [
-  { value: 'lead',     label: 'lead',     chipClass: STATUS_COLORS.lead,     dot: 'bg-amber-500' },
-  { value: 'active',   label: 'active',   chipClass: STATUS_COLORS.active,   dot: 'bg-emerald-500' },
-  { value: 'inactive', label: 'inactive', chipClass: STATUS_COLORS.inactive, dot: 'bg-ink-3' },
-]
-
-const AVATAR_COLORS = [
-  'bg-blue-600/20 text-blue-400',
-  'bg-emerald-600/20 text-emerald-400',
-  'bg-violet-600/20 text-violet-400',
-  'bg-amber-600/20 text-amber-400',
-  'bg-rose-600/20 text-rose-400',
-  'bg-cyan-600/20 text-cyan-400',
-]
-function avatarColor(name) {
-  let h = 0; for (const c of (name || '')) h = ((h << 5) - h + c.charCodeAt(0)) | 0
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
-}
-
-const EMPTY = { first_name: '', last_name: '', email: '', phone: '', address: '', city: '', state: '', zip_code: '', billing_address: '', billing_city: '', billing_state: '', billing_zip: '', status: 'lead', source: '', notes: '', custom_fields: {} }
+import { STATUS_COLORS, STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 
 // Configurable table columns. `render(c, h)` gets the row plus page helpers
 // (updateStatus, setJobClient). The leading selection checkbox is fixed and
@@ -71,8 +44,6 @@ const CLIENT_COLUMNS = [
     </div>
   ) },
 ]
-const DEFAULT_CLIENT_COLUMNS = ['name', 'phone', 'email', 'city', 'source', 'status']
-
 export default function Clients() {
   const navigate = useNavigate()
   const { toast, ToastContainer } = useToast()
