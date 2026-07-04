@@ -512,11 +512,18 @@ def test_connecteam(db: Session = Depends(get_db)):
         import asyncio
         employees = asyncio.run(get_employees())
         return {"ok": True, "employee_count": len(employees)}
-    except ConnecteamAuthError as e:
-        raise HTTPException(401, str(e))
+    except ConnecteamAuthError:
+        # ConnecteamAuthError's message is a fixed literal we author in
+        # integrations/connecteam.py (no exception-carried detail), so it's
+        # safe to surface verbatim as guidance.
+        raise HTTPException(401, "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again.")
     except Exception as e:
+        # Log the underlying error server-side, but return a generic message —
+        # Connecteam's client errors can carry request URLs / internal detail
+        # we don't want to bounce back to the browser (CodeQL: information
+        # exposure through an exception).
         logger.warning(f"Connecteam test call failed: {e}")
-        raise HTTPException(502, f"Connecteam call failed: {e}")
+        raise HTTPException(502, "Connecteam call failed — check server logs for the underlying error.")
 
 
 class PushOpenShiftsBody(BaseModel):
@@ -596,14 +603,19 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
                 _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
                      action="create_open", status="failed",
                      detail="no shift id returned", commit=False)
-        except ConnecteamAuthError as e:
+        except ConnecteamAuthError:
             # Auth errors mean every subsequent call will fail too — stop early
             # and let the caller rotate the key.
-            errors.append({"job_id": job.id, "error": str(e)})
+            errors.append({"job_id": job.id, "error": "auth_failed"})
             db.commit()
-            raise HTTPException(401, f"Connecteam rejected the API key: {e}")
+            raise HTTPException(401, "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again.")
         except Exception as e:
-            errors.append({"job_id": job.id, "error": str(e)})
+            # Full detail goes to the server log + integration_events (admin
+            # audit trail); the response only carries the exception class name
+            # so a Connecteam / httpx error can't leak internals to the browser
+            # (CodeQL: information exposure through an exception).
+            logger.warning(f"push_open_shifts: create_open_shift for job {job.id} failed: {e}")
+            errors.append({"job_id": job.id, "error": type(e).__name__})
             _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
                  action="create_open", status="failed", detail=str(e), commit=False)
 
