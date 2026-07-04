@@ -18,7 +18,7 @@
  *   • Empty states with illustrations
  *   • Mobile-responsive layout
  */
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   MessageSquare, Clock,
   CheckCircle2, AlertTriangle,
@@ -26,7 +26,7 @@ import {
   Bell,
   MessageCircle, PenLine,
 } from 'lucide-react'
-import { get, post, getCached } from "../api"
+import { post } from "../api"
 import { dayLabel, contactDisplay } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
@@ -35,6 +35,7 @@ import { ContactPanel } from '../components/comms/ContactPanel'
 import { ComposeBar } from '../components/comms/ComposeBar'
 import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
+import { useCommsData } from '../hooks/useCommsData'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -42,14 +43,6 @@ import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function Comms() {
-  // State
-  const [convs, setConvs] = useState([])
-  const [summary, setSummary] = useState({})
-  const [selectedId, setSelectedId] = useState(null)
-  const [detail, setDetail] = useState(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
-  const [clients, setClients] = useState([])
-
   // Phase 8 IA: 3 folders ('active' | 'mine' | 'done') + multi-select chip
   // filters that are additive on top of the folder. Replaces the prior 6
   // single-select folders (Open / Breached / Mine / Unassigned / Unread /
@@ -58,6 +51,14 @@ export default function Comms() {
   const [chipFilters, setChipFilters] = useState(() => new Set()) // 'overdue' | 'unassigned' | 'unread'
   const [channelFilter, setChannelFilter] = useState('')
   const [search, setSearch] = useState('')
+
+  const {
+    convs, summary,
+    selectedId, setSelectedId,
+    detail, loadingDetail, clients,
+    threadRef,
+    loadList, loadSummary, loadDetail,
+  } = useCommsData({ folder, chipFilters, channelFilter, search })
 
   const [reply, setReply] = useState('')
   const [replySubject, setReplySubject] = useState('')
@@ -73,86 +74,6 @@ export default function Comms() {
     setToast({ ok, msg })
     setTimeout(() => setToast(null), ok ? 2500 : 5000)
   }, [])
-
-  const threadRef = useRef(null)
-
-  // ──────── Data fetching ────────
-
-  const loadList = useCallback(async () => {
-    const params = new URLSearchParams()
-    // Folder maps to status + (optionally) assignee. Status names on the
-    // backend stay as 'open'/'resolved' for API compat; UI renames them.
-    if (folder === 'mine') {
-      params.set('status', 'open')
-      const stored = localStorage.getItem('brightbase_user')
-      const currentUser = stored ? JSON.parse(stored) : null
-      params.set('assignee', currentUser?.email?.split('@')[0] || 'Me')
-    } else if (folder === 'done') {
-      params.set('status', 'resolved')
-    } else {
-      params.set('status', 'open') // 'active'
-    }
-    // Chip filters layer on top.
-    if (chipFilters.has('overdue'))     params.set('sla_state', 'breached')
-    if (chipFilters.has('unread'))      params.set('unread_only', 'true')
-    if (chipFilters.has('unassigned') && folder !== 'mine') {
-      // 'unassigned' is mutually exclusive with 'mine'; skip when on Mine.
-      params.set('assignee', 'unassigned')
-    }
-    if (channelFilter) params.set('channel', channelFilter)
-    if (search) params.set('q', search)
-    try {
-      const data = await get(`/api/comms/conversations?${params.toString()}`)
-      setConvs(data)
-    } catch (e) { console.error('[Comms] loadList:', e) }
-  }, [folder, chipFilters, channelFilter, search])
-
-  const loadSummary = useCallback(async () => {
-    try { setSummary(await getCached('/api/comms/conversations/summary')) }
-    catch (e) { console.error('[Comms] loadSummary:', e) }
-  }, [])
-
-  const loadDetail = useCallback(async (id) => {
-    if (!id) { setDetail(null); return }
-    setLoadingDetail(true)
-    try {
-      const d = await get(`/api/comms/conversations/${id}`)
-      setDetail(d)
-      if (d.unread_count > 0) {
-        await post(`/api/comms/conversations/${id}/read`)
-        setDetail(prev => prev ? { ...prev, unread_count: 0 } : prev)
-        setConvs(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
-        loadSummary()
-      }
-    } catch (e) { console.error('[Comms] loadDetail:', e) }
-    finally { setLoadingDetail(false) }
-  }, [loadSummary])
-
-  const loadClients = useCallback(async () => {
-    try { setClients(await get('/api/clients?limit=100')) }
-    catch (e) { console.error('[Comms] loadClients:', e) }
-  }, [])
-
-  // ──────── Effects ────────
-
-  useEffect(() => { loadSummary(); loadClients() }, [loadSummary, loadClients])
-  // Refresh the list whenever ANY filter changes (folder / channel / chips /
-  // search). loadList is rebuilt by useCallback on each of those, so depending
-  // on it covers them all — previously this watched only `search`, so tapping
-  // a channel/folder/chip didn't refresh until the 15s poller fired. The small
-  // debounce keeps typing in the search box smooth.
-  useEffect(() => { const t = setTimeout(() => loadList(), 250); return () => clearTimeout(t) }, [loadList])
-  useEffect(() => { loadDetail(selectedId) }, [selectedId, loadDetail])
-  useEffect(() => {
-    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight
-  }, [detail?.messages?.length])
-  useEffect(() => {
-    const iv = setInterval(() => {
-      loadList(); loadSummary()
-      if (selectedId) loadDetail(selectedId)
-    }, 15000)
-    return () => clearInterval(iv)
-  }, [selectedId, loadList, loadSummary, loadDetail])
 
   // ──────── Actions ────────
 
