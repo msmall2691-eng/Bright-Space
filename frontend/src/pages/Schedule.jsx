@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Calendar, User, Clock, Plus, AlertCircle,
-  RefreshCw, Filter, X, CheckCircle,
-  Calendar as CalendarIcon, Trash2, Edit2, Zap,
+  RefreshCw, Filter, X,
+  Calendar as CalendarIcon, Trash2,
   Wand2, Wrench, ChevronDown,
 } from 'lucide-react'
 import { get, post, put, patch } from '../api'
@@ -21,6 +21,7 @@ import { SyncBadge, TurnoverInfo } from '../components/schedule/SyncBadge'
 import AgendaDay from '../components/schedule/AgendaDay'
 import VisitCard from '../components/schedule/VisitCard'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
+import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 
@@ -841,268 +842,19 @@ export default function Schedule() {
       )}
 
       {/* Visit Details Drawer */}
-      {showDetails && selectedVisit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-end">
-          <GlassCard className="w-full sm:w-96 h-[95vh] sm:h-auto rounded-t-2xl sm:rounded-lg m-0 sm:m-4 overflow-y-auto safe-bottom">
-            <div className="p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
-                <div className="flex items-center gap-1">
-                  {selectedVisit.job?.id && (
-                    <button
-                      onClick={() => navigate(`/jobs/${selectedVisit.job.id}`)}
-                      className="text-[12px] font-medium text-blue-500 hover:underline px-2 py-1"
-                    >
-                      Open full page
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowDetails(false)}
-                    className="p-2 sm:p-1 hover:bg-bg-2 rounded active:bg-bg-2 -mr-2 sm:mr-0"
-                  >
-                    <X className="w-5 sm:w-5 h-5 sm:h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Details */}
-              <div className="space-y-3 sm:space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Date & Time</p>
-                  <p className="text-sm sm:text-base text-ink">
-                    {selectedVisit.visit.scheduled_date && String(selectedVisit.visit.scheduled_date).trim()
-                      ? `${new Date(`${selectedVisit.visit.scheduled_date}T${selectedVisit.visit.start_time || '09:00'}`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} @ ${(selectedVisit.visit.start_time || '09:00').slice(0, 5)}`
-                      : 'Unscheduled — pick a date in Edit Job'
-                    }
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Property</p>
-                  <p className="text-sm sm:text-base text-ink">{selectedVisit.property?.name}</p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
-                  <p className="text-sm sm:text-base text-ink break-words">{selectedVisit.property?.address}</p>
-                </div>
-
-                {/* On-site access details (house code, entry/parking notes, site
-                    contact, STR check-in/out) — what a crew needs to get in. */}
-                {(() => {
-                  // Access details come from the property lookup in state
-                  // (populated by /api/schedule/week's aggregated properties).
-                  const p = selectedVisit.property || {}
-                  if (!(p.house_code || p.access_notes || p.parking_notes || p.site_contact_name || p.site_contact_phone || p.check_in_time || p.check_out_time)) return null
-                  return (
-                    <div>
-                      <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Access</p>
-                      <div className="text-sm text-ink space-y-0.5">
-                        {p.house_code && <p>Code <span className="font-semibold">{p.house_code}</span></p>}
-                        {p.access_notes && <p className="break-words">{p.access_notes}</p>}
-                        {p.parking_notes && <p className="text-ink-2">Parking: {p.parking_notes}</p>}
-                        {(p.site_contact_name || p.site_contact_phone) && (
-                          <p>Site contact: {p.site_contact_name || ''}{p.site_contact_phone ? ` · ${p.site_contact_phone}` : ''}</p>
-                        )}
-                        {(p.check_out_time || p.check_in_time) && (
-                          <p className="text-ink-3">
-                            {p.check_out_time ? `Checkout ${p.check_out_time}` : ''}
-                            {p.check_out_time && p.check_in_time ? ' · ' : ''}
-                            {p.check_in_time ? `Check-in ${p.check_in_time}` : ''}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })()}
-
-                <div>
-                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Client</p>
-                  <p className="text-sm sm:text-base text-ink">{selectedVisit.job?.client_name}</p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Status</p>
-                  <StatusBadge status={VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.badge || 'info'}>
-                    {VISIT_STATUS_CONFIG[selectedVisit.visit.status]?.label || selectedVisit.visit.status}
-                  </StatusBadge>
-                </div>
-
-                {/* Airbnb/STR turnover details */}
-                {selectedVisit.job?.job_type === 'str_turnover' &&
-                  (selectedVisit.job?.booking || selectedVisit.job?.next_arrival || selectedVisit.job?.is_immediate_turnover) && (
-                  <div>
-                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Turnover</p>
-                    {selectedVisit.job?.is_immediate_turnover && (
-                      <p className="inline-flex items-center gap-1 text-sm font-semibold text-red-700 mb-1">
-                        <Zap className="w-3.5 h-3.5" /> Same-day turnaround — next guest arrives today
-                      </p>
-                    )}
-                    <div className="text-sm text-ink space-y-0.5">
-                      {selectedVisit.job?.booking?.source && (
-                        <p>Source: <span className="capitalize">{selectedVisit.job.booking.source}</span></p>
-                      )}
-                      {selectedVisit.job?.booking?.guest_count > 0 && (
-                        <p>{selectedVisit.job.booking.guest_count} guest(s) checked out</p>
-                      )}
-                      {selectedVisit.job?.booking?.checkout_date && (
-                        <p>Checkout: {shortDate(selectedVisit.job.booking.checkout_date)}</p>
-                      )}
-                      {selectedVisit.job?.next_arrival?.checkin_date && (
-                        <p>Next check-in: {shortDate(selectedVisit.job.next_arrival.checkin_date)}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {selectedVisit.visit.cleaner_ids?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Assigned Cleaners</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedVisit.visit.cleaner_ids.map((cid, i) => (
-                        <span key={i} className="inline-flex items-center gap-1.5 text-sm text-ink bg-bg-2 pl-1 pr-2.5 py-0.5 rounded-full">
-                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">
-                            {cleanerInitials(empName(cid) || `C${cid}`)}
-                          </span>
-                          {empName(cid) || `Cleaner ${cid}`}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Secondary details (calendar sync, SMS reminder) folded away. */}
-                <button type="button" onClick={() => setShowVisitMore(v => !v)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-ink-2 hover:text-ink border-t border-hairline pt-3 w-full">
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showVisitMore ? 'rotate-180' : ''}`} />
-                  More details
-                </button>
-
-                {showVisitMore && (jobEvents.length > 0 || selectedVisit.visit.gcal_event_id) && (
-                  <div>
-                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Google Calendar</p>
-                    {(() => {
-                      const latest = jobEvents[0]  // newest-first from the API
-                      if (!latest) {
-                        // Has an event id but predates the audit log — show the
-                        // plain synced state we already knew about.
-                        return <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700"><CheckCircle className="w-3.5 h-3.5" /> Synced</span>
-                      }
-                      const when = latest.created_at ? new Date(latest.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
-                      if (latest.status === 'failed') {
-                        return (
-                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={latest.error_message || ''}>
-                            <AlertCircle className="w-3.5 h-3.5" /> {latest.action === 'delete' ? 'Calendar removal failed' : 'Calendar sync failed'}{when && ` · ${when}`}
-                          </span>
-                        )
-                      }
-                      if (latest.action === 'delete') {
-                        return (
-                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-bg-2 text-ink-2">
-                            <Clock className="w-3.5 h-3.5" /> Removed from calendar{when && ` · ${when}`}
-                          </span>
-                        )
-                      }
-                      return (
-                        <span className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                          <CheckCircle className="w-3.5 h-3.5" /> Synced{when && ` · ${when}`}
-                        </span>
-                      )
-                    })()}
-                    {jobEvents[0]?.status === 'failed' && jobEvents[0]?.error_message && (
-                      <p className="text-[11px] text-red-600 mt-1 break-words">{String(jobEvents[0].error_message).slice(0, 200)}</p>
-                    )}
-                  </div>
-                )}
-
-                {/* SMS reminder toggle — reminders are on by default; staff can
-                    suppress the 24h text for this booking only. */}
-                {showVisitMore && selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
-                  <div className="border-t border-hairline pt-3 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold text-ink-2 uppercase mb-0.5">SMS reminder</p>
-                      <p className="text-[12px] text-ink-3">
-                        {selectedVisit.job?.skip_sms_reminder
-                          ? '🔕 Off — no 24h text for this booking'
-                          : '🔔 On — client gets a 24h reminder'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleReminder(selectedVisit.job, !selectedVisit.job?.skip_sms_reminder)}
-                      className={`text-[12px] font-semibold px-3 py-1.5 rounded-lg border whitespace-nowrap transition-colors ${
-                        selectedVisit.job?.skip_sms_reminder
-                          ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                          : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                      }`}
-                    >
-                      {selectedVisit.job?.skip_sms_reminder ? 'Enable' : 'Disable'}
-                    </button>
-                  </div>
-                )}
-
-                {/* Completion summary, once a visit has been completed */}
-                {selectedVisit.visit.status === 'completed' && (
-                  <div className="border-t border-hairline pt-3">
-                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Completion</p>
-                    {(selectedVisit.visit.completed_at || selectedVisit.visit.completed_by) && (
-                      <p className="text-[12px] text-ink-3 mb-1">
-                        {selectedVisit.visit.completed_at && `Completed ${new Date(selectedVisit.visit.completed_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
-                        {selectedVisit.visit.completed_by && ` · by ${empName(selectedVisit.visit.completed_by)}`}
-                      </p>
-                    )}
-                    {selectedVisit.visit.checklist_results && (
-                      <ul className="text-sm text-ink space-y-0.5">
-                        {Object.entries(selectedVisit.visit.checklist_results).map(([task, done]) => (
-                          <li key={task} className="flex items-center gap-1.5">
-                            <span className={done ? 'text-green-600' : 'text-ink-3'}>{done ? '✓' : '○'}</span>
-                            {task}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {selectedVisit.visit.photos?.length > 0 && (
-                      <p className="text-sm text-ink mt-1">{selectedVisit.visit.photos.length} photo(s) attached</p>
-                    )}
-                  </div>
-                )}
-
-                <div className="border-t border-hairline pt-4 flex flex-col-reverse sm:flex-row gap-2">
-                  {selectedVisit.visit.status !== 'completed' && selectedVisit.visit.status !== 'cancelled' && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      className="w-full sm:flex-1"
-                      onClick={() => setCompletingVisit(selectedVisit.visit)}
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Complete
-                    </Button>
-                  )}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full sm:flex-1"
-                    onClick={() => handleEditJob(selectedVisit.job)}
-                  >
-                    <Edit2 className="w-4 h-4 mr-2" />
-                    Edit Job
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    className="w-full sm:flex-1"
-                    onClick={() => handleDelete(selectedVisit.visit.id)}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </GlassCard>
-        </div>
-      )}
+      <VisitDetailsDrawer
+        selectedVisit={showDetails ? selectedVisit : null}
+        showMore={showVisitMore}
+        onToggleMore={() => setShowVisitMore(v => !v)}
+        jobEvents={jobEvents}
+        empName={empName}
+        onClose={() => setShowDetails(false)}
+        onNavigateJob={(jobId) => navigate(`/jobs/${jobId}`)}
+        onComplete={(v) => setCompletingVisit(v)}
+        onEditJob={handleEditJob}
+        onDelete={handleDelete}
+        onToggleReminder={handleToggleReminder}
+      />
 
       {/* Job Edit Modal */}
       {showJobModal && (
