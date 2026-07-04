@@ -30,77 +30,10 @@ import {
 import { get, post, getCached } from "../api"
 import { formatPhone } from '../utils/display'
 import { isSupported as notificationsSupported, getPermission as getNotifPermission, requestPermission as requestNotifPermission } from '../utils/notifications'
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   DESIGN TOKENS
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const COLORS = {
-  primary: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
-  surface: { 0: '#ffffff', 50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7' },
-  ink: { 900: '#18181b', 700: '#3f3f46', 500: '#71717a', 400: '#a1a1aa', 300: '#d4d4d8' },
-}
-
-// Phase 8 redesign: only the breached state is shown to operators (renamed
-// "Overdue"). The intermediate met/on_track/at_risk states are kept in the
-// data model but not rendered in the UI — they were jargon and added noise.
-const SLA_CONFIG = {
-  met:      { bg: '#ecfdf5', text: '#047857', dot: '#10b981', label: 'Met' },
-  on_track: { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6', label: 'On track' },
-  at_risk:  { bg: '#fffbeb', text: '#b45309', dot: '#f59e0b', label: 'At risk' },
-  breached: { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444', label: 'Overdue' },
-}
-
-const CHANNEL_CONFIG = {
-  sms:      { icon: Phone,          label: 'SMS',      bg: 'bg-emerald-50',  text: 'text-emerald-700', ring: 'ring-emerald-200' },
-  email:    { icon: Mail,           label: 'Email',    bg: 'bg-blue-50',     text: 'text-blue-700',    ring: 'ring-blue-200' },
-  chat:     { icon: MessageSquare,  label: 'Chat',     bg: 'bg-violet-50',   text: 'text-violet-700',  ring: 'ring-violet-200' },
-  whatsapp: { icon: MessageSquare,  label: 'WhatsApp', bg: 'bg-green-50',    text: 'text-green-700',   ring: 'ring-green-200' },
-}
-
-const PRIORITY_COLORS = {
-  low:    { active: 'bg-bg-2 text-ink-2 ring-hairline-2', dot: 'bg-bg-2' },
-  normal: { active: 'bg-blue-100 text-blue-700 ring-blue-300', dot: 'bg-blue-500' },
-  high:   { active: 'bg-amber-100 text-amber-700 ring-amber-300', dot: 'bg-amber-500' },
-  urgent: { active: 'bg-red-100 text-red-700 ring-red-300', dot: 'bg-red-500' },
-}
-
-const TEAM_ASSIGNEES = ['Megan', 'Unassigned']
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   UTILITY FUNCTIONS
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-function relTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const diff = (Date.now() - d.getTime()) / 1000
-  if (diff < 60) return 'now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d`
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-function fullTime(iso) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function dayLabel(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-  if (d.toDateString() === today.toDateString()) return 'Today'
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
-}
-
-function isPhoneNumber(s) { return /^\+?\d[\d\s\-\(\)]+$/.test(s || '') }
+import {
+  COLORS, SLA_CONFIG, CHANNEL_CONFIG, PRIORITY_COLORS, TEAM_ASSIGNEES,
+} from '../components/comms/constants'
+import { relTime, fullTime, dayLabel, isPhoneNumber, contactDisplay } from '../components/comms/utils'
 
 // Small bell button in the inbox header. Hides itself once permission has
 // been resolved (granted or denied) — there's no useful action after that
@@ -122,12 +55,6 @@ function NotifPermissionButton() {
     </button>
   )
 }
-
-function contactDisplay(conv) {
-  const name = conv?.client?.name || conv?.external_contact || 'Unknown'
-  return isPhoneNumber(name) ? formatPhone(name) : name
-}
-
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SHARED UI PRIMITIVES
