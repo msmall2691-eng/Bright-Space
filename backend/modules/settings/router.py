@@ -450,7 +450,13 @@ def gmail_status(db: Session = Depends(get_db)):
 
 class ConnecteamConfig(BaseModel):
     api_key: Optional[str] = None
+    # The DB key stays `connecteam_company_id` for backward compat with rows
+    # already saved (and the CONNECTEAM_COMPANY_ID env var), but the value it
+    # holds is really the *scheduler id* — that's what the Connecteam scheduler
+    # API path needs. Accept both field names on the way in; the UI now uses
+    # scheduler_id so re-labelled installs Just Work.
     company_id: Optional[str] = None
+    scheduler_id: Optional[str] = None
 
 
 def _mask_key(v: str) -> str:
@@ -463,7 +469,7 @@ def _mask_key(v: str) -> str:
 @router.get("/connecteam-status", dependencies=[Depends(require_role("admin", "manager"))])
 def connecteam_status(db: Session = Depends(get_db)):
     """Whether Connecteam is wired up + a masked hint of the saved key so the
-    Settings card can show "connected as company 12345, key •••abcd"."""
+    Settings card can show "connected as scheduler 12345, key •••abcd"."""
     import os
     db_key = get_setting(db, "connecteam_api_key") or ""
     db_cid = get_setting(db, "connecteam_company_id") or ""
@@ -474,9 +480,11 @@ def connecteam_status(db: Session = Depends(get_db)):
     return {
         "configured": bool(key and cid),
         "has_key": bool(key),
-        "has_company_id": bool(cid),
+        "has_company_id": bool(cid),          # legacy field the current UI reads
+        "has_scheduler_id": bool(cid),        # semantic name for the new UI
         "api_key_masked": _mask_key(key),
-        "company_id": cid,
+        "company_id": cid,                    # legacy field
+        "scheduler_id": cid,                  # semantic alias — same value
         "source": ("database" if (db_key or db_cid) else ("env" if (env_key or env_cid) else "none")),
     }
 
@@ -485,33 +493,52 @@ def connecteam_status(db: Session = Depends(get_db)):
 def save_connecteam_settings(config: ConnecteamConfig, db: Session = Depends(get_db)):
     """Save (or clear) the Connecteam credentials. A masked value ("••••abcd")
     from the status endpoint is ignored so re-saving the form without retyping
-    the key doesn't overwrite it with the mask."""
+    the key doesn't overwrite it with the mask. `scheduler_id` and the legacy
+    `company_id` both write the same underlying `connecteam_company_id` row —
+    same value semantically, different name on the wire."""
     if config.api_key is not None:
         v = config.api_key.strip()
         if v and not v.startswith("••••"):
             set_setting(db, "connecteam_api_key", v)
         elif v == "":
             set_setting(db, "connecteam_api_key", "")
-    if config.company_id is not None:
-        set_setting(db, "connecteam_company_id", config.company_id.strip())
+    # scheduler_id wins when both are supplied — it's the semantic name.
+    sched = config.scheduler_id if config.scheduler_id is not None else config.company_id
+    if sched is not None:
+        set_setting(db, "connecteam_company_id", sched.strip())
     db.commit()
     return connecteam_status(db)
 
 
 @router.post("/connecteam/test", dependencies=[Depends(require_role("admin", "manager"))])
 def test_connecteam(db: Session = Depends(get_db)):
-    """Hit Connecteam with the saved credentials so the operator gets a real
-    yes/no instead of "we saved something, hope it works". Uses get_employees
-    because it's a cheap read that fails the same way create_shift does."""
+    """Verify the saved credentials against Connecteam and return the list of
+    schedulers on the account so the operator can pick the right Scheduler ID.
+
+    Uses GET /me for the auth smoke test (Connecteam's recommended cheapest
+    endpoint) and GET /scheduler/v1/schedulers for the picker. Both go through
+    the same X-API-KEY header — if the key is wrong, /me 401s and we surface
+    that before ever hitting the scheduler list."""
     from integrations.connecteam import (
-        is_configured, ConnecteamAuthError, get_employees,
+        is_configured, ConnecteamAuthError, get_me, list_schedulers,
     )
     if not is_configured():
-        raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Company ID first.")
+        raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Scheduler ID first.")
     try:
         import asyncio
-        employees = asyncio.run(get_employees())
-        return {"ok": True, "employee_count": len(employees)}
+        me = asyncio.run(get_me())
+        try:
+            schedulers = asyncio.run(list_schedulers())
+        except Exception as e:
+            # Scheduler list is a nice-to-have — the key is valid if /me
+            # returned. Don't fail the whole test on a scheduler-list hiccup.
+            logger.warning(f"Connecteam list_schedulers failed after /me OK: {e}")
+            schedulers = []
+        return {
+            "ok": True,
+            "account": me.get("data") or me,
+            "schedulers": schedulers,
+        }
     except ConnecteamAuthError:
         # ConnecteamAuthError's message is a fixed literal we author in
         # integrations/connecteam.py (no exception-carried detail), so it's
@@ -551,7 +578,7 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
     from datetime import date, timedelta
 
     if not is_configured():
-        raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Company ID first.")
+        raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Scheduler ID first.")
 
     today = date.today()
     try:
