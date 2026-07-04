@@ -9,6 +9,7 @@ import CRMHealthPanel from "../components/CRMHealthPanel"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 import { useClients } from '../hooks/useClients'
+import { useClientPhones } from '../hooks/useClientPhones'
 import { STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
@@ -95,10 +96,17 @@ export default function Clients() {
     if (Array.isArray(cfg.columns)) setColumns(cfg.columns.filter(id => CLIENT_COLUMNS.some(c => c.id === id)))
   }
   const fileInputRef = useRef(null)
-  const [phoneNumbers, setPhoneNumbers] = useState([])
-  const [newPhoneNumber, setNewPhoneNumber] = useState('')
-  const [newPhoneType, setNewPhoneType] = useState('mobile')
-  const [loadingPhones, setLoadingPhones] = useState(false)
+  const {
+    phoneNumbers,
+    newPhoneNumber, setNewPhoneNumber,
+    newPhoneType, setNewPhoneType,
+    loadingPhones,
+    loadPhones,
+    addPhoneNumber,
+    deletePhoneNumber,
+    setPhonePrimary,
+    resetPhones,
+  } = useClientPhones({ selected, refreshList: load })
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [mergeModal, setMergeModal] = useState(null) // { a, b } the two clients being merged
@@ -138,12 +146,12 @@ export default function Clients() {
       }
       const url = selected ? `/api/clients/${selected.id}` : '/api/clients'
       selected ? await patch(url, form) : await post(url, form)
-      await load(); setShowForm(false); setSelected(null); setForm(EMPTY); setPhoneNumbers([]); setDupes([])
+      await load(); setShowForm(false); setSelected(null); setForm(EMPTY); resetPhones(); setDupes([])
     } catch (e) { setSaveError(e.message || 'Failed to save') }
     setSaving(false)
   }
 
-  const openNew = () => { setForm(EMPTY); setSelected(null); setPhoneNumbers([]); setDupes([]); setShowBilling(false); setShowForm(true) }
+  const openNew = () => { setForm(EMPTY); setSelected(null); resetPhones(); setDupes([]); setShowBilling(false); setShowForm(true) }
   const openEdit = (c) => {
     setForm({ ...c });
     setSelected(c);
@@ -151,55 +159,6 @@ export default function Clients() {
     setShowBilling(Boolean(c.billing_address || c.billing_city || c.billing_state || c.billing_zip))
     loadPhones(c.id)
     setShowForm(true)
-  }
-
-  const loadPhones = async (clientId) => {
-    setLoadingPhones(true)
-    try {
-      const phones = await get(`/api/clients/${clientId}/phones`)
-      setPhoneNumbers(Array.isArray(phones) ? phones : [])
-    } catch (e) {
-      console.error("Error loading phones:", e)
-      setPhoneNumbers([])
-    }
-    setLoadingPhones(false)
-  }
-
-  const addPhoneNumber = async () => {
-    if (!newPhoneNumber.trim() || !selected) return
-    try {
-      await post(`/api/clients/${selected.id}/phones`, {
-        phone: newPhoneNumber,
-        phone_type: newPhoneType,
-        is_primary: phoneNumbers.length === 0,
-      })
-      setNewPhoneNumber('')
-      setNewPhoneType('mobile')
-      await loadPhones(selected.id)
-    } catch (e) {
-      console.error("Error adding phone:", e)
-    }
-  }
-
-  const deletePhoneNumber = async (phoneId) => {
-    if (!selected) return
-    try {
-      await del(`/api/clients/${selected.id}/phones/${phoneId}`)
-      await loadPhones(selected.id)
-    } catch (e) {
-      console.error("Error deleting phone:", e)
-    }
-  }
-
-  const setPhonePrimary = async (phoneId) => {
-    if (!selected) return
-    try {
-      await patch(`/api/clients/${selected.id}/phones/${phoneId}`, { is_primary: true })
-      await loadPhones(selected.id)
-      await load()
-    } catch (e) {
-      console.error("Error setting primary phone:", e)
-    }
   }
 
   const handleImport = async (e) => {
@@ -215,7 +174,7 @@ export default function Clients() {
 
   const deleteClient = async (id) => {
     if (!confirm('Delete this client?')) return
-    await del(`/api/clients/${id}`); await load(); setShowForm(false); setPhoneNumbers([])
+    await del(`/api/clients/${id}`); await load(); setShowForm(false); resetPhones()
   }
 
   const toggleSelect = (id, e) => {
@@ -349,7 +308,7 @@ export default function Clients() {
         <ClientForm
           selected={selected}
           form={form} setForm={setForm}
-          onClose={() => { setShowForm(false); setPhoneNumbers([]) }}
+          onClose={() => { setShowForm(false); resetPhones() }}
           phoneNumbers={phoneNumbers} loadingPhones={loadingPhones}
           newPhoneNumber={newPhoneNumber} setNewPhoneNumber={setNewPhoneNumber}
           newPhoneType={newPhoneType} setNewPhoneType={setNewPhoneType}
