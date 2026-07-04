@@ -20,7 +20,7 @@ import { StatCard, EmptyState, ErrorState } from '../components/ui'
 import { AIFollowUps } from '../components/AIFollowUps'
 import {
   Calendar, DollarSign,
-  CheckCircle2, Clock, ArrowRight, Zap, FileText, Users, TrendingUp,
+  Clock, FileText, TrendingUp,
 } from 'lucide-react'
 import { today, monthStart, fmtMoney, contactLabel, channelIcon } from '../components/dashboard/utils'
 import { Tile, KpiCard, TileLoading } from '../components/dashboard/primitives'
@@ -28,6 +28,7 @@ import { Funnel } from '../components/dashboard/Funnel'
 import { InboxTile } from '../components/dashboard/InboxTile'
 import { TodayTile } from '../components/dashboard/TodayTile'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
+import { TurnoverCoverageTile, CrewWorkloadTile } from '../components/dashboard/OperationsTiles'
 
 /* ── Page ─────────────────────────────────────────────────────────── */
 export default function Dashboard() {
@@ -373,82 +374,8 @@ export default function Dashboard() {
           navigate={navigate}
         />
 
-        {/* TURNOVER COVERAGE — STR cleanings this week and which need a crew */}
-        <Tile
-          icon={Zap}
-          iconColor="text-amber-500"
-          title="Turnover coverage"
-          badge={turnover.needCrew > 0 && (
-            <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
-              {turnover.needCrew} need a crew
-            </span>
-          )}
-          action="Open schedule"
-          onAction={() => navigate('/schedule')}
-        >
-          {loading ? (
-            <TileLoading />
-          ) : turnover.total === 0 ? (
-            <EmptyState compact icon={CheckCircle2} title="No turnovers this week"
-              description="STR cleanings will show here." />
-          ) : (
-            <div className="flex-1 grid grid-cols-2 gap-3">
-              <StatCard label="Turnovers (7 days)" value={turnover.total} />
-              <StatCard label="Need a cleaner"
-                value={turnover.needCrew}
-                accent={turnover.needCrew > 0 ? 'text-amber-600' : 'text-emerald-600'}
-                onClick={() => navigate('/schedule')} />
-            </div>
-          )}
-        </Tile>
-
-        {/* CREW WORKLOAD — who's booked this week, to balance assignments */}
-        <Tile
-          icon={Users}
-          iconColor="text-blue-500"
-          title="Crew workload (7 days)"
-          badge={crew.unassigned > 0 && (
-            <span className="text-[10px] font-bold text-white bg-amber-500 px-1.5 py-0.5 rounded-full">
-              {crew.unassigned} unassigned
-            </span>
-          )}
-          action="Open schedule"
-          onAction={() => navigate('/schedule')}
-        >
-          {loading ? (
-            <TileLoading />
-          ) : crew.rows.length === 0 && crew.unassigned === 0 ? (
-            <EmptyState compact icon={Users} title="No jobs this week"
-              description="Assignments will show here." />
-          ) : (
-            <div className="flex-1 overflow-y-auto max-h-[300px] space-y-1.5">
-              {rosterUnavailable && (
-                <p className="text-[11px] text-ink-3 bg-bg-2 rounded-lg px-2.5 py-1.5">
-                  Crew roster unavailable (Connecteam offline) — cleaners shown by ID.
-                </p>
-              )}
-              {crew.rows.map(r => {
-                const pct = crew.rows[0] ? Math.round((r.n / crew.rows[0].n) * 100) : 0
-                return (
-                  <div key={r.id} className="flex items-center gap-2 text-sm">
-                    <span className="w-28 truncate text-ink-2 shrink-0">{r.name}</span>
-                    <div className="flex-1 bg-bg-2 rounded-full h-2 overflow-hidden">
-                      <div className="bg-blue-500 h-full rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="w-6 text-right font-semibold text-ink shrink-0">{r.n}</span>
-                  </div>
-                )
-              })}
-              {crew.unassigned > 0 && (
-                <button onClick={() => navigate('/schedule')}
-                  className="w-full flex items-center justify-between gap-2 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-800 hover:opacity-90 transition-opacity mt-1">
-                  <span>Jobs with no crew assigned</span>
-                  <span className="font-bold flex items-center gap-1">{crew.unassigned} <ArrowRight className="w-3.5 h-3.5" /></span>
-                </button>
-              )}
-            </div>
-          )}
-        </Tile>
+        <TurnoverCoverageTile loading={loading} turnover={turnover} navigate={navigate} />
+        <CrewWorkloadTile loading={loading} crew={crew} rosterUnavailable={rosterUnavailable} navigate={navigate} />
 
         {/* MONEY — full width on desktop */}
         <div className="lg:col-span-2">
