@@ -1,10 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft, ChevronRight, Calendar, User, Clock, Plus, AlertCircle,
-  RefreshCw, Filter, X,
-  Calendar as CalendarIcon, Trash2,
-  Wand2, Wrench, ChevronDown,
+  Calendar, User, Clock, AlertCircle, Filter, X,
+  Calendar as CalendarIcon, Trash2, Wand2,
 } from 'lucide-react'
 import { get, post, put, patch } from '../api'
 import Button from '../components/ui/Button'
@@ -22,6 +20,7 @@ import AgendaDay from '../components/schedule/AgendaDay'
 import VisitCard from '../components/schedule/VisitCard'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
+import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 
@@ -563,151 +562,30 @@ export default function Schedule() {
   return (
     <div className="flex flex-col h-screen bg-bg">
       {/* Header */}
-      <div className="bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
-          {/* Single compact row: title · date nav · view toggle · New Job */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
-
-            {/* View switcher — in-app calendar by default, one tap to Google.
-                Short labels on phones so the toolbar fits narrow viewports. */}
-            <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
-              {[['month', 'Calendar', 'Cal'], ['agenda', 'Day', 'Day']].map(([v, label, short]) => (
-                <button key={v} onClick={() => setViewMode(v)}
-                  className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
-                  <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
-                </button>
-              ))}
-            </div>
-            {/* Outer date nav — only for Day. Month mode uses CalendarView's
-                own month nav, so these arrows would otherwise do nothing. */}
-            {!isGoogleOnly && viewMode !== 'month' && (
-              <div className="hidden sm:flex items-center gap-1 ml-1">
-                <button onClick={prevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <span className="text-xs font-semibold text-ink-2 whitespace-nowrap min-w-[64px] text-center">
-                  {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
-                <button onClick={nextWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Next week">
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-
-            <div className="flex-1" />
-
-            {/* Filters hidden behind a toggle so the default view stays clean.
-                A dot shows when a filter is actually narrowing the list. */}
-            {!isGoogleOnly && (
-              <Button onClick={() => setShowFilters(o => !o)} variant="secondary" size="sm" className="whitespace-nowrap relative"
-                title="Filter by property type or status">
-                <Filter className="w-4 h-4" />
-                <span className="hidden sm:inline ml-1.5">Filters</span>
-                {(selectedPropertyType !== 'all' || selectedStatus !== 'all') && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
-                )}
-              </Button>
-            )}
-
-            {/* Power tools tucked into one menu to keep the toolbar clean */}
-            <div className="relative">
-              <Button onClick={() => setToolsOpen(o => !o)} variant="secondary" size="sm" className="whitespace-nowrap"
-                title="Calendar sync & maintenance tools">
-                <Wrench className="w-4 h-4" />
-                <span className="hidden sm:inline ml-1.5">Tools</span>
-                <ChevronDown className="w-3 h-3 ml-0.5" />
-              </Button>
-              {toolsOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setToolsOpen(false)} />
-                  <div className="absolute right-0 mt-1 w-56 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
-                    <button onClick={() => { setToolsOpen(false); syncFromGoogle() }} disabled={gcalSyncing}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
-                      <RefreshCw className={`w-4 h-4 ${gcalSyncing ? 'animate-spin' : ''}`} /> {gcalSyncing ? 'Syncing…' : 'Sync from Google'}
-                    </button>
-                    <button onClick={() => { setToolsOpen(false); pushToGoogle() }} disabled={gcalPushing}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
-                      <CalendarIcon className="w-4 h-4" /> {gcalPushing ? 'Pushing…' : 'Push to Google'}
-                    </button>
-                    <div className="my-1 border-t border-hairline" />
-                    <button onClick={() => { setToolsOpen(false); previewAutoAssign() }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                      <Wand2 className="w-4 h-4" /> Auto-assign turnovers
-                    </button>
-                    <button onClick={() => { setToolsOpen(false); previewFixTimes() }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                      <Clock className="w-4 h-4" /> Fix missing times
-                    </button>
-                    <div className="my-1 border-t border-hairline" />
-                    <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
-                      onClick={() => setToolsOpen(false)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                      <CalendarIcon className="w-4 h-4" /> Open in Google Calendar
-                    </a>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <Button onClick={() => { setNewJobDate(dateStr); setShowNewJob(true) }} variant="primary" size="sm" className="whitespace-nowrap">
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1.5">New Job</span>
-            </Button>
-          </div>
-
-          {/* Mobile-only date nav — desktop has it inline above */}
-          {!isGoogleOnly && (
-          <div className="sm:hidden flex items-center gap-2 mt-2">
-            <button onClick={prevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-semibold text-ink-2 flex-1 text-center">
-              {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-            <button onClick={nextWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          )}
-
-          {/* Filter chips — revealed via the Filters toggle to keep the toolbar clean */}
-          {!isGoogleOnly && showFilters && (
-          <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
-            <select
-              value={selectedPropertyType}
-              onChange={(e) => setSelectedPropertyType(e.target.value)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
-                selectedPropertyType === 'all'
-                  ? 'bg-panel text-ink-3 border-hairline'
-                  : 'bg-blue-50 text-blue-700 border-blue-200'
-              }`}
-            >
-              <option value="all">All types</option>
-              <option value="residential">Residential</option>
-              <option value="str">STR</option>
-              <option value="commercial">Commercial</option>
-            </select>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className={`text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap ${
-                selectedStatus === 'all'
-                  ? 'bg-panel text-ink-3 border-hairline'
-                  : 'bg-blue-50 text-blue-700 border-blue-200'
-              }`}
-            >
-              <option value="all">All status</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="dispatched">Dispatched</option>
-              <option value="in_progress">In progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          )}
-        </div>
-      </div>
+      <ScheduleToolbar
+        viewMode={viewMode}
+        onViewChange={setViewMode}
+        showDateNav={!isGoogleOnly}
+        currentDate={currentDate}
+        onPrevWeek={prevWeek}
+        onNextWeek={nextWeek}
+        showFilters={showFilters}
+        onToggleFilters={() => setShowFilters(o => !o)}
+        selectedPropertyType={selectedPropertyType}
+        onPropertyTypeChange={setSelectedPropertyType}
+        selectedStatus={selectedStatus}
+        onStatusChange={setSelectedStatus}
+        toolsOpen={toolsOpen}
+        onToggleTools={() => setToolsOpen(o => !o)}
+        onCloseTools={() => setToolsOpen(false)}
+        gcalSyncing={gcalSyncing}
+        gcalPushing={gcalPushing}
+        onSyncFromGoogle={syncFromGoogle}
+        onPushToGoogle={pushToGoogle}
+        onPreviewAutoAssign={previewAutoAssign}
+        onPreviewFixTimes={previewFixTimes}
+        onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
+      />
 
       {/* Schedule health — just the two operational counts. The Google /
           Connecteam sync ratios used to sit here as always-on diagnostic cards;
