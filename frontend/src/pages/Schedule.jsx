@@ -16,6 +16,7 @@ import { ScheduleHealthStrip, ScheduleBulkBar, ScheduleListView } from '../compo
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
+import { useScheduleTools } from '../hooks/useScheduleTools'
 
 export default function Schedule() {
   const { toast, ToastContainer } = useToast()
@@ -89,119 +90,18 @@ export default function Schedule() {
   // The "Hard delete" bulk-cancel toggle was removed alongside its backend
   // endpoint (POST /api/admin/visits/hard-delete) in the Job/Visit unification.
   // Bulk cancel is soft-only now (PATCH /api/jobs/{id} status=cancelled).
-  // Auto-assign turnovers: null | { loading } | { preview:{assigned,unassignable} } | { running }
-  const [autoAssign, setAutoAssign] = useState(null)
-  // Fix-missing-times tool: null | { loading } | { preview } | { running }
-  const [fixTimes, setFixTimes] = useState(null)
+  // "Tools" dropdown (declutters the toolbar) — open/close is UI, so it
+  // stays here; the actual actions live in useScheduleTools.
+  const [toolsOpen, setToolsOpen] = useState(false)
+
+  const {
+    gcalSyncing, syncFromGoogle,
+    gcalPushing, pushToGoogle,
+    autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
+    fixTimes, setFixTimes, previewFixTimes, runFixTimes,
+  } = useScheduleTools({ toast, refresh })
 
   const dateStr = currentDate.toISOString().split('T')[0]
-
-  // Auto-assign: preview (dry-run) the picks, then confirm to apply.
-  const previewAutoAssign = async () => {
-    setAutoAssign({ loading: true })
-    try {
-      const res = await post('/api/jobs/auto-assign-turnovers?dry_run=true', {})
-      if (!res?.assigned?.length && !res?.unassignable?.length) {
-        setAutoAssign(null)
-        toast.info('No unassigned turnovers to fill')
-        return
-      }
-      setAutoAssign({ preview: res })
-    } catch (e) {
-      setAutoAssign(null)
-      toast.error(e.message || 'Could not preview auto-assign')
-    }
-  }
-
-  const runAutoAssign = async () => {
-    setAutoAssign(a => ({ ...a, running: true }))
-    try {
-      const res = await post('/api/jobs/auto-assign-turnovers', {})
-      toast.success(`Assigned ${res?.assigned?.length || 0} turnover${(res?.assigned?.length || 0) === 1 ? '' : 's'}`)
-      setAutoAssign(null)
-      refresh()
-    } catch (e) {
-      toast.error(e.message || 'Auto-assign failed')
-      setAutoAssign(a => ({ ...a, running: false }))
-    }
-  }
-
-  // Pull the latest from Google Calendar on demand, so edits you make in Google
-  // show up here immediately instead of waiting for the ~10-min scheduler tick.
-  const [gcalSyncing, setGcalSyncing] = useState(false)
-  const [toolsOpen, setToolsOpen] = useState(false)  // "Tools" dropdown (declutters the toolbar)
-  const syncFromGoogle = async () => {
-    if (gcalSyncing) return
-    setGcalSyncing(true)
-    try {
-      const r = await post('/api/jobs/sync-gcal', {})
-      const c = r?.jobs_created || 0, u = r?.jobs_updated || 0, x = r?.jobs_cancelled || 0
-      const parts = []
-      if (c) parts.push(`${c} new`)
-      if (u) parts.push(`${u} updated`)
-      if (x) parts.push(`${x} cancelled`)
-      toast.success(parts.length ? `Synced from Google — ${parts.join(', ')}` : 'Synced from Google — up to date')
-      refresh()
-    } catch (e) {
-      toast.error(e.message || 'Google sync failed')
-    }
-    setGcalSyncing(false)
-  }
-
-  // Push BrightBase jobs that don't yet have a Google event up to Google. Fixes
-  // the "blank embed" case where jobs were created before Google was connected
-  // (or otherwise never pushed) — they have no calendar event to show.
-  const [gcalPushing, setGcalPushing] = useState(false)
-  const pushToGoogle = async () => {
-    if (gcalPushing) return
-    setGcalPushing(true)
-    try {
-      const r = await post('/api/jobs/push-to-gcal', {})
-      toast.success(r?.message || `Pushed ${r?.pushed || 0} job(s) to Google`)
-      refresh()
-    } catch (e) {
-      const msg = e?.message || 'Push failed'
-      toast.error(/not configured/i.test(msg)
-        ? 'Google Calendar isn’t connected on the server (credentials missing)'
-        : msg)
-    }
-    setGcalPushing(false)
-  }
-
-  // Diagnose + fix jobs that render with no time ("– –"). Preview (dry-run)
-  // surfaces the diagnostic by_source so you can see the cause in-app, then
-  // confirm to backfill sensible default times.
-  const previewFixTimes = async () => {
-    setFixTimes({ loading: true })
-    try {
-      const [diag, preview] = await Promise.all([
-        get('/api/jobs/diagnostics/missing-times').catch(() => null),
-        post('/api/jobs/backfill-missing-times?dry_run=true', {}),
-      ])
-      if (!preview?.count) {
-        setFixTimes(null)
-        toast.info('All jobs already have times — no fix needed')
-        return
-      }
-      setFixTimes({ preview, bySource: diag?.summary?.by_source || {} })
-    } catch (e) {
-      setFixTimes(null)
-      toast.error(e.message || 'Could not check job times')
-    }
-  }
-
-  const runFixTimes = async () => {
-    setFixTimes(f => ({ ...f, running: true }))
-    try {
-      const res = await post('/api/jobs/backfill-missing-times', {})
-      toast.success(`Set times on ${res?.count || 0} job${(res?.count || 0) === 1 ? '' : 's'}`)
-      setFixTimes(null)
-      refresh()
-    } catch (e) {
-      toast.error(e.message || 'Fix failed')
-      setFixTimes(f => ({ ...f, running: false }))
-    }
-  }
 
   // Filter visits
   const filteredVisits = useMemo(() => {
