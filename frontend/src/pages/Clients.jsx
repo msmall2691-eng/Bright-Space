@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Phone, Mail, MapPin, ChevronRight, Upload, LayoutGrid, TableProperties, Users, Calendar } from 'lucide-react'
+import { Plus, Search, Upload, LayoutGrid, TableProperties, Users, Calendar } from 'lucide-react'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
 import { del, get, post, patch, upload } from "../api"
@@ -10,11 +10,12 @@ import ColumnsButton from "../components/ColumnsButton"
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
-import { STATUS_COLORS, STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
+import { STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
 import { ImportResultBanner } from '../components/clients/ImportResultBanner'
+import { ClientCardRow } from '../components/clients/ClientCardRow'
 
 // Configurable table columns. `render(c, h)` gets the row plus page helpers
 // (updateStatus, setJobClient). The leading selection checkbox is fixed and
@@ -380,40 +381,14 @@ export default function Clients() {
         {viewMode === 'cards' && (
           <div className="space-y-1.5 overflow-y-auto flex-1">
             {filtered.map(c => (
-              <div key={c.id} onClick={() => navigate(`/clients/${c.id}`)}
-                className={`flex items-center gap-3 sm:gap-4 bg-panel border rounded-xl p-3 sm:p-3.5 cursor-pointer transition-all group ${selectedIds.has(c.id) ? 'border-blue-400 bg-blue-50/40' : 'border-hairline hover:border-hairline'}`}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(c.id)}
-                  onChange={(e) => toggleSelect(c.id, e)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-4 h-4 rounded border-hairline cursor-pointer shrink-0"
-                  data-testid="client-row-checkbox"
-                  aria-label={`Select ${c.name}`}
-                />
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-                  <span className="text-[12px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</div>
-                    <span className={`sm:hidden text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
-                  </div>
-                  <div className="flex items-center gap-x-3 gap-y-0.5 mt-0.5 flex-wrap">
-                    {c.phone && <span className="text-[11px] text-ink-3 flex items-center gap-1"><Phone className="w-3 h-3 shrink-0" />{c.phone}</span>}
-                    {c.email && <span className="text-[11px] text-ink-3 flex items-center gap-1 min-w-0 max-w-full"><Mail className="w-3 h-3 shrink-0" /><span className="truncate">{c.email}</span></span>}
-                    {c.city && <span className="text-[11px] text-ink-3 flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{c.city}</span>}
-                  </div>
-                </div>
-                <span className={`hidden sm:inline-flex text-[10px] px-2 py-0.5 rounded-full border capitalize font-medium shrink-0 ${STATUS_COLORS[c.status] || STATUS_COLORS.inactive}`}>{c.status}</span>
-                <button onClick={(e) => { e.stopPropagation(); setJobClient(c) }}
-                  title={`Schedule a job for ${displayContactName(c)}`}
-                  aria-label={`Schedule ${c.name}`}
-                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
-                  <Calendar className="w-4 h-4" />
-                </button>
-                <ChevronRight className="w-4 h-4 text-ink-3 group-hover:text-ink-3 transition-colors shrink-0" />
-              </div>
+              <ClientCardRow
+                key={c.id}
+                c={c}
+                selected={selectedIds.has(c.id)}
+                toggleSelect={toggleSelect}
+                setJobClient={setJobClient}
+                navigate={navigate}
+              />
             ))}
             {filtered.length === 0 && (
               <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
