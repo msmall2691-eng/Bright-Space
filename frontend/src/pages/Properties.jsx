@@ -1,14 +1,15 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home } from 'lucide-react'
 import { EmptyState } from '../components/ui'
-import { get, post, patch, del } from "../api"
+import { post, patch, del } from "../api"
 import { EMPTY, PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
 import { PropertyForm } from '../components/properties/PropertyForm'
 import { SyncToolsPanel, SweepResultsPanel } from '../components/properties/SyncToolsPanel'
 import { PropertyRow } from '../components/properties/PropertyRow'
 import { PropertiesToolbar, BulkActionBar, SyncResultBanner } from '../components/properties/PropertiesToolbar'
+import { useProperties } from '../hooks/useProperties'
 
 
 export default function Properties() {
@@ -24,8 +25,8 @@ export default function Properties() {
     setSearch(cfg.search ?? '')
   }
 
-  const [properties, setProperties] = useState([])
-  const [clients, setClients] = useState([])
+  const { properties, clients, setClients, load } = useProperties()
+
   const [showForm, setShowForm] = useState(false)
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [newPropertyType, setNewPropertyType] = useState('residential')
@@ -75,14 +76,6 @@ export default function Properties() {
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [hardDelete, setHardDelete] = useState(false)
-
-  const load = () =>
-    get('/api/properties').then(setProperties).catch(err => console.error("[Properties]", err))
-
-  useEffect(() => {
-    load()
-    get('/api/clients?status=active').then(setClients).catch(err => console.error("[Properties]", err))
-  }, [])
 
   const clientName = (id) => {
     const client = clients.find(c => c.id === id)
