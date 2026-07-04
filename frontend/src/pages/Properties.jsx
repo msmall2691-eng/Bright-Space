@@ -2,8 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home } from 'lucide-react'
 import { EmptyState } from '../components/ui'
-import { post } from "../api"
-import { EMPTY, PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
+import { PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
 import { PropertyForm } from '../components/properties/PropertyForm'
 import { SyncToolsPanel, SweepResultsPanel } from '../components/properties/SyncToolsPanel'
@@ -11,6 +10,7 @@ import { PropertyRow } from '../components/properties/PropertyRow'
 import { PropertiesToolbar, BulkActionBar, SyncResultBanner } from '../components/properties/PropertiesToolbar'
 import { useProperties } from '../hooks/useProperties'
 import { usePropertyMutations } from '../hooks/usePropertyMutations'
+import { usePropertyForm } from '../hooks/usePropertyForm'
 
 
 export default function Properties() {
@@ -40,16 +40,24 @@ export default function Properties() {
     bulkDelete: mutateBulkDelete,
   } = usePropertyMutations({ load })
 
-  const [showForm, setShowForm] = useState(false)
-  const [showTypeModal, setShowTypeModal] = useState(false)
-  const [newPropertyType, setNewPropertyType] = useState('residential')
-  const [selected, setSelected] = useState(null)
-  const [form, setForm] = useState(EMPTY)
-  // Inline "new client" quick-add from the property form (no trip to Clients).
-  const [addingClient, setAddingClient] = useState(false)
-  const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
-  const [creatingClient, setCreatingClient] = useState(false)
-  const [clientErr, setClientErr] = useState('')
+  const {
+    showForm, setShowForm,
+    showTypeModal, setShowTypeModal,
+    newPropertyType, setNewPropertyType,
+    selected,
+    form, setForm,
+    addingClient, setAddingClient,
+    newClient, setNewClient,
+    creatingClient,
+    clientErr, setClientErr,
+    selectClient,
+    createInlineClient,
+    openEdit,
+    openNew,
+    confirmNewProperty,
+    resetAfterSave,
+  } = usePropertyForm({ clients, setClients })
+
   const [expandedPropId, setExpandedPropId] = useState(null)
   const [icalForm, setIcalForm] = useState({ url: '', source: '' })
   const [showIcalForm, setShowIcalForm] = useState(null)
@@ -62,45 +70,6 @@ export default function Properties() {
   const clientName = (id) => {
     const client = clients.find(c => c.id === id)
     return client?.name || `Client #${id}`
-  }
-
-  // Selecting a client pre-fills the property's address from the client's own
-  // address when those fields are still empty (smart default; never clobbers
-  // anything you've already typed).
-  const selectClient = (idStr) => {
-    const c = clients.find(c => String(c.id) === String(idStr))
-    setForm(f => {
-      const next = { ...f, client_id: idStr }
-      if (c) {
-        if (!f.address && c.address) next.address = c.address
-        if (!f.city && c.city) next.city = c.city
-        if (!f.state && c.state) next.state = c.state
-        if (!f.zip_code && c.zip_code) next.zip_code = c.zip_code
-      }
-      return next
-    })
-  }
-
-  // Create a client without leaving the property form: POST, add to the list,
-  // and select it (with the same address smart-default).
-  const createInlineClient = async () => {
-    if (!newClient.name.trim()) { setClientErr('Name is required'); return }
-    setCreatingClient(true); setClientErr('')
-    try {
-      const created = await post('/api/clients', {
-        name: newClient.name.trim(),
-        phone: newClient.phone.trim() || null,
-        email: newClient.email.trim() || null,
-        status: 'active',
-      })
-      setClients(cs => [created, ...cs])
-      selectClient(String(created.id))
-      setAddingClient(false)
-      setNewClient({ name: '', phone: '', email: '' })
-    } catch (e) {
-      setClientErr(e.message || 'Failed to create client')
-    }
-    setCreatingClient(false)
   }
 
   const propType = (p) => (p?.property_type || '').toLowerCase()
@@ -130,12 +99,7 @@ export default function Properties() {
 
   const save = async () => {
     const result = await saveProperty({ selected, form })
-    if (result.ok) {
-      setShowForm(false)
-      setShowTypeModal(false)
-      setSelected(null)
-      setForm(EMPTY)
-    }
+    if (result.ok) resetAfterSave()
   }
 
   const addIcal = async (propId) => {
@@ -147,24 +111,6 @@ export default function Properties() {
   }
 
   const removeIcal = (propId, icalId) => mutateRemoveIcal(propId, icalId)
-
-  const openEdit = (p) => {
-    setSelected(p)
-    setForm({
-      ...p,
-      client_id: p.client_id,
-      property_type: p.property_type || 'residential',
-      check_in_time: p.check_in_time || '14:00',
-      check_out_time: p.check_out_time || '10:00',
-      house_code: p.house_code || '',
-    })
-    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr('')
-    setShowForm(true)
-  }
-
-  const openNew = () => {
-    setShowTypeModal(true)
-  }
 
   const toggleSelect = (id, e) => {
     e?.stopPropagation()
@@ -185,14 +131,6 @@ export default function Properties() {
   const bulkDelete = async () => {
     const result = await mutateBulkDelete({ ids: Array.from(selectedIds), hardDelete })
     if (result?.ok) clearSelection()
-  }
-
-  const confirmNewProperty = () => {
-    setSelected(null)
-    setForm({ ...EMPTY, property_type: newPropertyType })
-    setAddingClient(false); setNewClient({ name: '', phone: '', email: '' }); setClientErr('')
-    setShowTypeModal(false)
-    setShowForm(true)
   }
 
   return (
