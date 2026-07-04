@@ -233,6 +233,22 @@ async def manual_ical_sync():
     return sync_all_ical_feeds_tick()
 
 
+@app.get("/api/version")
+async def version():
+    """Report which build is actually running so 'did my deploy take?' has a
+    one-request answer. Railway injects RAILWAY_GIT_COMMIT_SHA and friends into
+    every container it deploys — reading them at request time (not import time)
+    means we always see the running container's values, and the endpoint stays
+    working when Railway isn't the host (returns empty strings)."""
+    return {
+        "commit": os.getenv("RAILWAY_GIT_COMMIT_SHA", "")[:12] or "unknown",
+        "branch": os.getenv("RAILWAY_GIT_BRANCH", "") or "unknown",
+        "commit_message": os.getenv("RAILWAY_GIT_COMMIT_MESSAGE", "").splitlines()[0][:200],
+        "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID", ""),
+        "service": "BrightBase",
+    }
+
+
 @app.get("/api/health")
 async def health():
     # Surface schema-drift state here (not just in startup logs) so a
@@ -405,8 +421,21 @@ _dist = Path(__file__).parent.parent / "frontend" / "dist"
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 
+    # No-cache on the SPA shell only. Vite emits hashed filenames under /assets
+    # (e.g. index-a1b2c3d4.js), so those can be cached long-term — but if the
+    # browser also caches index.html, it never notices a new bundle exists after
+    # a deploy and keeps loading the stale JS. That's the "I merged but the UI
+    # still shows the old code" symptom. Forcing revalidation on index.html means
+    # every page load picks up the current bundle references without waiting on
+    # a hard-refresh or an Incognito window.
+    _SPA_NO_CACHE = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             raise HTTPException(status_code=404, detail="Not found")
-        return FileResponse(_dist / "index.html")
+        return FileResponse(_dist / "index.html", headers=_SPA_NO_CACHE)

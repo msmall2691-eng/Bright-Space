@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 # WebSocket connections — auth for /ws/agent/* happens inside the handler.
 _PUBLIC_PREFIXES = (
     "/api/health",
+    # Public build identifier — same rationale as /api/health: needs to be
+    # readable without a JWT so you can hit it after a deploy to confirm which
+    # commit is actually running before signing in.
+    "/api/version",
     "/api/auth/login",
     "/api/auth/register",
     # Google sign-in: the login page calls these before a JWT exists.

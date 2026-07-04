@@ -77,8 +77,12 @@ def run_migrations_online() -> None:
         # This prevents trying to re-create tables that already exist
         if has_app_settings and not has_alembic_version:
             try:
+                # VARCHAR(128) not (32): descriptive revision IDs like
+                # "034_merge_quote_requests_into_lead_intakes" (48 chars) blow
+                # past Alembic's 32-char default and StringDataRightTruncation
+                # kills the whole upgrade.
                 connection.exec_driver_sql(
-                    "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL, "
+                    "CREATE TABLE alembic_version (version_num VARCHAR(128) NOT NULL, "
                     "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
                 )
                 connection.exec_driver_sql(
