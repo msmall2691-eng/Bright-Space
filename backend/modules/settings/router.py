@@ -441,6 +441,199 @@ def gmail_status(db: Session = Depends(get_db)):
     return {"connected": any_ok, "accounts": accounts}
 
 
+# ── Connecteam credentials + push-schedule ─────────────────────────────────
+# Lets an operator paste their Connecteam API key + Company ID in Settings →
+# Integrations (instead of hunting for the Railway env vars) and push the
+# upcoming schedule to Connecteam as open shifts. The DB values take precedence
+# over CONNECTEAM_API_KEY / CONNECTEAM_COMPANY_ID; env stays as a fallback so
+# existing deploys keep working.
+
+class ConnecteamConfig(BaseModel):
+    api_key: Optional[str] = None
+    company_id: Optional[str] = None
+
+
+def _mask_key(v: str) -> str:
+    v = (v or "").strip()
+    if not v:
+        return ""
+    return "••••" + v[-4:] if len(v) > 4 else "••••"
+
+
+@router.get("/connecteam-status", dependencies=[Depends(require_role("admin", "manager"))])
+def connecteam_status(db: Session = Depends(get_db)):
+    """Whether Connecteam is wired up + a masked hint of the saved key so the
+    Settings card can show "connected as company 12345, key •••abcd"."""
+    import os
+    db_key = get_setting(db, "connecteam_api_key") or ""
+    db_cid = get_setting(db, "connecteam_company_id") or ""
+    env_key = os.getenv("CONNECTEAM_API_KEY", "")
+    env_cid = os.getenv("CONNECTEAM_COMPANY_ID", "")
+    key = (db_key or env_key).strip()
+    cid = (db_cid or env_cid).strip()
+    return {
+        "configured": bool(key and cid),
+        "has_key": bool(key),
+        "has_company_id": bool(cid),
+        "api_key_masked": _mask_key(key),
+        "company_id": cid,
+        "source": ("database" if (db_key or db_cid) else ("env" if (env_key or env_cid) else "none")),
+    }
+
+
+@router.post("/connecteam", dependencies=[Depends(require_role("admin"))])
+def save_connecteam_settings(config: ConnecteamConfig, db: Session = Depends(get_db)):
+    """Save (or clear) the Connecteam credentials. A masked value ("••••abcd")
+    from the status endpoint is ignored so re-saving the form without retyping
+    the key doesn't overwrite it with the mask."""
+    if config.api_key is not None:
+        v = config.api_key.strip()
+        if v and not v.startswith("••••"):
+            set_setting(db, "connecteam_api_key", v)
+        elif v == "":
+            set_setting(db, "connecteam_api_key", "")
+    if config.company_id is not None:
+        set_setting(db, "connecteam_company_id", config.company_id.strip())
+    db.commit()
+    return connecteam_status(db)
+
+
+@router.post("/connecteam/test", dependencies=[Depends(require_role("admin", "manager"))])
+def test_connecteam(db: Session = Depends(get_db)):
+    """Hit Connecteam with the saved credentials so the operator gets a real
+    yes/no instead of "we saved something, hope it works". Uses get_employees
+    because it's a cheap read that fails the same way create_shift does."""
+    from integrations.connecteam import (
+        is_configured, ConnecteamAuthError, get_employees,
+    )
+    if not is_configured():
+        raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Company ID first.")
+    try:
+        import asyncio
+        employees = asyncio.run(get_employees())
+        return {"ok": True, "employee_count": len(employees)}
+    except ConnecteamAuthError:
+        # ConnecteamAuthError's message is a fixed literal we author in
+        # integrations/connecteam.py (no exception-carried detail), so it's
+        # safe to surface verbatim as guidance.
+        raise HTTPException(401, "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again.")
+    except Exception as e:
+        # Log the underlying error server-side, but return a generic message —
+        # Connecteam's client errors can carry request URLs / internal detail
+        # we don't want to bounce back to the browser (CodeQL: information
+        # exposure through an exception).
+        logger.warning(f"Connecteam test call failed: {e}")
+        raise HTTPException(502, "Connecteam call failed — check server logs for the underlying error.")
+
+
+class PushOpenShiftsBody(BaseModel):
+    # Inclusive date range for jobs to push (YYYY-MM-DD).
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+@router.post("/connecteam/push-open-shifts", dependencies=[Depends(require_role("admin", "manager"))])
+def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
+    """Push the Bright Space schedule to Connecteam as OPEN shifts (unassigned)
+    so cleaners can self-claim them.
+
+    - Skips cancelled / completed jobs and anything already dispatched
+      (connecteam_shift_ids populated) so re-clicking is idempotent.
+    - Records the returned shift id on Job.connecteam_shift_ids and logs an
+      integration event, matching the auto-dispatch path.
+    - Defaults to today → today + 14 days when no range is provided.
+    """
+    from integrations.connecteam import (
+        is_configured, ConnecteamAuthError, create_open_shift_sync,
+    )
+    from database.models import Job
+    from utils.integration_log import log_integration_event as _log
+    from datetime import date, timedelta
+
+    if not is_configured():
+        raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Company ID first.")
+
+    today = date.today()
+    try:
+        start = date.fromisoformat(body.start_date) if body.start_date else today
+        end = date.fromisoformat(body.end_date) if body.end_date else today + timedelta(days=14)
+    except ValueError:
+        raise HTTPException(400, "start_date/end_date must be YYYY-MM-DD")
+    if end < start:
+        raise HTTPException(400, "end_date must be on or after start_date")
+
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.scheduled_date >= start,
+            Job.scheduled_date <= end,
+            Job.status.notin_(["cancelled", "completed"]),
+        )
+        .order_by(Job.scheduled_date, Job.start_time)
+        .all()
+    )
+
+    pushed, skipped, errors = 0, 0, []
+    for job in jobs:
+        if job.connecteam_shift_ids:
+            skipped += 1
+            continue
+        if not job.scheduled_date or not job.start_time or not job.end_time:
+            skipped += 1
+            continue
+        start_iso = f"{job.scheduled_date}T{str(job.start_time)[:5]}:00"
+        end_iso = f"{job.scheduled_date}T{str(job.end_time)[:5]}:00"
+        try:
+            res = create_open_shift_sync(
+                start_datetime=start_iso,
+                end_datetime=end_iso,
+                title=job.title,
+                address=job.address,
+                notes=job.notes,
+            )
+            sid = str(res.get("id") or res.get("shiftId") or "").strip()
+            if sid:
+                job.connecteam_shift_ids = [sid]
+                job.dispatched = True
+                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                     action="create_open", status="ok", external_id=sid, commit=False)
+                pushed += 1
+            else:
+                errors.append({"job_id": job.id, "error": "no shift id returned"})
+                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                     action="create_open", status="failed",
+                     detail="no shift id returned", commit=False)
+        except ConnecteamAuthError:
+            # Auth errors mean every subsequent call will fail too — stop early
+            # and let the caller rotate the key.
+            errors.append({"job_id": job.id, "error": "auth_failed"})
+            db.commit()
+            raise HTTPException(401, "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again.")
+        except Exception as e:
+            # Full detail goes to the server log + integration_events (admin
+            # audit trail); the response only carries the exception class name
+            # so a Connecteam / httpx error can't leak internals to the browser
+            # (CodeQL: information exposure through an exception).
+            logger.warning(f"push_open_shifts: create_open_shift for job {job.id} failed: {e}")
+            errors.append({"job_id": job.id, "error": type(e).__name__})
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="create_open", status="failed", detail=str(e), commit=False)
+
+    try:
+        db.commit()
+    except Exception as e:
+        logger.warning(f"push_open_shifts commit failed: {e}")
+
+    return {
+        "ok": not errors or pushed > 0,
+        "pushed": pushed,
+        "skipped": skipped,
+        "considered": len(jobs),
+        "errors": errors,
+        "range": {"start_date": str(start), "end_date": str(end)},
+    }
+
+
 # ── Self-serve Google OAuth ── connect an admin's work Google account in-app.
 @router.get("/google/connect", dependencies=[Depends(require_role("admin"))])
 def google_connect(request: Request, db: Session = Depends(get_db)):
