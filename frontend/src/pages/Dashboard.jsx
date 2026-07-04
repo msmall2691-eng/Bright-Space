@@ -26,6 +26,7 @@ import { today, monthStart, fmtMoney, contactLabel, channelIcon } from '../compo
 import { Tile, KpiCard, TileLoading } from '../components/dashboard/primitives'
 import { Funnel } from '../components/dashboard/Funnel'
 import { InboxTile } from '../components/dashboard/InboxTile'
+import { TodayTile } from '../components/dashboard/TodayTile'
 
 /* ── Page ─────────────────────────────────────────────────────────── */
 export default function Dashboard() {
@@ -357,46 +358,13 @@ export default function Dashboard() {
           navigate={navigate}
         />
 
-        {/* TODAY — schedule preview, no calendar widget */}
-        <Tile
-          icon={Calendar}
-          iconColor="text-violet-500"
-          title="Today's schedule"
-          badge={todayCount > 0 && (
-            <span className="text-[10px] font-bold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded-full">
-              {todayCount}
-            </span>
-          )}
-          action="Open Schedule"
-          onAction={() => navigate('/schedule')}
-        >
-          {loading ? (
-            <TileLoading />
-          ) : todayJobs.length === 0 ? (
-            <EmptyState compact icon={Calendar} title="Nothing scheduled today"
-              description={weekCount > 0 ? `${weekCount} jobs later this week` : undefined} />
-          ) : (
-            <div className="flex-1 overflow-y-auto max-h-[380px]">
-              {todayJobs.map(j => (
-                <button
-                  key={j.id}
-                  onClick={() => navigate(`/jobs/${j.id}`)}
-                  className="w-full text-left flex items-baseline gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
-                >
-                  <span className="text-[12px] font-semibold text-blue-600 tabular-nums shrink-0 w-12">
-                    {(j.start_time || '').slice(0, 5) || '—'}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] text-ink truncate">{j.title}</span>
-                    {j.address && (
-                      <span className="block text-[11px] text-ink-3 truncate mt-0.5">{j.address}</span>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </Tile>
+        <TodayTile
+          loading={loading}
+          todayJobs={todayJobs}
+          todayCount={todayCount}
+          weekCount={weekCount}
+          navigate={navigate}
+        />
 
         {/* QUOTES & LEADS — what's in the funnel needing action */}
         <Tile
