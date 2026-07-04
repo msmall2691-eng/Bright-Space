@@ -219,7 +219,9 @@ def _extract_shift_ids(data: dict) -> list:
 
 
 async def create_shifts(shifts: list) -> list:
-    """Bulk-create shifts. Returns the created shift ids in the same order."""
+    """Bulk-create shifts. Returns the created shift ids in the same order.
+    Callers that need to correlate ids back to source rows should trust the
+    order — Connecteam's bulk endpoint returns shifts in submission order."""
     if not shifts:
         return []
     sched = _get_scheduler_id()
@@ -232,6 +234,17 @@ async def create_shifts(shifts: list) -> list:
         _raise_for_status(r)
         data = r.json()
     return _extract_shift_ids(data)
+
+
+def create_shifts_sync(shifts: list) -> list:
+    """Synchronous wrapper for bulk create — the /connecteam/push-open-shifts
+    settings endpoint runs in Starlette's threadpool."""
+    return _run_sync(create_shifts(shifts))
+
+
+# Public alias — callers that build payloads themselves (bulk push) reach for
+# this instead of duplicating the wire-format logic.
+build_shift_payload = _shift_payload
 
 
 async def create_shift(
