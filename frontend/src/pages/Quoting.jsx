@@ -10,6 +10,10 @@ import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, put, del } from "../api"
 import { formatDate } from '../utils/format'
 import Toast from '../components/quoting/Toast'
+import LeadRow from '../components/quoting/LeadRow'
+import QuoteRow from '../components/quoting/QuoteRow'
+import FollowUpRow from '../components/quoting/FollowUpRow'
+import ArchivedRow from '../components/quoting/ArchivedRow'
 import {
   QUOTE_STATUS_COLORS, LEAD_STATUS_COLORS,
   QUOTE_STATUS_OPTIONS, LEAD_STATUS_OPTIONS, QUOTE_NEXT_STEP,
@@ -707,67 +711,15 @@ export default function Quoting() {
             {intakes.length > 0 && (
             <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
             {intakes.map(intake => (
-              <div key={intake.id} className="p-3 hover:bg-bg-2/40 transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-medium text-ink">{intake.name}</span>
-                      <span onClick={e => e.stopPropagation()}>
-                        <InlineSelect value={intake.status} options={LEAD_STATUS_OPTIONS}
-                          onSelect={(s) => updateLeadStatus(intake.id, s)}
-                          disabled={!canEdit || intake.status === 'converted'} />
-                      </span>
-                      <span className="text-xs text-ink-3 capitalize bg-bg-2 px-2 py-0.5 rounded-full">{intake.service_type}</span>
-                    </div>
-                    {/* Structured request chips — the data the customer entered on
-                        the website (sqft/beds/baths/frequency/estimate), so the
-                        operator reads it at a glance instead of from the message blob. */}
-                    {(intake.square_footage || intake.bedrooms || intake.bathrooms || intake.frequency
-                      || intake.estimate_min != null) && (
-                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                        {intake.square_footage ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.square_footage.toLocaleString()} sqft</span> : null}
-                        {intake.bedrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bedrooms} bd</span> : null}
-                        {intake.bathrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bathrooms} ba</span> : null}
-                        {intake.frequency ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2 capitalize">{intake.frequency}</span> : null}
-                        {(intake.estimate_min != null && intake.estimate_max != null) ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium">
-                            ${Math.round(intake.estimate_min)}–${Math.round(intake.estimate_max)}
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
-                    <div className="text-xs text-ink-3 space-y-0.5">
-                      {(intake.phone || intake.email) && <div>{[intake.phone, intake.email].filter(Boolean).join(' · ')}</div>}
-                      {intake.address && <div>{[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}</div>}
-                      {intake.preferred_date && <div>Preferred: {formatDate(intake.preferred_date)}</div>}
-                      {intake.message && <div className="text-ink-3 italic mt-1 line-clamp-2">"{intake.message}"</div>}
-                    </div>
-                    <div className="text-xs text-ink-3 mt-1.5">
-                      {new Date(intake.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    {canEdit && intake.status === 'new' && (
-                      <button onClick={() => markIntakeReviewed(intake.id)}
-                        className="text-xs px-3 py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 rounded-lg transition-colors border border-hairline">
-                        Mark Reviewed
-                      </button>
-                    )}
-                    {canEdit && intake.status !== 'converted' && (
-                      <button onClick={() => { openQuoteForm(null, intake); setTab('quotes') }}
-                        className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1">
-                        <Plus className="w-3 h-3" /> Create Quote
-                      </button>
-                    )}
-                    {intake.client_id && (
-                      <button onClick={() => navigate(`/clients/${intake.client_id}`)}
-                        className="text-xs px-3 py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-3 rounded-lg transition-colors">
-                        View Client
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <LeadRow
+                key={intake.id}
+                intake={intake}
+                canEdit={canEdit}
+                onUpdateStatus={updateLeadStatus}
+                onMarkReviewed={markIntakeReviewed}
+                onCreateQuote={(it) => { openQuoteForm(null, it); setTab('quotes') }}
+                onOpenClient={(id) => navigate(`/clients/${id}`)}
+              />
             ))}
             </div>
             )}
@@ -810,90 +762,22 @@ export default function Quoting() {
             {visibleQuotes.length > 0 && (
             <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
             {visibleQuotes.map(q => (
-              <div key={q.id} className="p-3 hover:bg-bg-2/40 transition-colors">
-                <div className="flex items-center gap-3">
-                  {canEdit && (
-                    <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
-                      className="w-4 h-4 shrink-0 rounded border-hairline accent-blue-600 cursor-pointer"
-                      title="Select for bulk action" />
-                  )}
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-ink">{clientName(q.client_id)}</span>
-                      <span className="text-xs text-ink-3">{q.quote_number}</span>
-                      {canEdit && ['draft', 'sent', 'viewed', 'accepted', 'declined'].includes(q.status) ? (
-                        <span onClick={e => e.stopPropagation()}>
-                          <InlineSelect value={q.status} options={QUOTE_STATUS_OPTIONS}
-                            onSelect={(s) => updateStatus(q.id, s)} />
-                        </span>
-                      ) : (
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full border capitalize ${QUOTE_STATUS_COLORS[q.status] || QUOTE_STATUS_COLORS.draft}`}>{(q.status || '').replace(/_/g, ' ')}</span>
-                      )}
-                      {q.status === 'changes_requested' && <span className="w-2 h-2 rounded-full bg-amber-500" title="Customer requested changes" />}
-                      {q.last_send_error && ['draft', 'sent', 'viewed'].includes(q.status) && (
-                        <span className="text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200"
-                          title={q.last_send_error}>
-                          send failed
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-ink-3 mt-0.5">
-                      {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address, `${q.items?.length || 0} items`, new Date(q.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
-                    </div>
-                    {QUOTE_NEXT_STEP[q.status] && (
-                      <div className={`text-[11px] font-medium mt-1 ${QUOTE_NEXT_STEP[q.status].cls}`}>
-                        {QUOTE_NEXT_STEP[q.status].text}
-                      </div>
-                    )}
-                  </div>
-                  <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
-                  <div className="flex gap-1.5 shrink-0">
-                    <button onClick={() => navigate(`/quotes/${q.id}`)}
-                      className="text-xs px-2.5 py-1.5 bg-bg-2 text-ink-2 hover:bg-bg-3 rounded-lg transition-colors"
-                      title="Open full page">
-                      Open
-                    </button>
-                    {canEdit && (q.status === 'draft' || q.status === 'sent') && (
-                      <button onClick={() => openSendPanel(q)}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
-                        <Send className="w-3 h-3" /> Send
-                      </button>
-                    )}
-                    {canEdit && q.status === 'sent' && (
-                      <button onClick={() => copyPublicLink(q)}
-                        className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${copiedQuoteId === q.id ? 'bg-green-600/30 text-green-400' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
-                        {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                        {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
-                      </button>
-                    )}
-                    {/* Accept / Decline removed — the inline status dropdown next
-                        to the client name already sets those states (most quotes
-                        are accepted by the customer via their link anyway). */}
-                    {canEdit && q.status === 'accepted' && (
-                      <button onClick={() => setScheduleQuote(q)}
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-                        <Calendar className="w-3 h-3" />
-                        Set up schedule
-                      </button>
-                    )}
-                    {q.status === 'converted' && (
-                      <span className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-green-50 text-green-500 rounded-lg"
-                        title="This quote has been scheduled">
-                        <Calendar className="w-3 h-3" />
-                        Scheduled ✓
-                      </span>
-                    )}
-                    {canEdit && q.status !== 'converted' && (
-                      <button onClick={() => archiveQuote(q)}
-                        title="Archive (hide) this quote"
-                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-ink-3 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 className="w-3 h-3" />
-                        Archive
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <QuoteRow
+                key={q.id}
+                q={q}
+                canEdit={canEdit}
+                clientName={clientName}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onOpenQuote={openQuoteForm}
+                onNavigate={navigate}
+                onSend={openSendPanel}
+                onCopyLink={copyPublicLink}
+                onSchedule={setScheduleQuote}
+                onArchive={archiveQuote}
+                onUpdateStatus={updateStatus}
+                copiedQuoteId={copiedQuoteId}
+              />
             ))}
             </div>
             )}
@@ -909,44 +793,18 @@ export default function Quoting() {
                 <p className="text-xs mt-1 text-ink-3">Sent quotes the customer hasn't opened (48h+) or opened but hasn't answered (24h+) show up here.</p>
               </div>
             )}
-            {followUps.map(q => {
-              const h = q.hours_waiting || 0
-              const waited = h >= 48 ? `${Math.round(h / 24)}d` : `${Math.round(h)}h`
-              const reasonLabel = q.follow_up_reason === 'viewed_not_accepted' ? 'Opened, no reply' : 'Not opened yet'
-              const reasonTone = q.follow_up_reason === 'viewed_not_accepted'
-                ? 'bg-purple-50 text-purple-500 border-purple-200' : 'bg-amber-50 text-amber-600 border-amber-200'
-              return (
-                <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-ink">{clientName(q.client_id)}</span>
-                        <span className="text-xs text-ink-3">{q.quote_number}</span>
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full border ${reasonTone}`}>{reasonLabel}</span>
-                        <span className="text-xs text-ink-3">waiting {waited}</span>
-                        {q.follow_up_sent_at && <span className="text-xs text-ink-3">· nudged before</span>}
-                      </div>
-                      <div className="text-xs text-ink-3 mt-0.5">
-                        {[q.address, `${q.items?.length || 0} items`, q.sent_at && `sent ${new Date(q.sent_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
-                      </div>
-                    </div>
-                    <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
-                    {canEdit && (
-                      <div className="flex gap-1.5 shrink-0">
-                        <button onClick={() => sendFollowUp(q)} disabled={nudging === q.id}
-                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors">
-                          <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
-                        </button>
-                        <button onClick={() => openSendPanel(q)}
-                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline rounded-lg transition-colors">
-                          Options
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+            {followUps.map(q => (
+              <FollowUpRow
+                key={q.id}
+                q={q}
+                canEdit={canEdit}
+                clientName={clientName}
+                nudging={nudging}
+                onOpenQuote={openQuoteForm}
+                onSendFollowUp={sendFollowUp}
+                onOpenSendPanel={openSendPanel}
+              />
+            ))}
           </div>
         )}
 
@@ -969,34 +827,16 @@ export default function Quoting() {
               <div className="text-center py-16 text-ink-3 text-sm">No archived quotes</div>
             )}
             {archivedQuotes.map(q => (
-              <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                  {isAdmin && (
-                    <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => toggleSelect(q.id)}
-                      className="w-4 h-4 shrink-0 rounded border-hairline accent-red-600 cursor-pointer"
-                      title="Select for permanent delete" />
-                  )}
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openQuoteForm(q)}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-ink">{clientName(q.client_id)}</span>
-                      <span className="text-xs text-ink-3">{q.quote_number}</span>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline">archived</span>
-                    </div>
-                    <div className="text-xs text-ink-3 mt-0.5">
-                      {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address,
-                        q.archived_at && `archived ${new Date(q.archived_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
-                    </div>
-                  </div>
-                  <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
-                  {isAdmin && (
-                    <button onClick={() => deletePermanent(q)}
-                      title="Delete permanently"
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0">
-                      <Trash2 className="w-3.5 h-3.5" /> Delete
-                    </button>
-                  )}
-                </div>
-              </div>
+              <ArchivedRow
+                key={q.id}
+                q={q}
+                isAdmin={isAdmin}
+                clientName={clientName}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onOpenQuote={openQuoteForm}
+                onDeletePermanent={deletePermanent}
+              />
             ))}
             {!isAdmin && archivedQuotes.length > 0 && (
               <p className="text-xs text-ink-3 text-center pt-2">Permanent deletion is admin-only.</p>
