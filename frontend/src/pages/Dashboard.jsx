@@ -16,19 +16,20 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get, getCached } from '../api'
 import { htmlToText } from '../utils/format'
-import { StatCard, EmptyState, ErrorState } from '../components/ui'
+import { ErrorState } from '../components/ui'
 import { AIFollowUps } from '../components/AIFollowUps'
 import {
   Calendar, DollarSign,
   Clock, FileText, TrendingUp,
 } from 'lucide-react'
 import { today, monthStart, fmtMoney, contactLabel, channelIcon } from '../components/dashboard/utils'
-import { Tile, KpiCard, TileLoading } from '../components/dashboard/primitives'
+import { KpiCard } from '../components/dashboard/primitives'
 import { Funnel } from '../components/dashboard/Funnel'
 import { InboxTile } from '../components/dashboard/InboxTile'
 import { TodayTile } from '../components/dashboard/TodayTile'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
 import { TurnoverCoverageTile, CrewWorkloadTile } from '../components/dashboard/OperationsTiles'
+import { MoneyTile } from '../components/dashboard/MoneyTile'
 
 /* ── Page ─────────────────────────────────────────────────────────── */
 export default function Dashboard() {
@@ -377,88 +378,19 @@ export default function Dashboard() {
         <TurnoverCoverageTile loading={loading} turnover={turnover} navigate={navigate} />
         <CrewWorkloadTile loading={loading} crew={crew} rosterUnavailable={rosterUnavailable} navigate={navigate} />
 
-        {/* MONEY — full width on desktop */}
         <div className="lg:col-span-2">
-        <Tile
-          icon={DollarSign}
-          iconColor="text-emerald-500"
-          title="Money"
-          action="Open Invoicing"
-          onAction={() => navigate('/billing?view=invoices')}
-        >
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-bg-2">
-            <StatCard
-              className="bg-panel"
-              label="Today"
-              value={fmtMoney(todayRevenue)}
-              sub={todayRevenue > 0 ? 'collected today' : 'nothing collected yet'}
-            />
-            <StatCard
-              className="bg-panel"
-              label="Month to date"
-              value={fmtMoney(mtdRevenue)}
-              sub={`${invoices.filter(i => i.status === 'paid').length} paid`}
-            />
-            <StatCard
-              className="bg-panel"
-              label="Outstanding"
-              value={fmtMoney(outstanding)}
-              sub={`${invoices.filter(i => ['sent','overdue'].includes(i.status)).length} unpaid${overdueInvoiceCount > 0 ? ` · ${overdueInvoiceCount} overdue` : ''}`}
-              accent={overdueInvoiceCount > 0 ? 'text-amber-600' : 'text-ink'}
-              onClick={() => navigate('/billing?view=invoices')}
-            />
-            <StatCard
-              className="bg-panel"
-              label="Pipeline"
-              value={fmtMoney(pipeline)}
-              sub={`${summary?.quotes?.sent ?? 0} sent · ${summary?.quotes?.draft ?? 0} draft`}
-              accent="text-emerald-600"
-              onClick={() => navigate('/billing?view=quotes')}
-            />
-          </div>
-
-          {/* AR Aging — who to call this morning */}
-          {(arAging['30'].length + arAging['60'].length + arAging['90'].length) > 0 && (
-            <div className="border-t border-hairline px-5 py-3">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Aging receivables</div>
-              <div className="flex gap-3 text-[12px]">
-                {arAging['30'].length > 0 && (
-                  <button onClick={() => navigate('/billing?view=invoices')} className="flex items-baseline gap-1 hover:text-amber-700 transition-colors">
-                    <span className="text-amber-600 font-bold">{fmtMoney(arAging['30'].reduce((s, i) => s + (i.total || 0), 0))}</span>
-                    <span className="text-ink-3">30-60d</span>
-                  </button>
-                )}
-                {arAging['60'].length > 0 && (
-                  <button onClick={() => navigate('/billing?view=invoices')} className="flex items-baseline gap-1 hover:text-orange-700 transition-colors">
-                    <span className="text-orange-600 font-bold">{fmtMoney(arAging['60'].reduce((s, i) => s + (i.total || 0), 0))}</span>
-                    <span className="text-ink-3">60-90d</span>
-                  </button>
-                )}
-                {arAging['90'].length > 0 && (
-                  <button onClick={() => navigate('/billing?view=invoices')} className="flex items-baseline gap-1 hover:text-red-700 transition-colors">
-                    <span className="text-red-600 font-bold">{fmtMoney(arAging['90'].reduce((s, i) => s + (i.total || 0), 0))}</span>
-                    <span className="text-ink-3">90d+</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Revenue by service type (paid, month-to-date) */}
-          {svcRevenue.length > 0 && (
-            <div className="border-t border-hairline px-5 py-3">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Paid this month by service</div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
-                {svcRevenue.map(s => (
-                  <div key={s.service} className="flex items-baseline gap-1">
-                    <span className="text-ink font-bold">{fmtMoney(s.total)}</span>
-                    <span className="text-ink-3 capitalize">{(s.service || '').replace('str_turnover', 'STR').replace('_', ' ')}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Tile>
+          <MoneyTile
+            todayRevenue={todayRevenue}
+            mtdRevenue={mtdRevenue}
+            outstanding={outstanding}
+            pipeline={pipeline}
+            invoices={invoices}
+            overdueInvoiceCount={overdueInvoiceCount}
+            summary={summary}
+            arAging={arAging}
+            svcRevenue={svcRevenue}
+            navigate={navigate}
+          />
         </div>
 
         {/* AI-computed operational follow-ups — auto-loads, hides when all clear */}
