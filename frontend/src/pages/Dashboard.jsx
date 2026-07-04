@@ -15,31 +15,15 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get, getCached } from '../api'
-import { displayContactName, formatPhone } from '../utils/display'
 import { htmlToText } from '../utils/format'
 import { StatCard, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { AIFollowUps } from '../components/AIFollowUps'
 import {
-  Calendar, Inbox, DollarSign, Phone, Mail, MessageSquare,
+  Calendar, Inbox, DollarSign,
   CheckCircle2, Clock, ArrowRight, Zap, FileText, Users, TrendingUp,
 } from 'lucide-react'
-
-const today = () => new Date().toISOString().slice(0, 10)
-const monthStart = () => {
-  const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
-}
-const fmtMoney = (n) => `$${Math.round(n || 0).toLocaleString()}`
-
-// Same fallback chain as displayContactName but prefers a friendlier
-// "(617) 849-2813" over "Lead +16178492813" when the contact is just a phone.
-function contactLabel(conv) {
-  const named = displayContactName(conv?.client || {})
-  if (named && !named.toLowerCase().startsWith('lead ')) return named
-  if (conv?.external_contact && /\+?\d/.test(conv.external_contact)) return formatPhone(conv.external_contact)
-  return named || 'Unknown'
-}
-
-const channelIcon = (ch) => ({ sms: Phone, email: Mail, chat: MessageSquare }[ch] || MessageSquare)
+import { SOFT_CARD, CHIP } from '../components/dashboard/constants'
+import { today, monthStart, fmtMoney, contactLabel, channelIcon } from '../components/dashboard/utils'
 
 
 /* ── Attention row — unified across overdue / unassigned / late / overdue invoice ─ */
@@ -66,21 +50,6 @@ function AttentionRow({ tone, title, sub, action, onClick }) {
   )
 }
 
-
-// Soft, airy card surface shared by the facelifted dashboard (white + blue,
-// rounded, gentle shadow — the look from the reference dashboard).
-const SOFT_CARD =
-  'bg-panel rounded-2xl border border-hairline shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-16px_rgba(15,23,42,0.12)]'
-
-// Map the existing iconColor tokens (passed by the tile call sites) to a tinted
-// chip so the icons read as colored badges without touching any call site.
-const CHIP = {
-  'text-blue-500':    'bg-blue-50 text-blue-600',
-  'text-violet-500':  'bg-violet-50 text-violet-600',
-  'text-purple-500':  'bg-purple-50 text-purple-600',
-  'text-amber-500':   'bg-amber-50 text-amber-600',
-  'text-emerald-500': 'bg-emerald-50 text-emerald-600',
-}
 
 /* ── Tile shell — facelifted to the airy white card. Header row carries a
       tinted icon chip, title, optional badge, and a text+arrow action link.
