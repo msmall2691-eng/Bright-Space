@@ -10,7 +10,9 @@ import { useToast } from '../components/ui/Toast'
 import { useClients } from '../hooks/useClients'
 import { useClientPhones } from '../hooks/useClientPhones'
 import { useClientMutations } from '../hooks/useClientMutations'
-import { STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
+import { useClientForm } from '../hooks/useClientForm'
+import { useSelectionSet } from '../hooks/useSelectionSet'
+import { STATUS_OPTIONS, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
@@ -56,18 +58,8 @@ export default function Clients() {
   const [statusFilter, setStatusFilter] = useState('')
   const { clients, setClients, filtered, statusCounts, load } = useClients(statusFilter, search)
   const [selected, setSelected] = useState(null)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState(EMPTY)
-  // Billing address is usually the same as the service address; hide it behind
-  // a toggle unless the client actually has separate billing details.
-  const [showBilling, setShowBilling] = useState(false)
   // Quick "Schedule" from a client row → opens the job modal with that client.
   const [jobClient, setJobClient] = useState(null)
-  const [dupes, setDupes] = useState([]) // possible duplicates surfaced on create (non-blocking)
-  // Invalidate the duplicate warning whenever a match-relevant field changes, so
-  // editing the name/phone/email after a warning re-runs the check on next save
-  // instead of "Create anyway" slipping through with the new values (Codex review).
-  useEffect(() => { setDupes([]) }, [form.first_name, form.last_name, form.phone, form.email])
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
   useEffect(() => { localStorage.setItem('clients_view', viewMode) }, [viewMode])
   // Visible/ordered table columns. Persisted to localStorage as the session
@@ -103,8 +95,15 @@ export default function Clients() {
     setPhonePrimary,
     resetPhones,
   } = useClientPhones({ selected, refreshList: load })
-  const [selectedIds, setSelectedIds] = useState(() => new Set())
-  const clearSelection = () => setSelectedIds(new Set())
+  const {
+    showForm, setShowForm,
+    form, setForm,
+    showBilling, setShowBilling,
+    dupes, setDupes,
+    openNew, openEdit,
+  } = useClientForm({ setSelected, loadPhones, resetPhones })
+  const { selectedIds, toggle: toggleSelect, toggleAll, clear: clearSelection } = useSelectionSet()
+  const toggleSelectAll = () => toggleAll(filtered.map(c => c.id))
 
   const {
     saving, saveError,
@@ -125,32 +124,6 @@ export default function Clients() {
   })
 
   useEffect(() => { clearSelection() }, [statusFilter, search])
-
-  const openNew = () => { setForm(EMPTY); setSelected(null); resetPhones(); setDupes([]); setShowBilling(false); setShowForm(true) }
-  const openEdit = (c) => {
-    setForm({ ...c });
-    setSelected(c);
-    setDupes([])
-    setShowBilling(Boolean(c.billing_address || c.billing_city || c.billing_state || c.billing_zip))
-    loadPhones(c.id)
-    setShowForm(true)
-  }
-
-  const toggleSelect = (id, e) => {
-    e?.stopPropagation()
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-  const toggleSelectAll = () => {
-    setSelectedIds(prev => {
-      const visibleIds = filtered.map(c => c.id)
-      const allSelected = visibleIds.every(id => prev.has(id))
-      return allSelected ? new Set() : new Set(visibleIds)
-    })
-  }
 
   return (
     <div className="flex h-full">
