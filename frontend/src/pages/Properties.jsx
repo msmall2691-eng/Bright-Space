@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home } from 'lucide-react'
 import { EmptyState } from '../components/ui'
-import { post, patch, del } from "../api"
+import { post } from "../api"
 import { EMPTY, PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
 import { PropertyForm } from '../components/properties/PropertyForm'
@@ -10,6 +10,7 @@ import { SyncToolsPanel, SweepResultsPanel } from '../components/properties/Sync
 import { PropertyRow } from '../components/properties/PropertyRow'
 import { PropertiesToolbar, BulkActionBar, SyncResultBanner } from '../components/properties/PropertiesToolbar'
 import { useProperties } from '../hooks/useProperties'
+import { usePropertyMutations } from '../hooks/usePropertyMutations'
 
 
 export default function Properties() {
@@ -27,46 +28,28 @@ export default function Properties() {
 
   const { properties, clients, setClients, load } = useProperties()
 
+  const {
+    saving, syncing,
+    syncResult, setSyncResult,
+    sweep, setSweep,
+    sweeping, rebuildingId, bulkDeleting,
+    save: saveProperty,
+    addIcal: mutateAddIcal,
+    removeIcal: mutateRemoveIcal,
+    syncOne, syncAll, runSweep, rebuildOne,
+    bulkDelete: mutateBulkDelete,
+  } = usePropertyMutations({ load })
+
   const [showForm, setShowForm] = useState(false)
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [newPropertyType, setNewPropertyType] = useState('residential')
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(EMPTY)
-  const [saving, setSaving] = useState(false)
   // Inline "new client" quick-add from the property form (no trip to Clients).
   const [addingClient, setAddingClient] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
   const [clientErr, setClientErr] = useState('')
-  const [syncing, setSyncing] = useState(null)
-  const [syncResult, setSyncResult] = useState(null)
-  const [sweep, setSweep] = useState(null)
-  const [sweeping, setSweeping] = useState(false)
-  const [rebuildingId, setRebuildingId] = useState(null)
-  const runSweep = async () => {
-    setSweeping(true); setSweep(null); setSyncResult(null)
-    try {
-      const data = await post('/api/properties/turnover-sweep')
-      setSweep(data)
-    } catch (e) {
-      setSweep({ error: String(e?.message || e) })
-    }
-    setSweeping(false)
-  }
-
-  // Fix one flagged property right from the health report: force-rebuild its
-  // turnovers from the feed, then re-run the sweep so the row re-verifies.
-  const rebuildOne = async (propertyId) => {
-    setRebuildingId(propertyId)
-    try {
-      await post(`/api/properties/${propertyId}/rebuild-turnovers`)
-      const data = await post('/api/properties/turnover-sweep')
-      setSweep(data)
-    } catch (e) {
-      setSweep(s => ({ ...(s || {}), error: String(e?.message || e) }))
-    }
-    setRebuildingId(null)
-  }
   const [expandedPropId, setExpandedPropId] = useState(null)
   const [icalForm, setIcalForm] = useState({ url: '', source: '' })
   const [showIcalForm, setShowIcalForm] = useState(null)
@@ -74,7 +57,6 @@ export default function Properties() {
   // that used to crowd the main screen — tucked behind this toggle now.
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
-  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [hardDelete, setHardDelete] = useState(false)
 
   const clientName = (id) => {
@@ -147,76 +129,24 @@ export default function Properties() {
   }, [properties])
 
   const save = async () => {
-    setSaving(true)
-    try {
-      const url = selected ? `/api/properties/${selected.id}` : '/api/properties'
-      const body = {
-        ...form,
-        client_id: parseInt(form.client_id),
-        default_duration_hours: parseFloat(form.default_duration_hours),
-        default_crew_size: form.default_crew_size ? parseInt(form.default_crew_size) : null
-      }
-      selected ? await patch(url, body) : await post(url, body)
-      await load()
+    const result = await saveProperty({ selected, form })
+    if (result.ok) {
       setShowForm(false)
       setShowTypeModal(false)
       setSelected(null)
       setForm(EMPTY)
-    } catch (e) {
-      alert('Error saving property: ' + e.message)
     }
-    setSaving(false)
   }
 
   const addIcal = async (propId) => {
-    if (!icalForm.url.trim()) return
-    try {
-      // Timing/access (checkout time, duration, house code) come from the
-      // property's own STR settings — no need to re-enter them per feed.
-      await post(`/api/properties/${propId}/icals`, { url: icalForm.url.trim(), source: icalForm.source })
-      await load()
+    const result = await mutateAddIcal(propId, icalForm)
+    if (result?.ok) {
       setShowIcalForm(null)
       setIcalForm({ url: '', source: '' })
-    } catch (e) {
-      alert('Error adding iCal: ' + e.message)
     }
   }
 
-  const removeIcal = async (propId, icalId) => {
-    if (!confirm('Remove this iCal URL?')) return
-    try {
-      await del(`/api/properties/${propId}/icals/${icalId}`)
-      await load()
-    } catch (e) {
-      alert('Error removing iCal: ' + e.message)
-    }
-  }
-
-  const syncOne = async (id) => {
-    setSyncing(id)
-    setSyncResult(null)
-    try {
-      const data = await post(`/api/properties/${id}/sync`)
-      setSyncResult({ id, ...data, ok: true })
-      await load()
-    } catch (e) {
-      setSyncResult({ id, ok: false, error: String(e) })
-    }
-    setSyncing(null)
-  }
-
-  const syncAll = async () => {
-    setSyncing('all')
-    setSyncResult(null)
-    try {
-      const data = await post('/api/properties/sync-all')
-      setSyncResult({ id: 'all', ...data, ok: true })
-      await load()
-    } catch (e) {
-      setSyncResult({ id: 'all', ok: false, error: String(e) })
-    }
-    setSyncing(null)
-  }
+  const removeIcal = (propId, icalId) => mutateRemoveIcal(propId, icalId)
 
   const openEdit = (p) => {
     setSelected(p)
@@ -253,26 +183,8 @@ export default function Properties() {
   }
   const clearSelection = () => setSelectedIds(new Set())
   const bulkDelete = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    const verb = hardDelete ? 'permanently delete' : 'archive'
-    if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be soft-archived (active=false).'} `)) return
-    setBulkDeleting(true)
-    try {
-      if (hardDelete) {
-        await post('/api/admin/properties/hard-delete', { ids })
-      } else {
-        const results = await Promise.allSettled(ids.map(id => del(`/api/properties/${id}`)))
-        const failed = results.filter(r => r.status === 'rejected').length
-        if (failed > 0) alert(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
-      }
-      clearSelection()
-      await load()
-    } catch (e) {
-      alert('Bulk delete failed: ' + (e?.message || 'unknown'))
-    } finally {
-      setBulkDeleting(false)
-    }
+    const result = await mutateBulkDelete({ ids: Array.from(selectedIds), hardDelete })
+    if (result?.ok) clearSelection()
   }
 
   const confirmNewProperty = () => {
