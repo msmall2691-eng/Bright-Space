@@ -4,52 +4,11 @@ import UsersAdmin from '../components/UsersAdmin'
 import GoogleAccountCard from '../components/GoogleAccountCard'
 import { del, get, post, patch, upload } from "../api"
 import { applyTheme, getTheme } from '../theme'
-
-
-const ENTITY_TABS = [
-  { key: 'client',   label: 'Clients',    desc: 'Fields shown on every client record' },
-  { key: 'property', label: 'Properties', desc: 'Fields shown on every property record' },
-  { key: 'job',      label: 'Jobs',       desc: 'Fields shown on every job / appointment' },
-  { key: 'invoice',  label: 'Invoices',   desc: 'Fields shown on every invoice' },
-]
-
-const FIELD_TYPES = [
-  { value: 'text',     label: 'Text' },
-  { value: 'number',   label: 'Number' },
-  { value: 'date',     label: 'Date' },
-  { value: 'select',   label: 'Dropdown' },
-  { value: 'checkbox', label: 'Checkbox' },
-  { value: 'textarea', label: 'Long text' },
-]
-
-const TYPE_BADGE = {
-  text:     'bg-bg-2 text-ink-3',
-  number:   'bg-blue-50 text-blue-700',
-  date:     'bg-violet-50 text-violet-700',
-  select:   'bg-amber-50 text-amber-700',
-  checkbox: 'bg-emerald-50 text-emerald-700',
-  textarea: 'bg-bg-2 text-ink-3',
-}
-
-const EMPTY_FORM = { name: '', field_type: 'text', options: '', required: false, sort_order: 0 }
-
-const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
-const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 transition-colors'
-
-function Toast({ toasts }) {
-  return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none">
-      {toasts.map(t => (
-        <div key={t.id}
-          className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium shadow-lg border pointer-events-auto
-            ${t.type === 'success' ? 'bg-panel border-hairline text-ink' : 'bg-red-50 border-red-200 text-red-700'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${t.type === 'success' ? 'bg-emerald-400' : 'bg-red-400'}`} />
-          {t.message}
-        </div>
-      ))}
-    </div>
-  )
-}
+import Toast from '../components/settings/Toast'
+import FieldPreview from '../components/settings/FieldPreview'
+import {
+  ENTITY_TABS, FIELD_TYPES, TYPE_BADGE, EMPTY_FORM, lbl, inp,
+} from '../components/settings/constants'
 
 export default function Settings() {
   const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations' | 'users'
@@ -1656,34 +1615,4 @@ export default function Settings() {
 
     </div>
   )
-}
-
-function FieldPreview({ type, options }) {
-  const cls = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink-3 pointer-events-none'
-  switch (type) {
-    case 'textarea':
-      return <textarea rows={2} placeholder="Long text…" className={cls + ' resize-none'} readOnly />
-    case 'number':
-      return <input type="number" placeholder="0" className={cls} readOnly />
-    case 'date':
-      return <input type="date" className={cls} readOnly />
-    case 'select': {
-      const opts = options.split('\n').map(s => s.trim()).filter(Boolean)
-      return (
-        <select className={cls} disabled>
-          <option value="">Select…</option>
-          {opts.map(o => <option key={o}>{o}</option>)}
-        </select>
-      )
-    }
-    case 'checkbox':
-      return (
-        <label className="flex items-center gap-2 pointer-events-none">
-          <input type="checkbox" className="w-4 h-4 rounded border-hairline" readOnly />
-          <span className="text-sm text-ink-3">Yes / No</span>
-        </label>
-      )
-    default:
-      return <input type="text" placeholder="Text value…" className={cls} readOnly />
-  }
 }
