@@ -1,18 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Users, Calendar } from 'lucide-react'
+import { Users } from 'lucide-react'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
-import InlineSelect from "../components/InlineSelect"
 import CRMHealthPanel from "../components/CRMHealthPanel"
-import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 import { useClients } from '../hooks/useClients'
 import { useClientPhones } from '../hooks/useClientPhones'
 import { useClientMutations } from '../hooks/useClientMutations'
 import { useClientForm } from '../hooks/useClientForm'
+import { useClientView } from '../hooks/useClientView'
 import { useSelectionSet } from '../hooks/useSelectionSet'
-import { STATUS_OPTIONS, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
+import { CLIENT_COLUMNS } from '../components/clients/columns'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
@@ -20,37 +19,6 @@ import { ImportResultBanner } from '../components/clients/ImportResultBanner'
 import { ClientCardRow } from '../components/clients/ClientCardRow'
 import { ClientTableView } from '../components/clients/ClientTableView'
 import { ClientsToolbar } from '../components/clients/ClientsToolbar'
-
-// Configurable table columns. `render(c, h)` gets the row plus page helpers
-// (updateStatus, setJobClient). The leading selection checkbox is fixed and
-// lives outside this registry. A saved view stores an ordered list of the
-// visible column ids (see viewConfig.columns).
-const CLIENT_COLUMNS = [
-  { id: 'name', label: 'Name', render: (c) => (
-    <div className="flex items-center gap-2.5">
-      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${avatarColor(c.name)}`}>
-        <span className="text-[10px] font-bold">{displayContactName(c)[0]?.toUpperCase()}</span>
-      </div>
-      <span className="text-[13px] font-medium text-ink truncate">{displayContactName(c)}</span>
-    </div>
-  ) },
-  { id: 'phone', label: 'Phone', render: (c) => <span className="text-[12px] text-ink-3">{c.phone || '—'}</span> },
-  { id: 'email', label: 'Email', render: (c) => <span className="text-[12px] text-ink-3 truncate block max-w-[200px]">{c.email || '—'}</span> },
-  { id: 'city', label: 'City', render: (c) => <span className="text-[12px] text-ink-3">{c.city || '—'}</span> },
-  { id: 'state', label: 'State', render: (c) => <span className="text-[12px] text-ink-3">{c.state || '—'}</span> },
-  { id: 'source', label: 'Source', render: (c) => <span className="text-[12px] text-ink-3">{c.source || '—'}</span> },
-  { id: 'created', label: 'Added', render: (c) => <span className="text-[12px] text-ink-3">{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</span> },
-  { id: 'status', label: 'Status', render: (c, h) => (
-    <div className="flex items-center gap-2">
-      <InlineSelect value={c.status} options={STATUS_OPTIONS} onSelect={(s) => h.updateStatus(c, s)} />
-      <button onClick={(e) => { e.stopPropagation(); h.setJobClient(c) }}
-        title={`Schedule a job for ${displayContactName(c)}`} aria-label={`Schedule ${c.name}`}
-        className="inline-flex items-center justify-center w-6 h-6 rounded-md text-ink-3 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-        <Calendar className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  ) },
-]
 export default function Clients() {
   const navigate = useNavigate()
   const { toast, ToastContainer } = useToast()
@@ -60,29 +28,11 @@ export default function Clients() {
   const [selected, setSelected] = useState(null)
   // Quick "Schedule" from a client row → opens the job modal with that client.
   const [jobClient, setJobClient] = useState(null)
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
-  useEffect(() => { localStorage.setItem('clients_view', viewMode) }, [viewMode])
-  // Visible/ordered table columns. Persisted to localStorage as the session
-  // default and into each saved view's config. Filter against the registry so a
-  // stale stored id (renamed/removed column) can't break rendering.
-  const [columns, setColumns] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('clients_columns') || 'null')
-      if (Array.isArray(saved)) return saved.filter(id => CLIENT_COLUMNS.some(c => c.id === id))
-    } catch { /* fall through */ }
-    return DEFAULT_CLIENT_COLUMNS
-  })
-  useEffect(() => { localStorage.setItem('clients_columns', JSON.stringify(columns)) }, [columns])
-  const visibleColumns = columns.length
-    ? columns.map(id => CLIENT_COLUMNS.find(c => c.id === id)).filter(Boolean)
-    : CLIENT_COLUMNS.filter(c => DEFAULT_CLIENT_COLUMNS.includes(c.id))
-  // Saved views (Twenty-style): a view persists the meaningful list state.
-  const viewConfig = { statusFilter, viewMode, columns }
-  const applyView = (cfg) => {
-    setStatusFilter(cfg.statusFilter ?? '')
-    if (cfg.viewMode) setViewMode(cfg.viewMode)
-    if (Array.isArray(cfg.columns)) setColumns(cfg.columns.filter(id => CLIENT_COLUMNS.some(c => c.id === id)))
-  }
+  const {
+    viewMode, setViewMode,
+    columns, setColumns, visibleColumns,
+    viewConfig, applyView,
+  } = useClientView({ statusFilter, setStatusFilter })
   const fileInputRef = useRef(null)
   const {
     phoneNumbers,
