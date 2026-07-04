@@ -1,34 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Home, Building2, Wind, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle, Search } from 'lucide-react'
+import { Plus, X, RefreshCw, CheckCircle, AlertCircle, Clock, Link, Trash2, Users, Calendar, ChevronRight, AlertTriangle, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
 import { EmptyState } from '../components/ui'
 import { CustomFieldsForm } from '../components/CustomFields'
 import { get, post, patch, del } from "../api"
-
-
-// Source dropdown values + their display labels. Keep aligned with the
-// backend's iCal source labels (used as "ical_source" on Visit rows for
-// turnover idempotency).
-const ICAL_SOURCES = [
-  { value: 'airbnb',     label: 'Airbnb' },
-  { value: 'vrbo',       label: 'VRBO' },
-  { value: 'booking_com', label: 'Booking.com' },
-  { value: 'manual',     label: 'Manual / Custom' },
-]
-
-
-function relTimeAgo(iso) {
-  if (!iso) return null
-  const ms = Date.now() - new Date(iso).getTime()
-  if (ms < 60_000) return 'just now'
-  const mins = Math.floor(ms / 60_000)
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
-}
+import { ICAL_SOURCES, EMPTY, PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
+import { relTimeAgo } from '../components/properties/utils'
 
 
 // One row per iCal feed on a STR property. Shows the URL (truncated),
@@ -109,21 +87,6 @@ function IcalFeedRow({ ical, onRemove }) {
   )
 }
 
-
-const EMPTY = {
-  client_id: '', property_type: 'residential', name: '', address: '', city: '', state: '',
-  zip_code: '', default_duration_hours: 3, default_crew_size: null,
-  access_notes: '', parking_notes: '',
-  check_in_time: '14:00', check_out_time: '10:00', house_code: '', timezone: '',
-  business_name: '', hours_of_operation: '',
-  notes: '', custom_fields: {}
-}
-
-const PROPERTY_TYPE_CONFIG = {
-  residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home, color: 'text-blue-600' },
-  commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700', icon: Building2, color: 'text-purple-600' },
-  str: { label: 'STR', badge: 'bg-amber-100 text-amber-700', icon: Wind, color: 'text-amber-600' },
-}
 
 export default function Properties() {
   const navigate = useNavigate()
