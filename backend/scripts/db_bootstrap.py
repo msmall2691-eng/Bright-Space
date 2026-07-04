@@ -14,7 +14,7 @@ Both paths are idempotent and safe to run on every deploy.
 import os
 import sys
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 # Run from the backend root (where alembic.ini + main.py live).
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +36,35 @@ def _alembic_config() -> Config:
     return cfg
 
 
+def _widen_alembic_version_col():
+    """Alembic's default alembic_version.version_num is VARCHAR(32). Our
+    migration IDs use descriptive names like 034_merge_quote_requests_into_lead_intakes
+    (48 chars), so trying to write one truncates and the whole `alembic upgrade`
+    aborts on StringDataRightTruncation — which is exactly what was crashing
+    every Railway deploy after that migration landed (stale container kept
+    serving the old code because pre-deploy failed).
+
+    Widen the column to VARCHAR(128) before running the upgrade. Idempotent
+    (Postgres treats "widen to same-or-larger type" as a no-op), Postgres-only
+    (SQLite ignores type changes, which is fine — SQLite is only used in tests
+    and never carries this table). Skipped when the table doesn't exist yet
+    (fresh install path)."""
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conn:
+        exists = conn.execute(
+            text("SELECT 1 FROM information_schema.tables "
+                 "WHERE table_name = 'alembic_version' LIMIT 1")
+        ).first()
+        if not exists:
+            return
+        conn.execute(text(
+            "ALTER TABLE alembic_version "
+            "ALTER COLUMN version_num TYPE VARCHAR(128)"
+        ))
+    print("[db_bootstrap] alembic_version.version_num widened to VARCHAR(128)")
+
+
 def main():
     tables = set(inspect(engine).get_table_names())
     # "Fresh" = no Alembic history AND no app schema yet. The clients table is a
@@ -49,9 +78,13 @@ def main():
         with engine.begin() as conn:
             apply_org_rls(conn)
         command.stamp(cfg, "head")
+        # stamp() just created alembic_version with the default VARCHAR(32);
+        # widen it now so the next migration with a >32-char id doesn't blow up.
+        _widen_alembic_version_col()
         print("[db_bootstrap] fresh install complete")
     else:
         print("[db_bootstrap] existing database — running alembic upgrade head")
+        _widen_alembic_version_col()
         command.upgrade(cfg, "head")
         print("[db_bootstrap] migrations up to date")
 
