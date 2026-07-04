@@ -134,7 +134,15 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
       // for why nothing went over. Split the message by outcome so the operator
       // knows whether to create jobs, un-dispatch, or check a real error.
       const range = r.range ? ` (${r.range.start_date}→${r.range.end_date})` : ''
-      const firstErr = r.errors?.[0]?.error ? ` — first failure: ${r.errors[0].error}` : ''
+      const e0 = r.errors?.[0]
+      // Surface Connecteam's actual complaint when it's a 4xx (their response
+      // body names the reason — invalid scheduler id, duration too long,
+      // etc). Truncate so a huge body doesn't blow up the toast.
+      const firstErr = e0
+        ? (e0.status
+            ? ` — first failure: HTTP ${e0.status}${e0.body ? ` — ${String(e0.body).slice(0, 180)}` : ''}`
+            : ` — first failure: ${e0.error}`)
+        : ''
       let msg
       let tone
       if (r.pushed > 0) {

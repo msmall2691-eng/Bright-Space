@@ -637,12 +637,22 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
             db.commit()
             raise HTTPException(401, "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again.")
         except Exception as e:
-            # Full detail goes to the server log + integration_events (admin
-            # audit trail); the response only carries the exception class name
-            # so a Connecteam / httpx error can't leak internals to the browser
-            # (CodeQL: information exposure through an exception).
+            # Log full detail server-side + to the admin integration_events
+            # audit trail. For the HTTP response body we surface only:
+            #   * the exception class name
+            #   * Connecteam's HTTP status code (safe — 3rd-party status)
+            #   * a short prefix of Connecteam's response body (safe — it's
+            #     THEIR error message telling us "invalid schedulerId",
+            #     "duration too long", etc; not our internal URL/detail)
+            # This is the info the operator actually needs to diagnose
+            # "why did all 8 pushes get rejected" without opening DevTools.
             logger.warning(f"push_open_shifts: create_open_shift for job {job.id} failed: {e}")
-            errors.append({"job_id": job.id, "error": type(e).__name__})
+            entry = {"job_id": job.id, "error": type(e).__name__}
+            import httpx as _httpx
+            if isinstance(e, _httpx.HTTPStatusError) and e.response is not None:
+                entry["status"] = e.response.status_code
+                entry["body"] = (e.response.text or "")[:300]
+            errors.append(entry)
             _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
                  action="create_open", status="failed", detail=str(e), commit=False)
 
