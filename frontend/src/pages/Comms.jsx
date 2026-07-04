@@ -20,24 +20,23 @@
  */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
-  MessageSquare, Mail, Phone, Search, User, Clock,
+  MessageSquare, Mail, Phone, Search, Clock,
   CheckCircle2, AlertTriangle,
   UserPlus, Inbox,
-  ArrowLeft, Bell,
+  Bell,
   Plus, MessageCircle, PenLine,
 } from 'lucide-react'
 import { get, post, getCached } from "../api"
-import { formatPhone } from '../utils/display'
-import { CHANNEL_CONFIG } from '../components/comms/constants'
-import { relTime, dayLabel, contactDisplay } from '../components/comms/utils'
+import { dayLabel, contactDisplay } from '../components/comms/utils'
 import {
-  NotifPermissionButton, Avatar, ChannelBadge, SlaBadge, DaySeparator,
+  NotifPermissionButton, ChannelBadge, DaySeparator,
 } from '../components/comms/primitives'
 import { ConvItem } from '../components/comms/ConvItem'
 import { MessageBubble } from '../components/comms/MessageBubble'
 import { ComposeModal } from '../components/comms/ComposeModal'
 import { ContactPanel } from '../components/comms/ContactPanel'
 import { ComposeBar } from '../components/comms/ComposeBar'
+import { ThreadHeader } from '../components/comms/ThreadHeader'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -452,65 +451,13 @@ export default function Comms() {
           </div>
         ) : (
           <>
-            {/* Phase 8: Overdue banner (renamed from "SLA breached"). */}
-            {detail.sla_state === 'breached' && (
-              <div className="bg-red-50 border-b border-red-200 px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-red-700">
-                <Clock className="w-4 h-4" />
-                Overdue — last reply {relTime(detail.last_inbound_at)} ago
-              </div>
-            )}
-
-            {/* Thread header */}
-            <div className="border-b border-hairline px-5 py-3.5 flex items-center gap-3 bg-panel shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-              {/* Mobile back button */}
-              <button onClick={() => setMobileView('list')}
-                className="w-8 h-8 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 lg:hidden">
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-
-              {/* Avatar with channel chip in corner — matches the inbox row */}
-              <div className="relative shrink-0">
-                <Avatar name={detail.client?.name || detail.external_contact} size="md" />
-                {(() => {
-                  const ch = CHANNEL_CONFIG[detail.channel] || CHANNEL_CONFIG.sms
-                  const Ic = ch.icon
-                  return (
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${ch.bg} ring-2 ring-white flex items-center justify-center`}>
-                      <Ic className={`w-2.5 h-2.5 ${ch.text}`} />
-                    </div>
-                  )
-                })()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-ink text-[15px] truncate">{contactDisplay(detail)}</h2>
-                  <SlaBadge state={detail.sla_state} />
-                </div>
-                <div className="text-[12px] text-ink-3 mt-0.5 truncate">
-                  {detail.client?.phone && formatPhone(detail.client.phone)}
-                  {detail.client?.phone && detail.client?.email && <span className="mx-1.5 text-ink-3">·</span>}
-                  {detail.client?.email && detail.client.email}
-                  {!detail.client?.phone && !detail.client?.email && detail.external_contact && formatPhone(detail.external_contact)}
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => setStatus(detail.status === 'resolved' ? 'open' : 'resolved')}
-                  className={`text-[12px] font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-                    detail.status === 'resolved'
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ring-1 ring-emerald-200'
-                      : 'bg-bg-2 text-ink-2 hover:bg-emerald-50 hover:text-emerald-700'
-                  }`}>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {detail.status === 'resolved' ? 'Done' : 'Mark done'}
-                </button>
-                <button onClick={() => setShowContactPanel(!showContactPanel)}
-                  className="w-8 h-8 rounded-lg bg-bg-2 hover:bg-bg-2 flex items-center justify-center text-ink-3 transition-colors hidden lg:flex">
-                  <User className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <ThreadHeader
+              detail={detail}
+              showContactPanel={showContactPanel}
+              setShowContactPanel={setShowContactPanel}
+              setMobileView={setMobileView}
+              onToggleStatus={() => setStatus(detail.status === 'resolved' ? 'open' : 'resolved')}
+            />
 
             {/* Messages thread */}
             <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 bg-bg/50">
