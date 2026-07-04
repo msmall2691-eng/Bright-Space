@@ -109,21 +109,42 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
     }
   }
 
-  const testConnecteam = async () => {
-    setCtTesting(true)
+  // testConnecteam({silent: true}) is called automatically when the form opens
+  // so the Scheduler ID field is already a real dropdown of the operator's
+  // schedulers — no more "hit Test connection first, then re-open the form to
+  // pick from the list". A silent call swallows both the success toast and
+  // failures (a failed silent probe just leaves the plain input in place).
+  const testConnecteam = async ({ silent = false } = {}) => {
+    if (!silent) setCtTesting(true)
     try {
       const r = await post('/api/settings/connecteam/test', {})
-      // Stash the schedulers list so the picker underneath can offer them.
       setConnecteam(c => ({ ...c, schedulers: r.schedulers || [] }))
-      const acct = r.account?.name || r.account?.email || 'Connecteam'
-      const n = (r.schedulers || []).length
-      toast(`Connecteam OK — connected as ${acct}${n ? ` · ${n} scheduler${n === 1 ? '' : 's'} available` : ''}`)
+      if (!silent) {
+        const acct = r.account?.name || r.account?.email || 'Connecteam'
+        const n = (r.schedulers || []).length
+        toast(`Connecteam OK — connected as ${acct}${n ? ` · ${n} scheduler${n === 1 ? '' : 's'} available` : ''}`)
+      }
     } catch (e) {
-      toast(e?.message || 'Connecteam test call failed', 'error')
+      if (!silent) toast(e?.message || 'Connecteam test call failed', 'error')
     } finally {
-      setCtTesting(false)
+      if (!silent) setCtTesting(false)
     }
   }
+
+  // Auto-populate the scheduler dropdown when the credentials form opens (or
+  // opens implicitly because Connecteam isn't configured yet). Only fires when
+  // an API key is actually saved — no point probing without one.
+  useEffect(() => {
+    if (!active) return
+    const formVisible = !connecteam.loading && (!connecteam.configured || ctForm.open)
+    if (!formVisible) return
+    if (!connecteam.has_key) return
+    if (Array.isArray(connecteam.schedulers)) return
+    testConnecteam({ silent: true })
+    // testConnecteam is defined inline above with stable closures; only the
+    // form-open trigger + presence of a saved key should re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, connecteam.loading, connecteam.configured, ctForm.open, connecteam.has_key])
 
   const pushScheduleToConnecteam = async () => {
     if (!window.confirm('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?')) return
@@ -509,16 +530,29 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                   <div>
                     <label className="block text-xs font-medium text-ink-2 mb-1">Scheduler ID</label>
                     {Array.isArray(connecteam.schedulers) && connecteam.schedulers.length > 0 ? (
-                      <select
-                        value={ctForm.company_id}
-                        onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
-                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400"
-                      >
-                        <option value="">— pick a scheduler —</option>
-                        {connecteam.schedulers.map(s => (
-                          <option key={s.id} value={s.id}>{s.name} (ID {s.id})</option>
-                        ))}
-                      </select>
+                      <>
+                        <select
+                          value={ctForm.company_id}
+                          onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
+                          className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400"
+                        >
+                          <option value="">— pick a scheduler —</option>
+                          {connecteam.schedulers.map(s => (
+                            <option key={s.id} value={s.id}>{s.name} (ID {s.id})</option>
+                          ))}
+                        </select>
+                        {/* Warn when the currently-selected/saved id doesn't
+                            match any scheduler on the account — the mistake
+                            that made "rejected 8 pushes" happen the first time
+                            (a Company ID got pasted where a Scheduler ID
+                            belongs). Empty selection is fine — that's the
+                            initial "pick one" state. */}
+                        {ctForm.company_id && !connecteam.schedulers.some(s => String(s.id) === String(ctForm.company_id)) && (
+                          <p className="text-[11px] text-red-700 mt-1">
+                            ID <code className="bg-red-50 px-1 rounded">{ctForm.company_id}</code> isn't one of your schedulers — pick from the list above.
+                          </p>
+                        )}
+                      </>
                     ) : (
                       <input
                         type="text"
