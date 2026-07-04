@@ -26,7 +26,6 @@ import {
   Bell,
   MessageCircle, PenLine,
 } from 'lucide-react'
-import { post } from "../api"
 import { dayLabel, contactDisplay } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
@@ -36,6 +35,7 @@ import { ComposeBar } from '../components/comms/ComposeBar'
 import { ThreadHeader } from '../components/comms/ThreadHeader'
 import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
 import { useCommsData } from '../hooks/useCommsData'
+import { useCommsMutations } from '../hooks/useCommsMutations'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -77,41 +77,20 @@ export default function Comms() {
 
   // ──────── Actions ────────
 
+  const { setAssignee, setStatus, setPriority, sendReplyOrNote } = useCommsMutations({
+    detail, loadDetail, loadList, loadSummary,
+  })
+
   const sendReply = async () => {
     if (!reply.trim() || !detail) return
     setSending(true); setFlash(null)
     try {
-      if (noteMode) {
-        await post(`/api/comms/conversations/${detail.id}/notes`, { body: reply, author: JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Unknown' })
-      } else {
-        await post(`/api/comms/conversations/${detail.id}/messages`, {
-          body: reply,
-          subject: detail.channel === 'email' ? (replySubject || detail.subject) : undefined,
-          author: JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Unknown',
-        })
-      }
+      await sendReplyOrNote({ body: reply, subject: replySubject, isNote: noteMode })
       setReply(''); setReplySubject('')
-      await loadDetail(detail.id); await loadList()
       setFlash({ ok: true, msg: noteMode ? 'Note saved' : 'Sent!' })
     } catch (e) { setFlash({ ok: false, msg: String(e.message || e) }) }
     setSending(false)
     setTimeout(() => setFlash(null), 3000)
-  }
-
-  const setAssignee = async (a) => {
-    if (!detail) return
-    await post(`/api/comms/conversations/${detail.id}/assign`, { assignee: a === 'Unassigned' ? null : a })
-    await loadDetail(detail.id); await loadList()
-  }
-  const setStatus = async (s) => {
-    if (!detail) return
-    await post(`/api/comms/conversations/${detail.id}/status`, { status: s })
-    await loadDetail(detail.id); await loadList(); await loadSummary()
-  }
-  const setPriority = async (p) => {
-    if (!detail) return
-    await post(`/api/comms/conversations/${detail.id}/priority`, { priority: p })
-    await loadDetail(detail.id); await loadList()
   }
 
   const selectConversation = (id) => {
