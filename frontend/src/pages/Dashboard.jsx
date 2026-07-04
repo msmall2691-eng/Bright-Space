@@ -19,12 +19,13 @@ import { htmlToText } from '../utils/format'
 import { StatCard, EmptyState, ErrorState } from '../components/ui'
 import { AIFollowUps } from '../components/AIFollowUps'
 import {
-  Calendar, Inbox, DollarSign,
+  Calendar, DollarSign,
   CheckCircle2, Clock, ArrowRight, Zap, FileText, Users, TrendingUp,
 } from 'lucide-react'
 import { today, monthStart, fmtMoney, contactLabel, channelIcon } from '../components/dashboard/utils'
-import { AttentionRow, Tile, KpiCard, TileLoading } from '../components/dashboard/primitives'
+import { Tile, KpiCard, TileLoading } from '../components/dashboard/primitives'
 import { Funnel } from '../components/dashboard/Funnel'
+import { InboxTile } from '../components/dashboard/InboxTile'
 
 /* ── Page ─────────────────────────────────────────────────────────── */
 export default function Dashboard() {
@@ -345,69 +346,16 @@ export default function Dashboard() {
       {/* Tiles grid */}
       <div className="px-4 sm:px-6 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
 
-        {/* INBOX — what needs attention */}
-        <Tile
-          icon={Inbox}
-          iconColor="text-blue-500"
-          title="Inbox needs attention"
-          badge={(attention.length > 0 || slaBreached > 0) && (
-            <span className="flex items-center gap-1">
-              {slaBreached > 0 && (
-                <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full" title="Conversations past their response SLA">
-                  {slaBreached} SLA
-                </span>
-              )}
-              {attention.length > 0 && (
-                <span className="text-[10px] font-bold text-ink-3 bg-bg-2 px-1.5 py-0.5 rounded-full">
-                  {attention.length}
-                </span>
-              )}
-            </span>
-          )}
-          action="Open Comms"
-          onAction={() => navigate('/comms')}
-        >
-          {loading ? (
-            <TileLoading />
-          ) : attention.length === 0 ? (
-            <EmptyState compact icon={CheckCircle2} title="All clear"
-              description="Nothing urgent right now." />
-          ) : (
-            <div className="flex-1 overflow-y-auto max-h-[380px]">
-              {attention.map(p => (
-                <AttentionRow key={p.key} {...p} />
-              ))}
-              {/* Per-category overflow: route each "+N more" to the page
-                  where those items actually live. /comms doesn't surface
-                  late visits or overdue invoices, so the CTA needs to
-                  match the category. */}
-              {(hiddenOverdueConvs + hiddenUnassignedConvs > 0) && (
-                <button
-                  onClick={() => navigate('/comms')}
-                  className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
-                >
-                  +{hiddenOverdueConvs + hiddenUnassignedConvs} more in inbox · Open Comms →
-                </button>
-              )}
-              {hiddenLateVisits > 0 && (
-                <button
-                  onClick={() => navigate('/schedule')}
-                  className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
-                >
-                  +{hiddenLateVisits} more late {hiddenLateVisits === 1 ? 'visit' : 'visits'} · Open Schedule →
-                </button>
-              )}
-              {hiddenInvoices > 0 && (
-                <button
-                  onClick={() => navigate('/billing?view=invoices')}
-                  className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
-                >
-                  +{hiddenInvoices} more past-due {hiddenInvoices === 1 ? 'invoice' : 'invoices'} · Open Invoicing →
-                </button>
-              )}
-            </div>
-          )}
-        </Tile>
+        <InboxTile
+          loading={loading}
+          attention={attention}
+          slaBreached={slaBreached}
+          hiddenOverdueConvs={hiddenOverdueConvs}
+          hiddenUnassignedConvs={hiddenUnassignedConvs}
+          hiddenLateVisits={hiddenLateVisits}
+          hiddenInvoices={hiddenInvoices}
+          navigate={navigate}
+        />
 
         {/* TODAY — schedule preview, no calendar widget */}
         <Tile
