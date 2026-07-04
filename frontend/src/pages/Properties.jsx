@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home } from 'lucide-react'
 import { EmptyState } from '../components/ui'
@@ -11,6 +11,8 @@ import { PropertiesToolbar, BulkActionBar, SyncResultBanner } from '../component
 import { useProperties } from '../hooks/useProperties'
 import { usePropertyMutations } from '../hooks/usePropertyMutations'
 import { usePropertyForm } from '../hooks/usePropertyForm'
+import { useSelectionSet } from '../hooks/useSelectionSet'
+import { usePropertyFilters } from '../hooks/usePropertyFilters'
 
 
 export default function Properties() {
@@ -64,38 +66,15 @@ export default function Properties() {
   // Sync/repair tooling (health check, sync-all, rebuild) is power-user stuff
   // that used to crowd the main screen — tucked behind this toggle now.
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [hardDelete, setHardDelete] = useState(false)
+  const { selectedIds, toggle: toggleSelect, toggleAll, clear: clearSelection } = useSelectionSet()
 
   const clientName = (id) => {
     const client = clients.find(c => c.id === id)
     return client?.name || `Client #${id}`
   }
 
-  const propType = (p) => (p?.property_type || '').toLowerCase()
-
-  // Memoized: re-filter only when the data, type tab, or search changes — not
-  // on every render of this state-heavy page (~30 useState).
-  const filteredProperties = useMemo(() => {
-    const base = currentType === 'all'
-      ? properties
-      : properties.filter(p => propType(p) === currentType)
-    const q = search.trim().toLowerCase()
-    if (!q) return base
-    return base.filter(p =>
-      [p.name, p.address, p.client_name].some(v => (v || '').toLowerCase().includes(q))
-    )
-  }, [properties, currentType, search])
-
-  // One pass over properties (was three scans), recomputed only on data change.
-  const typeCounts = useMemo(() => {
-    const counts = { all: properties.length, residential: 0, commercial: 0, str: 0 }
-    for (const p of properties) {
-      const t = propType(p)
-      if (t in counts) counts[t] += 1
-    }
-    return counts
-  }, [properties])
+  const { filteredProperties, typeCounts } = usePropertyFilters({ properties, currentType, search })
 
   const save = async () => {
     const result = await saveProperty({ selected, form })
@@ -112,22 +91,7 @@ export default function Properties() {
 
   const removeIcal = (propId, icalId) => mutateRemoveIcal(propId, icalId)
 
-  const toggleSelect = (id, e) => {
-    e?.stopPropagation()
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-  const toggleSelectAll = () => {
-    setSelectedIds(prev => {
-      const visibleIds = filteredProperties.map(p => p.id)
-      const allSelected = visibleIds.length > 0 && visibleIds.every(id => prev.has(id))
-      return allSelected ? new Set() : new Set(visibleIds)
-    })
-  }
-  const clearSelection = () => setSelectedIds(new Set())
+  const toggleSelectAll = () => toggleAll(filteredProperties.map(p => p.id))
   const bulkDelete = async () => {
     const result = await mutateBulkDelete({ ids: Array.from(selectedIds), hardDelete })
     if (result?.ok) clearSelection()
