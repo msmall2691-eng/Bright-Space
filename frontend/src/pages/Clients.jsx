@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Users, Calendar } from 'lucide-react'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
-import { del, get, post, patch, upload } from "../api"
+import { del, post, patch, upload } from "../api"
 import InlineSelect from "../components/InlineSelect"
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
+import { useClients } from '../hooks/useClients'
 import { STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
@@ -50,9 +51,9 @@ const CLIENT_COLUMNS = [
 export default function Clients() {
   const navigate = useNavigate()
   const { toast, ToastContainer } = useToast()
-  const [clients, setClients] = useState([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const { clients, setClients, filtered, statusCounts, load } = useClients(statusFilter, search)
   const [selected, setSelected] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY)
@@ -104,9 +105,6 @@ export default function Clients() {
   const [mergeWinner, setMergeWinner] = useState(null) // id of the surviving record
   const [merging, setMerging] = useState(false)
 
-  const load = () =>
-    get(`/api/clients${statusFilter ? `?status=${statusFilter}` : ''}`).then(setClients).catch(err => console.error("[Clients]", err))
-
   // Inline-edit: change a client's status straight from the table (optimistic;
   // reverts on failure). Mirrors Twenty's click-a-cell-to-edit pattern.
   async function updateStatus(c, status) {
@@ -120,19 +118,7 @@ export default function Clients() {
     }
   }
 
-  useEffect(() => { load() }, [statusFilter])
   useEffect(() => { clearSelection() }, [statusFilter, search])
-
-  // Memoized so the list only re-filters when the data or search term changes,
-  // not on every unrelated state update (this page holds ~25 useState — modals,
-  // form fields, selection — that would otherwise re-run the filter each time).
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return clients.filter(c =>
-      !search || (c.name || '').toLowerCase().includes(q) ||
-      (c.phone || '').includes(search) || (c.email || '').toLowerCase().includes(q)
-    )
-  }, [clients, search])
 
   const save = async () => {
     setSaving(true); setSaveError('')
@@ -286,16 +272,6 @@ export default function Clients() {
     }
     setMerging(false)
   }
-
-  // One pass over clients (was four .filter() scans), recomputed only when the
-  // client list changes rather than on every render.
-  const statusCounts = useMemo(() => {
-    const counts = { '': clients.length, lead: 0, active: 0, inactive: 0 }
-    for (const c of clients) {
-      if (c.status in counts) counts[c.status] += 1
-    }
-    return counts
-  }, [clients])
 
   return (
     <div className="flex h-full">
