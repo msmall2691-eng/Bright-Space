@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { Users, Calendar } from 'lucide-react'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
-import { del, post, patch, upload } from "../api"
 import InlineSelect from "../components/InlineSelect"
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { displayContactName } from '../utils/display'
 import { useToast } from '../components/ui/Toast'
 import { useClients } from '../hooks/useClients'
 import { useClientPhones } from '../hooks/useClientPhones'
+import { useClientMutations } from '../hooks/useClientMutations'
 import { STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
@@ -61,8 +61,6 @@ export default function Clients() {
   // Billing address is usually the same as the service address; hide it behind
   // a toggle unless the client actually has separate billing details.
   const [showBilling, setShowBilling] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
   // Quick "Schedule" from a client row → opens the job modal with that client.
   const [jobClient, setJobClient] = useState(null)
   const [dupes, setDupes] = useState([]) // possible duplicates surfaced on create (non-blocking)
@@ -70,8 +68,6 @@ export default function Clients() {
   // editing the name/phone/email after a warning re-runs the check on next save
   // instead of "Create anyway" slipping through with the new values (Codex review).
   useEffect(() => { setDupes([]) }, [form.first_name, form.last_name, form.phone, form.email])
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState(null)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('clients_view') || 'table') // 'cards' | 'table' — Twenty is table-first
   useEffect(() => { localStorage.setItem('clients_view', viewMode) }, [viewMode])
   // Visible/ordered table columns. Persisted to localStorage as the session
@@ -108,48 +104,27 @@ export default function Clients() {
     resetPhones,
   } = useClientPhones({ selected, refreshList: load })
   const [selectedIds, setSelectedIds] = useState(() => new Set())
-  const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [mergeModal, setMergeModal] = useState(null) // { a, b } the two clients being merged
-  const [mergeWinner, setMergeWinner] = useState(null) // id of the surviving record
-  const [merging, setMerging] = useState(false)
+  const clearSelection = () => setSelectedIds(new Set())
 
-  // Inline-edit: change a client's status straight from the table (optimistic;
-  // reverts on failure). Mirrors Twenty's click-a-cell-to-edit pattern.
-  async function updateStatus(c, status) {
-    const prev = c.status
-    setClients(cs => cs.map(x => (x.id === c.id ? { ...x, status } : x)))
-    try {
-      await patch(`/api/clients/${c.id}`, { status })
-    } catch (err) {
-      console.error("[Clients] status update failed", err)
-      setClients(cs => cs.map(x => (x.id === c.id ? { ...x, status: prev } : x)))
-    }
-  }
+  const {
+    saving, saveError,
+    importing, importResult, setImportResult,
+    bulkDeleting,
+    mergeModal, setMergeModal,
+    mergeWinner, setMergeWinner,
+    merging,
+    updateStatus, save, handleImport, deleteClient, bulkDelete, openMerge, doMerge,
+  } = useClientMutations({
+    load, clients, setClients,
+    selected, setSelected, form, setForm,
+    dupes, setDupes,
+    setShowForm, setShowBilling,
+    resetPhones,
+    selectedIds, clearSelection,
+    toast,
+  })
 
   useEffect(() => { clearSelection() }, [statusFilter, search])
-
-  const save = async () => {
-    setSaving(true); setSaveError('')
-    try {
-      // Dupe check on create — non-blocking. First save surfaces any matches;
-      // saving again (dupes already shown) creates anyway.
-      if (!selected && dupes.length === 0) {
-        const q = new URLSearchParams()
-        const nm = `${form.first_name || ''} ${form.last_name || ''}`.trim()
-        if (nm) q.set('name', nm)
-        if (form.phone) q.set('phone', form.phone)
-        if (form.email) q.set('email', form.email)
-        if ([...q.keys()].length) {
-          const res = await get(`/api/clients/check-duplicate?${q.toString()}`).catch(() => null)
-          if (res?.duplicates?.length) { setDupes(res.duplicates); setSaving(false); return }
-        }
-      }
-      const url = selected ? `/api/clients/${selected.id}` : '/api/clients'
-      selected ? await patch(url, form) : await post(url, form)
-      await load(); setShowForm(false); setSelected(null); setForm(EMPTY); resetPhones(); setDupes([])
-    } catch (e) { setSaveError(e.message || 'Failed to save') }
-    setSaving(false)
-  }
 
   const openNew = () => { setForm(EMPTY); setSelected(null); resetPhones(); setDupes([]); setShowBilling(false); setShowForm(true) }
   const openEdit = (c) => {
@@ -159,22 +134,6 @@ export default function Clients() {
     setShowBilling(Boolean(c.billing_address || c.billing_city || c.billing_state || c.billing_zip))
     loadPhones(c.id)
     setShowForm(true)
-  }
-
-  const handleImport = async (e) => {
-    const f = e.target.files?.[0]; if (!f) return
-    setImporting(true); setImportResult(null)
-    const fd = new FormData(); fd.append('file', f)
-    try {
-      const data = await upload('/api/clients/import-xlsx', fd)
-      setImportResult(data); await load()
-    } catch (err) { setImportResult({ error: err.message }) }
-    setImporting(false); e.target.value = ''
-  }
-
-  const deleteClient = async (id) => {
-    if (!confirm('Delete this client?')) return
-    await del(`/api/clients/${id}`); await load(); setShowForm(false); resetPhones()
   }
 
   const toggleSelect = (id, e) => {
@@ -191,45 +150,6 @@ export default function Clients() {
       const allSelected = visibleIds.every(id => prev.has(id))
       return allSelected ? new Set() : new Set(visibleIds)
     })
-  }
-  const clearSelection = () => setSelectedIds(new Set())
-  const bulkDelete = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    if (!confirm(`Delete ${ids.length} client${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
-    setBulkDeleting(true)
-    try {
-      const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))
-      const failed = results.filter(r => r.status === 'rejected').length
-      if (failed > 0) toast.error(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
-      clearSelection()
-      await load()
-    } finally {
-      setBulkDeleting(false)
-    }
-  }
-
-  const openMerge = () => {
-    const [a, b] = Array.from(selectedIds).map(id => clients.find(c => c.id === id)).filter(Boolean)
-    if (!a || !b) return
-    setMergeModal({ a, b })
-    // Default the survivor to the more-complete / active record.
-    const score = c => (c.status === 'active' ? 2 : 0) + (c.email ? 1 : 0) + (c.phone ? 1 : 0)
-    setMergeWinner(score(b) > score(a) ? b.id : a.id)
-  }
-  const doMerge = async () => {
-    if (!mergeModal || !mergeWinner) return
-    const winner = mergeWinner
-    const loser = mergeModal.a.id === winner ? mergeModal.b.id : mergeModal.a.id
-    setMerging(true)
-    try {
-      await post(`/api/clients/${winner}/merge`, { loser_id: loser })
-      toast.success('Clients merged')
-      setMergeModal(null); clearSelection(); await load()
-    } catch (e) {
-      toast.error('Could not merge: ' + (e?.message || 'unknown error'))
-    }
-    setMerging(false)
   }
 
   return (
