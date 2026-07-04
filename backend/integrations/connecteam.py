@@ -12,12 +12,38 @@ from typing import Optional
 CONNECTEAM_BASE = "https://api.connecteam.com/v1"
 
 
+def _db_setting(key: str) -> str:
+    """Read a Connecteam credential out of app_settings (Settings → Integrations),
+    falling back silently when the DB isn't reachable (e.g. tests, boot). Returns
+    "" on any failure so callers get the same "not configured" signal as an
+    unset env var."""
+    try:
+        from database.db import SessionLocal
+        db = SessionLocal()
+        try:
+            from modules.settings.router import get_setting
+            return (get_setting(db, key) or "").strip()
+        finally:
+            db.close()
+    except Exception:
+        return ""
+
+
+def _get_api_key() -> str:
+    """API key: prefer the value the user saved in Settings; fall back to the
+    CONNECTEAM_API_KEY env var so existing Railway deploys keep working."""
+    return _db_setting("connecteam_api_key") or os.getenv("CONNECTEAM_API_KEY", "").strip()
+
+
+def _get_company_id() -> str:
+    return _db_setting("connecteam_company_id") or os.getenv("CONNECTEAM_COMPANY_ID", "").strip()
+
+
 def is_configured() -> bool:
     """True when Connecteam credentials are present, so callers can tell
     "Connecteam isn't connected" apart from "connected but the call failed"
     (mirrors integrations.google_calendar.is_configured)."""
-    return bool(os.getenv("CONNECTEAM_API_KEY", "").strip()
-                and os.getenv("CONNECTEAM_COMPANY_ID", "").strip())
+    return bool(_get_api_key() and _get_company_id())
 
 
 def _run_sync(coro):
@@ -55,13 +81,13 @@ def _raise_for_status(r: httpx.Response) -> None:
 
 def _headers() -> dict:
     return {
-        "Authorization": f"Bearer {os.getenv('CONNECTEAM_API_KEY', '')}",
+        "Authorization": f"Bearer {_get_api_key()}",
         "Content-Type": "application/json",
     }
 
 
 def _company_id() -> str:
-    return os.getenv("CONNECTEAM_COMPANY_ID", "")
+    return _get_company_id()
 
 
 async def get_employees() -> list:
@@ -103,6 +129,44 @@ async def create_shift(
         )
         _raise_for_status(r)
         return r.json()
+
+
+async def create_open_shift(
+    start_datetime: str,   # ISO 8601: 2025-04-10T08:00:00
+    end_datetime: str,
+    title: str,
+    address: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> dict:
+    """Create an OPEN shift in Connecteam (no assigned employee).
+
+    An open shift shows up in the Connecteam schedule as "up for grabs" so
+    cleaners can claim it themselves — that's what lets Bright Space push the
+    week's schedule over without pre-assigning who works what."""
+    payload = {
+        "startTime": start_datetime,
+        "endTime": end_datetime,
+        "title": title,
+        "isOpenShift": True,
+    }
+    if address:
+        payload["location"] = address
+    if notes:
+        payload["notes"] = notes
+
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{CONNECTEAM_BASE}/companies/{_company_id()}/shifts",
+            headers=_headers(),
+            json=payload,
+        )
+        _raise_for_status(r)
+        return r.json()
+
+
+def create_open_shift_sync(**kwargs) -> dict:
+    """Synchronous wrapper around create_open_shift for the sync job endpoints."""
+    return _run_sync(create_open_shift(**kwargs))
 
 
 async def delete_shift(shift_id: str) -> None:

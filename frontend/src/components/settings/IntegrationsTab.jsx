@@ -23,6 +23,11 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
   const [msgStatus, setMsgStatus] = useState({ loading: true })
   const [msgSaving, setMsgSaving] = useState(false)
   const [stoppingIcal, setStoppingIcal] = useState(false)
+  const [connecteam, setConnecteam] = useState({ loading: true })
+  const [ctForm, setCtForm] = useState({ api_key: '', company_id: '', open: false })
+  const [ctSaving, setCtSaving] = useState(false)
+  const [ctTesting, setCtTesting] = useState(false)
+  const [ctPushing, setCtPushing] = useState(false)
 
   const refreshGcalStatus = () => {
     setGcalConn({ loading: true })
@@ -51,15 +56,85 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
     }
   }
 
+  const refreshConnecteamStatus = () => {
+    setConnecteam(c => ({ ...c, loading: true }))
+    return get('/api/settings/connecteam-status')
+      .then(r => {
+        setConnecteam({ loading: false, ...r })
+        setCtForm(f => ({ ...f, company_id: r.company_id || '' }))
+      })
+      .catch(e => setConnecteam({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
+  }
+
   useEffect(() => {
     if (!active) return
     get('/api/settings/gcal-embed').then(r => setGcalEmbed(r?.override || '')).catch(() => {})
     refreshGcalStatus()
     refreshGmailStatus()
+    refreshConnecteamStatus()
     get('/api/settings/messaging-status')
       .then(r => setMsgStatus({ loading: false, ...r }))
       .catch(() => setMsgStatus({ loading: false, error: true }))
   }, [active])
+
+  const saveConnecteam = async () => {
+    setCtSaving(true)
+    try {
+      const payload = { company_id: ctForm.company_id.trim() }
+      // Only send api_key if the user actually typed one — empty means "leave alone".
+      if (ctForm.api_key.trim()) payload.api_key = ctForm.api_key.trim()
+      const r = await post('/api/settings/connecteam', payload)
+      setConnecteam({ loading: false, ...r })
+      setCtForm(f => ({ ...f, api_key: '', open: false, company_id: r.company_id || f.company_id }))
+      toast('Connecteam credentials saved')
+    } catch (e) {
+      toast(e?.message || 'Could not save Connecteam credentials', 'error')
+    } finally {
+      setCtSaving(false)
+    }
+  }
+
+  const disconnectConnecteam = async () => {
+    if (!window.confirm('Disconnect Connecteam? Bright Space will stop pushing shifts until you re-add the API key.')) return
+    setCtSaving(true)
+    try {
+      const r = await post('/api/settings/connecteam', { api_key: '', company_id: '' })
+      setConnecteam({ loading: false, ...r })
+      setCtForm({ api_key: '', company_id: '', open: false })
+      toast('Connecteam disconnected')
+    } catch (e) {
+      toast(e?.message || 'Could not disconnect Connecteam', 'error')
+    } finally {
+      setCtSaving(false)
+    }
+  }
+
+  const testConnecteam = async () => {
+    setCtTesting(true)
+    try {
+      const r = await post('/api/settings/connecteam/test', {})
+      toast(`Connecteam OK — ${r.employee_count} employee${r.employee_count === 1 ? '' : 's'} visible`)
+    } catch (e) {
+      toast(e?.message || 'Connecteam test call failed', 'error')
+    } finally {
+      setCtTesting(false)
+    }
+  }
+
+  const pushScheduleToConnecteam = async () => {
+    if (!window.confirm('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?')) return
+    setCtPushing(true)
+    try {
+      const r = await post('/api/settings/connecteam/push-open-shifts', {})
+      const err = r.errors?.length ? ` (${r.errors.length} failed)` : ''
+      toast(`Pushed ${r.pushed} open shift${r.pushed === 1 ? '' : 's'} to Connecteam · ${r.skipped} skipped${err}`,
+        r.errors?.length ? 'error' : undefined)
+    } catch (e) {
+      toast(e?.message || 'Could not push schedule', 'error')
+    } finally {
+      setCtPushing(false)
+    }
+  }
 
   // Returning from Google's consent screen lands here with ?gcal=connected.
   useEffect(() => {
@@ -355,10 +430,108 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
           </div>
 
           <div className="space-y-3">
+            {/* Connecteam — real card. Paste API key + Company ID; test the
+                connection; push the upcoming schedule to Connecteam as OPEN
+                shifts so cleaners can self-claim them. */}
+            <div className="bg-panel rounded-xl border border-hairline p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <span className="text-2xl">👥</span>
+                  <div>
+                    <h3 className="font-semibold text-ink">Connecteam</h3>
+                    <p className="text-xs text-ink-3">Push jobs to your field team as open shifts they can claim.</p>
+                    {!connecteam.loading && connecteam.configured && (
+                      <p className="text-[11px] text-ink-3 mt-1">
+                        Key <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.api_key_masked}</code>
+                        {connecteam.company_id ? <> · Company <code className="bg-bg-2 px-1 rounded text-ink-2">{connecteam.company_id}</code></> : null}
+                        {connecteam.source === 'env' && <span className="ml-1 text-ink-3">(from server env)</span>}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0 ${
+                  connecteam.loading
+                    ? 'bg-bg-2 text-ink-3 border-hairline'
+                    : connecteam.configured
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-bg-2 text-ink-3 border-hairline'
+                }`}>
+                  {connecteam.loading ? 'Checking…' : connecteam.configured ? '✓ Connected' : 'Not connected'}
+                </span>
+              </div>
+
+              {/* Form: shown when not connected, or when the user clicks
+                  "Update key" on a connected card (so re-keying is one click). */}
+              {!connecteam.loading && (!connecteam.configured || ctForm.open) && (
+                <div className="mt-4 space-y-3 border-t border-hairline pt-4">
+                  <div>
+                    <label className="block text-xs font-medium text-ink-2 mb-1">API Key</label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={ctForm.api_key}
+                      onChange={e => setCtForm(f => ({ ...f, api_key: e.target.value }))}
+                      placeholder={connecteam.has_key ? 'Enter a new key to replace the saved one' : 'Paste your Connecteam API key'}
+                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-ink-2 mb-1">Company ID</label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={ctForm.company_id}
+                      onChange={e => setCtForm(f => ({ ...f, company_id: e.target.value }))}
+                      placeholder="e.g. 123456"
+                      className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+                  <p className="text-[11px] text-ink-3">
+                    Find these in Connecteam under Developer → API Keys. The Company ID is the numeric account identifier shown next to the key.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button onClick={saveConnecteam} disabled={ctSaving || (!ctForm.company_id.trim() && !ctForm.api_key.trim())}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+                      {ctSaving ? 'Saving…' : 'Save credentials'}
+                    </button>
+                    {ctForm.open && (
+                      <button onClick={() => setCtForm(f => ({ ...f, open: false, api_key: '' }))}
+                        className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions: shown when connected. Test verifies the saved key
+                  against Connecteam; Push sends upcoming jobs as open shifts. */}
+              {!connecteam.loading && connecteam.configured && !ctForm.open && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
+                  <button onClick={pushScheduleToConnecteam} disabled={ctPushing}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+                    {ctPushing ? 'Pushing…' : 'Push schedule → open shifts'}
+                  </button>
+                  <button onClick={testConnecteam} disabled={ctTesting}
+                    className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
+                    {ctTesting ? 'Testing…' : 'Test connection'}
+                  </button>
+                  <button onClick={() => setCtForm(f => ({ ...f, open: true, api_key: '' }))}
+                    className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
+                    Update key
+                  </button>
+                  <button onClick={disconnectConnecteam} disabled={ctSaving}
+                    className="ml-auto px-3 py-2 rounded-lg text-xs font-medium text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50">
+                    Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Stripe / Zapier — still placeholders. */}
             {[
-              { name: 'Connecteam', icon: '👥', desc: 'Dispatch jobs to your field team', status: 'available' },
-              { name: 'Stripe', icon: '💳', desc: 'Accept online payments', status: 'available' },
-              { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps', status: 'available' },
+              { name: 'Stripe', icon: '💳', desc: 'Accept online payments' },
+              { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps' },
             ].map((integration, idx) => (
               <div key={idx} className="bg-panel rounded-xl border border-hairline p-4 flex items-center justify-between hover:shadow-md transition-shadow">
                 <div className="flex items-center gap-4">
@@ -368,12 +541,8 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                     <p className="text-xs text-ink-3">{integration.desc}</p>
                   </div>
                 </div>
-                <button className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  integration.status === 'connected'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}>
-                  {integration.status === 'connected' ? '✓ Connected' : 'Connect'}
+                <button className="px-4 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                  Connect
                 </button>
               </div>
             ))}
