@@ -153,21 +153,39 @@ async def get_me() -> dict:
 
 async def list_schedulers() -> list:
     """List all schedulers on the account. Used by the Settings UI's Test
-    button to help the operator pick the right schedulerId (the numeric id
+    button to help the operator pick the right schedulerId (the integer id
     that goes into CONNECTEAM_COMPANY_ID / the 'Scheduler ID' field).
 
-    Response shape: { "data": { "schedulers": [{ "id": 12345, "name": "Ops" }] } }
-    We flatten to a plain list of {id, name}."""
+    Response shape (per developer.connecteam.com/docs/scheduler-get-schedulers):
+      { "data": { "schedulers": [
+          { "schedulerId": 9454799, "name": "Main Schedule",
+            "isArchived": false, "timezone": "America/New_York" }
+      ] } }
+
+    We flatten to a plain list of {id, name}, filtering out archived schedulers
+    (they're read-only on Connecteam's side — pushing to one 400s with
+    "schedule id doesn't exist" even though the id is technically real).
+
+    IMPORTANT: the id field is `schedulerId`, NOT `id`. An earlier version of
+    this parser looked for `id`, so the dropdown that's supposed to auto-
+    populate in Settings was silently empty — which forced operators to paste
+    the numeric id from the Connecteam UI URL (a frontend "component" id,
+    NOT the API's schedulerId), and Connecteam then rejected shift-create
+    with 400 "schedule id doesn't exist". Falling back to `id` too keeps us
+    forward-compat if Connecteam ever adds one."""
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"{CONNECTEAM_BASE}/scheduler/v1/schedulers",
                              headers=_headers())
         _raise_for_status(r)
         data = r.json()
     schedulers = ((data.get("data") or {}).get("schedulers")) or data.get("schedulers") or []
-    return [
-        {"id": s.get("id"), "name": s.get("name") or f"Scheduler #{s.get('id')}"}
-        for s in schedulers if s.get("id") is not None
-    ]
+    out = []
+    for s in schedulers:
+        sid = s.get("schedulerId") if s.get("schedulerId") is not None else s.get("id")
+        if sid is None or s.get("isArchived"):
+            continue
+        out.append({"id": sid, "name": s.get("name") or f"Scheduler #{sid}"})
+    return out
 
 
 async def get_employees() -> list:
