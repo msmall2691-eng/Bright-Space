@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Phone, Mail, MapPin, ChevronRight, X, Upload, LayoutGrid, TableProperties, Trash2, Users, Calendar } from 'lucide-react'
+import { Plus, Search, Phone, Mail, MapPin, ChevronRight, Upload, LayoutGrid, TableProperties, Users, Calendar } from 'lucide-react'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
 import { del, get, post, patch, upload } from "../api"
@@ -13,6 +13,8 @@ import { useToast } from '../components/ui/Toast'
 import { STATUS_COLORS, STATUS_OPTIONS, EMPTY, DEFAULT_CLIENT_COLUMNS, avatarColor } from '../components/clients/constants'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
+import { BulkActionBar } from '../components/clients/BulkActionBar'
+import { ImportResultBanner } from '../components/clients/ImportResultBanner'
 
 // Configurable table columns. `render(c, h)` gets the row plus page helpers
 // (updateStatus, setJobClient). The leading selection checkbox is fixed and
@@ -361,59 +363,18 @@ export default function Clients() {
         <CRMHealthPanel />
 
         {importResult && (
-          <div className={`mb-3 px-3 py-2 rounded-lg text-[12px] border flex items-center justify-between ${
-            importResult.error
-              ? 'bg-red-50 border-red-200 text-red-600'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-600'
-          }`}>
-            <span>
-              {importResult.error
-                ? `Import failed: ${importResult.error}`
-                : `Imported ${importResult.added} clients${importResult.skipped ? `, skipped ${importResult.skipped} duplicates` : ''}`}
-            </span>
-            <button onClick={() => setImportResult(null)} className="ml-3 opacity-60 hover:opacity-100"><X className="w-3 h-3" /></button>
-          </div>
+          <ImportResultBanner importResult={importResult} onDismiss={() => setImportResult(null)} />
         )}
 
-        {/* Selection / bulk-action bar */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3 text-[11px] text-ink-3 font-medium">
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
-                onChange={toggleSelectAll}
-                className="w-3.5 h-3.5 rounded border-hairline cursor-pointer"
-                data-testid="clients-select-all"
-              />
-              <span>Select all</span>
-            </label>
-            <span>{filtered.length} client{filtered.length !== 1 ? 's' : ''}</span>
-          </div>
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2" data-testid="clients-bulk-actions">
-              <span className="text-[11px] text-ink-2 font-medium">{selectedIds.size} selected</span>
-              <button onClick={clearSelection}
-                className="text-[11px] text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
-                Clear
-              </button>
-              {selectedIds.size === 2 && (
-                <button onClick={openMerge}
-                  data-testid="clients-bulk-merge"
-                  className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
-                  <Users className="w-3.5 h-3.5" />
-                  Merge
-                </button>
-              )}
-              <button onClick={bulkDelete} disabled={bulkDeleting}
-                data-testid="clients-bulk-delete"
-                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
-                <Trash2 className="w-3.5 h-3.5" />
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
-              </button>
-            </div>
-          )}
-        </div>
+        <BulkActionBar
+          filtered={filtered}
+          selectedIds={selectedIds}
+          toggleSelectAll={toggleSelectAll}
+          clearSelection={clearSelection}
+          openMerge={openMerge}
+          bulkDelete={bulkDelete}
+          bulkDeleting={bulkDeleting}
+        />
 
         {/* Client rows — Card view */}
         {viewMode === 'cards' && (
