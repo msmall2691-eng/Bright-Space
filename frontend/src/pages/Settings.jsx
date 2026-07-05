@@ -101,13 +101,11 @@ export default function Settings() {
           <IntegrationsTab
             toast={toast}
             active={section === 'integrations'}
-            automationSettings={automationSettings}
-            setAutomationSettings={setAutomationSettings}
           />
         )}
 
         {/* === AUTOMATION SECTION === */}
-        {section === 'automation' && <AutomationTab state={automation} />}
+        {section === 'automation' && <AutomationTab state={automation} toast={toast} active={section === 'automation'} />}
 
         {/* === EMAIL SETTINGS SECTION === */}
         {section === 'email' && <EmailTab toast={toast} active={section === 'email'} />}

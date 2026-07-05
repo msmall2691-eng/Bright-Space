@@ -1,28 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Loader2, RefreshCw, X } from 'lucide-react'
 import GoogleAccountCard from '../GoogleAccountCard'
 import { get, post } from '../../api'
 
 /** Integrations tab — the "connect BrightBase to Google / your phone /
- *  external tools" hub. Six cards in a stack:
- *    - GoogleAccountCard (per-user grant, always rendered)
- *    - Customer messaging status (read-only + off toggle)
- *    - Google Calendar embed URL
- *    - iCal Turnover Sync (reads automationSettings — shared with Automation)
- *    - Connected Services: GCal live status + write-target matrix
- *    - Gmail per-account health
- *    - Available integrations (Connecteam / Stripe / Zapier placeholders)
+ *  external tools" hub, reorganized into two sections:
+ *    - Google        — GoogleAccountCard (per-user grant) + business GCal
+ *                      status with the embed URL inline + Gmail per-account health.
+ *    - Other         — Connecteam (paste key, test, push open shifts),
+ *                      plus "Coming soon" chips for Stripe / Zapier.
  *
- *  Owns its own load state; parent supplies automation state + toast. */
-export default function IntegrationsTab({ toast, active, automationSettings, setAutomationSettings }) {
+ *  Customer-messaging toggle and iCal Turnover Sync used to live here too but
+ *  they're automation switches, not integrations — moved to AutomationTab. */
+export default function IntegrationsTab({ toast, active }) {
   const [gcalEmbed, setGcalEmbed] = useState('')
   const [gcalEmbedSaving, setGcalEmbedSaving] = useState(false)
   const [gcalConn, setGcalConn] = useState({ loading: true })
   const [gcalConnecting, setGcalConnecting] = useState(false)
   const [gmailConn, setGmailConn] = useState({ loading: true })
-  const [msgStatus, setMsgStatus] = useState({ loading: true })
-  const [msgSaving, setMsgSaving] = useState(false)
-  const [stoppingIcal, setStoppingIcal] = useState(false)
   const [connecteam, setConnecteam] = useState({ loading: true })
   const [ctForm, setCtForm] = useState({ api_key: '', company_id: '', open: false })
   const [ctSaving, setCtSaving] = useState(false)
@@ -43,19 +37,6 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
       .catch(e => setGmailConn({ loading: false, connected: false, accounts: [], detail: e?.message || 'Could not check status' }))
   }
 
-  const setMessaging = async (on) => {
-    setMsgSaving(true)
-    try {
-      const r = await post('/api/settings/messaging', { customer_sms_reminders: on })
-      setMsgStatus({ loading: false, ...r })
-      toast(on ? 'Automatic SMS reminders enabled' : 'Automatic customer messaging turned OFF')
-    } catch (e) {
-      toast(e?.message || 'Could not update messaging', 'error')
-    } finally {
-      setMsgSaving(false)
-    }
-  }
-
   const refreshConnecteamStatus = () => {
     setConnecteam(c => ({ ...c, loading: true }))
     return get('/api/settings/connecteam-status')
@@ -72,9 +53,6 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
     refreshGcalStatus()
     refreshGmailStatus()
     refreshConnecteamStatus()
-    get('/api/settings/messaging-status')
-      .then(r => setMsgStatus({ loading: false, ...r }))
-      .catch(() => setMsgStatus({ loading: false, error: true }))
   }, [active])
 
   const saveConnecteam = async () => {
@@ -224,155 +202,30 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
     setGcalEmbedSaving(false)
   }
 
-  const toggleIcalSync = async (enable) => {
-    setStoppingIcal(true)
-    try {
-      const next = { ...automationSettings, ical_auto_sync_enabled: enable }
-      await post('/api/settings/automation', { ical_auto_sync_enabled: enable })
-      setAutomationSettings(next)
-      toast(enable ? 'iCal sync resumed' : 'iCal sync stopped')
-    } catch (e) {
-      toast('Failed to update iCal sync: ' + (e?.message || 'unknown'), 'error')
-    } finally {
-      setStoppingIcal(false)
-    }
-  }
-
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
       <div className="max-w-2xl pt-6 space-y-8">
 
-        {/* Per-user Google grant (Gmail + Calendar), distinct from the
-            shared business connection below. */}
-        <GoogleAccountCard />
-
-        {/* Customer messaging status — at-a-glance "are we auto-texting
-            customers?". Read-only mirror of the job SMS reminder flag. */}
-        {!msgStatus.loading && !msgStatus.error && (
-          <div className={`rounded-xl border p-4 flex items-center justify-between gap-3 ${
-            msgStatus.any_automatic_customer_messaging
-              ? 'bg-amber-50 border-amber-200'
-              : 'bg-emerald-50 border-emerald-200'
-          }`}>
-            <div className="flex items-center gap-3">
-              <span className="text-xl">{msgStatus.any_automatic_customer_messaging ? '🔔' : '🔕'}</span>
-              <div>
-                <h3 className={`text-sm font-semibold ${msgStatus.any_automatic_customer_messaging ? 'text-amber-800' : 'text-emerald-800'}`}>
-                  Customer messaging: {msgStatus.any_automatic_customer_messaging ? 'ON' : 'OFF'}
-                </h3>
-                <p className={`text-xs mt-0.5 ${msgStatus.any_automatic_customer_messaging ? 'text-amber-700' : 'text-emerald-700'}`}>
-                  {msgStatus.any_automatic_customer_messaging
-                    ? 'Automatic SMS reminders to customers are enabled.'
-                    : 'No automatic texts or emails are sent to customers. Invites & invoices are manual only.'}
-                </p>
-              </div>
-            </div>
-            {msgStatus.any_automatic_customer_messaging ? (
-              <button onClick={() => setMessaging(false)} disabled={msgSaving}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-60 shrink-0">
-                {msgSaving ? 'Turning off…' : 'Turn off'}
-              </button>
-            ) : (
-              <span className="px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-300 shrink-0">
-                Auto-reminders OFF
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Google Calendar embed */}
+        {/* One unified "Google" section: per-user account grant (Gmail +
+            Calendar) on top; below it the shared business Google Calendar
+            connection with its embed-URL configurator inline; below that the
+            per-account Gmail health readout. Previously these were three
+            separate top-level sections (plus a stray "iCal sync" card and a
+            customer-messaging banner) which made the page feel scattered.
+            iCal sync + customer messaging moved to the Automation tab. */}
         <div>
           <div className="mb-4">
-            <h2 className="text-lg font-bold text-ink">Google Calendar Embed</h2>
-            <p className="text-sm text-ink-2 mt-1">
-              Shows your real Google Calendar in the Schedule "Google" view and on each
-              client's Calendar tab. Paste the embed URL or the full <code className="text-xs">&lt;iframe&gt;</code> from
-              Google Calendar → Settings → "Integrate calendar". Leave blank to auto-build from your
-              configured calendar IDs.
-            </p>
-          </div>
-          <div className="bg-panel rounded-xl border border-hairline p-6 space-y-3">
-            <textarea
-              value={gcalEmbed}
-              onChange={e => setGcalEmbed(e.target.value)}
-              rows={3}
-              placeholder='https://calendar.google.com/calendar/embed?src=…   (or paste the whole <iframe …></iframe>)'
-              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400 resize-none"
-            />
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-ink-3">Only Google Calendar embed URLs are accepted.</span>
-              <button onClick={saveGcalEmbed} disabled={gcalEmbedSaving}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
-                {gcalEmbedSaving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* iCal Turnover Sync */}
-        <div>
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-ink">iCal Turnover Sync</h2>
-            <p className="text-sm text-ink-2 mt-1">
-              Pulls Airbnb / VRBO reservations and auto-creates turnover visits.
-              Stop the sync to halt all new visits being generated from iCal feeds.
-            </p>
+            <h2 className="text-lg font-bold text-ink">Google</h2>
+            <p className="text-sm text-ink-2 mt-1">Per-user Gmail + Calendar grant, plus the shared business calendar the app writes to.</p>
           </div>
 
-          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4" data-testid="ical-sync-card">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <span className="text-2xl leading-none mt-0.5">🔁</span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-ink">iCal Sync</h3>
-                    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      automationSettings.ical_auto_sync_enabled
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : 'bg-bg-2 text-ink-3 border border-hairline'
-                    }`}>
-                      {automationSettings.ical_auto_sync_enabled ? 'Active' : 'Stopped'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-ink-3 mt-1">
-                    {automationSettings.ical_auto_sync_enabled
-                      ? `Pulling every ${automationSettings.ical_sync_interval} minutes`
-                      : 'Auto-sync paused. No new turnover visits will be created from iCal feeds.'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => toggleIcalSync(!automationSettings.ical_auto_sync_enabled)}
-                disabled={stoppingIcal}
-                data-testid={automationSettings.ical_auto_sync_enabled ? 'stop-ical-button' : 'resume-ical-button'}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${
-                  automationSettings.ical_auto_sync_enabled
-                    ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                {stoppingIcal
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : automationSettings.ical_auto_sync_enabled
-                    ? <X className="w-3.5 h-3.5" />
-                    : <RefreshCw className="w-3.5 h-3.5" />}
-                {stoppingIcal
-                  ? 'Working...'
-                  : automationSettings.ical_auto_sync_enabled ? 'Stop iCal sync' : 'Resume iCal sync'}
-              </button>
-            </div>
-          </div>
-        </div>
+          {/* Per-user Google grant (Gmail + Calendar). */}
+          <GoogleAccountCard />
 
-        {/* Other connected services */}
-        <div>
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-ink">Connected Services</h2>
-            <p className="text-sm text-ink-2 mt-1">Connect external tools to enhance your workflow</p>
-          </div>
-
-          {/* Google Calendar — live status */}
-          <div className="bg-panel rounded-xl border border-hairline p-4 mb-3">
+          {/* Business Google Calendar — live status + embed URL config
+              (inline, since the embed URL is what the calendar status card
+              is configuring). */}
+          <div className="bg-panel rounded-xl border border-hairline p-4 mb-3 mt-4">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <span className="text-2xl">📅</span>
@@ -442,6 +295,28 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                 <div className="text-ink-3/80">Tip: the account above must match the calendar you embed below. If you embed office@mainecleaningco.com but are connected as a different account, events won't appear.</div>
               </div>
             )}
+
+            {/* Embed URL configurator — inline so operators immediately see
+                the connection status AND the field that changes what the
+                Schedule "Google" view actually renders. Was a separate
+                top-level section before. */}
+            <div className="mt-4 pt-4 border-t border-hairline">
+              <div className="text-xs font-semibold text-ink-2 mb-2">Embed URL for the in-app Google view</div>
+              <textarea
+                value={gcalEmbed}
+                onChange={e => setGcalEmbed(e.target.value)}
+                rows={2}
+                placeholder='https://calendar.google.com/calendar/embed?src=…   (or paste the whole <iframe …></iframe>)'
+                className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-xs text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400 resize-none"
+              />
+              <div className="flex items-center justify-between gap-2 mt-2">
+                <span className="text-[11px] text-ink-3">Leave blank to auto-build from your configured calendar IDs. Only Google Calendar embed URLs are accepted.</span>
+                <button onClick={saveGcalEmbed} disabled={gcalEmbedSaving}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 shrink-0">
+                  {gcalEmbedSaving ? 'Saving…' : 'Save embed'}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Gmail — per-account connection health */}
@@ -479,6 +354,14 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
             {!gmailConn.loading && (!gmailConn.accounts || gmailConn.accounts.length === 0) && (
               <div className="mt-3 text-[11px] text-ink-3">No Gmail-enabled Google account connected yet. Connect one above to sync inbound email.</div>
             )}
+          </div>
+        </div>
+
+        {/* Other integrations — the field-team + payment stack. */}
+        <div>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-ink">Other integrations</h2>
+            <p className="text-sm text-ink-2 mt-1">Push jobs to your field team, take payments, and hook into external workflows.</p>
           </div>
 
           <div className="space-y-3">
