@@ -617,12 +617,18 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
               )}
             </div>
 
-            {/* Stripe / Zapier — still placeholders. */}
+            {/* Stripe / Zapier — not built yet. The "Connect" button here
+                used to be an orphaned <button> with no onClick — clicking it
+                did literally nothing, which set operators up to click and
+                click waiting for a modal that would never appear (same
+                disease the pre-#441 Connecteam button had). Downgraded to
+                a "Coming soon" chip so the roadmap is visible without
+                looking like a live action. */}
             {[
               { name: 'Stripe', icon: '💳', desc: 'Accept online payments' },
               { name: 'Zapier', icon: '⚡', desc: 'Automate workflows with 5000+ apps' },
             ].map((integration, idx) => (
-              <div key={idx} className="bg-panel rounded-xl border border-hairline p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+              <div key={idx} className="bg-panel rounded-xl border border-hairline p-4 flex items-center justify-between opacity-70">
                 <div className="flex items-center gap-4">
                   <span className="text-2xl">{integration.icon}</span>
                   <div>
@@ -630,9 +636,9 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                     <p className="text-xs text-ink-3">{integration.desc}</p>
                   </div>
                 </div>
-                <button className="px-4 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-                  Connect
-                </button>
+                <span className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-bg-2 text-ink-3 border border-hairline">
+                  Coming soon
+                </span>
               </div>
             ))}
           </div>

@@ -140,7 +140,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <span>
                   <span className={lbl}>AI assistant</span>
-                  <span className="block text-xs text-ink-3 mt-0.5">Show the floating "Ask Scout" button on every page.</span>
+                  <span className="block text-xs text-ink-3 mt-0.5">Show the floating "Ask Scout" button on every page. Applies to this device only.</span>
                 </span>
                 <input type="checkbox" checked={showScout}
                   onChange={e => {
@@ -329,13 +329,16 @@ export default function GeneralTab({ toast, active, dangerZone }) {
             </div>
             <div>
               <label className={lbl}>Currency</label>
+              {/* Bright Space is US-only today — every downstream (quotes,
+                  invoices, Stripe integration) assumes USD. EUR/GBP/CAD were
+                  visible in the dropdown but not actually supported anywhere,
+                  which set operators up to save a value that would silently
+                  do nothing. When we expand, re-add the options AND wire up
+                  the formatters. */}
               <select value={generalSettings.currency}
                 onChange={e => setGeneralSettings(s => ({ ...s, currency: e.target.value }))}
                 className={inp}>
                 <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="CAD">CAD (C$)</option>
               </select>
             </div>
           </div>
