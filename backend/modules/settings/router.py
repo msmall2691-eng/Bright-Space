@@ -466,10 +466,44 @@ def _mask_key(v: str) -> str:
     return "••••" + v[-4:] if len(v) > 4 else "••••"
 
 
+_SCHEDULERS_CACHE_KEY = "connecteam_schedulers_cache"
+
+
+def _read_cached_schedulers(db: Session) -> list:
+    """Read the last successfully-fetched scheduler list from AppSetting.
+    Returns [] on empty / malformed cache so callers never get None.
+
+    We persist the list on every successful /connecteam/test so that
+    subsequent status calls can show the picker without hitting Connecteam
+    again — the rate-limit hell Megan spent hours in on 2026-07-04 came
+    from every page load / form open re-fetching the same list. Once cached,
+    the picker survives 429s, deploys, cache-busts, browser reloads."""
+    import json as _json
+    raw = get_setting(db, _SCHEDULERS_CACHE_KEY) or ""
+    if not raw:
+        return []
+    try:
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def _cache_schedulers(db: Session, schedulers: list) -> None:
+    """Overwrite the cached scheduler list. Called after a successful
+    /connecteam/test only — a failed list_schedulers doesn't wipe a good cache."""
+    import json as _json
+    set_setting(db, _SCHEDULERS_CACHE_KEY, _json.dumps(schedulers or []))
+
+
 @router.get("/connecteam-status", dependencies=[Depends(require_role("admin", "manager"))])
 def connecteam_status(db: Session = Depends(get_db)):
     """Whether Connecteam is wired up + a masked hint of the saved key so the
-    Settings card can show "connected as scheduler 12345, key •••abcd"."""
+    Settings card can show "connected as scheduler 12345, key •••abcd".
+
+    Also returns the cached scheduler list (from the last successful
+    /connecteam/test) so the picker survives page loads without re-fetching
+    from Connecteam every time — dodges the rate-limit spiral."""
     import os
     db_key = get_setting(db, "connecteam_api_key") or ""
     db_cid = get_setting(db, "connecteam_company_id") or ""
@@ -477,6 +511,7 @@ def connecteam_status(db: Session = Depends(get_db)):
     env_cid = os.getenv("CONNECTEAM_COMPANY_ID", "")
     key = (db_key or env_key).strip()
     cid = (db_cid or env_cid).strip()
+    schedulers = _read_cached_schedulers(db)
     return {
         "configured": bool(key and cid),
         "has_key": bool(key),
@@ -486,6 +521,13 @@ def connecteam_status(db: Session = Depends(get_db)):
         "company_id": cid,                    # legacy field
         "scheduler_id": cid,                  # semantic alias — same value
         "source": ("database" if (db_key or db_cid) else ("env" if (env_key or env_cid) else "none")),
+        "schedulers": schedulers,
+        # Flag the mismatch server-side so the UI can show a persistent warning
+        # on the connected card (not just inside the Update-key form).
+        "scheduler_id_valid": bool(cid) and (
+            not schedulers  # no cache yet — can't judge, don't warn
+            or any(str(s.get("id")) == cid for s in schedulers)
+        ),
     }
 
 
@@ -496,16 +538,25 @@ def save_connecteam_settings(config: ConnecteamConfig, db: Session = Depends(get
     the key doesn't overwrite it with the mask. `scheduler_id` and the legacy
     `company_id` both write the same underlying `connecteam_company_id` row —
     same value semantically, different name on the wire."""
+    key_changed = False
     if config.api_key is not None:
         v = config.api_key.strip()
         if v and not v.startswith("••••"):
             set_setting(db, "connecteam_api_key", v)
+            key_changed = True
         elif v == "":
             set_setting(db, "connecteam_api_key", "")
+            key_changed = True
     # scheduler_id wins when both are supplied — it's the semantic name.
     sched = config.scheduler_id if config.scheduler_id is not None else config.company_id
     if sched is not None:
         set_setting(db, "connecteam_company_id", sched.strip())
+    # A key change points at a different account — the previous account's
+    # cached scheduler list is meaningless now. Clear the cache so the next
+    # /connecteam/test re-fetches against the new key. Scheduler-id-only
+    # changes keep the cache (same account, just picking a different one).
+    if key_changed:
+        _cache_schedulers(db, [])
     db.commit()
     return connecteam_status(db)
 
@@ -534,6 +585,13 @@ def test_connecteam(db: Session = Depends(get_db)):
             # returned. Don't fail the whole test on a scheduler-list hiccup.
             logger.warning(f"Connecteam list_schedulers failed after /me OK: {e}")
             schedulers = []
+        # Persist the list so future page loads and the connected-card picker
+        # don't need to re-hit Connecteam (rate-limit-friendly). Only cache
+        # non-empty results — an empty response (from a 429/scope failure)
+        # would overwrite a previously-good cache.
+        if schedulers:
+            _cache_schedulers(db, schedulers)
+            db.commit()
         return {
             "ok": True,
             "account": me.get("data") or me,
