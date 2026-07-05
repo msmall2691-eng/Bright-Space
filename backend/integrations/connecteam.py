@@ -220,10 +220,18 @@ def _shift_payload(*, start_datetime, end_datetime, title,
     elif user_id is not None:
         payload["assignedUserIds"] = [int(user_id)] if str(user_id).isdigit() else [user_id]
     if address:
-        # locationData is a structured object; when we only have a free-text
-        # address, put it in the `address` sub-field. Connecteam ignores unknown
-        # keys, so extra fields are safe.
-        payload["locationData"] = {"address": address}
+        # locationData is a structured object. `isReferencedToJob` is REQUIRED
+        # by Connecteam's validator whenever locationData is present — their
+        # public docs (developer.connecteam.com/docs/scheduler-create-shifts)
+        # don't mention it, but the API returns error_code 1002 without it:
+        #   "body.0.locationData.isReferencedToJob": {"message":"Field..."}
+        # false = free-text address, not tied to a Connecteam Job entity. Once
+        # we wire up Job lookup by customer name (follow-up), a matched Job
+        # will flip this to true and add a jobId to the shift.
+        payload["locationData"] = {
+            "address": address,
+            "isReferencedToJob": False,
+        }
     if notes:
         payload["notes"] = [{"html": notes}]
     return payload
