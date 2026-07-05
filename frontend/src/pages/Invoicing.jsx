@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '../components/ui'
 import { del, get, post, patch } from "../api"
+import { useInvoicing } from '../hooks/useInvoicing'
 import { EMPTY_ITEM } from '../components/invoicing/constants'
 import { Toast } from '../components/invoicing/Toast'
 import { InvoiceRow } from '../components/invoicing/InvoiceRow'
@@ -14,10 +15,15 @@ import { InvoicingHeader } from '../components/invoicing/InvoicingHeader'
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Invoicing() {
   const navigate = useNavigate()
-  const [invoices, setInvoices]   = useState([])
-  const [clients, setClients]     = useState([])
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch]       = useState('')
+  const {
+    invoices, clients,
+    clientName, clientOf,
+    filtered,
+    totalRevenue, outstanding, overdueCount,
+    load,
+  } = useInvoicing({ statusFilter, search })
   const [panel, setPanel]         = useState(null)   // null | 'edit' | 'send'
   const [selected, setSelected]   = useState(null)
   const [form, setForm]           = useState({ client_id: '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
@@ -39,17 +45,6 @@ export default function Invoicing() {
     setToasts(t => [...t, { id, message, type }])
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500)
   }, [])
-
-  const load = useCallback(() =>
-    get(`/api/invoices${statusFilter ? `?status=${statusFilter}` : ''}`).then(setInvoices).catch(err => console.error("[Invoicing]", err)),
-    [statusFilter]
-  )
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { get('/api/clients').then(setClients).catch(err => console.error("[Invoicing]", err)) }, [])
-
-  const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
-  const clientOf   = (id) => clients.find(c => c.id === id)
 
   const updateItem = (i, key, val) => setForm(f => {
     const items = [...f.items]; items[i] = { ...items[i], [key]: val }; return { ...f, items }
@@ -172,16 +167,6 @@ export default function Invoicing() {
   }
 
   const closePanel = () => { setPanel(null); setSelected(null) }
-
-  const filtered = invoices.filter(inv => {
-    if (!search) return true
-    const name = clientName(inv.client_id).toLowerCase()
-    return name.includes(search.toLowerCase()) || inv.invoice_number.toLowerCase().includes(search.toLowerCase())
-  })
-
-  const totalRevenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.total || 0), 0)
-  const outstanding  = invoices.filter(i => ['sent','overdue'].includes(i.status)).reduce((s, i) => s + (i.total || 0), 0)
-  const overdueCount = invoices.filter(i => i.status === 'overdue').length
 
   return (
     <div className="flex h-full bg-bg">
