@@ -499,6 +499,17 @@ export default function IntegrationsTab({ toast, active, automationSettings, set
                         {connecteam.source === 'env' && <span className="ml-1 text-ink-3">(from server env)</span>}
                       </p>
                     )}
+                    {/* Persistent warning: when the backend has a cached
+                        scheduler list AND the saved id isn't in it, the
+                        Push button will always 400 "schedule id doesn't
+                        exist". Surface this on the connected card itself
+                        so you don't have to open Update key to know
+                        something's off. */}
+                    {!connecteam.loading && connecteam.configured && connecteam.scheduler_id_valid === false && Array.isArray(connecteam.schedulers) && connecteam.schedulers.length > 0 && (
+                      <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1 mt-2 inline-block">
+                        Saved Scheduler ID <code>{connecteam.scheduler_id || connecteam.company_id}</code> isn't on your Connecteam account. Click Update key and pick from the list.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0 ${
