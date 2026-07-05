@@ -2,8 +2,8 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '../components/ui'
-import { del, get, post, patch } from "../api"
 import { useInvoicing } from '../hooks/useInvoicing'
+import { useInvoicingMutations } from '../hooks/useInvoicingMutations'
 import { EMPTY_ITEM } from '../components/invoicing/constants'
 import { Toast } from '../components/invoicing/Toast'
 import { InvoiceRow } from '../components/invoicing/InvoiceRow'
@@ -31,14 +31,7 @@ export default function Invoicing() {
   // line items + total.
   const [showInvAdvanced, setShowInvAdvanced] = useState(false)
   const [sendForm, setSendForm]   = useState({ channel: 'email', email: '', phone: '', custom_message: '' })
-  const [saving, setSaving]       = useState(false)
-  const [sending, setSending]     = useState(false)
-  const [drafting, setDrafting]   = useState(false)
-  const [deleting, setDeleting]   = useState(false)
   const [toasts, setToasts]       = useState([])
-  // Batch "chase overdue" review modal: null when closed, else
-  // { loading, truncated, items:[{...draft, sending, sent}] }
-  const [chaser, setChaser]       = useState(null)
 
   const toast = useCallback((message, type = 'success') => {
     const id = Date.now()
@@ -46,104 +39,21 @@ export default function Invoicing() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500)
   }, [])
 
+  const {
+    saving, sending, drafting, deleting,
+    chaser, setChaser,
+    save, markPaid, markOverdue, deleteInvoice, sendInvoice, draftReminder,
+    openChaser, updateChaserMsg, sendChaserItem,
+  } = useInvoicingMutations({
+    load,
+    selected, setPanel,
+    form, sendForm, setSendForm,
+    toast,
+  })
+
   const updateItem = (i, key, val) => setForm(f => {
     const items = [...f.items]; items[i] = { ...items[i], [key]: val }; return { ...f, items }
   })
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      const url    = selected ? `/api/invoices/${selected.id}` : '/api/invoices'
-      const body   = { ...form, client_id: parseInt(form.client_id), tax_rate: parseFloat(form.tax_rate) || 0 }
-      selected ? await patch(url, body) : await post(url, body)
-      await load(); toast(selected ? 'Invoice updated' : 'Invoice created'); setPanel(null)
-    } catch (e) { toast(e.message || 'Failed to save invoice', 'error') }
-    setSaving(false)
-  }
-
-  const markPaid = async (id) => {
-    await patch(`/api/invoices/${id}`, { paid_at: new Date().toISOString() })
-    await load(); toast('Marked as paid')
-    if (selected?.id === id) setPanel(null)
-  }
-
-  const markOverdue = async (id) => {
-    await patch(`/api/invoices/${id}`, { status: 'overdue' })
-    await load(); toast('Marked as overdue')
-  }
-
-  const deleteInvoice = async () => {
-    if (!selected) return; setDeleting(true)
-    try {
-      await del(`/api/invoices/${selected.id}`)
-      await load(); setPanel(null); toast('Invoice deleted')
-    } catch { toast('Failed to delete invoice', 'error') }
-    setDeleting(false)
-  }
-
-  const sendInvoice = async () => {
-    if (!selected) return; setSending(true)
-    try {
-      const data = await post(`/api/invoices/${selected.id}/send`, sendForm)
-      await load()
-      const parts = Object.entries(data.results || {}).map(([ch, res]) => `${ch}: ${res}`).join(', ')
-      toast(`Invoice sent — ${parts}`); setPanel(null)
-    } catch (e) { toast(e.message || 'Failed to send invoice', 'error') }
-    setSending(false)
-  }
-
-  const draftReminder = async () => {
-    if (!selected || drafting) return
-    setDrafting(true)
-    try {
-      const res = await post(`/api/ai/draft-invoice-reminder/${selected.id}`, {})
-      if (res?.message) {
-        setSendForm(f => ({ ...f, custom_message: res.message }))
-        toast('Draft ready — review before sending')
-      } else {
-        toast(res?.error || 'Could not draft a reminder', 'error')
-      }
-    } catch (e) { toast(e.message || 'Could not draft a reminder', 'error') }
-    setDrafting(false)
-  }
-
-  // Batch chaser: load AI drafts for every overdue invoice, for review.
-  const openChaser = async () => {
-    setChaser({ loading: true, items: [], truncated: false })
-    try {
-      const res = await get('/api/ai/overdue-reminders')
-      setChaser({
-        loading: false,
-        truncated: !!res?.truncated,
-        items: (res?.reminders || []).map(r => ({ ...r, sending: false, sent: false })),
-      })
-    } catch (e) {
-      setChaser(null)
-      toast(e.message || 'Could not load overdue reminders', 'error')
-    }
-  }
-
-  const updateChaserMsg = (id, message) => setChaser(c => c && ({
-    ...c, items: c.items.map(it => it.invoice_id === id ? { ...it, message } : it),
-  }))
-
-  const sendChaserItem = async (item) => {
-    if (item.sending || item.sent) return
-    setChaser(c => c && ({ ...c, items: c.items.map(it => it.invoice_id === item.invoice_id ? { ...it, sending: true } : it) }))
-    try {
-      await post(`/api/invoices/${item.invoice_id}/send`, {
-        channel: item.client_email ? 'email' : 'sms',
-        email: item.client_email || '',
-        phone: item.client_phone || '',
-        custom_message: item.message,
-      })
-      setChaser(c => c && ({ ...c, items: c.items.map(it => it.invoice_id === item.invoice_id ? { ...it, sending: false, sent: true } : it) }))
-      toast(`Reminder sent — ${item.invoice_number}`)
-    } catch (e) {
-      setChaser(c => c && ({ ...c, items: c.items.map(it => it.invoice_id === item.invoice_id ? { ...it, sending: false } : it) }))
-      toast(e.message || `Failed to send ${item.invoice_number}`, 'error')
-    }
-  }
 
   const openEdit = (inv) => {
     setSelected(inv)
