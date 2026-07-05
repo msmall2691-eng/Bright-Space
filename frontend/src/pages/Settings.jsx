@@ -10,7 +10,10 @@ import GeneralTab from '../components/settings/GeneralTab'
 import IntegrationsTab from '../components/settings/IntegrationsTab'
 
 export default function Settings() {
-  const [section, setSection] = useState('fields') // 'fields' | 'email' | 'general' | 'integrations' | 'users'
+  // Land on General — that's where company identity, brand color, terms, and
+  // the danger zone live, which is the natural first stop. Previously landed
+  // on Custom Fields, which is a niche power-user screen.
+  const [section, setSection] = useState('general') // 'fields' | 'email' | 'general' | 'integrations' | 'automation' | 'users'
   // Users management is admin-only (the backend enforces it; this hides the tab).
   const isAdmin = (() => {
     try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }

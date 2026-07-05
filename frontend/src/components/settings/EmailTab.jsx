@@ -18,11 +18,17 @@ export default function EmailTab({ toast, active }) {
   const [testResult, setTestResult] = useState(null)
   const [testing, setTesting] = useState(false)
   const [hasCredentials, setHasCredentials] = useState(false)
+  const [credentialsSource, setCredentialsSource] = useState('none')
 
   const loadEmailSettings = useCallback(async () => {
     try {
       const data = await get('/api/settings/email')
       setHasCredentials(data.has_credentials || false)
+      // credentials_source is display-only and NOT a saveable field on the
+      // backend's EmailConfig model. Keep it in a sibling state instead of
+      // folding it into emailConfig, otherwise saveEmailConfig posts it as a
+      // phantom field — silently ignored today by pydantic, but a landmine
+      // the day the model tightens (extra="forbid").
       setEmailConfig(prev => ({
         ...prev,
         smtp_user: data.smtp_user || '',
@@ -34,8 +40,8 @@ export default function EmailTab({ toast, active }) {
         from_email: data.from_email || '',
         from_name: data.from_name || '',
         email_auto_enrich: data.email_auto_enrich || 'true',
-        credentials_source: data.credentials_source || 'none',
       }))
+      setCredentialsSource(data.credentials_source || 'none')
     } catch {}
   }, [])
 
@@ -75,7 +81,7 @@ export default function EmailTab({ toast, active }) {
         {/* Status indicator */}
         <div className={`flex items-center gap-3 p-4 rounded-xl border mb-6 ${hasCredentials ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
           {hasCredentials
-            ? <><CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /><div><div className="text-sm font-medium text-emerald-800">Credentials Found</div><div className="text-xs text-emerald-600">{emailConfig.credentials_source === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div></>
+            ? <><CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /><div><div className="text-sm font-medium text-emerald-800">Credentials Found</div><div className="text-xs text-emerald-600">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div></>
             : <><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" /><div><div className="text-sm font-medium text-amber-800">Not Connected</div><div className="text-xs text-amber-600">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div></>
           }
         </div>
