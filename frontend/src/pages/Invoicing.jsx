@@ -4,35 +4,7 @@ import { CustomFieldsForm } from '../components/CustomFields'
 import { Plus, Trash2, X, CheckCircle, Send, Mail, MessageSquare, Search, AlertTriangle, ChevronRight, FileText, Sparkles } from 'lucide-react'
 import { PageHeader, StatCard, EmptyState } from '../components/ui'
 import { del, get, post, patch } from "../api"
-
-
-// ── Status config ─────────────────────────────────────────────────────────────
-const STATUS = {
-  draft:   { dot: 'bg-ink-3',    text: 'text-ink-3',    label: 'Draft'   },
-  sent:    { dot: 'bg-blue-400',    text: 'text-blue-400',    label: 'Sent'    },
-  paid:    { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Paid'    },
-  overdue: { dot: 'bg-red-400',     text: 'text-red-400',     label: 'Overdue' },
-}
-
-// ── Client avatar ─────────────────────────────────────────────────────────────
-const AVATAR_COLORS = [
-  'bg-violet-500/20 text-violet-300',
-  'bg-sky-500/20 text-blue-400',
-  'bg-emerald-500/20 text-emerald-300',
-  'bg-orange-500/20 text-orange-300',
-  'bg-pink-500/20 text-pink-300',
-  'bg-yellow-500/20 text-yellow-300',
-]
-function avatar(name = '') {
-  const i = name.charCodeAt(0) % AVATAR_COLORS.length
-  return { color: AVATAR_COLORS[i], initials: name.slice(0, 2).toUpperCase() }
-}
-
-const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
-
-// ── Shared input styles ───────────────────────────────────────────────────────
-const inp = 'w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 transition-colors'
-const lbl = 'block text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1.5'
+import { STATUS, avatar, EMPTY_ITEM, inp, lbl, sub, totalAmt, daysOverdue } from '../components/invoicing/constants'
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ toasts }) {
@@ -94,14 +66,6 @@ export default function Invoicing() {
 
   const clientName = (id) => clients.find(c => c.id === id)?.name || `Client #${id}`
   const clientOf   = (id) => clients.find(c => c.id === id)
-  const sub        = (items) => items.reduce((s, i) => s + (parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0), 0)
-  const totalAmt   = (items, tax) => sub(items) * (1 + (parseFloat(tax) || 0) / 100)
-
-  const daysOverdue = (inv) => {
-    if (!inv.due_date || inv.status === 'paid') return null
-    const diff = Math.floor((Date.now() - new Date(inv.due_date)) / 86400000)
-    return diff > 0 ? diff : null
-  }
 
   const updateItem = (i, key, val) => setForm(f => {
     const items = [...f.items]; items[i] = { ...items[i], [key]: val }; return { ...f, items }
