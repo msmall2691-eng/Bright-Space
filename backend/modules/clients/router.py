@@ -16,6 +16,7 @@ from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
 from utils.contacts import normalize_phone
 from utils.enrichment import enrich_client_data
 from modules.auth.router import get_current_user, require_role, current_org_id
+from utils.dates import business_today
 
 router = APIRouter()
 
@@ -710,7 +711,7 @@ def get_client_profile(client_id: int, db: Session = Depends(get_db), org_id: in
     profile["properties"] = properties_data
 
     # Split jobs into upcoming and past
-    today = date.today().isoformat()
+    today = business_today().isoformat()
     upcoming_jobs = []
     past_jobs = []
 

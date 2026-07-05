@@ -13,6 +13,7 @@ from database.db import get_db
 from modules.auth.router import require_role
 from database.models import RecurringSchedule, Job, RecurrenceException
 from utils.activity_logger import log_job_created, log_calendar_event
+from utils.dates import business_today
 
 router = APIRouter()
 
@@ -138,7 +139,7 @@ def _as_date(value):
 
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     """Return a sorted list of dates this schedule should run in the next N weeks."""
-    today = date.today()
+    today = business_today()
     end = today + timedelta(weeks=weeks_ahead)
     result = []
 
@@ -392,7 +393,7 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
     # Annotate each schedule with the count of upcoming generated jobs so the
     # UI can show "4 upcoming" next to the schedule, instead of leaving the
     # user guessing whether anything actually got generated.
-    today = date.today().isoformat()
+    today = business_today().isoformat()
     out = []
     for s in schedules:
         d = sched_to_dict(s)

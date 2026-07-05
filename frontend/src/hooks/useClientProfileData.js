@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { get } from '../api'
+import { todayYMD } from '../utils/format'
 
 /**
  * Owns every piece of server-driven state on the client profile: the client
@@ -93,7 +94,7 @@ export function useClientProfileData(id) {
   // Upcoming and past cleanings.
   // Null-safe: some jobs (legacy / unscheduled) have a null scheduled_date —
   // calling .localeCompare on null used to crash the whole profile page.
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = todayYMD()
   const upcomingJobs = jobs
     .filter(j => j.scheduled_date && j.scheduled_date >= todayStr && j.status !== 'cancelled')
     .sort((a, b) => (a.scheduled_date || '').localeCompare(b.scheduled_date || '') || (a.start_time || '').localeCompare(b.start_time || ''))

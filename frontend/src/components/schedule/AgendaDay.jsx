@@ -1,6 +1,7 @@
 import { Calendar } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG } from './constants'
 import { TurnoverInfo } from './SyncBadge'
+import { toLocalYMD } from '../../utils/format'
 
 /** Single-day mobile-first view. Renders the day's visits as full-width
  *  cards. Tap a card to open the existing detail drawer via onSelect (same
@@ -25,7 +26,7 @@ export default function AgendaDay({
             {isToday ? 'Today' : ''}
           </div>
           <h2 className="text-xl font-bold text-ink tracking-tight">
-            {new Date(`${currentDate.toISOString().split('T')[0]}T00:00`).toLocaleDateString('en-US', {
+            {new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
               weekday: 'long', month: 'long', day: 'numeric',
             })}
           </h2>

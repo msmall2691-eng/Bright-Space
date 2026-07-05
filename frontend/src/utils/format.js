@@ -56,3 +56,22 @@ export function formatDateShort(value) {
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
 }
+
+/**
+ * Local calendar date as YYYY-MM-DD.
+ *
+ * Use this instead of `d.toISOString().split('T')[0]` / `.slice(0, 10)`:
+ * toISOString() converts to UTC, so from 8pm Eastern onward the UTC date is
+ * already *tomorrow* — "today" highlights, day counts, week ranges, and
+ * default job dates all shift a day forward every evening.
+ */
+export function toLocalYMD(value) {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Today's local calendar date as YYYY-MM-DD. */
+export function todayYMD() {
+  return toLocalYMD(new Date())
+}

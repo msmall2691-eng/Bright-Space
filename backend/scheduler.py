@@ -10,6 +10,7 @@ from database.db import SessionLocal
 from database.models import AppSetting, Property, PropertyIcal, RecurringSchedule
 from integrations.ical_sync import sync_property
 from integrations.gcal_sync import sync_calendar
+from utils.dates import business_today
 
 log = logging.getLogger(__name__)
 
@@ -241,6 +242,93 @@ def str_turnover_autoassign_tick() -> dict:
         db.close()
 
 
+def sync_reconcile_tick() -> dict:
+    """Self-healing push reconcile for Google Calendar + Connecteam.
+
+    Job creation pushes to Google / dispatches to Connecteam inline; when that
+    inline push fails (Google briefly down, integration connected *after* the
+    job was created, transient Connecteam error) the job silently stays
+    unsynced until someone notices the yellow "Needs attention" banner and runs
+    Tools -> Push to Google. This tick closes that gap automatically, using the
+    exact same code paths as the manual actions.
+
+    Gated by sync_reconcile_enabled (app_settings) / SYNC_RECONCILE_ENABLED
+    (env, default ON). Safe to run repeatedly: both paths skip jobs that are
+    already synced, cancelled/completed, or in the past.
+    """
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        if not _db_flag(db, "sync_reconcile_enabled",
+                        env_flag("SYNC_RECONCILE_ENABLED", True)):
+            return {"skipped": True, "reason": "disabled"}
+        result = {}
+
+        # 1) Google Calendar: reuse the manual "Push to Google" logic verbatim.
+        try:
+            from integrations.google_calendar import is_configured as _gcal_ok
+            if _gcal_ok():
+                from modules.scheduling.router import push_to_gcal
+                pushed = push_to_gcal(db)
+                if pushed.get("pushed"):
+                    log.info(f"Sync reconcile: pushed {pushed['pushed']} job(s) to Google Calendar")
+                if pushed.get("errors"):
+                    log.warning(
+                        f"Sync reconcile: {len(pushed['errors'])} GCal push error(s), "
+                        f"first: {pushed['errors'][:1]}"
+                    )
+                result["gcal"] = {"pushed": pushed.get("pushed", 0),
+                                  "errors": len(pushed.get("errors") or [])}
+            else:
+                result["gcal"] = {"skipped": "not_configured"}
+        except Exception as e:
+            log.warning(f"Sync reconcile: GCal push failed: {e}")
+            result["gcal"] = {"error": str(e)}
+
+        # 2) Connecteam: dispatch upcoming assigned jobs that have no shifts yet.
+        #    auto_dispatch_job() no-ops safely on anything that shouldn't sync.
+        try:
+            from integrations.connecteam import is_configured as _ct_ok
+            if _ct_ok():
+                from integrations.connecteam_auto import auto_dispatch_job
+                from database.models import Job
+                start = business_today().isoformat()
+                end = (business_today() + timedelta(days=30)).isoformat()
+                jobs = db.query(Job).filter(
+                    Job.status.in_(["scheduled", "in_progress"]),
+                    Job.scheduled_date >= start,
+                    Job.scheduled_date <= end,
+                ).all()
+                dispatched, errors = 0, 0
+                for job in jobs:
+                    if job.connecteam_shift_ids or not job.cleaner_ids:
+                        continue
+                    st = auto_dispatch_job(db, job, commit=False)
+                    if st.get("dispatched"):
+                        dispatched += 1
+                    if st.get("errors"):
+                        errors += len(st["errors"])
+                db.commit()
+                if dispatched:
+                    log.info(f"Sync reconcile: dispatched {dispatched} job(s) to Connecteam")
+                if errors:
+                    log.warning(f"Sync reconcile: {errors} Connecteam dispatch error(s)")
+                result["connecteam"] = {"dispatched": dispatched, "errors": errors}
+            else:
+                result["connecteam"] = {"skipped": "not_configured"}
+        except Exception as e:
+            log.warning(f"Sync reconcile: Connecteam dispatch failed: {e}")
+            result["connecteam"] = {"error": str(e)}
+
+        return result
+    except Exception as e:
+        log.error(f"Sync reconcile failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def turnover_coverage_tick() -> dict:
     """Proactive daily safety net: every upcoming guest checkout should have an
     active turnover. Read-only — the iCal tick already syncs feeds; this just
@@ -256,7 +344,7 @@ def turnover_coverage_tick() -> dict:
                         env_flag("TURNOVER_COVERAGE_CHECK_ENABLED", True)):
             return {"skipped": True, "reason": "disabled"}
 
-        today = date.today().isoformat()
+        today = business_today().isoformat()
 
         def _d(x):
             return x if isinstance(x, str) else (x.isoformat() if x else None)
@@ -338,7 +426,7 @@ def quote_expiry_tick() -> dict:
         if not _db_flag(db, "quote_auto_expire_enabled",
                         env_flag("QUOTE_AUTO_EXPIRE_ENABLED", True)):
             return {"skipped": True, "reason": "disabled"}
-        today = date.today()
+        today = business_today()
         expired = 0
         # valid_until may be a str on drifted rows — coerce per row instead of
         # filtering in SQL so the comparison is always date-vs-date.
@@ -380,6 +468,21 @@ def start_scheduler():
     global _scheduler
 
     _scheduler = BackgroundScheduler()
+
+    # Sync reconcile: self-healing Google Calendar / Connecteam push for jobs
+    # whose inline push failed or that predate the integration being connected.
+    if env_flag("SYNC_RECONCILE_ENABLED", True):
+        reconcile_minutes = env_int("SYNC_RECONCILE_INTERVAL_MINUTES", 30)
+        _scheduler.add_job(
+            sync_reconcile_tick,
+            IntervalTrigger(minutes=reconcile_minutes),
+            id="sync_reconcile",
+            name="Google/Connecteam sync reconcile",
+            replace_existing=True,
+        )
+        log.info(f"Sync reconcile enabled (interval: {reconcile_minutes} min)")
+    else:
+        log.info("Sync reconcile disabled via SYNC_RECONCILE_ENABLED=0")
 
     # iCal auto-sync
     if env_flag("ICAL_AUTO_SYNC_ENABLED", True):

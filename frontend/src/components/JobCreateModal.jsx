@@ -3,6 +3,7 @@ import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, 
 import { get, post } from '../api'
 import { toast } from '../utils/toastBus'
 import AddressAutocomplete from './AddressAutocomplete'
+import { toLocalYMD } from '../utils/format'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -62,7 +63,7 @@ function nextBusinessDay() {
   const d = new Date()
   d.setDate(d.getDate() + 1)
   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
+  return toLocalYMD(d)
 }
 
 // "09:00" + minutes → "12:00" (24h, wraps within a day).

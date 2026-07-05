@@ -41,3 +41,34 @@ def fmt_long_date(v: DateLike) -> Optional[str]:
         # Non-empty but unparseable (e.g. already a human string): pass through.
         return v if isinstance(v, str) else None
     return d.strftime("%B %d, %Y")
+
+
+# --- Business-local "today" -------------------------------------------------
+#
+# The server runs in UTC (Railway), but the business operates in US Eastern.
+# ``date.today()`` on a UTC box flips to *tomorrow* at 8pm Eastern, which
+# shifted "today" schedules, past-date validation, reminders, and dashboards
+# every evening. Use these instead of ``date.today()`` /
+# ``datetime.now(timezone.utc)`` whenever "today" means the business day.
+
+import os
+from zoneinfo import ZoneInfo
+
+
+def business_tz() -> ZoneInfo:
+    """Company-local timezone (BUSINESS_TIMEZONE > GCAL_TIMEZONE > Eastern)."""
+    return ZoneInfo(
+        os.getenv("BUSINESS_TIMEZONE")
+        or os.getenv("GCAL_TIMEZONE")
+        or "America/New_York"
+    )
+
+
+def business_now() -> datetime:
+    """Timezone-aware ``datetime.now()`` in the business timezone."""
+    return datetime.now(business_tz())
+
+
+def business_today() -> date:
+    """Today's date in the business timezone (NOT the server's UTC date)."""
+    return business_now().date()

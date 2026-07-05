@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get, getCached } from '../api'
 import { today } from '../components/dashboard/utils'
+import { toLocalYMD } from '../utils/format'
 
 /** Data hook for the Dashboard command center.
  *
@@ -40,7 +41,7 @@ export function useDashboardData() {
   const [error, setError] = useState(false)
 
   const t = today()
-  const weekEnd = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)
+  const weekEnd = toLocalYMD(new Date(Date.now() + 7 * 864e5))
 
   const reload = useCallback(async () => {
     setLoading(true)

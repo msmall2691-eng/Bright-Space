@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink, Plus } from 'lucide-react'
 import { get, patch } from "../api"
+import { toLocalYMD } from '../utils/format'
 
 
 const TYPE_CONFIG = {
@@ -26,7 +27,7 @@ export function eachDay(start, end) {
   // a checkout in year 9999 from a bad iCal/GCal sync) must not lock the
   // renderer iterating millions of days. 400 covers any real stay/block.
   for (let i = 0; cur <= fin && i < 400; i++) {
-    days.push(cur.toISOString().slice(0, 10))
+    days.push(toLocalYMD(cur))
     cur.setDate(cur.getDate() + 1)
   }
   return days
@@ -66,7 +67,7 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   const [dropTarget, setDropTarget]   = useState(null)
 
   const isMobile = useIsMobile()
-  const today = now.toISOString().slice(0, 10)
+  const today = toLocalYMD(now)
 
   const firstDay = new Date(year, month, 1)
   const lastDay  = new Date(year, month + 1, 0)

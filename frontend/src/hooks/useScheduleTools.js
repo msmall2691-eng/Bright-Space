@@ -52,6 +52,22 @@ export function useScheduleTools({ toast, refresh }) {
     setGcalPushing(false)
   }
 
+  // One-click repair for the "Needs attention" strip: pushes unsynced jobs to
+  // Google AND dispatches missing Connecteam shifts in a single call.
+  const [fixingSync, setFixingSync] = useState(false)
+  const fixSync = async () => {
+    if (fixingSync) return
+    setFixingSync(true)
+    try {
+      const r = await post('/api/jobs/sync-reconcile', {})
+      toast.success(r?.message || 'Sync reconcile complete')
+      refresh()
+    } catch (e) {
+      toast.error(e?.message || 'Sync fix failed')
+    }
+    setFixingSync(false)
+  }
+
   const previewAutoAssign = async () => {
     setAutoAssign({ loading: true })
     try {
@@ -116,6 +132,7 @@ export function useScheduleTools({ toast, refresh }) {
   return {
     gcalSyncing, syncFromGoogle,
     gcalPushing, pushToGoogle,
+    fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
   }

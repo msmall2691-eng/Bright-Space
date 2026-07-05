@@ -56,6 +56,7 @@ from pytz import timezone as pytz_timezone
 from sqlalchemy.orm import Session
 from database.models import Property, ICalEvent, Job, Client, PropertyIcal
 import logging
+from utils.dates import business_today
 
 log = logging.getLogger(__name__)
 
@@ -313,7 +314,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         log.warning(f"Failed to parse iCal from {ical_url}: {e}")
         return {"error": f"Failed to parse iCal: {e}"}
 
-    today = date.today().isoformat()
+    today = business_today().isoformat()
     seen = 0
     created_events = 0
     created_jobs = 0
@@ -732,7 +733,7 @@ def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
             Job.status.in_(("scheduled", "in_progress")),
             Job.gcal_event_id.is_(None),
             Job.scheduled_date.isnot(None),
-            Job.scheduled_date >= datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            Job.scheduled_date >= business_today().isoformat(),
         )
         .all()
     )
@@ -878,7 +879,7 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     # UIDs, so a later feed can cancel an earlier feed's jobs after that feed
     # already reported "all covered". Derive expected checkouts from the final
     # stored reservation events and compare to the final active-turnover dates.
-    today_iso = date.today().isoformat()
+    today_iso = business_today().isoformat()
     expected = {
         _d for e in db.query(ICalEvent).filter(
             ICalEvent.property_id == prop.id,

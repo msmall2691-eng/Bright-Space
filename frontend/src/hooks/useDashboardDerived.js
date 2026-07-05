@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { htmlToText } from '../utils/format'
+import { htmlToText, toLocalYMD } from '../utils/format'
 import { contactLabel, fmtMoney, monthStart } from '../components/dashboard/utils'
 
 const SIX_DAYS_MS = 6 * 864e5
@@ -76,7 +76,7 @@ export function useDashboardDerived({
   // weekJobs is fetched with an inclusive +7 end, so clamp here).
   // "Covered" = a cleaner is assigned.
   const turnover = useMemo(() => {
-    const sixOut = new Date(Date.now() + SIX_DAYS_MS).toISOString().slice(0, 10)
+    const sixOut = toLocalYMD(new Date(Date.now() + SIX_DAYS_MS))
     const str = weekJobs.filter(j =>
       j.job_type === 'str_turnover' && j.status !== 'cancelled' &&
       (j.scheduled_date || '').slice(0, 10) <= sixOut)
@@ -90,7 +90,7 @@ export function useDashboardDerived({
 
   // Crew workload for the next 7 days: jobs assigned per cleaner + unassigned.
   const crew = useMemo(() => {
-    const sixOut = new Date(Date.now() + SIX_DAYS_MS).toISOString().slice(0, 10)
+    const sixOut = toLocalYMD(new Date(Date.now() + SIX_DAYS_MS))
     const jobs = weekJobs.filter(j => j.status !== 'cancelled' && (j.scheduled_date || '').slice(0, 10) <= sixOut)
     const nameOf = (id) => employees.find(e => String(e.id) === String(id))?.name || `Cleaner ${id}`
     const counts = {}

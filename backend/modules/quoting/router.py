@@ -29,6 +29,7 @@ from modules.auth.router import get_current_user, require_role, current_org_id, 
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from config import app_base_url
+from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["quotes"])
@@ -213,7 +214,7 @@ def create_quote(
         total=total,
         # Every quote is valid for 30 days (owner policy). Default when the UI
         # doesn't supply a date so the validity line is never empty/contradictory.
-        valid_until=_parse_date(quote_data.valid_until) or (date.today() + timedelta(days=30)),
+        valid_until=_parse_date(quote_data.valid_until) or (business_today() + timedelta(days=30)),
         status=quote_data.status or "draft",
     )
     db.add(quote)
@@ -365,7 +366,7 @@ def _apply_update(quote: Quote, data: dict) -> None:
             setattr(quote, field, data[field])
     if "valid_until" in data:
         # Keep the flat 30-day policy even on edit: never let it become null.
-        quote.valid_until = _parse_date(data["valid_until"]) or (date.today() + timedelta(days=30))
+        quote.valid_until = _parse_date(data["valid_until"]) or (business_today() + timedelta(days=30))
     if "tax_rate" in data and data["tax_rate"] is not None:
         quote.tax_rate = float(data["tax_rate"])
     if "discount" in data and data["discount"] is not None:
@@ -756,7 +757,7 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     quote.converted_at = _utcnow()
     quote.updated_at = _utcnow()
     from utils.opportunity_helper import advance_for_quote
-    advance_for_quote(db, quote, "won", close_date=str(date.today()))
+    advance_for_quote(db, quote, "won", close_date=str(business_today()))
     db.commit()
     db.refresh(job)
     return job
@@ -819,7 +820,7 @@ def _quote_availability(db: Session) -> list:
     record every business day is offered."""
     from modules.scheduling.router import _cleaner_roster, _find_unavailable_cleaners
     roster = _cleaner_roster(db)
-    today = date.today()
+    today = business_today()
     out = []
     for i in range(1, AVAILABILITY_DAYS + 1):
         d = today + timedelta(days=i)
@@ -910,7 +911,7 @@ def _is_quote_expired(quote: Quote) -> bool:
     """True when the quote is past its validity window (tolerates a str
     valid_until from legacy/drifted rows)."""
     expiry = coerce_date(quote.valid_until)
-    return bool(expiry and expiry < date.today())
+    return bool(expiry and expiry < business_today())
 
 
 def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_type: str):
@@ -1016,7 +1017,7 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
     # valid_until can be a str (prod schema drift) — coerce before comparing,
     # or "date < str" raises TypeError and 500s the customer's accept click.
     expiry = coerce_date(quote.valid_until)
-    if expiry and expiry < date.today():
+    if expiry and expiry < business_today():
         quote.status = "expired"
         db.commit()
         raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
@@ -1183,13 +1184,13 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
     if quote.status == "declined":
         raise HTTPException(status_code=409, detail="This quote was declined and can no longer be scheduled.")
     expiry = coerce_date(quote.valid_until)
-    if expiry and expiry < date.today():
+    if expiry and expiry < business_today():
         quote.status = "expired"
         db.commit()
         raise HTTPException(status_code=409, detail="This quote has expired. Please contact us for an updated quote.")
 
     d = coerce_date(data.date)
-    if not d or d < date.today():
+    if not d or d < business_today():
         raise HTTPException(status_code=400, detail="Please choose a valid future date.")
     window = (data.window or "morning").lower()
     if window not in SCHEDULE_WINDOWS:

@@ -10,7 +10,7 @@ import VisitCard from './VisitCard'
  *  - ScheduleListView: the week-grouped list branch (day headers + VisitCard
  *    rows), including the empty state. */
 
-export function ScheduleHealthStrip({ stats }) {
+export function ScheduleHealthStrip({ stats, onFixSync, fixingSync }) {
   return (
     <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
       <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
@@ -24,6 +24,16 @@ export function ScheduleHealthStrip({ stats }) {
           {stats.notGcal > 0 && <span>{stats.notGcal} not on Google yet</span>}
           {stats.notGcal > 0 && stats.notConnecteam > 0 && <span className="text-amber-300">·</span>}
           {stats.notConnecteam > 0 && <span>{stats.notConnecteam} not in Connecteam</span>}
+          {onFixSync && (
+            <button
+              onClick={onFixSync}
+              disabled={fixingSync}
+              className="ml-auto shrink-0 text-[12px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 disabled:opacity-60 border border-amber-300 rounded-md px-2.5 py-1 transition-colors"
+              data-testid="fix-sync-now"
+            >
+              {fixingSync ? 'Fixing…' : 'Fix sync now'}
+            </button>
+          )}
         </div>
       )}
     </div>

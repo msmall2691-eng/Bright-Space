@@ -17,6 +17,7 @@ from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
 from utils.integration_log import log_integration_event as _log_integration
+from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -184,7 +185,7 @@ def _validate_job_timing(scheduled_date, start_time, end_time, *, is_new: bool):
             status_code=400,
             detail=f"End time ({end_time}) must be after start time ({start_time}).",
         )
-    if is_new and d is not None and d < date.today():
+    if is_new and d is not None and d < business_today():
         raise HTTPException(
             status_code=400,
             detail=f"Cannot schedule a job in the past ({d.isoformat()}).",
@@ -344,7 +345,7 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
     eligible candidate are left unassigned and reported.
 
     dry_run=True computes the picks without writing them (for a preview)."""
-    today = date.today()
+    today = business_today()
     roster = _cleaner_roster(db)
     jobs = (
         db.query(Job)
@@ -830,7 +831,7 @@ def gcal_sync_status(db: Session = Depends(get_db)):
         configured = bool(is_configured())
     except Exception:
         configured = False
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = business_today().isoformat()
     unsynced = db.query(Job).filter(
         Job.gcal_event_id.is_(None),
         Job.status.in_(["scheduled", "in_progress"]),
@@ -851,7 +852,7 @@ def push_to_gcal(db: Session = Depends(get_db)):
     jobs = db.query(Job).options(joinedload(Job.client)).filter(
         Job.gcal_event_id.is_(None),
         Job.status.in_(["scheduled", "in_progress"]),
-        Job.scheduled_date >= datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        Job.scheduled_date >= business_today().isoformat(),
     ).all()
 
     if not jobs:
@@ -885,6 +886,74 @@ def push_to_gcal(db: Session = Depends(get_db)):
 
     db.commit()
     return {"pushed": created_count, "errors": errors, "message": f"Pushed {created_count} job(s) to Google Calendar"}
+
+
+@router.post("/sync-reconcile", dependencies=[Depends(require_role("admin", "manager"))])
+def sync_reconcile(db: Session = Depends(get_db)):
+    """One-click fix for the schedule "Needs attention" banner.
+
+    Pushes every upcoming unsynced job to Google Calendar (same logic as
+    /push-to-gcal) AND dispatches upcoming assigned jobs that have no
+    Connecteam shifts yet. Both paths are no-ops for jobs already synced,
+    so this is safe to call repeatedly. The background reconcile tick
+    (scheduler.sync_reconcile_tick) runs the same repairs automatically.
+    """
+    result = {"gcal": {"pushed": 0, "errors": 0}, "connecteam": {"dispatched": 0, "errors": 0}}
+
+    # Google Calendar
+    try:
+        from integrations.google_calendar import is_configured as _gcal_ok
+        if _gcal_ok():
+            pushed = push_to_gcal(db)
+            result["gcal"] = {"pushed": pushed.get("pushed", 0),
+                              "errors": len(pushed.get("errors") or [])}
+        else:
+            result["gcal"]["skipped"] = "not_configured"
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"sync-reconcile: GCal push failed: {e}")
+        result["gcal"] = {"pushed": 0, "errors": 1, "detail": str(e)}
+
+    # Connecteam
+    try:
+        from integrations.connecteam import is_configured as _ct_ok
+        if _ct_ok():
+            from integrations.connecteam_auto import auto_dispatch_job
+            start = business_today().isoformat()
+            end = (business_today() + timedelta(days=30)).isoformat()
+            jobs = db.query(Job).filter(
+                Job.status.in_(["scheduled", "in_progress"]),
+                Job.scheduled_date >= start,
+                Job.scheduled_date <= end,
+            ).all()
+            dispatched, errors = 0, 0
+            for job in jobs:
+                if job.connecteam_shift_ids or not job.cleaner_ids:
+                    continue
+                st = auto_dispatch_job(db, job, commit=False)
+                if st.get("dispatched"):
+                    dispatched += 1
+                if st.get("errors"):
+                    errors += len(st["errors"])
+            db.commit()
+            result["connecteam"] = {"dispatched": dispatched, "errors": errors}
+        else:
+            result["connecteam"]["skipped"] = "not_configured"
+    except Exception as e:
+        logger.warning(f"sync-reconcile: Connecteam dispatch failed: {e}")
+        result["connecteam"] = {"dispatched": 0, "errors": 1, "detail": str(e)}
+
+    parts = []
+    if result["gcal"].get("pushed"):
+        parts.append(f"{result['gcal']['pushed']} pushed to Google")
+    if result["connecteam"].get("dispatched"):
+        parts.append(f"{result['connecteam']['dispatched']} sent to Connecteam")
+    total_errors = result["gcal"].get("errors", 0) + result["connecteam"].get("errors", 0)
+    if total_errors:
+        parts.append(f"{total_errors} error(s)")
+    result["message"] = ", ".join(parts) if parts else "Everything already in sync"
+    return result
 
 
 @router.post("/sync-gcal", dependencies=[Depends(require_role("admin", "manager"))])
@@ -943,7 +1012,7 @@ def list_time_off(
     if cleaner_id:
         q = q.filter(CleanerTimeOff.cleaner_id == str(cleaner_id))
     if upcoming_only:
-        q = q.filter(CleanerTimeOff.end_date >= date.today())
+        q = q.filter(CleanerTimeOff.end_date >= business_today())
     rows = q.order_by(CleanerTimeOff.start_date).all()
     return [_timeoff_to_dict(t) for t in rows]
 
@@ -1007,7 +1076,7 @@ def diagnose_missing_times(db: Session = Depends(get_db)):
     always traces to a Job with start_time IS NULL shown via the job→visit
     fallback. Each row is tagged with the likely source so we can fix the
     actual producer rather than guess. Read-only; writes nothing."""
-    today = date.today()
+    today = business_today()
     missing = (
         db.query(Job)
         .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]))

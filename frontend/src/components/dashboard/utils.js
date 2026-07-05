@@ -1,13 +1,14 @@
 import { Mail, MessageSquare, Phone } from 'lucide-react'
 import { displayContactName, formatPhone } from '../../utils/display'
+import { toLocalYMD, todayYMD } from '../../utils/format'
 
 /** ISO date (YYYY-MM-DD) for today. */
-export const today = () => new Date().toISOString().slice(0, 10)
+export const today = () => todayYMD()
 
 /** ISO date (YYYY-MM-DD) for the first day of the current month. */
 export const monthStart = () => {
   const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
+  return toLocalYMD(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
 /** Whole-dollar money formatter used by every KPI on the money tile:

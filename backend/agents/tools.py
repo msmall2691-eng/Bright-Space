@@ -11,6 +11,7 @@ import os
 import re
 from datetime import date, timedelta
 from pathlib import Path
+from utils.dates import business_today
 
 # Resolve root relative to this file: tools.py → agents/ → backend/ → BrightBase/
 BRIGHTBASE_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -212,8 +213,8 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
         # ── Business data ──────────────────────────────────────────────────────
 
         if name == "get_business_snapshot":
-            today = date.today().isoformat()
-            week_end = (date.today() + timedelta(days=7)).isoformat()
+            today = business_today().isoformat()
+            week_end = (business_today() + timedelta(days=7)).isoformat()
             return {
                 "date_today": today,
                 "clients_total":  db.query(Client).count(),
@@ -272,7 +273,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
         elif name == "get_recurring_schedules":
             client_map = {c.id: c.name for c in db.query(Client).all()}
             day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-            today = date.today().isoformat()
+            today = business_today().isoformat()
             result = []
             for s in db.query(RecurringSchedule).all():
                 upcoming = db.query(Job).filter(
@@ -297,7 +298,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
             return result
 
         elif name == "check_system_health":
-            today = date.today().isoformat()
+            today = business_today().isoformat()
             issues = []
             ok = []
 
@@ -396,7 +397,7 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
 
             elif op == "push_all_to_gcal":
                 from integrations.google_calendar import create_event
-                today = date.today().isoformat()
+                today = business_today().isoformat()
                 jobs = db.query(Job).filter(
                     Job.scheduled_date >= today,
                     Job.status == "scheduled",

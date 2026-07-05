@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { todayYMD } from '../utils/format'
 
 /** Derived views over the week's visits: filter chip state (property type
  *  + status + unassigned-only) + the four cascading useMemos every render
@@ -70,7 +71,7 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
   }, [filteredVisits])
 
   const scheduleStats = useMemo(() => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = todayYMD()
     const active = (visits || []).filter(v => v.status !== 'cancelled')
     // The Google event id lives on the Job, not the Visit, so resolve through the
     // linked job — otherwise every visit reads as "not on Google" (false 0/total).

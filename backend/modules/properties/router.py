@@ -10,6 +10,7 @@ from database.db import get_db
 from database.models import Property, ICalEvent, PropertyIcal, Client
 from integrations.ical_sync import sync_property
 from modules.auth.router import require_role, current_org_id
+from utils.dates import business_today
 
 
 log = logging.getLogger(__name__)
@@ -240,7 +241,7 @@ def _active_turnover_dates(db: Session, property_id: int) -> set:
     dated turnover jobs. Used for the rebuild before/after report."""
     from datetime import date as _date
     from database.models import Job
-    today = _date.today().isoformat()
+    today = business_today().isoformat()
     out = set()
     for j in db.query(Job).filter(
         Job.property_id == property_id,
@@ -346,7 +347,7 @@ def turnover_sweep(db: Session = Depends(get_db)):
     from datetime import date
     from database.models import Job, ICalEvent
 
-    today = date.today().isoformat()
+    today = business_today().isoformat()
 
     prop_ids = [
         row[0] for row in (
@@ -483,7 +484,7 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
     if not prop:
         raise HTTPException(404, "Property not found")
 
-    today = date.today().isoformat()
+    today = business_today().isoformat()
     prop_tz = prop.timezone or "America/New_York"
 
     feeds = []

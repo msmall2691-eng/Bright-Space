@@ -19,6 +19,7 @@ import { useScheduleData } from '../hooks/useScheduleData'
 import { useScheduleTools } from '../hooks/useScheduleTools'
 import { useScheduleFilters } from '../hooks/useScheduleFilters'
 import { useVisitSelection } from '../hooks/useVisitSelection'
+import { toLocalYMD, todayYMD } from '../utils/format'
 
 export default function Schedule() {
   const { toast, ToastContainer } = useToast()
@@ -94,11 +95,12 @@ export default function Schedule() {
   const {
     gcalSyncing, syncFromGoogle,
     gcalPushing, pushToGoogle,
+    fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
   } = useScheduleTools({ toast, refresh })
 
-  const dateStr = currentDate.toISOString().split('T')[0]
+  const dateStr = toLocalYMD(currentDate)
 
   const {
     selectedPropertyType, setSelectedPropertyType,
@@ -194,8 +196,8 @@ export default function Schedule() {
     startDate.setDate(startDate.getDate() - startDate.getDay())
     const endDate = new Date(startDate)
     endDate.setDate(endDate.getDate() + 6)
-    const start = startDate.toISOString().split('T')[0]
-    const end = endDate.toISOString().split('T')[0]
+    const start = toLocalYMD(startDate)
+    const end = toLocalYMD(endDate)
     // Reload via /api/jobs; downstream code accepts the same shape via the
     // job-as-visit fallback in the main loader.
     const jobsRes = await get(`/api/jobs?date_from=${start}&date_to=${end}`)
@@ -276,7 +278,7 @@ export default function Schedule() {
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
       />
 
-      <ScheduleHealthStrip stats={scheduleStats} />
+      <ScheduleHealthStrip stats={scheduleStats} onFixSync={fixSync} fixingSync={fixingSync} />
 
       {/* Selection / bulk-action bar */}
       {!isGoogleOnly && (
@@ -300,7 +302,7 @@ export default function Schedule() {
           properties={properties}
           clients={clients}
           onSelect={handleEdit}
-          isToday={dateStr === new Date().toISOString().split('T')[0]}
+          isToday={dateStr === todayYMD()}
           empName={empName}
         />
       ) : viewMode === 'month' ? (

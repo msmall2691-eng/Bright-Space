@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { get } from '../api'
+import { toLocalYMD } from '../utils/format'
 
 /** Loads the /api/schedule/week aggregate (visits + jobs + properties +
  *  clients) for the week containing `currentDate`, plus the Connecteam
@@ -35,8 +36,8 @@ export function useScheduleData(currentDate) {
         const endDate = new Date(startDate)
         endDate.setDate(endDate.getDate() + 6)
 
-        const start = startDate.toISOString().split('T')[0]
-        const end = endDate.toISOString().split('T')[0]
+        const start = toLocalYMD(startDate)
+        const end = toLocalYMD(endDate)
 
         // One aggregate call returns the whole week (visits + jobs + properties
         // + clients) instead of four parallel round trips. Shapes are identical

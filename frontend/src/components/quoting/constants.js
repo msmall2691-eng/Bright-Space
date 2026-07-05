@@ -3,6 +3,7 @@
  * extracted sub-components. Everything here is closure-free — pure values
  * or pure functions with no captured state.
  */
+import { toLocalYMD } from '../../utils/format'
 
 export const QUOTE_STATUS_COLORS = {
   draft:    'bg-bg-2 text-ink-3 border-hairline',
@@ -81,7 +82,7 @@ export const roundTo5 = (n) => Math.round((Number(n) || 0) / 5) * 5
 export const defaultValidUntil = () => {
   const d = new Date()
   d.setDate(d.getDate() + 30)
-  return d.toISOString().slice(0, 10)
+  return toLocalYMD(d)
 }
 
 // Names that are really phone numbers / intake placeholders — never greet

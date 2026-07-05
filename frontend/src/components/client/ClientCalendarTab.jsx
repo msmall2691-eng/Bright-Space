@@ -7,6 +7,7 @@ import { get, post } from '../../api'
 import {
   MINI_DAYS, MONTH_NAMES, JOB_TYPE_DOT, JOB_TYPE_LABEL, STATUS_PILL,
 } from './constants'
+import { toLocalYMD } from '../../utils/format'
 
 /** A single Google Calendar event row in the client's linked timeline. */
 function GcalEventRow({ ev }) {
@@ -99,7 +100,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
     setInvitingId(null)
   }
 
-  const todayStr = now.toISOString().slice(0, 10)
+  const todayStr = toLocalYMD(now)
 
   // Build map of date → jobs for this client
   const jobsByDate = {}

@@ -29,6 +29,7 @@ from database.db import get_db
 from database.models import Client, Job, RecurringSchedule, Property, Invoice
 from modules.auth.router import get_current_user
 from agents.tools import get_tools_for_agent, execute_tool
+from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -141,7 +142,7 @@ def _days_overdue(inv: Invoice) -> Optional[int]:
         due = date.fromisoformat(str(inv.due_date)[:10])
     except (ValueError, TypeError):
         return None
-    d = (date.today() - due).days
+    d = (business_today() - due).days
     return d if d > 0 else None
 
 
@@ -235,7 +236,7 @@ def overdue_reminders(db: Session = Depends(get_db), user=Depends(get_current_us
     Review-first — returns drafts only, sends nothing. Each item carries the
     data the UI needs to review and then send via the existing invoice send
     endpoint. {total, truncated, reminders:[...]}."""
-    today = date.today().isoformat()
+    today = business_today().isoformat()
     candidates = db.query(Invoice).filter(
         Invoice.status.in_(["sent", "overdue"])
     ).all()
@@ -277,8 +278,8 @@ def followup_check(db: Session = Depends(get_db), user=Depends(get_current_user)
 def _compute_followups(db: Session) -> dict:
     """Build the prioritized list of items needing attention. Pure DB reads;
     each entry has title / detail / action / severity ('high' | 'medium')."""
-    today = date.today().isoformat()
-    soon = (date.today() + timedelta(days=2)).isoformat()
+    today = business_today().isoformat()
+    soon = (business_today() + timedelta(days=2)).isoformat()
     items = []
 
     # Overdue invoices (explicitly overdue, or sent + past due date).
