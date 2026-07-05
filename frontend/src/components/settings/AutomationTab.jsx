@@ -48,8 +48,34 @@ export function useAutomationSettings({ toast, active }) {
   }
 }
 
-export default function AutomationTab({ state }) {
+export default function AutomationTab({ state, toast, active }) {
   const { automationSettings: s, setAutomationSettings, automationSaving, saveAutomationSettings } = state
+
+  // Customer messaging (SMS reminders) toggle used to live on the Integrations
+  // tab as a big amber banner — but it's an automation switch, not an
+  // integration. Owns its own state here; reads GET messaging-status and
+  // POSTs messaging.
+  const [msgStatus, setMsgStatus] = useState({ loading: true })
+  const [msgSaving, setMsgSaving] = useState(false)
+  useEffect(() => {
+    if (!active) return
+    get('/api/settings/messaging-status')
+      .then(r => setMsgStatus({ loading: false, ...r }))
+      .catch(() => setMsgStatus({ loading: false, error: true }))
+  }, [active])
+  const setMessaging = async (on) => {
+    setMsgSaving(true)
+    try {
+      const r = await post('/api/settings/messaging', { customer_sms_reminders: on })
+      setMsgStatus({ loading: false, ...r })
+      toast(on ? 'Automatic SMS reminders enabled' : 'Automatic customer messaging turned OFF')
+    } catch (e) {
+      toast(e?.message || 'Could not update messaging', 'error')
+    } finally {
+      setMsgSaving(false)
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
       <div className="max-w-2xl pt-6">
@@ -121,6 +147,31 @@ export default function AutomationTab({ state }) {
               <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
             )}
           </div>
+
+          {/* Customer messaging status — was a red/amber banner on Integrations.
+              Same POST target as before (/api/settings/messaging), just
+              relocated to where operators actually look for automation
+              toggles. */}
+          {!msgStatus.loading && !msgStatus.error && (
+            <div className="border-t border-hairline pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-ink">Automatic customer SMS reminders</h3>
+                  <p className="text-xs text-ink-3 mt-1">
+                    {msgStatus.any_automatic_customer_messaging
+                      ? 'Currently ON — customers receive automatic SMS reminders before their cleanings.'
+                      : 'Currently OFF — no automatic texts or emails are sent to customers. Invites & invoices are manual only.'}
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!msgStatus.any_automatic_customer_messaging}
+                    disabled={msgSaving}
+                    onChange={e => setMessaging(e.target.checked)}
+                    className="w-4 h-4 rounded" />
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="border-t border-hairline pt-6">
             <div className="flex items-center justify-between mb-4">
