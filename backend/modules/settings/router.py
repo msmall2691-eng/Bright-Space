@@ -687,6 +687,11 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
             address=job.address,
             notes=job.notes,
             open_shift=True,
+            # DRAFT, not published. Bright Space pushes the schedule as a
+            # draft so the office can review + adjust in Connecteam before
+            # making shifts visible to cleaners. Publishing is a one-click
+            # step on Connecteam's side.
+            is_published=False,
         ))
         job_by_index.append(job)
 
