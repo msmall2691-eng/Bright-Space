@@ -102,8 +102,10 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
                       placeholder="Line item"
                       className="flex-1 bg-panel border border-hairline rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400" />
                     <input type="number" value={it.qty} onChange={e => updateTplItem(ti, ii, { qty: e.target.value })}
+                      onFocus={e => e.target.select()}
                       title="Qty" className="w-14 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
                     <input type="number" value={it.unit_price} onChange={e => updateTplItem(ti, ii, { unit_price: e.target.value })}
+                      onFocus={e => e.target.select()}
                       title="Unit price" className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
                     <button onClick={() => removeTplItem(ti, ii)} className="p-1.5 text-ink-3 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
                   </div>

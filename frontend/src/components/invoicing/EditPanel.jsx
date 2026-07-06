@@ -91,12 +91,14 @@ export function EditPanel({
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-ink-3 w-6">Qty</span>
                     <input type="number" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
+                      onFocus={e => e.target.select()}
                       className="w-14 bg-transparent text-xs text-ink-3 focus:outline-none text-center border border-hairline rounded px-1 py-0.5" />
                   </div>
                   <span className="text-ink-2">×</span>
                   <div className="flex items-center gap-1 flex-1">
                     <span className="text-[10px] text-ink-3">$</span>
                     <input type="number" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                      onFocus={e => e.target.select()}
                       className="flex-1 bg-transparent text-xs text-ink-3 focus:outline-none border border-hairline rounded px-2 py-0.5" />
                   </div>
                   <span className="text-xs font-medium text-ink w-16 text-right">
