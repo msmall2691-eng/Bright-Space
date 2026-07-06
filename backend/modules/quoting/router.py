@@ -742,7 +742,14 @@ def _existing_job_for_quote(db: Session, quote: Quote) -> Optional[Job]:
 
 def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     """Idempotent quote → (undated) Job conversion. Returns the Job, creating it
-    and flipping the quote to 'converted' only if one doesn't already exist."""
+    and flipping the quote to 'converted' only if one doesn't already exist.
+
+    Landing status is "unscheduled" because we don't ask for a date at
+    conversion time — the operator picks one on the Scheduling page. The
+    PATCH /jobs/{id} endpoint auto-promotes to "scheduled" when they do.
+    Leaving it as "scheduled" here made the Job listing display a blue
+    "Scheduled" badge on a job with no date, which read as on-calendar
+    when it wasn't."""
     existing = _existing_job_for_quote(db, quote)
     if existing:
         if quote.status != "converted":
@@ -761,7 +768,7 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
         job_type=job_type,
         title=quote.title or f"{svc.title()} clean",
         address=quote.address or prop.address,
-        status="scheduled",
+        status="unscheduled",
         notes=quote.notes,
     )
     db.add(job)

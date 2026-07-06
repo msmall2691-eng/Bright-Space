@@ -59,7 +59,7 @@ class JobUpdate(BaseModel):
     allow_conflicts: Optional[bool] = False
 
 JOB_TYPES = {"residential", "commercial", "str_turnover", "one_time"}
-JOB_STATUSES = {"scheduled", "in_progress", "completed", "cancelled"}
+JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
 
 
 class BookingInfo(BaseModel):
@@ -1451,6 +1451,18 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         updates["start_time"] = _to_time(updates["start_time"])
     if "end_time" in updates:
         updates["end_time"] = _to_time(updates["end_time"])
+
+    # Auto-promote "unscheduled" to "scheduled" when the operator finally
+    # adds a date. This is the transition converted-quote jobs need — they
+    # land as "unscheduled" (no date), and setting a date is the signal
+    # that they're now actually on the calendar. Skip if the operator
+    # explicitly set a different status in the same request.
+    if (
+        prev_status == "unscheduled"
+        and updates.get("scheduled_date")
+        and "status" not in updates
+    ):
+        updates["status"] = "scheduled"
     for field, value in updates.items():
         setattr(job, field, value)
     db.commit()
