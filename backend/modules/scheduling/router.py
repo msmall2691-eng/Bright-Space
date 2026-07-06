@@ -1455,12 +1455,18 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     # Auto-promote "unscheduled" to "scheduled" when the operator finally
     # adds a date. This is the transition converted-quote jobs need — they
     # land as "unscheduled" (no date), and setting a date is the signal
-    # that they're now actually on the calendar. Skip if the operator
-    # explicitly set a different status in the same request.
+    # that they're now actually on the calendar.
+    #
+    # The Job Edit modal sends the FULL payload on every save (including an
+    # unchanged status), so "status" is present in `updates` even when the
+    # operator only picked a date. Guard on the value: promote only when
+    # the incoming status equals the current status (i.e. wasn't actually
+    # changed to something else like "cancelled"). Anything else the
+    # operator explicitly picked wins.
     if (
         prev_status == "unscheduled"
         and updates.get("scheduled_date")
-        and "status" not in updates
+        and updates.get("status", prev_status) == prev_status
     ):
         updates["status"] = "scheduled"
     for field, value in updates.items():
