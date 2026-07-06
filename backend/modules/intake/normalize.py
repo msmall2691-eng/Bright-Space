@@ -23,6 +23,7 @@ import logging
 import re
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database.models import LeadIntake, Client, Activity
@@ -140,6 +141,10 @@ class IntakeData:
     # ride here so the operator sees them on the Request card without a
     # schema migration for every future essentials field the site adds.
     custom_fields: Optional[dict] = None
+    # Client-supplied idempotency token — a per-submission UUID from the
+    # maineclean.co form. Same key on two POSTs = same Lead row. See
+    # LeadIntake.idempotency_key for the DB-side guarantee.
+    idempotency_key: Optional[str] = None
 
 
 def build_intake(
@@ -169,6 +174,7 @@ def build_intake(
     pet_hair: Optional[str] = None,
     condition: Optional[str] = None,
     custom_fields: Optional[dict] = None,
+    idempotency_key: Optional[str] = None,
 ) -> IntakeData:
     """Normalize a raw public payload into :class:`IntakeData`.
 
@@ -230,6 +236,7 @@ def build_intake(
             }
             or None
         ),
+        idempotency_key=(idempotency_key or "").strip() or None,
     )
 
 
@@ -284,6 +291,26 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     of EVERY structured column, and a ``lead_received`` timeline Activity.
     Returns ``{success, intake_id, client_id, deduped}``.
     """
+    # Idempotency-key short-circuit — if the caller sent one and we've seen
+    # it, return that Lead. Beats the 5-minute recency SELECT because it's
+    # deterministic (not timing-dependent) and works across the maineclean.co
+    # Express middle layer's dual-forward pattern (see brightbase.ts +
+    # routes.ts /api/intake/submit handler). The DB unique index is the last
+    # word — see migration 044.
+    if data.idempotency_key:
+        by_key = (
+            db.query(LeadIntake)
+            .filter(LeadIntake.idempotency_key == data.idempotency_key)
+            .first()
+        )
+        if by_key is not None:
+            return {
+                "success": True,
+                "intake_id": by_key.id,
+                "client_id": by_key.client_id,
+                "deduped": True,
+            }
+
     recent = _find_recent_duplicate(db, data.email, data.phone)
     if recent:
         changed = False
@@ -322,16 +349,31 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         db.add(client)
         db.flush()  # assign client.id without committing
     else:
-        # Overwrite a placeholder name with the real lead's; back-fill contacts
-        # so future lookups still match this client.
+        # Overwrite a placeholder name with the real lead's.
         if data.name and data.name != "Unknown" and looks_placeholder_name(client.name):
             client.name = data.name
-        if data.email and not client.email:
+        # The customer just typed their current contact info on a booking
+        # form — treat it as authoritative, not "back-fill only if empty".
+        # This is the M1 fix from the July-2026 audit: a returning customer
+        # who books from a new address/phone was leaving their master client
+        # record permanently stale (Requests page shows the fresh info; the
+        # Client card kept the old). The multi-value `client_emails` and
+        # `client_phones` tables below preserve the historical values, so no
+        # info is lost — the primary just tracks the latest submission.
+        if data.email and data.email != client.email:
             client.email = data.email
-        if data.phone and not client.phone:
+        if data.phone and data.phone != client.phone:
             client.phone = data.phone
-        if data.address and not client.address:
+        if data.address and data.address != client.address:
             client.address = data.address
+        if data.city and data.city != client.city:
+            client.city = data.city
+        # Only update state if it moved out of the "ME" default AND the new
+        # value is non-empty — don't ever downgrade a real state to blank.
+        if data.state and data.state != (client.state or ""):
+            client.state = data.state
+        if data.zip_code and data.zip_code != (client.zip_code or ""):
+            client.zip_code = data.zip_code
 
     # Record the lead's email/phone in the canonical multi-value tables so a
     # returning customer (or a Gmail thread) matches this client instead of
@@ -351,9 +393,34 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         property_name=data.property_name, message=data.message,
         preferred_date=data.preferred_date, source=data.source, client_id=client.id,
         custom_fields=data.custom_fields or {},
+        idempotency_key=data.idempotency_key,
     )
-    db.add(intake)
-    db.flush()
+    # Race backstop: if two concurrent requests both pass the idempotency
+    # SELECT above and both try to insert with the same key, the unique index
+    # (migration 044) makes exactly one of them win. The loser catches
+    # IntegrityError here, rolls back, and returns the winner's row — the
+    # customer sees a single Lead either way.
+    sp = db.begin_nested()
+    try:
+        db.add(intake)
+        db.flush()
+        sp.commit()
+    except IntegrityError:
+        sp.rollback()
+        if data.idempotency_key:
+            winner = (
+                db.query(LeadIntake)
+                .filter(LeadIntake.idempotency_key == data.idempotency_key)
+                .first()
+            )
+            if winner is not None:
+                return {
+                    "success": True,
+                    "intake_id": winner.id,
+                    "client_id": winner.client_id,
+                    "deduped": True,
+                }
+        raise
     try:
         db.add(Activity(
             client_id=client.id,

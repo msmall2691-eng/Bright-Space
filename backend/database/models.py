@@ -593,6 +593,14 @@ class LeadIntake(Base):
     assigned_to = Column(String, nullable=True)
     internal_notes = Column(Text, nullable=True)
     custom_fields = Column(JSON, default=dict)
+    # Client-supplied idempotency token (UUID). Every public POST from
+    # maineclean.co carries one so retries, dual-forwards from the Express
+    # middle layer, and the two-endpoint pattern (booking + intake) all
+    # collapse to a single Lead row instead of racing past the 5-minute
+    # recency SELECT. Unique index enforces this at the DB level;
+    # `upsert_lead` short-circuits when a match is found. Nullable so
+    # pre-migration rows and any non-website callers still work.
+    idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

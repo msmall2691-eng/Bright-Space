@@ -41,6 +41,9 @@ class IntakeSubmit(BaseModel):
     message: Optional[str] = None
     preferred_date: Optional[str] = None
     source: Optional[str] = "website"
+    # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
+    # (retry / dual-forward / user tapped Submit twice) = one Lead row.
+    idempotency_key: Optional[str] = None
 
 
 class IntakeUpdate(BaseModel):
@@ -109,6 +112,7 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
         check_out=data.check_out, estimate_min=data.estimate_min,
         estimate_max=data.estimate_max, property_name=data.property_name,
         message=data.message, preferred_date=data.preferred_date, source=data.source,
+        idempotency_key=data.idempotency_key,
     )
     return upsert_lead(db, payload)
 
@@ -346,6 +350,9 @@ class WebhookPayload(BaseModel):
     squareFeet: Optional[int] = None
     message: Optional[str] = None
     propertyType: Optional[str] = None
+    # Client-supplied UUID for cross-endpoint dedup (see IntakeSubmit).
+    idempotencyKey: Optional[str] = None
+    idempotency_key: Optional[str] = None
     model_config = ConfigDict(extra="allow")
 
 
@@ -374,6 +381,7 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
         square_footage=sqft, frequency=data.frequency, message=notes_text or None,
         source=data.source or "website",
         pet_hair=data.petHair, condition=data.condition,
+        idempotency_key=data.idempotency_key or data.idempotencyKey,
     )
     result = upsert_lead(db, payload)
 
