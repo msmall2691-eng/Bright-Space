@@ -15,6 +15,59 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _send_booking_customer_confirmation(
+    data: "BookingSubmit",
+    intake_id: int,
+    estimate_min: Optional[float],
+    estimate_max: Optional[float],
+) -> None:
+    """Email the customer a booking receipt right after they submit.
+
+    Best-effort — SMTP not configured or a send failure both log a
+    warning and return without raising, so the customer-facing HTTP
+    response never depends on this path.
+    """
+    to_email = (data.email or "").strip()
+    if not to_email or "@" not in to_email:
+        return
+    try:
+        from integrations.email import _load_smtp_creds, send_email
+        from services.quote_email_service import first_name_of, customer_display_name
+        creds = _load_smtp_creds()
+        company = creds.get("from_name") or "The Maine Cleaning Co."
+        first = first_name_of(data.name) or customer_display_name(data.name) or "there"
+        est_line = ""
+        if estimate_min is not None and estimate_max is not None:
+            est_line = f"Estimate: ${int(estimate_min)}–${int(estimate_max)}."
+        lines = [
+            f"Hi {first},",
+            "",
+            f"Thanks for booking with {company}! We got your request for {data.serviceType} on {data.requestedDate}.",
+            f"Service address: {data.address}",
+            est_line,
+            "",
+            "We'll review it and confirm by call or text within 1 business day. "
+            "Once we've confirmed, you'll get a Google Calendar invite that adds the "
+            "cleaning to your phone automatically — no app to install.",
+            "",
+            "Questions in the meantime? Just reply to this email.",
+        ]
+        # Drop the est_line placeholder if no estimate came through.
+        lines = [l for l in lines if l is not None and l != ""] or lines
+        import html as _html
+        body = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
+            "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines) + "</div>"
+        send_email(
+            to=to_email,
+            subject=f"Booking request received — {data.requestedDate}",
+            html_body=body,
+            text_body="\n".join(lines),
+        )
+        logger.info("[booking] customer confirmation email sent for intake=%s", intake_id)
+    except Exception as e:
+        logger.warning("[booking] customer confirmation email failed for intake %s: %s", intake_id, e)
+
+
 def _send_booking_owner_alert(
     db: Session,
     data: "BookingSubmit",
@@ -244,6 +297,14 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         _send_booking_owner_alert(db, data, result["intake_id"], estimate_min, estimate_max)
     except Exception as e:
         logger.warning("booking owner SMS failed: %s", e)
+
+    # Email the customer a receipt so they know we got it and know what
+    # comes next (the Google Calendar invite once we approve). Same
+    # best-effort contract as the owner SMS.
+    try:
+        _send_booking_customer_confirmation(data, result["intake_id"], estimate_min, estimate_max)
+    except Exception as e:
+        logger.warning("booking customer email failed: %s", e)
 
     return BookingResponse(
         success=True,
