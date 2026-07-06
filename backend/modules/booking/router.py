@@ -55,6 +55,12 @@ class BookingSubmit(BaseModel):
     # call would drop the pet/condition surcharges.
     petHair: Optional[str] = None
     condition: Optional[str] = None
+    # The customer-facing calculator on maineclean.co computes a range and
+    # sends it here. Honor those numbers — otherwise Bright-Space would
+    # recompute with its own engine and store a value that differs from
+    # what the customer was quoted.
+    estimateMin: Optional[float] = None
+    estimateMax: Optional[float] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -126,6 +132,27 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         parts.append(f"Turnover type: {data.turnover}")
     message = " | ".join(parts) if parts else None
 
+    # Trust the customer-facing quote but not a tampered payload. Drop
+    # anything that isn't a plausible positive range (negative, inverted,
+    # or absurdly large — the canonical engine tops out well under $10k
+    # even for oversized deep-clean one-time jobs) and let build_intake's
+    # fallback recompute from the structured fields instead. 0 is also
+    # treated as missing because the client sends 0 for custom-quote
+    # services (STR / commercial).
+    _MAX_PLAUSIBLE_ESTIMATE = 10000
+    estimate_min = data.estimateMin if data.estimateMin else None
+    estimate_max = data.estimateMax if data.estimateMax else None
+    if estimate_min is not None and (estimate_min < 0 or estimate_min > _MAX_PLAUSIBLE_ESTIMATE):
+        estimate_min = None
+    if estimate_max is not None and (estimate_max < 0 or estimate_max > _MAX_PLAUSIBLE_ESTIMATE):
+        estimate_max = None
+    if (
+        estimate_min is not None
+        and estimate_max is not None
+        and estimate_min > estimate_max
+    ):
+        estimate_min = estimate_max = None
+
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
         state="ME", service_key=data.serviceType, bedrooms=data.bedrooms,
@@ -134,6 +161,7 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         check_in=data.checkIn, check_out=data.checkOut, property_name=data.property,
         message=message, preferred_date=data.requestedDate, source="website",
         pet_hair=data.petHair, condition=data.condition,
+        estimate_min=estimate_min, estimate_max=estimate_max,
     )
     result = upsert_lead(db, payload)
 

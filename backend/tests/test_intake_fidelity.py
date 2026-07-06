@@ -53,12 +53,18 @@ def test_build_intake_maps_and_computes_estimate():
 
 
 def test_frequency_changes_the_estimate():
-    """Frequency must actually feed the estimator (it was hard-coded None)."""
+    """Frequency must actually feed the estimator (it was hard-coded None).
+
+    In the client-aligned labor-hour model biweekly is the baseline (1.0),
+    weekly is 0.85, monthly 1.15, and one-time is 1.50 — so a recurring
+    cadence prices below one-time. Compare biweekly vs an explicit one-time
+    to prove both that the frequency is wired through AND that the discount
+    direction is correct.
+    """
     one_time = build_intake(name="A", email="a@example.com", service_key="residential",
-                            square_footage=2000, bathrooms=2, frequency=None)
+                            square_footage=2000, bathrooms=2, frequency="one-time")
     biweekly = build_intake(name="A", email="a@example.com", service_key="residential",
                             square_footage=2000, bathrooms=2, frequency="biweekly")
-    # A recurring cadence is discounted vs a one-time clean.
     assert biweekly.estimate_max < one_time.estimate_max
 
 

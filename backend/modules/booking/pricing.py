@@ -1,90 +1,130 @@
 """
 Instant-quote pricing engine for the public booking form.
 
-Rules are encoded as plain constants so they're easy to audit and tune
-without touching application code. The output is a price *range* (min, max)
-because the form doesn't capture enough detail to commit to a single
-number — the operator finalizes the actual quote in BrightBase.
+This is a Python port of the maineclean.co InstantEstimate calculator
+(client/src/components/ui/InstantEstimate.tsx). The two engines MUST
+stay in lock-step: the customer sees a number in the browser, then
+Bright-Space recomputes here whenever the wire payload doesn't carry
+one — and if the two engines diverge, the operator gets a different
+price than the customer was quoted.
 
-Defaults reflect mid-2026 Maine residential cleaning rates. Tune the
-constants below if your rates drift. No env-var indirection on purpose:
-making this file the single source of truth keeps surprises out of
-production when you redeploy.
+Formula (mirrors the client):
+    labor  = (sqft_units + bath_adj + condition_units + pet_units) * service_mult
+    raw    = labor * frequency_factor * RATE_PER_UNIT
+    mid    = max(min_job, round_to_5(raw))
+    range  = mid ± 4%, each rounded to $5
+
+Any change to constants here must be mirrored in InstantEstimate.tsx
+or the customer-facing quote and the Bright-Space stored quote will
+drift again. That drift is exactly the bug this file was rewritten
+to eliminate.
 """
+import math
 from typing import Optional
 
 
-# ── Base prices by service ─────────────────────────────────────────
-# Includes the first 2 bedrooms + 1 bathroom + 1000 sqft. Add-ons below.
-BASE_PRICE = {
-    "residential": 130,
-    "commercial":  200,
-    "str":         120,  # STR turnover — smaller default footprint
+# ── Rate per labor unit ────────────────────────────────────────────
+RATE_PER_UNIT = 60  # dollars per labor-unit
+
+# ── Minimum job floor ──────────────────────────────────────────────
+MIN_JOB_STANDARD = 130
+MIN_JOB_DEEP     = 225
+
+# ── Condition surcharges (labor units) ─────────────────────────────
+# Accept "maintenance" (client's key) and "maintained" (legacy Bright-Space
+# alias) so payloads from either shape land on the same 0-unit tier.
+CONDITION_UNITS = {
+    None:          0.0,
+    "":            0.0,
+    "maintenance": 0.0,
+    "maintained":  0.0,
+    "moderate":    0.50,
+    "heavy":       1.00,
 }
 
-# ── Per-additional-room ────────────────────────────────────────────
-PER_EXTRA_BEDROOM_USD  = 25
-PER_EXTRA_BATHROOM_USD = 20
-
-# ── Per-sqft tier (above the first 1000) ───────────────────────────
-SQFT_BAND_SIZE = 500
-SQFT_BAND_PRICE_USD = 25
-
-# ── Pet hair surcharge ─────────────────────────────────────────────
-PET_HAIR_SURCHARGE = {
-    None:    0,
-    "":      0,
-    "none":  0,
-    "some":  15,
-    "heavy": 30,
+# ── Pet-hair surcharges (labor units) ──────────────────────────────
+PET_UNITS = {
+    None:    0.0,
+    "":      0.0,
+    "none":  0.0,
+    "some":  0.30,
+    "heavy": 0.60,
 }
 
-# ── Home condition surcharge ───────────────────────────────────────
-HOME_CONDITION_SURCHARGE = {
-    None:        0,
-    "":          0,
-    "maintained": 0,
-    "moderate":  15,
-    "heavy":     30,
+# ── Frequency multipliers ──────────────────────────────────────────
+# Biweekly is the baseline (1.0). Weekly = 15% off, monthly = 15% surcharge,
+# one-time = 50% surcharge. Do NOT restructure this as "discount off one-time"
+# — that model diverges from the customer-shown quote.
+FREQUENCY_FACTOR = {
+    None:         1.0,
+    "":           1.0,
+    "weekly":     0.85,
+    "biweekly":   1.0,
+    "bi-weekly":  1.0,
+    "monthly":    1.15,
+    "one-time":   1.50,
+    "onetime":    1.50,
+    "one time":   1.50,
 }
-
-# ── Service multipliers ────────────────────────────────────────────
-# Standard / move-in-out / deep-clean / etc. The booking form's
-# free-text "frequency" field is normalized at the call-site.
-FREQUENCY_DISCOUNT = {
-    # one-time pays the base rate
-    None:            1.00,
-    "":              1.00,
-    "one-time":      1.00,
-    "weekly":        0.90,    # 10% off for weekly
-    "biweekly":      0.95,    # 5%  off for biweekly
-    "bi-weekly":     0.95,
-    "monthly":       1.00,
-}
-
-# Deep-clean / move-in-out are typically requested by checking a
-# checkbox or via the message field. Operator can confirm and adjust;
-# the instant quote conservatively flags it via the range width.
-DEEP_CLEAN_MULTIPLIER  = 1.50
-MOVE_IN_OUT_MULTIPLIER = 1.65
 
 # ── Range width ────────────────────────────────────────────────────
-# We always return a min/max around the calculated mid so the customer
-# sees a realistic span. Operator finalizes the exact number.
-RANGE_BAND_PERCENT = 0.12   # ±12% around the mid
+# Client shows ±4%; mirror it so the visible range matches by construction.
+RANGE_BAND_PERCENT = 0.04
+
+# Custom-quote services — client shows no instant number for these; the
+# operator prices them by hand. Bright-Space still runs the labor-hour
+# formula for them so downstream code (opportunity amount, seed unit_price,
+# Requests page) has a residential-shaped placeholder to show the operator
+# rather than $0. The breakdown flags custom_quote=True so callers can
+# render "Custom" verbiage in place of the number if they want to.
+_CUSTOM_QUOTE_SERVICES = {
+    "str", "vacation-rental", "airbnb", "airbnb-turnover",
+    "vrbo-turnover", "str-turnover", "commercial", "commercial-cleaning",
+    "office",
+}
+
+# Default sqft matches the client's initial slider value.
+_DEFAULT_SQFT = 2000
+
+
+def _js_round(n: float) -> int:
+    """JS Math.round for positive numbers — half rounds UP, not banker's.
+    We use this everywhere the client uses Math.round so the two engines
+    produce identical output on the same input."""
+    return int(math.floor(n + 0.5))
 
 
 def _round_to_5(n: float) -> int:
-    """Round to the nearest $5 so the displayed prices look like
-    real numbers, not algorithm output."""
-    return int(round(n / 5.0) * 5)
+    """Round to the nearest $5, JS-compatible."""
+    return _js_round(n / 5.0) * 5
+
+
+def _sqft_units(sf: int) -> float:
+    """Piecewise sqft → labor units. Small homes have a steep marginal
+    rate; larger homes flatten out. Matches InstantEstimate.tsx exactly."""
+    if sf <= 1500:
+        return sf / 680.0
+    if sf <= 3000:
+        return 1500 / 680.0 + (sf - 1500) / 1050.0
+    return 1500 / 680.0 + 1500 / 1050.0 + (sf - 3000) / 1400.0
+
+
+def _deep_multiplier(sf: int) -> float:
+    """Deep-clean multiplier scales with home size."""
+    if sf <= 1200:
+        return 1.60
+    if sf <= 2000:
+        return 1.65
+    if sf <= 3000:
+        return 1.75
+    return 1.80
 
 
 def estimate_price(
     *,
     service_type: str,
     bedrooms: Optional[int] = None,
-    bathrooms: Optional[int] = None,
+    bathrooms: Optional[float] = None,
     square_footage: Optional[int] = None,
     frequency: Optional[str] = None,
     message: Optional[str] = None,
@@ -93,106 +133,84 @@ def estimate_price(
 ) -> dict:
     """Return {estimate_min, estimate_max, breakdown} for a booking.
 
-    Conservative defaults so we never quote suspiciously low. Every
-    component is reported back in ``breakdown`` for transparency and
-    debugging.
+    Ported from the maineclean.co InstantEstimate calculator so the range
+    the customer saw and the range Bright-Space stores agree by construction.
+
+    ``bedrooms`` is accepted for signature compatibility but not used — the
+    client engine sizes on sqft + bathrooms + condition/pet only.
     """
-    svc = (service_type or "residential").lower()
-    if svc not in BASE_PRICE:
-        # Map common aliases the booking form might send.
-        svc = {
-            "airbnb-turnover":     "str",
-            "vrbo-turnover":       "str",
-            "vacation-rental":     "str",
-            "str-turnover":        "str",
-            "residential-cleaning":"residential",
-            "commercial-cleaning": "commercial",
-            "standard":            "residential",
-            "deep":                "residential",
-            "deep-cleaning":       "residential",
-            "move-in-out":         "residential",
-        }.get(svc, "residential")
-
-    base = BASE_PRICE[svc]
-    breakdown = {"base": base, "service_type": svc}
-
-    # Extra rooms beyond the 2BR/1BA included in the base.
-    extra_bd = max(0, (bedrooms or 0) - 2)
-    extra_ba = max(0, (bathrooms or 0) - 1)
-    bd_cost = extra_bd * PER_EXTRA_BEDROOM_USD
-    ba_cost = extra_ba * PER_EXTRA_BATHROOM_USD
-    breakdown["extra_bedrooms"]  = {"count": extra_bd, "subtotal": bd_cost}
-    breakdown["extra_bathrooms"] = {"count": extra_ba, "subtotal": ba_cost}
-
-    # Extra square footage beyond the first 1000.
-    sqft_cost = 0
-    if square_footage and square_footage > 1000:
-        bands = (square_footage - 1000 + SQFT_BAND_SIZE - 1) // SQFT_BAND_SIZE
-        sqft_cost = bands * SQFT_BAND_PRICE_USD
-        breakdown["extra_sqft"] = {
-            "square_footage": square_footage,
-            "bands": bands,
-            "subtotal": sqft_cost,
-        }
-
-    subtotal = base + bd_cost + ba_cost + sqft_cost
-
-    # Deep-clean / move-in-out modifiers — keyword sniff on the message
-    # so the website's "what kind of clean" radio lands the right rate
-    # whether it's encoded in service_type or in the free-text message.
+    svc = (service_type or "").lower().strip()
     msg = (message or "").lower()
-    raw_st = (service_type or "").lower()
-    multiplier = 1.0
-    multiplier_label = None
-    if "move" in raw_st or "move-in" in msg or "move-out" in msg or "move in" in msg or "move out" in msg:
-        multiplier = MOVE_IN_OUT_MULTIPLIER
-        multiplier_label = "move_in_out"
-    elif "deep" in raw_st or "deep clean" in msg or "deep-clean" in msg:
-        multiplier = DEEP_CLEAN_MULTIPLIER
-        multiplier_label = "deep_clean"
-    if multiplier != 1.0:
-        breakdown["service_multiplier"] = {
-            "label": multiplier_label,
-            "factor": multiplier,
-        }
-        subtotal *= multiplier
+    is_custom_quote = svc in _CUSTOM_QUOTE_SERVICES
 
-    # Pet hair surcharge.
-    pet_key = (pet_hair or "").lower().strip()
-    pet_cost = PET_HAIR_SURCHARGE.get(pet_key, 0)
-    if pet_cost:
-        breakdown["pet_hair"] = {"level": pet_key, "surcharge": pet_cost}
-        subtotal += pet_cost
+    # Detect deep-clean / move-in-out from service_type OR the message text
+    # — the contact form has no dedicated field, customers write it in.
+    is_deep = "deep" in svc or "deep clean" in msg or "deep-clean" in msg
+    is_move = (
+        "move" in svc
+        or "move-in" in msg or "move-out" in msg
+        or "move in" in msg or "move out" in msg
+    )
 
-    # Home condition surcharge.
-    cond_key = (condition or "").lower().strip()
-    cond_cost = HOME_CONDITION_SURCHARGE.get(cond_key, 0)
-    if cond_cost:
-        breakdown["home_condition"] = {"level": cond_key, "surcharge": cond_cost}
-        subtotal += cond_cost
+    min_job = MIN_JOB_DEEP if (is_deep or is_move) else MIN_JOB_STANDARD
 
-    # Recurring-frequency discount.
-    freq_key = (frequency or "").lower().strip()
-    freq_factor = FREQUENCY_DISCOUNT.get(freq_key, 1.00)
-    if freq_factor != 1.0:
-        breakdown["frequency_discount"] = {
-            "frequency": freq_key,
-            "factor": freq_factor,
-        }
-        subtotal *= freq_factor
+    sf = int(square_footage) if square_footage else _DEFAULT_SQFT
+    sqft_units = _sqft_units(sf)
 
-    mid = subtotal
-    band = mid * RANGE_BAND_PERCENT
-    estimate_min = _round_to_5(mid - band)
-    estimate_max = _round_to_5(mid + band)
+    ba = float(bathrooms) if bathrooms not in (None, "") else 1.0
+    bath_adj = max(0.0, (ba - 1) * 0.40)
 
-    # Floor: never quote below the base for the service.
-    if estimate_min < base:
-        estimate_min = base
-    if estimate_max < estimate_min:
-        estimate_max = estimate_min
+    cond_key = (condition or "").lower().strip() or None
+    cond_units = CONDITION_UNITS.get(cond_key, 0.0)
 
-    breakdown["pre_round_mid"] = round(mid, 2)
+    pet_key = (pet_hair or "").lower().strip() or None
+    pet_units = PET_UNITS.get(pet_key, 0.0)
+
+    if is_deep:
+        service_mult = _deep_multiplier(sf)
+        mult_label = "deep_clean"
+    elif is_move:
+        # Move-in-out isn't in the client UI, but the earlier Bright-Space
+        # engine priced it 65% above standard. Keep that so operators using
+        # the instant-quote endpoint directly still get a sensible number.
+        service_mult = 1.65
+        mult_label = "move_in_out"
+    else:
+        service_mult = 1.0
+        mult_label = None
+
+    labor = (sqft_units + bath_adj + cond_units + pet_units) * service_mult
+
+    freq_key = (frequency or "").lower().strip() or None
+    freq_factor = FREQUENCY_FACTOR.get(freq_key, 1.0)
+
+    raw = labor * freq_factor * RATE_PER_UNIT
+    rounded = _round_to_5(raw)
+    final = max(min_job, rounded)
+
+    estimate_min = _round_to_5(final * (1.0 - RANGE_BAND_PERCENT))
+    estimate_max = _round_to_5(final * (1.0 + RANGE_BAND_PERCENT))
+
+    breakdown = {
+        "service_type": svc or "residential",
+        "custom_quote": is_custom_quote,
+        "min_job": min_job,
+        "sqft": sf,
+        "sqft_units": round(sqft_units, 4),
+        "bathrooms": ba,
+        "bath_adj_units": round(bath_adj, 4),
+        "condition_units": cond_units,
+        "pet_units": pet_units,
+        "service_multiplier": (
+            {"label": mult_label, "factor": service_mult} if mult_label else None
+        ),
+        "frequency_factor": freq_factor,
+        "labor": round(labor, 4),
+        "rate_per_unit": RATE_PER_UNIT,
+        "raw": round(raw, 2),
+        "final_mid": final,
+    }
+
     return {
         "estimate_min": estimate_min,
         "estimate_max": estimate_max,
