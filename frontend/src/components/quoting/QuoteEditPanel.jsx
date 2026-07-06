@@ -265,7 +265,9 @@ export default function QuoteEditPanel({
                     </div>
                     <div className="flex-1">
                       <label className="text-xs text-ink-3">Unit Price ($)</label>
-                      <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                      <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price}
+                        onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                        onFocus={e => e.target.select()}
                         className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                     </div>
                     <div className="flex-1 flex flex-col justify-end">
