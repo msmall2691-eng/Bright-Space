@@ -11,7 +11,12 @@ function _usDigits(v) {
   if (d.length === 11 && d.startsWith('1')) return d.slice(1)
   return d
 }
+// Client records sometimes carry a labelled non-number in the phone field,
+// e.g. "+12074518184 (placeholder)". The digits look valid to isValidUsPhone,
+// so an explicit label check keeps the send button disabled for them.
+function _isPlaceholderPhone(v) { return /\bplaceholder\b|\btbd\b|\bunknown\b/i.test(String(v || '')) }
 function isValidUsPhone(v) {
+  if (_isPlaceholderPhone(v)) return false
   const d = _usDigits(v)
   if (d.length !== 10) return false
   // NANP: area code and exchange first digits are 2-9. Rejects "0075551234".

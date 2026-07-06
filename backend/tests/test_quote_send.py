@@ -86,6 +86,23 @@ def test_default_sms_uses_new_greeting_format(quote_ctx):
     assert "/quote/" in body  # accept link still present
 
 
+def test_send_sms_rejects_placeholder_and_bad_numbers(quote_ctx):
+    """Placeholder-labelled or NANP-invalid phones never reach Twilio."""
+    db, c, q = quote_ctx
+    # Placeholder marker in the client record — real digits but "(placeholder)" tag.
+    c.phone = "+12074518184 (placeholder)"; db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM_x"}) as sms:
+        out = send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
+    assert not sms.called
+    assert out["results"]["sms"] == "invalid phone number"
+    # Malformed international number (starts with 0 after country code).
+    c.phone = "+09650460670"; db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM_y"}) as sms:
+        out = send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
+    assert not sms.called
+    assert out["results"]["sms"] == "invalid phone number"
+
+
 def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     db, c, q = quote_ctx
     c.email = None; c.phone = None; db.commit()

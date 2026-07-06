@@ -16,8 +16,11 @@ let _geoEnabled = null
  *  - value, onChange(street): controlled street text
  *  - onSelect(parts): called when a suggestion is chosen
  *  - placeholder, className (input classes)
+ *  - selectOnFocus: highlight the existing value on focus so typing replaces
+ *    it instead of appending — used where the pre-fill is often a partial
+ *    fragment (e.g. a bare ZIP from the client record on the quote form).
  */
-export default function AddressAutocomplete({ value, onChange, onSelect, placeholder, className }) {
+export default function AddressAutocomplete({ value, onChange, onSelect, placeholder, className, selectOnFocus = false }) {
   const [preds, setPreds] = useState([])
   const [open, setOpen] = useState(false)
   const [enabled, setEnabled] = useState(_geoEnabled !== false)
@@ -65,7 +68,10 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
       <input
         value={value || ''}
         onChange={e => onType(e.target.value)}
-        onFocus={() => preds.length && setOpen(true)}
+        onFocus={e => {
+          if (selectOnFocus && e.target.value) e.target.select()
+          if (preds.length) setOpen(true)
+        }}
         placeholder={placeholder}
         autoComplete="off"
         className={className}
