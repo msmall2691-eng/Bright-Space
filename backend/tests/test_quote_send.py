@@ -62,6 +62,30 @@ def test_default_sms_greets_by_first_name_only(quote_ctx):
     assert "Meg Small" not in body
 
 
+def test_default_sms_uses_new_greeting_format(quote_ctx):
+    """New SMS template: personal greeting + quote line + total + valid until +
+    Reply YES + link. Regression for the flat one-liner it replaced."""
+    db, c, q = quote_ctx
+    c.name = "Meg Small"; db.commit()
+    q.address = "24 Pine Street, Portland, ME, 04102"
+    q.valid_until = "2026-08-05"
+    q.service_type = "residential"
+    db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM3"}) as sms, \
+         patch("modules.quoting.router._company_info",
+               return_value={"company_name": "The Maine Cleaning Co.", "company_email": None,
+                             "company_phone": None, "quote_terms": None,
+                             "brand_color": "#1f2937", "company_logo_url": None}):
+        send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
+    body = sms.call_args.kwargs.get("body") or sms.call_args.args[1]
+    assert "Hi Meg, your quote from The Maine Cleaning Co. is ready." in body
+    assert f"Quote {q.quote_number} — Residential clean at 24 Pine Street, Portland, ME, 04102" in body
+    assert "Total: $100.00" in body
+    assert "Valid until: 2026-08-05" in body
+    assert "Reply YES to accept or ask any questions." in body
+    assert "/quote/" in body  # accept link still present
+
+
 def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):
     db, c, q = quote_ctx
     c.email = None; c.phone = None; db.commit()

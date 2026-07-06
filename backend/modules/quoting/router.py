@@ -606,12 +606,12 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         else:
             try:
                 from integrations.twilio_client import send_sms
-                from services.quote_email_service import first_name_of
-                nice_name = first_name_of(client.name)
-                default_sms = (f"Hi {nice_name}, your quote {quote.quote_number} is ready."
-                               if nice_name else f"Hi, your quote {quote.quote_number} is ready.")
-                base = (body.custom_message or "").strip() or default_sms
-                msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
+                from services.quote_email_service import build_quote_sms_body
+                company_name = _company_info(db).get("company_name")
+                msg = build_quote_sms_body(
+                    quote=quote, client=client, company_name=company_name,
+                    quote_link=quote_link, custom_message=body.custom_message,
+                )
                 sms_result = send_sms(to=to_phone, body=msg)
                 results["sms"] = "sent"
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",

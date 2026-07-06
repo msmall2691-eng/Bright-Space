@@ -137,7 +137,7 @@ def test_sms_default_never_greets_a_phone_number(ctx):
         send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
     body = sms.call_args.kwargs.get("body") or sms.call_args.args[1]
     assert "+12074329492" not in body.split("View & accept")[0]
-    assert body.startswith("Hi, your quote")
+    assert body.startswith("Hi there, your quote from ")
 
 
 def _rendered_email(monkeypatch, **overrides):
