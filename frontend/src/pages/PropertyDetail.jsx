@@ -20,6 +20,7 @@ const PROPERTY_TYPE_CONFIG = {
 }
 
 const JOB_STATUS_CONFIG = {
+  unscheduled: { label: 'Unscheduled', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700' },
   scheduled: { label: 'Scheduled', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700' },
   dispatched: { label: 'Dispatched', dot: 'bg-green-500', badge: 'bg-green-100 text-green-700' },
   in_progress: { label: 'In Progress', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700' },

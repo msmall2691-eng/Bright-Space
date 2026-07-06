@@ -426,9 +426,10 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   onChange={e => setFormData(f => ({ ...f, status: e.target.value }))}
                   className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
                 >
-                  {!['scheduled', 'in_progress', 'completed', 'cancelled'].includes(formData.status) && (
+                  {!['unscheduled', 'scheduled', 'in_progress', 'completed', 'cancelled'].includes(formData.status) && (
                     <option value={formData.status}>{formData.status || '(unset)'}</option>
                   )}
+                  <option value="unscheduled">Unscheduled</option>
                   <option value="scheduled">Scheduled</option>
                   <option value="in_progress">In progress</option>
                   <option value="completed">Completed</option>

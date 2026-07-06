@@ -508,7 +508,11 @@ class Job(Base):
     address = Column(String)
     cleaner_ids = Column(JSON, default=list)
     status = Column(String, default="scheduled")
-    # "scheduled" | "in_progress" | "completed" | "cancelled"
+    # "unscheduled" | "scheduled" | "in_progress" | "completed" | "cancelled"
+    # "unscheduled" is the state a converted quote lands in until an operator
+    # picks a date; the scheduling PATCH endpoint auto-flips to "scheduled"
+    # when scheduled_date is set so the Job listing stops mislabeling
+    # date-less jobs as "Scheduled".
     notes = Column(Text)
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)

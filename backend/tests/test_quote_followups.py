@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from database.db import SessionLocal
-from database.models import Client, Quote, IntegrationEvent, Property, LeadIntake
+from database.models import Client, Quote, IntegrationEvent, Property, LeadIntake, Job
 from modules.quoting.router import (
     convert_quote_to_job, quotes_needing_follow_up, send_quote, QuoteSendRequest,
     _apply_update,
@@ -49,6 +49,20 @@ def test_convert_to_job_stamps_converted_at(client_ctx):
     assert out["quote_id"] == q.id
     db.refresh(q)
     assert q.status == "converted" and q.converted_at is not None
+
+
+def test_convert_to_job_creates_unscheduled_job(client_ctx):
+    """A quote → job conversion doesn't ask for a date, so the new Job
+    must land as "unscheduled" — not "scheduled". Otherwise the Job
+    listing shows a "Scheduled" badge on a date-less job, which reads
+    as on-calendar when it isn't."""
+    db, c = client_ctx
+    q = _mk_quote(db, c.id, "QT-CONV-UNSCH", status="accepted")
+    out = convert_quote_to_job(q.id, db=db)
+    job = db.query(Job).filter(Job.id == out["id"]).first()
+    assert job is not None
+    assert job.status == "unscheduled"
+    assert job.scheduled_date is None
 
 
 def test_patch_to_converted_stamps_converted_at(client_ctx):

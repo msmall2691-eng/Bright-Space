@@ -16,6 +16,10 @@ import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 
 const STATUS_OPTIONS = [
+  // "unscheduled" = converted from a quote but no date yet. Distinct badge so
+  // an operator can spot date-less jobs at a glance; auto-flips to
+  // "scheduled" server-side when a date is saved on the job.
+  { value: 'unscheduled', label: 'unscheduled', chipClass: 'bg-amber-500/15 text-amber-600 border-amber-500/30',    dot: 'bg-amber-500' },
   { value: 'scheduled',   label: 'scheduled',   chipClass: 'bg-blue-500/15 text-blue-500 border-blue-500/20',       dot: 'bg-blue-500' },
   { value: 'in_progress', label: 'in progress', chipClass: 'bg-amber-500/15 text-amber-500 border-amber-500/20',    dot: 'bg-amber-500' },
   { value: 'completed',   label: 'completed',   chipClass: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20', dot: 'bg-emerald-500' },

@@ -85,6 +85,62 @@ def test_cross_client_property_is_rejected(ctx):
         db.commit()
 
 
+def test_setting_date_auto_promotes_unscheduled_to_scheduled(ctx):
+    """Converted quotes land as "unscheduled" until an operator picks a date.
+    The moment the date is saved via PATCH /jobs/{id}, the status should
+    flip to "scheduled" so the Job listing badge stops saying "Unscheduled."
+    """
+    from datetime import date as _date
+    db, c, p1, p2, j = ctx
+    j.status = "unscheduled"
+    j.scheduled_date = None
+    db.commit(); db.refresh(j)
+
+    update_job(j.id, JobUpdate(scheduled_date=str(_date(2027, 1, 15))), db=db)
+    db.refresh(j)
+    assert j.status == "scheduled"
+    assert str(j.scheduled_date) == "2027-01-15"
+
+
+def test_setting_date_via_full_edit_payload_auto_promotes(ctx):
+    """The JobEditModal sends the full form on save, so status="unscheduled"
+    is echoed even when the operator only picked a date. Guarding on
+    "status not in updates" would skip the promotion and write
+    "unscheduled" back over the new date. Guarding on the VALUE keeps
+    the promotion firing for that common case."""
+    from datetime import date as _date
+    db, c, p1, p2, j = ctx
+    j.status = "unscheduled"
+    j.scheduled_date = None
+    db.commit(); db.refresh(j)
+
+    update_job(j.id, JobUpdate(
+        title=j.title, job_type=j.job_type, property_id=p1.id,
+        scheduled_date=str(_date(2027, 1, 15)),
+        status="unscheduled",   # echoed unchanged from the modal's form state
+    ), db=db)
+    db.refresh(j)
+    assert j.status == "scheduled"
+    assert str(j.scheduled_date) == "2027-01-15"
+
+
+def test_setting_date_respects_explicit_status(ctx):
+    """If the operator also sends a status in the same PATCH, honor it —
+    the auto-flip must not clobber an explicit choice."""
+    from datetime import date as _date
+    db, c, p1, p2, j = ctx
+    j.status = "unscheduled"
+    j.scheduled_date = None
+    db.commit(); db.refresh(j)
+
+    update_job(j.id, JobUpdate(
+        scheduled_date=str(_date(2027, 1, 15)),
+        status="in_progress",
+    ), db=db)
+    db.refresh(j)
+    assert j.status == "in_progress"
+
+
 def test_status_change_propagates_to_active_visits(ctx):
     """Codex P1 (#271): the schedule reads Visit.status — a job completed via
     the edit modal must not leave its visits looking scheduled/actionable."""
