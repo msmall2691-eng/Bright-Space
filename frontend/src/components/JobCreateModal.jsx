@@ -123,9 +123,13 @@ export default function JobCreateModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  // Quick-schedule: a single compact form is the default for the common path.
-  // "Advanced" reveals the full stepped wizard (property, recurring, address).
-  const [quick, setQuick] = useState(!defaultRecurring)
+  // Audit finding: the modal used to switch between a compact form and a
+  // completely different 3-step wizard when "Advanced options" was clicked.
+  // Now everything is one form. `showMore` expands extra fields (property
+  // picker + recurring options + address override) INLINE below the compact
+  // form — no mode switch, no wizard. Defaults open when the caller wants
+  // recurring so the recurring-config fields are immediately visible.
+  const [showMore, setShowMore] = useState(!!defaultRecurring)
   const [showNotes, setShowNotes] = useState(false)
   // Once the user edits End by hand, stop auto-deriving it from Start + duration.
   const [endTouched, setEndTouched] = useState(false)
@@ -194,7 +198,8 @@ export default function JobCreateModal({
     try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
     if (draft.form) setForm(draft.form)
     if (typeof draft.recurring === 'boolean') setRecurring(draft.recurring)
-    if (typeof draft.quick === 'boolean') setQuick(draft.quick)
+    if (typeof draft.showMore === 'boolean') setShowMore(draft.showMore)
+    else if (draft.quick === false) setShowMore(true)  // legacy drafts
     if (draft.client) { setSelectedClient(draft.client); setActiveClientId(String(draft.client.id)) }
     toast?.info?.('Restored your in-progress booking from before the session timed out.')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -347,7 +352,7 @@ export default function JobCreateModal({
     // what gets restored after re-auth. Cleared on a confirmed success below.
     try {
       localStorage.setItem(JOB_DRAFT_KEY, JSON.stringify({
-        form, recurring, quick,
+        form, recurring, showMore,
         client: selectedClient
           ? { id: selectedClient.id, name: selectedClient.name, email: selectedClient.email }
           : null,
@@ -422,16 +427,6 @@ export default function JobCreateModal({
     onClose?.()
   }
 
-  // 3-step guided flow: Who (client + property) → What (title, type, repeat,
-  // notes) → When (date/recurrence + times + address). All the state, handlers
-  // and submit logic above are unchanged; the steps are purely a layout over
-  // them, so every call site keeps working.
-  const [step, setStep] = useState(1)
-  const STEPS = [{ n: 1, label: 'Who' }, { n: 2, label: 'What' }, { n: 3, label: 'When' }]
-  const step1Valid = !!activeClientId          // a client must be chosen/known
-  const step2Valid = !!form.title              // job_type always has a default
-  const goNext = () => setStep(s => Math.min(3, s + 1))
-  const goBack = () => setStep(s => Math.max(1, s - 1))
   // Bumped from py-2.5 → py-3 so the button is ~44px tall on phones (Apple HIG
   // minimum touch target). Same visual on desktop, no layout shift.
   const btn = "px-4 py-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors"
@@ -460,28 +455,12 @@ export default function JobCreateModal({
               <X className="w-5 h-5" />
             </button>
           </div>
-          {/* Step indicator — advanced wizard only */}
-          {!quick && (
-          <div className="flex items-center gap-1.5 mt-3">
-            {STEPS.map((s, i) => (
-              <div key={s.n} className="flex items-center gap-1.5 flex-1">
-                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold shrink-0 ${
-                  step === s.n ? 'bg-blue-600 text-white'
-                  : step > s.n ? 'bg-blue-100 text-blue-700'
-                  : 'bg-bg-2 text-ink-3'
-                }`}>{s.n}</span>
-                <span className={`text-xs font-medium ${step === s.n ? 'text-ink' : 'text-ink-3'}`}>{s.label}</span>
-                {i < STEPS.length - 1 && <span className="flex-1 h-px bg-hairline" />}
-              </div>
-            ))}
-          </div>
-          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin">
-          {/* Client picker — quick mode, or step 1 of the advanced wizard.
-              Only in standalone mode; from a client profile the client is fixed. */}
-          {standalone && (quick || step === 1) && (
+          {/* Client picker — only in standalone mode; from a client profile
+              the client is fixed by the caller. */}
+          {standalone && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
@@ -569,65 +548,76 @@ export default function JobCreateModal({
             </div>
           )}
 
-          {/* ── Quick schedule · one screen (client above) ──────────────── */}
-          {quick && (<>
-            {!standalone && clientName && (
-              <div className="text-xs text-ink-3">Scheduling for <span className="font-medium text-ink-2">{clientName}</span></div>
-            )}
-            <div>
-              <label className="block text-xs text-ink-2 font-medium mb-1">Service type</label>
-              <div className="flex gap-2">
-                {JOB_TYPES.map(t => (
-                  <button key={t.value} type="button" onClick={() => setJobType(t.value)}
-                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
-                      form.job_type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
-                    }`}>{t.label}</button>
-                ))}
-              </div>
+          {/* Always-visible compact form: Service Type → Date → Start/End → Notes.
+              "More options" below inline-expands the property picker, address
+              override, and recurring options. No more mode switching between a
+              compact form and a separate 3-step wizard (audit finding). */}
+          {!standalone && clientName && (
+            <div className="text-xs text-ink-3">Scheduling for <span className="font-medium text-ink-2">{clientName}</span></div>
+          )}
+          <div>
+            <label className="block text-xs text-ink-2 font-medium mb-1">Service type</label>
+            <div className="flex gap-2">
+              {JOB_TYPES.map(t => (
+                <button key={t.value} type="button" onClick={() => setJobType(t.value)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                    form.job_type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
+                  }`}>{t.label}</button>
+              ))}
             </div>
+          </div>
+          {/* Date field: hidden when recurring is on (the recurring section below
+              owns frequency/day-of-week scheduling instead of a single date). */}
+          {!recurring && (
             <div>
               <label className="block text-xs text-ink-2 font-medium mb-1"><Calendar className="w-3 h-3 inline mr-1" /> Date *</label>
               <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
             </div>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-xs text-ink-2 font-medium mb-1"><Clock className="w-3 h-3 inline mr-1" /> Start *</label>
-                <input type="time" value={form.start_time} onChange={e => setStartTime(e.target.value)}
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
-                <input type="time" value={form.end_time} onChange={e => setEndTime(e.target.value)}
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
-              </div>
+          )}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs text-ink-2 font-medium mb-1"><Clock className="w-3 h-3 inline mr-1" /> Start *</label>
+              <input type="time" value={form.start_time} onChange={e => setStartTime(e.target.value)}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
             </div>
-            {showNotes ? (
-              <div>
-                <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
-                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
-                  placeholder="Special instructions, access codes, etc."
-                  className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
-              </div>
-            ) : (
-              <button type="button" onClick={() => setShowNotes(true)}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add notes</button>
-            )}
-            <button type="button" onClick={() => setQuick(false)}
-              className="w-full text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
-              Advanced options (property, recurring, address)…
-            </button>
-            {error && (
-              <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
-                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
-              </div>
-            )}
-            <ConflictPrompt conflict={conflict} saving={saving}
-              onCancel={() => setConflict(null)} onOverride={() => save(true)} />
-          </>)}
+            <div className="flex-1">
+              <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
+              <input type="time" value={form.end_time} onChange={e => setEndTime(e.target.value)}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
+            </div>
+          </div>
+          {showNotes ? (
+            <div>
+              <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                placeholder="Special instructions, access codes, etc."
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none" />
+            </div>
+          ) : (
+            <button type="button" onClick={() => setShowNotes(true)}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add notes</button>
+          )}
 
-          {/* ── Advanced · Property (step 1; client handled above) ───────── */}
-          {!quick && step === 1 && (
+          {/* More options — inline expansion, NOT a mode switch. Reveals the
+              property picker, title override, repeat/recurring options, and
+              address override, right below the compact form on the same page. */}
+          <button type="button" onClick={() => setShowMore(v => !v)}
+            className="w-full flex items-center justify-center gap-1.5 text-center text-xs text-ink-3 hover:text-ink-2 pt-1 border-t border-hairline mt-1">
+            More options (property, recurring, address)
+            <span className={`transition-transform inline-block ${showMore ? 'rotate-180' : ''}`}>▾</span>
+          </button>
+
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
+            </div>
+          )}
+          <ConflictPrompt conflict={conflict} saving={saving}
+            onCancel={() => setConflict(null)} onOverride={() => save(true)} />
+
+          {/* ── More options — Property picker (inline expansion) ─────────── */}
+          {showMore && (<>
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs text-ink-2 font-medium">Property</label>
@@ -679,12 +669,12 @@ export default function JobCreateModal({
               </div>
             )}
           </div>
-          )}
 
-          {/* ── Step 2 · What ──────────────────────────────────────────── */}
-          {!quick && step === 2 && (<>
+          {/* Title override (auto-generated from the client name; edit here
+              to override). Service Type stays in the compact form above so
+              it isn't duplicated. */}
           <div>
-            <label className="block text-xs text-ink-2 font-medium mb-1">Title *</label>
+            <label className="block text-xs text-ink-2 font-medium mb-1">Title (optional)</label>
             <input
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
@@ -693,32 +683,8 @@ export default function JobCreateModal({
             />
           </div>
 
-          <div>
-            <label className="block text-xs text-ink-2 font-medium mb-1">Service Type</label>
-            <div className="flex gap-2">
-              {JOB_TYPES.map(t => (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => setJobType(t.value)}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
-                    form.job_type === t.value
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            {form.job_type === 'str_turnover' && (
-              <p className="text-[11px] text-ink-3 mt-1.5 leading-snug">
-                Tip: STR turnovers can auto-schedule from an Airbnb/VRBO iCal feed. Set the property's type to STR on the client's Properties tab to add a feed.
-              </p>
-            )}
-          </div>
-
-          {/* Repeat toggle — drives the rest of the form. */}
+          {/* Repeat toggle — drives whether the compact Date field above is
+              replaced by frequency/day-of-week options below. */}
           <div className="flex items-center justify-between bg-bg border border-hairline rounded-lg px-3 py-2.5">
             <label className="flex items-center gap-2 text-sm text-ink-2 font-medium cursor-pointer">
               <RepeatIcon className="w-4 h-4 text-ink-3" />
@@ -744,26 +710,10 @@ export default function JobCreateModal({
               />
             </button>
           </div>
-          </>)}
 
-          {/* ── Step 3 · When ──────────────────────────────────────────── */}
-          {!quick && step === 3 && (<>
-          {/* One-time mode: single Date */}
-          {!recurring && (
-            <div>
-              <label className="block text-xs text-ink-2 font-medium mb-1">
-                <Calendar className="w-3 h-3 inline mr-1" /> Date *
-              </label>
-              <input
-                type="date"
-                value={form.scheduled_date}
-                onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-              />
-            </div>
-          )}
-
-          {/* Recurring mode: Frequency + Days/Day-of-month */}
+          {/* Recurring scheduling options — only when Repeat is on. The
+              compact Date field above hides in recurring mode; these
+              frequency/day-of-week/etc controls take over. */}
           {recurring && (
             <>
               <div>
@@ -842,32 +792,12 @@ export default function JobCreateModal({
             </>
           )}
 
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-xs text-ink-2 font-medium mb-1">
-                <Clock className="w-3 h-3 inline mr-1" /> Start *
-              </label>
-              <input
-                type="time"
-                value={form.start_time}
-                onChange={e => setStartTime(e.target.value)}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs text-ink-2 font-medium mb-1">End *</label>
-              <input
-                type="time"
-                value={form.end_time}
-                onChange={e => setEndTime(e.target.value)}
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none"
-              />
-            </div>
-          </div>
-
+          {/* Address override — pre-fills from the selected property/client
+              elsewhere. Only exposed here for when the operator needs to
+              deviate (e.g. a one-off job at a different address). */}
           <div>
             <label className="block text-xs text-ink-2 font-medium mb-1">
-              <MapPin className="w-3 h-3 inline mr-1" /> Address {recurring ? '*' : ''}
+              <MapPin className="w-3 h-3 inline mr-1" /> Address {recurring ? '*' : '(optional)'}
             </label>
             <input
               value={form.address}
@@ -890,26 +820,6 @@ export default function JobCreateModal({
               <p className="text-[10px] text-ink-3 mt-1">How many weeks of Jobs to materialize from this schedule.</p>
             </div>
           )}
-
-          <div>
-            <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>
-            <textarea
-              value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              rows={2}
-              placeholder="Special instructions, access codes, etc."
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none resize-none"
-            />
-          </div>
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              {error}
-            </div>
-          )}
-          <ConflictPrompt conflict={conflict} saving={saving}
-            onCancel={() => setConflict(null)} onOverride={() => save(true)} />
           </>)}
         </div>
 
@@ -917,44 +827,17 @@ export default function JobCreateModal({
           className="p-6 border-t border-hairline flex items-center gap-3"
           style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
         >
-          {quick ? (
-            <>
-              <button onClick={handleCancel} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
-              <button
-                onClick={() => save()}
-                disabled={saving || !canSave}
-                data-testid="job-create-submit"
-                className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
-              >
-                {saving ? 'Creating…' : 'Create job'}
-              </button>
-            </>
-          ) : (<>
+          <button onClick={handleCancel} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
           <button
-            onClick={step === 1 ? handleCancel : goBack}
-            className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}
+            onClick={() => save()}
+            disabled={saving || !canSave}
+            data-testid="job-create-submit"
+            className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
           >
-            {step === 1 ? 'Cancel' : 'Back'}
+            {saving
+              ? (recurring ? 'Creating…' : 'Creating…')
+              : (recurring ? 'Create & Generate Jobs' : 'Create job')}
           </button>
-          {step < 3 ? (
-            <button
-              onClick={goNext}
-              disabled={step === 1 ? !step1Valid : !step2Valid}
-              data-testid="job-create-next"
-              className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              onClick={() => save()}
-              disabled={saving || !canSave}
-              className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
-            >
-              {saving ? 'Creating...' : recurring ? 'Create & Generate Jobs' : 'Create Job'}
-            </button>
-          )}
-          </>)}
         </div>
       </div>
     </div>

@@ -224,6 +224,41 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
         {/* Content */}
         <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-6">
+          {/* Status pills — primary control on existing jobs, was buried
+              under "Advanced options" per the audit. New jobs default to
+              Scheduled with no picker so the create flow stays compact.
+              "Unscheduled" is the auto-set status for date-less converted
+              quotes (added upstream); flips to Scheduled server-side when
+              a date is saved. */}
+          {!isNew && (
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { v: 'unscheduled', label: 'Unscheduled', activeCls: 'bg-amber-500 text-white border-amber-500' },
+                  { v: 'scheduled',   label: 'Scheduled',   activeCls: 'bg-blue-600 text-white border-blue-600' },
+                  { v: 'in_progress', label: 'In progress', activeCls: 'bg-amber-600 text-white border-amber-600' },
+                  { v: 'completed',   label: 'Completed',   activeCls: 'bg-emerald-600 text-white border-emerald-600' },
+                  { v: 'cancelled',   label: 'Cancelled',   activeCls: 'bg-ink-3 text-white border-ink-3' },
+                ].map(({ v, label, activeCls }) => {
+                  const active = formData.status === v
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setFormData(f => ({ ...f, status: v }))}
+                      className={`px-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors ${
+                        active ? activeCls : 'bg-bg-2 text-ink-2 border-hairline hover:bg-hairline'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Title — editable on EVERY job, not just new ones */}
           <div>
             <label className="block text-sm font-semibold text-ink-2 mb-2">Job Title</label>
@@ -394,48 +429,30 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             >
               <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
               Advanced options
-              {!showAdvanced && (formData.notes || formData.status !== 'scheduled') && (
+              {!showAdvanced && formData.notes && (
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
               )}
             </button>
           </div>
 
           {showAdvanced && (<>
-            {/* Type + Status side by side on desktop, stacked on phones */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-semibold text-ink-2 mb-2">Job Type</label>
-                <select
-                  value={formData.job_type}
-                  onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
-                  className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
-                >
-                  {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
-                    <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
-                  )}
-                  <option value="residential">Residential</option>
-                  <option value="commercial">Commercial</option>
-                  <option value="str_turnover">STR Turnover</option>
-                  <option value="one_time">One-time</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-ink-2 mb-2">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={e => setFormData(f => ({ ...f, status: e.target.value }))}
-                  className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
-                >
-                  {!['unscheduled', 'scheduled', 'in_progress', 'completed', 'cancelled'].includes(formData.status) && (
-                    <option value={formData.status}>{formData.status || '(unset)'}</option>
-                  )}
-                  <option value="unscheduled">Unscheduled</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="in_progress">In progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
+            {/* Job Type — Status moved out to a pill row at the top of the
+                modal (audit: status was buried under Advanced). */}
+            <div>
+              <label className="block text-sm font-semibold text-ink-2 mb-2">Job Type</label>
+              <select
+                value={formData.job_type}
+                onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
+              >
+                {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
+                  <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
+                )}
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+                <option value="str_turnover">STR Turnover</option>
+                <option value="one_time">One-time</option>
+              </select>
             </div>
 
             {/* Address — editable; pre-fills from the property when blank */}

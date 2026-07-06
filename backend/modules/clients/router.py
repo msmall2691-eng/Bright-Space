@@ -504,6 +504,37 @@ def get_clients(
     return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()]
 
 
+class BulkStatusRequest(BaseModel):
+    ids: List[int]
+    status: Literal["lead", "active", "inactive"]
+
+
+@router.post("/bulk-status", dependencies=[Depends(require_role("admin", "manager"))])
+def bulk_update_client_status(
+    data: BulkStatusRequest,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Set the same status on many clients at once — used by the CRM Health
+    bulk actions (archive spam/test buckets to 'inactive'). Only touches
+    clients in the caller's workspace and returns the number updated so
+    the UI can confirm. Idempotent: re-running is a no-op."""
+    if not data.ids:
+        return {"updated": 0}
+    org = resolve_org_id(org_id, db)
+    rows = db.query(Client).filter(
+        Client.id.in_(data.ids),
+        or_(Client.org_id == org, Client.org_id.is_(None)),
+    ).all()
+    changed = 0
+    for c in rows:
+        if c.status != data.status:
+            c.status = data.status
+            changed += 1
+    db.commit()
+    return {"updated": changed, "requested": len(data.ids), "matched": len(rows)}
+
+
 @router.get("/counts", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_client_counts(
     db: Session = Depends(get_db),
