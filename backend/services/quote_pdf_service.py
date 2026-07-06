@@ -108,7 +108,11 @@ class QuotePDFService:
         if logo_flowable is not None:
             band_rows.append([logo_flowable])
         band_rows.append([Paragraph(_esc(self.company_name.upper()), band_company)])
-        band_rows.append([Paragraph(_esc(quote_title) or 'Your Cleaning Quote', band_title)])
+        # Strip internal-label titles ("Test Quote — Workflow Validation" etc.)
+        # so scratchpad text staff typed doesn't end up as the PDF headline.
+        from services.quote_email_service import customer_safe_title
+        _safe_title = customer_safe_title(quote_title)
+        band_rows.append([Paragraph(_esc(_safe_title) or 'Your Cleaning Quote', band_title)])
         band_rows.append([Paragraph(f"Quote #{_esc(quote_number)} &middot; {datetime.now().strftime('%B %d, %Y')}", band_meta)])
         if expires_at:
             band_rows.append([Paragraph(f"Valid until {expires_at.strftime('%B %d, %Y')}", band_meta)])

@@ -554,6 +554,9 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                         email_photo_url = None
                 res = QuoteEmailService().send_quote_email(
                     to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
+                    # Authoritative first name from the client record; falls
+                    # back to name-splitting inside the service when unset.
+                    client_first_name=getattr(client, "first_name", None),
                     total_amount=float(quote.total or 0),
                     expires_at=fmt_long_date(quote.valid_until),
                     quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",

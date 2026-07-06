@@ -1,5 +1,30 @@
 import { useState } from 'react'
-import { X, Send, Mail, MessageSquare, Eye, ChevronDown } from 'lucide-react'
+import { X, Send, Mail, MessageSquare, Eye, ChevronDown, AlertCircle } from 'lucide-react'
+
+// US-phone helpers. Twilio silently rejects anything that isn't a valid
+// E.164 number; catching that upfront (instead of after "Sending…") keeps
+// the user from having to guess why the send failed.
+function _digitsOnly(v) { return String(v || '').replace(/\D/g, '') }
+function _usDigits(v) {
+  const d = _digitsOnly(v)
+  // Accept both bare 10-digit ("2075551234") and E.164 US ("+12075551234").
+  if (d.length === 11 && d.startsWith('1')) return d.slice(1)
+  return d
+}
+function isValidUsPhone(v) {
+  const d = _usDigits(v)
+  if (d.length !== 10) return false
+  // NANP: area code and exchange first digits are 2-9. Rejects "0075551234".
+  if (d[0] === '0' || d[0] === '1') return false
+  if (d[3] === '0' || d[3] === '1') return false
+  return true
+}
+function formatUsPhone(v) {
+  const d = _usDigits(v).slice(0, 10)
+  if (d.length < 4) return d
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+}
 
 /** Right-side (bottom-sheet on mobile) send-quote panel. Delivery via
  *  email, SMS, or both — with subject/greeting/copy-to for email and a
@@ -90,14 +115,36 @@ export default function SendQuotePanel({
         )}
 
         {/* Phone */}
-        {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (
-          <div>
-            <label className="block text-xs text-ink-3 mb-1">Phone Number</label>
-            <input type="tel" value={sendForm.phone} onChange={e => setSendForm(f => ({ ...f, phone: e.target.value }))}
-              placeholder="+12075551234"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
-          </div>
-        )}
+        {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (() => {
+          // Show the invalid-format hint only after the user has typed
+          // something — silent while the field is still empty so the initial
+          // state doesn't look like an error.
+          const phoneRaw = sendForm.phone || ''
+          const hasDigits = _digitsOnly(phoneRaw).length > 0
+          const phoneOk = isValidUsPhone(phoneRaw)
+          return (
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Phone Number</label>
+              <input type="tel" value={formatUsPhone(phoneRaw)}
+                onChange={e => setSendForm(f => ({ ...f, phone: e.target.value }))}
+                placeholder="(207) 555-1234"
+                inputMode="tel"
+                autoComplete="tel-national"
+                aria-invalid={hasDigits && !phoneOk}
+                className={`w-full bg-panel border rounded-lg px-3 py-2 text-sm focus:outline-none ${
+                  hasDigits && !phoneOk
+                    ? 'border-red-400 focus:border-red-500'
+                    : 'border-hairline focus:border-blue-400'
+                }`} />
+              {hasDigits && !phoneOk && (
+                <p className="mt-1 flex items-center gap-1 text-[11px] text-red-500">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  Enter a valid 10-digit US number
+                </p>
+              )}
+            </div>
+          )
+        })()}
 
         {/* SMS preview */}
         {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (
@@ -152,11 +199,22 @@ export default function SendQuotePanel({
       </div>
 
       <div className="p-6 border-t border-hairline shrink-0">
-        <button onClick={onSend} disabled={sending || (!sendForm.email && !sendForm.phone)}
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-          <Send className="w-4 h-4" />
-          {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
-        </button>
+        {(() => {
+          // Block a send that Twilio would silently reject — either no
+          // destination at all, or SMS/both selected with a bad phone.
+          const smsSelected = sendForm.channel === 'sms' || sendForm.channel === 'both'
+          const smsBlocked = smsSelected && !isValidUsPhone(sendForm.phone)
+          const noDestination = !sendForm.email && !sendForm.phone
+          const blocked = sending || noDestination || smsBlocked
+          return (
+            <button onClick={onSend} disabled={blocked}
+              title={smsBlocked ? 'Enter a valid US phone number to send SMS.' : undefined}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              <Send className="w-4 h-4" />
+              {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
+            </button>
+          )
+        })()}
       </div>
     </div>
   )

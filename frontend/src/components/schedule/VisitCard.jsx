@@ -1,7 +1,7 @@
 import { CheckCircle, Zap, MessageCircle, Camera, Edit2, Trash2 } from 'lucide-react'
 import RecordLink from '../RecordLink'
 import StatusBadge from '../ui/StatusBadge'
-import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, VISIT_ACCENT } from './constants'
+import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, VISIT_ACCENT, computeDisplayStatus } from './constants'
 import { SyncBadge } from './SyncBadge'
 
 export default function VisitCard({
@@ -13,7 +13,15 @@ export default function VisitCard({
   const propertyType = property?.property_type || 'residential'
   const config = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
   const PropertyIcon = config.icon
-  const statusConfig = VISIT_STATUS_CONFIG[visit.status] || VISIT_STATUS_CONFIG.scheduled
+  // Show "Needs setup" instead of "Scheduled" when the visit's linked job
+  // has no date / property / crew set — otherwise a converted-from-quote job
+  // with no date reads as ready-to-run and gets missed operationally.
+  const displayStatus = computeDisplayStatus({
+    ...visit,
+    property_id: job?.property_id,
+    cleaner_ids: visit.cleaner_ids?.length ? visit.cleaner_ids : job?.cleaner_ids,
+  })
+  const statusConfig = VISIT_STATUS_CONFIG[displayStatus] || VISIT_STATUS_CONFIG.scheduled
   const accent = VISIT_ACCENT[propertyType] || 'border-l-blue-400'
 
   const cleaners = visit.cleaner_ids || []

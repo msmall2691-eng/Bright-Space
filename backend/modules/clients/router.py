@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from pydantic import BaseModel
 from typing import Literal, Optional, List
 from datetime import datetime, date
@@ -499,6 +499,27 @@ def get_clients(
         like = f"%{search.strip()}%"
         q = q.filter(or_(Client.name.ilike(like), Client.email.ilike(like), Client.phone.ilike(like)))
     return [client_to_dict(c) for c in q.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()]
+
+
+@router.get("/counts", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def get_client_counts(
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Return the total client count plus a breakdown by status, for the
+    Clients toolbar's pill counts. Whole-DB totals — not filtered by the
+    caller's currently-selected tab — so a lead created while viewing the
+    "Active" tab still increments the "All" pill (the counts were derived
+    from the currently-loaded subset, which was wrong when a status
+    filter was active)."""
+    base = db.query(Client).filter(or_(Client.org_id == org_id, Client.org_id.is_(None)))
+    total = base.count()
+    counts = {"": total, "lead": 0, "active": 0, "inactive": 0}
+    rows = (base.with_entities(Client.status, func.count(Client.id))
+                .group_by(Client.status).all())
+    for status, n in rows:
+        counts[str(status or "")] = int(n)
+    return counts
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])

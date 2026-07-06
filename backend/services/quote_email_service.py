@@ -33,6 +33,30 @@ _PLACEHOLDER_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A "quote title" that's obviously an internal label — "Test Quote", "Workflow
+# Validation", anything staff would put in a scratchpad. When the title matches
+# this, we strip it from the customer-facing email header instead of leaking
+# internal shorthand. Distinct from _PLACEHOLDER_NAME_RE because titles have
+# different failure modes (they contain "quote", "workflow", "internal", ...).
+_PLACEHOLDER_TITLE_RE = re.compile(
+    r"^(test.*|.*\btest\b.*|.*\bworkflow\b.*|.*\bvalidation\b.*|"
+    r".*\binternal\b.*|.*\bdraft\b.*|.*\bscratch\b.*|.*\bplaceholder\b.*|"
+    r"untitled|no title|n/?a)$",
+    re.IGNORECASE,
+)
+
+
+def customer_safe_title(title: str | None) -> str | None:
+    """Strip an internal-label title so it doesn't render in the customer's
+    email header. Returns the title unchanged when it looks like real
+    customer-facing text; None when it's obviously internal-only."""
+    t = (title or "").strip()
+    if not t:
+        return None
+    if _PLACEHOLDER_TITLE_RE.match(t):
+        return None
+    return t
+
 
 def customer_display_name(name: str | None) -> str:
     """The name as greet-able text, or '' when it's a placeholder/phone."""
@@ -63,10 +87,67 @@ def phone_tel_href(phone: str | None) -> str:
     return cleaned
 
 
-def first_name_of(name: str | None) -> str:
-    """First name for a friendly greeting, or '' for placeholder/phone names."""
+# Words that mark a "name" as a business/account label rather than a person.
+# When any of these appear (case-insensitive), we don't grab the first token
+# for a greeting — "Hi BrightBase," or "Hi Ashley," pulled from
+# "Ashley White Cleaning LLC" reads worse than a neutral "Hi there,".
+_BUSINESS_MARKERS_RE = re.compile(
+    r"\b(llc|l\.l\.c\.?|inc|inc\.|corp|corp\.|corporation|co\.|company|ltd|"
+    r"ltd\.|lp|llp|gmbh|group|services|service|cleaning|cleaners|"
+    r"maintenance|properties|management|rentals|holdings|enterprises|"
+    r"solutions|systems|associates|partners|and\s+sons|and\s+co)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_business(name: str) -> bool:
+    """Heuristic: does this display name read like a company / label rather
+    than a person's name? Used to decide whether "first word" is a safe greeting.
+
+    Positive signals: known business markers, parenthesized qualifier (test
+    labels: "Client Name (Office Quote)"), 3+ words, or a single token that
+    is either all-caps or CamelCase (brand names: "BrightBase", "TESTCO")."""
+    n = name.strip()
+    if not n:
+        return False
+    if _BUSINESS_MARKERS_RE.search(n):
+        return True
+    if "(" in n:  # parenthesized labels — often internal notes
+        return True
+    tokens = n.split()
+    if len(tokens) >= 3:
+        # More than "First Last" — likely a company, brand, or a labeled name.
+        # Real two-name people ("Mary Ann Smith") slip through with 3 tokens;
+        # returning True just falls back to "Hi there," which is safe.
+        return True
+    if len(tokens) == 1:
+        t = tokens[0]
+        if t.upper() == t and len(t) > 1:   # ACME, TESTCO
+            return True
+        # CamelCase inside a single token — "BrightBase", "iCleaners".
+        if any(c.isupper() for c in t[1:]):
+            return True
+    return False
+
+
+def first_name_of(name: str | None, *, client_first_name: str | None = None) -> str:
+    """First name for a friendly greeting.
+
+    - If the Client row has a real first_name column set, use it directly
+      (authoritative; avoids ever having to guess).
+    - Otherwise fall back to the display name, but return '' for placeholder,
+      phone-like, or business/label-shaped names so we greet "Hi there,"
+      instead of "Hi BrightBase," from "BrightBase Test (Office Quote)".
+    """
+    fn = (client_first_name or "").strip()
+    if fn and not _PLACEHOLDER_NAME_RE.match(fn):
+        return fn
     display = customer_display_name(name)
-    return display.split()[0] if display else ""
+    if not display:
+        return ""
+    if _looks_like_business(display):
+        return ""
+    return display.split()[0]
 
 
 class QuoteEmailService:
@@ -241,6 +322,7 @@ class QuoteEmailService:
         address: Optional[str] = None,
         bcc: Optional[str] = None,
         property_photo_url: Optional[str] = None,
+        client_first_name: Optional[str] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -279,7 +361,10 @@ class QuoteEmailService:
             # Greeting: explicit override > friendly first name > greet-able
             # full name > neutral. "Hi Megan," reads better than the full name.
             override = (greeting or "").strip()
-            first = first_name_of(client_name)
+            # Prefer the client's stored first_name column over guessing from
+            # the display name — avoids "Hi BrightBase," when the display name
+            # is a business/label ("BrightBase Test (Office Quote)").
+            first = first_name_of(client_name, client_first_name=client_first_name)
             if override:
                 greeting_line = f"Hello {override},"
             elif first:
@@ -317,7 +402,7 @@ class QuoteEmailService:
                 company_name=self.company_name,
                 company_logo_url=self.company_logo_url,
                 quote_number=quote_number,
-                quote_title=(quote_title or "").strip() or None,
+                quote_title=customer_safe_title(quote_title),
                 greeting_line=greeting_line,
                 intro_message=(intro_message or "").strip() or None,
                 items=line_items,

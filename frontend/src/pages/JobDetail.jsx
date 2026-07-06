@@ -9,6 +9,8 @@ import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
+import { AlertCircle } from 'lucide-react'
+import { computeDisplayStatus } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
@@ -146,6 +148,27 @@ export default function JobDetail() {
                 </div>
                 <InlineSelect value={job.status} options={STATUS_OPTIONS} onSelect={setStatus} />
               </div>
+              {/* Warn when the DB status is 'scheduled' but the job is missing a
+                  date, a property, or a crew — so a convert-to-job quote with no
+                  time never silently reads as ready-to-run. Lists exactly what's
+                  missing so staff know what to fill. */}
+              {computeDisplayStatus(job) === 'needs_setup' && (() => {
+                const missing = []
+                if (!job.scheduled_date) missing.push('a date')
+                if (!job.property_id) missing.push('a property')
+                if (!(job.cleaner_ids && job.cleaner_ids.length)) missing.push('a crew')
+                return (
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Needs setup</p>
+                      <p className="text-amber-700/90">
+                        This job isn't fully scheduled yet — add {missing.join(' + ')} to make it live.
+                      </p>
+                    </div>
+                  </div>
+                )
+              })()}
               <InlineEditField label="Job" value={job.title} placeholder="Untitled job"
                 onSave={(v) => saveField({ title: v || 'Untitled job' })} />
             </div>

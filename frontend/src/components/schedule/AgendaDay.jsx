@@ -1,5 +1,5 @@
 import { Calendar, CornerUpLeft } from 'lucide-react'
-import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG } from './constants'
+import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
 import { TurnoverInfo } from './SyncBadge'
 import { toLocalYMD } from '../../utils/format'
 
@@ -61,7 +61,13 @@ export default function AgendaDay({
               const client = clients[job?.client_id]
               const propertyType = property?.property_type || 'residential'
               const typeCfg = PROPERTY_TYPE_CONFIG[propertyType] || PROPERTY_TYPE_CONFIG.residential
-              const statusCfg = VISIT_STATUS_CONFIG[v.status] || VISIT_STATUS_CONFIG.scheduled
+              // Include the linked job so property/crew absence flips scheduled→needs_setup.
+              const displayStatus = computeDisplayStatus({
+                ...v,
+                property_id: job?.property_id,
+                cleaner_ids: v.cleaner_ids?.length ? v.cleaner_ids : job?.cleaner_ids,
+              })
+              const statusCfg = VISIT_STATUS_CONFIG[displayStatus] || VISIT_STATUS_CONFIG.scheduled
               const TypeIcon = typeCfg.icon
               const startHHMM = (v.start_time || '').slice(0, 5)
               const endHHMM = (v.end_time || '').slice(0, 5)

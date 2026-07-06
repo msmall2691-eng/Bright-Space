@@ -120,12 +120,17 @@ export default function QuoteEditPanel({
             </div>
           )}
 
-          {/* Title */}
+          {/* Title — customer-facing. Renders as the header on the quote
+              email and PDF, so staff need to know it's not a scratchpad. */}
           <div>
             <label className="block text-xs text-ink-3 mb-1">Quote Title</label>
             <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder="e.g. Biweekly cleaning — 12 Pier Rd"
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            <p className="mt-1 text-[11px] text-ink-3">
+              Shown to the customer as the email + PDF header. Skip internal
+              notes here — use the Notes field below for those.
+            </p>
           </div>
 
           {/* Client */}
@@ -260,12 +265,18 @@ export default function QuoteEditPanel({
                   <div className="flex gap-2">
                     <div className="w-20">
                       <label className="text-xs text-ink-3">Qty</label>
-                      <input type="number" inputMode="decimal" min="0" step="0.5" value={item.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
+                      <input type="number" inputMode="decimal" min="0" step="0.5" value={item.qty}
+                        onChange={e => updateItem(i, 'qty', e.target.value)}
+                        onFocus={e => e.target.select()}
                         className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                     </div>
                     <div className="flex-1">
                       <label className="text-xs text-ink-3">Unit Price ($)</label>
-                      <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                      {/* select-all on focus so typing replaces the pre-filled "0"
+                          instead of appending — otherwise typing 150 gives 0150. */}
+                      <input type="number" inputMode="decimal" min="0" step="5" value={item.unit_price}
+                        onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                        onFocus={e => e.target.select()}
                         className="w-full bg-bg-2 border border-hairline rounded px-2 py-2.5 sm:py-1.5 text-base sm:text-sm focus:outline-none mt-0.5" />
                     </div>
                     <div className="flex-1 flex flex-col justify-end">

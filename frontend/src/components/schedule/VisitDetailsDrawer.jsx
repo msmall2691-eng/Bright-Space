@@ -2,7 +2,7 @@ import { X, Zap, ChevronDown, CheckCircle, AlertCircle, Clock, Edit2, Trash2 } f
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import StatusBadge from '../ui/StatusBadge'
-import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from './constants'
+import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials, computeDisplayStatus } from './constants'
 
 /** Right-side (bottom-sheet on mobile) drawer for a single visit. Pure
  *  props-in: the parent owns the selection + all mutation callbacks so
@@ -124,9 +124,19 @@ export default function VisitDetailsDrawer({
 
             <div>
               <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Status</p>
-              <StatusBadge status={VISIT_STATUS_CONFIG[visit.status]?.badge || 'info'}>
-                {VISIT_STATUS_CONFIG[visit.status]?.label || visit.status}
-              </StatusBadge>
+              {(() => {
+                const displayStatus = computeDisplayStatus({
+                  ...visit,
+                  property_id: job?.property_id,
+                  cleaner_ids: visit.cleaner_ids?.length ? visit.cleaner_ids : job?.cleaner_ids,
+                })
+                const cfg = VISIT_STATUS_CONFIG[displayStatus]
+                return (
+                  <StatusBadge status={cfg?.badge || 'info'}>
+                    {cfg?.label || visit.status}
+                  </StatusBadge>
+                )
+              })()}
             </div>
 
             {/* Airbnb/STR turnover details */}
