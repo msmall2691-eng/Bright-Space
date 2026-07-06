@@ -28,7 +28,7 @@ export function useQuotingData() {
   const [templatesLoaded, setTemplatesLoaded] = useState(false)
   // Full customer-facing identity (Settings → General) — drives the REAL
   // public-page preview, SMS copy, and send-panel subject prefill.
-  const [company, setCompany] = useState({ company_name: 'Maine Cleaning Co' })
+  const [company, setCompany] = useState({ company_name: 'The Maine Cleaning Co.' })
   const [archivedQuotes, setArchivedQuotes] = useState([])
 
   const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error('[Quoting]', err))
@@ -66,7 +66,7 @@ export function useQuotingData() {
     quoteTemplates, setQuoteTemplates,
     templatesLoaded,
     company,
-    companyName: company.company_name || 'Maine Cleaning Co',
+    companyName: company.company_name || 'The Maine Cleaning Co.',
     archivedQuotes,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,
   }

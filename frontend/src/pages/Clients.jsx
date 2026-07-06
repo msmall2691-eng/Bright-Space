@@ -16,6 +16,44 @@ import { CLIENT_COLUMNS } from '../components/clients/columns'
 import { ClientForm } from '../components/clients/ClientForm'
 import { MergeModal } from '../components/clients/MergeModal'
 import { BulkActionBar } from '../components/clients/BulkActionBar'
+
+// Group the duplicate-bucket rows into review pairs the automatic
+// email-merge can't touch (both members have a real, non-placeholder
+// name). Pair key is sorted (min id, max id) so (a,b) and (b,a) dedupe.
+function _isPlaceholderClientName(name) {
+  const n = (name || '').trim()
+  if (!n) return true
+  const stripped = n.replace(/[-().\s+]/g, '')
+  return /^\d+$/.test(stripped)
+}
+function computeRealNamedDupPairs(rows) {
+  const byKey = new Map()
+  for (const c of rows) {
+    if (_isPlaceholderClientName(c.name)) continue
+    const emailKey = c.email && c.email.trim() ? `e:${c.email.trim().toLowerCase()}` : null
+    const phoneKey = c.phone_tail ? `p:${c.phone_tail}` : (c.phone ? `p:${String(c.phone).replace(/\D/g, '').slice(-10)}` : null)
+    for (const k of [emailKey, phoneKey]) {
+      if (!k) continue
+      if (!byKey.has(k)) byKey.set(k, [])
+      byKey.get(k).push(c)
+    }
+  }
+  const seen = new Set()
+  const pairs = []
+  for (const group of byKey.values()) {
+    if (group.length < 2) continue
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const [lo, hi] = group[i].id < group[j].id ? [group[i], group[j]] : [group[j], group[i]]
+        const key = `${lo.id}:${hi.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        pairs.push([lo, hi])
+      }
+    }
+  }
+  return pairs
+}
 import { ImportResultBanner } from '../components/clients/ImportResultBanner'
 import { ClientCardRow } from '../components/clients/ClientCardRow'
 import { ClientTableView } from '../components/clients/ClientTableView'
@@ -24,16 +62,23 @@ import { ClientsToolbar } from '../components/clients/ClientsToolbar'
 /** Banner that appears when a CRM Health bucket is being filtered.
  *  Shows the count and offers a contextual bulk action:
  *   - spam_marketing / test → "Archive N" (soft — status=inactive)
- *   - duplicate → "Auto-merge safe duplicates" (calls the admin-only
- *     cleanup-duplicates-by-email endpoint; dry-run preview first)
- *   - incomplete → no bulk action (needs per-record enrichment)
+ *   - duplicate → "Auto-merge safe duplicates" (placeholder-into-real by
+ *     email) plus "Review pairs" for the real-named groups the auto-merge
+ *     can't safely touch (walks pairs through the existing Merge modal).
+ *   - incomplete → "Edit next →" (jumps into the edit form for the first
+ *     row; each record needs a different missing field so there's no true
+ *     bulk fix — this makes the workflow discoverable).
  *  All destructive-ish actions confirm the count first so a mis-click
  *  can't quietly wipe 40 records. */
-function BucketFilterBanner({ bucketFilter, filteredCount, baseCount, onClear, onArchived, onArchiveError, idsToArchive }) {
+function BucketFilterBanner({
+  bucketFilter, filteredCount, baseCount, onClear, onArchived, onArchiveError,
+  idsToArchive, reviewablePairCount, onReviewPairs, onEditFirst,
+}) {
   const [busy, setBusy] = useState(false)
   const [dupPreview, setDupPreview] = useState(null)
   const isArchivable = ['spam_marketing', 'test'].includes(bucketFilter.key)
   const isDuplicate = bucketFilter.key === 'duplicate'
+  const isIncomplete = bucketFilter.key === 'incomplete'
 
   const doArchive = async () => {
     if (!idsToArchive.length) return
@@ -100,6 +145,20 @@ function BucketFilterBanner({ bucketFilter, filteredCount, baseCount, onClear, o
               {busy ? 'Analyzing…' : 'Auto-merge safe duplicates'}
             </button>
           )}
+          {isDuplicate && reviewablePairCount > 0 && (
+            <button onClick={onReviewPairs} disabled={busy}
+              title="Step through real-named duplicate pairs the auto-merge can't touch"
+              className="font-semibold text-amber-800 border border-amber-400 hover:bg-amber-100 disabled:opacity-50 px-2.5 py-1 rounded-md">
+              Review {reviewablePairCount} pair{reviewablePairCount === 1 ? '' : 's'}
+            </button>
+          )}
+          {isIncomplete && filteredCount > 0 && (
+            <button onClick={onEditFirst}
+              title="Open the first record's edit form to add missing phone / email"
+              className="font-semibold text-amber-800 border border-amber-400 hover:bg-amber-100 px-2.5 py-1 rounded-md">
+              Edit next →
+            </button>
+          )}
           <button onClick={onClear}
             className="font-semibold underline underline-offset-2 hover:text-amber-900">
             Clear filter
@@ -145,6 +204,18 @@ export default function Clients() {
   const filtered = bucketFilter
     ? baseFiltered.filter(c => bucketFilter.ids.has(c.id))
     : baseFiltered
+  // Real-named duplicate review workflow. `pairQueue` is the remaining
+  // pairs still to visit (stored as [idA, idB] so we can re-resolve them
+  // after each merge shrinks the list). `reviewTotal` is fixed at start
+  // for the "Pair X of Y" counter. `reviewing` gates the queue-advance
+  // effect so a modal opened from elsewhere (toolbar's Merge action)
+  // doesn't get pulled into this flow.
+  const [pairQueue, setPairQueue] = useState([])
+  const [reviewTotal, setReviewTotal] = useState(0)
+  const [reviewing, setReviewing] = useState(false)
+  const reviewablePairs = bucketFilter?.key === 'duplicate'
+    ? computeRealNamedDupPairs(filtered)
+    : []
   const [selected, setSelected] = useState(null)
   // Quick "Schedule" from a client row → opens the job modal with that client.
   const [jobClient, setJobClient] = useState(null)
@@ -195,6 +266,56 @@ export default function Clients() {
 
   useEffect(() => { clearSelection() }, [statusFilter, search])
 
+  // While reviewing, auto-open the next pair when the merge modal closes
+  // (post-merge or user-clicked Skip). Skips pairs whose members have
+  // already been merged away. Gated on `!merging` so we advance only
+  // after the post-merge reload has updated the clients list — otherwise
+  // we could reopen with a stale record that was just deleted server-side.
+  // When the queue drains, exit review mode.
+  useEffect(() => {
+    if (!reviewing || mergeModal || merging) return
+    let next = null
+    let rest = pairQueue
+    while (rest.length && !next) {
+      const [pairIds, ...tail] = rest
+      const a = clients.find(c => c.id === pairIds[0])
+      const b = clients.find(c => c.id === pairIds[1])
+      rest = tail
+      if (a && b) next = [a, b]
+    }
+    if (rest !== pairQueue) setPairQueue(rest)
+    if (next) {
+      setMergeModal({ a: next[0], b: next[1] })
+      const score = c => (c.status === 'active' ? 2 : 0) + (c.email ? 1 : 0) + (c.phone ? 1 : 0)
+      setMergeWinner(score(next[1]) > score(next[0]) ? next[1].id : next[0].id)
+    } else if (rest.length === 0) {
+      setReviewing(false); setReviewTotal(0)
+    }
+  }, [reviewing, mergeModal, merging, pairQueue, clients, setMergeModal, setMergeWinner])
+
+  const startPairReview = () => {
+    if (!reviewablePairs.length) return
+    const queue = reviewablePairs.map(([a, b]) => [a.id, b.id])
+    setPairQueue(queue)
+    setReviewTotal(queue.length)
+    setReviewing(true)
+  }
+  const stopPairReview = () => {
+    setReviewing(false); setReviewTotal(0); setPairQueue([]); setMergeModal(null)
+  }
+  const skipPairReview = () => {
+    // Closing the modal triggers the advance effect above.
+    setMergeModal(null)
+  }
+  const reviewProgress = reviewing && mergeModal
+    ? { current: reviewTotal - pairQueue.length, total: reviewTotal, onSkip: skipPairReview, onStop: stopPairReview }
+    : null
+
+  const editFirstIncomplete = () => {
+    const first = filtered[0]
+    if (first) openEdit(first)
+  }
+
   return (
     <div className="flex h-full">
       {/* Main list */}
@@ -237,6 +358,9 @@ export default function Clients() {
             }}
             onArchiveError={(msg) => toast.error(msg)}
             idsToArchive={filtered.map(c => c.id)}
+            reviewablePairCount={reviewablePairs.length}
+            onReviewPairs={startPairReview}
+            onEditFirst={editFirstIncomplete}
           />
         )}
 
@@ -323,6 +447,7 @@ export default function Clients() {
           merging={merging}
           setMergeModal={setMergeModal}
           doMerge={doMerge}
+          reviewProgress={reviewProgress}
         />
       )}
       {jobClient && (

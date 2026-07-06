@@ -3,6 +3,8 @@
 Regression for the bug where the endpoint flipped status to 'sent' and minted the
 link but never emailed or texted the customer.
 """
+from datetime import date
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -60,6 +62,50 @@ def test_default_sms_greets_by_first_name_only(quote_ctx):
     body = sms.call_args.kwargs.get("body") or sms.call_args.args[1]
     assert body.startswith("Hi Meg,")
     assert "Meg Small" not in body
+
+
+def test_default_sms_uses_new_greeting_format(quote_ctx):
+    """New SMS template: personal greeting + quote line + total + valid until +
+    "tap the link / reply with questions" + link. Regression for the flat
+    one-liner it replaced, and for the SMS advertising a YES-to-accept path
+    the backend doesn't handle."""
+    db, c, q = quote_ctx
+    c.name = "Meg Small"; db.commit()
+    q.address = "24 Pine Street, Portland, ME, 04102"
+    q.valid_until = date(2026, 8, 5)
+    q.service_type = "residential"
+    db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM3"}) as sms, \
+         patch("modules.quoting.router._company_info",
+               return_value={"company_name": "The Maine Cleaning Co.", "company_email": None,
+                             "company_phone": None, "quote_terms": None,
+                             "brand_color": "#1f2937", "company_logo_url": None}):
+        send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
+    body = sms.call_args.kwargs.get("body") or sms.call_args.args[1]
+    assert "Hi Meg, your quote from The Maine Cleaning Co. is ready." in body
+    assert f"Quote {q.quote_number} — Residential clean at 24 Pine Street, Portland, ME, 04102" in body
+    assert "Total: $100.00" in body
+    assert "Valid until: 2026-08-05" in body
+    assert "Tap the link to accept, or reply with any questions." in body
+    assert "Reply YES" not in body  # don't advertise an unimplemented handler
+    assert "/quote/" in body  # accept link still present
+
+
+def test_send_sms_rejects_placeholder_and_bad_numbers(quote_ctx):
+    """Placeholder-labelled or NANP-invalid phones never reach Twilio."""
+    db, c, q = quote_ctx
+    # Placeholder marker in the client record — real digits but "(placeholder)" tag.
+    c.phone = "+12074518184 (placeholder)"; db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM_x"}) as sms:
+        out = send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
+    assert not sms.called
+    assert out["results"]["sms"] == "invalid phone number"
+    # Malformed international number (starts with 0 after country code).
+    c.phone = "+09650460670"; db.commit()
+    with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM_y"}) as sms:
+        out = send_quote(q.id, QuoteSendRequest(channel="sms"), db=db)
+    assert not sms.called
+    assert out["results"]["sms"] == "invalid phone number"
 
 
 def test_send_with_no_destination_is_undelivered_not_error(quote_ctx):

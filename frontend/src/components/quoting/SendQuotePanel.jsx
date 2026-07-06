@@ -11,7 +11,12 @@ function _usDigits(v) {
   if (d.length === 11 && d.startsWith('1')) return d.slice(1)
   return d
 }
+// Client records sometimes carry a labelled non-number in the phone field,
+// e.g. "+12074518184 (placeholder)". The digits look valid to isValidUsPhone,
+// so an explicit label check keeps the send button disabled for them.
+function _isPlaceholderPhone(v) { return /\bplaceholder\b|\btbd\b|\bunknown\b/i.test(String(v || '')) }
 function isValidUsPhone(v) {
+  if (_isPlaceholderPhone(v)) return false
   const d = _usDigits(v)
   if (d.length !== 10) return false
   // NANP: area code and exchange first digits are 2-9. Rejects "0075551234".
@@ -46,8 +51,28 @@ export default function SendQuotePanel({
 
   const previewSMS = () => {
     const q = selected
-    const st = (q.service_type || 'residential').charAt(0).toUpperCase() + (q.service_type || 'residential').slice(1)
-    return `${companyName} — Quote ${q.quote_number || `QT-${q.id}`}\n${st} clean${q.address ? ` at ${q.address}` : ''}\nTotal: $${parseFloat(q.total || 0).toFixed(2)}${q.valid_until ? `\nValid until: ${q.valid_until}` : ''}\n\nReply YES to accept or ask any questions.`
+    const st = (q.service_type || 'residential').charAt(0).toUpperCase() + (q.service_type || 'residential').slice(1).toLowerCase()
+    // Mirror the backend rule: first token of the client's real name, skipped
+    // when it's a phone number / placeholder so we don't greet "Hi +12074329492,".
+    const rawName = String(clientName(q.client_id) || '')
+    const firstToken = rawName.split(/\s+/)[0] || ''
+    const isPlaceholder = !firstToken || /[\d+()]/.test(firstToken) || /^client\s*#/i.test(rawName)
+    const first = isPlaceholder ? '' : firstToken
+    const note = (sendForm.custom_message || '').trim()
+    const greeting = note
+      ? note
+      : first
+      ? `Hi ${first}, your quote from ${companyName} is ready.`
+      : `Hi there, your quote from ${companyName} is ready.`
+    const number = q.quote_number || `QT-${q.id}`
+    const lines = [
+      greeting,
+      `Quote ${number} — ${st} clean${q.address ? ` at ${q.address}` : ''}`,
+      `Total: $${parseFloat(q.total || 0).toFixed(2)}`,
+    ]
+    if (q.valid_until) lines.push(`Valid until: ${q.valid_until}`)
+    lines.push('', 'Tap the link to accept, or reply with any questions.')
+    return lines.join('\n')
   }
 
   return (

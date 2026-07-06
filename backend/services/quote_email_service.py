@@ -150,6 +150,54 @@ def first_name_of(name: str | None, *, client_first_name: str | None = None) -> 
     return display.split()[0]
 
 
+def build_quote_sms_body(
+    *,
+    quote,
+    client,
+    company_name: str | None,
+    quote_link: str,
+    custom_message: str | None = None,
+) -> str:
+    """Assemble the SMS body a customer sees for a quote delivery.
+
+    Leads with a personal greeting so the customer immediately knows who
+    the text is from and that it's addressed to them; falls back to a
+    neutral "Hi there," when the client has no usable name on file.
+    When a staff-written personal note is provided, that note replaces
+    the default greeting line so it reads naturally at the top.
+    """
+    first = first_name_of(
+        getattr(client, "name", None) if client is not None else None,
+        client_first_name=getattr(client, "first_name", None) if client is not None else None,
+    )
+    company = (company_name or "").strip() or "our team"
+    note = (custom_message or "").strip()
+    if note:
+        greeting = note
+    elif first:
+        greeting = f"Hi {first}, your quote from {company} is ready."
+    else:
+        greeting = f"Hi there, your quote from {company} is ready."
+
+    st_raw = (getattr(quote, "service_type", None) or "residential").strip()
+    service_type = (st_raw[:1].upper() + st_raw[1:].lower()) if st_raw else "Residential"
+    number = getattr(quote, "quote_number", None) or f"QT-{getattr(quote, 'id', '')}"
+    address = (getattr(quote, "address", None) or "").strip()
+    details = f"Quote {number} — {service_type} clean" + (f" at {address}" if address else "")
+
+    total_val = float(getattr(quote, "total", 0) or 0)
+    lines = [greeting, details, f"Total: ${total_val:,.2f}"]
+    valid = getattr(quote, "valid_until", None)
+    if valid:
+        lines.append(f"Valid until: {valid}")
+    lines.append("")
+    lines.append("Tap the link to accept, or reply with any questions.")
+    body = "\n".join(lines)
+    if quote_link and quote_link not in body:
+        body += f"\nView & accept: {quote_link}"
+    return body
+
+
 class QuoteEmailService:
     """Send quote emails with PDF attachments over the shared SMTP config"""
 

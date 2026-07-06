@@ -156,7 +156,7 @@ export default function Login({ onLoginSuccess }) {
           </div>
 
           <h1 className="text-3xl font-bold text-ink text-center mb-2">BrightBase</h1>
-          <p className="text-center text-ink-3 mb-8">Maine Cleaning Co.</p>
+          <p className="text-center text-ink-3 mb-8">The Maine Cleaning Co.</p>
 
           {/* Session-timeout notice — friendlier than the gateway error it replaces */}
           {sessionExpired && !error && (

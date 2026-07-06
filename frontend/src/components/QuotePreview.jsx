@@ -25,7 +25,7 @@ export default function QuotePreview({ form, quoteNumber, company = {} }) {
     quote_date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
     title: form.title || '',
     customer_message: form.customer_message || '',
-    company_name: company.company_name || 'Maine Cleaning Co',
+    company_name: company.company_name || 'The Maine Cleaning Co.',
     company_email: company.company_email || null,
     company_phone: company.company_phone || null,
     terms: company.quote_terms || null,

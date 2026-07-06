@@ -49,3 +49,36 @@ def normalize_e164(phone: Optional[str]) -> Optional[str]:
         return f"+1{digits}"
     else:
         return None
+
+
+_PLACEHOLDER_PHONE_MARKER = re.compile(r"\b(placeholder|tbd|unknown)\b", re.IGNORECASE)
+
+
+def is_deliverable_sms_number(phone: Optional[str]) -> bool:
+    """True when the string looks like a real number Twilio can text.
+
+    Rejects placeholder-labelled entries ("+12074518184 (placeholder)")
+    that survive digit-only validators, plus obviously invalid NANP
+    numbers whose area code or exchange starts with 0 or 1 (e.g. the
+    malformed "+09650460670" a lead once submitted). Runs upstream of
+    Twilio so we don't burn a request on numbers that will fail there."""
+    if not phone or _PLACEHOLDER_PHONE_MARKER.search(phone):
+        return False
+    e164 = normalize_e164(phone)
+    if not e164:
+        return False
+    digits = e164.lstrip("+")
+    if len(digits) == 11 and digits.startswith("1"):
+        nanp = digits[1:]
+    elif len(digits) == 10:
+        nanp = digits
+    else:
+        # Non-NANP international — we don't service, so don't try to send.
+        return False
+    if len(nanp) != 10:
+        return False
+    if nanp[0] in ("0", "1"):
+        return False
+    if nanp[3] in ("0", "1"):
+        return False
+    return True

@@ -600,19 +600,28 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
 
     if want_sms:
         to_phone = (body.phone or client.phone or "").strip()
+        from utils.phone import is_deliverable_sms_number, normalize_e164
         if not to_phone:
             results["sms"] = "no phone number on file"
             errors.append("no phone number")
+        elif not is_deliverable_sms_number(to_phone):
+            # Twilio would silently reject / bill for placeholder-labelled or
+            # malformed numbers. Fail cleanly here with a reason the UI can show.
+            results["sms"] = "invalid phone number"
+            errors.append("invalid phone number")
+            _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
+                             action="send", status="failed", recipient=to_phone,
+                             detail="invalid phone number (placeholder or bad format)", commit=False)
         else:
             try:
                 from integrations.twilio_client import send_sms
-                from services.quote_email_service import first_name_of
-                nice_name = first_name_of(client.name)
-                default_sms = (f"Hi {nice_name}, your quote {quote.quote_number} is ready."
-                               if nice_name else f"Hi, your quote {quote.quote_number} is ready.")
-                base = (body.custom_message or "").strip() or default_sms
-                msg = base if quote_link in base else f"{base} View & accept: {quote_link}"
-                sms_result = send_sms(to=to_phone, body=msg)
+                from services.quote_email_service import build_quote_sms_body
+                company_name = _company_info(db).get("company_name")
+                msg = build_quote_sms_body(
+                    quote=quote, client=client, company_name=company_name,
+                    quote_link=quote_link, custom_message=body.custom_message,
+                )
+                sms_result = send_sms(to=(normalize_e164(to_phone) or to_phone), body=msg)
                 results["sms"] = "sent"
                 _log_integration(db, entity_type="quote", entity_id=quote.id, provider="sms",
                                  action="send", status="ok", external_id=sms_result.get("sid"),

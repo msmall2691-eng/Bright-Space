@@ -216,6 +216,7 @@ export default function QuoteEditPanel({
               value={form.address}
               onChange={v => setForm(f => ({ ...f, address: v }))}
               onSelect={p => setForm(f => ({ ...f, address: p.address || f.address }))}
+              selectOnFocus
               placeholder="123 Main St, Portland, ME 04101"
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
           </div>
