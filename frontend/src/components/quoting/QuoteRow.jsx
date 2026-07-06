@@ -22,10 +22,13 @@ export default function QuoteRow({
 }) {
   return (
     <div className="p-3 hover:bg-bg-2/40 transition-colors">
-      <div className="flex items-center gap-3">
+      {/* Stack info + actions on mobile so the button row can wrap instead of
+          overflowing off-screen (Archive was getting cut off on iPhone). */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+      <div className="flex items-start sm:items-center gap-3 min-w-0">
         {canEdit && (
           <input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => onToggleSelect(q.id)}
-            className="w-4 h-4 shrink-0 rounded border-hairline accent-blue-600 cursor-pointer"
+            className="w-4 h-4 mt-1 sm:mt-0 shrink-0 rounded border-hairline accent-blue-600 cursor-pointer"
             title="Select for bulk action" />
         )}
         <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onOpenQuote(q)}>
@@ -58,7 +61,8 @@ export default function QuoteRow({
           )}
         </div>
         <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>
-        <div className="flex gap-1.5 shrink-0">
+      </div>
+        <div className="flex flex-wrap gap-1.5 sm:flex-nowrap sm:shrink-0">
           <button onClick={() => onNavigate(`/quotes/${q.id}`)}
             className="text-xs px-2.5 py-1.5 bg-bg-2 text-ink-2 hover:bg-bg-3 rounded-lg transition-colors"
             title="Open full page">

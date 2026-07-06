@@ -76,7 +76,7 @@ export default function SendQuotePanel({
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-[460px] sm:border-l sm:border-hairline sm:shrink-0">
+    <div className="fixed inset-0 z-40 bg-panel flex flex-col pb-bottomnav sm:pb-0 sm:static sm:inset-auto sm:z-auto sm:w-[460px] sm:border-l sm:border-hairline sm:shrink-0">
       <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
         <div>
           <h2 className="font-semibold text-ink">Send Quote</h2>
