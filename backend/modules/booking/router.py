@@ -290,11 +290,20 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
     )
     result = upsert_lead(db, payload)
 
+    # Use the post-normalize estimate so both alerts match what the operator
+    # sees on the Requests row. When the customer's payload didn't include a
+    # range (or included an implausible one), build_intake() recomputed the
+    # canonical range and it now lives on payload.estimate_min/max — passing
+    # the pre-normalize local vars here would silently drop the estimate line
+    # from the receipt even though the request row shows one.
+    alert_estimate_min = payload.estimate_min if payload.estimate_min is not None else estimate_min
+    alert_estimate_max = payload.estimate_max if payload.estimate_max is not None else estimate_max
+
     # Ping the owner by SMS as soon as a booking lands. Twilio-only; if the
     # env isn't configured or the send fails the booking still succeeds —
     # the customer-facing response must never depend on the alert path.
     try:
-        _send_booking_owner_alert(db, data, result["intake_id"], estimate_min, estimate_max)
+        _send_booking_owner_alert(db, data, result["intake_id"], alert_estimate_min, alert_estimate_max)
     except Exception as e:
         logger.warning("booking owner SMS failed: %s", e)
 
@@ -302,7 +311,7 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
     # comes next (the Google Calendar invite once we approve). Same
     # best-effort contract as the owner SMS.
     try:
-        _send_booking_customer_confirmation(data, result["intake_id"], estimate_min, estimate_max)
+        _send_booking_customer_confirmation(data, result["intake_id"], alert_estimate_min, alert_estimate_max)
     except Exception as e:
         logger.warning("booking customer email failed: %s", e)
 

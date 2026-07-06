@@ -252,6 +252,37 @@ def test_booking_submit_fires_customer_and_owner_alerts():
         _cleanup_email(email)
 
 
+def test_booking_alerts_use_canonical_estimate_when_client_omits_it():
+    """Codex P2 on #500: when the customer's booking payload doesn't
+    include an estimate range (or ships an implausible one and it gets
+    dropped), build_intake() recomputes and stores the canonical range
+    on the intake row. Both alerts must see that recomputed value —
+    otherwise the receipt promises an estimate line but omits it while
+    the operator's Requests row shows one. Pins the fix."""
+    from unittest.mock import patch
+    email = _uniq_email()
+    try:
+        with patch("modules.booking.router._send_booking_owner_alert") as sms, \
+             patch("modules.booking.router._send_booking_customer_confirmation") as mail:
+            r = client.post("/api/booking/submit", json={
+                "name": "Est Test", "email": email, "phone": "2075557999",
+                "address": "1 Main St", "serviceType": "residential",
+                "requestedDate": "2026-07-01", "squareFeet": 2000, "bathrooms": 2,
+                "frequency": "biweekly",
+                # No estimateMin / estimateMax — build_intake() recomputes.
+            })
+            assert r.status_code == 201, r.text
+            # Both helpers should have received the recomputed range —
+            # NOT None (the pre-normalize local vars) — as positional args 3+4.
+            for helper in (sms, mail):
+                mn, mx = helper.call_args.args[-2], helper.call_args.args[-1]
+                assert mn is not None, f"{helper} got None estimate_min"
+                assert mx is not None, f"{helper} got None estimate_max"
+                assert mn <= mx
+    finally:
+        _cleanup_email(email)
+
+
 def test_booking_submit_saves_frequency():
     """booking/submit used to hard-code frequency=None, dropping cadence."""
     email = _uniq_email()
