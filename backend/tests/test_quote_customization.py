@@ -95,6 +95,22 @@ def test_company_names_do_not_become_first_names():
     assert first_name_of("megan small") == "megan"
 
 
+def test_client_first_name_bypasses_company_heuristic(monkeypatch):
+    """Codex P2 on #495: when Client.first_name is populated the router
+    passes it via client_first_name= to send_quote_email. That path must
+    NOT re-run the name-parse company heuristic — otherwise real given
+    names like "McKenzie" / "DeAndre" / "Anne-Marie" / "JOHN" that look
+    like brand tokens would suppress the greeting."""
+    # Sanity: first_name_of() alone suppresses these (it's un-trusted).
+    for real in ["McKenzie", "DeAndre", "Anne-Marie", "JOHN"]:
+        assert first_name_of(real) == ""
+    # But the render path with client_first_name set uses them verbatim.
+    _, html = _rendered_email(monkeypatch, client_name="BrightBase LLC",
+                              client_first_name="McKenzie")
+    assert "Hi McKenzie," in html
+    assert "Hello BrightBase" not in html
+
+
 def test_title_and_customer_message_round_trip(ctx):
     db, c, q = ctx
     d = _quote_dict(q)

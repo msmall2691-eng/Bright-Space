@@ -270,6 +270,7 @@ class QuoteEmailService:
         pdf_filename: str = "quote.pdf",
         subject: Optional[str] = None,
         greeting: Optional[str] = None,
+        client_first_name: Optional[str] = None,
         intro_message: Optional[str] = None,
         quote_title: Optional[str] = None,
         items: Optional[list] = None,
@@ -315,14 +316,19 @@ class QuoteEmailService:
             if bcc_addr and "@" in bcc_addr and bcc_addr.lower() != to_email.strip().lower():
                 msg['Bcc'] = bcc_addr
 
-            # Greeting: explicit override > friendly first name > greet-able
-            # full name > neutral. "Hi Megan," reads better than the full name.
+            # Greeting: explicit override > stored client.first_name (trusted;
+            # skips the name-parse heuristic so "McKenzie" / "JOHN" /
+            # "Anne-Marie" don't get flagged as companies) > derived first
+            # name > neutral. "Hi Megan," reads better than the full name.
             override = (greeting or "").strip()
-            first = first_name_of(client_name)
+            trusted_first = (client_first_name or "").strip()
+            derived_first = first_name_of(client_name)
             if override:
                 greeting_line = f"Hello {override},"
-            elif first:
-                greeting_line = f"Hi {first},"
+            elif trusted_first:
+                greeting_line = f"Hi {trusted_first},"
+            elif derived_first:
+                greeting_line = f"Hi {derived_first},"
             else:
                 greeting_line = "Hello,"
 
