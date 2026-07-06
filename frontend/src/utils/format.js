@@ -53,7 +53,10 @@ export function formatDate(value, opts) {
  */
 export function formatDateShort(value) {
   if (!value) return null
-  const d = new Date(value)
+  const s = String(value)
+  // Date-only strings ("YYYY-MM-DD") must parse as LOCAL midnight; new Date(s)
+  // treats them as UTC, rendering a day early in negative-offset zones (ME).
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00`) : new Date(value)
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
 }
 

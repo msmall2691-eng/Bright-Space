@@ -467,7 +467,9 @@ class Job(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"))
-    quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
+    # One job per quote. NULLs allowed for ad-hoc jobs (Postgres treats NULLs as
+    # distinct, so unique=True does not block multiple quote-less jobs).
+    quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True, unique=True, index=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
 
     # Job classification

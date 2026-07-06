@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from io import BytesIO
 from pydantic import BaseModel
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
@@ -29,6 +30,17 @@ from modules.auth.router import get_current_user, require_role, current_org_id, 
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from config import app_base_url
+
+import re as _re
+# A greeting override that is really an intake/display label ("TEST"), a phone
+# number, or "unknown" must NOT beat the real first name derived from the client
+# record. Returns None so QuoteEmailService falls back to first_name_of(client.name).
+_PLACEHOLDER_GREETING = _re.compile(r"^(unknown|test|test\s*[-–—].*|webhook test|test client|n/?a|\+?[\d\s().-]+)$", _re.I)
+def _safe_greeting(override):
+    o = (override or "").strip()
+    if not o or _PLACEHOLDER_GREETING.match(o):
+        return None
+    return o
 from utils.dates import business_today
 
 logger = logging.getLogger(__name__)
@@ -546,7 +558,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     expires_at=fmt_long_date(quote.valid_until),
                     quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
                     subject=(body.subject or "").strip() or None,
-                    greeting=(body.greeting or "").strip() or None,
+                    greeting=_safe_greeting(body.greeting),
                     # Send-time personal note wins; the quote's stored
                     # customer message is the default intro.
                     intro_message=(body.custom_message or "").strip()
@@ -758,7 +770,13 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     quote.updated_at = _utcnow()
     from utils.opportunity_helper import advance_for_quote
     advance_for_quote(db, quote, "won", close_date=str(business_today()))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # A concurrent convert won the race and inserted the job first; the
+        # unique index on jobs.quote_id rejected ours. Return the winner.
+        db.rollback()
+        return _existing_job_for_quote(db, quote)
     db.refresh(job)
     return job
 
@@ -1008,6 +1026,10 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
 def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
     """Client accepts the quote from the public link."""
     quote = _quote_by_token(token, db)
+    # Serialize concurrent accepts (double-tap / retry): lock the row so the
+    # status guard and auto-convert below can't both run twice. (No-op on
+    # SQLite tests; enforced on Postgres.)
+    quote = db.query(Quote).filter(Quote.id == quote.id).with_for_update().first()
     # Idempotent: a double-tap (or re-open of an already-accepted/converted
     # link) must not revert status or re-fire conversion/notifications.
     if quote.status in ("accepted", "converted"):

@@ -26,6 +26,8 @@ export function toTitleCase(input = '') {
 export function isPlaceholderName(name = '') {
   const n = name.trim().toLowerCase()
   if (!n) return true
+  if (['unknown', 'test', 'n/a', 'na', 'webhook test', 'test client', 'brightbase webhook test'].includes(n)) return true
+  if (n.startsWith('test ') || n.startsWith('test-') || n.startsWith('test –') || n.startsWith('test —')) return true
   if (n.startsWith('sms +') || n.startsWith('sms lead')) return true
   if (/^\+?\d{7,}$/.test(n.replace(/[^\d+]/g, ''))) return true
   return false

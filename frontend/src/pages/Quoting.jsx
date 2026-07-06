@@ -298,7 +298,14 @@ export default function Quoting() {
     const intake = q.intake_id ? intakes.find(i => i.id === q.intake_id) : null
     const preferEmail = intake?.email || client?.email || ''
     const preferPhone = intake?.phone || client?.phone || ''
-    const clientName = (intake?.name || client?.name || '').trim()
+    // Greeting uses the linked client's REAL name (authoritative once matched);
+    // fall back to the intake's display name only if the client name is missing
+    // or a placeholder. Prevents "Hello TEST," when a request used a test label.
+    const clientReal = (client?.name || '').trim()
+    const intakeName = (intake?.name || '').trim()
+    const clientName = !isPlaceholderName(clientReal)
+      ? clientReal
+      : (!isPlaceholderName(intakeName) ? intakeName : '')
     setSendForm({
       channel: preferEmail ? 'email' : 'sms',
       email: preferEmail,
