@@ -1,3 +1,6 @@
+import logging
+import os
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
@@ -8,7 +11,54 @@ from modules.intake.normalize import build_intake, upsert_lead
 from modules.booking.pricing import estimate_price
 from ratelimit import limiter
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _send_booking_owner_alert(
+    db: Session,
+    data: "BookingSubmit",
+    intake_id: int,
+    estimate_min: Optional[float],
+    estimate_max: Optional[float],
+) -> None:
+    """Text the owner as soon as a website booking lands.
+
+    Owner phone comes from Settings → General ("owner_alert_phone") first,
+    then falls back to the OWNER_ALERT_PHONE env var. Uses the same
+    integrations.twilio_client the quote-SMS path uses, so the same
+    TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER
+    configuration covers this path — no extra env work needed to enable.
+    """
+    to_number = None
+    try:
+        from database.models import AppSetting
+        row = db.query(AppSetting).filter(AppSetting.key == "owner_alert_phone").first()
+        if row and (row.value or "").strip():
+            to_number = row.value.strip()
+    except Exception:
+        pass
+    to_number = to_number or (os.getenv("OWNER_ALERT_PHONE") or "").strip() or None
+    if not to_number:
+        logger.info("[booking] owner SMS skipped — no owner_alert_phone / OWNER_ALERT_PHONE set")
+        return
+
+    # Compact one-message summary. Twilio segments beyond 160 chars, so
+    # keep it terse but include the levers an operator wants at a glance.
+    est = ""
+    if estimate_min is not None and estimate_max is not None:
+        est = f" · ${int(estimate_min)}–${int(estimate_max)}"
+    body = (
+        f"New booking #{intake_id}: {data.name} — "
+        f"{data.serviceType} on {data.requestedDate}{est}\n"
+        f"{data.address}\n"
+        f"{data.phone}\n"
+        f"See details in Bright-Space Requests."
+    )
+
+    from integrations.twilio_client import send_sms
+    send_sms(to=to_number, body=body)
+    logger.info("[booking] owner SMS sent for intake=%s", intake_id)
 
 
 # ---------------------------------------------------------------------------
@@ -19,6 +69,7 @@ BOOKING_SERVICE_MAP = {
     "vrbo-turnover": "str",
     "vacation-rental": "str",
     "str-turnover": "str",
+    "str": "str",   # bare "str" is what the maineclean.co bookingMutation sends
     "residential-cleaning": "residential",
     "residential": "residential",
     "standard": "residential",
@@ -61,6 +112,15 @@ class BookingSubmit(BaseModel):
     # what the customer was quoted.
     estimateMin: Optional[float] = None
     estimateMax: Optional[float] = None
+    # Six /book "essentials" the site collects so cleaners come prepared.
+    # Not on the LeadIntake column list; stored on LeadIntake.custom_fields
+    # so operators see them next to the request without a per-field schema
+    # migration for every future essentials addition.
+    entryMethod: Optional[str] = None       # owner-home / lockbox / hidden-key / gate-code / other
+    parkingNotes: Optional[str] = None
+    petsDetail: Optional[str] = None
+    focusAreas: Optional[list] = None        # ["kitchen", "bathrooms", ...]
+    specialInstructions: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -153,6 +213,17 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
     ):
         estimate_min = estimate_max = None
 
+    # /book essentials — passed through as custom_fields on the LeadIntake row
+    # so they show up on the Requests page next to the estimate/date. Any that
+    # arrive empty are dropped inside build_intake so the JSON stays compact.
+    essentials = {
+        "entry_method":         data.entryMethod,
+        "parking_notes":        data.parkingNotes,
+        "pets_detail":          data.petsDetail,
+        "focus_areas":          data.focusAreas,
+        "special_instructions": data.specialInstructions,
+    }
+
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
         state="ME", service_key=data.serviceType, bedrooms=data.bedrooms,
@@ -162,8 +233,17 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         message=message, preferred_date=data.requestedDate, source="website",
         pet_hair=data.petHair, condition=data.condition,
         estimate_min=estimate_min, estimate_max=estimate_max,
+        custom_fields=essentials,
     )
     result = upsert_lead(db, payload)
+
+    # Ping the owner by SMS as soon as a booking lands. Twilio-only; if the
+    # env isn't configured or the send fails the booking still succeeds —
+    # the customer-facing response must never depend on the alert path.
+    try:
+        _send_booking_owner_alert(db, data, result["intake_id"], estimate_min, estimate_max)
+    except Exception as e:
+        logger.warning("booking owner SMS failed: %s", e)
 
     return BookingResponse(
         success=True,

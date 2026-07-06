@@ -134,6 +134,12 @@ class IntakeData:
     message: Optional[str] = None
     preferred_date: Optional[str] = None
     source: str = "website"
+    # Free-form structured fields off the public payload — the /book flow's
+    # on-site "essentials" (bedrooms is on the columns above; the rest —
+    # entry method, parking, pets detail, focus areas, special instructions —
+    # ride here so the operator sees them on the Request card without a
+    # schema migration for every future essentials field the site adds.
+    custom_fields: Optional[dict] = None
 
 
 def build_intake(
@@ -162,6 +168,7 @@ def build_intake(
     source: Optional[str] = "website",
     pet_hair: Optional[str] = None,
     condition: Optional[str] = None,
+    custom_fields: Optional[dict] = None,
 ) -> IntakeData:
     """Normalize a raw public payload into :class:`IntakeData`.
 
@@ -212,6 +219,17 @@ def build_intake(
         message=message,
         preferred_date=preferred_date or requested_date,
         source=normalize_source(source),
+        # Drop empty keys and empty values so the row's custom_fields stays
+        # a compact {only what was actually sent}. Callers pass a dict with
+        # all six /book essentials; anything untouched by the customer is
+        # filtered here rather than the column carrying explicit nulls.
+        custom_fields=(
+            {
+                k: v for k, v in (custom_fields or {}).items()
+                if k and v not in (None, "", [])
+            }
+            or None
+        ),
     )
 
 
@@ -278,6 +296,17 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         if data.message and (not recent.message or len(data.message) > len(recent.message or "")):
             recent.message = data.message
             changed = True
+        # Shallow-merge custom_fields. The scalar _MERGE_FIELDS loop's
+        # "fill-if-missing" rule is wrong for a dict — the earlier hit
+        # (e.g. an intake-submit) may already have {} on the row, but the
+        # follow-up booking submit's essentials are strictly newer info the
+        # operator needs. Merge with incoming keys winning; assign a fresh
+        # dict so SQLAlchemy's JSON change detection actually fires.
+        if data.custom_fields:
+            merged = {**(recent.custom_fields or {}), **data.custom_fields}
+            if merged != (recent.custom_fields or {}):
+                recent.custom_fields = merged
+                changed = True
         if changed:
             db.commit()
             db.refresh(recent)
@@ -321,6 +350,7 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         estimate_min=data.estimate_min, estimate_max=data.estimate_max,
         property_name=data.property_name, message=data.message,
         preferred_date=data.preferred_date, source=data.source, client_id=client.id,
+        custom_fields=data.custom_fields or {},
     )
     db.add(intake)
     db.flush()
