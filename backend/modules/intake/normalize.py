@@ -357,12 +357,18 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         # This is the M1 fix from the July-2026 audit: a returning customer
         # who books from a new address/phone was leaving their master client
         # record permanently stale (Requests page shows the fresh info; the
-        # Client card kept the old). The multi-value `client_emails` and
-        # `client_phones` tables below preserve the historical values, so no
-        # info is lost — the primary just tracks the latest submission.
+        # Client card kept the old). Before overwriting the primary email/
+        # phone, copy the OLD value into the multi-value contact tables so a
+        # legacy/manual client that only had the primary populated (no
+        # matching contact_emails/contact_phones row) still stays matchable
+        # via its old contact.
         if data.email and data.email != client.email:
+            if client.email:
+                add_contact_email(db, client, client.email, source="preserved_primary")
             client.email = data.email
         if data.phone and data.phone != client.phone:
+            if client.phone:
+                add_contact_phone(db, client, client.phone, source="preserved_primary")
             client.phone = data.phone
         if data.address and data.address != client.address:
             client.address = data.address
@@ -375,9 +381,11 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         if data.zip_code and data.zip_code != (client.zip_code or ""):
             client.zip_code = data.zip_code
 
-    # Record the lead's email/phone in the canonical multi-value tables so a
-    # returning customer (or a Gmail thread) matches this client instead of
-    # spawning a duplicate — even if it isn't the client's primary contact.
+    # Record the NEW lead's email/phone in the canonical multi-value tables
+    # so a returning customer (or a Gmail thread) matches this client
+    # instead of spawning a duplicate — even if it isn't the client's
+    # primary contact. (The old primary was copied above before we
+    # overwrote it, so history is preserved either way.)
     add_contact_email(db, client, data.email, source=data.source)
     add_contact_phone(db, client, data.phone, source=data.source)
 

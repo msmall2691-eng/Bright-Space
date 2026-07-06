@@ -418,3 +418,78 @@ def test_returning_customer_booking_refreshes_stale_client_fields():
         db.close()
     finally:
         _cleanup_email(email)
+
+
+def test_overwriting_client_primary_preserves_old_email_in_history():
+    """A legacy client with only Client.email populated (no contact_emails row)
+    must keep its old email in the multi-value table when a new booking
+    overwrites the primary. Otherwise a later Gmail thread using the old
+    address can't match this client anymore.
+
+    Pins the July-2026 audit review's follow-up (P2 on PR #507).
+    """
+    from database.models import Client, ContactEmail
+
+    new_email = _uniq_email()
+    old_email = _uniq_email()
+    # Unique phone so find_client_by_contact matches THIS legacy row and not
+    # some leftover from an earlier test on a shared SQLite CI DB.
+    unique_phone_digits = "207555" + f"{uuid.uuid4().int % 10000:04d}"
+    unique_phone_e164 = "+1" + unique_phone_digits
+    try:
+        db = SessionLocal()
+        # Simulate a legacy client: primary email on Client, but no matching
+        # contact_emails row for this address (pre-multi-value migration state).
+        legacy = Client(
+            name="Legacy Cust", email=old_email, phone=unique_phone_e164,
+            address="10 Old Rd", city="Old City", state="ME",
+            zip_code="00001", status="lead", source="import",
+        )
+        db.add(legacy)
+        db.commit()
+        legacy_id = legacy.id
+
+        # Sanity: no contact_emails row for this specific email yet.
+        assert db.query(ContactEmail).filter(
+            ContactEmail.client_id == legacy_id,
+            ContactEmail.email.ilike(old_email),
+        ).count() == 0
+        db.close()
+
+        # New booking arrives with a DIFFERENT email but same phone (so
+        # find_client_by_contact matches this legacy client).
+        db = SessionLocal()
+        data = build_intake(
+            name="Legacy Cust", email=new_email, phone=unique_phone_digits,
+            address="20 New Rd", city="New City", state="ME", zip_code="00002",
+            service_key="residential", bedrooms=2, bathrooms=1,
+        )
+        upsert_lead(db, data)
+        db.commit()
+
+        c = db.query(Client).filter(Client.id == legacy_id).one()
+        # Primary now the new email.
+        assert c.email == new_email
+        # Old email preserved in contact_emails so future Gmail/manual lookups
+        # by that address still resolve to this client.
+        old_row = (
+            db.query(ContactEmail)
+            .filter(ContactEmail.client_id == legacy_id,
+                    ContactEmail.email.ilike(old_email))
+            .first()
+        )
+        assert old_row is not None, (
+            "old primary email must be copied to contact_emails BEFORE overwrite"
+        )
+        # New email also in the history (via the standing add_contact_email).
+        new_row = (
+            db.query(ContactEmail)
+            .filter(ContactEmail.client_id == legacy_id,
+                    ContactEmail.email.ilike(new_email))
+            .first()
+        )
+        assert new_row is not None
+        db.close()
+    finally:
+        _cleanup_email(new_email)
+        _cleanup_email(old_email)

@@ -43,6 +43,9 @@ class IntakeSubmit(BaseModel):
     source: Optional[str] = "website"
     # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
     # (retry / dual-forward / user tapped Submit twice) = one Lead row.
+    # Accept both camel and snake so callers in either style work — the
+    # maineclean.co InstantEstimate form uses camelCase.
+    idempotencyKey: Optional[str] = None
     idempotency_key: Optional[str] = None
 
 
@@ -112,7 +115,7 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
         check_out=data.check_out, estimate_min=data.estimate_min,
         estimate_max=data.estimate_max, property_name=data.property_name,
         message=data.message, preferred_date=data.preferred_date, source=data.source,
-        idempotency_key=data.idempotency_key,
+        idempotency_key=data.idempotency_key or data.idempotencyKey,
     )
     return upsert_lead(db, payload)
 
