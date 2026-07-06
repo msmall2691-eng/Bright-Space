@@ -40,9 +40,16 @@ export default function QuoteEditPanel({
   onSave,
   onClose,
   onSend,
+  // Optional controlled pair — Quoting.jsx lifts this so openFromIntake
+  // can force the "add client" form open when a request has no matched
+  // client. Falls back to local state for other callers.
+  addingClient: addingClientProp,
+  setAddingClient: setAddingClientProp,
 }) {
   const [previewMode, setPreviewMode] = useState(false)
-  const [addingClient, setAddingClient] = useState(false)
+  const [addingClientLocal, setAddingClientLocal] = useState(false)
+  const addingClient = addingClientProp ?? addingClientLocal
+  const setAddingClient = setAddingClientProp ?? setAddingClientLocal
   const [clientErr, setClientErr] = useState('')
 
   const handleCreateClient = async () => {

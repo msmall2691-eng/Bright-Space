@@ -23,7 +23,11 @@ export function useProperties() {
 
   useEffect(() => {
     load()
-    get('/api/clients?status=active').then(setClients).catch(err => console.error('[Properties]', err))
+    // No status filter: a property can (and does) belong to a Lead-status
+    // client. Filtering to active-only was wiping out the Client field in
+    // Edit Property for every lead-linked property — Save would then unlink
+    // the property from a real client.
+    get('/api/clients?limit=1000').then(setClients).catch(err => console.error('[Properties]', err))
   }, [load])
 
   return { properties, clients, setClients, load }

@@ -111,9 +111,23 @@ export default function JobDetail() {
   const newInvoice = async () => {
     setCreating(true)
     try {
+      // Seed from the linked quote if there is one — a job converted from a
+      // $150 quote used to create a $0.00 invoice because we hard-coded
+      // unit_price: 0. Fall back to a single $0 line only when no quote
+      // exists (rare for real jobs; ad-hoc / STR turnovers without a quote).
+      const qItems = job.quote?.items || []
+      const items = qItems.length
+        ? qItems.map(i => ({
+            name: i.name || job.title || 'Cleaning',
+            description: i.description || '',
+            qty: Number(i.qty) || 1,
+            unit_price: Number(i.unit_price) || 0,
+          }))
+        : [{ name: job.title || 'Cleaning', qty: 1, unit_price: 0 }]
       const inv = await post('/api/invoices', {
         client_id: job.client_id, job_id: job.id,
-        items: [{ name: job.title || 'Cleaning', unit_price: 0 }],
+        items,
+        tax_rate: Number(job.quote?.tax_rate) || 0,
       })
       navigate(`/invoices/${inv.id}`)
     } catch { toast.error('Could not create invoice'); setCreating(false) }

@@ -82,6 +82,11 @@ export default function Quoting() {
   // flag stay here because `save()` reads them when auto-creating on save.
   const [newClient, setNewClient] = useState({ name: '', phone: '', email: '' })
   const [creatingClient, setCreatingClient] = useState(false)
+  // Whether the "Add client inline" form is expanded in QuoteEditPanel.
+  // Lifted from the panel so openFromIntake can auto-expand it when a
+  // request has no matched client — previously called an undefined
+  // setAddingClient and hard-crashed the whole Billing page.
+  const [addingClient, setAddingClient] = useState(false)
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -692,6 +697,8 @@ export default function Quoting() {
           creatingClient={creatingClient}
           newClient={newClient}
           setNewClient={setNewClient}
+          addingClient={addingClient}
+          setAddingClient={setAddingClient}
           showQuoteAdvanced={showQuoteAdvanced}
           setShowQuoteAdvanced={setShowQuoteAdvanced}
           selectClient={selectClient}

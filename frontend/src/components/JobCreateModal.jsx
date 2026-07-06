@@ -170,7 +170,10 @@ export default function JobCreateModal({
     const q = clientQuery.trim()
     const t = setTimeout(() => {
       setClientLoading(true); setClientLoadErr('')
-      const params = new URLSearchParams({ status: 'active', limit: '20' })
+      // Include lead-status clients — most of the client book starts as
+      // leads (45/51 in July audit) and quietly filtering them out made
+      // "New Job" unusable for the majority of records.
+      const params = new URLSearchParams({ limit: '20' })
       if (q) params.append('search', q)
       get(`/api/clients?${params.toString()}`)
         .then(d => setClientResults(Array.isArray(d) ? d : []))

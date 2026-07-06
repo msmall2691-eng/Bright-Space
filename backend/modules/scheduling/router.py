@@ -1218,7 +1218,14 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
                         if job.opportunity else None),
-        "quote": ({"id": quote.id, "quote_number": quote.quote_number, "status": quote.status, "total": quote.total}
+        # Include items + tax_rate + subtotal/tax so the JobDetail "New invoice"
+        # button can seed the invoice with the linked quote's real line items
+        # instead of a $0 placeholder — otherwise an invoice created from a
+        # $150 quote used to save as $0.00 (audit bug).
+        "quote": ({"id": quote.id, "quote_number": quote.quote_number, "status": quote.status,
+                   "total": quote.total, "subtotal": quote.subtotal,
+                   "tax": quote.tax, "tax_rate": quote.tax_rate,
+                   "items": quote.items or []}
                   if quote else None),
         "invoices": [
             {"id": inv.id, "invoice_number": inv.invoice_number, "status": inv.status, "total": inv.total,

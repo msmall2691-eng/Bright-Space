@@ -483,7 +483,10 @@ def client_to_dict(c: Client) -> dict:
 def get_clients(
     status: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = Query(50, ge=1, le=200),
+    # Ceiling raised to 1000 so the Properties page can preload the whole
+    # client book to resolve client_id → display name — audit found the old
+    # 200 cap would silently drop rows in a workspace with more clients.
+    limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
