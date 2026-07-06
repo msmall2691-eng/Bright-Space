@@ -92,10 +92,10 @@ export default function CRMHealthPanel({ onSelectBucket }) {
                     <button
                       key={k}
                       onClick={() => onSelectBucket(k, ids)}
-                      title={`Show only ${m.label.toLowerCase()} clients`}
+                      title={`Filter to ${m.label.toLowerCase()} — the banner offers bulk actions`}
                       className={`px-2 py-1 rounded-md text-[11px] font-medium border hover:brightness-95 transition ${m.cls}`}
                     >
-                      {m.label}: {n}
+                      {m.label}: {n} →
                     </button>
                   ) : (
                     <span key={k} className={`px-2 py-1 rounded-md text-[11px] font-medium border ${m.cls}`}>
@@ -109,13 +109,17 @@ export default function CRMHealthPanel({ onSelectBucket }) {
                 </button>
               </div>
 
+              <p className="text-[11px] text-ink-3 -mt-1 mb-1">
+                Click a bucket to filter — the banner above the list has bulk archive / merge / review actions.
+              </p>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                 <Breakdown title="By source" obj={data.by_source} />
                 <Breakdown title="By status" obj={data.by_status} />
               </div>
 
               <p className="text-[11px] text-ink-3 mt-2">
-                Read-only snapshot — nothing is changed. Buckets are mutually exclusive and sum to {total}.
+                Snapshot itself changes nothing. Buckets are mutually exclusive and sum to {total}.
               </p>
             </>
           )}
