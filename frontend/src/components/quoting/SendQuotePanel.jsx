@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X, Send, Mail, MessageSquare, Eye, ChevronDown } from 'lucide-react'
+import { formatPhoneAsTyping, isValidPhoneUS, phoneDigits } from '../../utils/display'
 
 /** Right-side (bottom-sheet on mobile) send-quote panel. Delivery via
  *  email, SMS, or both — with subject/greeting/copy-to for email and a
@@ -17,7 +18,19 @@ export default function SendQuotePanel({
   onSend,
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [phoneTouched, setPhoneTouched] = useState(false)
   if (!selected) return null
+
+  // Phone validation: SMS / Both require a plausible 10-digit US number.
+  // We show inline feedback (and disable Send) instead of the previous
+  // behavior — accepting anything, showing "Sending…", and then failing
+  // with a generic post-send toast that left a stuck "send failed" tag.
+  const smsSelected = sendForm.channel === 'sms' || sendForm.channel === 'both'
+  const phoneEmpty = !phoneDigits(sendForm.phone)
+  const phoneValid = isValidPhoneUS(sendForm.phone)
+  const phoneShowError = smsSelected && phoneTouched && (phoneEmpty || !phoneValid)
+  const emailValid = sendForm.channel === 'sms' ? true : !!sendForm.email
+  const canSend = !sending && emailValid && (!smsSelected || (phoneValid && !phoneEmpty))
 
   const previewSMS = () => {
     const q = selected
@@ -90,12 +103,30 @@ export default function SendQuotePanel({
         )}
 
         {/* Phone */}
-        {(sendForm.channel === 'sms' || sendForm.channel === 'both') && (
+        {smsSelected && (
           <div>
             <label className="block text-xs text-ink-3 mb-1">Phone Number</label>
-            <input type="tel" value={sendForm.phone} onChange={e => setSendForm(f => ({ ...f, phone: e.target.value }))}
-              placeholder="+12075551234"
-              className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            <input
+              type="tel"
+              inputMode="tel"
+              value={sendForm.phone}
+              onChange={e => setSendForm(f => ({ ...f, phone: formatPhoneAsTyping(e.target.value) }))}
+              onBlur={() => setPhoneTouched(true)}
+              placeholder="(207) 555-1234"
+              aria-invalid={phoneShowError ? 'true' : undefined}
+              className={`w-full bg-panel border rounded-lg px-3 py-2 text-sm focus:outline-none ${
+                phoneShowError
+                  ? 'border-red-500/60 focus:border-red-500'
+                  : 'border-hairline focus:border-blue-400'
+              }`}
+            />
+            {phoneShowError && (
+              <p className="text-[11px] text-red-500 mt-1">
+                {phoneEmpty
+                  ? 'Enter a 10-digit US phone number to send SMS.'
+                  : 'Phone number must be 10 digits — check the area code.'}
+              </p>
+            )}
           </div>
         )}
 
@@ -152,7 +183,9 @@ export default function SendQuotePanel({
       </div>
 
       <div className="p-6 border-t border-hairline shrink-0">
-        <button onClick={onSend} disabled={sending || (!sendForm.email && !sendForm.phone)}
+        <button
+          onClick={() => { setPhoneTouched(true); if (canSend) onSend() }}
+          disabled={!canSend}
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
           <Send className="w-4 h-4" />
           {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}

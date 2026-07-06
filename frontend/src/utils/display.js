@@ -60,3 +60,32 @@ export function formatPhone(p) {
     return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
   return p
 }
+
+// Extract the raw digits from anything a user might type into a phone
+// field — parens, dashes, spaces, +, and even a leading "1" country code
+// get stripped so downstream validation just looks at the 10-digit NANP
+// subscriber number.
+export function phoneDigits(p) {
+  const digits = (p || '').replace(/\D/g, '')
+  return digits.length === 11 && digits[0] === '1' ? digits.slice(1) : digits
+}
+
+// Format-as-you-type: shape whatever the user has typed so far into the
+// closest partial `(XXX) XXX-XXXX` template. Callers should feed this
+// back into the field's value so the cursor stays intuitive.
+export function formatPhoneAsTyping(p) {
+  const d = phoneDigits(p).slice(0, 10)
+  if (!d) return ''
+  if (d.length < 4) return `(${d}`
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+}
+
+// True when the input contains a plausible 10-digit US phone number.
+// Blank inputs return true (nothing to send, nothing to reject); the
+// caller decides whether an empty value is acceptable.
+export function isValidPhoneUS(p) {
+  const digits = phoneDigits(p)
+  if (!digits) return true
+  return digits.length === 10
+}
