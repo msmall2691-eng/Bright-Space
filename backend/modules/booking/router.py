@@ -55,6 +55,12 @@ class BookingSubmit(BaseModel):
     # call would drop the pet/condition surcharges.
     petHair: Optional[str] = None
     condition: Optional[str] = None
+    # The customer-facing calculator on maineclean.co computes a range and
+    # sends it here. Honor those numbers — otherwise Bright-Space would
+    # recompute with its own engine and store a value that differs from
+    # what the customer was quoted.
+    estimateMin: Optional[float] = None
+    estimateMax: Optional[float] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -126,6 +132,12 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         parts.append(f"Turnover type: {data.turnover}")
     message = " | ".join(parts) if parts else None
 
+    # Treat 0 as "not sent" — the client sends 0 for custom-quote services
+    # (STR / commercial) and we want the fallback engine to compute a
+    # placeholder for the operator rather than persisting $0.
+    estimate_min = data.estimateMin if data.estimateMin else None
+    estimate_max = data.estimateMax if data.estimateMax else None
+
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
         state="ME", service_key=data.serviceType, bedrooms=data.bedrooms,
@@ -134,6 +146,7 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         check_in=data.checkIn, check_out=data.checkOut, property_name=data.property,
         message=message, preferred_date=data.requestedDate, source="website",
         pet_hair=data.petHair, condition=data.condition,
+        estimate_min=estimate_min, estimate_max=estimate_max,
     )
     result = upsert_lead(db, payload)
 
