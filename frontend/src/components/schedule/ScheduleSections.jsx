@@ -10,7 +10,7 @@ import VisitCard from './VisitCard'
  *  - ScheduleListView: the week-grouped list branch (day headers + VisitCard
  *    rows), including the empty state. */
 
-export function ScheduleHealthStrip({ stats, onFixSync, fixingSync }) {
+export function ScheduleHealthStrip({ stats, onFixSync, fixingSync, onFilterNoGcal, onFilterNoConnecteam }) {
   return (
     <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
       <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
@@ -20,12 +20,22 @@ export function ScheduleHealthStrip({ stats, onFixSync, fixingSync }) {
       {(stats.notGcal > 0 || stats.notConnecteam > 0) && (
         // Hidden on phones — a compact amber alert button in the sticky toolbar
         // takes over on mobile so this banner doesn't eat scroll real estate.
+        // Audit: the counts here were dead numbers. Now each is a click-through
+        // that narrows the list to just the offending visits.
         <div className="hidden sm:flex max-w-7xl mx-auto mt-2 flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span className="font-medium">Needs attention:</span>
-          {stats.notGcal > 0 && <span>{stats.notGcal} not on Google yet</span>}
+          {stats.notGcal > 0 && (
+            <button onClick={onFilterNoGcal} className="underline underline-offset-2 hover:text-amber-900" title="Filter list to jobs not on Google">
+              {stats.notGcal} not on Google yet
+            </button>
+          )}
           {stats.notGcal > 0 && stats.notConnecteam > 0 && <span className="text-amber-300">·</span>}
-          {stats.notConnecteam > 0 && <span>{stats.notConnecteam} not in Connecteam</span>}
+          {stats.notConnecteam > 0 && (
+            <button onClick={onFilterNoConnecteam} className="underline underline-offset-2 hover:text-amber-900" title="Filter list to jobs not in Connecteam">
+              {stats.notConnecteam} not in Connecteam
+            </button>
+          )}
           {onFixSync && (
             <button
               onClick={onFixSync}

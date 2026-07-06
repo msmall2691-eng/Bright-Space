@@ -598,6 +598,11 @@ def check_duplicate(
 @router.get("/health", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def crm_health(
     sample: int = Query(10, ge=0, le=100),
+    # When true, include the full list of client IDs per bucket. Off by
+    # default so the "just show me the counts" call stays cheap; on when
+    # the Clients page wants to filter its list to a specific bucket
+    # (audit finding: bucket counts were dead numbers).
+    include_ids: bool = Query(False),
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
@@ -674,7 +679,7 @@ def crm_health(
         buckets[cat].append(c)
 
     def _summarize(items: list[Client]) -> dict:
-        return {
+        out = {
             "count": len(items),
             "sample": [
                 {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone,
@@ -682,6 +687,9 @@ def crm_health(
                 for c in items[:sample]
             ],
         }
+        if include_ids:
+            out["ids"] = [c.id for c in items]
+        return out
 
     return {
         "total": len(clients),

@@ -88,7 +88,19 @@ export default function JobDetail() {
       .then(updated => setJob(j => ({ ...j, ...updated })))
       .catch(() => { toast.error('Could not save change'); load() })
 
-  const setStatus = (status) => { setJob(j => ({ ...j, status })); saveField({ status }) }
+  // Show an "invoice this?" banner when a job flips to Completed and doesn't
+  // already have an invoice. Cleared once the user acts or dismisses. Audit
+  // finding: nothing was connecting job completion to billing, so completed
+  // jobs silently didn't get invoiced.
+  const [showInvoicePrompt, setShowInvoicePrompt] = useState(false)
+  const setStatus = (status) => {
+    setJob(j => ({ ...j, status }))
+    saveField({ status })
+    if (status === 'completed' && job?.status !== 'completed' &&
+        (!job?.invoices || job.invoices.length === 0)) {
+      setShowInvoicePrompt(true)
+    }
+  }
 
   const addNote = async () => {
     const body = note.trim()
@@ -151,6 +163,36 @@ export default function JobDetail() {
         <button onClick={() => navigate('/schedule')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
           <ArrowLeft className="w-4 h-4" /> Back to Schedule
         </button>
+
+        {showInvoicePrompt && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <Receipt className="w-4 h-4 shrink-0 mt-0.5 text-emerald-700" />
+              <div className="min-w-0 text-[13px] text-emerald-800">
+                <p className="font-semibold">Ready to bill this job?</p>
+                <p className="text-emerald-700/90">
+                  It's marked complete and doesn't have an invoice yet
+                  {job.quote ? ` — we'll copy the ${job.quote.quote_number} line items.` : '.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => { setShowInvoicePrompt(false); newInvoice() }}
+                disabled={creating}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[13px] font-semibold px-3 py-1.5 rounded-lg"
+              >
+                {creating ? 'Creating…' : 'Create invoice'}
+              </button>
+              <button
+                onClick={() => setShowInvoicePrompt(false)}
+                className="text-[13px] text-emerald-700 hover:text-emerald-800 px-2"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
           {/* ── Left: fields ──────────────────────────────────────── */}

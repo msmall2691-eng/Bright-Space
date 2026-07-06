@@ -211,6 +211,22 @@ export default function JobCreateModal({
         if (initialPropertyId) {
           const prop = list.find(p => p.id === parseInt(initialPropertyId))
           if (prop) applyProperty(prop)
+        } else if (list.length === 1 && !form.property_id) {
+          // Auto-select the client's only property. Recurring form's
+          // Address field is required — without this the user had to
+          // manually re-type an address the system already knew, or the
+          // Save button stayed disabled (audit finding). Only fires when
+          // no property is already picked so re-loading doesn't clobber.
+          applyProperty(list[0])
+        } else if (!form.address && list.length > 0) {
+          // Multi-property client without a picked property: prefill the
+          // Address from the first property so the required field is
+          // populated. User can still choose a specific property to
+          // override, which will re-apply that property's address.
+          const firstWithAddress = list.find(p => p.address) || list[0]
+          if (firstWithAddress?.address) {
+            setForm(f => ({ ...f, address: [firstWithAddress.address, firstWithAddress.city, firstWithAddress.state].filter(Boolean).join(', ') }))
+          }
         }
       })
       .catch(e => {
@@ -626,15 +642,17 @@ export default function JobCreateModal({
                 value={form.property_id}
                 onChange={onPropertyChange}
                 data-testid="job-create-property-select"
-                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                disabled={loadingProps}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 disabled:bg-bg-2 disabled:text-ink-3"
+                disabled={loadingProps || !activeClientId}
               >
                 <option value="">
-                  {loadingProps
-                    ? 'Loading properties...'
-                    : properties.length === 0
-                      ? 'No properties for this client'
-                      : 'Select a property (optional)'}
+                  {!activeClientId
+                    ? 'Pick a client first'
+                    : loadingProps
+                      ? 'Loading properties...'
+                      : properties.length === 0
+                        ? 'No properties for this client yet'
+                        : 'Select a property (optional)'}
                 </option>
                 {properties.map(p => (
                   <option key={p.id} value={p.id}>

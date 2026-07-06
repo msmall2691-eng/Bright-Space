@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { get } from '../api'
 
 export function AIFollowUps({ title, className = '' }) {
@@ -25,15 +26,33 @@ export function AIFollowUps({ title, className = '' }) {
         </h3>
       </div>
       <div className="space-y-2">
-        {data.followups.slice(0, 6).map((f, i) => (
-          <div key={i} className="flex items-start gap-3 p-2 rounded-lg hover:bg-bg transition-colors">
-            <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${f.severity === 'high' ? 'bg-red-500' : 'bg-amber-400'}`} />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-ink-2 truncate">{f.title}</p>
-              <p className="text-xs text-ink-3 truncate">{f.action}</p>
+        {data.followups.slice(0, 6).map((f, i) => {
+          // Each row lands the user on the queue for that finding. Non-link
+          // rows (older backends without href, or one-offs) fall back to a
+          // plain div so we never break when a follow-up ships without one.
+          const inner = (
+            <>
+              <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${f.severity === 'high' ? 'bg-red-500' : 'bg-amber-400'}`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink-2 truncate">{f.title}</p>
+                <p className="text-xs text-ink-3 truncate">{f.action}</p>
+              </div>
+              {f.href && <ArrowRight className="w-3.5 h-3.5 text-ink-3 shrink-0 mt-1.5" />}
+            </>
+          )
+          if (f.href) {
+            return (
+              <Link key={i} to={f.href} className="flex items-start gap-3 p-2 rounded-lg hover:bg-bg transition-colors">
+                {inner}
+              </Link>
+            )
+          }
+          return (
+            <div key={i} className="flex items-start gap-3 p-2 rounded-lg">
+              {inner}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

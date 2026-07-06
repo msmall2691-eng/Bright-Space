@@ -31,7 +31,7 @@ function Breakdown({ title, obj }) {
   )
 }
 
-export default function CRMHealthPanel() {
+export default function CRMHealthPanel({ onSelectBucket }) {
   const [open, setOpen] = useState(false)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -39,7 +39,9 @@ export default function CRMHealthPanel() {
 
   const load = () => {
     setLoading(true); setError(null)
-    get('/api/clients/health')
+    // include_ids=true so the buckets carry the full ID list — clicking
+    // "Duplicates: 23" narrows the list without a second round trip.
+    get('/api/clients/health?include_ids=true')
       .then(setData)
       .catch(e => setError(e.message || 'Failed to load'))
       .finally(() => setLoading(false))
@@ -81,7 +83,21 @@ export default function CRMHealthPanel() {
                 {ORDER.map(k => {
                   const m = BUCKET_META[k]
                   const n = data.buckets?.[k]?.count ?? 0
-                  return (
+                  const ids = data.buckets?.[k]?.ids || []
+                  // Non-empty buckets are click-through filters — the parent
+                  // wires the click to narrow the Clients list to just that
+                  // bucket. "Real" is skipped since that's the healthy set.
+                  const clickable = onSelectBucket && n > 0 && k !== 'real'
+                  return clickable ? (
+                    <button
+                      key={k}
+                      onClick={() => onSelectBucket(k, ids)}
+                      title={`Show only ${m.label.toLowerCase()} clients`}
+                      className={`px-2 py-1 rounded-md text-[11px] font-medium border hover:brightness-95 transition ${m.cls}`}
+                    >
+                      {m.label}: {n}
+                    </button>
+                  ) : (
                     <span key={k} className={`px-2 py-1 rounded-md text-[11px] font-medium border ${m.cls}`}>
                       {m.label}: {n}
                     </span>

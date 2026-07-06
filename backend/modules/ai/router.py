@@ -288,6 +288,9 @@ def _compute_followups(db: Session) -> dict:
     ).all()
     overdue = [i for i in overdue if i.status == "overdue"
                or (i.due_date and str(i.due_date) < today)]
+    # `href` on each item lands the operator on the queue where they can
+    # act. Audit finding: every warning was a dead-end number — you could
+    # see "29 unassigned" but had no direct way to fix them.
     if overdue:
         amt = sum(i.total or 0 for i in overdue)
         items.append({
@@ -295,6 +298,7 @@ def _compute_followups(db: Session) -> dict:
             "detail": f"${amt:,.0f} past due across {len(overdue)} invoice(s).",
             "action": "Send payment reminders",
             "severity": "high",
+            "href": "/billing?view=invoices&status=overdue",
         })
 
     # Upcoming jobs with no cleaner assigned.
@@ -311,6 +315,7 @@ def _compute_followups(db: Session) -> dict:
             "detail": f"Upcoming jobs with no cleaner assigned{when}.",
             "action": "Assign cleaners on the schedule",
             "severity": sev,
+            "href": "/schedule?filter=unassigned",
         })
 
     # Upcoming jobs not pushed to Google Calendar.
@@ -321,6 +326,7 @@ def _compute_followups(db: Session) -> dict:
             "detail": "Scheduled jobs haven't synced to Google Calendar.",
             "action": "Push to Google Calendar",
             "severity": "medium",
+            "href": "/schedule?filter=no_gcal",
         })
 
     # Active recurring schedules with no upcoming jobs generated.
@@ -337,6 +343,7 @@ def _compute_followups(db: Session) -> dict:
             "detail": "Active recurring schedules haven't generated future jobs.",
             "action": "Generate jobs from recurring schedules",
             "severity": "medium",
+            "href": "/schedule?tab=recurring",
         })
 
     # New leads (likely awaiting follow-up).
@@ -347,6 +354,7 @@ def _compute_followups(db: Session) -> dict:
             "detail": "Leads in the pipeline that may need a follow-up.",
             "action": "Review leads and reach out",
             "severity": "medium",
+            "href": "/clients?status=lead",
         })
 
     # High severity first, then medium; preserve insertion order within a tier.

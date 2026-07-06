@@ -1001,6 +1001,88 @@ def _timeoff_to_dict(t: CleanerTimeOff) -> dict:
     }
 
 
+@router.get("/cleaner-availability", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def cleaner_availability(
+    date: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    exclude_job_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Per-cleaner availability status for the given date + time window.
+
+    Returns [{cleaner_id, status, detail}] where status is one of:
+      - "off"       — approved time off covering that date
+      - "conflict"  — already assigned to another job overlapping the window
+      - "same_day"  — assigned to another job that day (no time overlap)
+      - "free"      — no conflicts detected
+
+    Powers the JobEdit cleaner picker's inline availability hints so
+    operators aren't picking blind from an alphabetical list. Audit
+    finding: assigning cleaners without seeing conflicts led to
+    double-bookings.
+    """
+    d = _to_date(date)
+    if d is None:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD.")
+    # 1) Time-off: everyone off that day.
+    off_rows = db.query(CleanerTimeOff).filter(
+        CleanerTimeOff.start_date <= d, CleanerTimeOff.end_date >= d
+    ).all()
+    off_by_id = {str(r.cleaner_id): r for r in off_rows}
+
+    # 2) Same-day jobs excluding cancelled + optionally excluding the job
+    #    being edited (self-conflict is not a conflict).
+    q = db.query(Job).filter(
+        Job.scheduled_date == d.isoformat(),
+        Job.status.notin_(["cancelled"]),
+        Job.cleaner_ids.isnot(None),
+    )
+    if exclude_job_id is not None:
+        q = q.filter(Job.id != exclude_job_id)
+    same_day_jobs = q.all()
+
+    def _overlaps(a_start, a_end, b_start, b_end):
+        # Simple HH:MM interval overlap. Missing times treated as full-day
+        # (worst-case: assume they overlap so the operator gets a warning).
+        if not a_start or not a_end or not b_start or not b_end:
+            return True
+        return not (a_end <= b_start or a_start >= b_end)
+
+    conflicts: dict[str, list] = {}
+    same_day_only: dict[str, list] = {}
+    for j in same_day_jobs:
+        for cid in (j.cleaner_ids or []):
+            cid = str(cid)
+            if _overlaps(start, end, j.start_time, j.end_time):
+                conflicts.setdefault(cid, []).append(j)
+            else:
+                same_day_only.setdefault(cid, []).append(j)
+
+    # 3) Build the result for every known cleaner id we've seen (from any of
+    #    the three sources); the caller's cleaner list is separate — this
+    #    endpoint just answers "for these cleaners, what's their state".
+    all_ids = set(off_by_id) | set(conflicts) | set(same_day_only)
+    out = []
+    for cid in sorted(all_ids):
+        if cid in off_by_id:
+            r = off_by_id[cid]
+            out.append({"cleaner_id": cid, "status": "off",
+                        "detail": f"off {r.start_date}–{r.end_date}" +
+                                  (f" ({r.reason})" if r.reason else "")})
+        elif cid in conflicts:
+            j = conflicts[cid][0]
+            slot = f"{j.start_time}-{j.end_time}" if j.start_time and j.end_time else "same window"
+            out.append({"cleaner_id": cid, "status": "conflict",
+                        "detail": f"booked {slot}", "conflict_job_id": j.id})
+        else:
+            j = same_day_only[cid][0]
+            slot = f"{j.start_time}-{j.end_time}" if j.start_time and j.end_time else "same day"
+            out.append({"cleaner_id": cid, "status": "same_day",
+                        "detail": f"another job {slot}", "conflict_job_id": j.id})
+    return out
+
+
 @router.get("/time-off", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def list_time_off(
     cleaner_id: Optional[str] = None,

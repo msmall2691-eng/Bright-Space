@@ -56,6 +56,29 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       .finally(() => setLoadingCleaners(false))
   }, [])
 
+  // Per-cleaner availability for the current date + time window. Refetched
+  // whenever the operator changes the date or time so the picker's status
+  // hints stay in sync. Debounced (250ms) so quick edits don't hammer the
+  // endpoint. Audit finding: assigning cleaners blind led to double-bookings.
+  const [availability, setAvailability] = useState({}) // { [cleanerId]: {status, detail, conflict_job_id} }
+  useEffect(() => {
+    if (!formData.scheduled_date) { setAvailability({}); return }
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ date: formData.scheduled_date })
+      if (formData.start_time) params.append('start', formData.start_time)
+      if (formData.end_time) params.append('end', formData.end_time)
+      if (job?.id) params.append('exclude_job_id', String(job.id))
+      get(`/api/jobs/cleaner-availability?${params.toString()}`)
+        .then(rows => {
+          const map = {}
+          for (const r of (Array.isArray(rows) ? rows : [])) map[String(r.cleaner_id)] = r
+          setAvailability(map)
+        })
+        .catch(() => setAvailability({}))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [formData.scheduled_date, formData.start_time, formData.end_time, job?.id])
+
   // Editing keeps ownership consistent: only the job's client's properties
   // are offered (the backend rejects cross-client moves anyway). New jobs see
   // everything — the job adopts the chosen property's client.
@@ -310,18 +333,40 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 </div>
               </div>
 
-              {/* Dropdown */}
+              {/* Dropdown — each row carries an availability hint sourced
+                  from /api/jobs/cleaner-availability so the operator isn't
+                  picking blind. Conflicts render red + secondary text; same-
+                  day (no time overlap) renders amber; time-off greyed. */}
               {showCleanerDropdown && filteredCleaners.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-panel border border-hairline rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {filteredCleaners.map(cleaner => (
-                    <button
-                      key={cleaner.id}
-                      onClick={() => handleAddCleaner(cleaner.id)}
-                      className="w-full text-left px-4 py-3 hover:bg-blue-50 text-ink text-sm transition-colors first:rounded-t-lg last:rounded-b-lg active:bg-blue-100"
-                    >
-                      {cleaner.name}
-                    </button>
-                  ))}
+                  {filteredCleaners.map(cleaner => {
+                    const a = availability[String(cleaner.id)]
+                    const status = a?.status
+                    const rowCls = status === 'conflict' || status === 'off'
+                      ? 'bg-red-50/40 hover:bg-red-50'
+                      : status === 'same_day'
+                        ? 'bg-amber-50/40 hover:bg-amber-50'
+                        : 'hover:bg-blue-50'
+                    const hintCls = status === 'conflict' || status === 'off'
+                      ? 'text-red-600' : status === 'same_day'
+                        ? 'text-amber-700' : 'text-emerald-600'
+                    const hintLabel = status === 'conflict' ? a.detail
+                      : status === 'off' ? a.detail
+                      : status === 'same_day' ? a.detail
+                      : formData.scheduled_date ? 'Free' : ''
+                    return (
+                      <button
+                        key={cleaner.id}
+                        onClick={() => handleAddCleaner(cleaner.id)}
+                        className={`w-full text-left px-4 py-3 text-ink text-sm transition-colors first:rounded-t-lg last:rounded-b-lg active:bg-blue-100 flex items-center justify-between gap-2 ${rowCls}`}
+                      >
+                        <span className="truncate">{cleaner.name}</span>
+                        {hintLabel && (
+                          <span className={`text-[11px] font-medium shrink-0 ${hintCls}`}>{hintLabel}</span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
               {!loadingCleaners && cleaners.length === 0 && (

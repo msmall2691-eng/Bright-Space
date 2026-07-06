@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { todayYMD } from '../utils/format'
 
 /** Derived views over the week's visits: filter chip state (property type
@@ -18,6 +19,29 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
   const [selectedPropertyType, setSelectedPropertyType] = useState('all')
   const [selectedStatus, setSelectedStatus] = useState('all')
   const [unassignedOnly, setUnassignedOnly] = useState(false)
+  // "no-Google" / "no-Connecteam" quick filters — driven both by a URL
+  // param (deep links from the dashboard's follow-up cards) and by the
+  // clickable counters in ScheduleHealthStrip. Audit finding: those
+  // counters were dead numbers; now they narrow the list to the offenders.
+  const [noGcalOnly, setNoGcalOnly] = useState(false)
+  const [noConnecteamOnly, setNoConnecteamOnly] = useState(false)
+
+  // One-shot sync from URL ?filter=unassigned|no_gcal|no_connecteam so a
+  // click on a dashboard follow-up lands the operator on the queue with the
+  // filter pre-applied. Runs once on mount; user tweaks after that stick.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const f = (searchParams.get('filter') || '').toLowerCase()
+    if (!f) return
+    if (f === 'unassigned') setUnassignedOnly(true)
+    else if (f === 'no_gcal') setNoGcalOnly(true)
+    else if (f === 'no_connecteam') setNoConnecteamOnly(true)
+    // Strip the param so a later refresh doesn't re-fire the initial state.
+    const next = new URLSearchParams(searchParams)
+    next.delete('filter')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const filteredVisits = useMemo(() => {
     if (!visits || visits.length === 0) return []
@@ -40,6 +64,18 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
             v.status !== 'completed' && v.status !== 'cancelled'
           if (!unassigned) return false
         }
+        // "Not on Google" / "Not in Connecteam" — only against active
+        // visits, and gcal_event_id resolves through the linked job (the
+        // id lives on Job, not Visit, same as scheduleStats above).
+        if ((noGcalOnly || noConnecteamOnly) && (v.status === 'cancelled' || v.status === 'completed')) return false
+        if (noGcalOnly) {
+          const onGcal = !!(v.gcal_event_id || jobs[v.job_id]?.gcal_event_id)
+          if (onGcal) return false
+        }
+        if (noConnecteamOnly) {
+          const onCt = ((jobs[v.job_id]?.connecteam_shift_ids || []).length || 0) > 0
+          if (onCt) return false
+        }
         return true
       })
       .sort((a, b) => {
@@ -53,7 +89,7 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
         const bDate = new Date(`${b.scheduled_date}T${b.start_time || '09:00'}`)
         return aDate - bDate
       })
-  }, [visits, selectedPropertyType, selectedStatus, unassignedOnly, jobs, properties])
+  }, [visits, selectedPropertyType, selectedStatus, unassignedOnly, noGcalOnly, noConnecteamOnly, jobs, properties])
 
   const unassignedCount = useMemo(() => (
     (visits || []).filter(v => (v.cleaner_ids?.length || 0) === 0 &&
@@ -100,6 +136,8 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
     selectedPropertyType, setSelectedPropertyType,
     selectedStatus, setSelectedStatus,
     unassignedOnly, setUnassignedOnly,
+    noGcalOnly, setNoGcalOnly,
+    noConnecteamOnly, setNoConnecteamOnly,
     filteredVisits, unassignedCount, visitsByDate, scheduleStats,
     currentlyVisibleVisits,
   }

@@ -24,7 +24,15 @@ export default function Clients() {
   const { toast, ToastContainer } = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const { clients, setClients, filtered, statusCounts, load } = useClients(statusFilter, search)
+  const { clients, setClients, filtered: baseFiltered, statusCounts, load } = useClients(statusFilter, search)
+  // CRM Health "bucket" filter — when a bucket badge in CRMHealthPanel is
+  // clicked we narrow the visible list to just those client IDs. Null
+  // means "no bucket filter"; empty array means the bucket has no rows
+  // (still narrows, showing nothing).
+  const [bucketFilter, setBucketFilter] = useState(null) // { key, label, ids: Set }
+  const filtered = bucketFilter
+    ? baseFiltered.filter(c => bucketFilter.ids.has(c.id))
+    : baseFiltered
   const [selected, setSelected] = useState(null)
   // Quick "Schedule" from a client row → opens the job modal with that client.
   const [jobClient, setJobClient] = useState(null)
@@ -89,8 +97,31 @@ export default function Clients() {
           openNew={openNew}
         />
 
-        {/* Read-only CRM health snapshot — see the real/dup/spam breakdown before cleanup. */}
-        <CRMHealthPanel />
+        {/* Read-only CRM health snapshot — see the real/dup/spam breakdown before cleanup.
+            Bucket clicks narrow the list below to that bucket's members. */}
+        <CRMHealthPanel
+          onSelectBucket={(key, ids) => {
+            const label = ({
+              duplicate: 'Duplicates', spam_marketing: 'Spam / marketing',
+              incomplete: 'Incomplete', test: 'Test / junk',
+            })[key] || key
+            setBucketFilter({ key, label, ids: new Set(ids) })
+            clearSelection()
+          }}
+        />
+
+        {bucketFilter && (
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+            <span>
+              Showing <span className="font-semibold">{bucketFilter.label}</span> —
+              {' '}{filtered.length} of {baseFiltered.length}
+            </span>
+            <button onClick={() => setBucketFilter(null)}
+              className="font-semibold underline underline-offset-2 hover:text-amber-900">
+              Clear filter
+            </button>
+          </div>
+        )}
 
         {importResult && (
           <ImportResultBanner importResult={importResult} onDismiss={() => setImportResult(null)} />

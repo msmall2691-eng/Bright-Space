@@ -106,6 +106,8 @@ export default function Schedule() {
     selectedPropertyType, setSelectedPropertyType,
     selectedStatus, setSelectedStatus,
     unassignedOnly, setUnassignedOnly,
+    noGcalOnly, setNoGcalOnly,
+    noConnecteamOnly, setNoConnecteamOnly,
     filteredVisits, unassignedCount, visitsByDate, scheduleStats,
     currentlyVisibleVisits,
   } = useScheduleFilters({ visits, jobs, properties, viewMode, dateStr })
@@ -281,7 +283,13 @@ export default function Schedule() {
         fixingSync={fixingSync}
       />
 
-      <ScheduleHealthStrip stats={scheduleStats} onFixSync={fixSync} fixingSync={fixingSync} />
+      <ScheduleHealthStrip
+        stats={scheduleStats}
+        onFixSync={fixSync}
+        fixingSync={fixingSync}
+        onFilterNoGcal={() => setNoGcalOnly(v => !v)}
+        onFilterNoConnecteam={() => setNoConnecteamOnly(v => !v)}
+      />
 
       {/* Selection / bulk-action bar */}
       {!isGoogleOnly && (
