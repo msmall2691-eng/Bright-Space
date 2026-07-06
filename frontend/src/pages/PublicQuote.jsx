@@ -12,6 +12,11 @@ export default function PublicQuote() {
   const [accepted, setAccepted] = useState(false)
   const [acceptName, setAcceptName] = useState("")
   const [acceptEmail, setAcceptEmail] = useState("")
+  // Prefill of name/email came from the server (client record). When true,
+  // the accept form collapses to a one-line "Accepting as X · Change" so
+  // the customer doesn't retype what we already know.
+  const [prefilled, setPrefilled] = useState(false)
+  const [editingContact, setEditingContact] = useState(false)
   const [showRequest, setShowRequest] = useState(false)
   const [requestMsg, setRequestMsg] = useState("")
   const [requesting, setRequesting] = useState(false)
@@ -40,7 +45,15 @@ export default function PublicQuote() {
           else setError("Something went wrong on our end. Please try again in a moment.")
           return
         }
-        setQuote(await res.json())
+        const q = await res.json()
+        setQuote(q)
+        // Prefill the accept form from what the server already knows about
+        // the client — no need to make the customer retype their name/email.
+        const preName = (q.client_name || '').trim()
+        const preEmail = (q.client_email || '').trim()
+        if (preName) setAcceptName(preName)
+        if (preEmail) setAcceptEmail(preEmail)
+        if (preName || preEmail) setPrefilled(true)
       } catch (e) {
         setError('Connection error. Please check your connection and try again.')
       } finally {
@@ -263,22 +276,44 @@ export default function PublicQuote() {
   // Action block (Accept / Schedule / Request / Decline) — only while open.
   const actions = isClosed ? null : (
     <div className="space-y-3 pt-2">
-      {/* Light e-signature: who is accepting (optional, but makes it binding). */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <input
-          value={acceptName}
-          onChange={(e) => setAcceptName(e.target.value)}
-          placeholder="Your name"
-          className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-        />
-        <input
-          value={acceptEmail}
-          onChange={(e) => setAcceptEmail(e.target.value)}
-          placeholder="Your email (for the receipt)"
-          type="email"
-          className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-        />
-      </div>
+      {/* Light e-signature: who is accepting. Prefilled from the client record
+          on the quote, so most customers see a one-line "Accepting as X" summary
+          and never touch a form. Tap "Not you?" to override before accepting. */}
+      {prefilled && !editingContact ? (
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline bg-bg px-4 py-3">
+          <div className="min-w-0 text-sm">
+            <p className="font-medium text-ink truncate">
+              Accepting as <span className="font-semibold">{acceptName || acceptEmail}</span>
+            </p>
+            {acceptName && acceptEmail && (
+              <p className="text-[12px] text-ink-3 truncate">{acceptEmail}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditingContact(true)}
+            className="shrink-0 text-[13px] font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+          >
+            Not you?
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            value={acceptName}
+            onChange={(e) => setAcceptName(e.target.value)}
+            placeholder="Your name"
+            className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          />
+          <input
+            value={acceptEmail}
+            onChange={(e) => setAcceptEmail(e.target.value)}
+            placeholder="Your email (for the receipt)"
+            type="email"
+            className="w-full px-3 py-3 border border-hairline rounded-xl text-base focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          />
+        </div>
+      )}
 
       {showSchedule ? (
         <div className="space-y-3 rounded-xl border border-hairline bg-bg p-4">

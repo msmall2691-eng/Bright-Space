@@ -882,6 +882,19 @@ def _company_info(db: Session) -> dict:
 def _public_quote_dict(quote: Quote, db: Session) -> dict:
     """Client-facing serialization for the public accept page."""
     company = _company_info(db)
+    # The customer opening this page IS the client on the quote — the
+    # token was sent to their inbox/phone. Surface the name/email we
+    # already have so the accept form prefills instead of asking them
+    # to retype. Not a privacy leak: they already know their own info.
+    client = None
+    if quote.client_id:
+        client = db.query(Client).filter(Client.id == quote.client_id).first()
+    client_name = (client.name if client else None) or quote.accepted_by_name
+    client_email = (client.email if client else None) or quote.accepted_by_email
+    # If the stored name/email looks like a placeholder ("TEST", "Unknown",
+    # a phone number), null it out so we ask instead of prefilling nonsense.
+    if client_name and _PLACEHOLDER_GREETING.match(client_name.strip()):
+        client_name = None
     return {
         "id": quote.id,
         "quote_number": quote.quote_number,
@@ -910,6 +923,10 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         # The page loads it through our proxy and hides it on error, so this is
         # a cheap "maybe" flag — no Google call happens here.
         "property_photo_url": _property_photo_url(quote, db),
+        # Prefill for the accept form. Null when we don't have it — the UI
+        # then asks. Never sent for placeholder-looking values.
+        "client_name": client_name,
+        "client_email": client_email,
     }
 
 
