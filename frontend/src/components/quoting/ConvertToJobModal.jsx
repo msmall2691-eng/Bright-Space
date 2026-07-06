@@ -20,17 +20,24 @@ const _todayISO = () => {
   return `${d.getFullYear()}-${m}-${day}`
 }
 
-// Same shape the JobEditModal uses so we can render whoever /api/dispatch/employees
-// returns without caring about the underlying provider (Connecteam / manual).
-const _normalizeEmployee = (e) => ({
-  id: String(e.id ?? e.employee_id ?? e.user_id ?? ''),
-  name: e.name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || '(unnamed)',
-})
+// Mirrors JobEditModal's normalizer so a Connecteam roster (which returns
+// { userId, firstName, lastName, displayName }) shows up the same as a
+// manual roster ({ id, name }) — the previous version dropped every
+// Connecteam row on the floor because it only looked at snake_case fields.
+function _normalizeEmployee(e) {
+  const id = String(e?.id ?? e?.userId ?? '')
+  const composed = [e?.firstName, e?.lastName].filter(Boolean).join(' ').trim()
+  const name = e?.name || e?.displayName || composed || `Cleaner ${id}`
+  return { id, name }
+}
 
 export default function ConvertToJobModal({ quote, onClose, onConverted, onError }) {
   const [date, setDate] = useState(_todayISO())
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
+  // Pre-fill a reasonable window so the operator doesn't have to hand-type
+  // one — the backend delegates to scheduling.create_job which needs a
+  // start + end to run cleaner conflict / calendar guards.
+  const [startTime, setStartTime] = useState('09:00')
+  const [endTime, setEndTime] = useState('12:00')
   const [cleaners, setCleaners] = useState([])
   const [loadingCleaners, setLoadingCleaners] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
@@ -73,7 +80,11 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
     }
   }
 
-  const timeValid = !startTime || !endTime || endTime > startTime
+  // Times are pre-filled; require them so we always go through create_job's
+  // guard path (double-booking, capacity, Google Free/Busy, Connecteam
+  // dispatch). If the operator wants no schedule they use the "without
+  // scheduling" button, which posts an empty payload.
+  const timeValid = !!startTime && !!endTime && endTime > startTime
   const dateValid = !!date
 
   return (

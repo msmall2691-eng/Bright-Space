@@ -752,11 +752,16 @@ def _convert_quote_to_job(
     """Idempotent quote → Job conversion. Returns the Job, creating it and
     flipping the quote to 'converted' only if one doesn't already exist.
 
-    When ``scheduled_date`` is provided the Job lands as "scheduled" with
-    that date + optional start/end/cleaners populated. When it isn't, the
-    Job lands as "unscheduled" so the Job listing shows an Unscheduled
-    badge (the operator finishes scheduling from the Job/Scheduling page,
-    which auto-promotes to "scheduled" on save).
+    When ``scheduled_date`` + ``start_time`` + ``end_time`` are all provided,
+    delegates to :func:`modules.scheduling.router.create_job` so the same
+    cleaner conflict / capacity / Google Free-Busy guards fire, the Google
+    Calendar event is created, and any assigned cleaners get their
+    Connecteam shifts — none of which happened when the convert path
+    inserted the :class:`Job` row directly.
+
+    Without a full schedule the Job lands as "unscheduled" via a direct
+    insert; the Scheduling / Job Detail page auto-promotes to "scheduled"
+    once an operator saves a date.
     """
     existing = _existing_job_for_quote(db, quote)
     if existing:
@@ -769,18 +774,33 @@ def _convert_quote_to_job(
     svc, job_type, prop_type = _quote_job_vocab(quote)
     prop = _resolve_property_for_quote(db, quote, prop_type)
 
-    # Normalize the incoming schedule fields — these arrive as strings from
-    # the modal ("YYYY-MM-DD", "HH:MM"). Empty strings become None so
-    # partial data (date only, or date + start but no end) still works.
-    from modules.scheduling.router import _to_date, _to_time, _validate_job_timing
-    sched_date = _to_date(scheduled_date) if scheduled_date else None
-    st_time = _to_time(start_time) if start_time else None
-    et_time = _to_time(end_time) if end_time else None
-    if sched_date:
-        # is_new=True: reject conversions that would schedule a job in the
-        # past (matches create_job on the Scheduling page).
-        _validate_job_timing(sched_date, st_time, et_time, is_new=True)
+    # Fully-scheduled conversion → reuse the Scheduling create-job path so
+    # the same guards + calendar side effects run. It also flips the source
+    # quote to "converted" and advances the opportunity, matching what this
+    # helper would have done inline.
+    if scheduled_date and start_time and end_time:
+        from modules.scheduling.router import create_job, JobCreate
+        payload = JobCreate(
+            client_id=quote.client_id,
+            title=quote.title or f"{svc.title()} clean",
+            job_type=job_type,
+            scheduled_date=scheduled_date,
+            start_time=start_time,
+            end_time=end_time,
+            address=quote.address or prop.address,
+            quote_id=quote.id,
+            opportunity_id=quote.opportunity_id,
+            property_id=prop.id,
+            cleaner_ids=[str(c) for c in (cleaner_ids or [])],
+            notes=quote.notes,
+        )
+        job_dict = create_job(payload, db=db)
+        job = db.query(Job).filter(Job.id == job_dict["id"]).first()
+        return job
 
+    # Unscheduled conversion → direct-insert. No calendar sync or cleaner
+    # dispatch to run yet; the operator adds the date on the Scheduling page
+    # and PATCH auto-promotes at that point.
     job = Job(
         client_id=quote.client_id,
         quote_id=quote.id,
@@ -789,10 +809,7 @@ def _convert_quote_to_job(
         job_type=job_type,
         title=quote.title or f"{svc.title()} clean",
         address=quote.address or prop.address,
-        status="scheduled" if sched_date else "unscheduled",
-        scheduled_date=sched_date,
-        start_time=st_time,
-        end_time=et_time,
+        status="unscheduled",
         cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
         notes=quote.notes,
     )

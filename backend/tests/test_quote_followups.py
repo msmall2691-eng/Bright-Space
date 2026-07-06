@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from database.db import SessionLocal
-from database.models import Client, Quote, IntegrationEvent, Property, LeadIntake
+from database.models import Client, Quote, IntegrationEvent, Property, LeadIntake, Job
 from modules.quoting.router import (
     convert_quote_to_job, quotes_needing_follow_up, send_quote, QuoteSendRequest,
     _apply_update,
@@ -36,6 +36,12 @@ def client_ctx():
     db.add(c); db.commit(); db.refresh(c)
     yield db, c
     db.rollback()
+    # Delete Jobs first — the fixture used to leak them, and on SQLite the
+    # next test's fresh Client/Quote/Property inherit the just-deleted ids.
+    # That let a stale Job's quote_id match a brand-new Quote, so
+    # _existing_job_for_quote short-circuited convert-to-job and returned
+    # the previous test's Job instead of creating a new one.
+    db.query(Job).filter(Job.client_id == c.id).delete(synchronize_session=False)
     db.query(Property).filter(Property.client_id == c.id).delete(synchronize_session=False)
     db.query(Quote).filter(Quote.client_id == c.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
