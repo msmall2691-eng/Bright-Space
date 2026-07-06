@@ -276,6 +276,9 @@ export default function Schedule() {
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
+        syncAlertCount={(scheduleStats?.notGcal || 0) + (scheduleStats?.notConnecteam || 0)}
+        onFixSync={fixSync}
+        fixingSync={fixingSync}
       />
 
       <ScheduleHealthStrip stats={scheduleStats} onFixSync={fixSync} fixingSync={fixingSync} />
@@ -304,6 +307,7 @@ export default function Schedule() {
           onSelect={handleEdit}
           isToday={dateStr === todayYMD()}
           empName={empName}
+          onJumpToToday={() => setCurrentDate(new Date())}
         />
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">

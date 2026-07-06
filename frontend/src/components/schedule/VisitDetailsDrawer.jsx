@@ -31,10 +31,24 @@ export default function VisitDetailsDrawer({
 }) {
   if (!selectedVisit) return null
   const { visit, job, property } = selectedVisit
+  const canComplete = visit.status !== 'completed' && visit.status !== 'cancelled'
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-end">
-      <GlassCard className="w-full sm:w-96 h-[95vh] sm:h-auto rounded-t-2xl sm:rounded-lg m-0 sm:m-4 overflow-y-auto safe-bottom">
-        <div className="p-4 sm:p-6">
+    // Tap the dimmed backdrop to close — standard bottom-sheet behavior on
+    // mobile. stopPropagation on the sheet itself keeps in-sheet clicks safe.
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-end"
+      onClick={onClose}
+    >
+      <GlassCard
+        className="w-full sm:w-96 h-[95vh] sm:max-h-[90vh] sm:h-auto rounded-t-2xl sm:rounded-lg m-0 sm:m-4 flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Drag handle — visual affordance that this sheet dismisses from
+            the top. Mobile only; the desktop drawer looks silly with one. */}
+        <div className="sm:hidden flex justify-center pt-2 pb-1">
+          <div className="w-10 h-1 rounded-full bg-ink-3/30" aria-hidden="true" />
+        </div>
+        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between mb-4 sm:mb-6">
             <h2 className="text-lg sm:text-xl font-bold text-ink">Visit Details</h2>
             <div className="flex items-center gap-1">
@@ -252,38 +266,45 @@ export default function VisitDetailsDrawer({
               </div>
             )}
 
-            <div className="border-t border-hairline pt-4 flex flex-col-reverse sm:flex-row gap-2">
-              {visit.status !== 'completed' && visit.status !== 'cancelled' && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  className="w-full sm:flex-1"
-                  onClick={() => onComplete(visit)}
-                >
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Complete
-                </Button>
-              )}
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full sm:flex-1"
-                onClick={() => onEditJob(job)}
-              >
-                <Edit2 className="w-4 h-4 mr-2" />
-                Edit Job
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                className="w-full sm:flex-1"
-                onClick={() => onDelete(visit.id)}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </Button>
-            </div>
           </div>
+        </div>
+
+        {/* Sticky action footer — stays thumb-reachable on mobile even when
+            the visit has enough content to fill the sheet. Sits below the
+            scrolling area (flex-col above), with a hairline separator. */}
+        <div
+          className="border-t border-hairline px-4 py-3 sm:px-6 sm:py-4 bg-panel flex flex-col-reverse sm:flex-row gap-2"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+        >
+          {canComplete && (
+            <Button
+              variant="primary"
+              size="sm"
+              className="w-full sm:flex-1"
+              onClick={() => onComplete(visit)}
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              Complete
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full sm:flex-1"
+            onClick={() => onEditJob(job)}
+          >
+            <Edit2 className="w-4 h-4 mr-2" />
+            Edit Job
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            className="w-full sm:flex-1"
+            onClick={() => onDelete(visit.id)}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete
+          </Button>
         </div>
       </GlassCard>
     </div>

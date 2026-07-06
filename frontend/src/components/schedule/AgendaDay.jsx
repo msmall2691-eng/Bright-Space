@@ -1,13 +1,21 @@
-import { Calendar } from 'lucide-react'
+import { Calendar, CornerUpLeft } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG } from './constants'
 import { TurnoverInfo } from './SyncBadge'
 import { toLocalYMD } from '../../utils/format'
 
 /** Single-day mobile-first view. Renders the day's visits as full-width
  *  cards. Tap a card to open the existing detail drawer via onSelect (same
- *  handler the list view's cards use, so detail-panel behavior is identical). */
+ *  handler the list view's cards use, so detail-panel behavior is identical).
+ *
+ *  Mobile niceties:
+ *   - Sticky day header so the date/count context is visible while scrolling
+ *     a long day (matters when a cleaner is looking at 8+ visits in the field).
+ *   - Floating "Today" pill in the bottom-right when currentDate ≠ today, so
+ *     one thumb tap returns to the day the operator lives in most.
+ */
 export default function AgendaDay({
   currentDate, visits, jobs, properties, clients, onSelect, isToday, empName,
+  onJumpToToday,
 }) {
   // Sort by start_time so the day reads top-down chronologically. Visits
   // without a start_time sink to the bottom.
@@ -18,10 +26,12 @@ export default function AgendaDay({
   })
   const completed = sorted.filter(v => v.status === 'completed').length
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="max-w-2xl mx-auto px-3 pt-3 pb-6">
-        {/* Day header */}
-        <div className="mb-3 px-1">
+    <div className="flex-1 overflow-auto relative">
+      <div className="max-w-2xl mx-auto px-3 pb-6">
+        {/* Day header — sticky so the date + count stay visible during scroll.
+            top-0 sits it below the parent toolbar (also sticky) inside this
+            scroll container. bg matches the panel so it fully covers cards. */}
+        <div className="sticky top-0 z-[5] -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
             {isToday ? 'Today' : ''}
           </div>
@@ -128,6 +138,22 @@ export default function AgendaDay({
           </ul>
         )}
       </div>
+
+      {/* Floating "Today" jump pill — only when we're viewing another day and
+          the parent gave us a handler. Bottom-right, above the iOS home
+          indicator (safe-area bottom padding). One-thumb reach on phones. */}
+      {!isToday && typeof onJumpToToday === 'function' && (
+        <button
+          onClick={onJumpToToday}
+          style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+          className="fixed right-4 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-ink text-panel shadow-lg active:scale-95 transition-transform text-[13px] font-semibold"
+          data-testid="jump-to-today"
+          aria-label="Jump to today"
+        >
+          <CornerUpLeft className="w-3.5 h-3.5" />
+          Today
+        </button>
+      )}
     </div>
   )
 }

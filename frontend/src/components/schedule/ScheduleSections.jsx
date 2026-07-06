@@ -18,7 +18,9 @@ export function ScheduleHealthStrip({ stats, onFixSync, fixingSync }) {
         <StatCard className="bg-panel border border-hairline rounded-lg" label="This week" value={stats.week} icon={Clock} />
       </div>
       {(stats.notGcal > 0 || stats.notConnecteam > 0) && (
-        <div className="max-w-7xl mx-auto mt-2 flex flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+        // Hidden on phones — a compact amber alert button in the sticky toolbar
+        // takes over on mobile so this banner doesn't eat scroll real estate.
+        <div className="hidden sm:flex max-w-7xl mx-auto mt-2 flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span className="font-medium">Needs attention:</span>
           {stats.notGcal > 0 && <span>{stats.notGcal} not on Google yet</span>}

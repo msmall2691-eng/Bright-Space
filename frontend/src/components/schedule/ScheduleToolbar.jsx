@@ -1,6 +1,6 @@
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, Filter, Clock,
-  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown,
+  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, AlertCircle,
 } from 'lucide-react'
 import Button from '../ui/Button'
 
@@ -32,6 +32,13 @@ export default function ScheduleToolbar({
   onPreviewAutoAssign,
   onPreviewFixTimes,
   onNewJob,
+  // Compact mobile sync-alert button. `syncAlertCount` = total items out of
+  // sync (notGcal + notConnecteam). When > 0, an amber alert pill shows in
+  // the toolbar (mobile only — desktop keeps the full banner underneath).
+  // `onFixSync` runs the same reconcile as the banner button.
+  syncAlertCount = 0,
+  onFixSync,
+  fixingSync,
 }) {
   const filterActive = selectedPropertyType !== 'all' || selectedStatus !== 'all'
   return (
@@ -121,6 +128,23 @@ export default function ScheduleToolbar({
               </>
             )}
           </div>
+
+          {/* Mobile-only sync alert pill — surfaces the "Needs attention" state
+              without stealing a full row below the toolbar. Tap = Fix sync now.
+              Desktop still shows the full banner underneath. */}
+          {syncAlertCount > 0 && onFixSync && (
+            <button
+              onClick={onFixSync}
+              disabled={fixingSync}
+              className="sm:hidden shrink-0 flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold disabled:opacity-60 active:scale-95 transition-transform"
+              title={fixingSync ? 'Fixing…' : `${syncAlertCount} item(s) out of sync — tap to fix`}
+              aria-label={fixingSync ? 'Fixing sync' : `${syncAlertCount} items out of sync, tap to fix`}
+              data-testid="mobile-sync-alert"
+            >
+              <AlertCircle className={`w-3.5 h-3.5 ${fixingSync ? 'animate-pulse' : ''}`} />
+              <span>{syncAlertCount}</span>
+            </button>
+          )}
 
           <Button onClick={onNewJob} variant="primary" size="sm" className="whitespace-nowrap">
             <Plus className="w-4 h-4" />

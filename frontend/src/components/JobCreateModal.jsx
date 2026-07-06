@@ -413,14 +413,24 @@ export default function JobCreateModal({
   const step2Valid = !!form.title              // job_type always has a default
   const goNext = () => setStep(s => Math.min(3, s + 1))
   const goBack = () => setStep(s => Math.max(1, s - 1))
-  const btn = "px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+  // Bumped from py-2.5 → py-3 so the button is ~44px tall on phones (Apple HIG
+  // minimum touch target). Same visual on desktop, no layout shift.
+  const btn = "px-4 py-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors"
 
   return (
     <div
       className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center sm:justify-end"
       data-testid="job-create-modal"
+      onClick={handleCancel}
     >
-      <div className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]">
+      <div
+        className="w-full sm:w-[420px] bg-panel rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[95vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Mobile-only drag handle — signals dismissible bottom sheet. */}
+        <div className="sm:hidden flex justify-center pt-2 pb-1">
+          <div className="w-10 h-1 rounded-full bg-ink-3/30" aria-hidden="true" />
+        </div>
         <div className="px-6 py-4 border-b border-hairline">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-ink">
@@ -882,7 +892,10 @@ export default function JobCreateModal({
           </>)}
         </div>
 
-        <div className="p-6 border-t border-hairline flex items-center gap-3">
+        <div
+          className="p-6 border-t border-hairline flex items-center gap-3"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+        >
           {quick ? (
             <>
               <button onClick={handleCancel} className={`${btn} bg-bg-2 text-ink-2 hover:bg-hairline`}>Cancel</button>
