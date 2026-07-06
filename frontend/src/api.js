@@ -98,6 +98,17 @@ export async function api(url, options = {}) {
     }
   }
 
+  // Transient upstream failures (Railway proxy 502 / 503 / 504 when the app
+  // is cold-starting or an endpoint's external call — e.g. Google — ran past
+  // the gateway timeout) also retry once on GET, after a short pause to give
+  // the backend a moment to recover. Handoff §3: the Settings page 502'd on
+  // first load and succeeded on retry; catch that here so the caller doesn't
+  // have to.
+  if (method === 'GET' && res && [502, 503, 504].includes(res.status)) {
+    await new Promise(r => setTimeout(r, 400))
+    res = await fetchWithTimeout(url, fetchOpts, timeoutMs)
+  }
+
   // Sliding session: if the server rotated our token (past half-life), swap it
   // in silently so an active user is never logged out mid-task.
   maybeRotateToken(res)

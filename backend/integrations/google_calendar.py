@@ -264,7 +264,25 @@ def connection_status() -> dict:
         }
     try:
         service = _get_service()
-        cal_list = service.calendarList().list(maxResults=100).execute()
+        # Bound the Google fetch — the settings page loads this on mount, and
+        # a slow response from Google would run past Railway's upstream
+        # timeout and hand the browser a 502 (handoff §3). Five seconds is
+        # generous for a calendar list; the thread keeps running on timeout
+        # (googleapiclient's requests aren't cancellable), but the endpoint
+        # returns immediately with a clean error state.
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FTOut
+        with ThreadPoolExecutor(max_workers=1) as _pool:
+            fut = _pool.submit(lambda: service.calendarList().list(maxResults=100).execute())
+            try:
+                cal_list = fut.result(timeout=5)
+            except _FTOut:
+                print("[GCal] connection_status timed out waiting on Google (>5s)")
+                return {
+                    "connected": False, "reason": "error",
+                    "detail": "Google Calendar didn't respond in time — try again in a moment.",
+                    "calendars": [], "write_targets": write_targets,
+                    "oauth_available": oauth_available,
+                }
         items = cal_list.get("items", [])
         calendars = [
             {"id": c.get("id"), "summary": c.get("summary"), "primary": bool(c.get("primary"))}
