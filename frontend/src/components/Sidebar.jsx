@@ -17,6 +17,7 @@ const nav = [
   { divider: true, label: 'Operations' },
   { to: '/clients',     icon: Users,           label: 'Clients' },
   { to: '/schedule',    icon: Calendar,        label: 'Schedule' },
+  { to: '/recurring',   icon: Repeat,          label: 'Recurring' },
   { to: '/properties',  icon: Home,            label: 'Properties' },
   { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
   { divider: true, label: 'Team' },

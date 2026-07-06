@@ -53,8 +53,8 @@ export function RecurringTab({ schedules }) {
                   </div>
                   {s.address && <div className="text-[10px] text-ink-3 mt-0.5 flex items-center gap-1"><MapPin className="w-2.5 h-2.5" />{s.address}</div>}
                 </div>
-                <a href="/recurring" className="text-xs text-ink-3 hover:text-ink-3 bg-bg-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
-                  Edit
+                <a href={`/recurring?series=${s.id}`} className="text-xs text-ink-3 hover:text-ink-3 bg-bg-2 hover:bg-bg-2 px-2.5 py-1.5 rounded-lg transition-colors shrink-0">
+                  Manage
                 </a>
               </div>
             </div>

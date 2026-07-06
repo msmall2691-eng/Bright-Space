@@ -113,6 +113,7 @@ const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
+const Recurring = lazy(() => import('./pages/Recurring'))
 const Settings = lazy(() => import('./pages/Settings'))
 
 export default function App() {
@@ -221,7 +222,11 @@ export default function App() {
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:propertyId" element={<PropertyDetail />} />
               <Route path="/properties/:propertyId/icals" element={<PropertyIcalsBulk />} />
-              <Route path="/recurring" element={<Navigate to="/schedule?tab=recurring" replace />} />
+              {/* Dedicated management surface for recurring bookings —
+                  list of series, per-visit skip/reschedule (just this visit),
+                  and rule edits (future visits only). Schedule?tab=recurring
+                  still has the summary tab; this is the deep-dive page. */}
+              <Route path="/recurring" element={<Recurring />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
