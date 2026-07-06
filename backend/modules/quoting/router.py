@@ -743,16 +743,29 @@ def _existing_job_for_quote(db: Session, quote: Quote) -> Optional[Job]:
             .order_by(Job.id.asc()).first())
 
 
-def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
-    """Idempotent quote → (undated) Job conversion. Returns the Job, creating it
-    and flipping the quote to 'converted' only if one doesn't already exist.
+def _convert_quote_to_job(
+    db: Session,
+    quote: Quote,
+    *,
+    scheduled_date: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    cleaner_ids: Optional[list] = None,
+) -> Job:
+    """Idempotent quote → Job conversion. Returns the Job, creating it and
+    flipping the quote to 'converted' only if one doesn't already exist.
 
-    Landing status is "unscheduled" because we don't ask for a date at
-    conversion time — the operator picks one on the Scheduling page. The
-    PATCH /jobs/{id} endpoint auto-promotes to "scheduled" when they do.
-    Leaving it as "scheduled" here made the Job listing display a blue
-    "Scheduled" badge on a job with no date, which read as on-calendar
-    when it wasn't."""
+    When ``scheduled_date`` + ``start_time`` + ``end_time`` are all provided,
+    delegates to :func:`modules.scheduling.router.create_job` so the same
+    cleaner conflict / capacity / Google Free-Busy guards fire, the Google
+    Calendar event is created, and any assigned cleaners get their
+    Connecteam shifts — none of which happened when the convert path
+    inserted the :class:`Job` row directly.
+
+    Without a full schedule the Job lands as "unscheduled" via a direct
+    insert; the Scheduling / Job Detail page auto-promotes to "scheduled"
+    once an operator saves a date.
+    """
     existing = _existing_job_for_quote(db, quote)
     if existing:
         if quote.status != "converted":
@@ -763,6 +776,34 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
         return existing
     svc, job_type, prop_type = _quote_job_vocab(quote)
     prop = _resolve_property_for_quote(db, quote, prop_type)
+
+    # Fully-scheduled conversion → reuse the Scheduling create-job path so
+    # the same guards + calendar side effects run. It also flips the source
+    # quote to "converted" and advances the opportunity, matching what this
+    # helper would have done inline.
+    if scheduled_date and start_time and end_time:
+        from modules.scheduling.router import create_job, JobCreate
+        payload = JobCreate(
+            client_id=quote.client_id,
+            title=quote.title or f"{svc.title()} clean",
+            job_type=job_type,
+            scheduled_date=scheduled_date,
+            start_time=start_time,
+            end_time=end_time,
+            address=quote.address or prop.address,
+            quote_id=quote.id,
+            opportunity_id=quote.opportunity_id,
+            property_id=prop.id,
+            cleaner_ids=[str(c) for c in (cleaner_ids or [])],
+            notes=quote.notes,
+        )
+        job_dict = create_job(payload, db=db)
+        job = db.query(Job).filter(Job.id == job_dict["id"]).first()
+        return job
+
+    # Unscheduled conversion → direct-insert. No calendar sync or cleaner
+    # dispatch to run yet; the operator adds the date on the Scheduling page
+    # and PATCH auto-promotes at that point.
     job = Job(
         client_id=quote.client_id,
         quote_id=quote.id,
@@ -772,6 +813,7 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
         title=quote.title or f"{svc.title()} clean",
         address=quote.address or prop.address,
         status="unscheduled",
+        cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
         notes=quote.notes,
     )
     db.add(job)
@@ -791,13 +833,38 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     return job
 
 
+class ConvertToJobRequest(BaseModel):
+    """Optional scheduling details supplied from the Convert-to-Job modal.
+    All fields may be omitted, in which case the resulting Job lands as
+    'unscheduled' and the operator picks the date on the Scheduling page.
+    """
+    scheduled_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    cleaner_ids: Optional[list] = None
+
+
 @router.post("/{quote_id}/convert-to-job", dependencies=[Depends(require_role("admin", "manager"))])
-def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
-    """Create a Job from a quote. The date/time is left unset for the user to
-    fill in on the Scheduling page; every Job needs a Property, so we reuse the
+def convert_quote_to_job(
+    quote_id: int,
+    payload: Optional[ConvertToJobRequest] = None,
+    db: Session = Depends(get_db),
+):
+    """Create a Job from a quote. Accepts an optional payload with
+    scheduled_date, start_time, end_time, cleaner_ids so the modal can
+    schedule at conversion time; if the payload is absent or empty the
+    Job lands as 'unscheduled' and the operator finishes on the
+    Scheduling page. Every Job needs a Property, so we reuse the
     client's existing property or create one from the quote address."""
     quote = _get_quote_or_404(quote_id, db)
-    job = _convert_quote_to_job(db, quote)
+    p = payload or ConvertToJobRequest()
+    job = _convert_quote_to_job(
+        db, quote,
+        scheduled_date=p.scheduled_date,
+        start_time=p.start_time,
+        end_time=p.end_time,
+        cleaner_ids=p.cleaner_ids,
+    )
     return {
         "id": job.id,
         "client_id": job.client_id,
@@ -806,6 +873,10 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
         "title": job.title,
         "status": job.status,
         "job_type": job.job_type,
+        "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None,
+        "start_time": str(job.start_time) if job.start_time else None,
+        "end_time": str(job.end_time) if job.end_time else None,
+        "cleaner_ids": job.cleaner_ids or [],
     }
 
 

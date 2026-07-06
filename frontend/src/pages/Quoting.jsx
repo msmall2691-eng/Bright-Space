@@ -4,6 +4,7 @@ import { Plus, Trash2, Calendar, FileText, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
+import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import { get, post, patch } from "../api"
 import { formatDate } from '../utils/format'
 import Toast from '../components/quoting/Toast'
@@ -60,7 +61,6 @@ export default function Quoting() {
   const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '', copy_to: '' })
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
-  const [converting, setConverting] = useState(null)
   const [toast, setToast] = useState(null)
   // The fast path is client → line items → save. Template picker and the
   // scope/internal/message text areas live behind this toggle so the form
@@ -425,15 +425,16 @@ export default function Quoting() {
     setSending(false)
   }
 
-  const convertToJob = async (quoteId) => {
-    setConverting(quoteId)
-    try {
-      const job = await post(`/api/quotes/${quoteId}/convert-to-job`)
-      showToast('Job created — set the date in Scheduling')
-      navigate(`/scheduling`)
-    } catch (e) { showToast(e.message || 'Error converting to job') }
-    setConverting(null)
+  // Convert-to-Job opens the ConvertToJobModal so the operator picks a date
+  // + crew at conversion time. Prior behavior (silent create + Scheduling
+  // page hop) hid the fact that no date had been set, so undated jobs sat
+  // stale under a "Scheduled" badge that the Schedule calendar never showed.
+  const [convertingQuote, setConvertingQuote] = useState(null)
+  const openConvertToJob = (quoteId) => {
+    const q = quotes.find(x => x.id === quoteId) || safeQuote({ id: quoteId })
+    setConvertingQuote(q)
   }
+  const convertToJob = openConvertToJob  // legacy name; row buttons still call this
 
   // Permanent (hard) delete is admin-only and lives in the Archived view.
   const isAdmin = (() => {
@@ -745,6 +746,22 @@ export default function Quoting() {
           defaultRecurring
           onClose={() => setScheduleQuote(null)}
           onCreated={finishOnboard}
+        />
+      )}
+
+      {convertingQuote && (
+        <ConvertToJobModal
+          quote={convertingQuote}
+          onClose={() => setConvertingQuote(null)}
+          onConverted={(job) => {
+            setConvertingQuote(null)
+            showToast(job.scheduled_date
+              ? `Job scheduled for ${job.scheduled_date}`
+              : 'Job created — set the date in Scheduling')
+            loadQuotes()
+            navigate(`/jobs/${job.id}`)
+          }}
+          onError={(msg) => showToast(msg || 'Could not convert to job')}
         />
       )}
 

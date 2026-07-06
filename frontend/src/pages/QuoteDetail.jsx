@@ -12,6 +12,7 @@ import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
+import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 
 const STATUS_OPTIONS = [
   { value: 'draft',     label: 'draft',     chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
@@ -76,14 +77,11 @@ export default function QuoteDetail() {
 
   const setStatus = (status) => { setQuote(q => ({ ...q, status })); saveField({ status }) }
 
-  // Idempotent on the backend — returns the existing job if already converted.
-  const convertToJob = async () => {
-    setConverting(true)
-    try {
-      const job = await post(`/api/quotes/${id}/convert-to-job`, {})
-      navigate(`/jobs/${job.id}`)
-    } catch { toast.error('Could not convert to job'); setConverting(false) }
-  }
+  // Convert-to-job opens the modal so the operator can pick a date + crew
+  // at conversion time. The modal itself POSTs to the endpoint (idempotent
+  // on the backend — returns the existing job if already converted).
+  const [convertModalOpen, setConvertModalOpen] = useState(false)
+  const openConvertModal = () => setConvertModalOpen(true)
 
   if (loading) return <RecordSkeleton />
   if (notFound || !quote) {
@@ -144,13 +142,24 @@ export default function QuoteDetail() {
 
             {canEdit() && !quote.job && quote.status !== 'converted' && (
               <div className="border-t border-hairline pt-3">
-                <button onClick={convertToJob} disabled={converting}
+                <button onClick={openConvertModal} disabled={converting}
                   className="w-full flex items-center justify-center gap-1.5 bg-bg-2 hover:bg-bg-3 border border-hairline disabled:opacity-50 text-ink-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
                   <Calendar className="w-3.5 h-3.5" /> {converting ? 'Converting…' : 'Convert to job'}
                 </button>
               </div>
             )}
           </div>
+          {convertModalOpen && (
+            <ConvertToJobModal
+              quote={quote}
+              onClose={() => setConvertModalOpen(false)}
+              onConverted={(job) => {
+                setConvertModalOpen(false)
+                navigate(`/jobs/${job.id}`)
+              }}
+              onError={(msg) => toast.error(msg || 'Could not convert to job')}
+            />
+          )}
 
           {/* ── Center: line items + notes ────────────────────────── */}
           <div className="min-w-0 space-y-4">

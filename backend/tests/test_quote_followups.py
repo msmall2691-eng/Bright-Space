@@ -36,6 +36,12 @@ def client_ctx():
     db.add(c); db.commit(); db.refresh(c)
     yield db, c
     db.rollback()
+    # Delete Jobs first — the fixture used to leak them, and on SQLite the
+    # next test's fresh Client/Quote/Property inherit the just-deleted ids.
+    # That let a stale Job's quote_id match a brand-new Quote, so
+    # _existing_job_for_quote short-circuited convert-to-job and returned
+    # the previous test's Job instead of creating a new one.
+    db.query(Job).filter(Job.client_id == c.id).delete(synchronize_session=False)
     db.query(Property).filter(Property.client_id == c.id).delete(synchronize_session=False)
     db.query(Quote).filter(Quote.client_id == c.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
@@ -52,10 +58,9 @@ def test_convert_to_job_stamps_converted_at(client_ctx):
 
 
 def test_convert_to_job_creates_unscheduled_job(client_ctx):
-    """A quote → job conversion doesn't ask for a date, so the new Job
-    must land as "unscheduled" — not "scheduled". Otherwise the Job
-    listing shows a "Scheduled" badge on a date-less job, which reads
-    as on-calendar when it isn't."""
+    """A quote → job conversion without a payload lands as "unscheduled".
+    Otherwise the Job listing shows a "Scheduled" badge on a date-less
+    job, which reads as on-calendar when it isn't."""
     db, c = client_ctx
     q = _mk_quote(db, c.id, "QT-CONV-UNSCH", status="accepted")
     out = convert_quote_to_job(q.id, db=db)
@@ -63,6 +68,34 @@ def test_convert_to_job_creates_unscheduled_job(client_ctx):
     assert job is not None
     assert job.status == "unscheduled"
     assert job.scheduled_date is None
+    assert job.cleaner_ids == []
+
+
+def test_convert_to_job_with_schedule_populates_date_and_crew(client_ctx):
+    """The Convert-to-Job modal collects a date + crew and posts them so
+    the resulting Job lands as "scheduled" with those fields populated —
+    no follow-up trip to the Scheduling page."""
+    from datetime import date, timedelta
+    from modules.quoting.router import ConvertToJobRequest
+    db, c = client_ctx
+    q = _mk_quote(db, c.id, "QT-CONV-SCHED", status="accepted")
+    future = str(date.today() + timedelta(days=7))
+    out = convert_quote_to_job(
+        q.id,
+        payload=ConvertToJobRequest(
+            scheduled_date=future,
+            start_time="09:00",
+            end_time="12:00",
+            cleaner_ids=["alice", "bob"],
+        ),
+        db=db,
+    )
+    job = db.query(Job).filter(Job.id == out["id"]).first()
+    assert job.status == "scheduled"
+    assert str(job.scheduled_date) == future
+    assert str(job.start_time) == "09:00:00"
+    assert str(job.end_time) == "12:00:00"
+    assert job.cleaner_ids == ["alice", "bob"]
 
 
 def test_patch_to_converted_stamps_converted_at(client_ctx):
