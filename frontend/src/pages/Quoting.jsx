@@ -236,6 +236,19 @@ export default function Quoting() {
         setAddingClient(true)
       } else {
         setAddingClient(false)
+        // /api/clients is fetched once on Quoting page mount; a customer
+        // who booked via the maineclean.co /book flow AFTER the page was
+        // opened creates a client that isn't in that list yet, so the
+        // dropdown's <option> collection doesn't include the id we're
+        // about to set on the form and falls back to "Select client…"
+        // even though the intake IS correctly linked. Fetch just that
+        // client and prepend it so the select finds its option.
+        const alreadyLoaded = clients.some(c => String(c.id) === String(resolvedClientId))
+        if (!alreadyLoaded) {
+          get(`/api/clients/${resolvedClientId}`)
+            .then(c => c && c.id && setClients(cs => [c, ...cs.filter(x => x.id !== c.id)]))
+            .catch(err => console.error('[Quoting] fresh client load failed', err))
+        }
       }
       setForm({
         client_id: resolvedClientId, intake_id: intake.id,
