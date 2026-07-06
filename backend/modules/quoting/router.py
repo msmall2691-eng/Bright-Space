@@ -740,9 +740,24 @@ def _existing_job_for_quote(db: Session, quote: Quote) -> Optional[Job]:
             .order_by(Job.id.asc()).first())
 
 
-def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
-    """Idempotent quote → (undated) Job conversion. Returns the Job, creating it
-    and flipping the quote to 'converted' only if one doesn't already exist."""
+def _convert_quote_to_job(
+    db: Session,
+    quote: Quote,
+    *,
+    scheduled_date: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    cleaner_ids: Optional[list] = None,
+) -> Job:
+    """Idempotent quote → Job conversion. Returns the Job, creating it and
+    flipping the quote to 'converted' only if one doesn't already exist.
+
+    When ``scheduled_date`` is provided the Job lands as "scheduled" with
+    that date + optional start/end/cleaners populated. When it isn't, the
+    Job lands as "unscheduled" so the Job listing shows an Unscheduled
+    badge (the operator finishes scheduling from the Job/Scheduling page,
+    which auto-promotes to "scheduled" on save).
+    """
     existing = _existing_job_for_quote(db, quote)
     if existing:
         if quote.status != "converted":
@@ -753,6 +768,19 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
         return existing
     svc, job_type, prop_type = _quote_job_vocab(quote)
     prop = _resolve_property_for_quote(db, quote, prop_type)
+
+    # Normalize the incoming schedule fields — these arrive as strings from
+    # the modal ("YYYY-MM-DD", "HH:MM"). Empty strings become None so
+    # partial data (date only, or date + start but no end) still works.
+    from modules.scheduling.router import _to_date, _to_time, _validate_job_timing
+    sched_date = _to_date(scheduled_date) if scheduled_date else None
+    st_time = _to_time(start_time) if start_time else None
+    et_time = _to_time(end_time) if end_time else None
+    if sched_date:
+        # is_new=True: reject conversions that would schedule a job in the
+        # past (matches create_job on the Scheduling page).
+        _validate_job_timing(sched_date, st_time, et_time, is_new=True)
+
     job = Job(
         client_id=quote.client_id,
         quote_id=quote.id,
@@ -761,7 +789,11 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
         job_type=job_type,
         title=quote.title or f"{svc.title()} clean",
         address=quote.address or prop.address,
-        status="scheduled",
+        status="scheduled" if sched_date else "unscheduled",
+        scheduled_date=sched_date,
+        start_time=st_time,
+        end_time=et_time,
+        cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
         notes=quote.notes,
     )
     db.add(job)
@@ -781,13 +813,38 @@ def _convert_quote_to_job(db: Session, quote: Quote) -> Job:
     return job
 
 
+class ConvertToJobRequest(BaseModel):
+    """Optional scheduling details supplied from the Convert-to-Job modal.
+    All fields may be omitted, in which case the resulting Job lands as
+    'unscheduled' and the operator picks the date on the Scheduling page.
+    """
+    scheduled_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    cleaner_ids: Optional[list] = None
+
+
 @router.post("/{quote_id}/convert-to-job", dependencies=[Depends(require_role("admin", "manager"))])
-def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
-    """Create a Job from a quote. The date/time is left unset for the user to
-    fill in on the Scheduling page; every Job needs a Property, so we reuse the
+def convert_quote_to_job(
+    quote_id: int,
+    payload: Optional[ConvertToJobRequest] = None,
+    db: Session = Depends(get_db),
+):
+    """Create a Job from a quote. Accepts an optional payload with
+    scheduled_date, start_time, end_time, cleaner_ids so the modal can
+    schedule at conversion time; if the payload is absent or empty the
+    Job lands as 'unscheduled' and the operator finishes on the
+    Scheduling page. Every Job needs a Property, so we reuse the
     client's existing property or create one from the quote address."""
     quote = _get_quote_or_404(quote_id, db)
-    job = _convert_quote_to_job(db, quote)
+    p = payload or ConvertToJobRequest()
+    job = _convert_quote_to_job(
+        db, quote,
+        scheduled_date=p.scheduled_date,
+        start_time=p.start_time,
+        end_time=p.end_time,
+        cleaner_ids=p.cleaner_ids,
+    )
     return {
         "id": job.id,
         "client_id": job.client_id,
@@ -796,6 +853,10 @@ def convert_quote_to_job(quote_id: int, db: Session = Depends(get_db)):
         "title": job.title,
         "status": job.status,
         "job_type": job.job_type,
+        "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None,
+        "start_time": str(job.start_time) if job.start_time else None,
+        "end_time": str(job.end_time) if job.end_time else None,
+        "cleaner_ids": job.cleaner_ids or [],
     }
 
 

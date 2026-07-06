@@ -51,6 +51,48 @@ def test_convert_to_job_stamps_converted_at(client_ctx):
     assert q.status == "converted" and q.converted_at is not None
 
 
+def test_convert_to_job_with_schedule_populates_date_and_crew(client_ctx):
+    """The Convert-to-Job modal collects a date + crew and posts them so
+    the resulting Job lands as "scheduled" with those fields populated —
+    no follow-up trip to the Scheduling page. Without a payload it lands
+    as "unscheduled" (existing behavior)."""
+    from datetime import date, timedelta
+    from database.models import Job
+    from modules.quoting.router import ConvertToJobRequest
+    db, c = client_ctx
+    q = _mk_quote(db, c.id, "QT-CONV-SCHED", status="accepted")
+    future = str(date.today() + timedelta(days=7))
+    out = convert_quote_to_job(
+        q.id,
+        payload=ConvertToJobRequest(
+            scheduled_date=future,
+            start_time="09:00",
+            end_time="12:00",
+            cleaner_ids=["alice", "bob"],
+        ),
+        db=db,
+    )
+    job = db.query(Job).filter(Job.id == out["id"]).first()
+    assert job.status == "scheduled"
+    assert str(job.scheduled_date) == future
+    assert str(job.start_time) == "09:00:00"
+    assert str(job.end_time) == "12:00:00"
+    assert job.cleaner_ids == ["alice", "bob"]
+
+
+def test_convert_to_job_without_payload_stays_unscheduled(client_ctx):
+    """Convert-without-scheduling path: no payload → unscheduled Job with
+    no date, matching the existing behavior from #491."""
+    from database.models import Job
+    db, c = client_ctx
+    q = _mk_quote(db, c.id, "QT-CONV-BLANK", status="accepted")
+    out = convert_quote_to_job(q.id, db=db)
+    job = db.query(Job).filter(Job.id == out["id"]).first()
+    assert job.status == "unscheduled"
+    assert job.scheduled_date is None
+    assert job.cleaner_ids == []
+
+
 def test_patch_to_converted_stamps_converted_at(client_ctx):
     """The onboarding flow PATCHes status directly; _apply_update must still
     stamp converted_at so the conversion metric isn't left null."""
