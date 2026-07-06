@@ -6,6 +6,7 @@ import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import { get, post, patch } from "../api"
 import { formatDate } from '../utils/format'
+import { toE164US } from '../utils/display'
 import Toast from '../components/quoting/Toast'
 import LeadRow from '../components/quoting/LeadRow'
 import QuoteRow from '../components/quoting/QuoteRow'
@@ -386,7 +387,16 @@ export default function Quoting() {
       // backend falls back to the company email (which itself falls back to the
       // from/SMTP address). An empty string would be read as "skip the copy",
       // silently dropping the owner copy on a setup with no Company Email set.
-      const payload = { ...sendForm, copy_to: (sendForm.copy_to || '').trim() || null }
+      //
+      // Normalize the SMS phone to E.164 before it hits Twilio: the panel's
+      // input keeps display formatting like "(207) 555-1234" for the user,
+      // but Twilio expects "+12075551234" and rejects the display form.
+      const phoneE164 = sendForm.phone ? toE164US(sendForm.phone) : ''
+      const payload = {
+        ...sendForm,
+        phone: phoneE164 ?? sendForm.phone,
+        copy_to: (sendForm.copy_to || '').trim() || null,
+      }
       const data = await post(`/api/quotes/${selected.id}/send`, payload)
       if (data.delivered) {
         const sent = Object.entries(data.results || {})

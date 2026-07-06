@@ -89,3 +89,14 @@ export function isValidPhoneUS(p) {
   if (!digits) return true
   return digits.length === 10
 }
+
+// Convert whatever's in a display-formatted phone field ("(207) 555-1234")
+// to Twilio-safe E.164 ("+12075551234") for the wire. Returns '' for empty
+// input and null when the number isn't a valid 10-digit US number, so the
+// caller can decide whether to omit the field or block the send.
+export function toE164US(p) {
+  if (!p) return ''
+  const digits = phoneDigits(p)
+  if (digits.length !== 10) return null
+  return `+1${digits}`
+}
