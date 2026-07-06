@@ -71,7 +71,7 @@ export default function SendQuotePanel({
       `Total: $${parseFloat(q.total || 0).toFixed(2)}`,
     ]
     if (q.valid_until) lines.push(`Valid until: ${q.valid_until}`)
-    lines.push('', 'Reply YES to accept or ask any questions.')
+    lines.push('', 'Tap the link to accept, or reply with any questions.')
     return lines.join('\n')
   }
 

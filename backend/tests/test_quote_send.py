@@ -3,6 +3,8 @@
 Regression for the bug where the endpoint flipped status to 'sent' and minted the
 link but never emailed or texted the customer.
 """
+from datetime import date
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -64,11 +66,13 @@ def test_default_sms_greets_by_first_name_only(quote_ctx):
 
 def test_default_sms_uses_new_greeting_format(quote_ctx):
     """New SMS template: personal greeting + quote line + total + valid until +
-    Reply YES + link. Regression for the flat one-liner it replaced."""
+    "tap the link / reply with questions" + link. Regression for the flat
+    one-liner it replaced, and for the SMS advertising a YES-to-accept path
+    the backend doesn't handle."""
     db, c, q = quote_ctx
     c.name = "Meg Small"; db.commit()
     q.address = "24 Pine Street, Portland, ME, 04102"
-    q.valid_until = "2026-08-05"
+    q.valid_until = date(2026, 8, 5)
     q.service_type = "residential"
     db.commit()
     with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM3"}) as sms, \
@@ -82,7 +86,8 @@ def test_default_sms_uses_new_greeting_format(quote_ctx):
     assert f"Quote {q.quote_number} — Residential clean at 24 Pine Street, Portland, ME, 04102" in body
     assert "Total: $100.00" in body
     assert "Valid until: 2026-08-05" in body
-    assert "Reply YES to accept or ask any questions." in body
+    assert "Tap the link to accept, or reply with any questions." in body
+    assert "Reply YES" not in body  # don't advertise an unimplemented handler
     assert "/quote/" in body  # accept link still present
 
 

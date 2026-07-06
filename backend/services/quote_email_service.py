@@ -191,7 +191,7 @@ def build_quote_sms_body(
     if valid:
         lines.append(f"Valid until: {valid}")
     lines.append("")
-    lines.append("Reply YES to accept or ask any questions.")
+    lines.append("Tap the link to accept, or reply with any questions.")
     body = "\n".join(lines)
     if quote_link and quote_link not in body:
         body += f"\nView & accept: {quote_link}"
