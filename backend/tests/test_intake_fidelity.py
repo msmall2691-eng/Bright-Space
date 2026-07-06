@@ -110,6 +110,56 @@ def test_booking_essentials_land_in_custom_fields():
         _cleanup_email(email)
 
 
+def test_booking_essentials_merge_on_dedup():
+    """Cross-entrypoint dedup: a customer hits /api/intake/submit first
+    (contact form, no essentials), then /api/booking/submit within the
+    5-minute window (the /book flow, with essentials). The second call
+    hits the recent-duplicate branch and would return early — this test
+    pins that its custom_fields still land on the row via a shallow merge."""
+    email = _uniq_email()
+    try:
+        db = SessionLocal()
+        first = build_intake(
+            name="Merge Test", email=email, phone="2075550001",
+            service_key="residential", bathrooms=2, square_footage=2000,
+        )
+        r1 = upsert_lead(db, first)
+        assert r1["deduped"] is False
+
+        second = build_intake(
+            name="Merge Test", email=email, phone="2075550001",
+            service_key="residential", bathrooms=2, square_footage=2000,
+            custom_fields={
+                "entry_method": "lockbox",
+                "special_instructions": "Alarm code 4231",
+            },
+        )
+        r2 = upsert_lead(db, second)
+        assert r2["deduped"] is True
+        assert r2["intake_id"] == r1["intake_id"]
+
+        lead = db.query(LeadIntake).filter(LeadIntake.id == r1["intake_id"]).first()
+        assert lead.custom_fields["entry_method"] == "lockbox"
+        assert lead.custom_fields["special_instructions"] == "Alarm code 4231"
+
+        # And a subsequent hit with more essentials should merge, not
+        # replace — the earlier ones must survive.
+        third = build_intake(
+            name="Merge Test", email=email, phone="2075550001",
+            service_key="residential", bathrooms=2, square_footage=2000,
+            custom_fields={"parking_notes": "Driveway on the right"},
+        )
+        r3 = upsert_lead(db, third)
+        assert r3["deduped"] is True
+        lead = db.query(LeadIntake).filter(LeadIntake.id == r1["intake_id"]).first()
+        assert lead.custom_fields["entry_method"] == "lockbox"
+        assert lead.custom_fields["special_instructions"] == "Alarm code 4231"
+        assert lead.custom_fields["parking_notes"] == "Driveway on the right"
+        db.close()
+    finally:
+        _cleanup_email(email)
+
+
 def test_upsert_persists_all_structured_columns():
     email = _uniq_email()
     try:

@@ -296,6 +296,17 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         if data.message and (not recent.message or len(data.message) > len(recent.message or "")):
             recent.message = data.message
             changed = True
+        # Shallow-merge custom_fields. The scalar _MERGE_FIELDS loop's
+        # "fill-if-missing" rule is wrong for a dict — the earlier hit
+        # (e.g. an intake-submit) may already have {} on the row, but the
+        # follow-up booking submit's essentials are strictly newer info the
+        # operator needs. Merge with incoming keys winning; assign a fresh
+        # dict so SQLAlchemy's JSON change detection actually fires.
+        if data.custom_fields:
+            merged = {**(recent.custom_fields or {}), **data.custom_fields}
+            if merged != (recent.custom_fields or {}):
+                recent.custom_fields = merged
+                changed = True
         if changed:
             db.commit()
             db.refresh(recent)
