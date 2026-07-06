@@ -174,6 +174,36 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected
           "{htmlToText(intake.message)}"
         </p>
       )}
+
+      {/* /book "essentials" — surfaced from LeadIntake.custom_fields.
+          Only rendered if any of the six on-site fields came in, so a
+          contact-form lead doesn't grow an empty block. */}
+      {intake.custom_fields && (
+        intake.custom_fields.entry_method
+        || intake.custom_fields.parking_notes
+        || intake.custom_fields.pets_detail
+        || (intake.custom_fields.focus_areas && intake.custom_fields.focus_areas.length)
+        || intake.custom_fields.special_instructions
+      ) && (
+        <div className="text-[11px] text-ink-2 bg-blue-50 border border-blue-200 rounded p-2 space-y-0.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 mb-1">Booking essentials</div>
+          {intake.custom_fields.entry_method && (
+            <div><span className="text-ink-3">Entry:</span> {intake.custom_fields.entry_method.replace('-', ' ')}</div>
+          )}
+          {intake.custom_fields.parking_notes && (
+            <div><span className="text-ink-3">Parking:</span> {intake.custom_fields.parking_notes}</div>
+          )}
+          {intake.custom_fields.pets_detail && (
+            <div><span className="text-ink-3">Pets:</span> {intake.custom_fields.pets_detail}</div>
+          )}
+          {intake.custom_fields.focus_areas && intake.custom_fields.focus_areas.length > 0 && (
+            <div><span className="text-ink-3">Focus:</span> {intake.custom_fields.focus_areas.join(', ')}</div>
+          )}
+          {intake.custom_fields.special_instructions && (
+            <div className="line-clamp-2"><span className="text-ink-3">Notes:</span> {intake.custom_fields.special_instructions}</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
