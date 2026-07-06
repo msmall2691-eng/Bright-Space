@@ -620,8 +620,12 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
 def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db)):
     """Reschedule a single occurrence to a different date (and optionally time).
 
-    The original Job/Visit on the original date is cancelled; the next
-    generate_jobs call will create a Job for the new date.
+    The original Job on the original date is cancelled, and the Job for the
+    rescheduled date is materialized immediately with the exception's times so
+    the calendar reflects the change instantly. Without this, the caller would
+    have to wait for the next generate_jobs cycle — and even then, generate_jobs
+    would create the Job with the *series* times, not the exception times,
+    silently dropping any per-visit time change the user requested.
     """
     if body.rescheduled_date is None:
         raise HTTPException(
@@ -662,6 +666,41 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         db.add(ex)
 
     _cancel_existing_job_and_visit(db, schedule_id, body.exception_date, body.reason)
+
+    # Materialize (or update) the Job for the rescheduled date with the
+    # exception times. generate_jobs uses series times only, so without this
+    # step a "reschedule to 2pm" would surface as a 9am job on the calendar.
+    new_date = _as_date(body.rescheduled_date)
+    new_start = body.rescheduled_start_time or sched.start_time
+    new_end = body.rescheduled_end_time or sched.end_time
+    rescheduled_job = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == schedule_id,
+            Job.scheduled_date == new_date,
+            Job.status != "cancelled",
+        )
+        .first()
+    )
+    if rescheduled_job is not None:
+        rescheduled_job.start_time = new_start
+        rescheduled_job.end_time = new_end
+    else:
+        db.add(Job(
+            client_id=sched.client_id,
+            recurring_schedule_id=sched.id,
+            property_id=sched.property_id,
+            job_type=sched.job_type,
+            title=sched.title,
+            scheduled_date=new_date,
+            start_time=new_start,
+            end_time=new_end,
+            address=sched.address,
+            cleaner_ids=sched.cleaner_ids or [],
+            status="scheduled",
+            notes=sched.notes,
+        ))
+
     db.commit()
     db.refresh(ex)
     return _ex_to_dict(ex)
