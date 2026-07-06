@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import Client, Job, RecurringSchedule, Property, Invoice
+from database.models import Client, Job, RecurringSchedule, Property, Invoice, Quote
 from modules.auth.router import get_current_user
 from agents.tools import get_tools_for_agent, execute_tool
 from utils.dates import business_today
@@ -344,6 +344,24 @@ def _compute_followups(db: Session) -> dict:
             "action": "Generate jobs from recurring schedules",
             "severity": "medium",
             "href": "/schedule?tab=recurring",
+        })
+
+    # Draft quotes stuck > 48h — quote was started but never sent, so the
+    # customer is still waiting. Audit finding: pipeline showed $1,168 across
+    # 2 sent + 3 drafts, i.e. quotes being created but not promptly sent.
+    from datetime import datetime, timezone
+    draft_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+    stale_drafts = db.query(Quote).filter(
+        Quote.status == "draft",
+        Quote.created_at < draft_cutoff,
+    ).count()
+    if stale_drafts:
+        items.append({
+            "title": f"{stale_drafts} draft quote(s) not yet sent",
+            "detail": "Quotes started more than 48h ago and still in draft.",
+            "action": "Send or archive",
+            "severity": "medium",
+            "href": "/billing?view=quotes&status=draft",
         })
 
     # New leads (likely awaiting follow-up).

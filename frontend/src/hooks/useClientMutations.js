@@ -61,10 +61,27 @@ export function useClientMutations({
           if (res?.duplicates?.length) { setDupes(res.duplicates); setSaving(false); return }
         }
       }
-      const url = selected ? `/api/clients/${selected.id}` : '/api/clients'
+      const url = selected
+        ? `/api/clients/${selected.id}`
+        // POST bypasses the server-side dedup guard when the operator has
+        // already reviewed the matches on this create attempt (dupes.length > 0).
+        // Without force the server 409s on a duplicate hit — that path is what
+        // catches webhooks / API callers that skip check-duplicate.
+        : `/api/clients${dupes.length ? '?force=true' : ''}`
       selected ? await patch(url, form) : await post(url, form)
       await load(); setShowForm(false); setSelected(null); setForm(EMPTY); resetPhones(); setDupes([])
-    } catch (e) { setSaveError(e.message || 'Failed to save') }
+    } catch (e) {
+      // Server-side dedup 409 — the client-side check missed something (a
+      // ContactPhone match, a race). Surface the same dupes UI so the operator
+      // can review and retry with force.
+      const serverDupes = e?.detail?.duplicates || e?.body?.duplicates
+      if (Array.isArray(serverDupes) && serverDupes.length) {
+        setDupes(serverDupes)
+        setSaveError('')
+      } else {
+        setSaveError(e.message || 'Failed to save')
+      }
+    }
     setSaving(false)
   }
 

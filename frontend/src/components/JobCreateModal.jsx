@@ -162,6 +162,25 @@ export default function JobCreateModal({
   // which silently 422'd on limit=1000 and rendered empty).
   const [clientQuery, setClientQuery] = useState('')
   const [clientResults, setClientResults] = useState([])
+  // Connecteam employee-name set — used to badge client search results whose
+  // name matches a cleaner (audit finding: "Megan Small" existed as both a
+  // client and a cleaner and got confused in dispatch). Loaded lazily and
+  // tolerates Connecteam being offline — an empty set just skips the badge.
+  const [employeeNameSet, setEmployeeNameSet] = useState(() => new Set())
+  useEffect(() => {
+    if (!standalone) return
+    get('/api/dispatch/employees')
+      .then(rows => {
+        const names = new Set()
+        for (const e of (Array.isArray(rows) ? rows : [])) {
+          const n = (e?.name || e?.displayName
+            || [e?.firstName, e?.lastName].filter(Boolean).join(' ') || '').trim().toLowerCase()
+          if (n) names.add(n)
+        }
+        setEmployeeNameSet(names)
+      })
+      .catch(() => setEmployeeNameSet(new Set()))
+  }, [standalone])
   const [clientLoading, setClientLoading] = useState(false)
   const [clientLoadErr, setClientLoadErr] = useState('')
   const [clientRetry, setClientRetry] = useState(0)
@@ -512,15 +531,33 @@ export default function JobCreateModal({
                           <span className="block mt-0.5">Use “+ New client” to add one.</span>
                         </div>
                       ) : (
-                        clientResults.map(c => (
-                          <button key={c.id} type="button" onClick={() => chooseClient(c)}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-bg transition-colors">
-                            <div className="font-medium text-ink truncate">{c.name}</div>
-                            {(c.email || c.phone) && (
-                              <div className="text-[11px] text-ink-3 truncate">{[c.email, c.phone].filter(Boolean).join(' · ')}</div>
-                            )}
-                          </button>
-                        ))
+                        clientResults.map(c => {
+                          // Warn when this client's name matches a Connecteam
+                          // employee name — they're often two different people
+                          // ("Megan Small" the client vs the cleaner) and picking
+                          // the wrong one confuses dispatch. Case-insensitive
+                          // exact-match keeps the false-positive rate low.
+                          const namesCollide = employeeNameSet.has((c.name || '').trim().toLowerCase())
+                          return (
+                            <button key={c.id} type="button" onClick={() => chooseClient(c)}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-bg transition-colors">
+                              <div className="font-medium text-ink truncate flex items-center gap-1.5">
+                                <span className="truncate">{c.name}</span>
+                                {namesCollide && (
+                                  <span
+                                    title="Same name as a cleaner in your Connecteam roster — confirm this is the customer, not the crew."
+                                    className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                                  >
+                                    Also a cleaner
+                                  </span>
+                                )}
+                              </div>
+                              {(c.email || c.phone) && (
+                                <div className="text-[11px] text-ink-3 truncate">{[c.email, c.phone].filter(Boolean).join(' · ')}</div>
+                              )}
+                            </button>
+                          )
+                        })
                       )}
                     </div>
                   </div>

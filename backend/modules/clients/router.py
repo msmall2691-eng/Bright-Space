@@ -556,10 +556,52 @@ def get_client_counts(
     return counts
 
 
+def _find_client_duplicates(
+    db: Session, *, name: Optional[str], email: Optional[str], phone: Optional[str],
+    org_id: Optional[int] = None, exclude_id: Optional[int] = None,
+) -> list[Client]:
+    """Return every Client that looks like a duplicate of the given details —
+    same phone (last-10 tail, primary or secondary), same email (case-insensitive),
+    or exact name (case-insensitive). Shared between the interactive
+    check-duplicate endpoint and the server-side guard on POST /api/clients."""
+    q = db.query(Client)
+    if org_id is not None:
+        q = q.filter(or_(Client.org_id == org_id, Client.org_id.is_(None)))
+    if exclude_id:
+        q = q.filter(Client.id != exclude_id)
+
+    matches: dict[int, Client] = {}
+    tail = _phone_tail(normalize_phone(phone)) if phone else None
+    if tail:
+        for c in q.filter(Client.phone_tail == tail).all():
+            matches[c.id] = c
+        secondary_ids = {cp.client_id for cp in
+                         db.query(ContactPhone).filter(ContactPhone.phone_tail == tail).all()}
+        secondary_ids -= set(matches)
+        if secondary_ids:
+            for c in db.query(Client).filter(Client.id.in_(secondary_ids)).all():
+                matches[c.id] = c
+    if email:
+        em = email.strip().lower()
+        if em:
+            for c in q.filter(func.lower(Client.email) == em).all():
+                matches[c.id] = c
+    if name:
+        nm = name.strip().lower()
+        if nm:
+            for c in q.filter(func.lower(Client.name) == nm).all():
+                matches[c.id] = c
+    return list(matches.values())
+
+
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_client(data: ClientCreate, db: Session = Depends(get_db),
                   current_user: User = Depends(get_current_user),
-                  org_id: int = Depends(current_org_id)):
+                  org_id: int = Depends(current_org_id),
+                  force: bool = Query(False, description="Skip the server-side "
+                                      "duplicate check. Frontend passes true on "
+                                      "the 'create anyway' path after the operator "
+                                      "has seen the matches.")):
     payload = data.model_dump()
     _normalize_client_fields(payload)
     # Enrich with extracted data from email, name, etc.
@@ -567,6 +609,29 @@ def create_client(data: ClientCreate, db: Session = Depends(get_db),
     payload["name"] = _derive_name(payload.get("first_name"), payload.get("last_name"), payload.get("name") or "")
     if not payload["name"]:
         raise HTTPException(status_code=422, detail="name or first_name required")
+
+    # Server-side duplicate guard (audit finding: 23 of 107 clients are dupes).
+    # Frontend already calls /check-duplicate before the first save and asks
+    # the operator to confirm on dupes — the second save passes force=true.
+    # This closes the gap for webhooks / other callers that skip the check.
+    if not force:
+        dupes = _find_client_duplicates(
+            db,
+            name=payload.get("name"),
+            email=payload.get("email"),
+            phone=payload.get("phone"),
+            org_id=org_id,
+        )
+        if dupes:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "A client matching this name / email / phone already exists.",
+                    "duplicates": [client_to_dict(c) for c in dupes],
+                    "hint": "Retry with ?force=true to create anyway.",
+                },
+            )
+
     client = Client(**payload)
     client.org_id = org_id  # MT-2: stamp the caller's workspace
     # Audit actor: who created this record (Twenty's ActorMetadata).
