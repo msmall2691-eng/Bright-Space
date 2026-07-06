@@ -122,10 +122,16 @@ export default function QuoteEditPanel({
 
           {/* Title */}
           <div>
-            <label className="block text-xs text-ink-3 mb-1">Quote Title</label>
+            <label className="block text-xs text-ink-3 mb-1">
+              Quote Title <span className="text-ink-3">(shown to the customer)</span>
+            </label>
             <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
               placeholder="e.g. Biweekly cleaning — 12 Pier Rd"
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            <p className="text-[11px] text-ink-3 mt-1">
+              Appears in the email subject and PDF header — write it as the customer should see it.
+              For team-only shorthand use Internal Notes below.
+            </p>
           </div>
 
           {/* Client */}
