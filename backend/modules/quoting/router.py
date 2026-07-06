@@ -1335,22 +1335,40 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
     from modules.scheduling.router import (
         create_job, JobCreate, update_job, JobUpdate,
     )
+    # Customer-facing self-schedule: bypass the same guards the operator's
+    # UI uses. The customer has no way to react to a "double-booked cleaner"
+    # or "Google Free/Busy" 409 — the message we used to surface literally
+    # read "resubmit with allow_conflicts=true to book anyway" (seen on the
+    # public quote page). Let the booking land; the owner gets the "quote
+    # accepted & scheduled" alert immediately and can re-shuffle in Bright-
+    # Space if there's a real collision.
     existing = _existing_job_for_quote(db, quote)
-    if existing:
-        # Re-date the already-created job (keeps one job per quote) + sync GCal.
-        update_job(existing.id, JobUpdate(
-            scheduled_date=d.isoformat(), start_time=start, end_time=end), db=db)
-        job_id = existing.id
-    else:
-        svc, job_type, prop_type = _quote_job_vocab(quote)
-        prop = _resolve_property_for_quote(db, quote, prop_type)
-        created = create_job(JobCreate(
-            client_id=quote.client_id, title=quote.title or f"{svc.title()} clean",
-            job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
-            address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
-            cleaner_ids=[], notes=quote.notes,
-        ), db=db)
-        job_id = created["id"]
+    try:
+        if existing:
+            # Re-date the already-created job (keeps one job per quote) + sync GCal.
+            update_job(existing.id, JobUpdate(
+                scheduled_date=d.isoformat(), start_time=start, end_time=end,
+                allow_conflicts=True), db=db)
+            job_id = existing.id
+        else:
+            svc, job_type, prop_type = _quote_job_vocab(quote)
+            prop = _resolve_property_for_quote(db, quote, prop_type)
+            created = create_job(JobCreate(
+                client_id=quote.client_id, title=quote.title or f"{svc.title()} clean",
+                job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
+                address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
+                cleaner_ids=[], notes=quote.notes, allow_conflicts=True,
+            ), db=db)
+            job_id = created["id"]
+    except HTTPException as e:
+        # Defense in depth: even with allow_conflicts=True, an unrelated
+        # 400 (past date, end<=start) could bubble up. Rewrite the operator
+        # phrasing so the customer never sees "resubmit with allow_conflicts=true".
+        friendly = (
+            "We couldn't lock that slot right now. Please pick another time "
+            "or give us a call and we'll finish scheduling by hand."
+        )
+        raise HTTPException(status_code=e.status_code or 400, detail=friendly)
 
     nice_date = d.strftime("%B %d, %Y")
     win_label = "morning" if window == "morning" else "afternoon"

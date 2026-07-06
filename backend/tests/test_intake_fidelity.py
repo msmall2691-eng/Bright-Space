@@ -222,6 +222,67 @@ def test_cross_entrypoint_dedup_merges_into_one_lead():
         _cleanup_email(email)
 
 
+def test_booking_submit_fires_customer_and_owner_alerts():
+    """Every booking landing fires two best-effort side effects: a Twilio SMS
+    to the owner, and a confirmation email to the customer. Neither can be
+    allowed to block the customer-facing HTTP response, so the test verifies
+    they're INVOKED (the actual sending is stubbed here — real SMTP/Twilio
+    aren't reachable from CI and don't need to be)."""
+    from unittest.mock import patch
+    email = _uniq_email()
+    try:
+        with patch("modules.booking.router._send_booking_owner_alert") as sms, \
+             patch("modules.booking.router._send_booking_customer_confirmation") as mail:
+            r = client.post("/api/booking/submit", json={
+                "name": "Alert Test", "email": email, "phone": "2075557888",
+                "address": "1 Main St", "serviceType": "residential",
+                "requestedDate": "2026-07-01", "squareFeet": 2000, "bathrooms": 2,
+                "frequency": "biweekly",
+            })
+            assert r.status_code == 201, r.text
+            assert sms.called
+            assert mail.called
+            # Both get the same intake_id / estimate range so their bodies stay in sync.
+            sms_args = sms.call_args.args + tuple(sms.call_args.kwargs.values())
+            mail_args = mail.call_args.args + tuple(mail.call_args.kwargs.values())
+            # Both should have been given a non-None intake_id.
+            assert any(isinstance(a, int) and a > 0 for a in sms_args)
+            assert any(isinstance(a, int) and a > 0 for a in mail_args)
+    finally:
+        _cleanup_email(email)
+
+
+def test_booking_alerts_use_canonical_estimate_when_client_omits_it():
+    """Codex P2 on #500: when the customer's booking payload doesn't
+    include an estimate range (or ships an implausible one and it gets
+    dropped), build_intake() recomputes and stores the canonical range
+    on the intake row. Both alerts must see that recomputed value —
+    otherwise the receipt promises an estimate line but omits it while
+    the operator's Requests row shows one. Pins the fix."""
+    from unittest.mock import patch
+    email = _uniq_email()
+    try:
+        with patch("modules.booking.router._send_booking_owner_alert") as sms, \
+             patch("modules.booking.router._send_booking_customer_confirmation") as mail:
+            r = client.post("/api/booking/submit", json={
+                "name": "Est Test", "email": email, "phone": "2075557999",
+                "address": "1 Main St", "serviceType": "residential",
+                "requestedDate": "2026-07-01", "squareFeet": 2000, "bathrooms": 2,
+                "frequency": "biweekly",
+                # No estimateMin / estimateMax — build_intake() recomputes.
+            })
+            assert r.status_code == 201, r.text
+            # Both helpers should have received the recomputed range —
+            # NOT None (the pre-normalize local vars) — as positional args 3+4.
+            for helper in (sms, mail):
+                mn, mx = helper.call_args.args[-2], helper.call_args.args[-1]
+                assert mn is not None, f"{helper} got None estimate_min"
+                assert mx is not None, f"{helper} got None estimate_max"
+                assert mn <= mx
+    finally:
+        _cleanup_email(email)
+
+
 def test_booking_submit_saves_frequency():
     """booking/submit used to hard-code frequency=None, dropping cadence."""
     email = _uniq_email()

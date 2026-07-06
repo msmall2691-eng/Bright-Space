@@ -15,6 +15,59 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _send_booking_customer_confirmation(
+    data: "BookingSubmit",
+    intake_id: int,
+    estimate_min: Optional[float],
+    estimate_max: Optional[float],
+) -> None:
+    """Email the customer a booking receipt right after they submit.
+
+    Best-effort — SMTP not configured or a send failure both log a
+    warning and return without raising, so the customer-facing HTTP
+    response never depends on this path.
+    """
+    to_email = (data.email or "").strip()
+    if not to_email or "@" not in to_email:
+        return
+    try:
+        from integrations.email import _load_smtp_creds, send_email
+        from services.quote_email_service import first_name_of, customer_display_name
+        creds = _load_smtp_creds()
+        company = creds.get("from_name") or "The Maine Cleaning Co."
+        first = first_name_of(data.name) or customer_display_name(data.name) or "there"
+        est_line = ""
+        if estimate_min is not None and estimate_max is not None:
+            est_line = f"Estimate: ${int(estimate_min)}–${int(estimate_max)}."
+        lines = [
+            f"Hi {first},",
+            "",
+            f"Thanks for booking with {company}! We got your request for {data.serviceType} on {data.requestedDate}.",
+            f"Service address: {data.address}",
+            est_line,
+            "",
+            "We'll review it and confirm by call or text within 1 business day. "
+            "Once we've confirmed, you'll get a Google Calendar invite that adds the "
+            "cleaning to your phone automatically — no app to install.",
+            "",
+            "Questions in the meantime? Just reply to this email.",
+        ]
+        # Drop the est_line placeholder if no estimate came through.
+        lines = [l for l in lines if l is not None and l != ""] or lines
+        import html as _html
+        body = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
+            "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines) + "</div>"
+        send_email(
+            to=to_email,
+            subject=f"Booking request received — {data.requestedDate}",
+            html_body=body,
+            text_body="\n".join(lines),
+        )
+        logger.info("[booking] customer confirmation email sent for intake=%s", intake_id)
+    except Exception as e:
+        logger.warning("[booking] customer confirmation email failed for intake %s: %s", intake_id, e)
+
+
 def _send_booking_owner_alert(
     db: Session,
     data: "BookingSubmit",
@@ -237,13 +290,30 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
     )
     result = upsert_lead(db, payload)
 
+    # Use the post-normalize estimate so both alerts match what the operator
+    # sees on the Requests row. When the customer's payload didn't include a
+    # range (or included an implausible one), build_intake() recomputed the
+    # canonical range and it now lives on payload.estimate_min/max — passing
+    # the pre-normalize local vars here would silently drop the estimate line
+    # from the receipt even though the request row shows one.
+    alert_estimate_min = payload.estimate_min if payload.estimate_min is not None else estimate_min
+    alert_estimate_max = payload.estimate_max if payload.estimate_max is not None else estimate_max
+
     # Ping the owner by SMS as soon as a booking lands. Twilio-only; if the
     # env isn't configured or the send fails the booking still succeeds —
     # the customer-facing response must never depend on the alert path.
     try:
-        _send_booking_owner_alert(db, data, result["intake_id"], estimate_min, estimate_max)
+        _send_booking_owner_alert(db, data, result["intake_id"], alert_estimate_min, alert_estimate_max)
     except Exception as e:
         logger.warning("booking owner SMS failed: %s", e)
+
+    # Email the customer a receipt so they know we got it and know what
+    # comes next (the Google Calendar invite once we approve). Same
+    # best-effort contract as the owner SMS.
+    try:
+        _send_booking_customer_confirmation(data, result["intake_id"], alert_estimate_min, alert_estimate_max)
+    except Exception as e:
+        logger.warning("booking customer email failed: %s", e)
 
     return BookingResponse(
         success=True,
