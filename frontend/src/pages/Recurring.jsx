@@ -298,6 +298,9 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
     }
     setSaving(true); setError('')
     try {
+      // Backend PATCH rejects `days_of_week: []` outright (would silently
+      // collapse a multi-day schedule). For a monthly rule, days_of_week
+      // is meaningless — omit it entirely so exclude_none drops it server-side.
       const payload = {
         title: form.title.trim(),
         address: form.address.trim(),
@@ -305,12 +308,14 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
         interval_weeks: form.frequency === 'biweekly' ? 2
           : form.frequency === 'weekly' ? 1
           : parseInt(form.interval_weeks) || 1,
-        days_of_week: form.frequency === 'monthly' ? [] : form.days_of_week,
         day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
         start_time: form.start_time + ':00',
         end_time: form.end_time + ':00',
         generate_weeks_ahead: parseInt(form.generate_weeks_ahead) || 8,
         notes: form.notes || null,
+      }
+      if (form.frequency !== 'monthly') {
+        payload.days_of_week = form.days_of_week
       }
       await patch(`/api/recurring/${schedule.id}`, payload)
       onDone()
