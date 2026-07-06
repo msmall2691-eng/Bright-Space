@@ -72,10 +72,11 @@ FREQUENCY_FACTOR = {
 RANGE_BAND_PERCENT = 0.04
 
 # Custom-quote services — client shows no instant number for these; the
-# operator prices them by hand. When the client doesn't send an estimate
-# for one of these, we return zero range so downstream code (opportunity
-# amount, seed unit_price) treats it as "operator finalize" rather than
-# inventing a residential-looking price.
+# operator prices them by hand. Bright-Space still runs the labor-hour
+# formula for them so downstream code (opportunity amount, seed unit_price,
+# Requests page) has a residential-shaped placeholder to show the operator
+# rather than $0. The breakdown flags custom_quote=True so callers can
+# render "Custom" verbiage in place of the number if they want to.
 _CUSTOM_QUOTE_SERVICES = {
     "str", "vacation-rental", "airbnb", "airbnb-turnover",
     "vrbo-turnover", "str-turnover", "commercial", "commercial-cleaning",
@@ -140,14 +141,7 @@ def estimate_price(
     """
     svc = (service_type or "").lower().strip()
     msg = (message or "").lower()
-
-    if svc in _CUSTOM_QUOTE_SERVICES:
-        return {
-            "estimate_min": 0,
-            "estimate_max": 0,
-            "currency": "USD",
-            "breakdown": {"service_type": svc, "custom_quote": True},
-        }
+    is_custom_quote = svc in _CUSTOM_QUOTE_SERVICES
 
     # Detect deep-clean / move-in-out from service_type OR the message text
     # — the contact form has no dedicated field, customers write it in.
@@ -199,6 +193,7 @@ def estimate_price(
 
     breakdown = {
         "service_type": svc or "residential",
+        "custom_quote": is_custom_quote,
         "min_job": min_job,
         "sqft": sf,
         "sqft_units": round(sqft_units, 4),

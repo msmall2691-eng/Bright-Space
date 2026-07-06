@@ -132,11 +132,26 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         parts.append(f"Turnover type: {data.turnover}")
     message = " | ".join(parts) if parts else None
 
-    # Treat 0 as "not sent" — the client sends 0 for custom-quote services
-    # (STR / commercial) and we want the fallback engine to compute a
-    # placeholder for the operator rather than persisting $0.
+    # Trust the customer-facing quote but not a tampered payload. Drop
+    # anything that isn't a plausible positive range (negative, inverted,
+    # or absurdly large — the canonical engine tops out well under $10k
+    # even for oversized deep-clean one-time jobs) and let build_intake's
+    # fallback recompute from the structured fields instead. 0 is also
+    # treated as missing because the client sends 0 for custom-quote
+    # services (STR / commercial).
+    _MAX_PLAUSIBLE_ESTIMATE = 10000
     estimate_min = data.estimateMin if data.estimateMin else None
     estimate_max = data.estimateMax if data.estimateMax else None
+    if estimate_min is not None and (estimate_min < 0 or estimate_min > _MAX_PLAUSIBLE_ESTIMATE):
+        estimate_min = None
+    if estimate_max is not None and (estimate_max < 0 or estimate_max > _MAX_PLAUSIBLE_ESTIMATE):
+        estimate_max = None
+    if (
+        estimate_min is not None
+        and estimate_max is not None
+        and estimate_min > estimate_max
+    ):
+        estimate_min = estimate_max = None
 
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
