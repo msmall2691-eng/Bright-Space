@@ -532,7 +532,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     company_phone=company["company_phone"], brand_color=company["brand_color"],
                     terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
                 ).generate_quote_pdf(
-                    quote_number=quote.quote_number, client_name=client.name,
+                    quote_number=quote.quote_number, client_name=(client.first_name or client.name),
                     client_email=client.email or "", client_phone=client.phone,
                     line_items=_pdf_line_items(quote), subtotal=quote.subtotal,
                     tax_amount=quote.tax, discount_amount=quote.discount,
@@ -553,7 +553,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     except Exception:
                         email_photo_url = None
                 res = QuoteEmailService().send_quote_email(
-                    to_email=to_email, client_name=client.name, quote_number=quote.quote_number,
+                    to_email=to_email, client_name=(client.first_name or client.name), quote_number=quote.quote_number,
                     total_amount=float(quote.total or 0),
                     expires_at=fmt_long_date(quote.valid_until),
                     quote_link=quote_link, pdf_bytes=pdf_bytes, pdf_filename=f"{quote.quote_number}.pdf",
@@ -1160,7 +1160,7 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
     ).generate_quote_pdf(
         quote_number=quote.quote_number,
-        client_name=client.name if client else "",
+        client_name=(client.first_name or client.name) if client else "",
         client_email=client.email if client else "",
         client_phone=client.phone if client else None,
         line_items=_pdf_line_items(quote), subtotal=quote.subtotal, tax_amount=quote.tax,

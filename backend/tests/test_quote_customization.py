@@ -12,7 +12,9 @@ from database.models import Client, Quote, AppSetting
 from modules.quoting.router import (
     send_quote, QuoteSendRequest, _quote_dict, _public_quote_dict, _apply_update,
 )
-from services.quote_email_service import customer_display_name, format_money
+from services.quote_email_service import (
+    customer_display_name, first_name_of, looks_like_company, format_money,
+)
 
 
 @pytest.fixture
@@ -68,6 +70,29 @@ def test_placeholder_names_are_not_greeted():
     assert customer_display_name("BrightBase Webhook Test") == ""
     assert customer_display_name(None) == ""
     assert customer_display_name("Jane Doe") == "Jane Doe"
+
+
+def test_company_names_do_not_become_first_names():
+    """QA regression: "BrightBase LLC" produced "Hello BrightBase," which
+    reads as a botched mail merge. Company accounts should fall through
+    to the neutral greeting."""
+    for co in [
+        "BrightBase LLC",
+        "BrightBase, LLC",
+        "Acme Inc.",
+        "Acme Corp",
+        "Coastal Properties",
+        "Portland Cleaning Co.",
+        "Smith & Sons LLP",
+        "BrightBase",              # single all-caps-y token, no space
+        "ACME",
+    ]:
+        assert looks_like_company(co), co
+        assert first_name_of(co) == "", co
+
+    # Real people still greet correctly.
+    assert first_name_of("Jane Doe") == "Jane"
+    assert first_name_of("megan small") == "megan"
 
 
 def test_title_and_customer_message_round_trip(ctx):

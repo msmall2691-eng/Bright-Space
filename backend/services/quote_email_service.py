@@ -33,6 +33,23 @@ _PLACEHOLDER_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Company suffixes / structures that signal the name is a business, not a
+# person. Greeting the first WORD of "BrightBase LLC" as a first name gives
+# "Hello BrightBase," which reads as a botched mail merge. Detect these so
+# the greeting falls back to a neutral "Hello,".
+# Trailing "\b" is intentionally NOT required — patterns that already end
+# in "." (e.g. "Co.", "Inc.") don't sit before a word boundary at end of
+# string, so a strict "\b" fails to match. `(?=[\W_]|$)` (lookahead for a
+# non-word char or end of string) is the equivalent that still rejects
+# accidental substring hits ("business", "companion").
+_COMPANY_HINT_RE = re.compile(
+    r"\b(llc|l\.l\.c\.?|inc\.?|incorporated|corp\.?|corporation|"
+    r"ltd\.?|limited|co\.|company|holdings|group|properties|realty|"
+    r"management|mgmt|services|solutions|associates|partners|llp|pllc|"
+    r"p\.?c\.?|plc)(?=[\W_]|$)",
+    re.IGNORECASE,
+)
+
 
 def customer_display_name(name: str | None) -> str:
     """The name as greet-able text, or '' when it's a placeholder/phone."""
@@ -40,6 +57,23 @@ def customer_display_name(name: str | None) -> str:
     if not name or _PLACEHOLDER_NAME_RE.match(name):
         return ""
     return name
+
+
+def looks_like_company(name: str | None) -> bool:
+    """True when the name looks like a business account rather than a
+    person — either it carries a Corp/LLC/Inc-style suffix, or it's a
+    single-word all-caps/brand-like token (no space)."""
+    s = (name or "").strip()
+    if not s:
+        return False
+    if _COMPANY_HINT_RE.search(s):
+        return True
+    # "BrightBase" or "ACME" — single token with no space. Real given
+    # names are almost always followed by another token; a company brand
+    # often stands alone. Whitespace-tolerant.
+    if " " not in s and (s.isupper() or any(c.isupper() for c in s[1:])):
+        return True
+    return False
 
 
 def format_money(amount) -> str:
@@ -64,9 +98,14 @@ def phone_tel_href(phone: str | None) -> str:
 
 
 def first_name_of(name: str | None) -> str:
-    """First name for a friendly greeting, or '' for placeholder/phone names."""
+    """First name for a friendly greeting, or '' for placeholder/phone/company
+    names. A company account like "BrightBase LLC" returns '' so the greeting
+    lands on the neutral "Hello," fallback instead of "Hello BrightBase,"
+    — a business isn't a "Bright" and the mail merge shouldn't pretend it is."""
     display = customer_display_name(name)
-    return display.split()[0] if display else ""
+    if not display or looks_like_company(display):
+        return ""
+    return display.split()[0]
 
 
 class QuoteEmailService:
