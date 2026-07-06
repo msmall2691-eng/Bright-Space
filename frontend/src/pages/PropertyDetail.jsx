@@ -8,9 +8,7 @@ import { get, patch, post } from '../api'
 import Button from '../components/ui/Button'
 import RecordLink from '../components/RecordLink'
 import GlassCard from '../components/ui/GlassCard'
-// Normalize API responses — some endpoints return raw arrays, others return
-// paginated envelopes like { items, total, limit, offset }.
-const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? [])
+import { toArray } from '../utils/apiShapes'
 
 
 const PROPERTY_TYPE_CONFIG = {

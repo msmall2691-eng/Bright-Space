@@ -25,7 +25,7 @@ import re
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from database.models import LeadIntake, Client, Activity
+from database.models import LeadIntake, Client, Activity, Property
 from utils.contacts import (
     find_client_by_contact, normalize_phone, add_contact_email, add_contact_phone,
 )
@@ -261,6 +261,56 @@ def _find_recent_duplicate(db: Session, email: Optional[str], phone: Optional[st
     )
 
 
+def _normalize_addr(s: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+
+def _upsert_property_from_intake(db: Session, client: Client, data: IntakeData) -> None:
+    """Attach the booking's address to the client as a Property so the client's
+    Properties list reflects where they actually want service, not just their
+    stale lead-phase primary. No-op when the booking has no address or the same
+    address is already on file. Best-effort — never raises into the caller."""
+    if not data.address:
+        return
+    try:
+        target = _normalize_addr(data.address)
+        existing = db.query(Property).filter(Property.client_id == client.id).all()
+        for p in existing:
+            if _normalize_addr(p.address) == target:
+                return  # already tracked
+        prop = Property(
+            client_id=client.id,
+            org_id=getattr(client, "org_id", None),
+            name=data.property_name or data.address,
+            address=data.address,
+            city=data.city,
+            state=data.state or "ME",
+            zip_code=data.zip_code,
+            property_type=data.service_type or "residential",
+            bedrooms=data.bedrooms,
+            bathrooms=data.bathrooms,
+            square_footage=data.square_footage,
+        )
+        db.add(prop)
+    except Exception as e:  # a property write must never block the lead
+        logger.warning("intake property upsert failed for client %s: %s", client.id, e)
+
+
+def _recent_lead_activity_exists(db: Session, client_id: int) -> bool:
+    """True when this client already has a lead_created Activity inside the
+    dedup window. Guards against race conditions where two near-simultaneous
+    submissions each pass _find_recent_duplicate (before either has committed)
+    and each write their own timeline entry — the audit's L3 double-log."""
+    if not client_id:
+        return False
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=DEDUP_WINDOW_MINUTES)
+    return db.query(Activity.id).filter(
+        Activity.client_id == client_id,
+        Activity.activity_type == "lead_created",
+        Activity.created_at >= cutoff,
+    ).first() is not None
+
+
 def _lead_summary(data: IntakeData) -> str:
     """Compact one-line summary for the timeline, e.g.
     'New residential lead · 2000 sqft · 2 bath · biweekly · $120–$135'."""
@@ -339,6 +389,14 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     add_contact_email(db, client, data.email, source=data.source)
     add_contact_phone(db, client, data.phone, source=data.source)
 
+    # Audit M1: A returning customer booking a new address must have that
+    # address surfaced as a Property — otherwise the operator sees the fresh
+    # booking's address on the Request but the master client record still
+    # reflects a stale primary from months ago. Match on normalized address
+    # (case + whitespace) so a customer re-typing the same address doesn't
+    # spawn duplicate properties.
+    _upsert_property_from_intake(db, client, data)
+
     intake = LeadIntake(
         name=data.name or client.name, email=data.email, phone=data.phone,
         address=data.address, city=data.city, state=data.state or "ME",
@@ -355,13 +413,14 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     db.add(intake)
     db.flush()
     try:
-        db.add(Activity(
-            client_id=client.id,
-            activity_type="lead_created",
-            actor="website",
-            summary=_lead_summary(data),
-            extra_data={"intake_id": intake.id, "source": data.source},
-        ))
+        if not _recent_lead_activity_exists(db, client.id):
+            db.add(Activity(
+                client_id=client.id,
+                activity_type="lead_created",
+                actor="website",
+                summary=_lead_summary(data),
+                extra_data={"intake_id": intake.id, "source": data.source},
+            ))
     except Exception as e:  # a timeline write must never block the lead
         logger.warning("lead_received activity write failed: %s", e)
 

@@ -22,7 +22,7 @@ import {
   QUOTE_STATUS_OPTIONS, LEAD_STATUS_OPTIONS, QUOTE_NEXT_STEP,
   SERVICE_TYPES, EMPTY_ITEM, SERVICE_SCOPE,
   serviceLabel, freqLabel, titleFromIntake, roundTo5, defaultValidUntil,
-  isPlaceholderName,
+  isPlaceholderName, composeIntakeAddress,
 } from '../components/quoting/constants'
 
 // Quote templates (and their prices) live ONLY in the backend
@@ -255,7 +255,7 @@ export default function Quoting() {
         // Auto-fill a sensible title and customer-facing scope so the quote is
         // mostly built — the admin just reviews, tweaks, and sends.
         title: titleFromIntake(intake), customer_message: '',
-        address: [intake.address, intake.city, intake.state].filter(Boolean).join(', '),
+        address: composeIntakeAddress(intake),
         service_type: svcType,
         items: [{
           ...EMPTY_ITEM,
@@ -275,7 +275,7 @@ export default function Quoting() {
       })
       // Best-effort: when property-data enrichment is on, fill missing specs
       // (sqft/beds/baths/year) into the line description by address.
-      const fullAddr = [intake.address, intake.city, intake.state].filter(Boolean).join(', ')
+      const fullAddr = composeIntakeAddress(intake)
       if (fullAddr) {
         get(`/api/quotes/property-lookup?address=${encodeURIComponent(fullAddr)}`)
           .then(r => {

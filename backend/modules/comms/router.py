@@ -847,6 +847,13 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     # and inject SMS records, optionally with a real client's phone — which
     # also triggers FORWARD_INBOUND_SMS_TO outbound SMS, turning Twilio
     # into a free open relay against the on-call line.
+    #
+    # Audit finding: previously if TWILIO_AUTH_TOKEN was missing the handler
+    # logged a warning and accepted the request. That is fail-open — anyone
+    # who could reach the webhook could inject SMS records. An explicit
+    # opt-in (TWILIO_WEBHOOK_UNSAFE_ALLOW_UNSIGNED=1) is required to bypass
+    # validation, so a deploy that forgets to configure the token can't
+    # silently downgrade to no auth.
     auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
     if auth_token:
         from twilio.request_validator import RequestValidator
@@ -870,11 +877,18 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
                 f"[twilio] rejected webhook with bad signature from {request.client.host if request.client else 'unknown'}"
             )
             raise HTTPException(status_code=403, detail="Invalid Twilio signature")
-    else:
+    elif os.getenv("TWILIO_WEBHOOK_UNSAFE_ALLOW_UNSIGNED", "").strip() == "1":
         logger.warning(
-            "[twilio] TWILIO_AUTH_TOKEN not set — accepting webhook without signature check. "
-            "Set TWILIO_AUTH_TOKEN to enable signature validation."
+            "[twilio] TWILIO_AUTH_TOKEN not set — accepting webhook without signature check "
+            "because TWILIO_WEBHOOK_UNSAFE_ALLOW_UNSIGNED=1. Do NOT ship this to production."
         )
+    else:
+        logger.error(
+            "[twilio] TWILIO_AUTH_TOKEN not set — rejecting inbound webhook (fail-closed). "
+            "Set TWILIO_AUTH_TOKEN to enable signature validation, or "
+            "TWILIO_WEBHOOK_UNSAFE_ALLOW_UNSIGNED=1 to bypass (dev only)."
+        )
+        raise HTTPException(status_code=503, detail="Twilio webhook not configured")
 
     from_number = form.get("From", "")
     to_number = form.get("To", "")

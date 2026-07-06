@@ -222,7 +222,26 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
         db.flush()
         client_id = client.id
 
-    address = " ".join(filter(None, [intake.address, intake.city, intake.state, intake.zip_code]))
+    # Audit L1: only append pieces intake.address doesn't already carry — the
+    # maineclean.co autocomplete ships a formatted string like "Keystone Drive,
+    # Waterboro, ME, 04061" as intake.address AND stores each piece in its own
+    # column, and blindly concatenating all four doubles up city/state/zip on
+    # the customer-facing quote.
+    import re as _re
+    _addr_haystack = (intake.address or "").lower()
+    def _needs(v: Optional[str]) -> bool:
+        s = (v or "").strip()
+        if not s:
+            return False
+        return not _re.search(r"(^|[\s,])" + _re.escape(s.lower()) + r"([\s,]|$)", _addr_haystack)
+    address = ", ".join(
+        [p for p in (
+            (intake.address or "").strip(),
+            (intake.city or "").strip() if _needs(intake.city) else "",
+            (intake.state or "").strip() if _needs(intake.state) else "",
+            (intake.zip_code or "").strip() if _needs(intake.zip_code) else "",
+        ) if p]
+    )
 
     # Carry the customer's structured request onto a Property so the quote (and
     # later the job) start from real data instead of re-typing. Reuse an existing

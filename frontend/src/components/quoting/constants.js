@@ -64,6 +64,30 @@ export const SERVICE_SCOPE = {
   str: 'Turnover clean between guests: full kitchen and bathroom reset, fresh linens and towels staged, floors cleaned, trash removed, and the space restocked and guest-ready.',
 }
 
+// Compose a display address from a lead/request without doubling up components
+// that the free-text `address` field already carries. The maineclean.co
+// autocomplete stores a formatted string like "Keystone Drive, Waterboro, ME,
+// 04061" in intake.address AND persists city/state/zip in their own columns —
+// naively joining all four produced "…, 04061, ME" on the customer-facing quote.
+// Audit L1: only append pieces the address string doesn't already include.
+export const composeIntakeAddress = (intake) => {
+  const addr = (intake?.address || '').trim()
+  const parts = [addr]
+  const haystack = addr.toLowerCase()
+  const push = (v) => {
+    const s = (v || '').toString().trim()
+    if (!s) return
+    // Word-boundary match against the address string so "ME" doesn't spuriously
+    // match "Rome" and "01" doesn't match "0101"; keep it case-insensitive.
+    const re = new RegExp(`(^|[\\s,])${s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}([\\s,]|$)`, 'i')
+    if (!re.test(haystack)) parts.push(s)
+  }
+  push(intake?.city)
+  push(intake?.state)
+  push(intake?.zip_code)
+  return parts.filter(Boolean).join(', ')
+}
+
 // Build a quote title from a lead/request: "Biweekly Residential Cleaning — 24 Pine Street".
 export const titleFromIntake = (intake) => {
   const freq = freqLabel(intake.frequency)
