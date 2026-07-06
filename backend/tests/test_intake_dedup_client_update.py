@@ -83,6 +83,85 @@ def test_returning_customer_new_address_lands_as_property():
         _cleanup(email)
 
 
+def test_property_upsert_fires_even_on_dedup_path():
+    """Codex #1: a lightweight /intake/submit landing first WITHOUT an
+    address, then a /booking/submit within the 5-minute dedup window WITH
+    the service address, must still attach the address as a Property. The
+    property upsert used to live only in the non-dedup branch, so the
+    returning-customer service address stayed missing from the master
+    client record."""
+    email = _uniq_email()
+    try:
+        db = SessionLocal()
+        # First hit: contact form, no address.
+        first = build_intake(
+            name="Late Address", email=email, phone="2075550505",
+            service_key="residential",
+        )
+        r1 = upsert_lead(db, first)
+        assert r1["deduped"] is False
+        c = db.query(Client).filter(Client.email.ilike(email)).first()
+        assert c is not None
+        assert db.query(Property).filter(Property.client_id == c.id).count() == 0
+
+        # Second hit within the window: booking form with the address.
+        second = build_intake(
+            name="Late Address", email=email, phone="2075550505",
+            service_key="residential", address="42 Late Rd", city="Portland",
+            state="ME", zip_code="04101",
+        )
+        r2 = upsert_lead(db, second)
+        assert r2["deduped"] is True  # merged into the first lead
+        # But the property MUST have landed on the client via the dedup path.
+        props = db.query(Property).filter(Property.client_id == c.id).all()
+        addresses = {(p.address or "").lower() for p in props}
+        assert "42 late rd" in addresses, (
+            "Codex #1: property upsert must fire on the dedup path too, "
+            f"got {addresses}"
+        )
+    finally:
+        _cleanup(email)
+
+
+def test_property_dedup_respects_city():
+    """Codex #2: same street line, two cities → two properties."""
+    email = _uniq_email()
+    try:
+        db = SessionLocal()
+        # Book the Portland location first.
+        p1 = build_intake(
+            name="Two Cities", email=email, phone="2075550606",
+            service_key="residential", address="123 Main St", city="Portland",
+            state="ME", zip_code="04101",
+        )
+        upsert_lead(db, p1)
+        c = db.query(Client).filter(Client.email.ilike(email)).first()
+
+        # Age past the LeadIntake dedup window and book the Bath location.
+        from datetime import datetime, timedelta, timezone
+        old = db.query(LeadIntake).filter(LeadIntake.email.ilike(email)).first()
+        old.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        db.commit()
+
+        p2 = build_intake(
+            name="Two Cities", email=email, phone="2075550606",
+            service_key="residential", address="123 Main St", city="Bath",
+            state="ME", zip_code="04530",
+        )
+        upsert_lead(db, p2)
+
+        cities = {
+            (p.city or "").lower()
+            for p in db.query(Property).filter(Property.client_id == c.id).all()
+        }
+        assert "portland" in cities and "bath" in cities, (
+            f"Codex #2: same street in two cities should be two properties, "
+            f"got cities={cities}"
+        )
+    finally:
+        _cleanup(email)
+
+
 def test_same_address_does_not_spawn_duplicate_property():
     email = _uniq_email()
     try:

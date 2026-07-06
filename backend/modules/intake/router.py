@@ -227,13 +227,18 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
     # Waterboro, ME, 04061" as intake.address AND stores each piece in its own
     # column, and blindly concatenating all four doubles up city/state/zip on
     # the customer-facing quote.
-    import re as _re
-    _addr_haystack = (intake.address or "").lower()
+    #
+    # Codex #3: compare against comma-delimited components (never any word in
+    # the street line) so a customer at "123 Bath Rd" with city="Bath" isn't
+    # stripped down to "123 Bath Rd, ME, 04530".
+    _addr_components = {
+        c.strip().lower()
+        for c in (intake.address or "").split(",")
+        if c.strip()
+    }
     def _needs(v: Optional[str]) -> bool:
-        s = (v or "").strip()
-        if not s:
-            return False
-        return not _re.search(r"(^|[\s,])" + _re.escape(s.lower()) + r"([\s,]|$)", _addr_haystack)
+        s = (v or "").strip().lower()
+        return bool(s) and s not in _addr_components
     address = ", ".join(
         [p for p in (
             (intake.address or "").strip(),

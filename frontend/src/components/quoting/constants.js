@@ -69,18 +69,20 @@ export const SERVICE_SCOPE = {
 // autocomplete stores a formatted string like "Keystone Drive, Waterboro, ME,
 // 04061" in intake.address AND persists city/state/zip in their own columns —
 // naively joining all four produced "…, 04061, ME" on the customer-facing quote.
-// Audit L1: only append pieces the address string doesn't already include.
+//
+// Codex #3: compare on comma-delimited components (never on any word in the
+// street line) so a customer at "123 Bath Rd" with city="Bath" isn't stripped
+// down to "123 Bath Rd, ME, 04530".
 export const composeIntakeAddress = (intake) => {
   const addr = (intake?.address || '').trim()
-  const parts = [addr]
-  const haystack = addr.toLowerCase()
+  const components = new Set(
+    addr.split(',').map(c => c.trim().toLowerCase()).filter(Boolean)
+  )
+  const parts = addr ? [addr] : []
   const push = (v) => {
     const s = (v || '').toString().trim()
     if (!s) return
-    // Word-boundary match against the address string so "ME" doesn't spuriously
-    // match "Rome" and "01" doesn't match "0101"; keep it case-insensitive.
-    const re = new RegExp(`(^|[\\s,])${s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}([\\s,]|$)`, 'i')
-    if (!re.test(haystack)) parts.push(s)
+    if (!components.has(s.toLowerCase())) parts.push(s)
   }
   push(intake?.city)
   push(intake?.state)

@@ -265,18 +265,31 @@ def _normalize_addr(s: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
+def _property_key(address, city, state, zip_code) -> tuple:
+    """Normalized (address, city, state, zip) match key for property dedup.
+    Comparing on the tuple — not the street line alone — is what stops a
+    client whose two real properties are ``123 Main St, Portland`` and
+    ``123 Main St, Bath`` from getting collapsed to one row (Codex #2)."""
+    return (
+        _normalize_addr(address),
+        _normalize_addr(city),
+        _normalize_addr(state),
+        _normalize_addr(zip_code),
+    )
+
+
 def _upsert_property_from_intake(db: Session, client: Client, data: IntakeData) -> None:
     """Attach the booking's address to the client as a Property so the client's
     Properties list reflects where they actually want service, not just their
     stale lead-phase primary. No-op when the booking has no address or the same
-    address is already on file. Best-effort — never raises into the caller."""
+    address/city/state/zip is already on file. Best-effort — never raises."""
     if not data.address:
         return
     try:
-        target = _normalize_addr(data.address)
+        target = _property_key(data.address, data.city, data.state or "ME", data.zip_code)
         existing = db.query(Property).filter(Property.client_id == client.id).all()
         for p in existing:
-            if _normalize_addr(p.address) == target:
+            if _property_key(p.address, p.city, p.state, p.zip_code) == target:
                 return  # already tracked
         prop = Property(
             client_id=client.id,
@@ -298,9 +311,10 @@ def _upsert_property_from_intake(db: Session, client: Client, data: IntakeData) 
 
 def _recent_lead_activity_exists(db: Session, client_id: int) -> bool:
     """True when this client already has a lead_created Activity inside the
-    dedup window. Guards against race conditions where two near-simultaneous
-    submissions each pass _find_recent_duplicate (before either has committed)
-    and each write their own timeline entry — the audit's L3 double-log."""
+    dedup window. Callers must hold a row lock on the client (via
+    ``lock_client_for_activity_write``) so the check-then-insert pair is
+    atomic — otherwise two concurrent transactions both see 'no recent'
+    and each write their own entry (Codex #4)."""
     if not client_id:
         return False
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=DEDUP_WINDOW_MINUTES)
@@ -309,6 +323,19 @@ def _recent_lead_activity_exists(db: Session, client_id: int) -> bool:
         Activity.activity_type == "lead_created",
         Activity.created_at >= cutoff,
     ).first() is not None
+
+
+def _lock_client_for_activity_write(db: Session, client_id: int) -> None:
+    """Take a row lock on the client so the ``lead_created`` check-then-insert
+    is serialized across concurrent transactions. On Postgres this is a real
+    SELECT ... FOR UPDATE; on SQLite (tests) with_for_update is a no-op, which
+    is fine because SQLite already serializes writers."""
+    if not client_id:
+        return
+    try:
+        db.query(Client).filter(Client.id == client_id).with_for_update().first()
+    except Exception as e:  # never block the lead on a locking hiccup
+        logger.warning("client %s row lock failed: %s", client_id, e)
 
 
 def _lead_summary(data: IntakeData) -> str:
@@ -356,6 +383,16 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             merged = {**(recent.custom_fields or {}), **data.custom_fields}
             if merged != (recent.custom_fields or {}):
                 recent.custom_fields = merged
+                changed = True
+        # Codex #1: the property upsert used to sit AFTER this early return,
+        # so a lightweight /intake/submit landing first with no address and a
+        # follow-up /booking/submit within the 5-minute dedup window WITH the
+        # service address never attached a Property. Run it here too, against
+        # the recent lead's already-matched client.
+        if data.address and recent.client_id:
+            recent_client = db.query(Client).filter(Client.id == recent.client_id).first()
+            if recent_client:
+                _upsert_property_from_intake(db, recent_client, data)
                 changed = True
         if changed:
             db.commit()
@@ -413,6 +450,10 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     db.add(intake)
     db.flush()
     try:
+        # Codex #4: SELECT ... FOR UPDATE on the client row serializes
+        # the check-then-insert so two concurrent submissions can't both pass
+        # _recent_lead_activity_exists() and each add a timeline entry.
+        _lock_client_for_activity_write(db, client.id)
         if not _recent_lead_activity_exists(db, client.id):
             db.add(Activity(
                 client_id=client.id,

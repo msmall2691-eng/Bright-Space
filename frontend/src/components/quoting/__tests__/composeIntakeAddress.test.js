@@ -48,11 +48,24 @@ describe('composeIntakeAddress', () => {
   })
 
   it('is not fooled by a substring match (ME inside "Rome")', () => {
-    // Not a common Maine town but pins the word-boundary regex.
+    // Not a common Maine town but pins the component-only match.
     expect(composeIntakeAddress({
       address: '10 Main St, Rome',
       state: 'ME',
       zip_code: '04963',
     })).toBe('10 Main St, Rome, ME, 04963')
+  })
+
+  it('does not strip a city name that appears inside the street line (Codex #3)', () => {
+    // The bug: a bare-street address "123 Bath Rd" with city="Bath" used to
+    // suppress "Bath" as a duplicate, producing "123 Bath Rd, ME, 04530".
+    // Component match keeps them separate — Bath the street token is not the
+    // same as Bath the standalone city component.
+    expect(composeIntakeAddress({
+      address: '123 Bath Rd',
+      city: 'Bath',
+      state: 'ME',
+      zip_code: '04530',
+    })).toBe('123 Bath Rd, Bath, ME, 04530')
   })
 })
