@@ -141,7 +141,8 @@ export function CustomFieldsBody({ state }) {
               onClick={() => openEdit(field)}>
 
               <div className="flex items-center gap-2.5">
-                <GripVertical className="w-3.5 h-3.5 text-ink-3 opacity-0 group-hover:opacity-100" />
+                {/* Drag handle: hover-only on desktop (won't drag on touch anyway). */}
+                <GripVertical className="hidden sm:block w-3.5 h-3.5 text-ink-3 opacity-0 group-hover:opacity-100" />
                 <span className="text-sm font-medium text-ink">{field.name}</span>
                 {field.field_type === 'select' && field.options?.length > 0 && (
                   <span className="text-[10px] text-ink-3">{field.options.length} options</span>
@@ -158,10 +159,12 @@ export function CustomFieldsBody({ state }) {
                 {field.required ? <span className="text-red-500 font-medium">Required</span> : 'Optional'}
               </div>
 
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity"
+              <button type="button"
+                aria-label="Delete field"
+                className="p-2 -m-2 rounded opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                 onClick={e => { e.stopPropagation(); deleteField(field.id) }}>
                 <Trash2 className="w-3.5 h-3.5 text-ink-3 hover:text-red-500 transition-colors" />
-              </div>
+              </button>
             </div>
           ))}
         </div>

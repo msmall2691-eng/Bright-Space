@@ -96,7 +96,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
               </button>
               <button type="button" title="Delete view"
                 onClick={() => { deleteView(v.id); if (v.id === activeId) setActiveId(null) }}
-                className="p-1 rounded hover:bg-panel opacity-0 group-hover:opacity-100 transition-opacity">
+                className="p-1 rounded hover:bg-panel opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 <Trash2 className="w-3.5 h-3.5 text-ink-3 hover:text-red-500" />
               </button>
             </div>
