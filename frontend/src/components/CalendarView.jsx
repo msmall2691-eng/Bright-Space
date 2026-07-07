@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ba
 import { get, patch } from "../api"
 import { toLocalYMD } from '../utils/format'
 import { PROPERTY_TYPE_CONFIG } from './schedule/constants'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -45,18 +46,7 @@ function initials(name) {
   return parts[0].slice(0, 2).toUpperCase()
 }
 
-/** Tailwind-aware breakpoint hook (md = 768px). */
-function useIsMobile(breakpoint = 768) {
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' && window.innerWidth < breakpoint
-  )
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < breakpoint)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [breakpoint])
-  return isMobile
-}
+// useIsMobile lives in ../hooks/useIsMobile now — shared with WeekGrid.
 
 export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, refreshKey, filters = {}, toast }) {
   const now = new Date()

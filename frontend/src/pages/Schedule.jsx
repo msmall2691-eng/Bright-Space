@@ -8,6 +8,7 @@ import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
 import { useToast } from '../components/ui/Toast'
 import AgendaDay from '../components/schedule/AgendaDay'
+import WeekGrid from '../components/schedule/WeekGrid'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
@@ -34,10 +35,12 @@ export default function Schedule() {
   // Stored in the URL via ?view= so reload + bookmarks survive. If the
   // URL is unset we default to agenda on phone viewports and list on
   // desktop — see the useEffect below.
-  // Two views only: the month Calendar (default) and a single-Day agenda. The
-  // old "Week" list view was a third, overlapping mode — dropped to cut the
-  // "too many views" clutter. A stale ?view=list falls back to the calendar.
-  const VALID_VIEWS = ['agenda', 'month']
+  // Three views: month Calendar (default), a Week time-grid, and single-Day
+  // agenda. The old "Week" LIST view (grouped cards, one per day) was dropped
+  // when the time-grid Week landed — it was a third overlapping mode against
+  // Day and the new grid supersedes it. A stale ?view=list falls back to
+  // the calendar.
+  const VALID_VIEWS = ['agenda', 'week', 'month']
   const rawView = searchParams.get('view')
   const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'month'
   const isGoogleOnly = viewMode === 'google'
@@ -332,6 +335,17 @@ export default function Schedule() {
           isToday={dateStr === todayYMD()}
           empName={empName}
           onJumpToToday={() => setCurrentDate(new Date())}
+        />
+      ) : viewMode === 'week' ? (
+        <WeekGrid
+          currentDate={currentDate}
+          filteredVisits={filteredVisits}
+          jobs={jobs}
+          properties={properties}
+          clients={clients}
+          empName={empName}
+          onOpen={(v) => handleEdit(v, jobs[v.job_id], properties[jobs[v.job_id]?.property_id])}
+          onNewJob={(d) => { setNewJobDate(d); setShowNewJob(true) }}
         />
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
