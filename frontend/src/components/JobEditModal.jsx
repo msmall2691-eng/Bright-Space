@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
+import { useEmployees } from '../hooks/useEmployees'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively.
  *  Connecteam returns shapes like { userId, firstName, lastName, displayName }
@@ -36,25 +37,15 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // nothing the operator wrote is hidden on edit.
   const [showAdvanced, setShowAdvanced] = useState(Boolean(job?.notes))
 
-  // Real cleaner roster from Connecteam via /api/dispatch/employees.
-  // Mirrors the fetch CalendarView already does. Defensive: tolerates 502s
-  // (Connecteam offline) by leaving the list empty.
-  const [cleaners, setCleaners] = useState([])
-  const [loadingCleaners, setLoadingCleaners] = useState(false)
-
-  useEffect(() => {
-    setLoadingCleaners(true)
-    get('/api/dispatch/employees')
-      .then(rows => {
-        const list = Array.isArray(rows) ? rows.map(normalizeEmployee).filter(c => c.id) : []
-        setCleaners(list)
-      })
-      .catch(err => {
-        console.error('[JobEditModal] failed to load cleaners', err)
-        setCleaners([])
-      })
-      .finally(() => setLoadingCleaners(false))
-  }, [])
+  // Cleaner roster comes from the shared useEmployees hook so this modal
+  // reuses the same cached /api/dispatch/employees response CalendarView +
+  // useScheduleData already have on the wire (audit §18). normalizeEmployee
+  // still handles the shape drift between Connecteam payload variants.
+  const { employees, loading: loadingCleaners } = useEmployees()
+  const cleaners = useMemo(
+    () => (employees || []).map(normalizeEmployee).filter(c => c.id),
+    [employees]
+  )
 
   // Per-cleaner availability for the current date + time window. Refetched
   // whenever the operator changes the date or time so the picker's status
@@ -124,6 +115,15 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   const [conflict, setConflict] = useState(null)
   const [removing, setRemoving] = useState(false)
 
+  // onSave is invoked with a small envelope describing what changed so the
+  // parent can update local state instead of refetching the whole week.
+  // Audit §17. `mutated` is the server's response (job row) or null for
+  // deletes; `action` lets the parent branch on remove-vs-upsert.
+  const notifyParent = (action, mutated) => {
+    try { onSave?.({ action, jobId: job?.id, job: mutated || null }) }
+    catch { /* onSave was the old zero-arg shape — parent falls back to refetch */ }
+  }
+
   // Hard delete: removes the job AND its Google Calendar event (the backend's
   // DELETE /api/jobs/{id} calls delete_event). Irreversible, so confirm first.
   const handleDelete = async () => {
@@ -134,7 +134,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     try {
       await del(`/api/jobs/${job.id}`)
       notify?.('Job deleted · calendar event removed')
-      onSave?.()
+      notifyParent('delete', null)
       onClose()
     } catch (err) {
       setError(err.message || 'Failed to delete job')
@@ -150,9 +150,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     setRemoving(true)
     setError('')
     try {
-      await patch(`/api/jobs/${job.id}`, { status: 'cancelled' })
+      const updated = await patch(`/api/jobs/${job.id}`, { status: 'cancelled' })
       notify?.('Job cancelled')
-      onSave?.()
+      notifyParent('update', updated || { ...job, status: 'cancelled' })
       onClose()
     } catch (err) {
       setError(err.message || 'Failed to cancel job')
@@ -188,13 +188,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         end_time: formData.end_time || null,
         allow_conflicts: allowConflicts,
       }
+      let updated
       if (isNew) {
         if (prop?.client_id) payload.client_id = prop.client_id
-        await post('/api/jobs', payload)
+        updated = await post('/api/jobs', payload)
       } else {
-        await patch(`/api/jobs/${job.id}`, payload)
+        updated = await patch(`/api/jobs/${job.id}`, payload)
       }
-      onSave?.()
+      notifyParent(isNew ? 'create' : 'update', updated)
       onClose()
     } catch (err) {
       const msg = err.message || 'Failed to save job'

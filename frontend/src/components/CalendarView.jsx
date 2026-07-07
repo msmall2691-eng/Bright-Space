@@ -4,6 +4,7 @@ import { get, patch } from "../api"
 import { toLocalYMD } from '../utils/format'
 import { PROPERTY_TYPE_CONFIG } from './schedule/constants'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useEmployees } from '../hooks/useEmployees'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -56,7 +57,9 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   const [icalEvents, setIcalEvents] = useState([])
   const [exceptions, setExceptions] = useState([])
   const [selected,   setSelected]   = useState(null)
-  const [employees,  setEmployees]  = useState([])
+  // Employees roster comes from the shared getCached() layer via
+  // useEmployees; used by the day-panel cleaner drop-down (audit §18).
+  const { employees } = useEmployees()
   // Audit §12: the month fetch used to fail silently (console.error only)
   // and the grid rendered blank until data arrived. Track loading + error
   // so we can show a skeleton on first load and a retry banner on failure.
@@ -109,11 +112,7 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
       })
   }
 
-  useEffect(() => {
-    get('/api/dispatch/employees')
-      .then(data => setEmployees(Array.isArray(data) ? data : []))
-      .catch(() => {})
-  }, [])
+  // Employees roster is fetched via useEmployees above (audit §18).
 
   const filteredJobs = jobs.filter(j => {
     // Hide cancelled jobs by default so a deleted/cancelled job comes OFF the

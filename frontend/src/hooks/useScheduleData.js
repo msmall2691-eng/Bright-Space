@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { get } from '../api'
 import { toLocalYMD } from '../utils/format'
+import { useEmployees } from './useEmployees'
 
 /** Loads the /api/schedule/week aggregate (visits + jobs + properties +
  *  clients) for the week containing `currentDate`, plus the Connecteam
@@ -18,13 +19,11 @@ export function useScheduleData(currentDate) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
-  const [employees, setEmployees] = useState([])
 
-  useEffect(() => {
-    get('/api/dispatch/employees')
-      .then(r => setEmployees(Array.isArray(r) ? r : []))
-      .catch(() => {})
-  }, [])
+  // Employees roster comes from the shared useEmployees hook so this
+  // caller shares the getCached() 2-minute TTL with CalendarView,
+  // JobEditModal, and the other roster consumers (audit §18).
+  const { employees, empName } = useEmployees()
 
   useEffect(() => {
     const loadSchedule = async () => {
@@ -81,9 +80,6 @@ export function useScheduleData(currentDate) {
   }, [currentDate, refreshKey])
 
   const refresh = () => setRefreshKey(k => k + 1)
-  const empName = (id) =>
-    employees.find(e => String(e.id) === String(id) || String(e.userId) === String(id))?.name
-    || `Cleaner ${id}`
 
   return {
     visits, setVisits,

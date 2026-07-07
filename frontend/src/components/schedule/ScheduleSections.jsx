@@ -1,14 +1,15 @@
 import { AlertCircle, Clock, Calendar as CalendarIcon, Trash2 } from 'lucide-react'
-import GlassCard from '../ui/GlassCard'
 import StatCard from '../ui/StatCard'
-import VisitCard from './VisitCard'
 
-/** Three sub-sections of the Schedule page, all pure props-in:
+/** Two sub-sections of the Schedule page, all pure props-in:
  *  - ScheduleHealthStrip: today/this-week count cards + optional
  *    out-of-sync "Needs attention" strip.
  *  - ScheduleBulkBar: "Select all visible" checkbox + Clear + bulk cancel.
- *  - ScheduleListView: the week-grouped list branch (day headers + VisitCard
- *    rows), including the empty state. */
+ *
+ *  ScheduleListView + its VisitCard were removed when the time-grid Week
+ *  view superseded the old grouped-list week view — the branch was already
+ *  unreachable (VALID_VIEWS = ['agenda', 'week', 'month']) and the audit
+ *  called it out. */
 
 export function ScheduleHealthStrip({
   stats,
@@ -130,66 +131,3 @@ export function ScheduleBulkBar({
   )
 }
 
-export function ScheduleListView({
-  visitsByDate,
-  jobs,
-  properties,
-  clients,
-  selectedVisitIds,
-  onEdit,
-  onDelete,
-  onToggleSelect,
-  empName,
-}) {
-  const entries = Object.entries(visitsByDate)
-  return (
-    <div className="flex-1 overflow-auto">
-      <div className="max-w-7xl mx-auto p-3 sm:p-4">
-        {entries.length === 0 ? (
-          <GlassCard>
-            <div className="text-center py-12">
-              <CalendarIcon className="w-12 h-12 text-ink-3 mx-auto mb-3" />
-              <p className="text-ink-2">No visits scheduled for this week</p>
-            </div>
-          </GlassCard>
-        ) : (
-          <div className="space-y-4 sm:space-y-6">
-            {entries
-              .sort(([dateA], [dateB]) => {
-                // "unscheduled" bucket sorts to the bottom.
-                if (dateA === 'unscheduled') return 1
-                if (dateB === 'unscheduled') return -1
-                return dateA.localeCompare(dateB)
-              })
-              .map(([date, dateVisits]) => (
-                <div key={date}>
-                  <h2 className="text-base sm:text-lg font-bold text-ink mb-2 sm:mb-3">
-                    {date === 'unscheduled'
-                      ? `Unscheduled — pick a date in Edit Job (${dateVisits.length})`
-                      : new Date(`${date}T00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                    }
-                  </h2>
-                  <div className="space-y-2 sm:space-y-3">
-                    {dateVisits.map((visit) => (
-                      <VisitCard
-                        key={visit.id}
-                        visit={visit}
-                        job={jobs[visit.job_id]}
-                        property={properties[jobs[visit.job_id]?.property_id]}
-                        client={clients[jobs[visit.job_id]?.client_id]}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                        selected={selectedVisitIds.has(visit.id)}
-                        onToggleSelect={onToggleSelect}
-                        empName={empName}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}

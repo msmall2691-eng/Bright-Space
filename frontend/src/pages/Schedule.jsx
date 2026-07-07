@@ -14,7 +14,7 @@ import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
-import { ScheduleHealthStrip, ScheduleBulkBar, ScheduleListView } from '../components/schedule/ScheduleSections'
+import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
@@ -44,7 +44,6 @@ export default function Schedule() {
   const VALID_VIEWS = ['agenda', 'week', 'month']
   const rawView = searchParams.get('view')
   const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'month'
-  const isGoogleOnly = viewMode === 'google'
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
     params.set('view', next)
@@ -221,28 +220,52 @@ export default function Schedule() {
     setShowDetails(false)
   }
 
-  const handleJobSave = async () => {
-    // Reload schedule after job edit
+  // Audit §17: don't re-hit the API for the whole week + month on every
+  // save. Modals now hand back an {action, jobId, job} envelope and we
+  // patch local state directly. An arg-less call is treated as "the
+  // modal didn't tell us what happened" → fall back to the old refetch
+  // so nothing regresses if a caller isn't wired to the new shape.
+  const visitFromJob = (j) => ({
+    ...j,
+    job_id: j.id,
+    scheduled_date: j.scheduled_date,
+    start_time: j.start_time,
+    end_time: j.end_time,
+    cleaner_ids: j.cleaner_ids || [],
+    status: j.status,
+  })
+
+  const handleJobSave = async (envelope) => {
+    if (envelope && envelope.action && envelope.jobId != null) {
+      if (envelope.action === 'delete') {
+        setVisits(prev => prev.filter(v => (v.job_id ?? v.id) !== envelope.jobId))
+      } else if (envelope.job) {
+        const asVisit = visitFromJob(envelope.job)
+        setVisits(prev => {
+          const idx = prev.findIndex(v => (v.job_id ?? v.id) === envelope.jobId)
+          if (idx === -1) return [...prev, asVisit]
+          const next = prev.slice()
+          next[idx] = { ...next[idx], ...asVisit }
+          return next
+        })
+      }
+      // The month grid holds its own jobs list; bump the refresh key so it
+      // reconciles with the DB. We still avoid the week refetch — that
+      // used to be the expensive call.
+      setCalRefresh(k => k + 1)
+      return
+    }
+    // Legacy path: no envelope (older callers). Refetch the week.
     const startDate = new Date(currentDate)
     startDate.setDate(startDate.getDate() - startDate.getDay())
     const endDate = new Date(startDate)
     endDate.setDate(endDate.getDate() + 6)
     const start = toLocalYMD(startDate)
     const end = toLocalYMD(endDate)
-    // Reload via /api/jobs; downstream code accepts the same shape via the
-    // job-as-visit fallback in the main loader.
     const jobsRes = await get(`/api/jobs?date_from=${start}&date_to=${end}`)
     const jobsList = Array.isArray(jobsRes) ? jobsRes : (jobsRes?.items || [])
-    setVisits(jobsList.map(j => ({
-      ...j,
-      job_id: j.id,
-      scheduled_date: j.scheduled_date,
-      start_time: j.start_time,
-      end_time: j.end_time,
-      cleaner_ids: j.cleaner_ids || [],
-      status: j.status,
-    })))
-    setCalRefresh(k => k + 1)  // make the month CalendarView refetch its jobs too
+    setVisits(jobsList.map(visitFromJob))
+    setCalRefresh(k => k + 1)
   }
 
   // The Backfill button + coverage banner were removed as part of the
@@ -286,7 +309,7 @@ export default function Schedule() {
       <ScheduleToolbar
         viewMode={viewMode}
         onViewChange={setViewMode}
-        showDateNav={!isGoogleOnly}
+        showDateNav={true}
         currentDate={currentDate}
         onPrevWeek={prevWeek}
         onNextWeek={nextWeek}
@@ -420,19 +443,7 @@ export default function Schedule() {
             toast={toast}
           />
         </div>
-      ) : (
-      <ScheduleListView
-        visitsByDate={visitsByDate}
-        jobs={jobs}
-        properties={properties}
-        clients={clients}
-        selectedVisitIds={selectedVisitIds}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onToggleSelect={toggleVisitSelect}
-        empName={empName}
-      />
-      )}
+      ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
 
       {/* Visit Details Drawer */}
       <VisitDetailsDrawer
