@@ -174,6 +174,12 @@ class BookingSubmit(BaseModel):
     petsDetail: Optional[str] = None
     focusAreas: Optional[list] = None        # ["kitchen", "bathrooms", ...]
     specialInstructions: Optional[str] = None
+    # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
+    # (retry / dual-forward from the maineclean.co Express middle layer /
+    # user tapped Submit twice) collapses to one Lead. Accept both camel and
+    # snake so callers in either style work.
+    idempotencyKey: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -287,6 +293,7 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         pet_hair=data.petHair, condition=data.condition,
         estimate_min=estimate_min, estimate_max=estimate_max,
         custom_fields=essentials,
+        idempotency_key=data.idempotency_key or data.idempotencyKey,
     )
     result = upsert_lead(db, payload)
 

@@ -304,3 +304,192 @@ def test_booking_submit_saves_frequency():
         db.close()
     finally:
         _cleanup_email(email)
+
+
+# --- Audit July-2026 M2: idempotency key collapses dual-forward -----------
+
+def test_idempotency_key_collapses_two_posts_into_one_lead():
+    """Two POSTs with the same idempotency_key = one Lead row.
+
+    Pins the July-2026 audit's M2 fix. The maineclean.co Express middle layer
+    forwards a single booking to Bright-Space more than once (see brightbase.ts
+    + routes.ts /api/intake/submit handler). Before this fix the 5-minute
+    recency SELECT missed on concurrent inserts, so ops saw two identical
+    Leads in Billing → Leads for one customer submission.
+    """
+    email = _uniq_email()
+    key = f"idem-{uuid.uuid4().hex}"
+    try:
+        # First submit — creates the row.
+        r1 = client.post("/api/booking/submit", json={
+            "name": "Idem Test", "email": email, "phone": "2075558811",
+            "address": "1 Test Rd", "serviceType": "residential",
+            "requestedDate": "2026-08-01", "squareFeet": 1500, "bathrooms": 2,
+            "frequency": "biweekly", "idempotencyKey": key,
+        })
+        assert r1.status_code == 201, r1.text
+        first_id = r1.json()["bookingId"]
+
+        # Second submit — same key, different address (simulating a stale
+        # forward). Must return the same row, not create a second one.
+        r2 = client.post("/api/booking/submit", json={
+            "name": "Idem Test", "email": email, "phone": "2075558811",
+            "address": "2 OTHER Rd", "serviceType": "residential",
+            "requestedDate": "2026-08-01", "squareFeet": 1500, "bathrooms": 2,
+            "frequency": "biweekly", "idempotencyKey": key,
+        })
+        assert r2.status_code == 201, r2.text
+        assert r2.json()["bookingId"] == first_id
+
+        db = SessionLocal()
+        rows = db.query(LeadIntake).filter(LeadIntake.email.ilike(email)).all()
+        assert len(rows) == 1, (
+            f"expected 1 Lead for idempotent double-post, got {len(rows)}"
+        )
+        assert rows[0].idempotency_key == key
+        db.close()
+    finally:
+        _cleanup_email(email)
+
+
+# --- Audit July-2026 M1: matched-Client refresh ---------------------------
+
+def test_returning_customer_booking_refreshes_stale_client_fields():
+    """A returning customer's new booking address/phone updates the Client.
+
+    Pins the July-2026 audit's M1 fix. Before this, the matched-Client branch
+    was fill-if-null, so a customer whose master record had an old address
+    stayed permanently stale even as new bookings arrived with fresh info.
+    The multi-value client_emails / client_phones tables still record history.
+    """
+    email = _uniq_email()
+    try:
+        # First lead — sets the client's initial contact info.
+        db = SessionLocal()
+        data1 = build_intake(
+            name="Return Test", email=email, phone="2075550001",
+            address="OLD 1 Old St", city="Old City", state="ME", zip_code="00001",
+            service_key="residential", bedrooms=2, bathrooms=1, square_footage=1000,
+            frequency="biweekly",
+        )
+        upsert_lead(db, data1)
+        db.commit()
+        client_row = db.query(Client).filter(Client.email.ilike(email)).one()
+        assert client_row.address == "OLD 1 Old St"
+        assert client_row.phone == "+12075550001"
+        db.close()
+
+        # Second lead — same customer, new address + phone + zip. This time we
+        # need a fresh recency window so the idempotency SELECT doesn't hit.
+        # We use a new email that ALSO points to the same client via the
+        # client_emails helper. Simpler: bypass the recent-dup window by
+        # inserting the second row directly and letting client match do its
+        # thing on phone.
+        # (In production this is time-separated by hours/days; here we clear
+        # the recent-lead's created_at to simulate that gap.)
+        db = SessionLocal()
+        recent = (
+            db.query(LeadIntake)
+            .filter(LeadIntake.email.ilike(email))
+            .order_by(LeadIntake.created_at.desc())
+            .first()
+        )
+        from datetime import datetime, timedelta, timezone
+        recent.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        db.commit()
+        db.close()
+
+        db = SessionLocal()
+        data2 = build_intake(
+            name="Return Test", email=email, phone="2079998888",
+            address="NEW 155 Keystone Dr", city="New Town", state="ME",
+            zip_code="04061", service_key="residential", bedrooms=2,
+            bathrooms=1, square_footage=1000, frequency="biweekly",
+        )
+        upsert_lead(db, data2)
+        db.commit()
+
+        client_row = db.query(Client).filter(Client.email.ilike(email)).one()
+        # Client fields overwritten by the newer booking's values (M1 fix).
+        assert client_row.address == "NEW 155 Keystone Dr", client_row.address
+        assert client_row.phone == "+12079998888", client_row.phone
+        assert client_row.zip_code == "04061"
+        assert client_row.city == "New Town"
+        db.close()
+    finally:
+        _cleanup_email(email)
+
+
+def test_overwriting_client_primary_preserves_old_email_in_history():
+    """A legacy client with only Client.email populated (no contact_emails row)
+    must keep its old email in the multi-value table when a new booking
+    overwrites the primary. Otherwise a later Gmail thread using the old
+    address can't match this client anymore.
+
+    Pins the July-2026 audit review's follow-up (P2 on PR #507).
+    """
+    from database.models import Client, ContactEmail
+
+    new_email = _uniq_email()
+    old_email = _uniq_email()
+    # Unique phone so find_client_by_contact matches THIS legacy row and not
+    # some leftover from an earlier test on a shared SQLite CI DB.
+    unique_phone_digits = "207555" + f"{uuid.uuid4().int % 10000:04d}"
+    unique_phone_e164 = "+1" + unique_phone_digits
+    try:
+        db = SessionLocal()
+        # Simulate a legacy client: primary email on Client, but no matching
+        # contact_emails row for this address (pre-multi-value migration state).
+        legacy = Client(
+            name="Legacy Cust", email=old_email, phone=unique_phone_e164,
+            address="10 Old Rd", city="Old City", state="ME",
+            zip_code="00001", status="lead", source="import",
+        )
+        db.add(legacy)
+        db.commit()
+        legacy_id = legacy.id
+
+        # Sanity: no contact_emails row for this specific email yet.
+        assert db.query(ContactEmail).filter(
+            ContactEmail.client_id == legacy_id,
+            ContactEmail.email.ilike(old_email),
+        ).count() == 0
+        db.close()
+
+        # New booking arrives with a DIFFERENT email but same phone (so
+        # find_client_by_contact matches this legacy client).
+        db = SessionLocal()
+        data = build_intake(
+            name="Legacy Cust", email=new_email, phone=unique_phone_digits,
+            address="20 New Rd", city="New City", state="ME", zip_code="00002",
+            service_key="residential", bedrooms=2, bathrooms=1,
+        )
+        upsert_lead(db, data)
+        db.commit()
+
+        c = db.query(Client).filter(Client.id == legacy_id).one()
+        # Primary now the new email.
+        assert c.email == new_email
+        # Old email preserved in contact_emails so future Gmail/manual lookups
+        # by that address still resolve to this client.
+        old_row = (
+            db.query(ContactEmail)
+            .filter(ContactEmail.client_id == legacy_id,
+                    ContactEmail.email.ilike(old_email))
+            .first()
+        )
+        assert old_row is not None, (
+            "old primary email must be copied to contact_emails BEFORE overwrite"
+        )
+        # New email also in the history (via the standing add_contact_email).
+        new_row = (
+            db.query(ContactEmail)
+            .filter(ContactEmail.client_id == legacy_id,
+                    ContactEmail.email.ilike(new_email))
+            .first()
+        )
+        assert new_row is not None
+        db.close()
+    finally:
+        _cleanup_email(new_email)
+        _cleanup_email(old_email)
