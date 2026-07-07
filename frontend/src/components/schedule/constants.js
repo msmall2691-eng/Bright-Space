@@ -5,12 +5,51 @@
  */
 import { Wind, Home, Building2 } from 'lucide-react'
 
-// Property type colors (STR = amber, residential = blue, commercial = purple)
+// Property/job type palette — the single source of truth for how a job
+// is colored ANYWHERE in the schedule UI (agenda cards, VisitCards,
+// CalendarView month chips, day-cell highlights). Canonical hues:
+//   STR / str_turnover → amber
+//   residential        → blue
+//   commercial         → purple
+// The previous state had CalendarView using its own map (commercial=green,
+// turnover=orange), so the same job was a different color depending on the
+// view — audit called this out. All fields on one config; call sites pick
+// the ones they need.
+//
+// Keyed by the raw Job.job_type OR Property.property_type strings we ship
+// from the API. The `str_turnover` alias is just so CalendarView (which
+// keys by Job.job_type) resolves to the same visual as `str`.
 export const PROPERTY_TYPE_CONFIG = {
-  str:         { color: 'bg-amber-50 border-l-4 border-l-amber-400', badge: 'bg-amber-100 text-amber-700',   icon: Wind,       label: 'STR' },
-  residential: { color: 'bg-blue-50 border-l-4 border-l-blue-400',   badge: 'bg-blue-100 text-blue-700',     icon: Home,       label: 'Residential' },
-  commercial:  { color: 'bg-purple-50 border-l-4 border-l-purple-400', badge: 'bg-purple-100 text-purple-700', icon: Building2, label: 'Commercial' },
+  str: {
+    label: 'STR',
+    icon: Wind,
+    color: 'bg-amber-50 border-l-4 border-l-amber-400',
+    badge: 'bg-amber-100 text-amber-700',
+    dot:   'bg-amber-500',
+    pill:  'bg-amber-50 text-amber-700 border-amber-200',
+    pillHover: 'hover:bg-amber-100',
+  },
+  residential: {
+    label: 'Residential',
+    icon: Home,
+    color: 'bg-blue-50 border-l-4 border-l-blue-400',
+    badge: 'bg-blue-100 text-blue-700',
+    dot:   'bg-blue-500',
+    pill:  'bg-blue-50 text-blue-700 border-blue-200',
+    pillHover: 'hover:bg-blue-100',
+  },
+  commercial: {
+    label: 'Commercial',
+    icon: Building2,
+    color: 'bg-purple-50 border-l-4 border-l-purple-400',
+    badge: 'bg-purple-100 text-purple-700',
+    dot:   'bg-purple-500',
+    pill:  'bg-purple-50 text-purple-700 border-purple-200',
+    pillHover: 'hover:bg-purple-100',
+  },
 }
+// Job.job_type = 'str_turnover' resolves to the same palette entry as 'str'.
+PROPERTY_TYPE_CONFIG.str_turnover = PROPERTY_TYPE_CONFIG.str
 
 export const VISIT_STATUS_CONFIG = {
   // Computed pseudo-status for a job whose DB status is 'scheduled' but which

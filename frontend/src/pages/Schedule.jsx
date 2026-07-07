@@ -281,6 +281,15 @@ export default function Schedule() {
         syncAlertCount={(scheduleStats?.notGcal || 0) + (scheduleStats?.notConnecteam || 0)}
         onFixSync={fixSync}
         fixingSync={fixingSync}
+        unassignedOnly={unassignedOnly}
+        onToggleUnassigned={() => setUnassignedOnly(v => !v)}
+        unassignedCount={unassignedCount}
+        noConnecteamOnly={noConnecteamOnly}
+        onToggleNoConnecteam={() => setNoConnecteamOnly(v => !v)}
+        notConnecteamCount={scheduleStats?.notConnecteam || 0}
+        noGcalOnly={noGcalOnly}
+        onToggleNoGcal={() => setNoGcalOnly(v => !v)}
+        notGcalCount={scheduleStats?.notGcal || 0}
       />
 
       <ScheduleHealthStrip
@@ -289,10 +298,17 @@ export default function Schedule() {
         fixingSync={fixingSync}
         onFilterNoGcal={() => setNoGcalOnly(v => !v)}
         onFilterNoConnecteam={() => setNoConnecteamOnly(v => !v)}
+        onFilterUnassigned={() => setUnassignedOnly(v => !v)}
+        weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
       />
 
-      {/* Selection / bulk-action bar */}
-      {!isGoogleOnly && (
+      {/* Selection / bulk-action bar — agenda view only. In month view the
+          grid has no per-job checkbox to individually deselect, and the
+          "visible" set is the whole week (not just what's rendered), so
+          "Select all visible → Cancel N" would mass-cancel jobs the user
+          can't see. Keep bulk operations to the list surface where every
+          row is individually selectable. */}
+      {viewMode === 'agenda' && (
         <ScheduleBulkBar
           visibleCount={currentlyVisibleVisits.length}
           allSelected={currentlyVisibleVisits.length > 0 && currentlyVisibleVisits.every(v => selectedVisitIds.has(v.id))}
@@ -327,6 +343,7 @@ export default function Schedule() {
               ...(selectedPropertyType !== 'all' ? { job_type: selectedPropertyType === 'str' ? 'str_turnover' : selectedPropertyType } : {}),
               ...(selectedStatus !== 'all' ? { status: selectedStatus } : {}),
             }}
+            toast={toast}
           />
         </div>
       ) : (

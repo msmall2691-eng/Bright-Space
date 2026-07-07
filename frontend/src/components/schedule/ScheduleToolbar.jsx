@@ -39,8 +39,21 @@ export default function ScheduleToolbar({
   syncAlertCount = 0,
   onFixSync,
   fixingSync,
+  // Quick-filter toggles + their live counts. Surfaces the three "which
+  // jobs still need something" questions the dispatcher hits every day —
+  // previously reachable only via URL params or the health-strip counters.
+  unassignedOnly = false,
+  onToggleUnassigned,
+  unassignedCount = 0,
+  noConnecteamOnly = false,
+  onToggleNoConnecteam,
+  notConnecteamCount = 0,
+  noGcalOnly = false,
+  onToggleNoGcal,
+  notGcalCount = 0,
 }) {
   const filterActive = selectedPropertyType !== 'all' || selectedStatus !== 'all'
+    || unassignedOnly || noConnecteamOnly || noGcalOnly
   return (
     <div className="bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
@@ -200,9 +213,73 @@ export default function ScheduleToolbar({
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+
+            {/* Quick-filter chips: needs cleaner / not in Connecteam / not on
+                Google. Live counts sit inside the chip so the dispatcher can
+                see how much work each queue represents without clicking.
+                Zero-count chips render disabled instead of hidden so the row
+                shape doesn't jump around when the numbers change. */}
+            {onToggleUnassigned && (
+              <ChipToggle
+                active={unassignedOnly}
+                onClick={onToggleUnassigned}
+                disabled={unassignedCount === 0 && !unassignedOnly}
+                colorActive="bg-amber-50 text-amber-800 border-amber-200"
+                testid="filter-unassigned"
+              >
+                Needs cleaner ({unassignedCount})
+              </ChipToggle>
+            )}
+            {onToggleNoConnecteam && (
+              <ChipToggle
+                active={noConnecteamOnly}
+                onClick={onToggleNoConnecteam}
+                disabled={notConnecteamCount === 0 && !noConnecteamOnly}
+                colorActive="bg-amber-50 text-amber-800 border-amber-200"
+                testid="filter-no-connecteam"
+              >
+                Not in Connecteam ({notConnecteamCount})
+              </ChipToggle>
+            )}
+            {onToggleNoGcal && (
+              <ChipToggle
+                active={noGcalOnly}
+                onClick={onToggleNoGcal}
+                disabled={notGcalCount === 0 && !noGcalOnly}
+                colorActive="bg-amber-50 text-amber-800 border-amber-200"
+                testid="filter-no-gcal"
+              >
+                Not on Google ({notGcalCount})
+              </ChipToggle>
+            )}
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+/** Small toggle chip used for the quick filters (needs cleaner / not in
+ *  Connecteam / not on Google). Kept local because it shares the exact
+ *  visual language of the two selects above and isn't reused elsewhere.
+ */
+function ChipToggle({ active, onClick, disabled, colorActive, testid, children }) {
+  const base = 'text-[11px] font-medium px-2 py-1 rounded-full border whitespace-nowrap transition-colors'
+  const state = active
+    ? colorActive
+    : disabled
+      ? 'bg-panel text-ink-3/50 border-hairline cursor-default'
+      : 'bg-panel text-ink-3 border-hairline hover:bg-white/50 cursor-pointer'
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      className={`${base} ${state}`}
+      data-testid={testid}
+      aria-pressed={active}
+      disabled={disabled}
+    >
+      {children}
+    </button>
   )
 }
