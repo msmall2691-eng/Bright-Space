@@ -61,6 +61,18 @@ describe('readFileAsUpload', () => {
   })
 })
 
+describe('mergePhotosForSubmit — cap enforcement', () => {
+  // The modal re-checks length against MAX_TOTAL_PHOTOS at submit time so a
+  // paste-lane dump (bypasses handleFiles) can't slip past the guardrail.
+  // We assert the merge helper keeps the total honest so the caller can rely
+  // on comparing its output length.
+  it('preserves all entries (does not silently truncate) so the modal can decide', () => {
+    const urls = Array.from({ length: 25 }, (_, i) => `https://cdn/${i}.jpg`).join('\n')
+    const merged = mergePhotosForSubmit([], urls)
+    expect(merged.length).toBe(25)
+  })
+})
+
 describe('caps', () => {
   it('exposes sensible per-file and total limits', () => {
     // Guardrail — the modal wires these into its "N/20" counter and file

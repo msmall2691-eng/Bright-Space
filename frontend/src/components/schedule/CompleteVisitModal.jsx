@@ -58,7 +58,11 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
 
     const additions = []
     for (const file of files) {
-      if (!file.type || !file.type.startsWith('image/')) {
+      // Some mobile browsers (e.g. certain Android camera intents) hand back a
+      // File with an empty `type`. The picker's `accept="image/*"` has already
+      // gated by extension and readFileAsUpload falls back to image/jpeg — only
+      // reject when the browser explicitly said it's a non-image mime.
+      if (file.type && !file.type.startsWith('image/')) {
         setUploadError(`"${file.name}" isn't an image file.`)
         return
       }
@@ -80,9 +84,18 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
   const removeStaged = (idx) => setStaged(prev => prev.filter((_, i) => i !== idx))
 
   const submit = async () => {
+    // Re-check the total at submit time: handleFiles caps the upload lane,
+    // but the paste-URL textarea has no per-keystroke limit — a cleaner who
+    // dumps 30 links would otherwise bypass the 20-photo guardrail entirely
+    // and bloat the job.photos JSON column.
+    const photos = mergePhotosForSubmit(staged, urlLines)
+    if (photos.length > MAX_TOTAL_PHOTOS) {
+      setUploadError(`${photos.length} photos attached — please remove some (max ${MAX_TOTAL_PHOTOS}).`)
+      return
+    }
+    setUploadError('')
     setSaving(true)
     try {
-      const photos = mergePhotosForSubmit(staged, urlLines)
       await onComplete({ checklist_results: checks, photos })
     } catch {
       setSaving(false)
