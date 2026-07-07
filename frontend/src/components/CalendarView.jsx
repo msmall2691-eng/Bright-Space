@@ -57,6 +57,11 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   const [exceptions, setExceptions] = useState([])
   const [selected,   setSelected]   = useState(null)
   const [employees,  setEmployees]  = useState([])
+  // Audit §12: the month fetch used to fail silently (console.error only)
+  // and the grid rendered blank until data arrived. Track loading + error
+  // so we can show a skeleton on first load and a retry banner on failure.
+  const [monthLoading, setMonthLoading] = useState(true)
+  const [monthError,   setMonthError]   = useState(null)
 
   const [draggingJob, setDraggingJob] = useState(null)
   const [dropTarget, setDropTarget]   = useState(null)
@@ -70,9 +75,19 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   const rangeEnd   = isoDate(year, month, lastDay.getDate())
 
   useEffect(() => {
+    // The jobs fetch is the one users notice — surface loading + error state
+    // on it. iCal events + exceptions are supplementary overlays; their
+    // failures still just log so a bad iCal endpoint can't gray out the
+    // whole schedule.
+    setMonthLoading(true)
+    setMonthError(null)
     get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
-      .then(d => setJobs(Array.isArray(d) ? d : []))
-      .catch(err => console.error("[CalendarView] Failed to load jobs:", err.message || err))
+      .then(d => { setJobs(Array.isArray(d) ? d : []); setMonthLoading(false) })
+      .catch(err => {
+        setMonthLoading(false)
+        setMonthError(err?.detail || err?.message || 'Failed to load schedule')
+        console.error("[CalendarView] Failed to load jobs:", err.message || err)
+      })
 
     get(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
       .then(d => setIcalEvents(Array.isArray(d) ? d : []))
@@ -82,6 +97,17 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
       .then(d => setExceptions(Array.isArray(d) ? d : []))
       .catch(err => console.error("[CalendarView] Failed to load exceptions:", err.message || err))
   }, [year, month, refreshKey])
+
+  const retryMonthFetch = () => {
+    setMonthLoading(true)
+    setMonthError(null)
+    get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
+      .then(d => { setJobs(Array.isArray(d) ? d : []); setMonthLoading(false) })
+      .catch(err => {
+        setMonthLoading(false)
+        setMonthError(err?.detail || err?.message || 'Failed to load schedule')
+      })
+  }
 
   useEffect(() => {
     get('/api/dispatch/employees')
@@ -543,9 +569,13 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
           </div>
 
           <div className="hidden sm:flex items-center gap-3 lg:gap-4 text-xs text-ink-3">
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" />Residential</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" />Commercial</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" />Turnover</span>
+            {/* Legend must match PROPERTY_TYPE_CONFIG (Week 1 unify): residential
+                = blue, commercial = purple, turnover/STR = amber. Guest-stay
+                cells stay orange because they represent iCal check-ins, not
+                a job type. */}
+            <span className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${TYPE_CONFIG.residential.dot}`} />Residential</span>
+            <span className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${TYPE_CONFIG.commercial.dot}`} />Commercial</span>
+            <span className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${TYPE_CONFIG.str_turnover.dot}`} />Turnover</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-100 border border-orange-200" />Guest Stay</span>
           </div>
         </div>
@@ -556,7 +586,38 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
           ))}
         </div>
 
-        <div className="grid grid-cols-7 flex-1 gap-px bg-bg-2 rounded-xl overflow-hidden border border-hairline">
+        {/* Audit §12: surface the month-fetch error instead of a silently
+            blank grid. Retry re-hits the same endpoint. */}
+        {monthError && !monthLoading && (
+          <div className="mx-1 mb-1 flex items-center justify-between gap-2 text-[12px] px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700">
+            <span className="truncate">Couldn't load this month — <span className="text-red-600/80">{String(monthError).slice(0, 120)}</span></span>
+            <button
+              type="button"
+              onClick={retryMonthFetch}
+              className="shrink-0 text-[12px] font-semibold text-red-700 bg-red-100 hover:bg-red-200 border border-red-300 rounded-md px-2 py-0.5"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        <div className="relative grid grid-cols-7 flex-1 gap-px bg-bg-2 rounded-xl overflow-hidden border border-hairline">
+          {/* Audit §12: skeleton overlay while the initial month fetch is in
+              flight. Only for FIRST load (jobs.length === 0) — a month
+              refetch after a save shouldn't blink the whole grid. */}
+          {monthLoading && jobs.length === 0 && !monthError && (
+            <div className="absolute inset-0 z-10 pointer-events-none bg-panel/60 backdrop-blur-[1px] p-2" data-testid="month-skeleton">
+              <div className="grid grid-cols-7 gap-1 h-full">
+                {Array.from({ length: 35 }).map((_, i) => (
+                  <div key={i} className="rounded-md bg-bg-2/70 animate-pulse space-y-1 p-1">
+                    <div className="w-4 h-4 rounded-full bg-bg-2" />
+                    <div className="h-2 rounded bg-bg-2" />
+                    {i % 3 === 0 && <div className="h-2 rounded bg-bg-2" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {cells.map((date, i) => {
             if (!date) return <div key={i} className="bg-bg" />
 
@@ -587,12 +648,26 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
                   'bg-panel hover:bg-bg'
                 }`}
               >
-                <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full mb-0.5 sm:mb-1 ${
-                  isToday ? 'bg-blue-500 text-white' :
-                  isSelected ? 'text-blue-600' :
-                  'text-ink-2'
-                }`}>
-                  {parseInt(date.slice(8))}
+                {/* Day header — date circle + a small density chip on packed
+                    days so the operator reads volume at a glance without
+                    having to fan out the chips or open the day panel.
+                    Audit §10: month cells hide most of a busy day. */}
+                <div className="flex items-center justify-between mb-0.5 sm:mb-1">
+                  <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${
+                    isToday ? 'bg-blue-500 text-white' :
+                    isSelected ? 'text-blue-600' :
+                    'text-ink-2'
+                  }`}>
+                    {parseInt(date.slice(8))}
+                  </div>
+                  {dayJobs.length > maxPills && (
+                    <span
+                      className="hidden sm:inline text-[9px] font-semibold text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 leading-4"
+                      title={`${dayJobs.length} jobs scheduled`}
+                    >
+                      {dayJobs.length}
+                    </span>
+                  )}
                 </div>
 
                 {dayBookings.length > 0 && !isMobile && (
@@ -682,13 +757,52 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
                     )
                   })}
                   {dayJobs.length > maxPills && (
-                    <button
-                      type="button"
-                      onClick={e => { e.stopPropagation(); setSelected(date); onDayClick?.(date) }}
-                      className="text-[9px] sm:text-[10px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
-                    >
-                      +{dayJobs.length - maxPills} more
-                    </button>
+                    // Group wraps the "+N more" button + a hover popover. The
+                    // popover lists the HIDDEN jobs at full width, wrapped
+                    // (no truncation), so a packed day is inspectable without
+                    // opening the day panel. Click still opens the day panel
+                    // (works on touch, no hover). Audit §10.
+                    <div className="relative group/more">
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setSelected(date); onDayClick?.(date) }}
+                        className="text-[9px] sm:text-[10px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
+                      >
+                        +{dayJobs.length - maxPills} more
+                      </button>
+                      <div
+                        className="hidden group-hover/more:block absolute z-30 left-0 top-full mt-1 w-56 max-w-[16rem] bg-panel rounded-lg shadow-xl border border-hairline p-2"
+                        onClick={e => e.stopPropagation()}
+                        role="tooltip"
+                      >
+                        <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wide mb-1.5">
+                          {dayJobs.length - maxPills} more · {new Date(date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="space-y-0.5 max-h-72 overflow-auto">
+                          {dayJobs.slice(maxPills).map(j2 => {
+                            const tc2 = TYPE_CONFIG[j2.job_type] || TYPE_CONFIG.residential
+                            const chipTime2 = j2.start_time ? j2.start_time.slice(0, 5) : ''
+                            const chipWho2 = j2.client_name || (j2.address ? j2.address.split(',')[0] : '') || j2.title
+                            const isCancelled2 = j2.status === 'cancelled'
+                            return (
+                              <button
+                                key={j2.id}
+                                type="button"
+                                onClick={e => { e.stopPropagation(); onJobClick?.(j2) }}
+                                className={`w-full text-left flex items-center gap-1 text-[11px] px-1.5 py-1 rounded border leading-tight ${
+                                  isCancelled2 ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
+                                  `${tc2.pill} ${tc2.pillHover}`
+                                }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc2.dot}`} />
+                                {chipTime2 && <span className="font-semibold tabular-nums shrink-0">{chipTime2}</span>}
+                                <span className="whitespace-normal break-words">{chipWho2}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

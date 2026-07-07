@@ -9,6 +9,7 @@ import CalendarView from '../components/CalendarView'
 import { useToast } from '../components/ui/Toast'
 import AgendaDay from '../components/schedule/AgendaDay'
 import WeekGrid from '../components/schedule/WeekGrid'
+import ScheduleSkeleton from '../components/schedule/ScheduleSkeleton'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
@@ -272,13 +273,12 @@ export default function Schedule() {
     )
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-ink-2">Loading schedule...</p>
-      </div>
-    )
-  }
+  // Audit §12: don't blank the whole page during first-load. The toolbar
+  // and health strip stay visible; only the content area shows a skeleton
+  // so the user sees which view/date/filters they're on while data lands.
+  // Follow-up nav to a new week within the same session doesn't hit this
+  // branch — useScheduleData surfaces the loading flag only when there's
+  // no cached data yet.
 
   return (
     <div className="flex flex-col h-screen bg-bg">
@@ -348,8 +348,14 @@ export default function Schedule() {
         />
       )}
 
-      {/* Render branch: agenda (single-day cards) / list (week, grouped) / month (CalendarView) */}
-      {viewMode === 'agenda' ? (
+      {/* Render branch: agenda (single-day cards) / week (time-grid) / month
+          (CalendarView). Loading skeleton lives before the branch so the
+          toolbar + health strip stay live during initial load — audit §12.
+          Once visits arrive (even an empty week), the real branch takes
+          over so filters/empty-states get to render. */}
+      {loading && (visits?.length ?? 0) === 0 ? (
+        <ScheduleSkeleton viewMode={viewMode} />
+      ) : viewMode === 'agenda' ? (
         <AgendaDay
           currentDate={currentDate}
           visits={filteredVisits.filter(v => v.scheduled_date === dateStr)}
