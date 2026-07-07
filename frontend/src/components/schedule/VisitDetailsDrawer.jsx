@@ -80,15 +80,37 @@ export default function VisitDetailsDrawer({
               </p>
             </div>
 
-            <div>
-              <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Property</p>
-              <p className="text-sm sm:text-base text-ink">{property?.name}</p>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
-              <p className="text-sm sm:text-base text-ink break-words">{property?.address}</p>
-            </div>
+            {/* Audit §11: collapse Property/Address into one row when the
+                property has no distinct name (i.e. `name` is empty or equal
+                to `address`). A "88 Pleasant Street" / "88 Pleasant Street"
+                stack is just noise; show it once and label it "Address." A
+                named property (e.g. "Keystone Drive Rental") keeps both
+                rows because they carry independent info. */}
+            {(() => {
+              const name = (property?.name || '').trim()
+              const addr = (property?.address || '').trim()
+              const sameOrMissing = !name || name.toLowerCase() === addr.toLowerCase()
+              if (sameOrMissing) {
+                return (
+                  <div>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
+                    <p className="text-sm sm:text-base text-ink break-words">{addr}</p>
+                  </div>
+                )
+              }
+              return (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Property</p>
+                    <p className="text-sm sm:text-base text-ink">{name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Address</p>
+                    <p className="text-sm sm:text-base text-ink break-words">{addr}</p>
+                  </div>
+                </>
+              )
+            })()}
 
             {/* On-site access details (house code, entry/parking notes, site
                 contact, STR check-in/out) — what a crew needs to get in. */}

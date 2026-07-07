@@ -49,7 +49,29 @@ export default function Schedule() {
     params.set('view', next)
     setSearchParams(params, { replace: true })
   }
-  const [currentDate, setCurrentDate] = useState(new Date())
+
+  // currentDate is stored in the URL as ?date=YYYY-MM-DD so a reload keeps
+  // the user where they were — the audit called out that reloads jump back
+  // to today and CalendarView's own month state could disagree with the
+  // page anchor. A missing / invalid param falls back to today.
+  const rawDate = searchParams.get('date')
+  const initialDate = (() => {
+    if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      const d = new Date(`${rawDate}T12:00`)
+      if (!Number.isNaN(d.getTime())) return d
+    }
+    return new Date()
+  })()
+  const [currentDate, _setCurrentDate] = useState(initialDate)
+  const setCurrentDate = (next) => {
+    _setCurrentDate(next)
+    const params = new URLSearchParams(searchParams)
+    const y = next.getFullYear()
+    const m = String(next.getMonth() + 1).padStart(2, '0')
+    const d = String(next.getDate()).padStart(2, '0')
+    params.set('date', `${y}-${m}-${d}`)
+    setSearchParams(params, { replace: true })
+  }
   const {
     visits, setVisits,
     jobs, setJobs,
@@ -371,7 +393,19 @@ export default function Schedule() {
         <div className="flex-1 overflow-hidden">
           <CalendarView
             refreshKey={calRefresh}
-            onJobClick={(j) => { setEditingJob(jobs[j.id] || j); setShowJobModal(true) }}
+            /* Audit §7 unify: month click routes through handleEdit so it
+               opens the same VisitDetailsDrawer as agenda + week, instead
+               of jumping straight to JobEditModal. The drawer keeps an
+               always-visible "Edit" button, so power users can still
+               reach the edit modal in one more click, but the default
+               behavior is the same across every schedule surface. Jobs
+               and visits are the same entity post-unification, so `j`
+               satisfies both slots. */
+            onJobClick={(j) => handleEdit(
+              j,
+              jobs[j.id] || j,
+              properties[j.property_id]
+            )}
             onCreateForDay={(d) => { setNewJobDate(d); setShowNewJob(true) }}
             filters={{
               ...(selectedPropertyType !== 'all' ? { job_type: selectedPropertyType === 'str' ? 'str_turnover' : selectedPropertyType } : {}),

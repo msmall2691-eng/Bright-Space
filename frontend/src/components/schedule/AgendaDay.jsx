@@ -27,7 +27,11 @@ export default function AgendaDay({
   const completed = sorted.filter(v => v.status === 'completed').length
   return (
     <div className="flex-1 overflow-auto relative">
-      <div className="max-w-2xl mx-auto px-3 pb-6">
+      {/* Extra bottom padding on mobile so the last visit card isn't hidden
+          behind the floating "Ask AI" pill (bottom-[4.75rem]) or the bottom
+          nav. Audit §13: the pill was overlapping content on small viewports.
+          Desktop keeps the standard pb-6. */}
+      <div className="max-w-2xl mx-auto px-3 pb-24 sm:pb-6">
         {/* Day header — sticky so the date + count stay visible during scroll.
             top-0 sits it below the parent toolbar (also sticky) inside this
             scroll container. bg matches the panel so it fully covers cards. */}
