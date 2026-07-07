@@ -38,7 +38,13 @@ export function formatDateTime(value, opts) {
 
 export function formatDate(value, opts) {
   if (!value) return ''
-  const d = value instanceof Date ? value : new Date(value)
+  const s = String(value)
+  // Date-only strings ("YYYY-MM-DD") must parse as LOCAL midnight; new Date(s)
+  // treats them as UTC, rendering a day early in negative-offset zones (ME).
+  // (Same guard as formatDateShort below.)
+  const d = value instanceof Date
+    ? value
+    : (/^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00`) : new Date(value))
   if (Number.isNaN(d.getTime())) return String(value)
   return d.toLocaleDateString('en-US', opts || {
     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
