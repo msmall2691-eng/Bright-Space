@@ -356,7 +356,7 @@ class WebhookPayload(BaseModel):
     # Client-supplied UUID for cross-endpoint dedup (see IntakeSubmit).
     idempotencyKey: Optional[str] = None
     idempotency_key: Optional[str] = None
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
 
 @router.post("/webhook", status_code=201)  # PUBLIC: maineclean.co InstantEstimate webhook posts here

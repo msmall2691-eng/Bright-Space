@@ -193,10 +193,14 @@ def _validate_job_timing(scheduled_date, start_time, end_time, *, is_new: bool):
 
 
 def _find_cleaner_conflicts(db: Session, *, cleaner_ids, scheduled_date,
-                            start_time, end_time, exclude_job_id=None):
+                            start_time, end_time, exclude_job_id=None,
+                            org_id=None):
     """Return [(cleaner_id, conflicting Job)] where a cleaner is already booked
     on an overlapping job the same day. Two intervals overlap iff
-    start < other_end and end > other_start. Cancelled jobs don't count."""
+    start < other_end and end > other_start. Cancelled jobs don't count.
+
+    When org_id is given, scopes to that tenant so a 409 detail can't leak
+    another tenant's Job row (BB-SEC: cross-tenant scheduling leak)."""
     d = _to_date(scheduled_date)
     st = _to_time(start_time)
     et = _to_time(end_time)
@@ -212,6 +216,8 @@ def _find_cleaner_conflicts(db: Session, *, cleaner_ids, scheduled_date,
             Job.cleaner_ids.isnot(None),
         )
     )
+    if isinstance(org_id, int):
+        same_day = same_day.filter(Job.org_id == org_id)
     if exclude_job_id is not None:
         same_day = same_day.filter(Job.id != exclude_job_id)
 
@@ -244,22 +250,24 @@ def _conflict_detail(conflicts):
     )
 
 
-def _find_unavailable_cleaners(db: Session, *, cleaner_ids, scheduled_date):
+def _find_unavailable_cleaners(db: Session, *, cleaner_ids, scheduled_date, org_id=None):
     """Return [(cleaner_id, CleanerTimeOff)] for any assigned cleaner who has
-    approved time off covering scheduled_date (inclusive range)."""
+    approved time off covering scheduled_date (inclusive range).
+
+    When org_id is given, scopes to that tenant so a 409 detail can't leak
+    another tenant's CleanerTimeOff row."""
     d = _to_date(scheduled_date)
     if not cleaner_ids or d is None:
         return []
     ids = {str(c) for c in cleaner_ids}
-    rows = (
-        db.query(CleanerTimeOff)
-        .filter(
-            CleanerTimeOff.cleaner_id.in_(ids),
-            CleanerTimeOff.start_date <= d,
-            CleanerTimeOff.end_date >= d,
-        )
-        .all()
+    q = db.query(CleanerTimeOff).filter(
+        CleanerTimeOff.cleaner_id.in_(ids),
+        CleanerTimeOff.start_date <= d,
+        CleanerTimeOff.end_date >= d,
     )
+    if isinstance(org_id, int):
+        q = q.filter(CleanerTimeOff.org_id == org_id)
+    rows = q.all()
     return [(r.cleaner_id, r) for r in rows]
 
 
@@ -279,10 +287,14 @@ def _unavailable_detail(unavailable):
 CAPACITY_PER_CLEANER_PER_DAY = int(os.getenv("MAX_JOBS_PER_CLEANER_PER_DAY", "0") or 0)
 
 
-def _find_over_capacity(db: Session, *, cleaner_ids, scheduled_date, exclude_job_id=None):
+def _find_over_capacity(db: Session, *, cleaner_ids, scheduled_date,
+                        exclude_job_id=None, org_id=None):
     """If MAX_JOBS_PER_CLEANER_PER_DAY > 0, return [(cleaner_id, count)] for any
     assigned cleaner who would exceed that many non-cancelled jobs on the day.
-    Disabled (returns []) when the cap is 0/unset."""
+    Disabled (returns []) when the cap is 0/unset.
+
+    When org_id is given, scopes to that tenant so the count doesn't include
+    jobs from another tenant."""
     if CAPACITY_PER_CLEANER_PER_DAY <= 0:
         return []
     d = _to_date(scheduled_date)
@@ -294,6 +306,8 @@ def _find_over_capacity(db: Session, *, cleaner_ids, scheduled_date, exclude_job
         Job.status.notin_(["cancelled"]),
         Job.cleaner_ids.isnot(None),
     )
+    if isinstance(org_id, int):
+        q = q.filter(Job.org_id == org_id)
     if exclude_job_id is not None:
         q = q.filter(Job.id != exclude_job_id)
     counts = {cid: 0 for cid in ids}
@@ -601,19 +615,23 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # ── CLEANER GUARDS ── double-booking, time-off, capacity. All overridable
     # via allow_conflicts so an operator can intentionally force an assignment.
     if not data.allow_conflicts:
+        _org_scope = resolve_org_id(org_id, db)
         conflicts = _find_cleaner_conflicts(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
             start_time=data.start_time, end_time=data.end_time,
+            org_id=_org_scope,
         )
         if conflicts:
             raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
         unavailable = _find_unavailable_cleaners(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
+            org_id=_org_scope,
         )
         if unavailable:
             raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
         over = _find_over_capacity(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
+            org_id=_org_scope,
         )
         if over:
             who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
@@ -1510,19 +1528,23 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         _validate_job_timing(eff_date, eff_start, eff_end, is_new=False)
         if not allow_conflicts and ("scheduled_date" in updates or "start_time" in updates
                                     or "end_time" in updates or "cleaner_ids" in updates):
+            # org_id was already resolved at the top of update_job.
             conflicts = _find_cleaner_conflicts(
                 db, cleaner_ids=eff_cleaners, scheduled_date=eff_date,
                 start_time=eff_start, end_time=eff_end, exclude_job_id=job.id,
+                org_id=org_id,
             )
             if conflicts:
                 raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
             unavailable = _find_unavailable_cleaners(
                 db, cleaner_ids=eff_cleaners, scheduled_date=eff_date,
+                org_id=org_id,
             )
             if unavailable:
                 raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
             over = _find_over_capacity(
                 db, cleaner_ids=eff_cleaners, scheduled_date=eff_date, exclude_job_id=job.id,
+                org_id=org_id,
             )
             if over:
                 who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
@@ -2218,3 +2240,71 @@ def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db)):
         "message": f"Auto-assigned based on property history (appeared {crew_freq[top_cleaner]} times)",
     }
 
+
+
+# ── Schedule week aggregate ────────────────────────────────────────────────
+#
+# The /api/schedule/week endpoint used to live in modules.schedule — a
+# 72-line shim that called functions here + in properties + in clients
+# in-process. The audit flagged the shim as the reason org-scoping
+# relied on FastAPI Depends() sentinels leaking into pure-Python calls;
+# folded back into this module so those call sites are just internal
+# helpers with an explicit org_id passed in. FE URL is unchanged
+# (main.py still mounts schedule_router at /api/schedule).
+
+from modules.properties.router import get_properties as _get_properties
+from modules.clients.router import get_clients as _get_clients
+
+schedule_router = APIRouter()
+
+
+def _job_as_visit(job: dict) -> dict:
+    """Wrap a Job dict in the pre-migration Visit shape (kept for one release
+    so a stale Schedule.jsx bundle still renders while it reloads)."""
+    return {
+        **job,
+        "job_id": job.get("id"),
+        "scheduled_date": job.get("scheduled_date"),
+        "start_time": job.get("start_time"),
+        "end_time": job.get("end_time"),
+        "cleaner_ids": job.get("cleaner_ids") or [],
+        "status": job.get("status"),
+    }
+
+
+@schedule_router.get("/week", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def schedule_week(
+    scheduled_date_from: str,
+    scheduled_date_to: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    org_id: int = Depends(current_org_id),
+):
+    """Everything the Schedule page needs for one week, in a single response.
+
+    Delegates to get_jobs / get_properties / get_clients in-process. Every
+    delegate gets org_id explicitly so the FastAPI Query() defaults on those
+    functions never leak in as unresolved Depends sentinels.
+    """
+    jobs = get_jobs(
+        date_from=scheduled_date_from,
+        date_to=scheduled_date_to,
+        db=db, org_id=org_id,
+    )
+    return {
+        # Visits are derived from jobs post-unification; the shape mirrors what
+        # /api/visits used to emit so the FE fallback keeps rendering unchanged.
+        "visits": [_job_as_visit(j) for j in (jobs or [])],
+        "jobs": jobs,
+        "properties": _get_properties(db=db, org_id=org_id),
+        # limit/offset are Query() defaults — pass explicitly. 50 matches the
+        # standalone /api/clients default the page used before.
+        "clients": _get_clients(limit=50, offset=0, db=db, org_id=org_id),
+        # Coverage was "Job without Visit"; that can't happen post-unification.
+        "coverage": {
+            "total_jobs": len(jobs or []),
+            "jobs_without_visits": 0,
+            "coverage_percent": 100,
+            "healthy": True,
+        },
+    }

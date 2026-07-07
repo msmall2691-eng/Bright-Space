@@ -37,4 +37,12 @@ describe('formatDate / formatDateTime', () => {
     expect(formatDate('')).toBe('')
     expect(formatDateTime(null)).toBe('')
   })
+
+  it('parses a YYYY-MM-DD string as local midnight (not UTC → day-early in ET)', () => {
+    // "2026-06-15" via `new Date(s)` = 2026-06-15T00:00:00Z, which in America/New_York
+    // is 2026-06-14 20:00 the previous day. The guard must render June 15, not June 14.
+    const out = formatDate('2026-06-15', { month: 'short', day: 'numeric', year: 'numeric' })
+    expect(out).toContain('15')
+    expect(out).not.toContain('14')
+  })
 })

@@ -181,7 +181,7 @@ class BookingSubmit(BaseModel):
     idempotencyKey: Optional[str] = None
     idempotency_key: Optional[str] = None
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
 
 class AddressValidate(BaseModel):
@@ -218,7 +218,7 @@ class InstantQuoteRequest(BaseModel):
     petHair: Optional[str] = None          # "none" | "some" | "heavy"
     condition: Optional[str] = None        # "maintenance" | "moderate" | "heavy"
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
 
 class InstantQuoteResponse(BaseModel):
