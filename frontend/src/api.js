@@ -142,7 +142,14 @@ export async function api(url, options = {}) {
         if (trimmed) detail = `HTTP ${res.status}: ${trimmed}`
       }
     }
-    throw new Error(detail)
+    // Attach the HTTP status + parsed detail so callers can branch on 409
+    // (scheduling conflict → "Reschedule anyway" retry), 429 (rate limit),
+    // etc. without regexing the message text. Kept .message for the existing
+    // toast-string callers.
+    const err = new Error(detail)
+    err.status = res.status
+    err.detail = detail
+    throw err
   }
 
   // Handle 204 No Content

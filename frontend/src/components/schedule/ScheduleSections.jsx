@@ -10,18 +10,39 @@ import VisitCard from './VisitCard'
  *  - ScheduleListView: the week-grouped list branch (day headers + VisitCard
  *    rows), including the empty state. */
 
-export function ScheduleHealthStrip({ stats, onFixSync, fixingSync, onFilterNoGcal, onFilterNoConnecteam }) {
+export function ScheduleHealthStrip({
+  stats,
+  onFixSync,
+  fixingSync,
+  onFilterNoGcal,
+  onFilterNoConnecteam,
+  onFilterUnassigned,
+  // View-aware stat labels: "This month" reads truer when the calendar
+  // view actually spans a month, and the underlying `stats.week` count
+  // stays the same (schedule data is week-scoped) — but the label
+  // shouldn't lie. Falls back to "This week" when not given.
+  weekLabel = 'This week',
+}) {
+  // Audit §6a: the total "not in Connecteam" number conflates two very
+  // different states — "assigned but not yet pushed" is the real sync gap
+  // that "Fix sync now" resolves, but "no cleaner yet" is fixed by the
+  // operator picking a cleaner. Prefer the split breakdown when we have it
+  // so the CTA below points at the actual action.
+  const needsCleaner = stats.needsCleaner ?? 0
+  const assignedNotPushed = stats.assignedNotPushed ?? stats.notConnecteam ?? 0
+
+  const hasAnyAttention =
+    stats.notGcal > 0 || needsCleaner > 0 || assignedNotPushed > 0
+
   return (
     <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
       <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
         <StatCard className="bg-panel border border-hairline rounded-lg" label="Today" value={stats.today} icon={CalendarIcon} />
-        <StatCard className="bg-panel border border-hairline rounded-lg" label="This week" value={stats.week} icon={Clock} />
+        <StatCard className="bg-panel border border-hairline rounded-lg" label={weekLabel} value={stats.week} icon={Clock} />
       </div>
-      {(stats.notGcal > 0 || stats.notConnecteam > 0) && (
+      {hasAnyAttention && (
         // Hidden on phones — a compact amber alert button in the sticky toolbar
         // takes over on mobile so this banner doesn't eat scroll real estate.
-        // Audit: the counts here were dead numbers. Now each is a click-through
-        // that narrows the list to just the offending visits.
         <div className="hidden sm:flex max-w-7xl mx-auto mt-2 flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span className="font-medium">Needs attention:</span>
@@ -30,13 +51,28 @@ export function ScheduleHealthStrip({ stats, onFixSync, fixingSync, onFilterNoGc
               {stats.notGcal} not on Google yet
             </button>
           )}
-          {stats.notGcal > 0 && stats.notConnecteam > 0 && <span className="text-amber-300">·</span>}
-          {stats.notConnecteam > 0 && (
-            <button onClick={onFilterNoConnecteam} className="underline underline-offset-2 hover:text-amber-900" title="Filter list to jobs not in Connecteam">
-              {stats.notConnecteam} not in Connecteam
+          {stats.notGcal > 0 && needsCleaner > 0 && <span className="text-amber-300">·</span>}
+          {needsCleaner > 0 && (
+            <button
+              onClick={onFilterUnassigned || onFilterNoConnecteam}
+              className="underline underline-offset-2 hover:text-amber-900"
+              title="Filter list to jobs that still need a cleaner assignment"
+            >
+              {needsCleaner} need a cleaner before dispatch
             </button>
           )}
-          {onFixSync && (
+          {needsCleaner > 0 && assignedNotPushed > 0 && <span className="text-amber-300">·</span>}
+          {assignedNotPushed > 0 && (
+            <button onClick={onFilterNoConnecteam} className="underline underline-offset-2 hover:text-amber-900" title="Filter list to assigned jobs not yet in Connecteam">
+              {assignedNotPushed} assigned but not yet pushed
+            </button>
+          )}
+          {/* "Fix sync now" only makes sense for the pushed queue — a
+              cleaner-less job can't dispatch no matter how many times you
+              click it. Hide the button when the only outstanding number is
+              needs-cleaner + not-on-Google (the Google fixer runs from the
+              tools menu). */}
+          {onFixSync && assignedNotPushed > 0 && (
             <button
               onClick={onFixSync}
               disabled={fixingSync}

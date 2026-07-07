@@ -2,12 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink, Plus } from 'lucide-react'
 import { get, patch } from "../api"
 import { toLocalYMD } from '../utils/format'
+import { PROPERTY_TYPE_CONFIG } from './schedule/constants'
 
 
+// Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
+// the same color here as it is in the agenda/list views (audit §8). The
+// only local override is the label — month chips historically say
+// "Turnover" instead of "STR" for job_type='str_turnover', because "STR"
+// on a shift feels wrong out of context.
 const TYPE_CONFIG = {
-  residential:  { label: 'Residential', dot: 'bg-blue-500',   pill: 'bg-blue-50 text-blue-700 border-blue-200',   pillHover: 'hover:bg-blue-100' },
-  commercial:   { label: 'Commercial',  dot: 'bg-green-500',  pill: 'bg-green-50 text-green-700 border-green-200', pillHover: 'hover:bg-green-100' },
-  str_turnover: { label: 'Turnover',    dot: 'bg-orange-500', pill: 'bg-orange-50 text-orange-700 border-orange-200', pillHover: 'hover:bg-orange-100' },
+  ...PROPERTY_TYPE_CONFIG,
+  str_turnover: { ...PROPERTY_TYPE_CONFIG.str_turnover, label: 'Turnover' },
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -53,7 +58,7 @@ function useIsMobile(breakpoint = 768) {
   return isMobile
 }
 
-export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, refreshKey, filters = {} }) {
+export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, refreshKey, filters = {}, toast }) {
   const now = new Date()
   const [year,  setYear]  = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -163,6 +168,52 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
     if (dropTarget !== date) setDropTarget(date)
   }
   const onDragLeave = () => setDropTarget(null)
+
+  // Shared reschedule commit for both the desktop drop handler and the touch
+  // drag end. On 409 (double-booking / time-off / capacity) we surface a toast
+  // with a "Reschedule anyway" retry that re-issues the PATCH with
+  // allow_conflicts=true — matches the edit-modal escape hatch that already
+  // exists for save-in-modal, instead of silently snapping the chip back.
+  const commitReschedule = async (jobId, originalDate, targetDate, opts = {}) => {
+    const { allowConflicts = false, isRetry = false } = opts
+    try {
+      await patch(`/api/jobs/${jobId}`, {
+        scheduled_date: targetDate,
+        ...(allowConflicts ? { allow_conflicts: true } : {}),
+      })
+      if (isRetry && toast) toast.success('Rescheduled with conflict override')
+    } catch (err) {
+      const status = err && (err.status || err.statusCode)
+      const detail = err && (err.detail || err.message) || ''
+      // Snap the local state back to the original date so the UI matches the DB.
+      setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: originalDate } : j))
+      if (status === 409 && toast) {
+        toast.error(
+          `Can't move: ${detail.slice(0, 160) || 'scheduling conflict'}`,
+          {
+            action: {
+              label: 'Reschedule anyway',
+              onClick: () => {
+                // Optimistically push again so the chip visually jumps on retry.
+                setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
+                commitReschedule(jobId, originalDate, targetDate, { allowConflicts: true, isRetry: true })
+              },
+            },
+          },
+        )
+      } else if (toast) {
+        toast.error(`Reschedule failed${detail ? ': ' + detail.slice(0, 160) : ''}`)
+      } else {
+        console.error('[CalendarView] Reschedule failed:', err)
+      }
+      // Refresh the range so any partial success (or stale local state) gets
+      // reconciled with the server.
+      get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
+        .then(d => setJobs(Array.isArray(d) ? d : []))
+        .catch(() => {})
+    }
+  }
+
   const onDrop = async (e, targetDate) => {
     if (isMobile) return
     e.preventDefault()
@@ -170,16 +221,10 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
     if (!draggingJob) return
     if (draggingJob.scheduled_date === targetDate) { setDraggingJob(null); return }
     const jobId = draggingJob.id
+    const originalDate = draggingJob.scheduled_date
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
     setDraggingJob(null)
-    try {
-      await patch(`/api/jobs/${jobId}`, { scheduled_date: targetDate })
-    } catch (err) {
-      console.error('[CalendarView] Reschedule failed:', err)
-      get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
-        .then(d => setJobs(Array.isArray(d) ? d : []))
-        .catch(() => {})
-    }
+    await commitReschedule(jobId, originalDate, targetDate)
   }
 
   // Touch drag-to-reschedule. HTML5 DnD doesn't fire on touch, so we
@@ -246,16 +291,12 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
     setDropTarget(null)
     setDraggingJob(null)
     if (!targetDate || job.scheduled_date === targetDate) return
-    // Optimistic update + persist (same shape as desktop drop).
+    // Optimistic update + persist (same shape as desktop drop). Reuses the
+    // shared commitReschedule so touch drags also get the 409 "Reschedule
+    // anyway" toast instead of a silent revert.
+    const originalDate = job.scheduled_date
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: targetDate } : j))
-    try {
-      await patch(`/api/jobs/${job.id}`, { scheduled_date: targetDate })
-    } catch (err) {
-      console.error('[CalendarView] Touch reschedule failed:', err)
-      get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
-        .then(d => setJobs(Array.isArray(d) ? d : []))
-        .catch(() => {})
-    }
+    await commitReschedule(job.id, originalDate, targetDate)
   }
 
   const onChipTouchCancel = () => {

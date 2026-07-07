@@ -114,12 +114,33 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
     const onGcal = (v) => !!(v.gcal_event_id || jobs[v.job_id]?.gcal_event_id)
     const gcal = active.filter(onGcal).length
     const connecteam = active.filter(v => (jobs[v.job_id]?.connecteam_shift_ids || []).length > 0).length
+    // Split the "not in Connecteam" total by root cause. The Connecteam
+    // dispatcher skips any job with no cleaner_ids (see scheduling/router.py),
+    // so "not in Connecteam" conflates two very different states:
+    //   - assigned but not yet pushed (a real sync gap — the fixer resolves this)
+    //   - no cleaner yet (nothing to push — the operator has to assign first)
+    // Reporting them as one number sends the operator to "Fix sync now" when
+    // the actual fix is to assign a cleaner.
+    const needsCleaner = active.filter(v => {
+      const hasCt = (jobs[v.job_id]?.connecteam_shift_ids || []).length > 0
+      if (hasCt) return false
+      const assigned = (v.cleaner_ids?.length || 0) > 0
+      return !assigned
+    }).length
+    const assignedNotPushed = active.filter(v => {
+      const hasCt = (jobs[v.job_id]?.connecteam_shift_ids || []).length > 0
+      if (hasCt) return false
+      const assigned = (v.cleaner_ids?.length || 0) > 0
+      return assigned
+    }).length
     return {
       today: active.filter(v => v.scheduled_date === todayStr).length,
       week: active.length,
       gcal, connecteam, total: active.length,
       notGcal: active.length - gcal,
       notConnecteam: active.length - connecteam,
+      needsCleaner,
+      assignedNotPushed,
     }
   }, [visits, jobs])
 
