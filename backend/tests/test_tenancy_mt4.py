@@ -103,6 +103,35 @@ def test_admin_created_user_joins_creating_admins_org(db):
         app.dependency_overrides.pop(get_current_user_optional, None)
 
 
+def test_open_signup_flag_blocks_stranger_registration(db, monkeypatch):
+    """OPEN_SIGNUP_ENABLED=0 (default): a stranger POSTing /register gets 403;
+    OPEN_SIGNUP_ENABLED=1: same request succeeds and founds their own org.
+    Admin-created and allow-listed signups are always allowed."""
+    import uuid
+    from fastapi.testclient import TestClient
+    from main import app
+
+    db_, _ = db
+    monkeypatch.delenv("OPEN_SIGNUP_ENABLED", raising=False)
+
+    email = f"blocked-{uuid.uuid4().hex[:8]}@example.com"
+    r = TestClient(app).post("/api/auth/register",
+                             json={"email": email, "password": "pw123456"})
+    assert r.status_code == 403, r.text
+    assert db_.query(User).filter(User.email == email).first() is None
+
+    monkeypatch.setenv("OPEN_SIGNUP_ENABLED", "1")
+    email2 = f"allowed-{uuid.uuid4().hex[:8]}@example.com"
+    r = TestClient(app).post("/api/auth/register",
+                             json={"email": email2, "password": "pw123456"})
+    assert r.status_code == 200, r.text
+    created = db_.query(User).filter(User.email == email2).first()
+    assert created is not None
+    assert created.role == "admin"                 # MT-4: stranger founds own org
+    db_.query(User).filter(User.id == created.id).delete(synchronize_session=False)
+    db_.commit()
+
+
 def test_stranger_admin_does_not_block_primary_bootstrap(db, monkeypatch):
     """A stranger self-founding an admin org must NOT suppress the primary
     install's bootstrap-first-admin — the admin check is org-scoped."""

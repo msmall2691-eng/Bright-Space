@@ -521,10 +521,28 @@ def register(
     an EXISTING workspace — only of the brand-new empty org it founds. Joining an
     existing workspace as admin still requires the allow-list AND an admin-less
     primary install.
+
+    Open self-signup is gated by the OPEN_SIGNUP_ENABLED env flag (default
+    OFF for single-company deployments). When off, a stranger who is not
+    admin-created and not on the allow-list gets a 403 instead of founding
+    their own workspace. Admin-created users and allow-listed emails are
+    always allowed.
     """
     email_l = (data.email or "").strip().lower()
     is_admin_caller = bool(current_user and current_user.role == "admin")
     allowlisted = _auto_approved(email_l)
+
+    # BB-SEC-07 tightening: open self-signup founds a new workspace, which is
+    # safe only if multi-tenant isolation is perfect. Off by default so
+    # single-company deployments (the common case) can't be joined by
+    # strangers. Admin-created users and allow-listed emails bypass the flag.
+    _open_signup = os.getenv("OPEN_SIGNUP_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+    if not is_admin_caller and not allowlisted and not _open_signup:
+        raise HTTPException(
+            status_code=403,
+            detail="Open sign-up is disabled. Ask an admin for an invite, or set "
+                   "OPEN_SIGNUP_ENABLED=1 on the server to allow self-registration.",
+        )
 
     # Check if email already exists (case-insensitive).
     existing = (
