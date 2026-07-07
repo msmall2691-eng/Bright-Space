@@ -5,6 +5,7 @@ from sqlalchemy import func, or_
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 import logging
+import re
 
 from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
@@ -121,10 +122,19 @@ def get_intakes(
     priority: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    include_duplicates: bool = Query(False, description="Return raw rows without collapsing near-duplicate leads (debugging only)"),
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
-    """List intakes with filtering by status, source, service_type, priority."""
+    """List intakes with filtering by status, source, service_type, priority.
+
+    Audit M2: the Requests page has always collapsed raw LeadIntake rows by
+    (email, phone) client-side so the UI shows one card per person; the
+    Billing → Leads tab hit the same endpoint without doing that, so a
+    real-world race that produced two rows leaked to the operator as two
+    identical leads. Fold the same collapse rule into the server response so
+    every caller sees the canonical view.
+    """
     # MT-2: scope to the caller's workspace; tolerate legacy + public-submitted
     # NULL-org leads (the contact form has no logged-in user).
     q = db.query(LeadIntake).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)))
@@ -136,7 +146,25 @@ def get_intakes(
         q = q.filter(LeadIntake.service_type == service_type)
     if priority:
         q = q.filter(LeadIntake.priority == priority)
-    return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()]
+    # Fetch a superset large enough that per-person collapse still leaves at
+    # least `limit` results; hard cap at 4x limit to keep the query bounded.
+    rows = q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit * 4).all()
+
+    if include_duplicates:
+        return [intake_to_dict(i) for i in rows[:limit]]
+
+    def _key(r) -> str:
+        email = (r.email or "").strip().lower()
+        phone = re.sub(r"\D", "", r.phone or "")
+        return f"{email}|{phone}" if (email or phone) else f"id-{r.id}"
+
+    seen: dict = {}
+    for r in rows:
+        k = _key(r)
+        # Rows are already in created_at DESC order — first hit for a key wins.
+        if k not in seen:
+            seen[k] = r
+    return [intake_to_dict(r) for r in list(seen.values())[:limit]]
 
 
 @router.get("/stats", dependencies=[Depends(require_role("admin", "manager"))])
@@ -195,15 +223,35 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db), org_id: int = D
 
 @router.post("/{intake_id}/convert-to-quote", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    """Convert an intake to a quote with sensible defaults."""
+    """Convert an intake to a quote with sensible defaults.
+
+    Audit M3: idempotent — if the intake already has a converted_quote_id,
+    return that existing quote rather than minting a new one. A double-click
+    from the operator or a client retry used to spawn a second QT-YYYY-#### at
+    a different price (the estimator ran again with any newly-filled fields),
+    which showed up in Meg's July audit as an unexplained \"stray $425 quote\"
+    next to the intended $185 one. Serialize on the intake row so two
+    concurrent requests can't both pass this check.
+    """
     from database.models import Quote
 
     intake = db.query(LeadIntake).filter(
         LeadIntake.id == intake_id,
         or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
-    ).first()
+    ).with_for_update().first()
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
+
+    # Idempotency short-circuit: this intake already has a quote — return it.
+    if intake.converted_quote_id:
+        from modules.quoting.router import _quote_dict
+        existing = db.query(Quote).filter(Quote.id == intake.converted_quote_id).first()
+        if existing:
+            return _quote_dict(existing)
+        # FK exists but the quote row is gone (deleted quote); clear the stale
+        # pointer and fall through to create a fresh one.
+        intake.converted_quote_id = None
+        db.flush()
 
     client_id = intake.client_id
     if not client_id:

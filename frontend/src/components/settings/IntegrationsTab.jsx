@@ -127,8 +127,21 @@ export default function IntegrationsTab({ toast, active }) {
   const pushScheduleToConnecteam = async () => {
     if (!window.confirm('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?')) return
     setCtPushing(true)
+    // Audit follow-up: the "Pushing…" label alone left the operator staring at
+    // a spinning button for up to a minute during a big bulk push (Connecteam's
+    // scheduler API can take ~20-40s to accept 50+ shifts in one call).
+    // Surface progress immediately, and nudge again at ~15s so silence never
+    // reads as "the app is broken."
+    toast('Pushing schedule to Connecteam — this can take up to a minute for a full 14-day window.')
+    const stillWorkingTimer = setTimeout(() => {
+      toast('Still pushing to Connecteam. Safe to leave this page — shifts will appear in your Connecteam scheduler when done.')
+    }, 15000)
     try {
-      const r = await post('/api/settings/connecteam/push-open-shifts', {})
+      // Explicit long timeout: the default 15s was tripping before Connecteam's
+      // bulk endpoint (up to 30s of its own) returned, which surfaced as an
+      // "unresponsive UI" audit finding even when the push was succeeding
+      // server-side.
+      const r = await post('/api/settings/connecteam/push-open-shifts', {}, { timeout: 90000 })
       // Diagnostic toast: the base case ("Pushed 0 · 0 skipped") gave no signal
       // for why nothing went over. Split the message by outcome so the operator
       // knows whether to create jobs, un-dispatch, or check a real error.
@@ -162,6 +175,7 @@ export default function IntegrationsTab({ toast, active }) {
     } catch (e) {
       toast(e?.message || 'Could not push schedule', 'error')
     } finally {
+      clearTimeout(stillWorkingTimer)
       setCtPushing(false)
     }
   }

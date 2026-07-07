@@ -19,6 +19,27 @@ const qtyLabel = (q) => {
 // Spaces/parens in a tel: href don't dial reliably — normalize to digits.
 const telHref = (p) => (p ? p.replace(/[^\d+]/g, '') : '')
 
+// Audit L3 (re-audit): collapse a comma-delimited address that repeats a
+// component (state / zip / city). Existing quotes were saved with strings like
+// "Keystone Drive, Waterboro, ME, 04061, ME" before the write-side fix in
+// #505 landed; this display-time cleanup keeps them from leaking to the
+// customer-facing quote page and the Accept & schedule confirmation until
+// they're rewritten.
+const dedupeAddressComponents = (addr) => {
+  if (!addr || typeof addr !== 'string') return addr || ''
+  const seen = new Set()
+  const kept = []
+  for (const raw of addr.split(',')) {
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    kept.push(trimmed)
+  }
+  return kept.join(', ')
+}
+
 export default function QuoteDocument({ quote, actions = null, toolbar = null, banner = null }) {
   if (!quote) return null
   const items = Array.isArray(quote.items) ? quote.items : []
@@ -83,7 +104,7 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
               {quote.address && (
                 <div>
                   <p className="text-[10px] text-ink-3 uppercase font-semibold tracking-wide mb-0.5">Service Address</p>
-                  <p className="text-sm text-ink">{quote.address}</p>
+                  <p className="text-sm text-ink">{dedupeAddressComponents(quote.address)}</p>
                 </div>
               )}
               {quote.service_type && (

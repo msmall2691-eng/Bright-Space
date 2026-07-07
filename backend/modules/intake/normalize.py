@@ -22,7 +22,9 @@ from typing import Optional
 import logging
 import re
 
-from sqlalchemy import or_
+import hashlib
+
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from database.models import LeadIntake, Client, Activity, Property
@@ -338,6 +340,45 @@ def _lock_client_for_activity_write(db: Session, client_id: int) -> None:
         logger.warning("client %s row lock failed: %s", client_id, e)
 
 
+def _contact_lock_key(email: Optional[str], phone: Optional[str]) -> Optional[int]:
+    """Stable signed 64-bit int derived from the caller's normalized email/phone,
+    for use as a Postgres advisory-lock key. Returns None when neither field
+    identifies the person — in that case we can't safely serialize dedup,
+    so we skip the lock and fall through to the read-based guard."""
+    key = ((email or "").strip().lower() + "|" + (normalize_phone(phone) or ""))
+    if not key.strip("|"):
+        return None
+    digest = hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest()
+    val = int.from_bytes(digest, byteorder="big", signed=False)
+    # pg_advisory_xact_lock takes an int8 — clamp to signed 64-bit range.
+    if val >= 1 << 63:
+        val -= 1 << 64
+    return val
+
+
+def _lock_contact_for_upsert(db: Session, email: Optional[str], phone: Optional[str]) -> None:
+    """Serialize concurrent upsert_lead calls for the same person BEFORE the
+    dedup check, so two near-simultaneous /api/booking/submit and
+    /api/intake/webhook calls from one maineclean.co visit can't both pass
+    ``_find_recent_duplicate`` and each insert a LeadIntake row (audit M2).
+
+    Postgres: ``pg_advisory_xact_lock`` on a hash of the contact — released
+    on commit/rollback of the surrounding transaction (advisory_xact is the
+    right variant so it never leaks past the request). SQLite: no-op — SQLite
+    already serializes writers, so the read-then-insert pair inside a single
+    connection is atomic by construction.
+    """
+    key = _contact_lock_key(email, phone)
+    if key is None:
+        return
+    try:
+        dialect = db.bind.dialect.name if db.bind is not None else ""
+        if dialect == "postgresql":
+            db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+    except Exception as e:  # never block the lead on a locking hiccup
+        logger.warning("contact upsert lock failed: %s", e)
+
+
 def _lead_summary(data: IntakeData) -> str:
     """Compact one-line summary for the timeline, e.g.
     'New residential lead · 2000 sqft · 2 bath · biweekly · $120–$135'."""
@@ -361,6 +402,14 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     of EVERY structured column, and a ``lead_received`` timeline Activity.
     Returns ``{success, intake_id, client_id, deduped}``.
     """
+    # Audit M2: serialize concurrent upserts for the same contact BEFORE we
+    # look for a recent duplicate. Without this, two /api/booking/submit and
+    # /api/intake/webhook calls that fire from one maineclean.co visit can
+    # both run _find_recent_duplicate before either has committed, each miss
+    # the other, and each insert its own LeadIntake row — which is exactly
+    # what the "Billing → Leads shows 2 rows for one booking" audit item was.
+    _lock_contact_for_upsert(db, data.email, data.phone)
+
     recent = _find_recent_duplicate(db, data.email, data.phone)
     if recent:
         changed = False

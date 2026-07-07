@@ -169,9 +169,14 @@ export function getCached(url, ttlMs = 5000) {
   return p
 }
 
-/** POST helper */
-export const post = (url, body) =>
-  api(url, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });
+/** POST helper. `opts.timeout` overrides the default 15s window — use for
+ * calls that fan out to a slow upstream (Connecteam bulk push, etc.). */
+export const post = (url, body, opts = {}) =>
+  api(url, {
+    method: "POST",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(opts.timeout ? { timeout: opts.timeout } : {}),
+  });
 
 /** PUT helper */
 export const put = (url, body) =>
