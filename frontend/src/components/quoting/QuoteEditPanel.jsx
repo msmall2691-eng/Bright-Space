@@ -63,7 +63,7 @@ export default function QuoteEditPanel({
   }
 
   return (
-    <div className={`fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:border-l sm:border-hairline sm:shrink-0 ${previewMode ? 'sm:w-[500px] 2xl:w-[900px]' : 'sm:w-[500px]'}`}>
+    <div className={`fixed inset-0 z-40 bg-panel flex flex-col pb-bottomnav sm:pb-0 sm:static sm:inset-auto sm:z-auto sm:border-l sm:border-hairline sm:shrink-0 ${previewMode ? 'sm:w-[500px] 2xl:w-[900px]' : 'sm:w-[500px]'}`}>
       <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
         <div>
           <h2 className="font-semibold text-ink">{selected ? `Edit ${selected.quote_number}` : 'New Quote'}</h2>
