@@ -31,8 +31,17 @@ COPY backend/ .
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
-# Data directory for SQLite persistence (mount a Railway volume here)
-RUN mkdir -p /data
+# Non-root user for the runtime process. `app` owns /app and /data so
+# uvicorn can read the code and write to the SQLite volume (Railway
+# mounts /data). The gcc build dep from earlier is no longer needed for
+# runtime and stays under root's ownership — that's fine because the
+# app user only needs to execute python.
+RUN groupadd --system --gid 1000 app \
+  && useradd  --system --uid 1000 --gid app --home-dir /app --no-create-home app \
+  && mkdir -p /data \
+  && chown -R app:app /app /data
+
+USER app
 
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
