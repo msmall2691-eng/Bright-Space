@@ -185,3 +185,67 @@ export const WEEK_GRID_CONSTANTS = {
   HARD_MAX_HOUR,
   DEFAULT_DURATION_HOURS,
 }
+
+const SLOT_MINUTES = 15
+
+/**
+ * Turn a pixel offset within the timed body of a day column into a snapped
+ * float hour value inside the visible band. `offsetPx` is the click's y
+ * position relative to the top of the timed body (i.e., past the untimed
+ * strip); `gridHeightPx` is the body's total height. Snaps to 15-minute
+ * increments so drops don't produce odd end times like 09:03.
+ *
+ * Clamps to the band so a click below the last hour doesn't overflow
+ * outside it — the caller can still choose to reject a drop, but the
+ * math never returns something outside [startHour, endHour].
+ */
+export function pxToHour(offsetPx, gridHeightPx, band) {
+  const total = band.endHour - band.startHour
+  if (total <= 0 || gridHeightPx <= 0) return band.startHour
+  const rawHour = band.startHour + (offsetPx / gridHeightPx) * total
+  const slot = SLOT_MINUTES / 60
+  const snapped = Math.round(rawHour / slot) * slot
+  return Math.min(band.endHour - slot, Math.max(band.startHour, snapped))
+}
+
+/**
+ * Format a float-hour (e.g. 9.25) as a zero-padded "HH:MM" string suitable
+ * for the API's start_time / end_time columns.
+ */
+export function hourToTimeString(h) {
+  if (!Number.isFinite(h)) return '09:00'
+  const bounded = Math.max(0, Math.min(23.983, h))     // 23:59 max
+  const wholeH = Math.floor(bounded)
+  const min = Math.round((bounded - wholeH) * 60)
+  const mm = String(Math.min(59, min)).padStart(2, '0')
+  return `${String(wholeH).padStart(2, '0')}:${mm}`
+}
+
+/**
+ * Compute the reschedule PATCH payload for a drag-and-drop move.
+ *
+ * Given an existing job's timing and the drop target (new day + new start
+ * hour, snapped), return the new { scheduled_date, start_time, end_time }
+ * with the ORIGINAL duration preserved. When the original start/end can't
+ * be parsed (untimed job dropped onto a slot), stamp a DEFAULT_DURATION_HOURS
+ * block starting at the drop time. When the new end would run past 23:59,
+ * clamp so we never emit an inverted or wrap-around interval.
+ */
+export function planReschedule({ originalStart, originalEnd, targetDate, targetHour }) {
+  const origS = parseTimeToHour(originalStart)
+  const origE = parseTimeToHour(originalEnd)
+  const duration = (origS != null && origE != null && origE > origS)
+    ? (origE - origS)
+    : DEFAULT_DURATION_HOURS
+  const newStart = Math.max(0, Math.min(23 + 45 / 60, targetHour))
+  let newEnd = newStart + duration
+  // Clamp end to 23:59 so we never wrap into the next day. If the duration
+  // was longer than the remaining time, keep at least a 15-min block visible.
+  const maxEnd = 24 - 1 / 60                        // 23:59 as float hours
+  if (newEnd > maxEnd) newEnd = Math.max(newStart + SLOT_MINUTES / 60, maxEnd)
+  return {
+    scheduled_date: targetDate,
+    start_time: hourToTimeString(newStart),
+    end_time: hourToTimeString(newEnd),
+  }
+}

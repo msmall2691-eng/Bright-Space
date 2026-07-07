@@ -72,6 +72,9 @@ export default function Schedule() {
   const [showJobModal, setShowJobModal] = useState(false)
   const [showNewJob, setShowNewJob] = useState(false)
   const [newJobDate, setNewJobDate] = useState('')
+  // Optional seed for the create modal — set by WeekGrid's click-empty-slot
+  // handler so a click at 10:15 opens the modal already pointed at 10:15.
+  const [newJobStartTime, setNewJobStartTime] = useState('')
 
   // Deep-link entry point (e.g. Cmd+K → "Schedule a job"): /schedule?new=1
   // (optionally &date=YYYY-MM-DD) opens Quick-schedule, then strips the params.
@@ -345,7 +348,24 @@ export default function Schedule() {
           clients={clients}
           empName={empName}
           onOpen={(v) => handleEdit(v, jobs[v.job_id], properties[jobs[v.job_id]?.property_id])}
-          onNewJob={(d) => { setNewJobDate(d); setShowNewJob(true) }}
+          onNewJob={(d) => { setNewJobDate(d); setNewJobStartTime(''); setShowNewJob(true) }}
+          onNewSlot={({ date, start_time }) => {
+            setNewJobDate(date)
+            setNewJobStartTime(start_time)
+            setShowNewJob(true)
+          }}
+          onLocalMove={(jobId, next) => {
+            // Optimistic sync into the parent's visit/job state so subsequent
+            // renders keep the block in the moved position without waiting
+            // for a full refetch. The refetch on save still happens; this
+            // just keeps the intermediate frames coherent.
+            setVisits(prev => prev.map(v =>
+              v.job_id === jobId || v.id === jobId
+                ? { ...v, scheduled_date: next.scheduled_date, start_time: next.start_time, end_time: next.end_time }
+                : v
+            ))
+          }}
+          toast={toast}
         />
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
@@ -406,8 +426,9 @@ export default function Schedule() {
       {showNewJob && (
         <JobCreateModal
           initialDate={newJobDate || dateStr}
-          onClose={() => setShowNewJob(false)}
-          onCreated={() => { setShowNewJob(false); handleJobSave() }}
+          initialStartTime={newJobStartTime || null}
+          onClose={() => { setShowNewJob(false); setNewJobStartTime('') }}
+          onCreated={() => { setShowNewJob(false); setNewJobStartTime(''); handleJobSave() }}
         />
       )}
 

@@ -95,6 +95,10 @@ export default function JobCreateModal({
   initialQuoteId = null,
   initialFrequency = null,
   defaultRecurring = false,
+  // Prefill the start time (and derive an end time from JOB_DURATIONS). Used
+  // by the Week view's click-empty-slot handler so a new job seeded from a
+  // 10:15 slot opens with 10:15 already picked, not the default 09:00.
+  initialStartTime = null,
   onClose,
   onCreated,
 }) {
@@ -105,12 +109,13 @@ export default function JobCreateModal({
   // from the lead through the quote) so a won quote is one confirm away.
   const seedFreq = ['weekly', 'biweekly', 'monthly'].includes((initialFrequency || '').toLowerCase())
     ? initialFrequency.toLowerCase() : 'biweekly'
+  const _seedStart = initialStartTime || '09:00'
   const [form, setForm] = useState({
     title: initialTitle || (clientName ? `${clientName} — Clean` : ''),
     job_type: initialJobType || 'residential',
     scheduled_date: initialDate || nextBusinessDay(),
-    start_time: '09:00',
-    end_time: addMinutes('09:00', JOB_DURATIONS[initialJobType || 'residential'] || 180),
+    start_time: _seedStart,
+    end_time: addMinutes(_seedStart, JOB_DURATIONS[initialJobType || 'residential'] || 180),
     address: '',
     notes: '',
     property_id: initialPropertyId ? String(initialPropertyId) : '',
