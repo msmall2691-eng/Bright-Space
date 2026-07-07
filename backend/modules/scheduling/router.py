@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime, timezone, date, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -2074,7 +2074,13 @@ class JobCompleteRequest(BaseModel):
     completed_by: Optional[int] = None
     completed_at: Optional[datetime] = None
     checklist_results: Optional[dict] = None
-    photos: Optional[List[dict]] = None
+    # Photos entries can be a bare URL string (paste-a-link path) OR a dict
+    # carrying an inline data URL (field-cleaner uploaded from phone camera).
+    # Audit §15: the modal used to be URL-only; the new upload path posts
+    # dicts of shape {kind:"upload", data_url:"data:image/jpeg;base64,...",
+    # mime, name, size, added_at}. Keeping the column mixed avoids a schema
+    # migration for a feature that was already storing whatever JSON came in.
+    photos: Optional[List[Union[str, dict]]] = None
     notes: Optional[str] = None
 
 

@@ -1,13 +1,16 @@
-import { useState } from 'react'
-import { X, CheckCircle } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { X, CheckCircle, Camera, Trash2 } from 'lucide-react'
 import Button from '../ui/Button'
 import { DEFAULT_CHECKLIST } from './constants'
+import { readFileAsUpload, mergePhotosForSubmit, MAX_FILE_BYTES, MAX_TOTAL_PHOTOS } from './completePhotos'
 
 /** Bottom-sheet modal for marking a visit complete. Renders the default
  *  checklist, preserves any prior partial completion state (so re-opening
- *  doesn't lose work), and lets the cleaner paste photo URLs. Persists via
- *  the parent-supplied onComplete({ checklist_results, photos }) callback —
- *  the modal stays open on error so no work is lost. */
+ *  doesn't lose work), and lets the cleaner either snap/upload photos from
+ *  their phone OR paste URLs (audit §15 — the upload path replaces the old
+ *  "coming later" placeholder while keeping the paste path as an escape
+ *  hatch). Persists via the parent-supplied onComplete({ checklist_results,
+ *  photos }) callback; the modal stays open on error so no work is lost. */
 export default function CompleteVisitModal({ visit, onClose, onComplete }) {
   const [checks, setChecks] = useState(() => {
     const prior = visit.checklist_results || {}
@@ -16,18 +19,71 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
     Object.keys(prior).forEach(t => { if (!(t in seed)) seed[t] = !!prior[t] })
     return seed
   })
-  const [photos, setPhotos] = useState(() => (visit.photos || []).join('\n'))
+
+  // Split the incoming photos into two lanes so each has its own UI: pasted
+  // URLs live in a textarea, uploaded blobs live as staged dicts we render
+  // as thumbnails. On submit we merge them back into one array.
+  const [staged, setStaged] = useState(() => {
+    const prior = Array.isArray(visit.photos) ? visit.photos : []
+    return prior.filter(p => p && typeof p === 'object' && p.data_url)
+  })
+  const [urlLines, setUrlLines] = useState(() => {
+    const prior = Array.isArray(visit.photos) ? visit.photos : []
+    return prior.filter(p => typeof p === 'string').join('\n')
+  })
+
+  const [uploadError, setUploadError] = useState('')
   const [saving, setSaving] = useState(false)
+  const fileInputRef = useRef(null)
 
   const toggle = (task) => setChecks(c => ({ ...c, [task]: !c[task] }))
   const doneCount = Object.values(checks).filter(Boolean).length
   const total = Object.keys(checks).length
 
+  const pastedCount = useMemo(
+    () => urlLines.split('\n').map(s => s.trim()).filter(Boolean).length,
+    [urlLines],
+  )
+  const remainingSlots = Math.max(0, MAX_TOTAL_PHOTOS - staged.length - pastedCount)
+
+  const handleFiles = async (fileList) => {
+    setUploadError('')
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+
+    if (files.length > remainingSlots) {
+      setUploadError(`Only ${remainingSlots} more photo${remainingSlots === 1 ? '' : 's'} can be attached (max ${MAX_TOTAL_PHOTOS}).`)
+      return
+    }
+
+    const additions = []
+    for (const file of files) {
+      if (!file.type || !file.type.startsWith('image/')) {
+        setUploadError(`"${file.name}" isn't an image file.`)
+        return
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        setUploadError(`"${file.name}" is over ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB — please resize or pick a smaller photo.`)
+        return
+      }
+      try {
+        additions.push(await readFileAsUpload(file))
+      } catch {
+        setUploadError(`Could not read "${file.name}".`)
+        return
+      }
+    }
+    setStaged(prev => [...prev, ...additions])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removeStaged = (idx) => setStaged(prev => prev.filter((_, i) => i !== idx))
+
   const submit = async () => {
     setSaving(true)
     try {
-      const photoUrls = photos.split('\n').map(s => s.trim()).filter(Boolean)
-      await onComplete({ checklist_results: checks, photos: photoUrls })
+      const photos = mergePhotosForSubmit(staged, urlLines)
+      await onComplete({ checklist_results: checks, photos })
     } catch {
       setSaving(false)
     }
@@ -71,15 +127,64 @@ export default function CompleteVisitModal({ visit, onClose, onComplete }) {
           </div>
 
           <div>
-            <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Photo links (optional)</p>
-            <textarea
-              value={photos}
-              onChange={e => setPhotos(e.target.value)}
-              rows={3}
-              placeholder="One photo URL per line"
-              className="w-full px-3 py-2 border border-hairline rounded-lg text-sm placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-ink-2 uppercase">Photos</p>
+              <span className="text-xs font-semibold text-ink-3 tabular-nums">
+                {staged.length + pastedCount}/{MAX_TOTAL_PHOTOS}
+              </span>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              className="hidden"
+              onChange={e => handleFiles(e.target.files)}
             />
-            <p className="text-[11px] text-ink-3 mt-1">Paste links to photos (e.g. from your phone's cloud). Direct upload coming later.</p>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={remainingSlots === 0 || saving}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-hairline text-sm text-ink hover:bg-bg disabled:opacity-50"
+            >
+              <Camera className="w-4 h-4" />
+              Take or upload photos
+            </button>
+
+            {staged.length > 0 && (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {staged.map((p, i) => (
+                  <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-hairline bg-bg">
+                    <img src={p.data_url} alt={p.name || `Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeStaged(i)}
+                      aria-label={`Remove ${p.name || `photo ${i + 1}`}`}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black/80"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {uploadError && (
+              <p className="mt-2 text-[11px] text-red-600">{uploadError}</p>
+            )}
+
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold text-ink-3 uppercase mb-1">Or paste links</p>
+              <textarea
+                value={urlLines}
+                onChange={e => setUrlLines(e.target.value)}
+                rows={2}
+                placeholder="One photo URL per line"
+                className="w-full px-3 py-2 border border-hairline rounded-lg text-sm placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              />
+            </div>
           </div>
         </div>
 
