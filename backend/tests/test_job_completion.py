@@ -11,7 +11,7 @@ Covers:
 
 See docs/job-visit-unification.md.
 """
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
@@ -186,6 +186,36 @@ def test_crew_suggestions_ranks_by_frequency(ctx):
     # cleaner 1 appears in 3 prior jobs, 2 in 2, 3 in 1.
     assert ranks[0][0] == 1 and ranks[0][1] >= 3
     assert {r[0] for r in ranks} >= {1, 2, 3}
+
+
+def test_crew_suggestions_prefers_recent_over_ancient(ctx):
+    """Audit regression: prior code did `.limit(20)` with no ORDER BY, so a
+    property with >20 historical jobs could surface a stale cleaner from
+    years ago instead of the recurring one from last month. Now recency
+    wins ties by scheduled_date DESC.
+    """
+    db, c, p, j = ctx
+    ancient = date.today() - timedelta(days=1000)
+    recent = date.today() - timedelta(days=5)
+    # 25 ancient jobs with cleaner 99, then 3 recent jobs with cleaner 7.
+    # With the pre-fix "arbitrary 20" limit, cleaner 99 would dominate.
+    for _ in range(25):
+        db.add(Job(client_id=c.id, property_id=p.id, title="Ancient",
+                   job_type="residential", scheduled_date=ancient,
+                   start_time=time(9, 0), end_time=time(12, 0),
+                   status="scheduled", cleaner_ids=[99]))
+    for _ in range(3):
+        db.add(Job(client_id=c.id, property_id=p.id, title="Recent",
+                   job_type="residential", scheduled_date=recent,
+                   start_time=time(9, 0), end_time=time(12, 0),
+                   status="scheduled", cleaner_ids=[7]))
+    db.commit()
+
+    out = get_job_crew_suggestions(j.id, db=db)
+    cleaner_ids = [s["cleaner_id"] for s in out["suggestions"]]
+    # Cleaner 7 (recent) must be surfaced; 99 (ancient overflow) can be
+    # trimmed off entirely thanks to the recency ORDER BY + LIMIT 20.
+    assert 7 in cleaner_ids
 
 
 def test_auto_assign_applies_top_suggestion(ctx):
