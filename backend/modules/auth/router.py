@@ -221,15 +221,30 @@ def current_org_id(current_user: User = Depends(get_current_user),
 
 def set_rls_org_context(db: Session, org_id: int) -> None:
     """Set the per-transaction Postgres GUC that MT-3 RLS policies read. Safe
-    no-op on non-Postgres (SQLite tests) and never raises into the request."""
+    no-op on non-Postgres (SQLite tests). Errors are logged at ERROR — the RLS
+    context is the tenant-isolation backstop, so a silent failure would be an
+    invisible security regression.
+
+    Uses set_config('name', 'value', is_local) with bind parameters instead of
+    an f-stringed SET LOCAL. The int() cast is defense-in-depth here — the
+    caller has always given us an int from the User model — but SET LOCAL
+    doesn't accept bind parameters, so the parameter path (set_config) is
+    the correct hardening even though f-string interpolation was safe today.
+    """
+    if not (db.bind and db.bind.dialect.name == "postgresql"):
+        return
     try:
-        if db.bind and db.bind.dialect.name == "postgresql":
-            # SET LOCAL scopes to the current transaction; parameter binding isn't
-            # allowed for SET, so the int is interpolated (it's a validated int).
-            db.execute(text(f"SET LOCAL app.current_org_id = {int(org_id)}"))
-    except Exception:
-        # RLS context is a backstop; never break the request if it can't be set.
-        pass
+        db.execute(
+            text("SELECT set_config('app.current_org_id', :v, true)"),
+            {"v": str(int(org_id))},
+        )
+    except Exception as exc:
+        # Log at ERROR so ops sees it; do not raise into the request path — a
+        # thrown here would 500 an otherwise-valid request and would take
+        # priority over the actual per-query org_id filter (which stays in
+        # place as the primary boundary).
+        log = logging.getLogger(__name__)
+        log.error("Failed to set RLS org context (org_id=%s): %s", org_id, exc)
 
 
 def resolve_org_id(org_id, db: Session) -> int:
