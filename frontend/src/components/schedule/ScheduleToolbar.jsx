@@ -12,7 +12,6 @@ import Button from '../ui/Button'
 export default function ScheduleToolbar({
   viewMode,
   onViewChange,
-  showDateNav,
   currentDate,
   onPrevWeek,
   onNextWeek,
@@ -73,7 +72,7 @@ export default function ScheduleToolbar({
           </div>
           {/* Outer date nav — only for Day. Month mode uses CalendarView's
               own month nav, so these arrows would otherwise do nothing. */}
-          {showDateNav && viewMode !== 'month' && (
+          {viewMode !== 'month' && (
             <div className="hidden sm:flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
@@ -91,8 +90,7 @@ export default function ScheduleToolbar({
 
           {/* Filters hidden behind a toggle so the default view stays clean.
               A dot shows when a filter is actually narrowing the list. */}
-          {showDateNav && (
-            <Button onClick={onToggleFilters} variant="secondary" size="sm" className="whitespace-nowrap relative"
+          <Button onClick={onToggleFilters} variant="secondary" size="sm" className="whitespace-nowrap relative"
               title="Filter by property type or status">
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline ml-1.5">Filters</span>
@@ -100,7 +98,6 @@ export default function ScheduleToolbar({
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
               )}
             </Button>
-          )}
 
           {/* Power tools tucked into one menu to keep the toolbar clean */}
           <div className="relative">
@@ -166,7 +163,7 @@ export default function ScheduleToolbar({
         </div>
 
         {/* Mobile-only date nav — desktop has it inline above */}
-        {showDateNav && (
+        {(
           <div className="sm:hidden flex items-center gap-2 mt-2">
             <button onClick={onPrevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
               <ChevronLeft className="w-4 h-4" />
@@ -181,7 +178,7 @@ export default function ScheduleToolbar({
         )}
 
         {/* Filter chips — revealed via the Filters toggle to keep the toolbar clean */}
-        {showDateNav && showFilters && (
+        {showFilters && (
           <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
             <select
               value={selectedPropertyType}
