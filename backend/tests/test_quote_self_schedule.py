@@ -14,11 +14,12 @@ from modules.quoting.router import (
     public_quote_availability, public_schedule_quote, public_accept_quote,
     PublicScheduleRequest, PublicAcceptRequest,
 )
+from utils.dates import business_today
 
 
 def _next_weekday(base=None):
     """A near-future Mon–Sat date (availability excludes Sundays)."""
-    d = (base or date.today()) + timedelta(days=2)
+    d = (base or business_today()) + timedelta(days=2)
     while d.weekday() == 6:
         d += timedelta(days=1)
     return d
@@ -43,7 +44,7 @@ def _mk_quote(db, c, token, status="sent", property_id=None):
               service_type="residential", address="1 St", notes="", items=[],
               subtotal=100, tax_rate=0, tax=0, discount=0, total=100, status=status,
               public_token=token, property_id=property_id,
-              valid_until=date.today() + timedelta(days=30))
+              valid_until=business_today() + timedelta(days=30))
     db.add(q); db.commit(); db.refresh(q)
     return q
 
@@ -99,7 +100,7 @@ def test_schedule_accepts_dates_and_converts(ctx):
 def test_schedule_is_idempotent_no_duplicate_job(ctx):
     db, c = ctx
     q = _mk_quote(db, c, "schedtok02")
-    d1, d2 = _next_weekday(), _next_weekday(date.today() + timedelta(days=5))
+    d1, d2 = _next_weekday(), _next_weekday(business_today() + timedelta(days=5))
     first = public_schedule_quote("schedtok02", PublicScheduleRequest(date=d1.isoformat(), window="morning"), db=db)
     second = public_schedule_quote("schedtok02", PublicScheduleRequest(date=d2.isoformat(), window="afternoon"), db=db)
     assert db.query(Job).filter(Job.quote_id == q.id).count() == 1   # re-dated, not duplicated
@@ -114,7 +115,7 @@ def test_schedule_rejects_past_date(ctx):
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
         public_schedule_quote("schedtok03", PublicScheduleRequest(
-            date=(date.today() - timedelta(days=1)).isoformat()), db=db)
+            date=(business_today() - timedelta(days=1)).isoformat()), db=db)
     assert exc.value.status_code == 400
 
 

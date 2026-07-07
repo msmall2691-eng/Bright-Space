@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from database.db import SessionLocal
 from database.models import Client, Property, Quote, Job
 from modules.quoting.router import delete_quote, list_quotes, _existing_job_for_quote
+from utils.dates import business_today
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def _mk_quote(db, c, num, status="sent", valid_until=None):
     q = Quote(client_id=c.id, quote_number=num, title="T", service_type="residential",
               address="1 St", notes="", items=[], subtotal=100, tax_rate=0, tax=0,
               discount=0, total=100, status=status,
-              valid_until=valid_until or (date.today() + timedelta(days=30)))
+              valid_until=valid_until or (business_today() + timedelta(days=30)))
     db.add(q); db.commit(); db.refresh(q)
     return q
 
@@ -85,9 +86,9 @@ def test_permanent_delete_removes_archived_quote(ctx):
 
 def test_expiry_sweep_flips_past_due_sent_quotes(ctx):
     db, c = ctx
-    past = _mk_quote(db, c, "QT-CL-3", status="sent", valid_until=date.today() - timedelta(days=1))
-    future = _mk_quote(db, c, "QT-CL-4", status="sent", valid_until=date.today() + timedelta(days=5))
-    accepted = _mk_quote(db, c, "QT-CL-5", status="accepted", valid_until=date.today() - timedelta(days=1))
+    past = _mk_quote(db, c, "QT-CL-3", status="sent", valid_until=business_today() - timedelta(days=1))
+    future = _mk_quote(db, c, "QT-CL-4", status="sent", valid_until=business_today() + timedelta(days=5))
+    accepted = _mk_quote(db, c, "QT-CL-5", status="accepted", valid_until=business_today() - timedelta(days=1))
     from scheduler import quote_expiry_tick
     res = quote_expiry_tick()
     assert res.get("expired", 0) >= 1

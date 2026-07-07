@@ -13,6 +13,7 @@ from database.db import SessionLocal
 from database.models import Client, Quote
 from schemas.quotes import QuoteCreate
 from modules.quoting.router import create_quote, public_quote_pdf
+from utils.dates import business_today
 
 
 @pytest.fixture
@@ -34,7 +35,10 @@ def test_create_quote_defaults_valid_until_to_30_days(client_ctx):
     user = SimpleNamespace(id=None)
     out = create_quote(QuoteCreate(client_id=c.id, title="T", items=[]), db=db, current_user=user)
     q = db.query(Quote).filter(Quote.id == out["id"]).first()
-    assert q.valid_until == date.today() + timedelta(days=30)
+    # create_quote stamps valid_until off business_today() (America/New_York)
+    # — comparing to date.today() (UTC) flakes near midnight UTC when the two
+    # calendars diverge by a day.
+    assert q.valid_until == business_today() + timedelta(days=30)
 
 
 def test_create_quote_respects_explicit_valid_until(client_ctx):
