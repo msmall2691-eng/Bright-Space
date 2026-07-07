@@ -2180,17 +2180,30 @@ def skip_job(job_id: int, reason: Optional[str] = None, db: Session = Depends(ge
 def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
     """Suggest crew for a job based on recent assignments at the same property.
 
-    Mirrors /api/visits/{id}/crew-suggestions — sorted by frequency, top 5."""
+    Ordered by scheduled_date DESC so "recent" actually means recent — the
+    previous version limited to 20 rows but had no ORDER BY, so the DB was
+    free to return the *oldest* 20 jobs at that property, which surfaced
+    stale cleaners (e.g. someone who cleaned once in 2023 outranking a
+    regular from last month). Audit: crew suggestions unreliable.
+
+    Sorted by frequency, top 5.
+    """
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if not job.property_id:
         return {"job_id": job_id, "property_id": None, "suggestions": []}
 
-    recent_jobs = db.query(Job).filter(
-        Job.property_id == job.property_id,
-        Job.cleaner_ids.isnot(None),
-    ).limit(20).all()
+    recent_jobs = (
+        db.query(Job)
+        .filter(
+            Job.property_id == job.property_id,
+            Job.cleaner_ids.isnot(None),
+        )
+        .order_by(Job.scheduled_date.desc().nullslast(), Job.id.desc())
+        .limit(20)
+        .all()
+    )
 
     crew_freq: dict = {}
     for j in recent_jobs:

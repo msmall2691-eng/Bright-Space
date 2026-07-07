@@ -562,14 +562,26 @@ def ical_preview(property_id: int, db: Session = Depends(get_db)):
     return out
 
 
-@router.get("/all-ical-events")
+@router.get("/all-ical-events", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_all_ical_events(
     start: Optional[str] = None,
     end: Optional[str] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
-    """Return all iCal booking events across all properties (for the main calendar)."""
-    q = db.query(ICalEvent, Property).join(Property, ICalEvent.property_id == Property.id)
+    """Return all iCal booking events across the caller's properties (for the
+    main calendar).
+
+    Audit: this used to have no role gate and no org scoping — any signed-in
+    user (or the shared API key) could list every property's bookings across
+    tenants. Now: role-gated and joined through the property's org_id, keeping
+    the legacy `org_id IS NULL` rows visible for pre-tenancy data.
+    """
+    q = (
+        db.query(ICalEvent, Property)
+        .join(Property, ICalEvent.property_id == Property.id)
+        .filter(or_(Property.org_id == org_id, Property.org_id.is_(None)))
+    )
     if start:
         q = q.filter(ICalEvent.checkout_date >= start)
     if end:

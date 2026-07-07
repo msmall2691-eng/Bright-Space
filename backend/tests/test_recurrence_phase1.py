@@ -204,6 +204,53 @@ def test_skip_endpoint_creates_exception(fresh_client_property):
         db.close()
 
 
+def test_skip_endpoint_cancels_existing_job(fresh_client_property):
+    """Regression: prior to the audit fix, _cancel_existing_job_and_visit
+    referenced a `Visit` model that no longer exists (removed by migration
+    039's Job/Visit unification). Skipping an occurrence that already had a
+    materialized Job raised NameError before this test could observe the
+    cancellation. Now the helper cancels the Job only and returns cleanly.
+    """
+    from fastapi.testclient import TestClient
+    from main import app
+    api = TestClient(app)
+
+    client, prop = fresh_client_property
+    db = SessionLocal()
+    try:
+        sched = _make_schedule(db, client, prop)
+        target = date.today() + timedelta(days=7)
+
+        job = Job(
+            client_id=client.id,
+            property_id=prop.id,
+            recurring_schedule_id=sched.id,
+            title="Weekly clean",
+            job_type="residential",
+            scheduled_date=target,
+            status="scheduled",
+            cleaner_ids=[],
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+
+        r = api.post(
+            f"/api/recurring/{sched.id}/skip",
+            json={"exception_date": target.isoformat(), "reason": "client out of town"},
+        )
+        assert r.status_code == 201, r.text
+
+        db.expire_all()
+        cancelled = db.query(Job).filter_by(id=job_id).first()
+        assert cancelled is not None
+        assert cancelled.status == "cancelled"
+        assert "client out of town" in (cancelled.notes or "")
+    finally:
+        db.close()
+
+
 def test_skip_endpoint_is_idempotent(fresh_client_property):
     from fastapi.testclient import TestClient
     from main import app

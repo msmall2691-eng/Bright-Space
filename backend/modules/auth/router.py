@@ -170,8 +170,24 @@ def get_current_user(
 
     # No Bearer — middleware must have admitted us via API key.
     # Surface a synthetic admin user (not persisted) for role checks.
+    #
+    # Audit callout: the synthetic user is `id=0` and effectively an
+    # unlogged super-admin. Log every hit at WARNING with the path + client
+    # host so an operator can grep production logs to see who's using the
+    # master key and against which endpoints, and can decide whether to
+    # rotate it or split it into scoped credentials.
     import os as _os
     if _os.getenv("BRIGHTBASE_API_KEY", ""):
+        try:
+            path = request.url.path
+            client = request.client.host if request.client else "unknown"
+        except Exception:
+            path, client = "?", "?"
+        logger.warning(
+            "[auth] Shared BRIGHTBASE_API_KEY used as synthetic admin (id=0) "
+            "for %s from %s — no user attribution.",
+            path, client,
+        )
         synthetic = User(id=0, email="api-key@internal", full_name="API Key", role="admin", active=True)
         return synthetic
 

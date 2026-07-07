@@ -549,10 +549,16 @@ def _ex_to_dict(ex: RecurrenceException) -> dict:
     }
 
 
-def _cancel_existing_job_and_visit(db: Session, sched_id: int, target_date: date, reason: Optional[str]) -> None:
-    """Mark any Job + Visit on (schedule_id, target_date) as cancelled. Used
-    when a skip/reschedule exception is added so the immediate UI reflects
-    the change without waiting for the next /generate-all run."""
+def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: Optional[str]) -> None:
+    """Mark any Job on (schedule_id, target_date) as cancelled so a
+    skip/reschedule exception takes effect immediately without waiting for
+    the next /generate-all run.
+
+    Historically this also walked a `Visit` table, but migration 039
+    removed the Visit model entirely (Job/Visit unification). The old
+    `Visit.job_id` reference here was a stale NameError waiting for the
+    first skip/reschedule that landed on an existing Job — audit bug.
+    """
     target_date = _as_date(target_date)
     job = (
         db.query(Job)
@@ -566,11 +572,8 @@ def _cancel_existing_job_and_visit(db: Session, sched_id: int, target_date: date
     if job is None:
         return
     job.status = "cancelled"
-    for v in db.query(Visit).filter(Visit.job_id == job.id).all():
-        if v.status not in ("completed", "cancelled"):
-            v.status = "cancelled"
-            if reason:
-                v.notes = (v.notes or "") + f"\n[Skipped via exception: {reason}]"
+    if reason:
+        job.notes = (job.notes or "") + f"\n[Skipped via exception: {reason}]"
 
 
 @router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
@@ -610,7 +613,7 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
         )
         db.add(ex)
 
-    _cancel_existing_job_and_visit(db, schedule_id, body.exception_date, body.reason)
+    _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
     db.commit()
     db.refresh(ex)
     return _ex_to_dict(ex)
@@ -665,7 +668,7 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         )
         db.add(ex)
 
-    _cancel_existing_job_and_visit(db, schedule_id, body.exception_date, body.reason)
+    _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
 
     # Materialize (or update) the Job for the rescheduled date with the
     # exception times. generate_jobs uses series times only, so without this
