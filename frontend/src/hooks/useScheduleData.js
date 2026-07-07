@@ -1,17 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { get } from '../api'
 import { toLocalYMD } from '../utils/format'
+import { rangeForView } from '../utils/dateRange'
 import { useEmployees } from './useEmployees'
 
 /** Loads the /api/schedule/week aggregate (visits + jobs + properties +
- *  clients) for the week containing `currentDate`, plus the Connecteam
- *  employee roster used for cleaner-name lookup.
+ *  clients) for the range implied by `viewMode` around `currentDate`,
+ *  plus the Connecteam employee roster used for cleaner-name lookup.
  *
- *  Returns the four indexed maps + list + a `refresh()` bump, plus
+ *  Audit §16: the range is now view-aware. agenda + week fetch the
+ *  Sun-Sat week (unchanged). Month fetches the full calendar-grid range
+ *  (first Sunday on-or-before the 1st, last Saturday on-or-after the
+ *  last) so a single fetch feeds both the health strip and the month
+ *  grid — no more two-fetch mismatch where the strip counted the week's
+ *  jobs while the grid showed the month's.
+ *
+ *  Returns the four indexed maps + list + `range` (the [start, end]
+ *  actually fetched, so CalendarView can skip its own fetch when the
+ *  parent already covers its month) + a `refresh()` bump, plus
  *  `setVisits` / `setJobs` so the parent can patch local state after a
- *  successful mutation (delete, complete, toggle-reminder) without waiting
- *  for a full refetch. `empName(id)` resolves a cleaner id to a display name. */
-export function useScheduleData(currentDate) {
+ *  successful mutation without waiting for a full refetch. `empName(id)`
+ *  resolves a cleaner id to a display name. */
+export function useScheduleData(currentDate, viewMode = 'week') {
   const [visits, setVisits] = useState([])
   const [jobs, setJobs] = useState({})
   const [properties, setProperties] = useState({})
@@ -25,18 +35,18 @@ export function useScheduleData(currentDate) {
   // JobEditModal, and the other roster consumers (audit §18).
   const { employees, empName } = useEmployees()
 
+  // Serialize the range so the useEffect deps stay primitive (avoids
+  // re-firing on every render when the object identity changes).
+  const range = useMemo(() => rangeForView(currentDate, viewMode), [currentDate, viewMode])
+  const rangeKey = `${range.start}|${range.end}`
+
   useEffect(() => {
     const loadSchedule = async () => {
       setLoading(true)
       setLoadError(false)
       try {
-        const startDate = new Date(currentDate)
-        startDate.setDate(startDate.getDate() - startDate.getDay())
-        const endDate = new Date(startDate)
-        endDate.setDate(endDate.getDate() + 6)
-
-        const start = toLocalYMD(startDate)
-        const end = toLocalYMD(endDate)
+        const start = range.start
+        const end = range.end
 
         // One aggregate call returns the whole week (visits + jobs + properties
         // + clients) instead of four parallel round trips. Shapes are identical
@@ -77,7 +87,9 @@ export function useScheduleData(currentDate) {
       setLoading(false)
     }
     loadSchedule()
-  }, [currentDate, refreshKey])
+    // rangeKey is the primitive string form of `range` so React can compare
+    // it cheaply; refreshKey lets refresh() re-fire without a range change.
+  }, [rangeKey, refreshKey])
 
   const refresh = () => setRefreshKey(k => k + 1)
 
@@ -89,5 +101,9 @@ export function useScheduleData(currentDate) {
     loading, loadError,
     refresh,
     employees, empName,
+    // The range that's actually loaded. CalendarView reads this to decide
+    // whether the parent's data covers its month grid — if yes, skip the
+    // duplicate /api/jobs fetch (audit §16).
+    range,
   }
 }

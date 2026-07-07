@@ -5,6 +5,7 @@ import { toLocalYMD } from '../utils/format'
 import { PROPERTY_TYPE_CONFIG } from './schedule/constants'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useEmployees } from '../hooks/useEmployees'
+import { monthGridRange, rangeContains } from '../utils/dateRange'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -49,10 +50,33 @@ function initials(name) {
 
 // useIsMobile lives in ../hooks/useIsMobile now — shared with WeekGrid.
 
-export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, refreshKey, filters = {}, toast }) {
-  const now = new Date()
+export default function CalendarView({
+  onJobClick, onDayClick, onCreateForDay,
+  refreshKey, filters = {}, toast,
+  // Audit §16: parent-fed jobs + range. When rangeContains(parentRange,
+  // this-month-grid) we skip the local /api/jobs fetch and render from
+  // parentJobs. anchorDate tells us which month to open on (defaults to
+  // "now" so this component still works standalone with no parent state).
+  parentJobs, parentRange, anchorDate, onMonthChange,
+}) {
+  const now = anchorDate ? new Date(anchorDate) : new Date()
   const [year,  setYear]  = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
+
+  // Keep the internal year/month synced with anchorDate when the parent
+  // moves. Two-way binding: the Prev/Next buttons below call onMonthChange
+  // so the parent moves currentDate, then we re-render at the new month.
+  useEffect(() => {
+    if (!anchorDate) return
+    const d = new Date(anchorDate)
+    const y = d.getFullYear()
+    const m = d.getMonth()
+    if (y !== year || m !== month) {
+      setYear(y)
+      setMonth(m)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorDate])
   const [jobs,       setJobs]       = useState([])
   const [icalEvents, setIcalEvents] = useState([])
   const [exceptions, setExceptions] = useState([])
@@ -77,11 +101,23 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   const rangeStart = isoDate(year, month, 1)
   const rangeEnd   = isoDate(year, month, lastDay.getDate())
 
+  // Audit §16: skip the local /api/jobs fetch when the parent already has
+  // data covering our month grid. We STILL fetch iCal events + exceptions
+  // (those aren't in /api/schedule/week's payload) so the guest-stay and
+  // skip/reschedule chips keep working.
+  const gridRange = monthGridRange(new Date(year, month, 15))
+  const parentCoversMonth = rangeContains(parentRange, gridRange)
+
   useEffect(() => {
-    // The jobs fetch is the one users notice — surface loading + error state
-    // on it. iCal events + exceptions are supplementary overlays; their
-    // failures still just log so a bad iCal endpoint can't gray out the
-    // whole schedule.
+    if (parentCoversMonth) {
+      // Use the parent's dataset; the effect below still fetches iCal +
+      // exceptions independently. Clear any stale error banner.
+      setMonthLoading(false)
+      setMonthError(null)
+      return
+    }
+    // Standalone path (e.g. component used elsewhere, or parent is on a
+    // narrower week range): fetch the month range ourselves.
     setMonthLoading(true)
     setMonthError(null)
     get(`/api/jobs?date_from=${rangeStart}&date_to=${rangeEnd}`)
@@ -91,7 +127,12 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
         setMonthError(err?.detail || err?.message || 'Failed to load schedule')
         console.error("[CalendarView] Failed to load jobs:", err.message || err)
       })
+  }, [year, month, refreshKey, parentCoversMonth])
 
+  useEffect(() => {
+    // iCal + exceptions overlays are always fetched — they aren't in the
+    // parent's payload and their failures still just log so a bad iCal
+    // endpoint can't gray out the whole schedule.
     get(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
       .then(d => setIcalEvents(Array.isArray(d) ? d : []))
       .catch(err => console.error("[CalendarView] Failed to load iCal events:", err.message || err))
@@ -113,6 +154,23 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
   }
 
   // Employees roster is fetched via useEmployees above (audit §18).
+
+  // Audit §16: when the parent covers our range, seed the local `jobs`
+  // state from the parent's data. Every existing setJobs(...) call
+  // (drag-drop optimistic updates, save-refetch, etc.) then continues to
+  // work unchanged — the parent's next render will overwrite our local
+  // state with the fresh server-of-truth data. This is the minimum-blast
+  // shape that lets the two views share a fetch without rewriting the
+  // 700 lines of month-grid interaction code.
+  useEffect(() => {
+    if (parentCoversMonth && Array.isArray(parentJobs)) {
+      setJobs(parentJobs)
+    }
+  // parentJobs identity changes on every parent render; that's OK, the
+  // shallow comparison inside React state means a real content change
+  // triggers a single re-render. If this ever becomes a perf pinch,
+  // memoize parentJobs at the caller.
+  }, [parentCoversMonth, parentJobs])
 
   const filteredJobs = jobs.filter(j => {
     // Hide cancelled jobs by default so a deleted/cancelled job comes OFF the
@@ -160,9 +218,27 @@ export default function CalendarView({ onJobClick, onDayClick, onCreateForDay, r
     return e ? initials(e.name || e.displayName || '') : ''
   }
 
-  const prev = () => { if (month === 0) { setYear(y => y - 1); setMonth(11) } else setMonth(m => m - 1) }
-  const next = () => { if (month === 11) { setYear(y => y + 1); setMonth(0) } else setMonth(m => m + 1) }
-  const goToday = () => { setYear(now.getFullYear()); setMonth(now.getMonth()); setSelected(today) }
+  // Audit §16: when the parent supplies onMonthChange, prev/next also move
+  // the parent's currentDate so useScheduleData refetches at the new
+  // range and we don't fall off the parent-covered fast path. Without a
+  // parent wired up, this reduces to the old local-only behavior.
+  const _emitMonth = (y, m) => {
+    if (onMonthChange) onMonthChange(new Date(y, m, 15, 12, 0, 0))
+  }
+  const prev = () => {
+    if (month === 0) { setYear(y => y - 1); setMonth(11); _emitMonth(year - 1, 11) }
+    else { setMonth(m => m - 1); _emitMonth(year, month - 1) }
+  }
+  const next = () => {
+    if (month === 11) { setYear(y => y + 1); setMonth(0); _emitMonth(year + 1, 0) }
+    else { setMonth(m => m + 1); _emitMonth(year, month + 1) }
+  }
+  const goToday = () => {
+    setYear(now.getFullYear())
+    setMonth(now.getMonth())
+    setSelected(today)
+    _emitMonth(now.getFullYear(), now.getMonth())
+  }
 
   const onDragStart = (e, job) => {
     if (isMobile) return

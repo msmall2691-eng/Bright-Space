@@ -79,7 +79,8 @@ export default function Schedule() {
     loading, loadError,
     refresh,
     empName,
-  } = useScheduleData(currentDate)
+    range: dataRange,
+  } = useScheduleData(currentDate, viewMode)
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
@@ -441,6 +442,16 @@ export default function Schedule() {
               ...(selectedStatus !== 'all' ? { status: selectedStatus } : {}),
             }}
             toast={toast}
+            /* Audit §16 fetch consolidation: hand the already-fetched jobs +
+               range to CalendarView so it can skip its own /api/jobs
+               request when parentRange covers its month grid. Its Prev/Next
+               month buttons call onMonthChange(date) so useScheduleData
+               refetches at the new range instead of CalendarView keeping a
+               parallel dataset. */
+            parentJobs={Object.values(jobs || {})}
+            parentRange={dataRange}
+            onMonthChange={(d) => setCurrentDate(d)}
+            anchorDate={currentDate}
           />
         </div>
       ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
