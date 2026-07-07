@@ -1,6 +1,7 @@
-import { useMemo, useEffect, useRef, useState } from 'react'
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
 import { Calendar as CalendarIcon, Plus, AlertCircle, Users } from 'lucide-react'
 import Button from '../ui/Button'
+import { patch } from '../../api'
 import { toLocalYMD, todayYMD } from '../../utils/format'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import {
@@ -15,6 +16,9 @@ import {
   splitTimedUntimed,
   weekDaysContaining,
   parseTimeToHour,
+  pxToHour,
+  hourToTimeString,
+  planReschedule,
   WEEK_GRID_CONSTANTS,
 } from './weekGridLayout'
 
@@ -27,9 +31,20 @@ import {
  * Untimed jobs (needs_setup / no start_time) show in a thin amber strip at
  * the top of their column so they can't be silently hidden.
  *
- * PR A scope: read-only. No drag-to-reschedule, no click-empty-slot create
- * (both are PR B). Tapping a block calls onOpen(visit) so the parent can
- * open the shared VisitDetailsDrawer that agenda already uses.
+ * PR B additions:
+ *  - Drag a block to another day/time → optimistic move + PATCH /api/jobs/{id}
+ *    persisting scheduled_date + start_time + end_time (duration preserved).
+ *    Snaps to 15-minute slots. On 409 (double-booking / time-off / capacity)
+ *    the drop reverts and a toast with a "Reschedule anyway" action re-PATCHes
+ *    with allow_conflicts=true — mirrors the month-grid override path from
+ *    Week 1.
+ *  - Click an empty slot (or the untimed strip's blank half) → onNewSlot(
+ *    { date, start_time, end_time }) so the parent opens the create modal
+ *    prefilled with the clicked day + start time. Falls back to onNewJob(date)
+ *    when no slot handler is provided.
+ *
+ * Desktop DnD only in this pass — mobile falls back to agenda, so the touch
+ * path from CalendarView isn't ported here (would be dead code).
  *
  * Props:
  *   currentDate    — any date inside the week to render (Sun-Sat window).
@@ -39,7 +54,17 @@ import {
  *   jobs, properties, clients — id-keyed maps for rendering job metadata.
  *   empName(id)    — resolves cleaner id → display name (fallback initials).
  *   onOpen(visit)  — parent opens the detail drawer (audit §7 unify).
- *   onNewJob(dateStr) — toolbar "New Job" callback (empty-slot create is PR B).
+ *   onNewJob(dateStr) — toolbar "New Job" callback used for the empty-week CTA.
+ *   onNewSlot({ date, start_time, end_time }) — PR B: click-empty-slot handler.
+ *   onLocalMove(jobId, patch) — parent's optimistic-state hook; when supplied,
+ *                    the parent syncs its local `jobs`/`visits` maps so the
+ *                    block stays in the new position instead of snapping back
+ *                    on the next render. Optional — the grid keeps a small
+ *                    internal override map either way.
+ *   toast          — the shared useToast() `toast` object; used for the 409
+ *                    "Reschedule anyway" notice. When absent, drag-drop still
+ *                    works but conflicts fall through to console.error like
+ *                    they did before.
  */
 const HOUR_ROW_PX = 56
 const UNTIMED_STRIP_PX = 34
@@ -55,16 +80,31 @@ export default function WeekGrid({
   empName,
   onOpen,
   onNewJob,
+  onNewSlot,
+  onLocalMove,
+  toast,
 }) {
   const isMobile = useIsMobile()
 
   const days = useMemo(() => weekDaysContaining(currentDate), [currentDate])
 
+  // Optimistic drag override: {[visitId]: { scheduled_date, start_time, end_time }}.
+  // When the parent has an onLocalMove hook we defer to its state; otherwise
+  // we keep the override locally so the block visually moves on drop even
+  // before the PATCH settles.
+  const [override, setOverride] = useState({})
+  const applyOverride = useCallback((v) => {
+    const o = override[v.id]
+    if (!o) return v
+    return { ...v, scheduled_date: o.scheduled_date, start_time: o.start_time, end_time: o.end_time }
+  }, [override])
+
   // Bucket visits by date, then compute per-day timed layout + untimed strip.
   const perDay = useMemo(() => {
     const byDay = {}
     for (const d of days) byDay[d] = []
-    for (const v of filteredVisits) {
+    for (const raw of filteredVisits) {
+      const v = applyOverride(raw)
       if (v.scheduled_date && byDay[v.scheduled_date]) byDay[v.scheduled_date].push(v)
     }
     return days.map(d => {
@@ -80,7 +120,7 @@ export default function WeekGrid({
         laneByVisitId: byVisitId,
       }
     })
-  }, [days, filteredVisits])
+  }, [days, filteredVisits, applyOverride])
 
   // Auto-expand the visible hour band to fit anything outside the default.
   const band = useMemo(() => computeHourBand(filteredVisits), [filteredVisits])
@@ -93,6 +133,63 @@ export default function WeekGrid({
     const t = setInterval(() => setNowInDay(nowHourInLocal()), 5 * 60 * 1000)
     return () => clearInterval(t)
   }, [])
+
+  // Drag-to-reschedule state. `draggingVisit` is the block currently being
+  // dragged (null when idle). `dropPreview` is where it would land if
+  // released now — used to render the ghost block and to compute the drop
+  // target on drop. The current-drop hour also lets the DayColumn draw a
+  // subtle highlight of the target slot.
+  const [draggingVisit, setDraggingVisit] = useState(null)
+  const [dropPreview, setDropPreview] = useState(null)  // { date, startHour } | null
+
+  /**
+   * Optimistic reschedule commit. Mirrors CalendarView.commitReschedule from
+   * Week 1: on 409, revert + toast with a "Reschedule anyway" retry that
+   * re-issues the PATCH with allow_conflicts=true; on any other error, revert
+   * + surface the reason. Never blocks the drop UX.
+   */
+  const commitReschedule = useCallback(async (visitId, jobId, original, next, opts = {}) => {
+    const { allowConflicts = false, isRetry = false } = opts
+    // Local optimistic apply for the block position, in case the parent
+    // hasn't wired onLocalMove — this component still visualizes the move.
+    setOverride(o => ({ ...o, [visitId]: next }))
+    if (onLocalMove) onLocalMove(jobId, next)
+    try {
+      await patch(`/api/jobs/${jobId}`, {
+        scheduled_date: next.scheduled_date,
+        start_time: next.start_time,
+        end_time: next.end_time,
+        ...(allowConflicts ? { allow_conflicts: true } : {}),
+      })
+      if (isRetry && toast) toast.success('Rescheduled with conflict override')
+    } catch (err) {
+      const status = err && (err.status || err.statusCode)
+      const detail = (err && (err.detail || err.message)) || ''
+      // Revert the optimistic move.
+      setOverride(o => {
+        const { [visitId]: _dropped, ...rest } = o
+        return rest
+      })
+      if (onLocalMove) onLocalMove(jobId, original)
+      if (status === 409 && toast) {
+        toast.error(
+          `Can't move: ${detail.slice(0, 160) || 'scheduling conflict'}`,
+          {
+            action: {
+              label: 'Reschedule anyway',
+              onClick: () => commitReschedule(visitId, jobId, original, next, {
+                allowConflicts: true, isRetry: true,
+              }),
+            },
+          },
+        )
+      } else if (toast) {
+        toast.error(`Reschedule failed${detail ? ': ' + detail.slice(0, 160) : ''}`)
+      } else {
+        console.error('[WeekGrid] Reschedule failed:', err)
+      }
+    }
+  }, [onLocalMove, toast])
 
   // Mobile fallback (audit §7): 7-column grid is unusable at phone width.
   // Render a friendly "switch to Day" hint; the toolbar's view toggle stays
@@ -204,6 +301,41 @@ export default function WeekGrid({
               empName={empName}
               onOpen={onOpen}
               nowInDay={nowInDay}
+              /* PR B: drag-drop + click-empty-slot */
+              draggingVisit={draggingVisit}
+              dropPreview={dropPreview}
+              onDragStartBlock={setDraggingVisit}
+              onDragEndBlock={() => { setDraggingVisit(null); setDropPreview(null) }}
+              onColumnDragOver={(nextPreview) => setDropPreview(nextPreview)}
+              onColumnDrop={(targetDate, targetHour) => {
+                if (!draggingVisit) return
+                const jobId = draggingVisit.job_id ?? draggingVisit.id
+                const original = {
+                  scheduled_date: draggingVisit.scheduled_date,
+                  start_time: draggingVisit.start_time,
+                  end_time: draggingVisit.end_time,
+                }
+                const next = planReschedule({
+                  originalStart: draggingVisit.start_time,
+                  originalEnd: draggingVisit.end_time,
+                  targetDate,
+                  targetHour,
+                })
+                setDraggingVisit(null)
+                setDropPreview(null)
+                // No-op moves shouldn't hit the API.
+                if (next.scheduled_date === original.scheduled_date
+                    && next.start_time === original.start_time
+                    && next.end_time === original.end_time) return
+                commitReschedule(draggingVisit.id, jobId, original, next)
+              }}
+              onEmptySlot={(startTime, endTime) => {
+                if (onNewSlot) {
+                  onNewSlot({ date, start_time: startTime, end_time: endTime })
+                } else if (onNewJob) {
+                  onNewJob(date)
+                }
+              }}
             />
           ))}
         </div>
@@ -216,9 +348,60 @@ function DayColumn({
   date, todayStr, band, hourRowPx, untimedStripPx,
   timedVisits, untimedVisits, laneByVisitId,
   jobs, properties, clients, empName, onOpen, nowInDay,
+  draggingVisit, dropPreview,
+  onDragStartBlock, onDragEndBlock,
+  onColumnDragOver, onColumnDrop,
+  onEmptySlot,
 }) {
   const isToday = date === todayStr
   const gridHeightPx = (band.endHour - band.startHour) * hourRowPx
+  const bodyRef = useRef(null)
+
+  // Resolve where the pointer is inside the timed body → a snapped hour.
+  const pointerToHour = (e) => {
+    const rect = bodyRef.current?.getBoundingClientRect()
+    if (!rect) return band.startHour
+    const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+    return pxToHour(y, rect.height, band)
+  }
+
+  const handleDragOver = (e) => {
+    if (!draggingVisit) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const hour = pointerToHour(e)
+    // Micro-optimization: only push a new preview when the day or the
+    // rounded hour actually changed. Avoids re-render on every mousemove px.
+    if (!dropPreview || dropPreview.date !== date
+        || Math.abs(dropPreview.startHour - hour) > 1e-6) {
+      onColumnDragOver && onColumnDragOver({ date, startHour: hour })
+    }
+  }
+
+  const handleDrop = (e) => {
+    if (!draggingVisit) return
+    e.preventDefault()
+    const hour = pointerToHour(e)
+    onColumnDrop && onColumnDrop(date, hour)
+  }
+
+  // Click-empty-slot to create. Only fire when the click landed on the body
+  // itself (not on a bubbling block click), and only outside an existing
+  // block's rect — VisitBlock's onClick calls stopPropagation, but the extra
+  // check on `e.target === bodyRef.current` keeps us safe against ghosts.
+  const handleBodyClick = (e) => {
+    if (!onEmptySlot) return
+    if (e.target !== bodyRef.current) return
+    const hour = pointerToHour(e)
+    const startTime = hourToTimeString(hour)
+    const endTime = hourToTimeString(Math.min(23.983, hour + WEEK_GRID_CONSTANTS.DEFAULT_DURATION_HOURS))
+    onEmptySlot(startTime, endTime)
+  }
+
+  const isDropTarget = dropPreview && dropPreview.date === date && draggingVisit
+  const dropTopPct = isDropTarget
+    ? (dropPreview.startHour - band.startHour) / (band.endHour - band.startHour)
+    : 0
 
   return (
     <div className={`border-r border-hairline last:border-r-0 relative ${isToday ? 'bg-blue-50/30' : ''}`}>
@@ -250,8 +433,35 @@ function DayColumn({
         )}
       </div>
 
-      {/* Hour-lined body */}
-      <div className="relative" style={{ height: gridHeightPx }}>
+      {/* Hour-lined body — also the drag-drop target + click-empty-slot host.
+          bodyRef gives us a stable rect for pointerToHour(). Clicks on
+          existing blocks stopPropagation so they never fall through here. */}
+      <div
+        ref={bodyRef}
+        className={`relative ${draggingVisit ? 'cursor-copy' : (onEmptySlot ? 'cursor-cell' : '')}`}
+        style={{ height: gridHeightPx }}
+        onDragOver={handleDragOver}
+        onDragLeave={() => {/* keep the preview until we get a new dragover */}}
+        onDrop={handleDrop}
+        onClick={handleBodyClick}
+      >
+        {/* Drop preview: a translucent horizontal band showing where the
+            dragged block would land. Height ~= dragged block's duration so
+            the operator sees the actual footprint, not just a line. */}
+        {isDropTarget && (() => {
+          const duration = previewDurationHours(draggingVisit)
+          const clampedStart = Math.min(band.endHour - duration, Math.max(band.startHour, dropPreview.startHour))
+          const total = band.endHour - band.startHour
+          const topPct = (clampedStart - band.startHour) / total
+          const heightPct = duration / total
+          return (
+            <div
+              className="absolute left-0.5 right-0.5 rounded-md bg-blue-500/20 border border-dashed border-blue-500 pointer-events-none z-10"
+              style={{ top: `${topPct * 100}%`, height: `${heightPct * 100}%` }}
+              data-testid="week-grid-drop-preview"
+            />
+          )
+        })()}
         {/* Faint horizontal lines every hour so the block positions are readable. */}
         {hoursInBand(band).map((h, i) => (
           <div
@@ -293,6 +503,9 @@ function DayColumn({
               leftPct={leftPct}
               widthPct={widthPct}
               gridHeightPx={gridHeightPx}
+              isDragging={draggingVisit?.id === v.id}
+              onDragStart={onDragStartBlock}
+              onDragEnd={onDragEndBlock}
             />
           )
         })}
@@ -301,7 +514,11 @@ function DayColumn({
   )
 }
 
-function VisitBlock({ visit, jobs, properties, clients, empName, onOpen, topPct, heightPct, leftPct, widthPct, gridHeightPx }) {
+function VisitBlock({
+  visit, jobs, properties, clients, empName, onOpen,
+  topPct, heightPct, leftPct, widthPct, gridHeightPx,
+  isDragging, onDragStart, onDragEnd,
+}) {
   const job = jobs[visit.job_id] || visit
   const property = properties[job.property_id]
   const client = clients[job.client_id]
@@ -318,17 +535,32 @@ function VisitBlock({ visit, jobs, properties, clients, empName, onOpen, topPct,
     height: heightPx,
     left: `calc(${leftPct}% + 2px)`,
     width: `calc(${widthPct}% - 4px)`,
+    opacity: isDragging ? 0.4 : undefined,
   }
 
   const label = client?.name || property?.address || job?.title || 'Job'
   const timeLabel = formatTimeRange(visit.start_time, visit.end_time)
 
+  const canDrag = !isCancelled && onDragStart
   return (
     <button
       type="button"
-      className={`absolute rounded-md border shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${cfg.pill} ${isCancelled ? 'opacity-50 line-through' : ''}`}
+      draggable={canDrag ? true : undefined}
+      onDragStart={canDrag ? (e) => {
+        // Payload isn't needed — WeekGrid holds the dragging state in React —
+        // but setting SOMETHING keeps Firefox happy and shows the copy cursor.
+        e.dataTransfer.effectAllowed = 'move'
+        try { e.dataTransfer.setData('text/plain', String(visit.id)) } catch { /* ignore */ }
+        onDragStart(visit)
+      } : undefined}
+      onDragEnd={canDrag ? () => onDragEnd && onDragEnd() : undefined}
+      className={`absolute rounded-md border shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${cfg.pill} ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
       style={style}
-      onClick={() => onOpen && onOpen(visit)}
+      onClick={(e) => {
+        // Stop the click bubbling into the day-column's empty-slot handler.
+        e.stopPropagation()
+        onOpen && onOpen(visit)
+      }}
       data-testid={`week-grid-block-${visit.id}`}
       title={`${timeLabel} · ${label}`}
     >
@@ -386,6 +618,18 @@ function hoursInBand(band) {
   const out = []
   for (let h = band.startHour; h < band.endHour; h++) out.push(h)
   return out
+}
+
+/**
+ * The dragged block's height footprint, in hours. Used to size the drop
+ * preview so the operator sees the actual landing rect, not just a line.
+ * Falls back to the default 2h for untimed drags.
+ */
+function previewDurationHours(visit) {
+  const s = parseTimeToHour(visit?.start_time)
+  const e = parseTimeToHour(visit?.end_time)
+  if (s != null && e != null && e > s) return e - s
+  return WEEK_GRID_CONSTANTS.DEFAULT_DURATION_HOURS
 }
 
 function formatHour(h) {

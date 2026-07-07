@@ -6,6 +6,9 @@ import {
   layoutDayColumn,
   splitTimedUntimed,
   weekDaysContaining,
+  pxToHour,
+  hourToTimeString,
+  planReschedule,
   WEEK_GRID_CONSTANTS,
 } from '../weekGridLayout'
 
@@ -164,5 +167,97 @@ describe('weekDaysContaining', () => {
   it('starts on Sunday itself when given a Sunday', () => {
     const days = weekDaysContaining(new Date(2026, 6, 5))
     expect(days[0]).toBe('2026-07-05')
+  })
+})
+
+describe('pxToHour', () => {
+  const band = { startHour: 8, endHour: 20 }              // 12h visible
+  const gridPx = 12 * 56                                  // 56px per hour
+
+  it('maps 0px to the band start', () => {
+    expect(pxToHour(0, gridPx, band)).toBe(8)
+  })
+  it('snaps to 15-minute slots', () => {
+    // 70min past 08:00 = 09:10; closest 15-min slot is 09:15 (5 min away vs
+    // 10 min to 09:00). Snapped value → 9.25.
+    expect(pxToHour((70 / 60) * 56, gridPx, band)).toBeCloseTo(9.25, 5)
+    // 80min past 08:00 = 09:20; closest slot is 09:15 (5 min).
+    expect(pxToHour((80 / 60) * 56, gridPx, band)).toBeCloseTo(9.25, 5)
+    // 90min past 08:00 = 09:30 exactly.
+    expect(pxToHour((90 / 60) * 56, gridPx, band)).toBeCloseTo(9.5, 5)
+  })
+  it('clamps to band.endHour - one slot so we never emit an out-of-band start', () => {
+    // Click below the last hour line — should land on the last valid slot (19:45).
+    expect(pxToHour(gridPx + 1000, gridPx, band)).toBeCloseTo(19.75, 5)
+  })
+  it('returns startHour when the grid has no height', () => {
+    expect(pxToHour(50, 0, band)).toBe(8)
+  })
+})
+
+describe('hourToTimeString', () => {
+  it('formats whole hours', () => {
+    expect(hourToTimeString(9)).toBe('09:00')
+    expect(hourToTimeString(14)).toBe('14:00')
+  })
+  it('formats 15-minute snaps', () => {
+    expect(hourToTimeString(9.25)).toBe('09:15')
+    expect(hourToTimeString(9.5)).toBe('09:30')
+    expect(hourToTimeString(9.75)).toBe('09:45')
+  })
+  it('never emits 24:xx', () => {
+    expect(hourToTimeString(25)).toBe('23:59')
+  })
+})
+
+describe('planReschedule', () => {
+  it('preserves original duration on move', () => {
+    const p = planReschedule({
+      originalStart: '09:00',
+      originalEnd: '11:30',
+      targetDate: '2026-07-10',
+      targetHour: 14,
+    })
+    expect(p).toEqual({
+      scheduled_date: '2026-07-10',
+      start_time: '14:00',
+      end_time: '16:30',      // 2.5h duration preserved
+    })
+  })
+  it('stamps a default 2h block when the original was untimed', () => {
+    const p = planReschedule({
+      originalStart: null,
+      originalEnd: null,
+      targetDate: '2026-07-10',
+      targetHour: 9,
+    })
+    expect(p.start_time).toBe('09:00')
+    expect(p.end_time).toBe('11:00')
+  })
+  it("clamps end to 23:59 so a late drop can't wrap to next day", () => {
+    const p = planReschedule({
+      originalStart: '09:00',
+      originalEnd: '12:00',        // 3h duration
+      targetDate: '2026-07-10',
+      targetHour: 22.5,             // 22:30
+    })
+    // 22:30 + 3h = 25:30 → clamps to 23:59.
+    expect(p.start_time).toBe('22:30')
+    expect(p.end_time).toBe('23:59')
+  })
+  it('keeps a positive-length block visible after end clamp', () => {
+    const p = planReschedule({
+      originalStart: '09:00',
+      originalEnd: '18:00',
+      targetDate: '2026-07-10',
+      targetHour: 23.75,           // 23:45 start, huge duration
+    })
+    expect(p.start_time).toBe('23:45')
+    // 23:59 is the hourToTimeString ceiling (24-1/60), so the gap is 14min
+    // — enough to still register as a visible block. The important thing is
+    // that it's positive and doesn't wrap past midnight.
+    const gap = parseTimeToHour(p.end_time) - parseTimeToHour(p.start_time)
+    expect(gap).toBeGreaterThan(0)
+    expect(gap).toBeLessThan(1)
   })
 })
