@@ -44,7 +44,7 @@ from modules.auth.router import router as auth_router, require_role
 from modules.admin.router import router as admin_router
 from modules.ai.router import router as ai_router
 from modules.dashboard.router import router as dashboard_router
-from modules.schedule.router import router as schedule_router
+from modules.scheduling.router import schedule_router
 
 load_dotenv()
 

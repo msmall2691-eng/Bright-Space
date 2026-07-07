@@ -10,6 +10,14 @@ by ``Base.metadata.create_all``. So:
   • Existing DB           → ``alembic upgrade head`` (unchanged behaviour).
 
 Both paths are idempotent and safe to run on every deploy.
+
+Drift tripwire: because fresh installs skip the migration chain, a bad new
+migration can land in prod without ever being replayed end-to-end.
+tests/test_migrations_from_scratch.py runs ``alembic upgrade head`` against
+an empty SQLite DB and is marked xfail(strict=True). When the chain is
+repaired that xfail flips to an unexpected pass — that is the signal to
+remove the create_all() branch below and switch fresh installs to the
+migration path like every other deploy.
 """
 import os
 import sys
