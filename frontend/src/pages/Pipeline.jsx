@@ -164,7 +164,8 @@ export default function Pipeline() {
                         ${dragId === o.id ? 'ring-1 ring-blue-400' : ''}`}
                     >
                       <div className="flex items-start gap-1.5">
-                        <GripVertical className="w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {/* Drag handle: desktop-only — HTML5 DnD doesn't fire on touch. */}
+                        <GripVertical className="hidden sm:block w-3.5 h-3.5 text-ink-3 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                         <div className="min-w-0 flex-1">
                           <Link to={`/opportunities/${o.id}`}
                             className="text-[13px] font-medium text-ink hover:text-blue-500 truncate block">

@@ -64,8 +64,9 @@ export function InvoiceRow({
         <span className={`text-xs ${st.text}`}>{st.label}</span>
       </div>
 
-      {/* Row actions — visible on hover */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+      {/* Row actions — hover-reveal on desktop, always visible on touch
+          so Send / Mark paid / Mark overdue are reachable on phones. */}
+      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
         onClick={e => e.stopPropagation()}>
         <button onClick={() => navigate(`/invoices/${inv.id}`)}
           className="text-[11px] px-2 py-1 rounded-md bg-bg text-ink-3 hover:bg-bg-2 transition-colors"
