@@ -68,7 +68,12 @@ export default function ScheduleToolbar({
           {/* View switcher — in-app calendar by default, one tap to Google.
               Short labels on phones so the toolbar fits narrow viewports. */}
           <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
-            {[['month', 'Calendar', 'Cal'], ['week', 'Week', 'Wk'], ['agenda', 'Day', 'Day']].map(([v, label, short]) => (
+            {[
+              ['agenda', 'Today', 'Day'],
+              ['dispatch', 'Dispatch', 'Dsp'],
+              ['week', 'Week', 'Wk'],
+              ['month', 'Calendar', 'Cal'],
+            ].map(([v, label, short]) => (
               <button key={v} onClick={() => onViewChange(v)}
                 className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
                 <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
