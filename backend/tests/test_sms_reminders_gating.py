@@ -145,3 +145,31 @@ def test_setting_persists_via_settings_api(api):
         r = api.post("/api/settings/messaging", json={"customer_sms_reminders": False})
         assert r.status_code == 200
         assert r.json()["customer_sms_reminders"] is False
+
+
+def test_tick_and_status_agree_on_ambiguous_env_values(api):
+    """Regression against Codex #520: the tick's env parser and the status
+    endpoint's parser must agree on non-obvious values. A truthy DB flag
+    with a garbage env value should never show ON in the UI while the
+    tick silently no-ops, or vice versa.
+    """
+    _set_db_flag(True)
+    fake_result = {"sent": 1, "candidates": 1, "skipped_no_phone": 0, "failed": 0}
+
+    for env_value in ("", "  ", "foo", "maybe", "yes-please", "0 ", " 0"):
+        with patch.dict(os.environ, {"JOB_SMS_REMINDERS_ENABLED": env_value}, clear=False):
+            # Ask the API what the UI would show:
+            status = api.get("/api/settings/messaging-status").json()
+            # And what the tick actually does:
+            with patch("services.reminder_service.send_due_reminders",
+                       return_value=fake_result) as mock_send:
+                tick = job_sms_reminders_tick()
+
+            # The two must agree — either both say "would send" (status=ON,
+            # tick doesn't short-circuit on env), or both say "hard off".
+            ui_on = status["customer_sms_reminders"]
+            tick_ran = mock_send.called
+            assert ui_on == tick_ran, (
+                f"UI/tick disagreed for JOB_SMS_REMINDERS_ENABLED={env_value!r}: "
+                f"ui_on={ui_on}, tick_ran={tick_ran}, tick={tick}, status={status}"
+            )

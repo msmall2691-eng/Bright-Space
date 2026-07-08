@@ -25,6 +25,18 @@ def _db_flag(db, key: str, env_default: bool) -> bool:
     return str(row.value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# Explicit "the deployment turned this off" check. env_flag() is a
+# truthy/falsy predicate — anything not in its whitelist reads as False,
+# which is wrong for a HARD-OFF gate (a stray "foo" would silently disable
+# the reminder tick while the status endpoint still reported ON). This
+# helper shares one authoritative interpretation with
+# modules.settings.router.messaging_status so the tick's behavior and the
+# UI's "env_disabled" surface never diverge (Codex review on #520).
+def env_hard_off(name: str) -> bool:
+    import os as _os
+    return _os.getenv(name, "").strip().lower() in {"0", "false", "no", "off"}
+
+
 def sync_gcal_tick() -> dict:
     """Background job to sync Google Calendar events to BrightBase, in
     both directions:
@@ -175,10 +187,11 @@ def job_sms_reminders_tick() -> dict:
     from services.reminder_service import send_due_reminders
     db = SessionLocal()
     try:
-        # Env flag as an emergency-off. Default True so unset envs fall
-        # through to the DB toggle (previously defaulted False, so the
-        # combined check was accidentally forever-off in prod).
-        if not env_flag("JOB_SMS_REMINDERS_ENABLED", True):
+        # Env is an emergency-off, not a truthy/falsy default. `env_hard_off`
+        # only triggers on explicit `0`/`false`/`no`/`off` — shared with
+        # messaging_status so the tick and UI can't disagree on what
+        # "env_disabled" means.
+        if env_hard_off("JOB_SMS_REMINDERS_ENABLED"):
             log.debug("Job SMS reminders hard-disabled via env; skipping tick")
             return {"skipped": True, "reason": "env_disabled"}
         if not _db_flag(db, "job_sms_reminders_enabled", False):

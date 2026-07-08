@@ -920,18 +920,22 @@ def messaging_status(db: Session = Depends(get_db)):
     Manual sends (per-appointment invite, invoice, inbox reply) are
     operator-initiated and intentionally not reflected here.
     """
-    import os
-    env_raw = os.getenv("JOB_SMS_REMINDERS_ENABLED", "").strip().lower()
-    env_hard_off = env_raw in {"0", "false", "no", "off"}
+    # Same authoritative env parser the reminder tick uses (scheduler.py).
+    # Sharing the helper is what Codex flagged on #520: a locally-inlined
+    # version drifted from the tick's env_flag() semantics, so a stray env
+    # value ("foo", empty-with-whitespace) could disable the tick while
+    # this endpoint still reported reminders ON.
+    from scheduler import env_hard_off as _env_hard_off
+    hard_off = _env_hard_off("JOB_SMS_REMINDERS_ENABLED")
     db_on = _coerce_bool(get_setting(db, "job_sms_reminders_enabled"), False)
-    sms_reminders = (not env_hard_off) and db_on
+    sms_reminders = (not hard_off) and db_on
     return {
         "customer_sms_reminders": sms_reminders,
         "any_automatic_customer_messaging": sms_reminders,
         # Expose the reason a truthy DB setting is still off so the
         # Automation tab can show "disabled at the deploy layer" instead of
         # a silent false ON.
-        "env_disabled": env_hard_off,
+        "env_disabled": hard_off,
     }
 
 
