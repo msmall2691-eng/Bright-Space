@@ -3,6 +3,8 @@ import { X, Phone, Mail, MapPin, User, Hash, StickyNote, ArrowLeft, Send } from 
 import { formatPhone } from '../../utils/display'
 import { contactDisplay, relTime } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
+import RecordLink from '../RecordLink'
+import { useClientQuickLinks } from '../../hooks/useClientQuickLinks'
 
 /** Right-side contact detail panel: summary header (avatar, status,
  *  channel badge, click-to-call/email links, address, "View Full Profile"),
@@ -12,6 +14,7 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }
   if (!detail) return null
   const name = contactDisplay(detail)
   const client = detail.client
+  const { openQuotes, upcomingJobs, unpaidInvoices } = useClientQuickLinks(client?.id)
 
   // Build a timeline from messages
   const timeline = useMemo(() => {
@@ -97,6 +100,37 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }
           What stays here: contact summary, tags, activity timeline. */}
       <div className="overflow-y-auto flex-1">
         <div className="px-4 pt-2 space-y-4">
+          {/* Open items — the "linked both ways" piece: this contact panel
+              used to be a dead end at phone/email/address. Surfaces the
+              client's open quotes, upcoming jobs, and unpaid invoices so an
+              operator mid-thread can jump straight to the record the
+              conversation is actually about. */}
+          {client && (openQuotes.length > 0 || upcomingJobs.length > 0 || unpaidInvoices.length > 0) && (
+            <div>
+              <label className="text-[10px] font-bold text-ink-3 uppercase tracking-wider block mb-1.5">Open Items</label>
+              <div className="space-y-1.5">
+                {upcomingJobs.map(j => (
+                  <div key={`job-${j.id}`} className="flex items-center justify-between gap-2 text-[12px] bg-bg-2 rounded-lg px-2.5 py-1.5">
+                    <RecordLink type="job" id={j.id} label={j.title} icon className="min-w-0" />
+                    <span className="text-[10px] text-ink-3 shrink-0">{j.scheduled_date}</span>
+                  </div>
+                ))}
+                {openQuotes.map(q => (
+                  <div key={`quote-${q.id}`} className="flex items-center justify-between gap-2 text-[12px] bg-bg-2 rounded-lg px-2.5 py-1.5">
+                    <RecordLink type="quote" id={q.id} label={`$${q.total?.toFixed(2)} quote`} icon className="min-w-0" />
+                    <span className="text-[10px] text-ink-3 shrink-0 capitalize">{(q.status || '').replace('_', ' ')}</span>
+                  </div>
+                ))}
+                {unpaidInvoices.map(inv => (
+                  <div key={`inv-${inv.id}`} className="flex items-center justify-between gap-2 text-[12px] bg-bg-2 rounded-lg px-2.5 py-1.5">
+                    <RecordLink type="invoice" id={inv.id} label={inv.invoice_number} icon className="min-w-0" />
+                    <span className="text-[10px] text-red-500 font-medium shrink-0">${inv.total?.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Tags */}
           {detail.tags?.length > 0 && (
             <div>

@@ -135,15 +135,14 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
   )
 }
 
-export function QuotesListTab({ quotes, clientId, navigate, onLinked }) {
+export function QuotesListTab({ quotes, clientId, onLinked }) {
   return (
     <div className="max-w-2xl space-y-2">
       {quotes.length === 0 && <p className="text-ink-3 text-sm text-center py-10">No quotes yet</p>}
       {quotes.map(q => (
         <div key={q.id} className="bg-panel border border-hairline rounded-xl p-4 flex items-center justify-between">
-          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/quotes/${q.id}`)}
-            title="Open this quote">
-            <div className="font-medium text-ink">${q.total?.toFixed(2)} <span className="text-xs text-ink-3 font-normal">· {q.quote_number}</span></div>
+          <div className="flex-1 min-w-0">
+            <RecordLink type="quote" id={q.id} label={`$${q.total?.toFixed(2)} · ${q.quote_number}`} className="font-medium" />
             <div className="text-xs text-ink-3 mt-0.5">{q.items?.length || 0} items · {new Date(q.created_at).toLocaleDateString()}</div>
           </div>
           <div className="flex items-center gap-2 ml-4">
