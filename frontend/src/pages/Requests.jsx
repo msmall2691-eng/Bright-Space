@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
+  Trash2, MessageCircle,
 } from 'lucide-react'
-import { get, post, patch } from '../api'
+import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
 import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
@@ -49,7 +50,7 @@ function SourceChip({ source }) {
   )
 }
 
-const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected, onToggleSelect }) => {
+const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete, selected, onToggleSelect }) => {
   const serviceConfig = SERVICE_TYPE_CONFIG[intake.service_type] || SERVICE_TYPE_CONFIG.residential
   const statusConfig = STATUS_CONFIG[intake.status] || STATUS_CONFIG.new
   const priorityConfig = PRIORITY_CONFIG[intake.priority] || PRIORITY_CONFIG.normal
@@ -157,12 +158,22 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, selected
                     onArchive(intake)
                     setShowMenu(false)
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-ink hover:bg-bg flex items-center gap-2 last:rounded-b-lg"
+                  className="w-full text-left px-4 py-2 text-sm text-ink hover:bg-bg flex items-center gap-2"
                 >
                   <Archive className="w-4 h-4" />
                   Archive
                 </button>
               )}
+              <button
+                onClick={() => {
+                  onDelete(intake)
+                  setShowMenu(false)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 last:rounded-b-lg"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete permanently
+              </button>
             </div>
           )}
         </div>
@@ -299,6 +310,35 @@ export default function Requests() {
     }
   }
 
+  // Permanent delete — separate from Archive so accidental clicks don't
+  // wipe rows. Backend already exposes DELETE /api/intake/{id} (admin +
+  // manager only). Confirm with the request name/id so the operator can
+  // eyeball what they're removing.
+  const handleDelete = async (intake) => {
+    const label = intake.name || intake.email || intake.phone || `Request #${intake.id}`
+    if (!confirm(`Permanently delete "${label}"? This can't be undone — Archive keeps it in the "Archived" filter instead.`)) return
+    try {
+      await del(`/api/intake/${intake.id}`)
+      setRequests(prev => prev.filter(r => r.id !== intake.id))
+      if (selectedRequest?.id === intake.id) {
+        setShowDetailsDrawer(false)
+        setSelectedRequest(null)
+      }
+    } catch (err) {
+      console.error('[Requests] Delete failed:', err)
+      alert('Delete failed. See console for details.')
+    }
+  }
+
+  // Open the customer's existing thread in Comms if one exists — else jump to
+  // Comms with the search pre-filled so the operator can open/start one.
+  // Backend's /conversations `q` param already matches on Client.email /
+  // Client.phone / Client.name (see comms/router.py list_conversations).
+  const openConversation = (intake) => {
+    const term = intake.email || intake.phone || intake.name || ''
+    navigate(`/comms?q=${encodeURIComponent(term)}`)
+  }
+
   const toggleSelectIntake = (id) => {
     setSelectedIntakes(prev => {
       const next = new Set(prev)
@@ -429,6 +469,7 @@ export default function Requests() {
                   onViewDetails={handleViewDetails}
                   onCreateQuote={handleCreateQuote}
                   onArchive={handleArchive}
+                  onDelete={handleDelete}
                   selected={selectedIntakes.has(data.id)}
                   onToggleSelect={toggleSelectIntake}
                 />
@@ -458,13 +499,67 @@ export default function Requests() {
 
             {/* Body */}
             <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+              {/* Quick contact row: one-tap Call / Text / Email / Open thread
+                  so the operator can dig into questions before quoting
+                  without leaving this page. `tel:` and `sms:` both open the
+                  OS handler (native dialer / iMessage / etc.); mailto:
+                  opens the default mail client with the intake context
+                  pre-populated. Open Thread jumps to Comms filtered to this
+                  contact — the inline reply panel will land in a follow-up
+                  PR so this drawer already has the entry point. */}
+              {(selectedRequest.email || selectedRequest.phone) && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedRequest.phone && (
+                    <a
+                      href={`tel:${selectedRequest.phone}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                    >
+                      <Phone className="w-3.5 h-3.5" /> Call
+                    </a>
+                  )}
+                  {selectedRequest.phone && (
+                    <a
+                      href={`sms:${selectedRequest.phone}?body=${encodeURIComponent(`Hi ${selectedRequest.name || ''} — following up on your cleaning request.`)}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" /> Text
+                    </a>
+                  )}
+                  {selectedRequest.email && (
+                    <a
+                      href={`mailto:${selectedRequest.email}?subject=${encodeURIComponent('Your cleaning request')}&body=${encodeURIComponent(`Hi ${selectedRequest.name || ''},\n\nThanks for reaching out — I wanted to follow up on your request before sending a quote.\n\n`)}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100"
+                    >
+                      <Mail className="w-3.5 h-3.5" /> Email
+                    </a>
+                  )}
+                  <button
+                    onClick={() => openConversation(selectedRequest)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" /> Open thread
+                  </button>
+                </div>
+              )}
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Email</label>
-                <p className="text-sm text-ink">{selectedRequest.email || '—'}</p>
+                <p className="text-sm text-ink">
+                  {selectedRequest.email ? (
+                    <a href={`mailto:${selectedRequest.email}`} className="text-blue-600 hover:underline">
+                      {selectedRequest.email}
+                    </a>
+                  ) : '—'}
+                </p>
               </div>
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Phone</label>
-                <p className="text-sm text-ink">{selectedRequest.phone || '—'}</p>
+                <p className="text-sm text-ink">
+                  {selectedRequest.phone ? (
+                    <a href={`tel:${selectedRequest.phone}`} className="text-blue-600 hover:underline">
+                      {selectedRequest.phone}
+                    </a>
+                  ) : '—'}
+                </p>
               </div>
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Address</label>
@@ -510,10 +605,23 @@ export default function Requests() {
 
             {/* Footer */}
             <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
+              <button
+                onClick={() => handleDelete(selectedRequest)}
+                className="w-full sm:w-auto sm:mr-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
               <Button variant="secondary" onClick={() => setShowDetailsDrawer(false)} className="w-full sm:w-auto">
                 Close
               </Button>
-              <Button variant="primary" className="w-full sm:w-auto flex items-center gap-2">
+              <Button
+                variant="primary"
+                className="w-full sm:w-auto flex items-center gap-2"
+                onClick={() => {
+                  setShowDetailsDrawer(false)
+                  handleCreateQuote(selectedRequest)
+                }}
+              >
                 <FileText className="w-4 h-4" />
                 Create Quote
               </Button>

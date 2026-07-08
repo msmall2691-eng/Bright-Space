@@ -19,6 +19,7 @@
  *   • Mobile-responsive layout
  */
 import { useState, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   MessageSquare,
   CheckCircle2, AlertTriangle,
@@ -49,7 +50,11 @@ export default function Comms() {
   const [folder, setFolder] = useState('active')
   const [chipFilters, setChipFilters] = useState(() => new Set())
   const [channelFilter, setChannelFilter] = useState('')
-  const [search, setSearch] = useState('')
+  // Pre-fill search from ?q= so deep links from Requests, Client detail,
+  // etc. land on the right contact. Falls back to '' when the param is
+  // absent — same behavior as before.
+  const [urlParams] = useSearchParams()
+  const [search, setSearch] = useState(() => urlParams.get('q') || '')
 
   // ──────── Data ────────
 
