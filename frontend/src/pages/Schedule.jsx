@@ -8,6 +8,9 @@ import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
 import { useToast } from '../components/ui/Toast'
 import AgendaDay from '../components/schedule/AgendaDay'
+import AgendaHero from '../components/schedule/AgendaHero'
+import DispatchBoard from '../components/schedule/DispatchBoard'
+import StickyActionBar from '../components/schedule/StickyActionBar'
 import WeekGrid from '../components/schedule/WeekGrid'
 import ScheduleSkeleton from '../components/schedule/ScheduleSkeleton'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
@@ -18,9 +21,11 @@ import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/Sch
 import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
+import { useScheduleAnalytics } from '../hooks/useScheduleAnalytics'
 import { useScheduleTools } from '../hooks/useScheduleTools'
 import { useScheduleFilters } from '../hooks/useScheduleFilters'
 import { useVisitSelection } from '../hooks/useVisitSelection'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { toLocalYMD, todayYMD } from '../utils/format'
 
 export default function Schedule() {
@@ -28,22 +33,22 @@ export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
   if (searchParams.get('tab') === 'recurring') return <RecurringPanel />
   if (searchParams.get('tab') === 'availability') return <AvailabilityPanel />
-  // Three view modes today:
-  //   agenda — single-day full-width card stack (default on phone, the
-  //            screen a cleaner actually uses in the field)
-  //   list   — week, grouped by day, dense rows (desktop-leaning)
-  //   month  — CalendarView month grid (desktop-leaning)
-  // Stored in the URL via ?view= so reload + bookmarks survive. If the
-  // URL is unset we default to agenda on phone viewports and list on
-  // desktop — see the useEffect below.
-  // Three views: month Calendar (default), a Week time-grid, and single-Day
-  // agenda. The old "Week" LIST view (grouped cards, one per day) was dropped
-  // when the time-grid Week landed — it was a third overlapping mode against
-  // Day and the new grid supersedes it. A stale ?view=list falls back to
-  // the calendar.
-  const VALID_VIEWS = ['agenda', 'week', 'month']
+  // Four view modes today:
+  //   agenda   — mobile-first day, hero on top + AgendaDay cards (default on phone)
+  //   dispatch — desktop 3-column ops board: unassigned / timeline / crews (default on desktop)
+  //   week     — week time-grid, dense rows
+  //   month    — CalendarView month grid (reference view)
+  // Stored in the URL via ?view= so reload + bookmarks survive.
+  //
+  // Landing default depends on viewport: agenda on phones, dispatch on
+  // desktop. The old "always default to month" landed a dispatcher on a
+  // grid of "10:00" pills with no context — the July audit called it out.
+  const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month']
   const rawView = searchParams.get('view')
-  const viewMode = VALID_VIEWS.includes(rawView) ? rawView : 'month'
+  const isMobile = useIsMobile(768)
+  const viewMode = VALID_VIEWS.includes(rawView)
+    ? rawView
+    : (isMobile ? 'agenda' : 'dispatch')
   const setViewMode = (next) => {
     const params = new URLSearchParams(searchParams)
     params.set('view', next)
@@ -78,9 +83,17 @@ export default function Schedule() {
     properties, clients,
     loading, loadError,
     refresh,
-    empName,
+    employees, empName,
     range: dataRange,
   } = useScheduleData(currentDate, viewMode)
+
+  // Analytics for the dispatch surfaces (mobile hero + desktop board).
+  // Purely derived — a filter chip toggle doesn't re-fire this because it
+  // reads visits/jobs, not the filtered subset.
+  const {
+    weekDates, loadByDate, todayVisits, todayStats,
+    crewLoad, unassignedToday,
+  } = useScheduleAnalytics({ visits, jobs, currentDate, employees })
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
@@ -275,13 +288,13 @@ export default function Schedule() {
 
   const prevWeek = () => {
     const d = new Date(currentDate)
-    d.setDate(d.getDate() - (viewMode === 'agenda' ? 1 : 7))
+    d.setDate(d.getDate() - ((viewMode === 'agenda' || viewMode === 'dispatch') ? 1 : 7))
     setCurrentDate(d)
   }
 
   const nextWeek = () => {
     const d = new Date(currentDate)
-    d.setDate(d.getDate() + (viewMode === 'agenda' ? 1 : 7))
+    d.setDate(d.getDate() + ((viewMode === 'agenda' || viewMode === 'dispatch') ? 1 : 7))
     setCurrentDate(d)
   }
 
@@ -372,24 +385,61 @@ export default function Schedule() {
         />
       )}
 
-      {/* Render branch: agenda (single-day cards) / week (time-grid) / month
-          (CalendarView). Loading skeleton lives before the branch so the
-          toolbar + health strip stay live during initial load — audit §12.
-          Once visits arrive (even an empty week), the real branch takes
-          over so filters/empty-states get to render. */}
+      {/* Render branch: agenda (mobile day + hero) / dispatch (desktop
+          3-column board) / week (time-grid) / month (CalendarView).
+          Loading skeleton lives before the branch so the toolbar + health
+          strip stay live during initial load — audit §12. Once visits
+          arrive (even an empty week), the real branch takes over so
+          filters/empty-states get to render. */}
       {loading && (visits?.length ?? 0) === 0 ? (
         <ScheduleSkeleton viewMode={viewMode} />
       ) : viewMode === 'agenda' ? (
-        <AgendaDay
+        <div className="flex-1 overflow-auto flex flex-col">
+          <AgendaHero
+            currentDate={currentDate}
+            todayVisits={todayVisits}
+            todayStats={todayStats}
+            unassignedToday={unassignedToday}
+            weekDates={weekDates}
+            loadByDate={loadByDate}
+            jobs={jobs}
+            properties={properties}
+            isToday={dateStr === todayYMD()}
+            onDateSelect={setCurrentDate}
+            onFocusUnassigned={() => setUnassignedOnly(v => !v)}
+          />
+          <div className="flex-1 min-h-0">
+            <AgendaDay
+              currentDate={currentDate}
+              visits={filteredVisits.filter(v => v.scheduled_date === dateStr)}
+              jobs={jobs}
+              properties={properties}
+              clients={clients}
+              onSelect={handleEdit}
+              isToday={dateStr === todayYMD()}
+              empName={empName}
+              onJumpToToday={() => setCurrentDate(new Date())}
+              hideHeader
+            />
+          </div>
+          <StickyActionBar
+            unassignedCount={todayStats.unassigned}
+            onAssign={() => setUnassignedOnly(true)}
+            onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
+          />
+        </div>
+      ) : viewMode === 'dispatch' ? (
+        <DispatchBoard
           currentDate={currentDate}
-          visits={filteredVisits.filter(v => v.scheduled_date === dateStr)}
+          todayVisits={todayVisits}
+          todayStats={todayStats}
+          unassignedToday={unassignedToday}
+          crewLoad={crewLoad}
           jobs={jobs}
           properties={properties}
           clients={clients}
-          onSelect={handleEdit}
-          isToday={dateStr === todayYMD()}
           empName={empName}
-          onJumpToToday={() => setCurrentDate(new Date())}
+          onOpen={handleEdit}
         />
       ) : viewMode === 'week' ? (
         <WeekGrid
