@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { get } from '../api'
+import { todayYMD } from '../utils/format'
 
 // "Needs a look" subsets, not the full collection — this is a compact
 // sidebar summary, not ClientProfile's Money tab. Statuses match
@@ -32,7 +33,12 @@ export function useClientQuickLinks(clientId) {
           get(`/api/invoices?client_id=${clientId}`).catch(() => []),
         ])
         if (cancelled) return
-        const today = new Date().toISOString().slice(0, 10)
+        // Codex review on #532: toISOString().slice(0, 10) uses UTC, which
+        // has already rolled to tomorrow during US evening hours — that
+        // silently dropped today's still-upcoming jobs. todayYMD() reads
+        // the local calendar date instead (see its own doc comment for the
+        // same footgun on the Schedule page).
+        const today = todayYMD()
         setLinks({
           openQuotes: (quotes || [])
             .filter(q => OPEN_QUOTE_STATUSES.has(q.status))
