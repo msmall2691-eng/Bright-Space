@@ -87,7 +87,14 @@ def send_email(to: str, subject: str, html_body: str, text_body: str = "") -> di
         msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
+    # timeout: default was infinite. A hung SMTP host (rare but real —
+    # Gmail rate-limit stalls, upstream DNS timeouts) would block the
+    # uvicorn worker forever, which on a single-worker deploy queued the
+    # entire request stream past Railway's edge timeout → 502s. 30s is
+    # generous enough for TLS handshake + login on a slow upstream but
+    # bounded so a stuck send can't wedge a worker.
+    smtp_timeout = int(os.getenv("SMTP_TIMEOUT_SECONDS", "30"))
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=smtp_timeout) as server:
         server.ehlo()
         server.starttls()
         server.login(smtp_user, smtp_pass)

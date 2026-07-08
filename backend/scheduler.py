@@ -523,9 +523,74 @@ def gcal_watch_renew_tick() -> dict:
         db.close()
 
 
+# Retained across the process lifetime so the OS keeps the exclusive lock
+# even after start_scheduler() returns — closing the file drops the lock.
+_scheduler_lock_fh = None
+
+
+def _claim_scheduler_singleton_lock() -> bool:
+    """Return True if THIS process should own the background scheduler.
+
+    Multi-worker uvicorn (--workers N) fires FastAPI's `startup` event in
+    every worker. Without a lock, each worker would start its own
+    BackgroundScheduler, and the same tick (SMS reminders, invoice dunning,
+    Gmail/GCal sync, Connecteam reconcile) would fire concurrently in every
+    process, racing before Job.sms_reminder_sent / Invoice.dunning_stage
+    got committed — producing duplicate customer texts, duplicate dunning
+    emails, duplicate external pushes. (Codex P1 on #525.)
+
+    Uses an exclusive OS file lock on a well-known path so only the FIRST
+    worker to try succeeds; subsequent workers see BlockingIOError and
+    noop. On Railway's container filesystem all worker processes share
+    /tmp, so this works without a Redis/DB dependency.
+
+    Override paths:
+      SCHEDULER_LOCK_PATH — customize where the lock file lives (dev/CI).
+      DISABLE_SCHEDULER=1 — force this process to NOT run the scheduler
+        (useful when a separate service owns it).
+    """
+    import fcntl
+    global _scheduler_lock_fh
+    if env_flag("DISABLE_SCHEDULER", False):
+        log.info("Scheduler explicitly disabled via DISABLE_SCHEDULER=1")
+        return False
+    import os as _os
+    lock_path = _os.getenv("SCHEDULER_LOCK_PATH", "/tmp/brightbase-scheduler.lock")
+    try:
+        _scheduler_lock_fh = open(lock_path, "w")
+        fcntl.flock(_scheduler_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _scheduler_lock_fh.write(str(_os.getpid()))
+        _scheduler_lock_fh.flush()
+        return True
+    except BlockingIOError:
+        if _scheduler_lock_fh is not None:
+            try: _scheduler_lock_fh.close()
+            except Exception: pass
+            _scheduler_lock_fh = None
+        return False
+    except OSError as e:
+        # Non-Linux platforms without flock, or a filesystem that doesn't
+        # support advisory locks. Fall back to letting THIS process run
+        # the scheduler — better than not running at all — and log loudly
+        # so we can investigate.
+        log.warning(f"Scheduler singleton lock unavailable ({e}); "
+                    "running scheduler in this process without inter-worker protection.")
+        return True
+
+
 def start_scheduler():
-    """Start the background scheduler."""
+    """Start the background scheduler.
+
+    Only the FIRST worker to claim the singleton lock actually starts it;
+    every other worker noops. This keeps multi-worker uvicorn safe: only
+    one APScheduler runs across all workers, so ticks can't fire N times
+    in parallel and race their idempotency writes.
+    """
     global _scheduler
+
+    if not _claim_scheduler_singleton_lock():
+        log.info("Scheduler already owned by another worker; skipping start in this process.")
+        return None
 
     _scheduler = BackgroundScheduler()
 
@@ -698,8 +763,9 @@ def start_scheduler():
 
 
 def stop_scheduler():
-    """Safely shut down the scheduler."""
-    global _scheduler
+    """Safely shut down the scheduler and release the singleton lock so a
+    subsequent worker (e.g. an in-place uvicorn restart) can claim it."""
+    global _scheduler, _scheduler_lock_fh
     if _scheduler:
         try:
             _scheduler.shutdown(wait=True)
@@ -708,3 +774,7 @@ def stop_scheduler():
             log.warning(f"Error stopping scheduler: {e}")
         finally:
             _scheduler = None
+    if _scheduler_lock_fh is not None:
+        try: _scheduler_lock_fh.close()
+        except Exception: pass
+        _scheduler_lock_fh = None

@@ -9,8 +9,14 @@ import { getCached } from '../api'
  *
  * Calls onIncrease(newTotal, prevTotal) when unreadMessages goes up between
  * polls. The very first response is treated as the baseline (no chime).
+ *
+ * intervalMs: default 2 min. The previous 30s default kept a uvicorn worker
+ * busy with a heartbeat query every half-minute — with one worker in prod
+ * that hurt 502 latency headroom. 2 min is still fresh enough for a chat
+ * app (new-message notifications land immediately from the browser tab if
+ * open) without hammering the summary endpoint.
  */
-export function useUnreadCount({ intervalMs = 30000, onIncrease } = {}) {
+export function useUnreadCount({ intervalMs = 120000, onIncrease } = {}) {
   const [unreadConversations, setUnreadConversations] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const lastSeen = useRef(null)
