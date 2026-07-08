@@ -47,3 +47,19 @@ def test_empty_input_returns_empty_string():
 
 def test_does_not_append_the_same_value_twice_in_one_call():
     assert combine_address("123 Oak", "Portland", "ME", "ME") == "123 Oak, Portland, ME"
+
+
+def test_keeps_city_when_street_name_contains_city_word():
+    """Regression for the codex P2 on PR #527. Whitespace tokenization
+    used to drop "Portland" because "12 Portland St" tokenized to
+    ["12", "portland", "st"]. Address components are comma-delimited,
+    not word-delimited — the street's words are not city candidates."""
+    assert combine_address("12 Portland St", "Portland", "ME", "04101") == (
+        "12 Portland St, Portland, ME, 04101"
+    )
+
+
+def test_still_skips_city_when_it_is_its_own_comma_component():
+    assert combine_address("12 Elm St, Portland", "Portland", "ME", "04101") == (
+        "12 Elm St, Portland, ME, 04101"
+    )

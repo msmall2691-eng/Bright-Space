@@ -80,4 +80,17 @@ describe('combineAddress (audit July-2026 L1/L3)', () => {
     expect(combineAddress('123 Oak', 'Portland', 'ME', 'ME'))
       .toBe('123 Oak, Portland, ME')
   })
+
+  it('keeps the city when the street name contains the city as a word (codex P2 on PR #527)', () => {
+    // Whitespace tokenization used to drop "Portland" because "12 Portland St"
+    // was tokenized to ["12","portland","st"]. Address components are
+    // comma-delimited, not word-delimited.
+    expect(combineAddress('12 Portland St', 'Portland', 'ME', '04101'))
+      .toBe('12 Portland St, Portland, ME, 04101')
+  })
+
+  it('still skips the city when it IS its own comma-delimited component', () => {
+    expect(combineAddress('12 Elm St, Portland', 'Portland', 'ME', '04101'))
+      .toBe('12 Elm St, Portland, ME, 04101')
+  })
 })

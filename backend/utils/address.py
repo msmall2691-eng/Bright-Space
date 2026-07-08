@@ -28,15 +28,17 @@ def combine_address(
         combine_address("155 Main St", "Portland", "ME", "04101")
             -> "155 Main St, Portland, ME, 04101"
     """
-    import re
-
     parts = []
     if base and base.strip():
         parts.append(base.strip())
-    # Build the token set from base so we can suppress any duplicate append.
+    # Split on COMMAS only, not every whitespace: an address like
+    # "12 Portland St" is one component ("12 Portland St"), not three tokens
+    # ("12", "Portland", "St"). Whitespace-splitting silently dropped
+    # "Portland" as the city argument when the street name happened to
+    # contain the city's word — cf. the codex P2 on PR #527.
     tokens = {
-        t.lower()
-        for t in re.split(r"[,\s]+", base or "")
+        t.strip().lower()
+        for t in (base or "").split(",")
         if t.strip()
     }
 

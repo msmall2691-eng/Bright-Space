@@ -100,10 +100,15 @@ export function todayYMD() {
  *     → "155 Main St, Portland, ME, 04101"
  */
 export function combineAddress(base, city, state, zip) {
+  // Split on COMMAS only, not every whitespace: an address like
+  // "12 Portland St" is one component ("12 Portland St"), not three tokens
+  // ("12", "Portland", "St"). Whitespace-splitting was silently dropping
+  // "Portland" as the city argument when the street name happened to contain
+  // the city's word — cf. the codex P2 on PR #527.
   const tokens = new Set(
-    (base || '').split(/[,\s]+/).map(t => t.trim().toLowerCase()).filter(Boolean),
+    (base || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
   )
-  const parts = base ? [base] : []
+  const parts = base && base.trim() ? [base.trim()] : []
   const push = (v) => {
     if (!v) return
     const s = String(v).trim()
