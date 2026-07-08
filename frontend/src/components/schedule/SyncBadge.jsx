@@ -14,6 +14,60 @@ export const SyncBadge = ({ ok, label, okTitle, offTitle }) => (
   </span>
 )
 
+/** Compute the sync state for a visit against its linked job (T-30).
+ *
+ *  Google: the gcal_event_id lives on Job, not on the derived Visit shape
+ *  the /api/schedule/week endpoint emits — but _job_as_visit spreads the
+ *  whole job dict, so v.gcal_event_id IS populated in practice. We check
+ *  both to stay robust against any consumer that doesn't spread.
+ *
+ *  Connecteam: connecteam_shift_ids is a JSON array on Job — a non-empty
+ *  array means at least one shift is live in the Connecteam scheduler
+ *  (single-day jobs have 1, multi-day / multi-cleaner splits push more).
+ *  Empty array + no assigned cleaner is a legitimate "nothing to push" —
+ *  the counter and chip separate that from "assigned but not pushed" via
+ *  the `hasCleaner` split.
+ */
+export function computeVisitSyncState(visit, job) {
+  const gcalOk = !!(visit?.gcal_event_id || job?.gcal_event_id)
+  const ctIds = job?.connecteam_shift_ids || []
+  const connecteamOk = Array.isArray(ctIds) && ctIds.length > 0
+  const hasCleaner = (visit?.cleaner_ids?.length || job?.cleaner_ids?.length || 0) > 0
+  return { gcalOk, connecteamOk, hasCleaner }
+}
+
+/** Per-visit sync chips (T-30). Shows Google + Connecteam status inline on
+ *  the AgendaDay card so an operator can see which visits still need sync
+ *  attention without opening each drawer. Compact enough to not clutter
+ *  the card at density.
+ *
+ *  Connecteam chip hides when no cleaner is assigned yet — a job with no
+ *  cleaner can't be dispatched to Connecteam by design (the pusher skips
+ *  it), so a "not synced" chip there would flag a state the operator has
+ *  to fix by ASSIGNING first, not by pushing. The "needs cleaner" queue
+ *  already covers that surface. */
+export function SyncStatusChips({ visit, job }) {
+  const { gcalOk, connecteamOk, hasCleaner } = computeVisitSyncState(visit, job)
+  return (
+    <span className="inline-flex items-center gap-1 flex-wrap">
+      <SyncBadge
+        ok={gcalOk}
+        label="Google"
+        okTitle="On Google Calendar"
+        offTitle="Not yet on Google Calendar"
+      />
+      {hasCleaner && (
+        <SyncBadge
+          ok={connecteamOk}
+          label="Connecteam"
+          okTitle="Pushed to Connecteam"
+          offTitle="Assigned but not yet in Connecteam"
+        />
+      )}
+    </span>
+  )
+}
+
 /** Airbnb/STR turnover context strip. The /api/jobs response enriches
  *  str_turnover jobs with `booking` (the reservation that just checked out),
  *  `next_arrival` (the next reservation), and `is_immediate_turnover` (next

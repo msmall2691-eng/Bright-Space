@@ -1,6 +1,6 @@
 import { Calendar, CornerUpLeft } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
-import { TurnoverInfo } from './SyncBadge'
+import { TurnoverInfo, SyncStatusChips } from './SyncBadge'
 import { toLocalYMD } from '../../utils/format'
 
 /** Single-day mobile-first view. Renders the day's visits as full-width
@@ -130,12 +130,15 @@ export default function AgendaDay({
                           )}
                         </div>
                       </div>
-                      {/* Meta footer — just the client. Calendar/Connecteam sync
-                          state lives in the visit drawer's "More details" now,
-                          so it doesn't clutter every card. */}
-                      {client?.name && (
-                        <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3">
-                          <span className="truncate">{client.name}</span>
+                      {/* Meta footer — client name + at-a-glance sync chips
+                          (T-30). Google + Connecteam badges surface whether
+                          the visit made it into the field-cleaner tools;
+                          the drawer still holds the full "More details"
+                          breakdown for anyone who taps in. */}
+                      {(client?.name || true) && (
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-3 flex-wrap">
+                          {client?.name && <span className="truncate">{client.name}</span>}
+                          <SyncStatusChips visit={v} job={job} />
                         </div>
                       )}
                       {/* Airbnb/STR turnover context (guests, immediate flag, next check-in) */}
