@@ -226,16 +226,45 @@ def test_lead_activity_not_double_logged_on_contact_variance():
         _cleanup(email)
 
 
-def test_contact_lock_key_is_stable_and_bounded():
-    """_contact_lock_key must return a deterministic signed 64-bit int (or
-    None for no contact info) so it's safe to pass to pg_advisory_xact_lock."""
-    from modules.intake.normalize import _contact_lock_key
+def test_contact_lock_keys_are_stable_and_bounded():
+    """_contact_lock_keys must return deterministic signed 64-bit ints (or
+    an empty list for no contact info) so they're safe to pass to
+    pg_advisory_xact_lock."""
+    from modules.intake.normalize import _contact_lock_keys
 
-    k1 = _contact_lock_key("Same@Example.com", "2075551234")
-    k2 = _contact_lock_key("same@example.com", "(207) 555-1234")
-    assert k1 == k2, "normalization (case + phone format) must not change the key"
-    assert isinstance(k1, int)
-    assert -(1 << 63) <= k1 < (1 << 63)
+    k1 = _contact_lock_keys("Same@Example.com", "2075551234")
+    k2 = _contact_lock_keys("same@example.com", "(207) 555-1234")
+    assert k1 == k2, "normalization (case + phone format) must not change the keys"
+    assert len(k1) == 2  # one key for email, one for phone
+    for k in k1:
+        assert isinstance(k, int)
+        assert -(1 << 63) <= k < (1 << 63)
 
-    assert _contact_lock_key(None, None) is None
-    assert _contact_lock_key("", "") is None
+    assert _contact_lock_keys(None, None) == []
+    assert _contact_lock_keys("", "") == []
+
+
+def test_contact_lock_keys_share_a_key_on_partial_overlap():
+    """Codex P1 on PR #533: two requests that share ONLY email (one has no
+    phone, the other does) must still share at least one lock key —
+    otherwise they'd serialize on nothing and both race past the recency
+    SELECT. Same for two requests that share only phone with a corrected
+    email."""
+    from modules.intake.normalize import _contact_lock_keys
+
+    email_only = _contact_lock_keys("same@example.com", None)
+    email_and_phone = _contact_lock_keys("same@example.com", "2075551234")
+    assert set(email_only) & set(email_and_phone), (
+        "requests sharing only email must share a lock key"
+    )
+
+    phone_only = _contact_lock_keys(None, "2075559999")
+    corrected_email_same_phone = _contact_lock_keys("new@example.com", "2075559999")
+    assert set(phone_only) & set(corrected_email_same_phone), (
+        "requests sharing only phone must share a lock key"
+    )
+
+    # Genuinely unrelated contacts share nothing.
+    unrelated = _contact_lock_keys("nobody@example.com", "2075550000")
+    assert not (set(email_only) & set(unrelated))
+    assert not (set(phone_only) & set(unrelated))

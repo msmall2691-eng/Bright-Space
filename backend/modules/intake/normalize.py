@@ -355,20 +355,42 @@ def _lock_client_for_activity_write(db: Session, client_id: int) -> None:
         logger.warning("client %s row lock failed: %s", client_id, e)
 
 
-def _contact_lock_key(email: Optional[str], phone: Optional[str]) -> Optional[int]:
-    """Stable signed 64-bit int derived from the caller's normalized email/phone,
-    for use as a Postgres advisory-lock key. Returns None when neither field
-    identifies the person — in that case we can't safely serialize dedup,
-    so we skip the lock and fall through to the read-based guard."""
-    key = ((email or "").strip().lower() + "|" + (normalize_phone(phone) or ""))
-    if not key.strip("|"):
-        return None
-    digest = hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest()
+def _stable_lock_key(s: str) -> int:
+    """Stable signed 64-bit int hash of ``s``, for use as a Postgres
+    advisory-lock key (pg_advisory_xact_lock takes an int8)."""
+    digest = hashlib.blake2b(s.encode("utf-8"), digest_size=8).digest()
     val = int.from_bytes(digest, byteorder="big", signed=False)
-    # pg_advisory_xact_lock takes an int8 — clamp to signed 64-bit range.
     if val >= 1 << 63:
         val -= 1 << 64
     return val
+
+
+def _contact_lock_keys(email: Optional[str], phone: Optional[str]) -> list:
+    """One lock key PER identifying field present — NOT one combined hash.
+
+    ``_find_recent_duplicate`` matches on ``email OR phone``, so two
+    concurrent requests that share only ONE field (e.g. the same email,
+    but one submission has no phone and the other does; or the same
+    phone with a corrected email) must still serialize on that shared
+    field. A single key derived from ``email + "|" + phone`` sends those
+    two requests to two DIFFERENT locks — they'd never contend, and both
+    could pass the recency SELECT before either INSERT lands (codex P1
+    on PR #533). Locking each identifier independently means any two
+    requests that share a value on either field always take at least
+    one lock in common.
+
+    Returns a SORTED, deduplicated list so callers acquire locks in a
+    consistent order — required to avoid an ABBA deadlock between two
+    transactions that each hold one lock and want the other's.
+    """
+    keys = []
+    e = (email or "").strip().lower()
+    if e:
+        keys.append(_stable_lock_key("email:" + e))
+    p = normalize_phone(phone) or ""
+    if p:
+        keys.append(_stable_lock_key("phone:" + p))
+    return sorted(set(keys))
 
 
 def _lock_contact_for_upsert(db: Session, email: Optional[str], phone: Optional[str]) -> None:
@@ -384,19 +406,21 @@ def _lock_contact_for_upsert(db: Session, email: Optional[str], phone: Optional[
     race on the SAME key before either has committed) that would otherwise
     both pass the recency SELECT before either INSERT lands.
 
-    Postgres: ``pg_advisory_xact_lock`` on a hash of the contact — released
-    on commit/rollback of the surrounding transaction (advisory_xact is the
-    right variant so it never leaks past the request). SQLite: no-op — SQLite
-    already serializes writers, so the read-then-insert pair inside a single
+    Postgres: ``pg_advisory_xact_lock`` on a hash of EACH identifying field
+    present (see ``_contact_lock_keys``) — released on commit/rollback of
+    the surrounding transaction (advisory_xact is the right variant so it
+    never leaks past the request). SQLite: no-op — SQLite already
+    serializes writers, so the read-then-insert pair inside a single
     connection is atomic by construction.
     """
-    key = _contact_lock_key(email, phone)
-    if key is None:
+    keys = _contact_lock_keys(email, phone)
+    if not keys:
         return
     try:
         dialect = db.bind.dialect.name if db.bind is not None else ""
         if dialect == "postgresql":
-            db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+            for k in keys:
+                db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": k})
     except Exception as e:  # never block the lead on a locking hiccup
         logger.warning("contact upsert lock failed: %s", e)
 
