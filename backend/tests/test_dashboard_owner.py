@@ -70,12 +70,17 @@ def _mk_property(ids, cid):
     return pid
 
 
-def _mk_quote(ids, cid, status, total, created_at=None):
+def _mk_quote(ids, cid, status, total, *, sent_at=None):
+    """Seed a quote. `sent_at=None` defaults to now for statuses that imply
+    delivery — the close-rate query filters on sent_at, so tests need it
+    populated to be counted. Pass sent_at=False to leave it NULL explicitly."""
     db = SessionLocal()
     q = Quote(client_id=cid, quote_number=f"Q-{uuid.uuid4().hex[:8]}",
               status=status, total=total, org_id=1)
-    if created_at:
-        q.created_at = created_at
+    if sent_at is None and status != "draft":
+        q.sent_at = datetime.utcnow()
+    elif sent_at:
+        q.sent_at = sent_at
     db.add(q); db.commit(); db.refresh(q)
     ids["quotes"].append(q.id)
     qid = q.id
@@ -186,6 +191,30 @@ def test_close_rate_ignores_draft(api_client):
     assert after["quotes_sent"] == before["quotes_sent"]
 
 
+def test_close_rate_counts_recently_sent_even_if_created_long_ago(api_client):
+    """A quote drafted 120 days ago and SENT today must count in the last-90
+    window — regression against the Codex-called-out bug where the filter
+    was on `created_at` instead of `sent_at`."""
+    api, ids = api_client
+    before = _snap(api)["close_rate"]
+    cid = _mk_client(ids)
+    # Sent yesterday, drafted long before → belongs in the window.
+    _mk_quote(ids, cid, "sent", 400.0, sent_at=datetime.utcnow() - timedelta(days=1))
+    after = _snap(api)["close_rate"]
+    assert after["quotes_sent"] - before["quotes_sent"] == 1
+
+
+def test_close_rate_excludes_quotes_sent_before_window(api_client):
+    """Symmetric: a quote sent 120 days ago must NOT count, even if it's
+    still open in the pipeline today."""
+    api, ids = api_client
+    before = _snap(api)["close_rate"]
+    cid = _mk_client(ids)
+    _mk_quote(ids, cid, "sent", 400.0, sent_at=datetime.utcnow() - timedelta(days=120))
+    after = _snap(api)["close_rate"]
+    assert after["quotes_sent"] == before["quotes_sent"]
+
+
 def test_mrr_estimate_uses_quote_total_and_frequency(api_client):
     """Weekly $250 quote → ≈ $1,083/mo (52/12 × 250). One priced schedule."""
     api, ids = api_client
@@ -225,6 +254,61 @@ def test_mrr_multi_day_weekly_multiplies(api_client):
     after = _snap(api)["mrr"]
     delta_cents = after["estimate_cents"] - before["estimate_cents"]
     expected = int(round(100.0 * 52 / 12 * 3 * 100))
+    assert delta_cents == expected
+
+
+def test_mrr_every_3_weeks_uses_interval(api_client):
+    """`every_3_weeks` @ $200 → 52/12/3 = 1.44 jobs/mo ≈ $288/mo. Regression
+    against the Codex bug where only weekly/biweekly/monthly were priced and
+    everything else silently became `schedules_unpriced` even with a quote."""
+    api, ids = api_client
+    before = _snap(api)["mrr"]
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+    qid = _mk_quote(ids, cid, "converted", 200.0)
+    # `every_3_weeks` carries the cadence via interval_weeks=3.
+    db = SessionLocal()
+    s = RecurringSchedule(
+        client_id=cid, property_id=pid, quote_id=qid,
+        title="Every-3-weeks test", address="1 Owner St", job_type="residential",
+        frequency="every_3_weeks", interval_weeks=3,
+        day_of_week=1, days_of_week=None,
+        start_time=time(9, 0), end_time=time(11, 0),
+        active=True, org_id=1,
+    )
+    db.add(s); db.commit(); db.refresh(s)
+    ids["schedules"].append(s.id)
+    db.close()
+    after = _snap(api)["mrr"]
+    delta_cents = after["estimate_cents"] - before["estimate_cents"]
+    expected = int(round(200.0 * (52 / 12 / 3) * 100))
+    assert delta_cents == expected
+    assert after["schedules_priced"] - before["schedules_priced"] == 1
+
+
+def test_mrr_daily_with_weekday_filter(api_client):
+    """Daily @ $50, Mon-Fri only → base 30 jobs/mo × (5/7) ≈ 21.4 jobs/mo ≈
+    $1,071/mo. Confirms the daily+filter path in _monthly_job_estimate."""
+    api, ids = api_client
+    before = _snap(api)["mrr"]
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+    qid = _mk_quote(ids, cid, "converted", 50.0)
+    db = SessionLocal()
+    s = RecurringSchedule(
+        client_id=cid, property_id=pid, quote_id=qid,
+        title="Daily M-F test", address="1 Owner St", job_type="residential",
+        frequency="daily", interval_weeks=1,
+        day_of_week=0, days_of_week=[0, 1, 2, 3, 4],
+        start_time=time(9, 0), end_time=time(11, 0),
+        active=True, org_id=1,
+    )
+    db.add(s); db.commit(); db.refresh(s)
+    ids["schedules"].append(s.id)
+    db.close()
+    after = _snap(api)["mrr"]
+    delta_cents = after["estimate_cents"] - before["estimate_cents"]
+    expected = int(round(50.0 * (30.0 * 5 / 7) * 100))
     assert delta_cents == expected
 
 

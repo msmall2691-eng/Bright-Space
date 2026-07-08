@@ -91,15 +91,53 @@ def dashboard_summary(db: Session = Depends(get_db), org_id: int = Depends(curre
     }
 
 
-# Monthly-cadence multipliers used by MRR — how many occurrences of the
-# schedule land in a rolling 30-day window on average. Weekly = 52/12 ≈ 4.33,
-# biweekly = 26/12 ≈ 2.17, monthly = 1.0. Multi-day-per-week schedules multiply
-# further inside the loop (see days_of_week handling below).
-_MRR_FREQUENCY_FACTORS = {
-    "weekly": 52.0 / 12.0,
-    "biweekly": 26.0 / 12.0,
-    "monthly": 1.0,
-}
+_WEEKS_PER_MONTH = 52.0 / 12.0
+_DAYS_PER_MONTH = 30.0
+
+
+def _monthly_job_estimate(sched) -> float:
+    """Estimate the number of jobs a RecurringSchedule generates per month.
+
+    Mirrors the cadence logic in `modules.recurring.router.generate_dates()`
+    so every frequency that actually produces jobs also contributes to MRR.
+    The audit-first version only priced `weekly`/`biweekly`/`monthly` and
+    silently counted `daily`, `every_3_weeks`, and `every_4_weeks` schedules
+    as `schedules_unpriced` — real MRR was under-reported.
+
+    - `monthly` → 1.0 (day_of_month once per calendar month).
+    - `daily`   → 30 / interval_weeks (interval_weeks is reused as the day
+      step here; the recurring router does the same trick). If specific
+      weekdays are set, scale by (days_selected / 7).
+    - anything else (weekly, biweekly, every_3_weeks, every_4_weeks, …) →
+      days_per_week × (52/12) / interval_weeks. `interval_weeks` carries
+      the actual cadence: weekly=1, biweekly=2, every_3_weeks=3, etc.
+    """
+    freq = (sched.frequency or "").lower()
+    if freq == "monthly":
+        return 1.0
+
+    # Count effective days-of-week. Mirrors _effective_days in the recurring
+    # router: prefer days_of_week (cleaned), fall back to the legacy
+    # day_of_week column, default to Monday.
+    days_of_week = sched.days_of_week
+    if isinstance(days_of_week, list) and days_of_week:
+        cleaned_days = sorted({
+            int(d) for d in days_of_week
+            if isinstance(d, (int, float)) and 0 <= int(d) <= 6
+        })
+    else:
+        cleaned_days = []
+    days_per_week = len(cleaned_days) if cleaned_days else 1
+
+    if freq == "daily":
+        step = max(1, int(sched.interval_weeks or 1))
+        base = _DAYS_PER_MONTH / step
+        if cleaned_days:
+            return base * days_per_week / 7.0
+        return base
+
+    interval = max(1, int(sched.interval_weeks or 1))
+    return days_per_week * _WEEKS_PER_MONTH / interval
 
 
 def _ar_aging_bucket(due_date_str: str | None, today: date) -> str | None:
@@ -144,15 +182,18 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
     window_90d_start = now - timedelta(days=90)
 
     # ── Close rate (last 90 days) ─────────────────────────────────────────
-    # Denominator: quotes that reached the customer during the window (any
-    # non-draft status). Numerator: those that ended up in `converted`
-    # (owner's win definition — matches /summary and the pipeline board).
+    # Cohort-by-send-date: of the quotes SENT to a customer during the
+    # window, what share have since converted. Filtering on Quote.sent_at
+    # (not Quote.created_at) matters because a quote can sit in `draft`
+    # for weeks before it's actually delivered — using created_at would
+    # bin sent-today-but-drafted-months-ago quotes outside the window and
+    # under-report recent activity.
     close_rows = (
         db.query(Quote.status, func.count(Quote.id))
         .filter(
             org_scope(Quote),
-            Quote.created_at >= window_90d_start,
-            Quote.status != "draft",
+            Quote.sent_at.isnot(None),
+            Quote.sent_at >= window_90d_start,
         )
         .group_by(Quote.status)
         .all()
@@ -163,12 +204,11 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
     close_rate_pct = round(quotes_won / quotes_sent * 100, 1) if quotes_sent else None
 
     # ── MRR estimate ─────────────────────────────────────────────────────
-    # For each ACTIVE recurring schedule with a source quote, multiply the
-    # quote total by the schedule's monthly cadence factor. Schedules with
-    # multi-day weekly patterns (Mon/Wed/Fri) multiply by the number of days
-    # since each generation cycle produces one job per listed weekday.
-    # Schedules without a linked quote are surfaced as `unpriced` so the
-    # owner can see what's missing from the MRR figure.
+    # For each ACTIVE recurring schedule with a linked quote, multiply the
+    # quote total by the schedule's jobs-per-month estimate — see
+    # `_monthly_job_estimate` for the cadence math (mirrors generate_dates).
+    # Schedules missing a quote/total are surfaced as `unpriced` so the
+    # owner can see what's excluded from the MRR figure.
     mrr_cents = 0
     priced = 0
     unpriced = 0
@@ -185,12 +225,11 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
         if not quote or not quote.total:
             unpriced += 1
             continue
-        factor = _MRR_FREQUENCY_FACTORS.get((s.frequency or "").lower(), 0.0)
+        factor = _monthly_job_estimate(s)
         if factor <= 0:
             unpriced += 1
             continue
-        days_per_week = len(s.days_of_week) if isinstance(s.days_of_week, list) and s.days_of_week else 1
-        mrr_cents += int(round(quote.total * factor * days_per_week * 100))
+        mrr_cents += int(round(quote.total * factor * 100))
         priced += 1
 
     # ── Revenue by service (last 90 days) ────────────────────────────────
