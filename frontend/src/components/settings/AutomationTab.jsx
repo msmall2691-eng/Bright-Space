@@ -170,9 +170,9 @@ export default function AutomationTab({ state, toast, active }) {
                 <div>
                   <h3 className="font-semibold text-ink">Automatic customer SMS reminders</h3>
                   <p className="text-xs text-ink-3 mt-1">
-                    {msgStatus.any_automatic_customer_messaging
+                    {msgStatus.customer_sms_reminders
                       ? 'Currently ON — customers receive automatic SMS reminders before their cleanings.'
-                      : 'Currently OFF — no automatic texts or emails are sent to customers. Invites & invoices are manual only.'}
+                      : 'Currently OFF — no automatic reminder texts are sent to customers. Manual sends are unaffected.'}
                   </p>
                   {/* env_disabled means the deployment set
                       JOB_SMS_REMINDERS_ENABLED=0 as a hard kill. The DB toggle

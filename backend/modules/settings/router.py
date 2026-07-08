@@ -936,7 +936,15 @@ def messaging_status(db: Session = Depends(get_db)):
 
     return {
         "customer_sms_reminders": sms_reminders,
-        "any_automatic_customer_messaging": sms_reminders or dunning_on,
+        # Kept for backwards compatibility with existing consumers that read
+        # this field to render SMS-specific copy. Do NOT broaden it to
+        # include dunning — the Automation tab keys the "Currently ON /
+        # customers receive automatic SMS reminders" line off of it, and
+        # widening the semantics made the SMS row lie whenever only
+        # dunning was on. Downstream summary tiles that want a broader
+        # "any automated touch is active" signal should use
+        # `customer_sms_reminders || invoice_dunning`.
+        "any_automatic_customer_messaging": sms_reminders,
         # Expose the reason a truthy DB setting is still off so the
         # Automation tab can show "disabled at the deploy layer" instead of
         # a silent false ON.

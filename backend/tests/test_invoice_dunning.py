@@ -258,6 +258,23 @@ def test_messaging_status_reflects_dunning_flag(api):
     assert body["invoice_dunning_env_disabled"] is False
 
 
+def test_dunning_only_does_not_flip_sms_status(api):
+    """Codex #521 regression: enabling dunning must NOT make the SMS-facing
+    fields flip on. The Automation tab uses customer_sms_reminders and
+    any_automatic_customer_messaging to render SMS-specific copy — either
+    reporting ON when only dunning is enabled would mislead operators."""
+    _set_flag("dunning_enabled", True)
+    _set_flag("job_sms_reminders_enabled", False)
+    env = {k: v for k, v in os.environ.items()
+           if k not in {"JOB_DUNNING_ENABLED", "JOB_SMS_REMINDERS_ENABLED"}}
+    with patch.dict(os.environ, env, clear=True):
+        r = api.get("/api/settings/messaging-status")
+    body = r.json()
+    assert body["invoice_dunning"] is True
+    assert body["customer_sms_reminders"] is False
+    assert body["any_automatic_customer_messaging"] is False
+
+
 def test_settings_api_persists_dunning_flag(api):
     env = {k: v for k, v in os.environ.items() if k != "JOB_DUNNING_ENABLED"}
     with patch.dict(os.environ, env, clear=True):
