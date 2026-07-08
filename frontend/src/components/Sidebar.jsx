@@ -3,12 +3,17 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
   Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
-  ChevronRight, Bell, Building2, LayoutGrid, LogOut, ChevronDown,
+  ChevronRight, Bell, Building2, LayoutGrid, LogOut, ChevronDown, TrendingUp,
 } from 'lucide-react'
 import { logout } from '../api'
 
+// Sidebar items ordered by workflow. Owner Dashboard is admin/manager-only
+// (backend 403s viewers on /api/dashboard/owner) — the `roles` gate below
+// hides the link for viewer/cleaner accounts so they don't see a route
+// that only 403s.
 const nav = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/owner',       icon: TrendingUp,      label: 'Owner',       roles: ['admin', 'manager'] },
   { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
   { divider: true, label: 'Sales' },
   { to: '/requests',    icon: Inbox,           label: 'Requests' },
@@ -73,7 +78,9 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
 
         {/* Navigation */}
         <nav className="flex-1 py-2 overflow-y-auto scrollbar-thin">
-          {nav.map((item, i) =>
+          {nav
+            .filter(item => !item.roles || (user?.role && item.roles.includes(user.role)))
+            .map((item, i) =>
             item.divider ? (
               <div key={i} className="px-4 pt-6 pb-2">
                 <span className="text-[11px] font-bold text-ink-3 uppercase tracking-wider">{item.label}</span>
