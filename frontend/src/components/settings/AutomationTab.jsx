@@ -162,10 +162,22 @@ export default function AutomationTab({ state, toast, active }) {
                       ? 'Currently ON — customers receive automatic SMS reminders before their cleanings.'
                       : 'Currently OFF — no automatic texts or emails are sent to customers. Invites & invoices are manual only.'}
                   </p>
+                  {/* env_disabled means the deployment set
+                      JOB_SMS_REMINDERS_ENABLED=0 as a hard kill. The DB toggle
+                      won't take effect until an operator lifts that. Surface
+                      the reason so Meg doesn't wonder why flipping the switch
+                      doesn't do anything. */}
+                  {msgStatus.env_disabled && (
+                    <p className="text-xs text-amber-700 mt-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                      Deployment kill-switch is active
+                      (<code className="text-[10px]">JOB_SMS_REMINDERS_ENABLED=0</code>). Ask
+                      your ops contact to lift it before this toggle takes effect.
+                    </p>
+                  )}
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={!!msgStatus.any_automatic_customer_messaging}
-                    disabled={msgSaving}
+                    disabled={msgSaving || msgStatus.env_disabled}
                     onChange={e => setMessaging(e.target.checked)}
                     className="w-4 h-4 rounded" />
                 </label>

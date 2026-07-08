@@ -156,16 +156,34 @@ def recurring_jobs_tick() -> dict:
 def job_sms_reminders_tick() -> dict:
     """Background job: text clients a reminder ahead of their cleaning.
 
-    OFF by default (it texts real customers). Gate: job_sms_reminders_enabled
-    app_setting / JOB_SMS_REMINDERS_ENABLED env. Delegates to the reminder
-    service, which uses Job.sms_reminder_sent for idempotency.
+    Gating (in order):
+      1. `JOB_SMS_REMINDERS_ENABLED=0` env → HARD off. Emergency deployment
+         kill (dev, compliance). Anything else — unset, `1`, `true` — falls
+         through to the DB flag.
+      2. `job_sms_reminders_enabled` app_setting — Meg's in-app toggle. OFF
+         by default so a fresh deploy never texts customers without an
+         explicit opt-in from Settings.
+      3. Otherwise: send due reminders. The reminder service uses
+         Job.sms_reminder_sent for idempotency.
+
+    Before T-04 the OUTER scheduler.start_scheduler() also gated tick
+    registration on the env flag, which meant Meg's Settings toggle did
+    nothing without a redeploy — the tick simply wasn't running. Now the
+    tick is registered unconditionally; the gates above decide whether it
+    actually sends.
     """
     from services.reminder_service import send_due_reminders
     db = SessionLocal()
     try:
-        if not _db_flag(db, "job_sms_reminders_enabled", env_flag("JOB_SMS_REMINDERS_ENABLED", False)):
-            log.debug("Job SMS reminders disabled; skipping tick")
-            return {"skipped": True, "reason": "disabled"}
+        # Env flag as an emergency-off. Default True so unset envs fall
+        # through to the DB toggle (previously defaulted False, so the
+        # combined check was accidentally forever-off in prod).
+        if not env_flag("JOB_SMS_REMINDERS_ENABLED", True):
+            log.debug("Job SMS reminders hard-disabled via env; skipping tick")
+            return {"skipped": True, "reason": "env_disabled"}
+        if not _db_flag(db, "job_sms_reminders_enabled", False):
+            log.debug("Job SMS reminders disabled via app_setting; skipping tick")
+            return {"skipped": True, "reason": "app_disabled"}
         result = send_due_reminders(db)
         log.info(f"Job SMS reminders: {result}")
         return result
@@ -527,20 +545,24 @@ def start_scheduler():
     else:
         log.info("Gmail inbox auto-sync disabled via GMAIL_AUTO_SYNC_ENABLED=0")
 
-    # Job SMS reminders — OFF by default (texts real customers). Hourly tick so
-    # each job gets one reminder ~lead_hours before it starts.
-    if env_flag("JOB_SMS_REMINDERS_ENABLED", False):
-        reminder_interval_minutes = env_int("JOB_SMS_REMINDER_INTERVAL_MINUTES", 60)
-        _scheduler.add_job(
-            job_sms_reminders_tick,
-            IntervalTrigger(minutes=reminder_interval_minutes),
-            id="job_sms_reminders",
-            name="Job SMS reminders",
-            replace_existing=True,
-        )
-        log.info(f"Job SMS reminders enabled (interval: {reminder_interval_minutes} min)")
-    else:
-        log.info("Job SMS reminders disabled (set JOB_SMS_REMINDERS_ENABLED=1 to enable)")
+    # Job SMS reminders — tick registered unconditionally (T-04). Whether it
+    # actually sends is decided inside job_sms_reminders_tick by the DB flag
+    # (Settings → Automation → "Automatic customer SMS reminders"); the tick
+    # short-circuits when disabled, so registering has no cost. Previously
+    # this gated on JOB_SMS_REMINDERS_ENABLED, which meant flipping the
+    # Settings toggle in prod did nothing without a redeploy.
+    reminder_interval_minutes = env_int("JOB_SMS_REMINDER_INTERVAL_MINUTES", 60)
+    _scheduler.add_job(
+        job_sms_reminders_tick,
+        IntervalTrigger(minutes=reminder_interval_minutes),
+        id="job_sms_reminders",
+        name="Job SMS reminders",
+        replace_existing=True,
+    )
+    log.info(
+        f"Job SMS reminders tick registered (interval: {reminder_interval_minutes} min); "
+        "activation gated on the in-app Settings toggle."
+    )
 
     # Recurring residential/commercial job generation (runs daily)
     if env_flag("RECURRING_AUTO_GENERATE_ENABLED", True):

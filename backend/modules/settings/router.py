@@ -912,20 +912,26 @@ def messaging_status(db: Session = Depends(get_db)):
     "are we texting customers?" indicator.
 
     The ONLY automatic path that can message a customer is the job SMS reminder
-    tick. Crucially, that tick is REGISTERED at boot only when the env flag
-    JOB_SMS_REMINDERS_ENABLED is on (scheduler.start_scheduler); the DB setting
-    job_sms_reminders_enabled can only *further disable* it from inside the tick.
-    So messaging is actually ON iff the env gate is on AND the DB setting hasn't
-    turned it off — we report the real scheduler state, not just intent, so a DB
-    toggle flipped without the env flag/restart doesn't show a false ON. Manual
-    sends (per-appointment invite, invoice, inbox reply) are operator-initiated
-    and intentionally not reflected here."""
+    tick. Post-T-04 the tick is always registered by scheduler.start_scheduler;
+    the DB app_setting `job_sms_reminders_enabled` (Meg's toggle in Settings)
+    decides whether it sends. `JOB_SMS_REMINDERS_ENABLED=0` remains as a
+    deployment-side hard-off (compliance / dev) — reported as env_disabled.
+
+    Manual sends (per-appointment invite, invoice, inbox reply) are
+    operator-initiated and intentionally not reflected here.
+    """
     import os
-    env_on = os.getenv("JOB_SMS_REMINDERS_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-    sms_reminders = env_on and _coerce_bool(get_setting(db, "job_sms_reminders_enabled"), True)
+    env_raw = os.getenv("JOB_SMS_REMINDERS_ENABLED", "").strip().lower()
+    env_hard_off = env_raw in {"0", "false", "no", "off"}
+    db_on = _coerce_bool(get_setting(db, "job_sms_reminders_enabled"), False)
+    sms_reminders = (not env_hard_off) and db_on
     return {
         "customer_sms_reminders": sms_reminders,
         "any_automatic_customer_messaging": sms_reminders,
+        # Expose the reason a truthy DB setting is still off so the
+        # Automation tab can show "disabled at the deploy layer" instead of
+        # a silent false ON.
+        "env_disabled": env_hard_off,
     }
 
 
