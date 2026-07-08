@@ -6,7 +6,7 @@ import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import { get, post, patch } from "../api"
-import { formatDate } from '../utils/format'
+import { formatDate, combineAddress } from '../utils/format'
 import Toast from '../components/quoting/Toast'
 import LeadRow from '../components/quoting/LeadRow'
 import QuoteRow from '../components/quoting/QuoteRow'
@@ -98,10 +98,10 @@ export default function Quoting() {
       const next = { ...f, client_id: idStr }
       if (c && !f.address) {
         // "123 Main St, Portland, ME 04101" — keep the ZIP so the quote (and any
-        // job converted from it) has the complete service address.
-        const cityStateZip = [[c.city, c.state].filter(Boolean).join(', '), c.zip_code]
-          .filter(Boolean).join(' ')
-        next.address = [c.address, cityStateZip].filter(Boolean).join(', ')
+        // job converted from it) has the complete service address. combineAddress
+        // skips any component already present in Client.address, so a legacy row
+        // that stored the full string doesn't get "ME" appended twice.
+        next.address = combineAddress(c.address, c.city, c.state, c.zip_code)
       }
       return next
     })
@@ -255,7 +255,12 @@ export default function Quoting() {
         // Auto-fill a sensible title and customer-facing scope so the quote is
         // mostly built — the admin just reviews, tweaks, and sends.
         title: titleFromIntake(intake), customer_message: '',
-        address: [intake.address, intake.city, intake.state].filter(Boolean).join(', '),
+        // maineclean.co's /book form assembles the address as
+        // "street, city, ME, zip" and posts it whole into LeadIntake.address,
+        // leaving intake.city NULL and intake.state="ME" (its column default).
+        // Without dedup we'd re-append ", ME" and ship "…, 04061, ME" on the
+        // customer-facing quote page (July-2026 audit L1/L3).
+        address: combineAddress(intake.address, intake.city, intake.state, intake.zip_code),
         service_type: svcType,
         items: [{
           ...EMPTY_ITEM,
@@ -275,7 +280,7 @@ export default function Quoting() {
       })
       // Best-effort: when property-data enrichment is on, fill missing specs
       // (sqft/beds/baths/year) into the line description by address.
-      const fullAddr = [intake.address, intake.city, intake.state].filter(Boolean).join(', ')
+      const fullAddr = combineAddress(intake.address, intake.city, intake.state, intake.zip_code)
       if (fullAddr) {
         get(`/api/quotes/property-lookup?address=${encodeURIComponent(fullAddr)}`)
           .then(r => {
