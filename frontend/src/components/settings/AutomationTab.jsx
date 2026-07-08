@@ -75,6 +75,18 @@ export default function AutomationTab({ state, toast, active }) {
       setMsgSaving(false)
     }
   }
+  const setDunning = async (on) => {
+    setMsgSaving(true)
+    try {
+      const r = await post('/api/settings/messaging', { invoice_dunning: on })
+      setMsgStatus({ loading: false, ...r })
+      toast(on ? 'Automatic overdue-invoice reminders enabled' : 'Automatic overdue-invoice reminders turned OFF')
+    } catch (e) {
+      toast(e?.message || 'Could not update dunning', 'error')
+    } finally {
+      setMsgSaving(false)
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
@@ -176,9 +188,33 @@ export default function AutomationTab({ state, toast, active }) {
                   )}
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={!!msgStatus.any_automatic_customer_messaging}
+                  <input type="checkbox" checked={!!msgStatus.customer_sms_reminders}
                     disabled={msgSaving || msgStatus.env_disabled}
                     onChange={e => setMessaging(e.target.checked)}
+                    className="w-4 h-4 rounded" />
+                </label>
+              </div>
+              {/* Invoice dunning — same shape as SMS reminders. T-03. */}
+              <div className="flex items-center justify-between mt-6 pt-6 border-t border-hairline">
+                <div>
+                  <h3 className="font-semibold text-ink">Automatic overdue-invoice reminders</h3>
+                  <p className="text-xs text-ink-3 mt-1">
+                    {msgStatus.invoice_dunning
+                      ? 'Currently ON — customers with past-due invoices are automatically emailed at 1, 7, and 14 days overdue.'
+                      : 'Currently OFF — overdue invoices are not chased automatically.'}
+                  </p>
+                  {msgStatus.invoice_dunning_env_disabled && (
+                    <p className="text-xs text-amber-700 mt-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                      Deployment kill-switch is active
+                      (<code className="text-[10px]">JOB_DUNNING_ENABLED=0</code>). Ask your ops
+                      contact to lift it before this toggle takes effect.
+                    </p>
+                  )}
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!msgStatus.invoice_dunning}
+                    disabled={msgSaving || msgStatus.invoice_dunning_env_disabled}
+                    onChange={e => setDunning(e.target.checked)}
                     className="w-4 h-4 rounded" />
                 </label>
               </div>
