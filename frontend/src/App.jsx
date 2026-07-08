@@ -114,6 +114,7 @@ const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
+const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const Settings = lazy(() => import('./pages/Settings'))
 
 export default function App() {
@@ -227,6 +228,7 @@ export default function App() {
                   and rule edits (future visits only). Schedule?tab=recurring
                   still has the summary tab; this is the deep-dive page. */}
               <Route path="/recurring" element={<Recurring />} />
+              <Route path="/owner" element={<OwnerDashboard />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
