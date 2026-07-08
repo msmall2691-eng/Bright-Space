@@ -212,6 +212,18 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
     if not intake:
         raise HTTPException(status_code=404, detail="Intake not found")
 
+    # Idempotent: a double-click on "Create Quote", a duplicate LeadIntake
+    # from the pre-fix M2 dedup bug, or a stale browser tab resubmitting
+    # would otherwise each mint an independent Quote for the same request
+    # (the July-2026 audit's M3 finding — a stray extra quote with its own
+    # hand-typed price). If this intake was already converted, return the
+    # existing quote instead of creating a second one.
+    if intake.converted_quote_id:
+        from modules.quoting.router import _quote_dict
+        existing_quote = db.query(Quote).filter(Quote.id == intake.converted_quote_id).first()
+        if existing_quote:
+            return _quote_dict(existing_quote)
+
     client_id = intake.client_id
     if not client_id:
         client = Client(
