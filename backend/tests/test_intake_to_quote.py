@@ -54,6 +54,24 @@ def test_convert_intake_seeds_quote_from_estimate(intake_ctx):
     assert prop.bedrooms == 3 and prop.bathrooms == 2 and prop.square_footage == 2000
 
 
+def test_convert_intake_is_idempotent(intake_ctx):
+    """July-2026 audit M3: a stray extra quote (its own hand-typed price,
+    already 'Sent') showed up for a request the auditor had already
+    converted once. convert_intake_to_quote had no guard against being
+    called twice on the same intake — a double-click on "Create Quote", a
+    duplicate LeadIntake from the pre-fix M2 dedup bug, or a stale browser
+    tab resubmitting would each mint an independent Quote. Calling it twice
+    on the same intake must now return the SAME quote both times."""
+    db, intake = intake_ctx
+    first = convert_intake_to_quote(intake.id, db=db)
+    second = convert_intake_to_quote(intake.id, db=db)
+    assert second["id"] == first["id"]
+    assert second["quote_number"] == first["quote_number"]
+    # Only one Quote row exists for this intake — not two.
+    count = db.query(Quote).filter(Quote.intake_id == intake.id).count()
+    assert count == 1, f"expected 1 quote for this intake, found {count}"
+
+
 def test_core_models_have_audit_fields():
     """Twenty-style ActorMetadata is present on the core mutable tables so
     'who changed this, and when' is answerable (and can't silently regress)."""

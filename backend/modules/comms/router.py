@@ -848,33 +848,43 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     # also triggers FORWARD_INBOUND_SMS_TO outbound SMS, turning Twilio
     # into a free open relay against the on-call line.
     auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-    if auth_token:
-        from twilio.request_validator import RequestValidator
-        validator = RequestValidator(auth_token)
-        signature = request.headers.get("X-Twilio-Signature", "")
-        # Twilio signs the full public URL it POSTed to. Behind Railway's
-        # proxy, request.url may show the internal scheme/host; prefer the
-        # X-Forwarded-* headers when present so the signed string matches
-        # what Twilio actually used.
-        fwd_proto = request.headers.get("X-Forwarded-Proto")
-        fwd_host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
-        if fwd_proto and fwd_host:
-            url = f"{fwd_proto}://{fwd_host}{request.url.path}"
-            if request.url.query:
-                url = f"{url}?{request.url.query}"
-        else:
-            url = str(request.url)
-        params = {k: v for k, v in form.items()}
-        if not validator.validate(url, params, signature):
-            logger.warning(
-                f"[twilio] rejected webhook with bad signature from {request.client.host if request.client else 'unknown'}"
-            )
-            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
-    else:
-        logger.warning(
-            "[twilio] TWILIO_AUTH_TOKEN not set — accepting webhook without signature check. "
-            "Set TWILIO_AUTH_TOKEN to enable signature validation."
+    if not auth_token:
+        # Fail CLOSED, not open (July-2026 audit finding). TWILIO_AUTH_TOKEN
+        # is already required for outbound SMS (integrations/twilio_client.py)
+        # — every quote/job-reminder/owner-alert send needs it — so if it's
+        # unset in production, outbound SMS is already broken and this
+        # webhook has no legitimate traffic to serve anyway. The old
+        # behavior (log a warning, accept the request) let anyone POST a
+        # forged payload with an arbitrary From/Body, inject SMS records
+        # under a real client's number, and trigger FORWARD_INBOUND_SMS_TO
+        # — turning Twilio into a free open relay against the on-call line.
+        logger.error(
+            "[twilio] rejecting webhook — TWILIO_AUTH_TOKEN not set, cannot "
+            "validate signature. Set TWILIO_AUTH_TOKEN to accept inbound SMS."
         )
+        raise HTTPException(status_code=403, detail="SMS webhook not configured")
+
+    from twilio.request_validator import RequestValidator
+    validator = RequestValidator(auth_token)
+    signature = request.headers.get("X-Twilio-Signature", "")
+    # Twilio signs the full public URL it POSTed to. Behind Railway's
+    # proxy, request.url may show the internal scheme/host; prefer the
+    # X-Forwarded-* headers when present so the signed string matches
+    # what Twilio actually used.
+    fwd_proto = request.headers.get("X-Forwarded-Proto")
+    fwd_host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+    if fwd_proto and fwd_host:
+        url = f"{fwd_proto}://{fwd_host}{request.url.path}"
+        if request.url.query:
+            url = f"{url}?{request.url.query}"
+    else:
+        url = str(request.url)
+    params = {k: v for k, v in form.items()}
+    if not validator.validate(url, params, signature):
+        logger.warning(
+            f"[twilio] rejected webhook with bad signature from {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
     from_number = form.get("From", "")
     to_number = form.get("To", "")
