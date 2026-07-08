@@ -929,29 +929,54 @@ def messaging_status(db: Session = Depends(get_db)):
     hard_off = _env_hard_off("JOB_SMS_REMINDERS_ENABLED")
     db_on = _coerce_bool(get_setting(db, "job_sms_reminders_enabled"), False)
     sms_reminders = (not hard_off) and db_on
+    # Invoice dunning (T-03) shares the same shape.
+    dunning_hard_off = _env_hard_off("JOB_DUNNING_ENABLED")
+    dunning_db_on = _coerce_bool(get_setting(db, "dunning_enabled"), False)
+    dunning_on = (not dunning_hard_off) and dunning_db_on
+
     return {
         "customer_sms_reminders": sms_reminders,
+        # Kept for backwards compatibility with existing consumers that read
+        # this field to render SMS-specific copy. Do NOT broaden it to
+        # include dunning — the Automation tab keys the "Currently ON /
+        # customers receive automatic SMS reminders" line off of it, and
+        # widening the semantics made the SMS row lie whenever only
+        # dunning was on. Downstream summary tiles that want a broader
+        # "any automated touch is active" signal should use
+        # `customer_sms_reminders || invoice_dunning`.
         "any_automatic_customer_messaging": sms_reminders,
         # Expose the reason a truthy DB setting is still off so the
         # Automation tab can show "disabled at the deploy layer" instead of
         # a silent false ON.
         "env_disabled": hard_off,
+        "invoice_dunning": dunning_on,
+        "invoice_dunning_env_disabled": dunning_hard_off,
     }
 
 
 class MessagingConfig(BaseModel):
-    customer_sms_reminders: bool
+    """Two independent toggles for automated customer touches. Missing
+    fields leave the current DB setting untouched so a partial POST from
+    the UI doesn't silently reset the other channel."""
+    customer_sms_reminders: Optional[bool] = None
+    invoice_dunning: Optional[bool] = None
 
 
 @router.post("/messaging", dependencies=[Depends(require_role("admin"))])
 def set_messaging(config: MessagingConfig, db: Session = Depends(get_db)):
-    """Turn automatic customer SMS reminders on/off from the UI.
+    """Turn the automatic customer touches on/off from the UI.
 
-    Writes the job_sms_reminders_enabled app-setting, which the reminder tick
-    checks every run — so setting it false stops reminders immediately, even if
-    the JOB_SMS_REMINDERS_ENABLED env flag is on (no redeploy needed). This is
-    the in-app kill switch for customer messaging."""
-    set_setting(db, "job_sms_reminders_enabled", "true" if config.customer_sms_reminders else "false")
+    Writes the `job_sms_reminders_enabled` and/or `dunning_enabled`
+    app-settings, which the ticks check every run — so setting either
+    false stops that stream immediately, even if the matching env flag
+    is on (no redeploy needed). This is the in-app kill switch for
+    customer messaging."""
+    if config.customer_sms_reminders is not None:
+        set_setting(db, "job_sms_reminders_enabled",
+                    "true" if config.customer_sms_reminders else "false")
+    if config.invoice_dunning is not None:
+        set_setting(db, "dunning_enabled",
+                    "true" if config.invoice_dunning else "false")
     db.commit()
     return messaging_status(db)
 

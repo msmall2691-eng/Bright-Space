@@ -639,6 +639,13 @@ class Invoice(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Automatic overdue-invoice email chase (T-03).
+    # dunning_stage: 0 = none sent yet, 1/2/3 = which cadence reminder was
+    # last sent. Once 3 fires we stop. Reset to 0 if the invoice flips to
+    # `paid` — the dunning_service handles that.
+    dunning_stage = Column(Integer, nullable=False, default=0, server_default="0")
+    dunning_last_sent_at = Column(DateTime(timezone=True), nullable=True)
+
     client = relationship("Client", back_populates="invoices")
     opportunity = relationship("Opportunity", back_populates="invoices")
 

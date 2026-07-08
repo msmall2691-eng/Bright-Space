@@ -165,6 +165,35 @@ def recurring_jobs_tick() -> dict:
     finally:
         db.close()
 
+def invoice_dunning_tick() -> dict:
+    """Background job: chase overdue invoices at +1/+7/+14 days past due (T-03).
+
+    Gating (mirrors job_sms_reminders_tick):
+      1. `JOB_DUNNING_ENABLED=0` env → HARD off. Emergency deployment kill.
+      2. `dunning_enabled` app_setting — Meg's in-app toggle. OFF by default
+         so a fresh deploy never emails customers without an explicit opt-in.
+      3. Otherwise: delegate to services.dunning_service.send_due_dunning
+         which advances Invoice.dunning_stage for idempotency.
+    """
+    from services.dunning_service import send_due_dunning
+    db = SessionLocal()
+    try:
+        if env_hard_off("JOB_DUNNING_ENABLED"):
+            log.debug("Invoice dunning hard-disabled via env; skipping tick")
+            return {"skipped": True, "reason": "env_disabled"}
+        if not _db_flag(db, "dunning_enabled", False):
+            log.debug("Invoice dunning disabled via app_setting; skipping tick")
+            return {"skipped": True, "reason": "app_disabled"}
+        result = send_due_dunning(db)
+        log.info(f"Invoice dunning: {result}")
+        return result
+    except Exception as e:
+        log.error(f"Invoice dunning failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def job_sms_reminders_tick() -> dict:
     """Background job: text clients a reminder ahead of their cleaning.
 
@@ -574,6 +603,22 @@ def start_scheduler():
     )
     log.info(
         f"Job SMS reminders tick registered (interval: {reminder_interval_minutes} min); "
+        "activation gated on the in-app Settings toggle."
+    )
+
+    # Invoice dunning (T-03) — same shape as the SMS-reminders tick. Once a
+    # day is enough; each stage guards against re-fire within the cadence
+    # window via Invoice.dunning_stage.
+    dunning_interval_hours = env_int("JOB_DUNNING_INTERVAL_HOURS", 24)
+    _scheduler.add_job(
+        invoice_dunning_tick,
+        IntervalTrigger(hours=dunning_interval_hours),
+        id="invoice_dunning",
+        name="Invoice dunning",
+        replace_existing=True,
+    )
+    log.info(
+        f"Invoice dunning tick registered (interval: {dunning_interval_hours}h); "
         "activation gated on the in-app Settings toggle."
     )
 
