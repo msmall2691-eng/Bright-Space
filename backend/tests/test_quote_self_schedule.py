@@ -5,6 +5,7 @@ the schedule endpoint (accept + dated job + convert, idempotent), and
 auto-convert-on-accept (only when the quote has a property).
 """
 from datetime import date, timedelta
+from utils.dates import business_today
 
 import pytest
 
@@ -113,8 +114,13 @@ def test_schedule_rejects_past_date(ctx):
     _mk_quote(db, c, "schedtok03")
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
+        # public_schedule_quote compares against business_today() (ET), so
+        # yesterday must be computed off the same clock. date.today() (UTC)
+        # would flake during the 00:00-04:00 UTC window when the ET calendar
+        # hasn't rolled yet — CI kept the request as "today" and returned 409
+        # ("no longer available") instead of the 400 the test expects.
         public_schedule_quote("schedtok03", PublicScheduleRequest(
-            date=(date.today() - timedelta(days=1)).isoformat()), db=db)
+            date=(business_today() - timedelta(days=1)).isoformat()), db=db)
     assert exc.value.status_code == 400
 
 

@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 from database.models import RecurringSchedule
 from modules.recurring.router import generate_dates
+from utils.dates import business_today
 
 
 def _sched(**kw):
@@ -13,8 +14,11 @@ def _sched(**kw):
 
 def test_daily_every_day():
     dates = generate_dates(_sched(), weeks_ahead=1)
-    # today .. today+7 inclusive = 8 consecutive days
-    assert dates[0] == date.today()
+    # today .. today+7 inclusive = 8 consecutive days.
+    # generate_dates() anchors on business_today() (America/New_York) — using
+    # date.today() here would flake during the 00:00-04:00 UTC window when the
+    # two calendars diverge and CI happens to run during that gap.
+    assert dates[0] == business_today()
     assert len(dates) == 8
     for a, b in zip(dates, dates[1:]):
         assert (b - a) == timedelta(days=1)

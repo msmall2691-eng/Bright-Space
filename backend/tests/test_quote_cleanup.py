@@ -1,5 +1,6 @@
 """PR4 cleanup: soft-delete (archive), list exclusion, and the auto-expiry sweep."""
 from datetime import date, timedelta
+from utils.dates import business_today
 
 import pytest
 from fastapi import HTTPException
@@ -85,9 +86,14 @@ def test_permanent_delete_removes_archived_quote(ctx):
 
 def test_expiry_sweep_flips_past_due_sent_quotes(ctx):
     db, c = ctx
-    past = _mk_quote(db, c, "QT-CL-3", status="sent", valid_until=date.today() - timedelta(days=1))
-    future = _mk_quote(db, c, "QT-CL-4", status="sent", valid_until=date.today() + timedelta(days=5))
-    accepted = _mk_quote(db, c, "QT-CL-5", status="accepted", valid_until=date.today() - timedelta(days=1))
+    # quote_expiry_tick compares against business_today() (ET). date.today()
+    # (UTC) diverges during 00:00-04:00 UTC — a "past" quote with
+    # valid_until=today-1 UTC still reads as today ET, so nothing expires and
+    # the test fails on CI runs in that window.
+    today = business_today()
+    past = _mk_quote(db, c, "QT-CL-3", status="sent", valid_until=today - timedelta(days=1))
+    future = _mk_quote(db, c, "QT-CL-4", status="sent", valid_until=today + timedelta(days=5))
+    accepted = _mk_quote(db, c, "QT-CL-5", status="accepted", valid_until=today - timedelta(days=1))
     from scheduler import quote_expiry_tick
     res = quote_expiry_tick()
     assert res.get("expired", 0) >= 1

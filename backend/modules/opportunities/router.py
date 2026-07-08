@@ -87,13 +87,17 @@ def list_opportunities(
 ):
     # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
     # Eager-load everything opp_to_dict touches. Without this, serializing N
-    # opportunities fired ~1 + N×4 queries (client + invoices/jobs/messages
-    # counts) — a 50-row page issued ~200 queries. joinedload for the
+    # opportunities fired ~1 + N×5 queries (client + quotes/invoices/jobs/
+    # messages counts) — a 50-row page issued ~250 queries. joinedload for the
     # many-to-one client; selectinload batches the count collections in one
-    # query each. (Opportunity has no `quotes` relationship, so quotes_count
-    # stays 0 via opp_to_dict's hasattr guard — nothing to load there.)
+    # query each. `quotes` was intentionally excluded here at one point on the
+    # premise that Opportunity had no such relationship — but the relationship
+    # is defined on Opportunity (see models.py: `quotes = relationship("Quote",
+    # ...)`), so the omission just made opp_to_dict fire a lazy fetch per row.
+    # Adding it here means Pipeline finally counts attached quotes correctly.
     q = db.query(Opportunity).options(
         joinedload(Opportunity.client),
+        selectinload(Opportunity.quotes),
         selectinload(Opportunity.invoices),
         selectinload(Opportunity.jobs),
         selectinload(Opportunity.messages),
