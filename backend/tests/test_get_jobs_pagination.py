@@ -138,3 +138,79 @@ def test_limit_out_of_range_is_rejected_by_validation(seeded):
 def test_offset_negative_is_rejected(seeded):
     api, _ = seeded
     assert api.get("/api/jobs?offset=-1").status_code == 422
+
+
+def test_unassigned_filter_applied_before_pagination(api):
+    """Codex P2 on #526: with `unassigned=true`, the endpoint must apply
+    the filter BEFORE slicing offset/limit — otherwise if all rows on the
+    first DB page happen to be assigned, the caller sees zero matches
+    even when unassigned rows exist further down the sort order.
+
+    Repro: seed 6 assigned jobs on earlier dates + 2 unassigned jobs on
+    later dates, then request `?unassigned=true&limit=3`. With the bug,
+    DB pagination returns the first 3 (all assigned), Python filter
+    strips them, response is empty. Fixed, the filter runs first and
+    the 2 unassigned rows come back on page 0.
+    """
+    db = SessionLocal()
+    c = Client(name=f"UnAsn {uuid.uuid4().hex[:6]}", status="active", org_id=1)
+    db.add(c); db.commit(); db.refresh(c)
+    p = Property(client_id=c.id, name="P", address="1 Test",
+                 property_type="residential", org_id=1)
+    db.add(p); db.commit(); db.refresh(p)
+    client_id = c.id
+    property_id = p.id
+    job_ids = []
+    # 6 assigned on early dates so they sort BEFORE the unassigned ones.
+    for i in range(6):
+        j = Job(
+            client_id=client_id, property_id=property_id, job_type="residential",
+            title=f"Assigned {i}",
+            scheduled_date=date.today() + timedelta(days=200 + i),
+            start_time=time(9, 0), end_time=time(11, 0),
+            status="scheduled", cleaner_ids=[42], org_id=1,
+        )
+        db.add(j); db.commit(); db.refresh(j)
+        job_ids.append(j.id)
+    unassigned_ids = []
+    for i in range(2):
+        j = Job(
+            client_id=client_id, property_id=property_id, job_type="residential",
+            title=f"UnAssigned {i}",
+            scheduled_date=date.today() + timedelta(days=210 + i),
+            start_time=time(9, 0), end_time=time(11, 0),
+            status="scheduled", cleaner_ids=[], org_id=1,
+        )
+        db.add(j); db.commit(); db.refresh(j)
+        job_ids.append(j.id)
+        unassigned_ids.append(j.id)
+    # Close before we hit the endpoint so the endpoint's own session
+    # sees fully-committed rows.
+    db.close()
+
+    try:
+        # Scope tightly to this client so pre-existing test rows don't
+        # confuse the assertion.
+        r = api.get(f"/api/jobs?client_id={client_id}&unassigned=true&limit=3")
+        assert r.status_code == 200
+        returned = {it["id"] for it in r.json()}
+        # Bug would return empty (assigned filled first page then got
+        # filtered out). Fix returns both unassigned rows.
+        assert returned == set(unassigned_ids), (
+            f"unassigned filter should run BEFORE pagination — "
+            f"expected {unassigned_ids}, got {returned}"
+        )
+
+        # Envelope total should reflect the whole filtered set, not
+        # just this page.
+        env = api.get(
+            f"/api/jobs?client_id={client_id}&unassigned=true&limit=1&paginated=true"
+        ).json()
+        assert env["total"] == 2
+        assert len(env["items"]) == 1
+    finally:
+        db = SessionLocal()
+        db.query(Job).filter(Job.id.in_(job_ids)).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id == property_id).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client_id).delete(synchronize_session=False)
+        db.commit(); db.close()
