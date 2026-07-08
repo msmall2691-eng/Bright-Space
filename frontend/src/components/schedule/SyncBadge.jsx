@@ -1,18 +1,26 @@
 import { Zap, Users, LogIn } from 'lucide-react'
 import { shortDate } from './constants'
 
-/** Small Google/Connecteam sync indicator chip. Green when synced, muted when
- *  not — the "is this on the working schedule / in staff scheduling?" signal. */
-export const SyncBadge = ({ ok, label, okTitle, offTitle }) => (
-  <span
-    title={ok ? okTitle : offTitle}
-    className={`inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded border ${
-      ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-bg-2 text-ink-3 border-hairline'
-    }`}
-  >
-    {ok ? '✓' : '○'} {label}
-  </span>
-)
+/** Small Google/Connecteam sync indicator chip. Three tones:
+ *  - "ok" (green) — everything's on the target scheduler.
+ *  - "partial" (amber) — some shifts pushed but at least one is missing
+ *    (multi-cleaner job where a mid-dispatch Connecteam create failed;
+ *    backend/integrations/connecteam_auto.py stores partial successes).
+ *  - "off" (muted) — nothing pushed yet. */
+export const SyncBadge = ({ state = 'off', label, okTitle, offTitle, partialTitle }) => {
+  const cfg =
+    state === 'ok' ? { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', mark: '✓', title: okTitle }
+    : state === 'partial' ? { cls: 'bg-amber-50 text-amber-800 border-amber-200', mark: '◐', title: partialTitle || offTitle }
+    : { cls: 'bg-bg-2 text-ink-3 border-hairline', mark: '○', title: offTitle }
+  return (
+    <span
+      title={cfg.title}
+      className={`inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded border ${cfg.cls}`}
+    >
+      {cfg.mark} {label}
+    </span>
+  )
+}
 
 /** Compute the sync state for a visit against its linked job (T-30).
  *
@@ -21,19 +29,37 @@ export const SyncBadge = ({ ok, label, okTitle, offTitle }) => (
  *  whole job dict, so v.gcal_event_id IS populated in practice. We check
  *  both to stay robust against any consumer that doesn't spread.
  *
- *  Connecteam: connecteam_shift_ids is a JSON array on Job — a non-empty
- *  array means at least one shift is live in the Connecteam scheduler
- *  (single-day jobs have 1, multi-day / multi-cleaner splits push more).
- *  Empty array + no assigned cleaner is a legitimate "nothing to push" —
- *  the counter and chip separate that from "assigned but not pushed" via
- *  the `hasCleaner` split.
+ *  Connecteam: connecteam_shift_ids is a JSON array on Job. Comparing
+ *  its length to the number of assigned cleaners gives us four states:
+ *    - none:    no cleaner AND no shift → nothing to show (the "needs
+ *      cleaner" queue owns this surface).
+ *    - synced:  shifts >= expected. Includes the open-shift push path
+ *      (Settings → Push open shifts writes shift_ids even with zero
+ *      cleaners — Codex review #2 on #524).
+ *    - partial: some shifts pushed but at least one is missing. This
+ *      happens when auto_dispatch_job's mid-loop Connecteam create
+ *      fails on one of several cleaners — the successful shift IDs are
+ *      still persisted (Codex review #1 on #524).
+ *    - missing: cleaners assigned but nothing pushed yet.
  */
 export function computeVisitSyncState(visit, job) {
   const gcalOk = !!(visit?.gcal_event_id || job?.gcal_event_id)
-  const ctIds = job?.connecteam_shift_ids || []
-  const connecteamOk = Array.isArray(ctIds) && ctIds.length > 0
-  const hasCleaner = (visit?.cleaner_ids?.length || job?.cleaner_ids?.length || 0) > 0
-  return { gcalOk, connecteamOk, hasCleaner }
+  const rawIds = job?.connecteam_shift_ids
+  const shifts = Array.isArray(rawIds) ? rawIds.length : 0
+  const rawCleaners = visit?.cleaner_ids?.length ? visit.cleaner_ids : (job?.cleaner_ids || [])
+  const cleaners = Array.isArray(rawCleaners) ? rawCleaners.length : 0
+  const expected = cleaners
+  let connecteamStatus = 'none'
+  if (shifts === 0 && expected === 0) {
+    connecteamStatus = 'none'
+  } else if (shifts >= Math.max(expected, 1)) {
+    connecteamStatus = 'synced'
+  } else if (shifts > 0) {
+    connecteamStatus = 'partial'
+  } else {
+    connecteamStatus = 'missing'
+  }
+  return { gcalOk, connecteamStatus, connecteamShifts: shifts, connecteamExpected: expected }
 }
 
 /** Per-visit sync chips (T-30). Shows Google + Connecteam status inline on
@@ -41,26 +67,32 @@ export function computeVisitSyncState(visit, job) {
  *  attention without opening each drawer. Compact enough to not clutter
  *  the card at density.
  *
- *  Connecteam chip hides when no cleaner is assigned yet — a job with no
- *  cleaner can't be dispatched to Connecteam by design (the pusher skips
- *  it), so a "not synced" chip there would flag a state the operator has
- *  to fix by ASSIGNING first, not by pushing. The "needs cleaner" queue
- *  already covers that surface. */
+ *  Connecteam chip hides only when there's no cleaner AND no shift — a
+ *  legitimate "nothing to sync" state (the "needs cleaner" queue owns
+ *  that surface). Push-as-open-shift (a shift with 0 cleaners assigned)
+ *  still renders as synced so an owner can distinguish it from an
+ *  un-pushed unassigned job. */
 export function SyncStatusChips({ visit, job }) {
-  const { gcalOk, connecteamOk, hasCleaner } = computeVisitSyncState(visit, job)
+  const { gcalOk, connecteamStatus, connecteamShifts, connecteamExpected } =
+    computeVisitSyncState(visit, job)
   return (
     <span className="inline-flex items-center gap-1 flex-wrap">
       <SyncBadge
-        ok={gcalOk}
+        state={gcalOk ? 'ok' : 'off'}
         label="Google"
         okTitle="On Google Calendar"
         offTitle="Not yet on Google Calendar"
       />
-      {hasCleaner && (
+      {connecteamStatus !== 'none' && (
         <SyncBadge
-          ok={connecteamOk}
+          state={connecteamStatus === 'synced' ? 'ok'
+               : connecteamStatus === 'partial' ? 'partial'
+               : 'off'}
           label="Connecteam"
-          okTitle="Pushed to Connecteam"
+          okTitle={connecteamExpected === 0
+            ? "Pushed to Connecteam (open shift)"
+            : "Pushed to Connecteam"}
+          partialTitle={`Only ${connecteamShifts} of ${connecteamExpected} cleaners pushed to Connecteam`}
           offTitle="Assigned but not yet in Connecteam"
         />
       )}
