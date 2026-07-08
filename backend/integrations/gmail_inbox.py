@@ -143,11 +143,19 @@ def _get_credentials():
 
 
 def _connect():
-    """Create and authenticate IMAP connection using DB or env credentials."""
+    """Create and authenticate IMAP connection using DB or env credentials.
+
+    timeout: without an explicit timeout, `IMAP4_SSL` waits indefinitely
+    on connect. A hung Gmail IMAP host (rare but real — TLS handshake
+    stalls, DNS timeouts) would block the uvicorn worker forever, which on
+    a single-worker deploy queued the entire request stream past Railway's
+    edge timeout → 502s. 30s matches the SMTP path (integrations/email.py).
+    """
     user, passwd, imap_host, imap_port, _, _ = _get_credentials()
     if not user or not passwd:
         raise ValueError("No email credentials configured")
-    mail = imaplib.IMAP4_SSL(imap_host, imap_port)
+    imap_timeout = int(os.getenv("IMAP_TIMEOUT_SECONDS", "30"))
+    mail = imaplib.IMAP4_SSL(imap_host, imap_port, timeout=imap_timeout)
     mail.login(user, passwd)
     return mail
 

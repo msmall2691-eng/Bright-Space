@@ -5,6 +5,7 @@ Twilio SMS integration.
 import os
 import logging
 from twilio.rest import Client
+from twilio.http.http_client import TwilioHttpClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,13 @@ def _client() -> Client:
             "Twilio credentials not configured. "
             "Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN environment variables."
         )
-    return Client(_TWILIO_ACCOUNT_SID, _TWILIO_AUTH_TOKEN)
+    # Explicit HTTP timeout — Twilio's default is None (block indefinitely).
+    # A hung Twilio API leg could otherwise wedge the uvicorn worker forever,
+    # which on a single-worker deploy queued the entire request stream past
+    # Railway's edge timeout and produced 502s. Match SMTP/IMAP: 30s ceiling.
+    twilio_timeout = int(os.getenv("TWILIO_TIMEOUT_SECONDS", "30"))
+    http_client = TwilioHttpClient(timeout=twilio_timeout)
+    return Client(_TWILIO_ACCOUNT_SID, _TWILIO_AUTH_TOKEN, http_client=http_client)
 
 
 def send_sms(to: str, body: str) -> dict:
