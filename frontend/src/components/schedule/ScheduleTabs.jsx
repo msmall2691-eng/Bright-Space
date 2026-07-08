@@ -324,7 +324,10 @@ export function RecurringPanel() {
     try {
       const [sch, cli, props] = await Promise.all([
         get('/api/recurring'),
-        get('/api/clients'),
+        // T-06: same as Recurring page — the default 50-cap dropped clients
+        // past position 50 from the name-lookup map, so schedules referenced
+        // "Client #99" instead of a real name.
+        get('/api/clients?limit=1000'),
         get('/api/properties'),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
