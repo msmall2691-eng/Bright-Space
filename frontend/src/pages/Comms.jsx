@@ -18,7 +18,8 @@
  *   • Empty states with illustrations
  *   • Mobile-responsive layout
  */
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   MessageSquare,
   CheckCircle2, AlertTriangle,
@@ -49,7 +50,21 @@ export default function Comms() {
   const [folder, setFolder] = useState('active')
   const [chipFilters, setChipFilters] = useState(() => new Set())
   const [channelFilter, setChannelFilter] = useState('')
-  const [search, setSearch] = useState('')
+  // Pre-fill search from ?q= so deep links from Requests, Client detail,
+  // etc. land on the right contact. Falls back to '' when the param is
+  // absent — same behavior as before.
+  const [urlParams] = useSearchParams()
+  const [search, setSearch] = useState(() => urlParams.get('q') || '')
+  // React Router keeps this component mounted across same-route
+  // navigations (e.g. /comms?q=alice -> /comms via a sidebar link), so
+  // the useState initializer above only runs once. Re-sync `search`
+  // whenever the URL's q actually changes so a stale contact filter
+  // doesn't linger after the query disappears from the URL (Codex
+  // review on #530). Typing in the search box doesn't touch the URL, so
+  // this doesn't fight the user's own edits.
+  useEffect(() => {
+    setSearch(urlParams.get('q') || '')
+  }, [urlParams])
 
   // ──────── Data ────────
 

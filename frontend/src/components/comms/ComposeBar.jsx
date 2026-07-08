@@ -22,6 +22,12 @@ export function ComposeBar({
   sending,
   flash,
   onSend,
+  // Internal notes need an existing conversation id to attach to. Callers
+  // embedding this bar before any message has been sent (e.g. the Requests
+  // drawer's inline thread panel, still on its first send) pass false to
+  // hide the toggle entirely rather than let the operator pick a mode with
+  // nowhere to save.
+  allowNotes = true,
 }) {
   return (
     <div className="border-t border-hairline bg-panel p-4">
@@ -33,12 +39,14 @@ export function ComposeBar({
           }`}>
           <Send className="w-3 h-3" /> Reply
         </button>
-        <button onClick={() => setNoteMode(true)}
-          className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-            noteMode ? 'bg-amber-500 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
-          }`}>
-          <StickyNote className="w-3 h-3" /> Note
-        </button>
+        {allowNotes && (
+          <button onClick={() => setNoteMode(true)}
+            className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
+              noteMode ? 'bg-amber-500 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
+            }`}>
+            <StickyNote className="w-3 h-3" /> Note
+          </button>
+        )}
 
         <div className="flex-1" />
 
