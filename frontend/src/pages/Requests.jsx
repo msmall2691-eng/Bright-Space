@@ -320,6 +320,16 @@ export default function Requests() {
     try {
       await del(`/api/intake/${intake.id}`)
       setRequests(prev => prev.filter(r => r.id !== intake.id))
+      // Drop it from the bulk-select set too — otherwise a stale id lingers
+      // in `selectedIntakes` (now invisible, since it's gone from `requests`)
+      // and a later "Archive N selected" click PATCHes a deleted row and
+      // reports a spurious failure (Codex review on #530).
+      setSelectedIntakes(prev => {
+        if (!prev.has(intake.id)) return prev
+        const next = new Set(prev)
+        next.delete(intake.id)
+        return next
+      })
       if (selectedRequest?.id === intake.id) {
         setShowDetailsDrawer(false)
         setSelectedRequest(null)
