@@ -29,6 +29,7 @@ const OK = {
     { service_type: 'weird_new_service', invoice_count: 1, total: 200.0 },
   ],
   ar_aging: {
+    current:   { count: 4, total: 2000.0 },
     '0_30':    { count: 3, total: 750.0 },
     '31_60':   { count: 1, total: 300.0 },
     '61_90':   { count: 0, total: 0.0 },
@@ -60,9 +61,12 @@ describe('OwnerDashboard', () => {
     expect(screen.getByText(/2 unpriced/)).toBeTruthy()
     // Revenue paid
     expect(screen.getByText('$2,700')).toBeTruthy()
-    // AR aging total in tile title: 750 + 300 + 0 + 800 = 1,850 (unbucketed
-    // doesn't count toward the outstanding-in-buckets headline).
-    expect(screen.getByText(/1,850 outstanding/)).toBeTruthy()
+    // Past-due total in tile title: 750 + 300 + 0 + 800 = 1,850. `current`
+    // (not yet due) and `unbucketed` (missing date) don't count toward the
+    // past-due headline.
+    expect(screen.getByText(/1,850 past due/)).toBeTruthy()
+    // Current receivables surface on their own row, not lumped with missing-date.
+    expect(screen.getByText(/Current \(not yet due\)/)).toBeTruthy()
     // Top clients
     expect(screen.getByText('Alpha Rentals')).toBeTruthy()
     expect(screen.getByText('Beta Airbnb')).toBeTruthy()
@@ -81,8 +85,16 @@ describe('OwnerDashboard', () => {
     const payload = { ...OK, ar_aging: { ...OK.ar_aging, unbucketed: { count: 0, total: 0.0 } } }
     get.mockResolvedValueOnce(payload)
     render(<OwnerDashboard />)
-    await waitFor(() => expect(screen.getByText(/1,850 outstanding/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/1,850 past due/)).toBeTruthy())
     expect(screen.queryByText('Missing due date')).toBeNull()
+  })
+
+  it('hides the "Current" row when there are no current receivables', async () => {
+    const payload = { ...OK, ar_aging: { ...OK.ar_aging, current: { count: 0, total: 0.0 } } }
+    get.mockResolvedValueOnce(payload)
+    render(<OwnerDashboard />)
+    await waitFor(() => expect(screen.getByText(/1,850 past due/)).toBeTruthy())
+    expect(screen.queryByText(/Current \(not yet due\)/)).toBeNull()
   })
 
   it('shows an empty state when there are no paid invoices in the window', async () => {

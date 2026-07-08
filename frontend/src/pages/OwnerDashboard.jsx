@@ -120,7 +120,7 @@ export default function OwnerDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* AR aging */}
-        <Tile icon={AlertTriangle} iconColor="rose" title={`AR aging · ${fmtMoney(arTotal)} outstanding`}>
+        <Tile icon={AlertTriangle} iconColor="rose" title={`AR aging · ${fmtMoney(arTotal)} past due`}>
           {loading ? <TileLoading /> : (
             <div className="px-5 py-4 space-y-2.5">
               {AGING_ORDER.map(b => {
@@ -137,6 +137,21 @@ export default function OwnerDashboard() {
                   </div>
                 )
               })}
+              {/* Not-yet-due receivables are healthy money; keep them visible
+                  but visually separated from the past-due buckets above.
+                  Only `unbucketed` (missing/malformed due_date) is flagged
+                  as a data-quality issue. */}
+              {arAging.current?.count > 0 && (
+                <div className="pt-2 mt-2 border-t border-hairline flex items-center justify-between">
+                  <span className="text-sm text-ink-2">Current (not yet due)</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm tabular-nums text-ink-2">{fmtMoney(arAging.current.total)}</span>
+                    <span className="text-[11px] text-ink-3 tabular-nums w-10 text-right">
+                      {arAging.current.count} {arAging.current.count === 1 ? 'invoice' : 'invoices'}
+                    </span>
+                  </div>
+                </div>
+              )}
               {arAging.unbucketed?.count > 0 && (
                 <div className="pt-2 mt-2 border-t border-hairline flex items-center justify-between text-[11px] text-ink-3">
                   <span>Missing due date</span>

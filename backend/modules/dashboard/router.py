@@ -141,11 +141,18 @@ def _monthly_job_estimate(sched) -> float:
 
 
 def _ar_aging_bucket(due_date_str: str | None, today: date) -> str | None:
-    """Given a YYYY-MM-DD due_date, return the aging bucket, or None if the
-    invoice isn't yet past due / has no due date. Buckets follow the industry
-    30/60/90 convention. `due_date` on invoices is stored as a string, so we
-    parse defensively — anything malformed skips into a null bucket and the
-    caller counts it under 'unbucketed'."""
+    """Given a YYYY-MM-DD due_date, return the aging bucket. Buckets follow
+    the industry 30/60/90 convention plus a `current` bucket for invoices
+    that aren't past due yet — those are normal current receivables, not
+    stale money.
+
+    Returns None ONLY when the due_date is missing or malformed; those
+    genuinely-uncategorizable invoices land in the caller's `unbucketed`
+    bucket so an operator can spot the data-quality problem. Previously
+    both "no due date" and "not yet due" collapsed into None, which made
+    the UI mislabel current receivables as missing-date errors (Codex
+    review on #519).
+    """
     if not due_date_str:
         return None
     try:
@@ -154,7 +161,7 @@ def _ar_aging_bucket(due_date_str: str | None, today: date) -> str | None:
         return None
     days = (today - due).days
     if days < 1:
-        return None                    # not yet due
+        return "current"               # due today or later — not past due
     if days <= 30:
         return "0_30"
     if days <= 60:
@@ -264,6 +271,7 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
     # that iterating is fine and it keeps the bucket math testable without
     # relying on DB-specific date functions.
     aging = {
+        "current": {"count": 0, "total": 0.0},
         "0_30": {"count": 0, "total": 0.0},
         "31_60": {"count": 0, "total": 0.0},
         "61_90": {"count": 0, "total": 0.0},

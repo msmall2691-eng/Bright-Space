@@ -138,9 +138,11 @@ def _snap(api):
 
 def test_ar_aging_bucket_boundaries():
     today = date(2026, 7, 8)
-    # Not yet due — returns None.
-    assert _ar_aging_bucket("2026-07-08", today) is None
-    assert _ar_aging_bucket("2026-07-09", today) is None
+    # Due today or in the future → "current" (not past due, not a data
+    # problem). Post-#519 fix: previously returned None which the UI
+    # mislabeled as "Missing due date".
+    assert _ar_aging_bucket("2026-07-08", today) == "current"
+    assert _ar_aging_bucket("2026-07-09", today) == "current"
     # Just past due, 1 day and 30 days → 0_30.
     assert _ar_aging_bucket("2026-07-07", today) == "0_30"
     assert _ar_aging_bucket("2026-06-08", today) == "0_30"
@@ -155,6 +157,8 @@ def test_ar_aging_bucket_boundaries():
 
 
 def test_ar_aging_bucket_malformed_input():
+    """None returned ONLY for missing/malformed — those genuinely can't be
+    aged. A parseable future date still buckets as `current`."""
     today = date(2026, 7, 8)
     assert _ar_aging_bucket(None, today) is None
     assert _ar_aging_bucket("", today) is None
@@ -314,7 +318,8 @@ def test_mrr_daily_with_weekday_filter(api_client):
 
 def test_ar_aging_buckets_unpaid_by_due_date(api_client):
     """A sent invoice 5 days past due lands in 0_30; a 45-day one lands in
-    31_60. Verify by delta so unrelated invoices don't confuse the math."""
+    31_60; a not-yet-due one lands in `current`. Verify by delta so
+    unrelated invoices don't confuse the math."""
     api, ids = api_client
     before = _snap(api)["ar_aging"]
     cid = _mk_client(ids)
@@ -323,7 +328,6 @@ def test_ar_aging_buckets_unpaid_by_due_date(api_client):
                 due_date=(today - timedelta(days=5)).isoformat())
     _mk_invoice(ids, cid, 300.0, status="overdue",
                 due_date=(today - timedelta(days=45)).isoformat())
-    # Not-yet-due invoice should NOT bucket.
     _mk_invoice(ids, cid, 500.0, status="sent",
                 due_date=(today + timedelta(days=5)).isoformat())
 
@@ -332,6 +336,9 @@ def test_ar_aging_buckets_unpaid_by_due_date(api_client):
     assert round(after["0_30"]["total"] - before["0_30"]["total"], 2) == 150.0
     assert after["31_60"]["count"] - before["31_60"]["count"] == 1
     assert round(after["31_60"]["total"] - before["31_60"]["total"], 2) == 300.0
+    # Not-yet-due invoice lands in `current`, not `unbucketed` (Codex #519).
+    assert after["current"]["count"] - before["current"]["count"] == 1
+    assert round(after["current"]["total"] - before["current"]["total"], 2) == 500.0
 
 
 def test_ar_aging_ignores_paid_and_draft(api_client):
@@ -345,7 +352,7 @@ def test_ar_aging_ignores_paid_and_draft(api_client):
     _mk_invoice(ids, cid, 999.0, status="draft",
                 due_date=(today - timedelta(days=30)).isoformat())
     after = _snap(api)["ar_aging"]
-    for bucket in ("0_30", "31_60", "61_90", "90_plus"):
+    for bucket in ("current", "0_30", "31_60", "61_90", "90_plus"):
         assert after[bucket] == before[bucket]
 
 
