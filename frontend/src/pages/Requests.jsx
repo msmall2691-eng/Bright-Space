@@ -10,6 +10,7 @@ import { displayContactName } from '../utils/display'
 import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
+import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 
 const SERVICE_TYPE_CONFIG = {
   residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home },
@@ -231,6 +232,7 @@ export default function Requests() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false)
+  const [drawerTab, setDrawerTab] = useState('details') // 'details' | 'conversation'
   const [selectedIntakes, setSelectedIntakes] = useState(() => new Set()) // bulk-archive selection
   const [bulkArchiving, setBulkArchiving] = useState(false)
 
@@ -289,6 +291,7 @@ export default function Requests() {
 
   const handleViewDetails = (intake) => {
     setSelectedRequest(intake)
+    setDrawerTab('details')
     setShowDetailsDrawer(true)
   }
 
@@ -340,14 +343,11 @@ export default function Requests() {
     }
   }
 
-  // Open the customer's existing thread in Comms if one exists — else jump to
-  // Comms with the search pre-filled so the operator can open/start one.
-  // Backend's /conversations `q` param already matches on Client.email /
-  // Client.phone / Client.name (see comms/router.py list_conversations).
-  const openConversation = (intake) => {
-    const term = intake.email || intake.phone || intake.name || ''
-    navigate(`/comms?q=${encodeURIComponent(term)}`)
-  }
+  // Switches the drawer to its inline Conversation tab (RequestThreadPanel)
+  // so the operator can read/reply without leaving the Requests page. The
+  // panel itself still has a "Full inbox" link out to /comms?q=... for the
+  // assign/priority/status controls that only make sense in the full inbox.
+  const openConversation = () => setDrawerTab('conversation')
 
   const toggleSelectIntake = (id) => {
     setSelectedIntakes(prev => {
@@ -507,16 +507,43 @@ export default function Requests() {
               </button>
             </div>
 
+            {/* Tab strip: Details (existing read-only fields) vs. Conversation
+                (inline two-way thread — RequestThreadPanel). Kept as two
+                fully separate bodies rather than showing both, so the
+                thread panel gets real vertical space to scroll + compose
+                in instead of being squeezed under the details fields. */}
+            <div className="flex items-center gap-1 px-4 sm:px-6 pt-3 border-b border-hairline bg-panel shrink-0">
+              {[
+                { key: 'details', label: 'Details' },
+                { key: 'conversation', label: 'Conversation' },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setDrawerTab(tab.key)}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    drawerTab === tab.key
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-ink-3 hover:text-ink-2'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {/* Body */}
+            {drawerTab === 'conversation' ? (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <RequestThreadPanel intake={selectedRequest} />
+              </div>
+            ) : (
             <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
               {/* Quick contact row: one-tap Call / Text / Email / Open thread
                   so the operator can dig into questions before quoting
                   without leaving this page. `tel:` and `sms:` both open the
-                  OS handler (native dialer / iMessage / etc.); mailto:
-                  opens the default mail client with the intake context
-                  pre-populated. Open Thread jumps to Comms filtered to this
-                  contact — the inline reply panel will land in a follow-up
-                  PR so this drawer already has the entry point. */}
+                  OS handler (native dialer / iMessage / etc.); Open Thread
+                  switches to the Conversation tab above for a two-way
+                  in-app reply instead of leaving the page. */}
               {(selectedRequest.email || selectedRequest.phone) && (
                 <div className="flex flex-wrap gap-2">
                   {selectedRequest.phone && (
@@ -612,6 +639,7 @@ export default function Requests() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Footer */}
             <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
