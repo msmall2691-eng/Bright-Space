@@ -13,6 +13,7 @@ export const QUOTE_STATUS_COLORS = {
   accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   converted: 'bg-teal-50 text-teal-700 border-teal-200',
   declined: 'bg-red-50 text-red-700 border-red-200',
+  expired: 'bg-amber-50 text-amber-700 border-amber-200',
 }
 
 export const LEAD_STATUS_COLORS = {
@@ -23,7 +24,9 @@ export const LEAD_STATUS_COLORS = {
 }
 
 // Inline-edit status options (Twenty-style chips) for the leads/quotes tables.
-export const QUOTE_STATUS_OPTIONS = ['draft', 'sent', 'viewed', 'accepted', 'declined', 'converted']
+// 'converted' is intentionally NOT selectable here — it's a derived state set only
+// by the quote→job conversion flow, never a manual status pick (audit item 2).
+export const QUOTE_STATUS_OPTIONS = ['draft', 'sent', 'viewed', 'accepted', 'declined']
   .map(s => ({ value: s, label: s, chipClass: QUOTE_STATUS_COLORS[s] || QUOTE_STATUS_COLORS.draft }))
 export const LEAD_STATUS_OPTIONS = ['new', 'reviewed', 'quoted', 'converted']
   .map(s => ({ value: s, label: s, chipClass: LEAD_STATUS_COLORS[s] }))

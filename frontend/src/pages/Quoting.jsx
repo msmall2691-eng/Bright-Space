@@ -45,6 +45,7 @@ export default function Quoting() {
     templatesLoaded,
     company, companyName,
     archivedQuotes,
+    quotesError,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,
   } = useQuotingData()
   const [panel, setPanel] = useState(null) // 'quote' | 'send' | 'templates' | null
@@ -610,8 +611,19 @@ export default function Quoting() {
                 </div>
               </div>
             )}
-            {quotes.length === 0 && <div className="text-center py-16 text-ink-3 text-sm">No quotes yet</div>}
-            {quotes.length > 0 && visibleQuotes.length === 0 && (
+            {quotesError && (
+              <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+                <div className="text-sm text-red-500">
+                  <span className="font-medium">Couldn't load quotes.</span> Check your connection and try again.
+                </div>
+                <button onClick={loadQuotes}
+                  className="shrink-0 text-sm px-3 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:text-ink transition-colors">
+                  Retry
+                </button>
+              </div>
+            )}
+            {!quotesError && quotes.length === 0 && <div className="text-center py-16 text-ink-3 text-sm">No quotes yet</div>}
+            {!quotesError && quotes.length > 0 && visibleQuotes.length === 0 && (
               <div className="text-center py-16 text-ink-3 text-sm">No quotes match your filters</div>
             )}
             {visibleQuotes.length > 0 && (

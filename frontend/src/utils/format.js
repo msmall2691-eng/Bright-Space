@@ -105,6 +105,30 @@ export function todayYMD() {
  *   combineAddress("155 Main St", "Portland", "ME", "04101")
  *     → "155 Main St, Portland, ME, 04101"
  */
+/**
+ * Canonical RENDER-side formatter (twin of backend `utils/address.format_address`):
+ * collapse duplicate comma components in an already-assembled address string,
+ * keeping the first appearance. Rows saved before the `combineAddress` write-side
+ * fix still carry a doubled state ("…, ME, 04101, ME"); this cleans them on display.
+ *
+ *   formatAddress("100 Congress Street, Portland, ME, 04101, ME")
+ *     → "100 Congress Street, Portland, ME, 04101"
+ */
+export function formatAddress(addr) {
+  if (!addr || !String(addr).trim()) return ''
+  const seen = new Set()
+  const parts = []
+  for (const raw of String(addr).split(',')) {
+    const tok = raw.trim()
+    if (!tok) continue
+    const key = tok.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    parts.push(tok)
+  }
+  return parts.join(', ')
+}
+
 export function combineAddress(base, city, state, zip) {
   // Split on COMMAS only, not every whitespace: an address like
   // "12 Portland St" is one component ("12 Portland St"), not three tokens

@@ -6,7 +6,29 @@ customer-facing quote page as "Keystone Drive, Waterboro, ME, 04061, ME"
 convert_intake_to_quote joined intake.state ("ME") onto it a second time.
 """
 
-from utils.address import combine_address
+from utils.address import combine_address, format_address
+
+
+def test_format_address_dedupes_trailing_state_on_stored_rows():
+    # Render-side twin of combine_address: rows saved before that write-side fix
+    # still carry a doubled state (QT-2026-0034). format_address cleans them on
+    # the way out so email/PDF/public page/admin all render one line.
+    assert format_address("100 Congress Street, Portland, ME, 04101, ME") == (
+        "100 Congress Street, Portland, ME, 04101"
+    )
+
+
+def test_format_address_is_case_insensitive_and_order_preserving():
+    assert format_address("1 Main St, Portland, me, 04101, ME") == "1 Main St, Portland, me, 04101"
+
+
+def test_format_address_leaves_clean_addresses_untouched():
+    assert format_address("155 Main St, Portland, ME, 04101") == "155 Main St, Portland, ME, 04101"
+
+
+def test_format_address_handles_empty():
+    assert format_address(None) == ""
+    assert format_address("   ") == ""
 
 
 def test_does_not_reappend_state_baked_into_base():

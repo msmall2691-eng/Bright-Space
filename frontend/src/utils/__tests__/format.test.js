@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { htmlToText, formatDate, formatDateTime, combineAddress } from '../format'
+import { htmlToText, formatDate, formatDateTime, combineAddress, formatAddress } from '../format'
+
+describe('formatAddress (audit July-2026 item 5 — render-side dedupe)', () => {
+  it('collapses a doubled state token on already-stored rows', () => {
+    expect(formatAddress('100 Congress Street, Portland, ME, 04101, ME'))
+      .toBe('100 Congress Street, Portland, ME, 04101')
+  })
+  it('is case-insensitive and order-preserving', () => {
+    expect(formatAddress('1 Main St, Portland, me, 04101, ME'))
+      .toBe('1 Main St, Portland, me, 04101')
+  })
+  it('leaves a clean address untouched', () => {
+    expect(formatAddress('155 Main St, Portland, ME, 04101'))
+      .toBe('155 Main St, Portland, ME, 04101')
+  })
+  it('handles empty input', () => {
+    expect(formatAddress(null)).toBe('')
+    expect(formatAddress('   ')).toBe('')
+  })
+})
 
 describe('htmlToText', () => {
   it('strips a full HTML email document to readable text', () => {

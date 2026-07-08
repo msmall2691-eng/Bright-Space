@@ -5,7 +5,7 @@ Integer-keyed quotes with inline JSON line items, matching the rest of the app
 plain dicts (see ``_quote_dict``) so the wire shape is decoupled from the ORM.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from pydantic import BaseModel
@@ -29,6 +29,7 @@ from database.models import (
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
+from utils.address import format_address
 from config import app_base_url
 
 import re as _re
@@ -119,7 +120,7 @@ def _quote_dict(q: Quote) -> dict:
         "internal_notes": getattr(q, "internal_notes", None),
         "service_type": q.service_type,
         "frequency": getattr(q, "frequency", None),
-        "address": q.address,
+        "address": format_address(q.address),
         "notes": q.notes,
         "items": q.items or [],
         "custom_fields": q.custom_fields or {},
@@ -355,9 +356,13 @@ def get_quote_details(quote_id: int, db: Session = Depends(get_db), org_id: int 
     if quote.property_id:
         prop = db.query(Property).filter(Property.id == quote.property_id).first()
     job = db.query(Job).filter(Job.quote_id == quote.id).first()
+    client = quote.client
 
     return {
         **_quote_dict(quote),
+        # Contact fields the detail page's Send panel prefills from.
+        "client_email": getattr(client, "email", None) if client else None,
+        "client_phone": getattr(client, "phone", None) if client else None,
         "opportunity": ({"id": opp.id, "title": opp.title, "stage": opp.stage} if opp else None),
         "property": ({"id": prop.id, "name": prop.name, "address": prop.address} if prop else None),
         "job": ({"id": job.id, "title": job.title, "status": job.status,
@@ -492,6 +497,16 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     # draft = first send; sent/viewed = a follow-up nudge (re-send).
     if quote.status not in ("draft", "sent", "viewed"):
         raise HTTPException(status_code=400, detail=f"Cannot send a {quote.status} quote")
+    # Send guard: never email a customer an empty or $0 quote. The pipeline is
+    # PATCH-able, so a quote with no priced line items can reach here — block it
+    # with a clear message instead of shipping a blank quote. Totals are computed
+    # from the line items, so an empty quote nets to $0; guarding on the total
+    # covers both "no line items" and "priced to zero/negative".
+    if float(quote.total or 0) <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Add at least one priced line item — this quote totals $0 and can't be sent.",
+        )
     prior_status = quote.status
     client = db.query(Client).filter(Client.id == quote.client_id).first()
     if not client:
@@ -538,7 +553,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     tax_amount=quote.tax, discount_amount=quote.discount,
                     total_amount=quote.total, notes=quote.notes, expires_at=quote.valid_until,
                     quote_title=quote.title, property_photo_url=photo_url,
-                    quote_link=quote_link, address=quote.address,
+                    quote_link=quote_link, address=format_address(quote.address),
                     service_type=quote.service_type, customer_message=quote.customer_message,
                 )
                 # For the EMAIL we only embed the photo when Google actually has
@@ -569,7 +584,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     quote_title=quote.title,
                     items=quote.items or [],
                     subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
-                    tax_rate=quote.tax_rate, address=quote.address,
+                    tax_rate=quote.tax_rate, address=format_address(quote.address),
                     bcc=owner_copy, property_photo_url=email_photo_url,
                 )
                 if res.get("success"):
@@ -682,15 +697,28 @@ def generate_quote_token(quote_id: int, db: Session = Depends(get_db)):
     }
 
 
+class AdminAcceptRequest(BaseModel):
+    """Optional body for the admin accept endpoint. ``notify_customer`` lets the
+    admin skip the customer receipt email when they're accepting on the customer's
+    behalf (e.g. a verbal yes over the phone)."""
+    notify_customer: bool = True
+
+
 @router.post("/{quote_id}/accept", dependencies=[Depends(require_role("admin", "manager"))])
-def accept_quote(quote_id: int, db: Session = Depends(get_db)):
+def accept_quote(quote_id: int, body: AdminAcceptRequest = None,
+                 background_tasks: BackgroundTasks = None, db: Session = Depends(get_db)):
+    """Admin-side accept. Runs the SAME side effects as the public accept link
+    (convert to job / advance the opportunity to won / notify) via the shared
+    finalizer, instead of the old stub that only flipped the status."""
     quote = _get_quote_or_404(quote_id, db)
-    if quote.status in ("accepted", "declined"):
+    if quote.status in ("accepted", "declined", "converted"):
         raise HTTPException(status_code=400, detail=f"Quote has already been {quote.status}")
     quote.status = "accepted"
     quote.accepted_at = _utcnow()
     quote.updated_at = _utcnow()
-    db.commit()
+    send_receipt = True if body is None else bool(body.notify_customer)
+    _finalize_quote_accept(db, quote, background_tasks=background_tasks,
+                           send_customer_receipt=send_receipt)
     db.refresh(quote)
     return _quote_dict(quote)
 
@@ -998,7 +1026,7 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "brand_color": company["brand_color"],
         "company_logo_url": company["company_logo_url"],
         "quote_date": fmt_long_date(quote.created_at),
-        "address": quote.address or "",
+        "address": format_address(quote.address),
         "service_type": quote.service_type,
         "notes": quote.notes,
         "items": quote.items or [],
@@ -1055,13 +1083,12 @@ def _notify_staff_quote_event(db: Session, quote: Quote, summary: str, activity_
         logger.warning(f"[quotes] activity log failed for {quote.id}: {e}")
 
 
-def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: list) -> None:
-    """Email the business owner when a customer responds to a quote.
-
-    Sends to the configured business address (the same from_email used to send
-    quotes) so the owner gets a real heads-up instead of only a hidden activity
-    log. Best-effort: never let a notification failure break the public response.
-    """
+def _notify_owner_quote_event_core(subject: str, lines: list, *, quote_number: str,
+                                   client_name: str, total: float) -> None:
+    """Primitive-only owner notification send. Takes plain values (not the ORM
+    quote) so it is safe to run from a BackgroundTasks callback AFTER the request
+    session has closed — lazy-loading quote.client there would raise
+    DetachedInstanceError. Best-effort: never raises."""
     try:
         from integrations.email import _load_smtp_creds, send_email
         creds = _load_smtp_creds()
@@ -1069,13 +1096,12 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
         if not owner:
             logger.info("[quotes] no owner email configured; skipping owner notification")
             return
-        client_name = quote.client.name if quote.client else "a customer"
         app_base = app_base_url()
         body_lines = lines + [
             "",
-            f"Quote: {quote.quote_number}",
+            f"Quote: {quote_number}",
             f"Customer: {client_name}",
-            f"Total: ${float(quote.total or 0):,.2f}",
+            f"Total: ${float(total or 0):,.2f}",
             f"Open it: {app_base}/quoting",
         ]
         import html as _html
@@ -1083,12 +1109,26 @@ def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: li
         send_email(to=owner, subject=subject, html_body=f"<div style='font-family:sans-serif'>{body}</div>",
                    text_body="\n".join(body_lines))
     except Exception as e:
-        logger.warning(f"[quotes] owner notification failed for {quote.id}: {e}")
+        logger.warning(f"[quotes] owner notification failed for {quote_number}: {e}")
 
 
-def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) -> None:
-    """Email the customer a receipt when they accept their quote. Best-effort —
-    never let a failure block the acceptance."""
+def _notify_owner_quote_event(db: Session, quote: Quote, subject: str, lines: list) -> None:
+    """Email the business owner when a customer responds to a quote. Thin ORM
+    wrapper around :func:`_notify_owner_quote_event_core` for the synchronous
+    callers (request-changes, decline, schedule) that still have a live session."""
+    _notify_owner_quote_event_core(
+        subject, lines,
+        quote_number=quote.quote_number,
+        client_name=(quote.client.name if quote.client else "a customer"),
+        total=float(quote.total or 0),
+    )
+
+
+def _send_customer_quote_confirmation_core(to_email: str, *, quote_number: str,
+                                           total: float, accepted_name: str) -> None:
+    """Primitive-only customer receipt send. Like the owner core, takes plain
+    values so it can run from a BackgroundTasks callback after the session closes.
+    Best-effort — never raises."""
     if not to_email or "@" not in to_email:
         return
     try:
@@ -1096,12 +1136,12 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
         from services.quote_email_service import first_name_of
         creds = _load_smtp_creds()
         company = creds.get("from_name") or "Our team"
-        name = first_name_of(quote.accepted_by_name or (quote.client.name if quote.client else "")) or "there"
-        total = f"${float(quote.total or 0):,.2f}"
+        name = first_name_of(accepted_name) or "there"
+        total = f"${float(total or 0):,.2f}"
         lines = [
             f"Hi {name},",
             "",
-            f"Thanks for accepting quote {quote.quote_number} ({total}).",
+            f"Thanks for accepting quote {quote_number} ({total}).",
             f"{company} will reach out shortly to schedule your service.",
             "",
             "Questions? Just reply to this email.",
@@ -1109,10 +1149,84 @@ def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) 
         import html as _html
         body = "<div style='font-family:sans-serif;font-size:14px;color:#111'>" + \
             "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines) + "</div>"
-        send_email(to=to_email, subject=f"Quote {quote.quote_number} confirmed — thank you!",
+        send_email(to=to_email, subject=f"Quote {quote_number} confirmed — thank you!",
                    html_body=body, text_body="\n".join(lines))
     except Exception as e:
-        logger.warning(f"[quotes] customer confirmation email failed for {quote.id}: {e}")
+        logger.warning(f"[quotes] customer confirmation email failed for {quote_number}: {e}")
+
+
+def _send_customer_quote_confirmation(db: Session, quote: Quote, to_email: str) -> None:
+    """Email the customer a receipt when they accept their quote. Thin ORM
+    wrapper around the primitive core for synchronous callers."""
+    _send_customer_quote_confirmation_core(
+        to_email,
+        quote_number=quote.quote_number,
+        total=float(quote.total or 0),
+        accepted_name=(quote.accepted_by_name or (quote.client.name if quote.client else "")),
+    )
+
+
+def _finalize_quote_accept(db: Session, quote: Quote, *, background_tasks=None,
+                           send_customer_receipt: bool = True) -> None:
+    """Side effects shared by the public accept link AND the admin accept endpoint.
+
+    Precondition: the caller has already set ``quote.status = 'accepted'`` and the
+    accept fields. This then, identically for both entry points:
+      - logs the staff activity row (in-transaction),
+      - advances the opportunity to 'won' — via auto-convert (which also creates
+        the job) when a property is linked, or directly when there isn't one, so
+        an accepted-but-unconverted quote still counts as won (audit items 7/10),
+      - emails the owner + customer, backgrounded when a FastAPI BackgroundTasks
+        is supplied so the customer's accept click doesn't block on serial SMTP.
+
+    Commits the accept + opportunity/conversion before returning. Email inputs are
+    captured up front so a backgrounded send is safe after the session closes."""
+    _notify_staff_quote_event(db, quote, f"Client accepted quote {quote.quote_number}", "quote_accepted")
+
+    # Capture everything the emails need NOW, while the ORM instance is live.
+    qn = quote.quote_number
+    who = quote.accepted_by_name or (quote.client.name if quote.client else "The customer")
+    owner_kwargs = dict(
+        quote_number=qn,
+        client_name=(quote.client.name if quote.client else "a customer"),
+        total=float(quote.total or 0),
+    )
+    customer_email = quote.accepted_by_email or (quote.client.email if quote.client else None)
+    customer_kwargs = dict(
+        quote_number=qn,
+        total=float(quote.total or 0),
+        accepted_name=(quote.accepted_by_name or (quote.client.name if quote.client else "")),
+    )
+
+    from utils.opportunity_helper import advance_for_quote
+    converted = False
+    if quote.property_id:
+        db.commit()
+        try:
+            _convert_quote_to_job(db, quote)  # creates the job AND advances opp → won
+            converted = True
+        except Exception as e:
+            logger.warning(f"[quotes] auto-convert on accept failed for {quote.id}: {e}")
+    if not converted:
+        # No property (or convert hiccup): still mark the deal won so pipeline
+        # metrics don't undercount accepted-but-unconverted quotes.
+        advance_for_quote(db, quote, "won", close_date=str(business_today()))
+        db.commit()
+
+    def _emails():
+        _notify_owner_quote_event_core(
+            f"✅ Quote {qn} accepted",
+            [f"{who} accepted quote {qn}.",
+             "You can convert it to a scheduled job from the Quoting page."],
+            **owner_kwargs,
+        )
+        if send_customer_receipt:
+            _send_customer_quote_confirmation_core(customer_email, **customer_kwargs)
+
+    if background_tasks is not None:
+        background_tasks.add_task(_emails)
+    else:
+        _emails()
 
 
 @router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "quote_view"))])
@@ -1130,7 +1244,8 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/public/{token}/accept", dependencies=[Depends(rate_limit(20, 3600, "quote_accept"))])
-def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Session = Depends(get_db)):
+def public_accept_quote(token: str, data: PublicAcceptRequest = None,
+                        background_tasks: BackgroundTasks = None, db: Session = Depends(get_db)):
     """Client accepts the quote from the public link."""
     quote = _quote_by_token(token, db)
     # Serialize concurrent accepts (double-tap / retry): lock the row so the
@@ -1157,27 +1272,10 @@ def public_accept_quote(token: str, data: PublicAcceptRequest = None, db: Sessio
     if data:
         quote.accepted_by_name = data.name or quote.accepted_by_name
         quote.accepted_by_email = data.email or quote.accepted_by_email
-    who = quote.accepted_by_name or (quote.client.name if quote.client else "The customer")
-    _notify_staff_quote_event(db, quote, f"Client accepted quote {quote.quote_number}", "quote_accepted")
-    _notify_owner_quote_event(
-        db, quote, f"✅ Quote {quote.quote_number} accepted",
-        [f"{who} accepted quote {quote.quote_number}.",
-         "You can convert it to a scheduled job from the Quoting page."],
-    )
-    # Send the customer a receipt/confirmation too.
-    _send_customer_quote_confirmation(
-        db, quote,
-        quote.accepted_by_email or (quote.client.email if quote.client else None),
-    )
-    db.commit()
-    # Auto-convert on accept when the quote already has a property — the job is
-    # ready to schedule. Quotes without a property stay "accepted" (a needs-
-    # scheduling state). Best-effort: a conversion hiccup must not fail accept.
-    if quote.property_id:
-        try:
-            _convert_quote_to_job(db, quote)
-        except Exception as e:
-            logger.warning(f"[quotes] auto-convert on accept failed for {quote.id}: {e}")
+    # Notifications (owner + customer receipt) are backgrounded so the accept
+    # click returns immediately instead of blocking on two serial SMTP sends;
+    # auto-convert + opportunity-won run inline. See _finalize_quote_accept.
+    _finalize_quote_accept(db, quote, background_tasks=background_tasks)
     return {"status": quote.status, "quote_number": quote.quote_number}
 
 
@@ -1258,7 +1356,7 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         expires_at=quote.valid_until, quote_title=quote.title,
         property_photo_url=_property_photo_url(quote, db),
         quote_link=f"{app_base_url().rstrip('/')}/quote/{token}",
-        address=quote.address, service_type=quote.service_type,
+        address=format_address(quote.address), service_type=quote.service_type,
         customer_message=quote.customer_message,
     )
     disp = "attachment" if download else "inline"

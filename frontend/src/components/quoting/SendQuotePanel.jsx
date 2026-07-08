@@ -230,10 +230,15 @@ export default function SendQuotePanel({
           const smsSelected = sendForm.channel === 'sms' || sendForm.channel === 'both'
           const smsBlocked = smsSelected && !isValidUsPhone(sendForm.phone)
           const noDestination = !sendForm.email && !sendForm.phone
-          const blocked = sending || noDestination || smsBlocked
+          // Mirror the backend send guard: never send an empty or $0 quote.
+          const emptyQuote = !(selected.items || []).length || parseFloat(selected.total || 0) <= 0
+          const blocked = sending || noDestination || smsBlocked || emptyQuote
+          const blockedTitle = emptyQuote
+            ? 'Add at least one line item and a total over $0 before sending.'
+            : smsBlocked ? 'Enter a valid US phone number to send SMS.' : undefined
           return (
             <button onClick={onSend} disabled={blocked}
-              title={smsBlocked ? 'Enter a valid US phone number to send SMS.' : undefined}
+              title={blockedTitle}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <Send className="w-4 h-4" />
               {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}

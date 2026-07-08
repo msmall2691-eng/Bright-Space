@@ -7,7 +7,7 @@ Quoting UI sends. Responses are serialized to plain dicts in the router
 
 from typing import Optional, List
 from datetime import date
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class QuoteItem(BaseModel):
@@ -16,6 +16,27 @@ class QuoteItem(BaseModel):
     description: Optional[str] = ""
     qty: float = 1
     unit_price: float = 0
+
+    @field_validator("qty", "unit_price")
+    @classmethod
+    def _no_negative(cls, v):
+        # Clamp negative qty / unit price to 0 — a negative line would silently
+        # subtract from the total (audit item 3). Real credits aren't modeled here.
+        return max(0.0, float(v or 0))
+
+
+def _clamp_tax_rate(v):
+    """Tax percent bounded to a sane 0–100 range."""
+    if v is None:
+        return v
+    return min(100.0, max(0.0, float(v)))
+
+
+def _clamp_discount(v):
+    """Discount is a non-negative dollar amount."""
+    if v is None:
+        return v
+    return max(0.0, float(v))
 
 
 class QuoteCreate(BaseModel):
@@ -39,6 +60,9 @@ class QuoteCreate(BaseModel):
     # Admin-defined custom fields (entity_type="quote"); free-form key→value.
     custom_fields: Optional[dict] = None
 
+    _v_tax = field_validator("tax_rate")(_clamp_tax_rate)
+    _v_discount = field_validator("discount")(_clamp_discount)
+
 
 class QuoteUpdate(BaseModel):
     client_id: Optional[int] = None
@@ -58,6 +82,9 @@ class QuoteUpdate(BaseModel):
     valid_until: Optional[str] = None
     status: Optional[str] = None
     custom_fields: Optional[dict] = None
+
+    _v_tax = field_validator("tax_rate")(_clamp_tax_rate)
+    _v_discount = field_validator("discount")(_clamp_discount)
 
 
 class QuoteRequestCreate(BaseModel):
