@@ -49,6 +49,26 @@ function Tab({ label, icon: Icon, active, count, onClick }) {
   )
 }
 
+// Second-level pills for a top Tab that covers more than one sub-view.
+// Both "Schedule" and "Money" only ever landed on their first sub-view
+// (calendar / quotes) — 'jobs'/'recurring' and 'invoices'/'opportunities'
+// were real tab values with real content, just unreachable from the UI.
+function SubNav({ items, active, onSelect }) {
+  return (
+    <div className="flex items-center gap-1 px-4 sm:px-6 py-2 border-b border-hairline bg-bg/40 overflow-x-auto">
+      {items.map(it => (
+        <button key={it.key} onClick={() => onSelect(it.key)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+            active === it.key ? 'bg-blue-500/15 text-blue-500' : 'text-ink-3 hover:text-ink-2 hover:bg-bg-2'
+          }`}>
+          {it.label}
+          {it.count > 0 && <span className="ml-1.5 opacity-70">{it.count}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -368,6 +388,29 @@ export default function ClientProfile() {
         <Tab label="Money" icon={DollarSign} active={['quotes', 'invoices', 'opportunities'].includes(tab)} count={quotes.length + invoices.length} onClick={() => setTab('quotes')} />
       </div>
 
+      {['calendar', 'jobs', 'recurring'].includes(tab) && (
+        <SubNav
+          active={tab}
+          onSelect={setTab}
+          items={[
+            { key: 'calendar', label: 'Calendar' },
+            { key: 'jobs', label: 'All Jobs', count: jobs.length },
+            { key: 'recurring', label: 'Recurring', count: schedules.length },
+          ]}
+        />
+      )}
+      {['quotes', 'invoices', 'opportunities'].includes(tab) && (
+        <SubNav
+          active={tab}
+          onSelect={setTab}
+          items={[
+            { key: 'quotes', label: 'Quotes', count: quotes.length },
+            { key: 'invoices', label: 'Invoices', count: invoices.length },
+            { key: 'opportunities', label: 'Opportunities', count: opportunities.length },
+          ]}
+        />
+      )}
+
       {/* Tab content */}
       <div className="p-4 sm:p-6 pb-28 sm:pb-6 sm:flex-1 sm:overflow-y-auto sm:scrollbar-thin">
 
@@ -437,7 +480,7 @@ export default function ClientProfile() {
         {/* Quotes */}
         {tab === 'quotes' && (
           <QuotesListTab
-            quotes={quotes} clientId={id} navigate={navigate}
+            quotes={quotes} clientId={id}
             onLinked={() => load()}
           />
         )}
