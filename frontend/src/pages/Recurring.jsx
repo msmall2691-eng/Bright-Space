@@ -763,7 +763,9 @@ export default function Recurring() {
     try {
       const [sch, cli] = await Promise.all([
         get('/api/recurring'),
-        get('/api/clients').catch(() => []),
+        // T-06: preload up to 1000 so schedule → client-name resolution and
+        // the filter dropdown cover the whole book, not just the first 50.
+        get('/api/clients?limit=1000').catch(() => []),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
       const map = {}; cliArr.forEach(c => { map[c.id] = c })
