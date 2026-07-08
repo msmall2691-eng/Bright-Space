@@ -85,18 +85,44 @@ describe('useClients', () => {
     expect(trailingClientCalls.length).toBe(1)
   })
 
-  it("does NOT client-side filter (server already matched)", async () => {
-    // Simulate a bogus server response — the point is that the hook doesn't
-    // try to re-filter based on the search string. Even a row that clearly
-    // doesn't match "Paul" survives.
+  it('narrows visible rows to the current query immediately (during debounce/lag)', async () => {
+    // Server returned a mixed set for the initial load; the user then types
+    // "Paul". Even before the server responds again with the filtered set,
+    // `filtered` must exclude the non-matching row so bulk actions in
+    // Clients.jsx can't accidentally hit it (Codex #522).
     get.mockImplementation((url) => {
       if (url.startsWith('/api/clients/counts')) return Promise.resolve({})
-      return Promise.resolve([{ id: 42, name: 'Server Match' }])
+      return Promise.resolve([
+        { id: 1, name: 'Ana Client' },
+        { id: 2, name: 'Paul Day' },
+      ])
     })
-    const { result } = renderHook(() => useClients('', 'Paul'))
+    const { result, rerender } = renderHook(({ q }) => useClients('', q), {
+      initialProps: { q: '' },
+    })
     await act(async () => { await vi.runAllTimersAsync() })
-    expect(result.current.clients).toHaveLength(1)
-    expect(result.current.filtered).toEqual(result.current.clients)
-    expect(result.current.filtered[0].name).toBe('Server Match')
+    expect(result.current.clients).toHaveLength(2)
+    // Type "Paul" — server hasn't refetched yet, but filtered narrows immediately.
+    rerender({ q: 'Paul' })
+    expect(result.current.filtered).toHaveLength(1)
+    expect(result.current.filtered[0].name).toBe('Paul Day')
+  })
+
+  it('matches phone and email as well as name (parity with pre-T-06 filter)', async () => {
+    get.mockImplementation((url) => {
+      if (url.startsWith('/api/clients/counts')) return Promise.resolve({})
+      return Promise.resolve([
+        { id: 1, name: 'Ana Client', phone: '+12075550123', email: 'ana@x.co' },
+        { id: 2, name: 'Bob Sample', phone: '+12075558888', email: 'bob@y.co' },
+      ])
+    })
+    const { result, rerender } = renderHook(({ q }) => useClients('', q), {
+      initialProps: { q: '' },
+    })
+    await act(async () => { await vi.runAllTimersAsync() })
+    rerender({ q: '8888' })
+    expect(result.current.filtered.map(c => c.name)).toEqual(['Bob Sample'])
+    rerender({ q: 'ana@' })
+    expect(result.current.filtered.map(c => c.name)).toEqual(['Ana Client'])
   })
 })

@@ -59,9 +59,24 @@ export function useClients(statusFilter, search) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, search])
 
-  // Server already matched — no client-side filter needed. Kept as
-  // identity so downstream callers reading `filtered` don't break.
-  const filtered = useMemo(() => clients, [clients])
+  // Client-side narrowing over the currently-loaded rows so the visible
+  // list matches the typed query immediately, even during the 250ms
+  // debounce + network round-trip (or if the search request fails).
+  // Without this, `clients` still holds the previous query's rows and
+  // Clients.jsx's bulk actions — which read `filtered` — could hit rows
+  // that don't match the current text. The server refetch still widens
+  // the pool for records past the 1000-row initial cap; this filter only
+  // ever narrows (equal to `clients` once the server response for the
+  // same query arrives). Codex #522 review.
+  const filtered = useMemo(() => {
+    if (!search) return clients
+    const q = search.toLowerCase()
+    return clients.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.phone || '').includes(search) ||
+      (c.email || '').toLowerCase().includes(q)
+    )
+  }, [clients, search])
 
   return { clients, setClients, filtered, statusCounts, load }
 }
