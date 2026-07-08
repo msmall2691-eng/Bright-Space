@@ -471,7 +471,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     }
 
 
-@router.get("", response_model=List[JobResponse], dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+from typing import Annotated
+from fastapi import Query as _Query   # local alias to keep the existing `date` name free
+
+
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_jobs(
     client_id: Optional[int] = None,
     property_id: Optional[int] = None,
@@ -481,6 +485,22 @@ def get_jobs(
     date_to: Optional[str] = None,
     job_type: Optional[str] = None,
     unassigned: Optional[bool] = None,
+    # T-23: paginate + cap the response so no single request can hog a
+    # worker. Annotated[int, Query(...)] gives us plain Python int
+    # defaults (500 / 0) — so direct in-process callers get a working
+    # SQLAlchemy `.offset(offset)` — AND FastAPI still reads the Query
+    # metadata for HTTP-level 422 validation on out-of-range values
+    # (Codex review on #526). `limit` default 500 keeps a month-of-jobs
+    # fetch in one round trip for the calendar; max 1000 gives an
+    # operator wiggle room for an ad-hoc query.
+    limit: Annotated[int, _Query(ge=1, le=1000)] = 500,
+    offset: Annotated[int, _Query(ge=0)] = 0,
+    # Opt-in envelope: when true, the response is
+    #   {"items": [...], "total": N, "limit": L, "offset": O}
+    # so callers can drive real pagination. Default false to keep the
+    # legacy bare-array shape working (CalendarView + others read that
+    # shape directly).
+    paginated: bool = False,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
@@ -510,15 +530,51 @@ def get_jobs(
     if job_type:
         q = q.filter(Job.job_type == job_type)
 
-    rows = [(j, j.scheduled_date) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
+    base_query = q.order_by(Job.scheduled_date, Job.start_time)
 
     # Unassigned filter: cleaner_ids is JSON, so filter in Python (cross-dialect
     # safe). A job "needs assignment" when it has no cleaners and isn't done/
     # cancelled — that's the actionable queue the Schedule page surfaces.
+    #
+    # Codex review on #526: when `unassigned` is set we MUST apply the
+    # predicate BEFORE the offset/limit slice, else the endpoint drops
+    # matching jobs on later pages. Ex: default cadence is scheduled_date
+    # asc, so if the first 500 rows are all assigned and the caller asks
+    # `?unassigned=true&limit=500`, DB-side pagination returns the first
+    # 500 (all assigned), Python filter removes all of them, and the
+    # caller sees an empty result even though matches exist.
+    #
+    # When `unassigned` is None (the calendar's common case), we keep the
+    # cheap SQL-only path — .offset().limit() on the ordered query — so
+    # this hot code stays fast.
     if unassigned is not None:
         def _is_unassigned(j):
             return (not (j.cleaner_ids or [])) and j.status in ("scheduled", "in_progress")
-        rows = [(j, eff) for j, eff in rows if _is_unassigned(j) == unassigned]
+        all_matches = [j for j in base_query.all() if _is_unassigned(j) == unassigned]
+        total = len(all_matches) if paginated else None
+        page = all_matches[offset:offset + limit]
+        rows = [(j, j.scheduled_date) for j in page]
+    else:
+        # Total BEFORE limit/offset so the envelope's `total` reflects the whole
+        # filtered set, not just this page. Cheap even on a big table because
+        # the same predicates are indexed (scheduled_date has an index; status/
+        # job_type are low-cardinality).
+        total = base_query.count() if paginated else None
+        # Order + paginate at the DB layer. Was: `.all()` — unbounded, which
+        # is exactly the 502-triggering pathology the spec called out.
+        page = base_query.offset(offset).limit(limit).all()
+        rows = [(j, j.scheduled_date) for j in page]
+
+    if len(rows) >= limit:
+        # A caller hitting the ceiling is likely NOT scoping (default
+        # limit=500 will only trip on huge date ranges or an unscoped
+        # fetch). Log a WARNING so we can spot un-paginated consumers
+        # in the perf log.
+        logger.warning(
+            "[get_jobs] response hit the cap (limit=%s, offset=%s) — "
+            "consider a narrower date range or pass paginated=true",
+            limit, offset,
+        )
 
     # Phase 5: build a per-property index of relevant ICalEvent rows so
     # we can attach booking details to str_turnover Jobs that lack a
@@ -572,6 +628,13 @@ def get_jobs(
                                         booking_event=booking,
                                         next_arrival=next_arrival,
                                         property_name=prop_names.get(j.property_id)))
+    if paginated:
+        return {
+            "items": rendered,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
     return rendered
 
 
@@ -2305,9 +2368,15 @@ def schedule_week(
     delegate gets org_id explicitly so the FastAPI Query() defaults on those
     functions never leak in as unresolved Depends sentinels.
     """
+    # Explicit limit/offset/paginated defaults so the FastAPI Query()
+    # sentinels never leak into this in-process call (same pattern the
+    # module docstring flags for org_id). schedule_week always wants the
+    # legacy bare-list shape; the 500 default matches the calendar's
+    # month-view ceiling.
     jobs = get_jobs(
         date_from=scheduled_date_from,
         date_to=scheduled_date_to,
+        limit=500, offset=0, paginated=False,
         db=db, org_id=org_id,
     )
     return {
