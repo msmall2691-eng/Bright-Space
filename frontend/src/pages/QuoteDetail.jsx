@@ -189,8 +189,16 @@ export default function QuoteDetail() {
   // 'converted' is derived (set by the convert flow), so it's only offered when
   // the quote is already in that state — never as a manual pick (audit item 2).
   const statusOptions = STATUS_OPTIONS.filter(o => o.value !== 'converted' || quote.status === 'converted')
-  const canSend = ['draft', 'sent', 'viewed', 'changes_requested'].includes(quote.status)
+  // Match the backend send_quote guard exactly: it only accepts draft/sent/viewed
+  // (draft = first send; sent/viewed = a follow-up nudge). Any other status —
+  // accepted, converted, declined, expired, changes_requested — 400s, so the
+  // Send CTA must be disabled for them rather than dead-ending in an error.
+  const canSend = ['draft', 'sent', 'viewed'].includes(quote.status)
   const emptyQuote = !items.length || Number(quote.total || 0) <= 0
+  const sendDisabled = !canSend || emptyQuote
+  const sendTitle = !canSend
+    ? `A ${quote.status} quote can't be sent.`
+    : emptyQuote ? 'Add at least one line item and a total over $0 before sending.' : undefined
 
   const ToolbarButton = ({ icon: Icon, label, onClick, disabled, title, primary }) => (
     <button onClick={onClick} disabled={disabled} title={title}
@@ -209,9 +217,9 @@ export default function QuoteDetail() {
           </button>
           {editable && (
             <div className="flex flex-wrap items-center gap-2">
-              <ToolbarButton icon={Send} label={canSend ? 'Send' : 'Resend'} onClick={openSend} primary
-                disabled={emptyQuote}
-                title={emptyQuote ? 'Add at least one line item and a total over $0 before sending.' : undefined} />
+              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : 'Resend'} onClick={openSend} primary
+                disabled={sendDisabled}
+                title={sendTitle} />
               <ToolbarButton icon={Eye} label="Preview" onClick={preview} />
               <ToolbarButton icon={Download} label="Download PDF" onClick={downloadPdf} />
               <ToolbarButton icon={copied ? Check : Link2} label={copied ? 'Copied' : 'Copy link'} onClick={copyLink} />
