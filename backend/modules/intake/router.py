@@ -229,7 +229,13 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
         db.flush()
         client_id = client.id
 
-    address = " ".join(filter(None, [intake.address, intake.city, intake.state, intake.zip_code]))
+    # Skip re-appending components already baked into intake.address (the
+    # maineclean.co /book flow POSTs the whole "street, city, ME, zip" string
+    # into address and leaves city/zip_code NULL — a blind join here would
+    # append a second ", ME" and, on the older " ".join, produce "…, 04061 ME"
+    # with no separator). Audit July-2026 L1/L3.
+    from utils.address import combine_address
+    address = combine_address(intake.address, intake.city, intake.state, intake.zip_code)
 
     # Carry the customer's structured request onto a Property so the quote (and
     # later the job) start from real data instead of re-typing. Reuse an existing

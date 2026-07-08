@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { htmlToText, formatDate, formatDateTime } from '../format'
+import { htmlToText, formatDate, formatDateTime, combineAddress } from '../format'
 
 describe('htmlToText', () => {
   it('strips a full HTML email document to readable text', () => {
@@ -36,5 +36,48 @@ describe('formatDate / formatDateTime', () => {
   it('returns empty string for falsy input', () => {
     expect(formatDate('')).toBe('')
     expect(formatDateTime(null)).toBe('')
+  })
+})
+
+describe('combineAddress (audit July-2026 L1/L3)', () => {
+  it('does not re-append state or zip already in the base', () => {
+    // The maineclean.co /book flow posts the whole "street, city, ME, zip"
+    // string into LeadIntake.address, with city/zip separate columns NULL and
+    // state defaulting to "ME". Before this helper the quote seeder wrote
+    // "Keystone Drive, Waterboro, ME, 04061, ME" — the doubled ME shipped
+    // to the customer-facing quote page.
+    expect(combineAddress(
+      'Keystone Drive, Waterboro, ME, 04061', null, 'ME', null,
+    )).toBe('Keystone Drive, Waterboro, ME, 04061')
+  })
+
+  it('appends components that are genuinely missing from base', () => {
+    expect(combineAddress('155 Main St', 'Portland', 'ME', '04101'))
+      .toBe('155 Main St, Portland, ME, 04101')
+  })
+
+  it('is case-insensitive on the dedupe check', () => {
+    expect(combineAddress('123 Elm St, Portland, me', null, 'ME', null))
+      .toBe('123 Elm St, Portland, me')
+  })
+
+  it('handles the missing-house-number case gracefully', () => {
+    expect(combineAddress('Keystone Drive', 'Waterboro', 'ME', '04061'))
+      .toBe('Keystone Drive, Waterboro, ME, 04061')
+  })
+
+  it('drops empty and whitespace-only components', () => {
+    expect(combineAddress('1 Main St', '', 'ME', '  '))
+      .toBe('1 Main St, ME')
+  })
+
+  it('returns empty string when everything is empty', () => {
+    expect(combineAddress(null, null, null, null)).toBe('')
+    expect(combineAddress('', '', '', '')).toBe('')
+  })
+
+  it('does not append a duplicate second-time (e.g. same state twice)', () => {
+    expect(combineAddress('123 Oak', 'Portland', 'ME', 'ME'))
+      .toBe('123 Oak, Portland, ME')
   })
 })

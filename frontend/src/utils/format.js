@@ -78,3 +78,45 @@ export function toLocalYMD(value) {
 export function todayYMD() {
   return toLocalYMD(new Date())
 }
+
+/**
+ * Combine a base address string with optional city/state/zip pieces WITHOUT
+ * re-appending any component already present in the base.
+ *
+ * The July-2026 audit's L1/L3 finding: `LeadIntake.address` from the /book
+ * flow already reads "Keystone Drive, Waterboro, ME, 04061" (the maineclean.co
+ * form assembles the full string before POSTing). Then the Quoting form
+ * blindly did `[intake.address, intake.city, intake.state].filter(Boolean).join(', ')`
+ * and produced "…, 04061, ME" — the customer-visible quote page shipped with
+ * "ME" appended twice.
+ *
+ * This helper checks whether each component already appears as a whole token
+ * in the base string (case-insensitive, split on commas + whitespace) and
+ * skips it if so. Only genuinely new components are appended.
+ *
+ *   combineAddress("155 Main St, Portland, ME, 04101", null, "ME", null)
+ *     → "155 Main St, Portland, ME, 04101"
+ *   combineAddress("155 Main St", "Portland", "ME", "04101")
+ *     → "155 Main St, Portland, ME, 04101"
+ */
+export function combineAddress(base, city, state, zip) {
+  const tokens = new Set(
+    (base || '').split(/[,\s]+/).map(t => t.trim().toLowerCase()).filter(Boolean),
+  )
+  const parts = base ? [base] : []
+  const push = (v) => {
+    if (!v) return
+    const s = String(v).trim()
+    if (!s) return
+    if (!tokens.has(s.toLowerCase())) {
+      parts.push(s)
+      // Update the token set so a repeated arg (or a later component that
+      // duplicates an earlier one) doesn't slip through in the same call.
+      tokens.add(s.toLowerCase())
+    }
+  }
+  push(city)
+  push(state)
+  push(zip)
+  return parts.join(', ')
+}
