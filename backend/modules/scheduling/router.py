@@ -471,7 +471,10 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     }
 
 
-@router.get("", response_model=List[JobResponse], dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+from fastapi import Query as _Query   # local alias to keep the existing `date` name free
+
+
+@router.get("", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_jobs(
     client_id: Optional[int] = None,
     property_id: Optional[int] = None,
@@ -481,6 +484,19 @@ def get_jobs(
     date_to: Optional[str] = None,
     job_type: Optional[str] = None,
     unassigned: Optional[bool] = None,
+    # T-23: paginate + cap the response so no single request can hog a
+    # worker. `limit` default 500 keeps a month-of-jobs fetch in one round
+    # trip for the calendar; max 1000 gives an operator wiggle room for
+    # an ad-hoc query. Values outside the range are clamped by FastAPI's
+    # Query validation.
+    limit: int = _Query(500, ge=1, le=1000),
+    offset: int = _Query(0, ge=0),
+    # Opt-in envelope: when true, the response is
+    #   {"items": [...], "total": N, "limit": L, "offset": O}
+    # so callers can drive real pagination. Default false to keep the
+    # legacy bare-array shape working (CalendarView + others read that
+    # shape directly).
+    paginated: bool = False,
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
@@ -510,7 +526,31 @@ def get_jobs(
     if job_type:
         q = q.filter(Job.job_type == job_type)
 
-    rows = [(j, j.scheduled_date) for j in q.order_by(Job.scheduled_date, Job.start_time).all()]
+    # Total BEFORE limit/offset so the envelope's `total` reflects the whole
+    # filtered set, not just this page. Cheap even on a big table because
+    # the same predicates are indexed (scheduled_date has an index; status/
+    # job_type are low-cardinality).
+    total = q.count() if paginated else None
+
+    # Order + paginate at the DB layer. Was: `.all()` — unbounded, which
+    # is exactly the 502-triggering pathology the spec called out.
+    rows = [
+        (j, j.scheduled_date)
+        for j in (
+            q.order_by(Job.scheduled_date, Job.start_time)
+             .offset(offset).limit(limit).all()
+        )
+    ]
+    if len(rows) >= limit:
+        # A caller hitting the ceiling is likely NOT scoping (default
+        # limit=500 will only trip on huge date ranges or an unscoped
+        # fetch). Log a WARNING so we can spot un-paginated consumers
+        # in the perf log.
+        logger.warning(
+            "[get_jobs] response hit the cap (limit=%s, offset=%s) — "
+            "consider a narrower date range or pass paginated=true",
+            limit, offset,
+        )
 
     # Unassigned filter: cleaner_ids is JSON, so filter in Python (cross-dialect
     # safe). A job "needs assignment" when it has no cleaners and isn't done/
@@ -572,6 +612,13 @@ def get_jobs(
                                         booking_event=booking,
                                         next_arrival=next_arrival,
                                         property_name=prop_names.get(j.property_id)))
+    if paginated:
+        return {
+            "items": rendered,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
     return rendered
 
 
@@ -2305,9 +2352,15 @@ def schedule_week(
     delegate gets org_id explicitly so the FastAPI Query() defaults on those
     functions never leak in as unresolved Depends sentinels.
     """
+    # Explicit limit/offset/paginated defaults so the FastAPI Query()
+    # sentinels never leak into this in-process call (same pattern the
+    # module docstring flags for org_id). schedule_week always wants the
+    # legacy bare-list shape; the 500 default matches the calendar's
+    # month-view ceiling.
     jobs = get_jobs(
         date_from=scheduled_date_from,
         date_to=scheduled_date_to,
+        limit=500, offset=0, paginated=False,
         db=db, org_id=org_id,
     )
     return {
