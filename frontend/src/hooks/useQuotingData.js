@@ -26,12 +26,18 @@ export function useQuotingData() {
   // admin could open the editor while templates are still [] (loading), then
   // Save — overwriting all stored templates with an empty list.
   const [templatesLoaded, setTemplatesLoaded] = useState(false)
+  // Quotes-list load error (distinct from "no quotes yet"): a failed fetch used
+  // to be swallowed to the console and render the empty state, so a backend/network
+  // failure looked like an empty book. Surfaced as a retryable banner (audit item 4).
+  const [quotesError, setQuotesError] = useState(false)
   // Full customer-facing identity (Settings → General) — drives the REAL
   // public-page preview, SMS copy, and send-panel subject prefill.
   const [company, setCompany] = useState({ company_name: 'The Maine Cleaning Co.' })
   const [archivedQuotes, setArchivedQuotes] = useState([])
 
-  const loadQuotes = () => get('/api/quotes').then(d => setQuotes(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error('[Quoting]', err))
+  const loadQuotes = () => get('/api/quotes')
+    .then(d => { setQuotes(Array.isArray(d) ? d.map(safeQuote) : []); setQuotesError(false) })
+    .catch(err => { console.error('[Quoting]', err); setQuotesError(true) })
   const loadIntakes = () => get('/api/intake').then(d => setIntakes(Array.isArray(d) ? d : [])).catch(err => console.error('[Quoting]', err))
   // Quotes the customer is sitting on (sent-but-unopened / opened-but-no-reply).
   const loadFollowUps = () => get('/api/quotes/follow-ups').then(d => setFollowUps(Array.isArray(d) ? d.map(safeQuote) : [])).catch(err => console.error('[Quoting]', err))
@@ -70,6 +76,7 @@ export function useQuotingData() {
     company,
     companyName: company.company_name || 'The Maine Cleaning Co.',
     archivedQuotes,
+    quotesError,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,
   }
 }

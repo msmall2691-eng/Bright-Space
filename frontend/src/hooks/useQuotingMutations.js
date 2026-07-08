@@ -19,7 +19,25 @@ export function useQuotingMutations({
   const [copiedQuoteId, setCopiedQuoteId] = useState(null)
 
   const updateStatus = async (id, status) => {
-    await patch(`/api/quotes/${id}`, { status })
+    // accepted/declined carry real business side effects (job conversion,
+    // opportunity won/lost, owner + customer notifications). A raw PATCH sets the
+    // status with NONE of them, so route those two through the real endpoints and
+    // confirm first. Everything else (draft/sent/viewed) is a plain status edit.
+    if (status === 'accepted' || status === 'declined') {
+      const ok = window.confirm(status === 'accepted'
+        ? 'Mark this quote accepted? This converts it to a job (when a property is linked), marks the deal won, and emails the owner and customer.'
+        : 'Mark this quote declined? This closes the deal as lost and notifies the owner.')
+      if (!ok) { loadQuotes(); return }  // revert the optimistic chip
+      try {
+        await post(`/api/quotes/${id}/${status === 'accepted' ? 'accept' : 'decline'}`, {})
+      } catch (e) {
+        toast(e.message || `Could not mark quote ${status}`)
+        loadQuotes()
+        return
+      }
+    } else {
+      await patch(`/api/quotes/${id}`, { status })
+    }
     loadQuotes()
     loadFollowUps()
   }

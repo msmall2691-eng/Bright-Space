@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Building2, MapPin, TrendingUp, Calendar, FileText,
-  Mail, MessageSquare, ChevronRight,
+  Mail, MessageSquare, ChevronRight, Send, Eye, Download, Link2, Check,
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
@@ -13,6 +13,8 @@ import InlineEditField from '../components/InlineEditField'
 import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
+import SendQuotePanel from '../components/quoting/SendQuotePanel'
+import { isPlaceholderName } from '../components/quoting/constants'
 
 const STATUS_OPTIONS = [
   { value: 'draft',     label: 'draft',     chipClass: 'bg-bg-2 text-ink-3 border-hairline',                    dot: 'bg-ink-3' },
@@ -56,6 +58,13 @@ export default function QuoteDetail() {
   const [notFound, setNotFound] = useState(false)
   const [converting, setConverting] = useState(false)
   const [deliveryHistory, setDeliveryHistory] = useState([])
+  const [company, setCompany] = useState({ company_name: 'The Maine Cleaning Co.' })
+  const [sendOpen, setSendOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [sendForm, setSendForm] = useState({
+    channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '', copy_to: '',
+  })
 
   const load = useCallback(() => {
     setLoading(true)
@@ -68,6 +77,12 @@ export default function QuoteDetail() {
   useEffect(() => {
     if (id) get(`/api/quotes/${id}/delivery-history`).then(d => setDeliveryHistory(d.history || [])).catch(() => {})
   }, [id])
+  // Customer-facing identity for the send panel's subject/copy-to defaults.
+  useEffect(() => {
+    get('/api/settings/general')
+      .then(d => setCompany(c => ({ ...c, ...Object.fromEntries(Object.entries(d || {}).filter(([, v]) => v != null)) })))
+      .catch(() => {})
+  }, [])
   useEffect(() => { if (quote?.quote_number) document.title = `${quote.quote_number} · Quote` }, [quote?.quote_number])
 
   const saveField = (body) =>
@@ -75,7 +90,81 @@ export default function QuoteDetail() {
       .then(updated => setQuote(q => ({ ...q, ...updated })))
       .catch(() => { toast.error('Could not save change'); load() })
 
-  const setStatus = (status) => { setQuote(q => ({ ...q, status })); saveField({ status }) }
+  // accepted/declined carry real side effects (convert/opportunity/notify), and
+  // 'converted' is derived from the convert flow — route them accordingly instead
+  // of a raw status PATCH that would bypass all of it (audit item 2).
+  const runStatusAction = async (action) => {
+    const ok = window.confirm(action === 'accept'
+      ? 'Mark this quote accepted? This converts it to a job (when a property is linked), marks the deal won, and emails the owner and customer.'
+      : 'Mark this quote declined? This closes the deal as lost and notifies the owner.')
+    if (!ok) return
+    try {
+      const updated = await post(`/api/quotes/${id}/${action}`, {})
+      setQuote(q => ({ ...q, ...updated }))
+    } catch (e) { toast.error(e.message || `Could not ${action} quote`); load() }
+  }
+  const setStatus = (status) => {
+    if (!status || status === quote.status) return
+    if (status === 'converted') { toast.error('Use “Convert to job” to convert a quote'); return }
+    if (status === 'accepted') return runStatusAction('accept')
+    if (status === 'declined') return runStatusAction('decline')
+    setQuote(q => ({ ...q, status })); saveField({ status })
+  }
+
+  // Ensure a public token exists, returning it (mints one on first use).
+  const ensureToken = async () => {
+    if (quote.public_token) return quote.public_token
+    const { public_token } = await post(`/api/quotes/${id}/generate-token`, {})
+    setQuote(q => ({ ...q, public_token }))
+    return public_token
+  }
+  const copyLink = async () => {
+    try {
+      const token = await ensureToken()
+      await navigator.clipboard.writeText(`${window.location.origin}/quote/${token}`)
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+      toast.success('Public link copied')
+    } catch (e) { toast.error(e.message || 'Could not copy link') }
+  }
+  const preview = async () => {
+    try { window.open(`${window.location.origin}/quote/${await ensureToken()}`, '_blank', 'noopener') }
+    catch (e) { toast.error(e.message || 'Could not open preview') }
+  }
+  const downloadPdf = async () => {
+    try { window.open(`${window.location.origin}/api/quotes/public/${await ensureToken()}/pdf?download=1`, '_blank', 'noopener') }
+    catch (e) { toast.error(e.message || 'Could not open PDF') }
+  }
+
+  const openSend = () => {
+    const name = (quote.client_name || '').trim()
+    setSendForm({
+      channel: 'email',
+      email: quote.client_email || '',
+      phone: quote.client_phone || '',
+      custom_message: '',
+      subject: `Your Quote ${quote.quote_number} from ${company.company_name || 'us'}`,
+      greeting: isPlaceholderName(name) ? '' : name.split(/\s+/)[0],
+      copy_to: company.company_email || '',
+    })
+    setSendOpen(true)
+  }
+  const doSend = async () => {
+    setSending(true)
+    try {
+      await post(`/api/quotes/${id}/generate-token`, {})
+      const payload = { ...sendForm, copy_to: (sendForm.copy_to || '').trim() || null }
+      const data = await post(`/api/quotes/${id}/send`, payload)
+      if (data.delivered) {
+        const sent = Object.entries(data.results || {}).filter(([, v]) => v === 'sent').map(([k]) => k)
+        toast.success(`Quote sent via ${sent.join(' & ') || 'email'} ✓`)
+      } else {
+        toast.error(`Couldn't send: ${(data.errors || []).join('; ') || 'delivery failed'}`)
+      }
+      setSendOpen(false)
+      load()
+    } catch (e) { toast.error(e.message || 'Error sending quote') }
+    setSending(false)
+  }
 
   // Convert-to-job opens the modal so the operator can pick a date + crew
   // at conversion time. The modal itself POSTs to the endpoint (idempotent
@@ -87,7 +176,7 @@ export default function QuoteDetail() {
   if (notFound || !quote) {
     return (
       <div className="p-6">
-        <button onClick={() => navigate('/billing?view=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
+        <button onClick={() => navigate('/billing?view=quotes&tab=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
           <ArrowLeft className="w-4 h-4" /> Back to Quotes
         </button>
         <EmptyState icon={FileText} title="Quote not found" description="It may have been archived or moved to another workspace." />
@@ -96,13 +185,47 @@ export default function QuoteDetail() {
   }
 
   const items = quote.items || []
+  const editable = canEdit()
+  // 'converted' is derived (set by the convert flow), so it's only offered when
+  // the quote is already in that state — never as a manual pick (audit item 2).
+  const statusOptions = STATUS_OPTIONS.filter(o => o.value !== 'converted' || quote.status === 'converted')
+  // Match the backend send_quote guard exactly: it only accepts draft/sent/viewed
+  // (draft = first send; sent/viewed = a follow-up nudge). Any other status —
+  // accepted, converted, declined, expired, changes_requested — 400s, so the
+  // Send CTA must be disabled for them rather than dead-ending in an error.
+  const canSend = ['draft', 'sent', 'viewed'].includes(quote.status)
+  const emptyQuote = !items.length || Number(quote.total || 0) <= 0
+  const sendDisabled = !canSend || emptyQuote
+  const sendTitle = !canSend
+    ? `A ${quote.status} quote can't be sent.`
+    : emptyQuote ? 'Add at least one line item and a total over $0 before sending.' : undefined
+
+  const ToolbarButton = ({ icon: Icon, label, onClick, disabled, title, primary }) => (
+    <button onClick={onClick} disabled={disabled} title={title}
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+        primary ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-bg-2 hover:bg-bg-3 border border-hairline text-ink-2'}`}>
+      <Icon className="w-3.5 h-3.5" /> {label}
+    </button>
+  )
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
-        <button onClick={() => navigate('/billing?view=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2 mb-4">
-          <ArrowLeft className="w-4 h-4" /> Back to Quotes
-        </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <button onClick={() => navigate('/billing?view=quotes&tab=quotes')} className="flex items-center gap-1.5 text-[13px] text-ink-3 hover:text-ink-2">
+            <ArrowLeft className="w-4 h-4" /> Back to Quotes
+          </button>
+          {editable && (
+            <div className="flex flex-wrap items-center gap-2">
+              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : 'Resend'} onClick={openSend} primary
+                disabled={sendDisabled}
+                title={sendTitle} />
+              <ToolbarButton icon={Eye} label="Preview" onClick={preview} />
+              <ToolbarButton icon={Download} label="Download PDF" onClick={downloadPdf} />
+              <ToolbarButton icon={copied ? Check : Link2} label={copied ? 'Copied' : 'Copy link'} onClick={copyLink} />
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_320px] gap-4">
           {/* ── Left: fields ──────────────────────────────────────── */}
@@ -112,7 +235,7 @@ export default function QuoteDetail() {
                 <div className="w-10 h-10 rounded-lg bg-blue-600/15 text-blue-500 flex items-center justify-center shrink-0">
                   <FileText className="w-5 h-5" />
                 </div>
-                <InlineSelect value={quote.status} options={STATUS_OPTIONS} onSelect={setStatus} />
+                <InlineSelect value={quote.status} options={statusOptions} onSelect={setStatus} />
               </div>
               <div className="text-[11px] text-ink-3 mb-0.5">{quote.quote_number}</div>
               <InlineEditField label="Title" value={quote.title} placeholder="Untitled quote"
@@ -264,6 +387,19 @@ export default function QuoteDetail() {
           </div>
         </div>
       </div>
+
+      {sendOpen && (
+        <SendQuotePanel
+          selected={quote}
+          clientName={(cid) => quote.client_name || `Client #${cid}`}
+          companyName={company.company_name || 'The Maine Cleaning Co.'}
+          sendForm={sendForm}
+          setSendForm={setSendForm}
+          sending={sending}
+          onClose={() => setSendOpen(false)}
+          onSend={doSend}
+        />
+      )}
     </div>
   )
 }
