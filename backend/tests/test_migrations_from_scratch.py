@@ -36,6 +36,7 @@ import os
 import uuid
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
@@ -45,6 +46,50 @@ pytestmark = pytest.mark.skipif(
     not _RAW.startswith(("postgresql://", "postgres://")),
     reason="RLS_TEST_DATABASE_URL not set to a Postgres DB",
 )
+
+
+def _schema_parity_issues(engine) -> list[str]:
+    """Compare the migrated schema against database/models' Base.metadata.
+
+    reaching "head" without an error (the assertion below) only proves the
+    migration SQL is syntactically valid — it says nothing about whether the
+    resulting schema actually matches what the ORM models expect. Migration
+    001 drifted from models.py for years without this ever failing: a column
+    declared VARCHAR instead of DATE/TIME/JSON/BOOLEAN inserts fine (Postgres
+    just stores whatever string/int SQLAlchemy sends) and only breaks at
+    query time, on a WHERE/filter — which a plain "did upgrade raise?" check
+    never exercises. This walks every mapped table/column and flags anything
+    genuinely missing or type-mismatched, so that class of drift fails CI
+    immediately instead of silently waiting for a fresh install to 500."""
+    from database.models import Base
+
+    insp = sa.inspect(engine)
+    live_tables = set(insp.get_table_names())
+    issues = []
+
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in live_tables:
+            issues.append(f"table '{table_name}' is missing entirely")
+            continue
+        live_cols = {c["name"]: c["type"] for c in insp.get_columns(table_name)}
+        for column in table.columns:
+            if column.name not in live_cols:
+                issues.append(f"{table_name}.{column.name} is missing")
+                continue
+            # Compare via each type's own Python/affinity class rather than a
+            # literal string match — DATE/TIMESTAMP/etc. render differently
+            # across dialects, but python_type stays stable for our purposes
+            # (str, bool, date, time, dict/list via JSON, etc).
+            expected_py = getattr(column.type, "python_type", None)
+            live_py = getattr(live_cols[column.name], "python_type", None)
+            if expected_py is None or live_py is None:
+                continue
+            if expected_py is not live_py:
+                issues.append(
+                    f"{table_name}.{column.name}: migrated type {live_cols[column.name]} "
+                    f"(python {live_py}) != model type {column.type} (python {expected_py})"
+                )
+    return issues
 
 
 def test_alembic_upgrade_head_from_empty_db():
@@ -81,8 +126,11 @@ def test_alembic_upgrade_head_from_empty_db():
         check_engine = create_engine(fresh_url, poolclass=NullPool)
         with check_engine.connect() as conn:
             actual = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        check_engine.dispose()
         assert actual == expected_head
+
+        issues = _schema_parity_issues(check_engine)
+        check_engine.dispose()
+        assert not issues, "migrated schema drifted from database/models:\n" + "\n".join(issues)
     finally:
         admin_engine = create_engine(admin_url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
         with admin_engine.connect() as conn:
