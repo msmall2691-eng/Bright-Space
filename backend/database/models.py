@@ -403,6 +403,11 @@ class RecurringSchedule(Base):
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
+    # Exclusive upper bound on generated dates — set when a "this and all
+    # future" edit splits the series: this schedule stops here, and a new
+    # RecurringSchedule picks up from the split date with the edited rule.
+    # NULL (the common case) means open-ended.
+    series_end_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
