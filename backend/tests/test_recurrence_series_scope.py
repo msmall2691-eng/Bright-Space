@@ -172,6 +172,37 @@ def test_split_generate_dates_excludes_split_boundary_and_beyond(fresh_client_pr
         db.close()
 
 
+def test_split_new_schedule_with_changed_weekday_has_no_dates_before_split(fresh_client_property):
+    """Regression: generate_dates() always expands from today forward with no
+    floor. Splitting a Monday series into (say) a Friday series at a Monday
+    two weeks out must NOT start producing Fridays this week — the new
+    schedule's series_start_date clamps generation to on/after the split."""
+    from modules.recurring.router import generate_dates
+    client, prop = fresh_client_property
+    db = SessionLocal()
+    try:
+        today_dow = date.today().weekday()
+        sched = _make_schedule(db, client, prop, days_of_week=[today_dow], weeks_ahead=8)
+        split_date = date.today() + timedelta(days=14)
+        new_dow = (today_dow + 2) % 7  # deliberately a different, earlier-in-week day
+
+        r = api.post(f"/api/recurring/{sched.id}/split", json={
+            "split_date": split_date.isoformat(),
+            "days_of_week": [new_dow], "day_of_week": new_dow,
+        })
+        assert r.status_code == 201, r.text
+        new_id = r.json()["id"]
+
+        db.expire_all()
+        new_sched = db.query(RecurringSchedule).filter_by(id=new_id).first()
+        assert new_sched.series_start_date == split_date
+        dates = generate_dates(new_sched, new_sched.generate_weeks_ahead)
+        assert all(d >= split_date for d in dates), \
+            "new schedule with a changed weekday must not generate before the split date"
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # split: removes/regenerates future Jobs (needs generate_jobs → Postgres only)
 # ---------------------------------------------------------------------------

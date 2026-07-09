@@ -408,6 +408,11 @@ class RecurringSchedule(Base):
     # RecurringSchedule picks up from the split date with the edited rule.
     # NULL (the common case) means open-ended.
     series_end_date = Column(Date, nullable=True)
+    # Inclusive lower bound — set on the NEW schedule a split creates, so a
+    # changed day-of-week can't generate occurrences before the split point
+    # (generate_dates always expands from today forward with no floor
+    # otherwise). NULL (the common case) means no floor.
+    series_start_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 

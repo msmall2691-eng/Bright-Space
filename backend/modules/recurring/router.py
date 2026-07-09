@@ -176,6 +176,7 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
         "active": s.active,
         "generate_weeks_ahead": s.generate_weeks_ahead,
         "series_end_date": s.series_end_date.isoformat() if s.series_end_date else None,
+        "series_start_date": s.series_start_date.isoformat() if s.series_start_date else None,
         "notes": s.notes,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
@@ -213,6 +214,13 @@ def _as_time(value):
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     """Return a sorted list of dates this schedule should run in the next N weeks."""
     today = business_today()
+    # series_start_date is the inclusive floor a "this and all future" split
+    # sets on the NEW schedule: without it, a changed day-of-week could
+    # generate occurrences before the split point, since this function
+    # otherwise always expands from today forward with no lower bound.
+    series_start = _as_date(getattr(sched, "series_start_date", None))
+    if series_start is not None and series_start > today:
+        today = series_start
     end = today + timedelta(weeks=weeks_ahead)
     # series_end_date is the exclusive boundary a "this and all future" split
     # sets on the OLD schedule — never generate on/after it, so the new
@@ -712,6 +720,7 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
         job_type=old.job_type,
         active=True,
         org_id=old.org_id,
+        series_start_date=data.split_date,
         **new_payload,
     )
     db.add(new_sched)
