@@ -211,6 +211,20 @@ def _as_time(value):
         return None
 
 
+def _validate_timing(start, end) -> None:
+    """Reject an inverted/zero-width window. Mirrors scheduling/router.py's
+    _validate_job_timing — this module's endpoints (reschedule/split/update)
+    write start_time/end_time too but had no equivalent guard, so e.g.
+    changing only a visit's start time via the calendar (leaving the old end
+    time in place) could silently save start > end."""
+    st, et = _as_time(start), _as_time(end)
+    if st is not None and et is not None and et <= st:
+        raise HTTPException(
+            status_code=400,
+            detail=f"End time ({end}) must be after start time ({start}).",
+        )
+
+
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     """Return a sorted list of dates this schedule should run in the next N weeks."""
     today = business_today()
@@ -647,6 +661,11 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
         updates["start_time"] = _as_time(updates["start_time"])
     if "end_time" in updates:
         updates["end_time"] = _as_time(updates["end_time"])
+    if "start_time" in updates or "end_time" in updates:
+        _validate_timing(
+            updates.get("start_time", sched.start_time),
+            updates.get("end_time", sched.end_time),
+        )
     for field, value in updates.items():
         setattr(sched, field, value)
     # Keep day_of_week in sync with first element of days_of_week
@@ -713,6 +732,7 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
     new_payload["day_of_week"] = new_payload["days_of_week"][0]
     new_payload["start_time"] = _as_time(new_payload["start_time"])
     new_payload["end_time"] = _as_time(new_payload["end_time"])
+    _validate_timing(new_payload["start_time"], new_payload["end_time"])
 
     old.series_end_date = data.split_date
     new_sched = RecurringSchedule(
@@ -881,6 +901,17 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         )
 
     sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
+    # Coerce once up front — RecurrenceException.rescheduled_start_time/
+    # rescheduled_end_time and Job.start_time/end_time are real Time columns;
+    # body.rescheduled_start_time arrives as a plain "HH:MM" string (matching
+    # this module's API convention), which Postgres's psycopg2 leniently
+    # casts but SQLite's Time type rejects outright.
+    body_start = _as_time(body.rescheduled_start_time)
+    body_end = _as_time(body.rescheduled_end_time)
+    # Validate the EFFECTIVE window — a caller changing only the start (or
+    # only the end) still falls back to the series' own time for the other
+    # side, exactly as the Job that gets materialized below will.
+    _validate_timing(body_start or sched.start_time, body_end or sched.end_time)
 
     existing = (
         db.query(RecurrenceException)
@@ -894,8 +925,8 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         ex = existing
         ex.exception_type = "reschedule"
         ex.rescheduled_date = body.rescheduled_date
-        ex.rescheduled_start_time = body.rescheduled_start_time
-        ex.rescheduled_end_time = body.rescheduled_end_time
+        ex.rescheduled_start_time = body_start
+        ex.rescheduled_end_time = body_end
         if body.reason:
             ex.reason = body.reason
     else:
@@ -904,21 +935,32 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
             exception_date=body.exception_date,
             exception_type="reschedule",
             rescheduled_date=body.rescheduled_date,
-            rescheduled_start_time=body.rescheduled_start_time,
-            rescheduled_end_time=body.rescheduled_end_time,
+            rescheduled_start_time=body_start,
+            rescheduled_end_time=body_end,
             reason=body.reason,
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
         )
         db.add(ex)
 
-    _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
+    # A same-date "reschedule" (rescheduled_date == exception_date — a pure
+    # time/crew change, no day move) targets the exact same Job row this
+    # would otherwise cancel. Skipping the cancel there — instead of
+    # cancelling then re-finding it below — matters because this Session
+    # runs with autoflush=False (database/db.py): the "find the rescheduled
+    # job" query a few lines down would still see the PRE-cancel database
+    # row (the pending status='cancelled' isn't flushed yet), match it as
+    # "existing", update its times, and then db.commit() at the end would
+    # persist both the leftover cancelled status AND the new times —
+    # silently cancelling a visit the user just meant to retime.
+    if _as_date(body.rescheduled_date) != _as_date(body.exception_date):
+        _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
 
     # Materialize (or update) the Job for the rescheduled date with the
     # exception times. generate_jobs uses series times only, so without this
     # step a "reschedule to 2pm" would surface as a 9am job on the calendar.
     new_date = _as_date(body.rescheduled_date)
-    new_start = body.rescheduled_start_time or sched.start_time
-    new_end = body.rescheduled_end_time or sched.end_time
+    new_start = body_start or sched.start_time
+    new_end = body_end or sched.end_time
     rescheduled_job = (
         db.query(Job)
         .filter(

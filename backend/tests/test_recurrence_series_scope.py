@@ -355,6 +355,100 @@ def test_resync_does_not_touch_jobs_with_an_exception(fresh_client_property):
 
 
 # ---------------------------------------------------------------------------
+# Same-date reschedule (time/crew-only change, no day move) must not cancel
+# the occurrence it's retiming — see the header comment on the
+# `if _as_date(body.rescheduled_date) != _as_date(body.exception_date)`
+# guard in add_reschedule_exception for why this is autoflush-sensitive.
+# ---------------------------------------------------------------------------
+def test_same_date_reschedule_keeps_job_scheduled_not_cancelled(fresh_client_property):
+    client, prop = fresh_client_property
+    db = SessionLocal()
+    try:
+        sched = _make_schedule(db, client, prop)
+        target = date.today() + timedelta(days=7)
+        job = Job(
+            client_id=client.id, property_id=prop.id, recurring_schedule_id=sched.id,
+            title="Occurrence", job_type="residential", scheduled_date=target,
+            start_time=time(9, 0), end_time=time(11, 0), status="scheduled", cleaner_ids=["101"],
+        )
+        db.add(job); db.commit(); db.refresh(job)
+        job_id = job.id
+
+        r = api.post(f"/api/recurring/{sched.id}/reschedule", json={
+            "exception_date": target.isoformat(),
+            "rescheduled_date": target.isoformat(),  # same day — time-only change
+            "rescheduled_start_time": "13:00",
+            "rescheduled_end_time": "15:00",
+        })
+        assert r.status_code == 201, r.text
+
+        db.expire_all()
+        updated = db.query(Job).filter_by(id=job_id).first()
+        assert updated is not None
+        assert updated.status == "scheduled", \
+            "a time-only same-date reschedule must not leave the occurrence cancelled"
+        assert str(updated.start_time)[:5] == "13:00"
+        assert str(updated.end_time)[:5] == "15:00"
+        # No duplicate row for the same schedule+date.
+        count = db.query(Job).filter(
+            Job.recurring_schedule_id == sched.id, Job.scheduled_date == target,
+        ).count()
+        assert count == 1
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Timing validation: changing only start (or only end) must not silently
+# save an inverted window — the reschedule/split/update endpoints write
+# start_time/end_time too but had no equivalent to _validate_job_timing.
+# ---------------------------------------------------------------------------
+def test_reschedule_rejects_start_after_leftover_series_end(fresh_client_property):
+    """Regression: changing only rescheduled_start_time (leaving end unset)
+    falls back to the series' own end_time — moving start past THAT must
+    400, not silently save an inverted window."""
+    client, prop = fresh_client_property
+    db = SessionLocal()
+    try:
+        sched = _make_schedule(db, client, prop)  # 09:00-11:00
+        target = date.today() + timedelta(days=7)
+        r = api.post(f"/api/recurring/{sched.id}/reschedule", json={
+            "exception_date": target.isoformat(),
+            "rescheduled_date": target.isoformat(),
+            "rescheduled_start_time": "13:00",
+        })
+        assert r.status_code == 400
+        assert "must be after" in r.json()["detail"]
+    finally:
+        db.close()
+
+
+def test_split_rejects_inverted_window(fresh_client_property):
+    client, prop = fresh_client_property
+    db = SessionLocal()
+    try:
+        sched = _make_schedule(db, client, prop)  # 09:00-11:00
+        split_date = date.today() + timedelta(days=14)
+        r = api.post(f"/api/recurring/{sched.id}/split", json={
+            "split_date": split_date.isoformat(), "start_time": "13:00",
+        })
+        assert r.status_code == 400
+    finally:
+        db.close()
+
+
+def test_update_schedule_rejects_inverted_window(fresh_client_property):
+    client, prop = fresh_client_property
+    db = SessionLocal()
+    try:
+        sched = _make_schedule(db, client, prop)  # 09:00-11:00
+        r = api.patch(f"/api/recurring/{sched.id}", json={"start_time": "13:00"})
+        assert r.status_code == 400
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Cross-org IDOR: recurring/router.py had zero org scoping before this sweep
 # ---------------------------------------------------------------------------
 def test_cross_org_get_schedule_returns_404(fresh_client_property):
