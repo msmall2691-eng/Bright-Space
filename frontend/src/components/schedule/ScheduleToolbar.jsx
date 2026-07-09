@@ -50,6 +50,11 @@ export default function ScheduleToolbar({
   noGcalOnly = false,
   onToggleNoGcal,
   notGcalCount = 0,
+  // Month view only: Airbnb/VRBO guest-stay overlay on the calendar grid.
+  // Off by default (see Schedule.jsx) — shown here so it can be turned back
+  // on for a turnover-heavy week without digging through Tools.
+  showGuestStays = false,
+  onToggleGuestStays,
 }) {
   const filterActive = selectedPropertyType !== 'all' || selectedStatus !== 'all'
     || unassignedOnly || noConnecteamOnly || noGcalOnly
@@ -247,6 +252,16 @@ export default function ScheduleToolbar({
                 testid="filter-no-gcal"
               >
                 Not on Google ({notGcalCount})
+              </ChipToggle>
+            )}
+            {viewMode === 'month' && onToggleGuestStays && (
+              <ChipToggle
+                active={showGuestStays}
+                onClick={onToggleGuestStays}
+                colorActive="bg-orange-50 text-orange-700 border-orange-200"
+                testid="filter-guest-stays"
+              >
+                Guest stays
               </ChipToggle>
             )}
           </div>

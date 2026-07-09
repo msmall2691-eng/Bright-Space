@@ -82,6 +82,20 @@ export default function Schedule() {
     range: dataRange,
   } = useScheduleData(currentDate, viewMode)
   const [showFilters, setShowFilters] = useState(false)  // filters hidden by default; most days show everything
+  // Guest-stay (Airbnb/VRBO iCal) overlay on the month calendar — off by
+  // default; it tinted nearly every cell and crowded out the actual jobs.
+  // Persisted (unlike the other filter chips) because it's a display
+  // preference, not a query narrowing this session's view.
+  const [showGuestStays, setShowGuestStays] = useState(() => {
+    return localStorage.getItem('schedule-show-guest-stays') === 'true'
+  })
+  const toggleGuestStays = () => {
+    setShowGuestStays(v => {
+      const next = !v
+      localStorage.setItem('schedule-show-guest-stays', String(next))
+      return next
+    })
+  }
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
   // Visit drawer: secondary sections (calendar sync status, SMS reminder) fold
@@ -342,6 +356,8 @@ export default function Schedule() {
         noGcalOnly={noGcalOnly}
         onToggleNoGcal={() => setNoGcalOnly(v => !v)}
         notGcalCount={scheduleStats?.notGcal || 0}
+        showGuestStays={showGuestStays}
+        onToggleGuestStays={toggleGuestStays}
       />
 
       <ScheduleHealthStrip
@@ -452,6 +468,7 @@ export default function Schedule() {
             parentRange={dataRange}
             onMonthChange={(d) => setCurrentDate(d)}
             anchorDate={currentDate}
+            showGuestStays={showGuestStays}
           />
         </div>
       ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
