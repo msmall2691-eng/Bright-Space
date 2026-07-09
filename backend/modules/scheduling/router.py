@@ -192,6 +192,23 @@ def _validate_job_timing(scheduled_date, start_time, end_time, *, is_new: bool):
         )
 
 
+def _overlaps(a_start, a_end, b_start, b_end):
+    """Simple interval overlap. Missing times treated as full-day (worst-
+    case: assume they overlap so the operator gets a warning).
+
+    Callers mix "HH:MM" strings (raw query params) and real `time` objects
+    (Job.start_time/end_time, already deserialized by SQLAlchemy) — comparing
+    a str to a time raises TypeError, so every input is coerced through
+    _to_time first. This was a real, untested bug in the pre-existing
+    cleaner_availability endpoint: it 500'd whenever start/end query params
+    were supplied AND a genuinely conflicting same-day job existed — i.e.
+    exactly the case the endpoint exists to detect."""
+    a_start, a_end, b_start, b_end = _to_time(a_start), _to_time(a_end), _to_time(b_start), _to_time(b_end)
+    if not a_start or not a_end or not b_start or not b_end:
+        return True
+    return not (a_end <= b_start or a_start >= b_end)
+
+
 def _find_cleaner_conflicts(db: Session, *, cleaner_ids, scheduled_date,
                             start_time, end_time, exclude_job_id=None,
                             org_id=None):
@@ -1166,13 +1183,6 @@ def cleaner_availability(
         q = q.filter(Job.id != exclude_job_id)
     same_day_jobs = q.all()
 
-    def _overlaps(a_start, a_end, b_start, b_end):
-        # Simple HH:MM interval overlap. Missing times treated as full-day
-        # (worst-case: assume they overlap so the operator gets a warning).
-        if not a_start or not a_end or not b_start or not b_end:
-            return True
-        return not (a_end <= b_start or a_start >= b_end)
-
     conflicts: dict[str, list] = {}
     same_day_only: dict[str, list] = {}
     for j in same_day_jobs:
@@ -1205,6 +1215,57 @@ def cleaner_availability(
             out.append({"cleaner_id": cid, "status": "same_day",
                         "detail": f"another job {slot}", "conflict_job_id": j.id})
     return out
+
+
+@router.get("/property-availability", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def property_availability(
+    property_id: int,
+    date: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    exclude_job_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Other non-cancelled jobs already on the calendar at this property on
+    this date, for a soft "heads up" warning while creating/editing a job.
+
+    Unlike the str_turnover-only hard 409 in create_job (a duplicate-turnover
+    guard), this covers every job_type and never blocks — it's meant to be
+    surfaced as a dismissible warning in the edit form, not a save-blocking
+    error, since a property legitimately CAN have two jobs the same day
+    (e.g. a morning turnover + an afternoon deep clean).
+
+    Returns {"conflicts": [{job_id, title, job_type, start_time, end_time,
+    overlaps}]} — `overlaps` is true when the window actually overlaps
+    start/end (when given), false when it's just "also that day".
+    """
+    d = _to_date(date)
+    if d is None:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD.")
+    oid = resolve_org_id(org_id, db)
+    q = db.query(Job).filter(
+        Job.property_id == property_id,
+        Job.scheduled_date == d.isoformat(),
+        Job.status.notin_(["cancelled"]),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
+    )
+    if exclude_job_id is not None:
+        q = q.filter(Job.id != exclude_job_id)
+    others = q.all()
+    return {
+        "conflicts": [
+            {
+                "job_id": j.id,
+                "title": j.title,
+                "job_type": j.job_type,
+                "start_time": str(j.start_time) if j.start_time else None,
+                "end_time": str(j.end_time) if j.end_time else None,
+                "overlaps": _overlaps(start, end, j.start_time, j.end_time),
+            }
+            for j in others
+        ],
+    }
 
 
 @router.get("/time-off", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])

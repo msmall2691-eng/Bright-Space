@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown } from 'lucide-react'
+import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
@@ -81,6 +81,32 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }, 250)
     return () => clearTimeout(t)
   }, [formData.scheduled_date, formData.start_time, formData.end_time, job?.id])
+
+  // Property-level double-booking: a soft, dismissible heads-up (not a
+  // save-blocking error — a property CAN legitimately have two jobs the
+  // same day, e.g. a morning turnover + an afternoon deep clean). Tier 1
+  // roadmap item: previously only str_turnover got a check at all, and
+  // only as a hard 409 on save; this covers every job_type and surfaces
+  // proactively while editing, same debounce pattern as cleaner availability.
+  const [propertyConflicts, setPropertyConflicts] = useState([])
+  const [dismissedPropertyWarning, setDismissedPropertyWarning] = useState(false)
+  useEffect(() => {
+    setDismissedPropertyWarning(false)
+    if (!formData.scheduled_date || !formData.property_id) { setPropertyConflicts([]); return }
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({
+        property_id: String(formData.property_id),
+        date: formData.scheduled_date,
+      })
+      if (formData.start_time) params.append('start', formData.start_time)
+      if (formData.end_time) params.append('end', formData.end_time)
+      if (job?.id) params.append('exclude_job_id', String(job.id))
+      get(`/api/jobs/property-availability?${params.toString()}`)
+        .then(res => setPropertyConflicts(Array.isArray(res?.conflicts) ? res.conflicts : []))
+        .catch(() => setPropertyConflicts([]))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [formData.scheduled_date, formData.start_time, formData.end_time, formData.property_id, job?.id])
 
   // Editing keeps ownership consistent: only the job's client's properties
   // are offered (the backend rejects cross-client moves anyway). New jobs see
@@ -492,6 +518,37 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               </p>
             )}
           </div>
+
+          {/* Property double-booking heads-up — soft warning, never blocks
+              Save. A property can legitimately have more than one job the
+              same day (morning turnover + afternoon deep clean), so this is
+              informational and dismissible, not a validation error. */}
+          {!dismissedPropertyWarning && propertyConflicts.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0 text-sm">
+                <p className="font-semibold text-amber-800">
+                  {propertyConflicts.some(c => c.overlaps) ? 'Overlapping job at this property' : 'Another job at this property that day'}
+                </p>
+                <ul className="mt-1 space-y-0.5 text-amber-900">
+                  {propertyConflicts.map(c => (
+                    <li key={c.job_id} className="truncate">
+                      {c.title}{c.start_time ? ` · ${c.start_time.slice(0, 5)}–${(c.end_time || '').slice(0, 5)}` : ''}
+                      {c.overlaps && <span className="font-semibold"> (overlaps)</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedPropertyWarning(true)}
+                className="shrink-0 p-1 text-amber-500 hover:text-amber-700"
+                aria-label="Dismiss warning"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Cleaner Selector */}
           <div>
