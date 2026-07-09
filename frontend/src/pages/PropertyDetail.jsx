@@ -257,7 +257,7 @@ export default function PropertyDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-bg">
+      <div className="flex items-center justify-center h-full bg-bg">
         <p className="text-ink-2">Loading property...</p>
       </div>
     )
@@ -265,7 +265,7 @@ export default function PropertyDetail() {
 
   if (!property) {
     return (
-      <div className="flex items-center justify-center h-screen bg-bg">
+      <div className="flex items-center justify-center h-full bg-bg">
         <GlassCard>
           <div className="text-center py-12">
             <AlertCircle className="w-12 h-12 text-ink-3 mx-auto mb-3" />
@@ -302,7 +302,7 @@ export default function PropertyDetail() {
   })
 
   return (
-    <div className="flex flex-col h-screen bg-bg">
+    <div className="flex flex-col h-full bg-bg">
       {/* Header */}
       <div className="bg-panel border-b border-hairline p-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto">

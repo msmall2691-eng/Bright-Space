@@ -321,7 +321,7 @@ export default function Schedule() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-bg">
+      <div className="flex flex-col items-center justify-center h-full bg-bg">
         <ErrorState
           title="Couldn't load the schedule"
           description="The server didn't respond. Check your connection and try again."
@@ -339,7 +339,7 @@ export default function Schedule() {
   // no cached data yet.
 
   return (
-    <div className="flex flex-col h-screen bg-bg">
+    <div className="flex flex-col h-full bg-bg">
       {/* Header */}
       <ScheduleToolbar
         viewMode={viewMode}

@@ -377,7 +377,7 @@ export default function Requests() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-bg">
+    <div className="flex flex-col h-full bg-bg">
       {/* Header */}
       <div className="bg-panel border-b border-hairline p-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto">
