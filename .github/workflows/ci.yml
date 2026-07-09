@@ -79,6 +79,8 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Validate Postgres Row-Level Security (MT-3)
         run: python -m pytest tests/test_tenancy_rls_postgres.py -v
+      - name: Validate migrations replay cleanly from an empty database
+        run: python -m pytest tests/test_migrations_from_scratch.py -v
 
   frontend-build:
     name: Frontend build

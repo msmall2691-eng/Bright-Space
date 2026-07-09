@@ -44,19 +44,26 @@ DATABASE_URL=sqlite:////tmp/local.db JWT_SECRET=dev \
   python -m pytest tests/test_tenancy_rls_postgres.py -v
 ```
 
-## Known issue: migrations don't apply cleanly from scratch on Postgres
+## Resolved: migrations now apply cleanly from scratch on Postgres
 
-`alembic upgrade head` against a **brand-new empty** Postgres fails on a data
-migration that references `conversations.channel` before that column exists
-(`psycopg2.errors.UndefinedColumn: column "channel" does not exist`). This does
-**not** affect incremental upgrades of the existing production DB (which already
-has the column), but a clean-room deploy (new Railway DB / preview env) would
-fail at that step.
+`alembic upgrade head` against a brand-new empty Postgres database used to fail
+partway through — starting with a data migration that referenced
+`conversations.channel` before that column existed, and continuing through
+several more gaps once that one was fixed (migration `001` was a hand-written
+snapshot that never tracked every column the ORM models had gained since;
+`orgs` was never created by any migration; every `id INTEGER PRIMARY KEY` had
+no auto-increment sequence on Postgres; a couple of migrations were scaffolding
+for designs — UUID-keyed quotes, an orphaned "property intelligence" feature —
+that were abandoned before shipping and could never succeed against the real
+schema). The chain now replays cleanly end-to-end, validated by
+`tests/test_migrations_from_scratch.py` (same `RLS_TEST_DATABASE_URL`-gated
+Postgres-service pattern as this file's own test, run in the same CI job).
 
-This validation work uses `Base.metadata.create_all()` + the migration-028 policy
-DDL to build the schema, so it sidesteps the chain. The from-scratch migration
-ordering is a separate fix (re-order/guard the data migration) — tracked, not
-addressed here.
+`scripts/db_bootstrap.py` no longer branches on "fresh vs existing" — every
+install runs `alembic upgrade head`. This validation's own fixture still uses
+`Base.metadata.create_all()` directly (it only needs a `clients` table with RLS
+applied, not the full app schema), which is fine — it's independent of the
+migration chain.
 
 ## Pre-flight for a real Railway deploy
 

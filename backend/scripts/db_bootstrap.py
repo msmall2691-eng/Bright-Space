@@ -1,28 +1,22 @@
 """Deploy-time database bootstrap.
 
-Run instead of a bare `alembic upgrade head`, because the historical migration
-chain (001 is a hand-written, incomplete snapshot) does NOT apply cleanly to a
-brand-new empty database — the canonical prod DB predates Alembic and was built
-by ``Base.metadata.create_all``. So:
+Run instead of a bare `alembic upgrade head` so the alembic_version column
+width fix (see below) applies before the very first migration on a fresh
+database, not just on existing ones.
 
-  • Fresh DB (no schema)  → create the full schema from the ORM models, apply
-                            MT-3 RLS policies, and stamp Alembic at head.
-  • Existing DB           → ``alembic upgrade head`` (unchanged behaviour).
-
-Both paths are idempotent and safe to run on every deploy.
-
-Drift tripwire: because fresh installs skip the migration chain, a bad new
-migration can land in prod without ever being replayed end-to-end.
-tests/test_migrations_from_scratch.py runs ``alembic upgrade head`` against
-an empty SQLite DB and is marked xfail(strict=True). When the chain is
-repaired that xfail flips to an unexpected pass — that is the signal to
-remove the create_all() branch below and switch fresh installs to the
-migration path like every other deploy.
+Fresh installs and existing installs both just run `alembic upgrade head` —
+the migration chain replays cleanly from an empty database (migration 001
+carries every column a later migration doesn't add itself; a handful of
+migrations for designs abandoned before shipping — UUID-keyed quotes, an
+orphaned "property intelligence" feature — are no-ops; `orgs` and the
+alembic_version-width fix are real migration steps). This is enforced by
+tests/test_migrations_from_scratch.py, which runs the full chain against a
+brand-new Postgres database in CI.
 """
 import os
 import sys
 
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 
 # Run from the backend root (where alembic.ini + main.py live).
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +28,6 @@ from alembic import command
 from alembic.config import Config
 
 from database.db import engine
-from database.models import Base
-from database.rls import apply_org_rls
 
 
 def _alembic_config() -> Config:
@@ -47,16 +39,24 @@ def _alembic_config() -> Config:
 def _widen_alembic_version_col():
     """Alembic's default alembic_version.version_num is VARCHAR(32). Our
     migration IDs use descriptive names like 034_merge_quote_requests_into_lead_intakes
-    (48 chars), so trying to write one truncates and the whole `alembic upgrade`
+    (42 chars), so trying to write one truncates and the whole `alembic upgrade`
     aborts on StringDataRightTruncation — which is exactly what was crashing
     every Railway deploy after that migration landed (stale container kept
     serving the old code because pre-deploy failed).
 
-    Widen the column to VARCHAR(128) before running the upgrade. Idempotent
-    (Postgres treats "widen to same-or-larger type" as a no-op), Postgres-only
-    (SQLite ignores type changes, which is fine — SQLite is only used in tests
-    and never carries this table). Skipped when the table doesn't exist yet
-    (fresh install path)."""
+    Migration 033b_widen_alembic_version now does this widening as a real
+    migration step, so a from-scratch install handles it as part of the chain.
+    This pre-widen stays for existing databases that reached head before
+    033b existed (their alembic_version was already stamped past that point
+    with the narrow column) and for the case where alembic_version doesn't
+    exist yet (033b can't widen a table that isn't there until it creates it
+    itself via a normal ALTER — that only works once the table exists, which
+    it does by the time any real deploy runs this).
+
+    Idempotent (Postgres treats "widen to same-or-larger type" as a no-op),
+    Postgres-only (SQLite ignores type changes, which is fine — SQLite is
+    only used in tests and never carries this table). Skipped when the table
+    doesn't exist yet (genuinely first-ever run)."""
     if engine.dialect.name != "postgresql":
         return
     with engine.begin() as conn:
@@ -74,27 +74,10 @@ def _widen_alembic_version_col():
 
 
 def main():
-    tables = set(inspect(engine).get_table_names())
-    # "Fresh" = no Alembic history AND no app schema yet. The clients table is a
-    # reliable sentinel for "the app has been installed here".
-    fresh = "alembic_version" not in tables and "clients" not in tables
-
     cfg = _alembic_config()
-    if fresh:
-        print("[db_bootstrap] empty database — creating schema from models, applying RLS, stamping head")
-        Base.metadata.create_all(bind=engine)
-        with engine.begin() as conn:
-            apply_org_rls(conn)
-        command.stamp(cfg, "head")
-        # stamp() just created alembic_version with the default VARCHAR(32);
-        # widen it now so the next migration with a >32-char id doesn't blow up.
-        _widen_alembic_version_col()
-        print("[db_bootstrap] fresh install complete")
-    else:
-        print("[db_bootstrap] existing database — running alembic upgrade head")
-        _widen_alembic_version_col()
-        command.upgrade(cfg, "head")
-        print("[db_bootstrap] migrations up to date")
+    _widen_alembic_version_col()
+    command.upgrade(cfg, "head")
+    print("[db_bootstrap] migrations up to date")
 
 
 if __name__ == "__main__":

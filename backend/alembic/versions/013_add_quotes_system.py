@@ -1,9 +1,36 @@
-"""Add quotes system tables.
+"""Add quotes system tables (superseded design — now a no-op)
 
 Revision ID: 013_quotes_system
 Revises: 012_add_property_profiles
 Create Date: 2026-05-26 15:00:00.000000
 
+This migration originally created a UUID-keyed `quotes` / `quote_line_items` /
+`quote_requests` set of tables. That design was abandoned in favor of the
+integer-keyed `Quote` model actually in use today — see its docstring in
+database/models.py: "Replaces the earlier UUID-keyed Quote + QuoteLineItem
+design that couldn't link to the integer Client/Job ids." The real `quotes`
+table (integer PK) already exists from migration 001, so this migration's
+`CREATE TABLE quotes` collides with it (DuplicateTable) on a from-scratch
+replay. `quote_line_items` has no ORM model or reader anywhere in the app.
+
+`quote_requests` here is UUID-keyed too and FKs into the UUID `clients.id`
+this migration imagines — but `clients.id` is, and always was, an integer.
+The real (integer-keyed) `quote_requests` table that migration 034 later
+merges into `lead_intakes` was never created by any migration either (same
+create_all()-only history as everything else this migration touches); 034
+already guards for that table being absent on a fresh install, so nothing
+downstream depends on this migration having created it.
+
+Migration 018 (five steps later) DROPs and recreates `quotes`/`quote_line_items`/
+`quote_requests` as integer-keyed tables anyway, so even a successful run of
+this migration's original body would just be churn that gets discarded before
+any app code ever reads from it.
+
+Turned into a no-op rather than deleted outright so existing `alembic_version`
+rows already stamped at this revision (or past it) keep resolving to a valid
+revision id.
+
+Revision ID: 013_quotes_system
 """
 from alembic import op
 import sqlalchemy as sa
@@ -17,108 +44,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create quotes table
-    op.create_table(
-        'quotes',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.func.gen_random_uuid()),
-        sa.Column('quote_number', sa.String(50), nullable=False),
-        sa.Column('client_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('property_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('title', sa.String(255), nullable=True),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('notes', sa.Text(), nullable=True),
-        sa.Column('subtotal', sa.Numeric(precision=12, scale=2), nullable=False, server_default='0'),
-        sa.Column('tax_amount', sa.Numeric(precision=12, scale=2), nullable=False, server_default='0'),
-        sa.Column('discount_amount', sa.Numeric(precision=12, scale=2), nullable=False, server_default='0'),
-        sa.Column('total_amount', sa.Numeric(precision=12, scale=2), nullable=False, server_default='0'),
-        sa.Column('status', sa.String(50), nullable=False, server_default='draft'),
-        sa.Column('sent_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('viewed_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('accepted_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('declined_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('preferred_day', sa.Integer(), nullable=True),
-        sa.Column('preferred_time', sa.String(50), nullable=True),
-        sa.Column('signature_data', postgresql.JSON(), nullable=True),
-        sa.Column('accepted_by_name', sa.String(255), nullable=True),
-        sa.Column('accepted_by_email', sa.String(255), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.CheckConstraint("status IN ('draft', 'sent', 'viewed', 'accepted', 'declined', 'expired', 'archived')", name='check_quote_status'),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='RESTRICT'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('quote_number', name='uq_quote_number')
-    )
-    op.create_index('idx_quotes_client_id', 'quotes', ['client_id'])
-    op.create_index('idx_quotes_property_id', 'quotes', ['property_id'])
-    op.create_index('idx_quotes_status', 'quotes', ['status'])
-    op.create_index('idx_quotes_created_by', 'quotes', ['created_by'])
-    op.create_index('idx_quotes_created_at', 'quotes', ['created_at'], postgresql_order_by='created_at DESC')
-
-    # Create quote_line_items table
-    op.create_table(
-        'quote_line_items',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.func.gen_random_uuid()),
-        sa.Column('quote_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('description', sa.String(500), nullable=False),
-        sa.Column('service_type', sa.String(100), nullable=True),
-        sa.Column('quantity', sa.Numeric(precision=10, scale=2), nullable=False, server_default='1'),
-        sa.Column('unit', sa.String(50), nullable=True),
-        sa.Column('unit_price', sa.Numeric(precision=12, scale=2), nullable=False),
-        sa.Column('line_total', sa.Numeric(precision=12, scale=2), nullable=False),
-        sa.Column('display_order', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(['quote_id'], ['quotes.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index('idx_quote_line_items_quote_id', 'quote_line_items', ['quote_id'])
-    op.create_index('idx_quote_line_items_display_order', 'quote_line_items', ['quote_id', 'display_order'])
-
-    # Create quote_requests table
-    op.create_table(
-        'quote_requests',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.func.gen_random_uuid()),
-        sa.Column('client_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('requester_name', sa.String(255), nullable=False),
-        sa.Column('requester_email', sa.String(255), nullable=False),
-        sa.Column('requester_phone', sa.String(20), nullable=True),
-        sa.Column('property_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('service_type', sa.String(100), nullable=True),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('preferred_date', sa.Date(), nullable=True),
-        sa.Column('preferred_time', sa.String(50), nullable=True),
-        sa.Column('status', sa.String(50), nullable=False, server_default='pending'),
-        sa.Column('quote_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.CheckConstraint("status IN ('pending', 'assigned', 'quoted', 'archived')", name='check_quote_request_status'),
-        sa.ForeignKeyConstraint(['client_id'], ['clients.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['property_id'], ['properties.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['quote_id'], ['quotes.id'], ondelete='SET NULL'),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index('idx_quote_requests_client_id', 'quote_requests', ['client_id'])
-    op.create_index('idx_quote_requests_status', 'quote_requests', ['status'])
-    op.create_index('idx_quote_requests_quote_id', 'quote_requests', ['quote_id'])
+    pass
 
 
 def downgrade() -> None:
-    op.drop_index('idx_quote_requests_quote_id', table_name='quote_requests')
-    op.drop_index('idx_quote_requests_status', table_name='quote_requests')
-    op.drop_index('idx_quote_requests_client_id', table_name='quote_requests')
-    op.drop_table('quote_requests')
-
-    op.drop_index('idx_quote_line_items_display_order', table_name='quote_line_items')
-    op.drop_index('idx_quote_line_items_quote_id', table_name='quote_line_items')
-    op.drop_table('quote_line_items')
-
-    op.drop_index('idx_quotes_created_at', table_name='quotes')
-    op.drop_index('idx_quotes_created_by', table_name='quotes')
-    op.drop_index('idx_quotes_status', table_name='quotes')
-    op.drop_index('idx_quotes_property_id', table_name='quotes')
-    op.drop_index('idx_quotes_client_id', table_name='quotes')
-    op.drop_table('quotes')
+    pass
