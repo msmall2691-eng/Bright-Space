@@ -1532,6 +1532,54 @@ def add_job_note(job_id: int, data: dict, db: Session = Depends(get_db),
     return activity_to_dict(act)
 
 
+def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
+    """Auto-create a draft Invoice the first time a job lands on 'completed'.
+
+    Idempotent: skip if an Invoice already exists for this Job. Uses the
+    source Quote's items when available; otherwise emits a placeholder line.
+    Called from both completion paths (update_job's status PATCH and
+    complete_job's dedicated endpoint) so invoicing doesn't depend on which
+    UI the operator used to mark the job done."""
+    try:
+        from database.models import Invoice, Quote
+        existing_inv = db.query(Invoice).filter(Invoice.job_id == job.id).first()
+        if existing_inv:
+            return
+        # Pull line items + tax from the originating quote when the job came
+        # from one (quotes are integer-keyed, matching Job.quote_id);
+        # otherwise build a default single-line invoice.
+        quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
+        items = (quote.items if (quote and quote.items) else [{
+            "name": job.title or "Cleaning",
+            "qty": 1,
+            "unit_price": 0,
+            "description": "",
+        }])
+        subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
+        tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate) else 5.5
+        tax = round(subtotal * (tax_rate / 100), 2)
+        total = round(subtotal + tax, 2)
+        due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
+        invoice = Invoice(
+            client_id=job.client_id,
+            job_id=job.id,
+            opportunity_id=job.opportunity_id,
+            items=items,
+            subtotal=round(subtotal, 2),
+            tax_rate=tax_rate,
+            tax=tax,
+            total=total,
+            status="draft",
+            due_date=due_date,
+            notes=job.notes or "",
+        )
+        db.add(invoice)
+        db.commit()
+        logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
+    except Exception as e:
+        logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
+
+
 @router.patch("/{job_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     org_id = resolve_org_id(org_id, db)
@@ -1653,47 +1701,13 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         db.commit()
 
     # Auto-create a draft Invoice the first time a job lands on "completed".
-    # Idempotent: skip if an Invoice already exists for this Job. Uses the
-    # source Quote's items when available; otherwise emits a placeholder line.
+    # Shared with complete_job() below — both are real "mark complete" paths
+    # (this one via the office-side status dropdown/edit modal, that one via
+    # the field checklist flow) and used to only auto-invoice from here,
+    # so an operator who completed a job through the field UI never got a
+    # draft invoice at all.
     if job.status == "completed" and prev_status != "completed":
-        try:
-            from database.models import Invoice, Quote
-            from datetime import datetime, timedelta
-            existing_inv = db.query(Invoice).filter(Invoice.job_id == job.id).first()
-            if not existing_inv:
-                # Pull line items + tax from the originating quote when the job
-                # came from one (quotes are now integer-keyed, matching
-                # Job.quote_id); otherwise build a default single-line invoice.
-                quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
-                items = (quote.items if (quote and quote.items) else [{
-                    "name": job.title or "Cleaning",
-                    "qty": 1,
-                    "unit_price": 0,
-                    "description": "",
-                }])
-                subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
-                tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate) else 5.5
-                tax = round(subtotal * (tax_rate / 100), 2)
-                total = round(subtotal + tax, 2)
-                due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
-                invoice = Invoice(
-                    client_id=job.client_id,
-                    job_id=job.id,
-                    opportunity_id=job.opportunity_id,
-                    items=items,
-                    subtotal=round(subtotal, 2),
-                    tax_rate=tax_rate,
-                    tax=tax,
-                    total=total,
-                    status="draft",
-                    due_date=due_date,
-                    notes=job.notes or "",
-                )
-                db.add(invoice)
-                db.commit()
-                logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
-        except Exception as e:
-            logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
+        _auto_create_draft_invoice(db, job)
     # (The old Visit-status-sync loop was dropped by migration 039; Job.status
     # is the single source of scheduling-lifecycle truth now.)
 
@@ -1797,7 +1811,16 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 auto_dispatch_job(db, job)
     except Exception as e:
         logger.warning(f"Connecteam sync failed for job {job.id}: {e}")
-    return job_to_dict(job)
+
+    out = job_to_dict(job)
+    # So the caller (JobDetail.jsx's "Ready to bill?" banner) can tell an
+    # invoice was already auto-created by this same request and skip
+    # prompting for a second one — the banner used to check stale
+    # client-side state that could never see the invoice this call had
+    # just created.
+    from database.models import Invoice
+    out["has_invoice"] = db.query(Invoice).filter(Invoice.job_id == job.id).first() is not None
+    return out
 
 
 class ReminderSettings(BaseModel):
@@ -2156,6 +2179,11 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
     photos on the Job row itself — closing the audit gap where the old flow
     updated Visit but never synced Job.status back. Idempotent: calling again
     just refreshes the fields with the latest payload (or defaults).
+
+    Also auto-creates a draft Invoice on the completing transition, same as
+    the PATCH /{job_id} status path — this used to be the one "mark complete"
+    route that didn't, so a job completed through the field checklist UI
+    (the actual completion flow) never got billed automatically.
     """
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -2181,6 +2209,12 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
 
     db.commit()
     db.refresh(job)
+
+    if job.status == "completed" and prev_status != "completed":
+        _auto_create_draft_invoice(db, job)
+
+    from database.models import Invoice
+    has_invoice = db.query(Invoice).filter(Invoice.job_id == job.id).first() is not None
     return {
         "id": job.id,
         "status": job.status,
@@ -2188,6 +2222,7 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
         "completed_by": job.completed_by,
         "checklist_results": job.checklist_results or {},
         "photos": job.photos or [],
+        "has_invoice": has_invoice,
     }
 
 

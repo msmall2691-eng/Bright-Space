@@ -17,11 +17,11 @@ import pytest
 
 from database.db import SessionLocal
 from database.models import (
-    Client, Property, Job, RecurringSchedule, RecurrenceException,
+    Client, Property, Job, RecurringSchedule, RecurrenceException, Invoice,
 )
 from modules.scheduling.router import (
     complete_job, skip_job, get_job_crew_suggestions, auto_assign_job_crew,
-    JobCompleteRequest,
+    update_job, JobCompleteRequest, JobUpdate,
 )
 from fastapi import HTTPException
 
@@ -42,6 +42,7 @@ def ctx():
     db.add(j); db.commit(); db.refresh(j)
     yield db, c, p, j
     db.rollback()
+    db.query(Invoice).filter(Invoice.client_id == c.id).delete(synchronize_session=False)
     db.query(RecurrenceException).filter(
         RecurrenceException.recurring_schedule_id.isnot(None)
     ).delete(synchronize_session=False)
@@ -97,6 +98,41 @@ def test_complete_defaults_completed_at_when_omitted(ctx):
     db, _c, _p, j = ctx
     out = complete_job(j.id, JobCompleteRequest(), db=db)
     assert out["completed_at"] is not None
+
+
+def test_complete_job_auto_creates_draft_invoice(ctx):
+    """The field-completion endpoint (CompleteVisitModal's actual UI path)
+    used to be the one "mark complete" route that never auto-invoiced —
+    only the office-side PATCH status path did. Both must now behave the
+    same way: completing a job auto-creates a draft Invoice."""
+    db, c, _p, j = ctx
+    assert db.query(Invoice).filter(Invoice.job_id == j.id).count() == 0
+    out = complete_job(j.id, JobCompleteRequest(), db=db)
+    assert out["has_invoice"] is True
+    inv = db.query(Invoice).filter(Invoice.job_id == j.id).first()
+    assert inv is not None
+    assert inv.client_id == c.id
+    assert inv.status == "draft"
+    assert inv.items and inv.items[0]["name"] == j.title
+
+
+def test_complete_job_auto_invoice_is_idempotent(ctx):
+    db, _c, _p, j = ctx
+    complete_job(j.id, JobCompleteRequest(), db=db)
+    complete_job(j.id, JobCompleteRequest(), db=db)  # re-complete (idempotent status)
+    count = db.query(Invoice).filter(Invoice.job_id == j.id).count()
+    assert count == 1
+
+
+def test_update_job_patch_completion_reports_has_invoice(ctx):
+    """The PATCH path's own response now also carries has_invoice so the
+    frontend (JobDetail.jsx's "Ready to bill?" banner) can tell an invoice
+    was already auto-created by this same request, instead of checking
+    stale pre-request state that could never see it."""
+    db, _c, _p, j = ctx
+    out = update_job(j.id, JobUpdate(status="completed"), db=db)
+    assert out["has_invoice"] is True
+    assert db.query(Invoice).filter(Invoice.job_id == j.id).count() == 1
 
 
 def test_skip_cancels_job(ctx):

@@ -27,11 +27,11 @@ All three call `build_intake()` + `upsert_lead()` (`modules/intake/normalize.py:
 
 **Owner action:** works the **Requests page** (`pages/Requests.jsx`). Each card shows contact info, source, status, priority, estimate range. Row actions: **View Details**, **Create Quote**, **Archive**, **Delete**.
 
-**Handoff to Quote — two paths that behave differently:**
-1. A backend endpoint exists for this (`POST /api/intake/{id}/convert-to-quote`, `modules/intake/router.py:203`) that properly stamps `intake.status="quoted"` and `intake.converted_quote_id` — **but no UI calls it.** It's dead code from the frontend's perspective (only referenced in generated `types.ts`).
-2. **What "Create Quote" actually does:** `Requests.jsx` navigates to `/billing?view=quotes` with the intake in `location.state`; `Quoting.jsx` pre-fills a draft (client match/create, address, price from the estimate midpoint, `intake.message` → `internal_notes`) that the operator reviews and saves via plain `POST /api/quotes`. **This path never sets `lead_intakes.status` or `converted_quote_id`.**
+**Handoff to Quote:**
+1. A backend endpoint exists for this too (`POST /api/intake/{id}/convert-to-quote`, `modules/intake/router.py:203`) — still no UI calls it (dead from the frontend's perspective, only referenced in generated `types.ts`).
+2. **What "Create Quote" actually does:** `Requests.jsx` navigates to `/billing?view=quotes` with the intake in `location.state`; `Quoting.jsx` pre-fills a draft (client match/create, address, price from the estimate midpoint, `intake.message` → `internal_notes`) that the operator reviews and saves via plain `POST /api/quotes`.
 
-**→ Known gap:** because only the unused endpoint updates intake status, a request that's been quoted through the real UI flow still shows as `new`/`reviewed` on the Requests list. If "Requests" filtering by quoted/converted status matters, this is the first thing to fix — either wire `Requests.jsx` to the existing endpoint, or have `create_quote()` set the intake status itself.
+**✓ Fixed:** `create_quote()` (`modules/quoting/router.py`) now stamps `intake.status="quoted"` and `intake.converted_quote_id` itself when `intake_id` is present, guarded so a second quote against an already-converted intake doesn't repoint `converted_quote_id` away from whichever quote converted it first — so this is the one place both paths agree, and the Requests list's quoted/converted filtering is accurate regardless of which button created the quote.
 
 **Fields that do carry forward regardless of path:** `Quote.client_id`, `Quote.intake_id`, `Quote.property_id`, `Quote.address`, `Quote.service_type`, `Quote.items[0].unit_price` (estimate midpoint), `Quote.frequency` (from `intake.frequency`), `Quote.internal_notes` (from `intake.message`).
 
@@ -103,15 +103,17 @@ Dispatch is **not a separate click** — it's an automatic side effect of `clean
 
 ---
 
-## Stage 5 — Job Completion (the important asymmetry)
+## Stage 5 — Job Completion
 
-**There are two distinct "mark complete" code paths with materially different side effects** — this is the single highest-value correction in this document.
+There are two "mark complete" code paths, and they used to have materially different side effects — **now fixed to behave the same way.**
 
-**Path A — `POST /api/jobs/{id}/complete`:** sets `status`, `completed_at`, `completed_by`, `checklist_results`, `photos`, `notes` in one idempotent call. **Does not auto-create an invoice.** Used by `Schedule.jsx`'s **"Complete Visit"** flow (checklist + photo upload, `CompleteVisitModal.jsx`) — the actual field-completion UX — and a completion action on `PropertyDetail.jsx`.
+**Path A — `POST /api/jobs/{id}/complete`:** sets `status`, `completed_at`, `completed_by`, `checklist_results`, `photos`, `notes` in one idempotent call. Used by `Schedule.jsx`'s **"Complete Visit"** flow (checklist + photo upload, `CompleteVisitModal.jsx`) — the actual field-completion UX — and a completion action on `PropertyDetail.jsx`.
 
-**Path B — `PATCH /api/jobs/{id}` with `{status: "completed"}`:** the generic field-update endpoint. **This path auto-creates a draft Invoice the first time a job lands on "completed"** (idempotent — skips if one already exists), pulling line items from the source Quote if one exists, else a placeholder line; `tax_rate` from the quote or a `5.5` default; `due_date = now + 14 days`. Used by `JobDetail.jsx`'s status dropdown and `JobEditModal.jsx`'s "Completed" pill.
+**Path B — `PATCH /api/jobs/{id}` with `{status: "completed"}`:** the generic field-update endpoint. Used by `JobDetail.jsx`'s status dropdown and `JobEditModal.jsx`'s "Completed" pill.
 
-**Practical consequence:** whether a completed job automatically gets a draft invoice depends on *which UI the operator used*. `JobDetail.jsx` also shows a client-side "Ready to bill?" banner any time status flips to completed in that session with no invoices loaded yet — this fires regardless of which path was used, so an operator who completes via the dropdown (which already auto-invoiced) and then also clicks that banner's "Create invoice" can produce two invoices for one job (only the *auto*-invoice logic checks for an existing one first).
+**✓ Fixed:** both paths now call the same `_auto_create_draft_invoice()` helper the first time a job lands on "completed" (idempotent — skips if an invoice already exists for the job), pulling line items from the source Quote if one exists, else a placeholder line; `tax_rate` from the quote or a `5.5` default; `due_date = now + 14 days`. Previously only Path B did this, so a job completed through the actual field checklist UI (Path A) never got auto-invoiced.
+
+`JobDetail.jsx`'s "Ready to bill?" banner (shown when status flips to completed with no invoices loaded yet) used to check stale pre-request client state, so it could never see an invoice its own request had just triggered — an operator completing via the dropdown could click through both the auto-invoice and the banner's "Create invoice" and get two invoices for one job. The PATCH response now carries a `has_invoice` flag computed after the auto-create runs, and the banner waits for that response before deciding whether to show.
 
 **Owner action:** field/dispatch side uses **CompleteVisitModal** (checklist + photos); office side uses the **JobDetail status dropdown** or **JobEditModal's Completed pill**.
 
@@ -123,7 +125,7 @@ Dispatch is **not a separate click** — it's an automatic side effect of `clean
 
 **Model:** `Invoice` (`database/models.py:616-651`). No `quote_id` column — reachable only transitively via `job.quote_id`.
 
-**Trigger — creation:** auto-create on completion (Stage 5, Path B only), or manually via `POST /api/invoices` from `JobDetail.jsx`, `OpportunityDetail.jsx`, or the Billing page's "New invoice" button.
+**Trigger — creation:** auto-create on completion (Stage 5, either path), or manually via `POST /api/invoices` from `JobDetail.jsx`, `OpportunityDetail.jsx`, or the Billing page's "New invoice" button.
 
 **Owner action — send:** **"Send invoice"** on `InvoiceDetail.jsx` → `POST /api/invoices/{id}/send` — emails/texts the client, logs a `Message`, flips `draft → sent`.
 
@@ -154,5 +156,5 @@ Dispatch is **not a separate click** — it's an automatic side effect of `clean
 1. **Job vs Visit:** `Visit` is fully retired. `Job` is the single source of truth including completion state. Frontend "visit" terminology is a UI label only.
 2. **Job creation:** one canonical backend function (`scheduling.create_job()`), reached from three frontend components (`JobCreateModal`, `ConvertToJobModal`, `JobEditModal`'s new-job case) that all funnel into it — not three independent creation paths with different guarantees.
 3. **Dispatch is a side effect, not a page.** It fires automatically when `cleaner_ids` changes; the merged Dispatch view (Stage 4) makes that assignment action visible and central rather than adding a new manual step.
-4. **Two "complete" code paths with different consequences** (Stage 5) is the highest-value fix candidate: auto-invoicing only fires on the PATCH-status path, not the `/complete` endpoint the actual field-completion checklist UI uses.
-5. **Intake → Quote status handoff doesn't work today** (Stage 1): the live "Create Quote" flow never calls the endpoint that stamps `lead_intakes.status = "quoted"` — only an endpoint with no UI caller does that.
+4. **Two "complete" code paths, now consistent** (Stage 5): both auto-invoice via a shared helper, and the frontend banner that used to risk a duplicate invoice now waits on the actual server response.
+5. **Intake → Quote status handoff, now fixed** (Stage 1): `create_quote()` — the function the live "Create Quote" button actually calls — stamps `lead_intakes.status`/`converted_quote_id` itself.
