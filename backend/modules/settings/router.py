@@ -867,6 +867,9 @@ class AutomationConfig(BaseModel):
     gcal_sync_interval: Optional[int] = None
     recurring_auto_generate_enabled: Optional[bool] = None
     invite_customers: Optional[bool] = None
+    # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
+    # ends less than this many hours before the next guest's check-in.
+    turnover_lead_buffer_hours: Optional[float] = None
 
 
 def customer_invites_enabled(db: Session) -> bool:
@@ -883,6 +886,14 @@ def freebusy_check_enabled(db: Session) -> bool:
     allow_conflicts). Defaults on; in-app kill switch lives in
     Settings → Automation. No-ops cleanly when Google isn't connected."""
     return _coerce_bool(get_setting(db, "freebusy_check"), True)
+
+
+def turnover_lead_buffer_hours(db: Session) -> float:
+    """Minimum acceptable gap (hours) between a turnover's scheduled end and
+    the next guest's check-in before the schedule flags it as a tight
+    turnaround (Tier 3 roadmap's lead-time guardrail). Configurable in
+    Settings → Automation; defaults to 3h."""
+    return _coerce_float(get_setting(db, "turnover_lead_buffer_hours"), 3.0)
 
 
 AUTOMATION_DEFAULTS = {
@@ -902,6 +913,13 @@ def _coerce_bool(v: Optional[str], default: bool) -> bool:
 def _coerce_int(v: Optional[str], default: int) -> int:
     try:
         return int(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(v: Optional[str], default: float) -> float:
+    try:
+        return float(v) if v is not None else default
     except (TypeError, ValueError):
         return default
 
@@ -1007,6 +1025,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
             os.getenv("RECURRING_AUTO_GENERATE_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
         ),
         "invite_customers": customer_invites_enabled(db),
+        "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }
 
 

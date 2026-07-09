@@ -111,13 +111,24 @@ export const TurnoverInfo = ({ job, compact = false }) => {
   const booking = job.booking
   const next = job.next_arrival
   const immediate = job.is_immediate_turnover
-  if (!booking && !next && !immediate) return null
+  // Same-day already gets its own (louder) badge below — this is the "not
+  // same day, but still cutting it close" case the lead-time guardrail adds
+  // (e.g. turnover ends 9pm, next guest checks in 8am — only 11h, but two
+  // different calendar days so is_immediate_turnover alone would miss it).
+  const tight = !immediate && job.turnover_lead_warning
+  if (!booking && !next && !immediate && !tight) return null
   return (
     <div className={`flex items-center gap-2 flex-wrap ${compact ? 'mt-1' : 'mt-2'}`}>
       {immediate && (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700"
           title="Next guest checks in today — same-day turnaround">
           <Zap className="w-2.5 h-2.5" /> Immediate turnover
+        </span>
+      )}
+      {tight && (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"
+          title={`Only ~${Math.max(0, Math.round(job.turnover_lead_hours))}h before the next guest checks in`}>
+          <Zap className="w-2.5 h-2.5" /> Tight turnaround
         </span>
       )}
       {booking?.guest_count > 0 && (

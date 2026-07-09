@@ -10,6 +10,18 @@ import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../components/ui/Toast'
+import { useEmployees } from '../hooks/useEmployees'
+import EndsPicker from '../components/schedule/EndsPicker'
+
+/** Resolve a Connecteam employee to an id+name pair, defensively. Mirrors
+ *  JobEditModal's normalizeEmployee — Connecteam returns shapes like
+ *  { userId, firstName, lastName, displayName } or sometimes { id, name }. */
+function normalizeEmployee(e) {
+  const id = String(e?.id ?? e?.userId ?? '')
+  const composed = [e?.firstName, e?.lastName].filter(Boolean).join(' ').trim()
+  const name = e?.name || e?.displayName || composed || `Cleaner ${id}`
+  return { id, name }
+}
 
 /**
  * /recurring — dedicated management surface for recurring bookings.
@@ -71,6 +83,15 @@ function ruleSummary(s) {
   const interval = s.interval_weeks || (s.frequency === 'biweekly' ? 2 : 1)
   const cadence = interval === 1 ? 'Weekly' : interval === 2 ? 'Biweekly' : `Every ${interval} weeks`
   return `${cadence} on ${dayStr}`
+}
+
+function endsSummary(s) {
+  if (!s) return ''
+  if (s.ends_mode === 'after_count' && s.series_end_occurrences) {
+    return `Ends after ${s.series_end_occurrences} visit${s.series_end_occurrences === 1 ? '' : 's'}`
+  }
+  if (s.ends_mode === 'on_date' && s.ends_on) return `Ends ${fmtDate(s.ends_on)}`
+  return 'Never ends'
 }
 
 function fmtTime(t) {
@@ -282,6 +303,10 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
     end_time: (schedule.end_time || '11:00').slice(0, 5),
     generate_weeks_ahead: schedule.generate_weeks_ahead || 8,
     notes: schedule.notes || '',
+    cleaner_ids: schedule.cleaner_ids || [],
+    ends_mode: schedule.ends_mode || 'never',
+    ends_on: schedule.ends_on || '',
+    ends_after_count: schedule.series_end_occurrences || 10,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -290,11 +315,27 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
     const next = has ? f.days_of_week.filter(x => x !== d) : [...f.days_of_week, d].sort((a, b) => a - b)
     return { ...f, days_of_week: next }
   })
+  const { employees } = useEmployees()
+  const cleaners = useMemo(
+    () => (employees || []).map(normalizeEmployee).filter(c => c.id),
+    [employees]
+  )
+  const toggleCleaner = (id) => setForm(f => {
+    const has = f.cleaner_ids.includes(id)
+    const next = has ? f.cleaner_ids.filter(x => x !== id) : [...f.cleaner_ids, id]
+    return { ...f, cleaner_ids: next }
+  })
   const submit = async () => {
     if (!form.title.trim()) { setError('Title required'); return }
     if (!form.address.trim()) { setError('Address required'); return }
     if (form.frequency !== 'monthly' && form.days_of_week.length === 0) {
       setError('Pick at least one day of week'); return
+    }
+    if (form.ends_mode === 'on_date' && !form.ends_on) {
+      setError('Pick an end date'); return
+    }
+    if (form.ends_mode === 'after_count' && (!form.ends_after_count || parseInt(form.ends_after_count) < 1)) {
+      setError('Occurrence count must be at least 1'); return
     }
     setSaving(true); setError('')
     try {
@@ -313,6 +354,13 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
         end_time: form.end_time + ':00',
         generate_weeks_ahead: parseInt(form.generate_weeks_ahead) || 8,
         notes: form.notes || null,
+        cleaner_ids: form.cleaner_ids,
+        // Always send ends_mode (never omit) — update_schedule's PATCH
+        // treats a missing key as "don't touch the existing end setting",
+        // not "clear it", so the Ends UI must state its choice every save.
+        ends_mode: form.ends_mode,
+        ends_on: form.ends_mode === 'on_date' ? form.ends_on : null,
+        ends_after_count: form.ends_mode === 'after_count' ? parseInt(form.ends_after_count) : null,
       }
       if (form.frequency !== 'monthly') {
         payload.days_of_week = form.days_of_week
@@ -392,6 +440,34 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
             className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
         </div>
       </div>
+      <div>
+        <label className="block text-xs font-semibold text-ink-3 mb-1">Crew</label>
+        {cleaners.length === 0 ? (
+          <p className="text-xs text-ink-3">No cleaners returned from Connecteam.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {cleaners.map(c => {
+              const sel = form.cleaner_ids.includes(c.id)
+              return (
+                <button key={c.id} type="button" onClick={() => toggleCleaner(c.id)}
+                  className={'px-3 py-1.5 rounded-full border text-sm ' + (sel
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-panel text-ink-2 border-hairline')}>
+                  {c.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <p className="text-[11px] text-ink-3 mt-1.5">
+          Changes future-generated visits only, same as the rest of this form —
+          crew on visits already on the calendar is untouched.
+        </p>
+      </div>
+      <EndsPicker
+        value={{ ends_mode: form.ends_mode, ends_on: form.ends_on, ends_after_count: form.ends_after_count }}
+        onChange={(next) => setForm(f => ({ ...f, ...next }))}
+      />
       <div>
         <label className="block text-xs font-semibold text-ink-3 mb-1">Generate weeks ahead</label>
         <input type="number" min="1" max="52" value={form.generate_weeks_ahead}
@@ -611,6 +687,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
             <div className="text-sm text-ink-2 mt-0.5">
               {fmtTime(schedule.start_time)} – {fmtTime(schedule.end_time)}
               {schedule.generate_weeks_ahead ? ` · generates ${schedule.generate_weeks_ahead} weeks ahead` : ''}
+              {' · '}{endsSummary(schedule)}
             </div>
             {schedule.notes && <div className="text-[13px] text-ink-3 mt-2 italic">{schedule.notes}</div>}
           </div>

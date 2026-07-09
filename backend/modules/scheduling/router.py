@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
@@ -18,6 +19,7 @@ from utils.activity_logger import (
 )
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import business_today
+from ratelimit import rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -113,6 +115,11 @@ class JobResponse(BaseModel):
     booking: Optional[BookingInfo] = None
     next_arrival: Optional[BookingInfo] = None
     is_immediate_turnover: bool = False
+    # Tier 3 roadmap: hours between this turnover's scheduled end and the next
+    # guest's check-in (property.check_in_time is the proxy — iCal feeds only
+    # carry a check-in DATE, not a time); None when it can't be computed.
+    turnover_lead_hours: Optional[float] = None
+    turnover_lead_warning: bool = False
 
 
 def _detect_booking_source(uid: str) -> str:
@@ -190,6 +197,23 @@ def _validate_job_timing(scheduled_date, start_time, end_time, *, is_new: bool):
             status_code=400,
             detail=f"Cannot schedule a job in the past ({d.isoformat()}).",
         )
+
+
+def _overlaps(a_start, a_end, b_start, b_end):
+    """Simple interval overlap. Missing times treated as full-day (worst-
+    case: assume they overlap so the operator gets a warning).
+
+    Callers mix "HH:MM" strings (raw query params) and real `time` objects
+    (Job.start_time/end_time, already deserialized by SQLAlchemy) — comparing
+    a str to a time raises TypeError, so every input is coerced through
+    _to_time first. This was a real, untested bug in the pre-existing
+    cleaner_availability endpoint: it 500'd whenever start/end query params
+    were supplied AND a genuinely conflicting same-day job existed — i.e.
+    exactly the case the endpoint exists to detect."""
+    a_start, a_end, b_start, b_end = _to_time(a_start), _to_time(a_end), _to_time(b_start), _to_time(b_end)
+    if not a_start or not a_end or not b_start or not b_end:
+        return True
+    return not (a_end <= b_start or a_start >= b_end)
 
 
 def _find_cleaner_conflicts(db: Session, *, cleaner_ids, scheduled_date,
@@ -415,9 +439,41 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
     }
 
 
+def _turnover_lead_hours(j: Job, next_arrival: Optional[ICalEvent],
+                          check_in_time: Optional[str] = None) -> Optional[float]:
+    """Hours between this turnover job's scheduled end and the next guest's
+    check-in. iCal feeds only carry a check-in DATE (no time), so the
+    property's configured check_in_time stands in for "what time do they
+    actually arrive" (default 16:00, the common STR standard, when unset).
+    None when there isn't enough data to compute a real gap (no next
+    arrival, or the job/property is missing a time).
+
+    ``check_in_time`` lets bulk callers (get_jobs) pass a pre-fetched value
+    instead of triggering a lazy-load of ``j.property`` per row; single-job
+    callers can omit it and fall back to the relationship."""
+    if next_arrival is None or not next_arrival.checkin_date or not j.end_time or not j.scheduled_date:
+        return None
+    if check_in_time is None:
+        prop = getattr(j, "property", None)
+        check_in_time = prop.check_in_time if prop else None
+    checkin_time_str = check_in_time or "16:00"
+    try:
+        checkin_date = (next_arrival.checkin_date if isinstance(next_arrival.checkin_date, date)
+                        else date.fromisoformat(str(next_arrival.checkin_date)))
+        hh, mm = (int(x) for x in checkin_time_str.split(":")[:2])
+        checkin_dt = datetime.combine(checkin_date, time(hh, mm))
+        end_date = j.scheduled_date if isinstance(j.scheduled_date, date) else date.fromisoformat(str(j.scheduled_date))
+        end_t = j.end_time if isinstance(j.end_time, time) else time.fromisoformat(str(j.end_time))
+        end_dt = datetime.combine(end_date, end_t)
+        return (checkin_dt - end_dt).total_seconds() / 3600
+    except (ValueError, TypeError):
+        return None
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
-                property_name: Optional[str] = None) -> dict:
+                property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
+                property_check_in_time: Optional[str] = None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
@@ -432,6 +488,8 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     # after the Job/Visit unification (migration 039) Job.scheduled_date is the
     # single source. The kwarg is kept for callers that still pass an override.
     sched = effective_date if effective_date is not None else j.scheduled_date
+    lead_hours = (_turnover_lead_hours(j, next_arrival, check_in_time=property_check_in_time)
+                  if booking_event is not None else None)
     return {
         "id": j.id,
         "client_id": j.client_id,
@@ -468,7 +526,63 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
             and next_arrival is not None
             and next_arrival.checkin_date == booking_event.checkout_date
         ),
+        "turnover_lead_hours": lead_hours,
+        "turnover_lead_warning": lead_hours is not None and lead_hours < lead_buffer_hours,
     }
+
+
+def _job_booking_info(db: Session, j: Job):
+    """Single-job counterpart to get_jobs()'s bulk booking/next-arrival match
+    (lines ~611-648): finds the ICalEvent this str_turnover job's checkout
+    corresponds to, and the next reservation's check-in at the same property
+    (the pair job_to_dict needs for `booking`/`next_arrival`/
+    `is_immediate_turnover`). get_jobs() bulk-fetches this per property to
+    stay O(1) queries for a whole list; single-job endpoints (get_job,
+    create_job, update_job) call this instead since they're already O(1) —
+    they used to skip this entirely and silently return is_immediate_turnover
+    always False.
+
+    Returns (booking, next_arrival) — both None for non-turnover jobs, jobs
+    with no property, or a turnover with no matching iCal reservation.
+    """
+    if j.job_type != "str_turnover" or not j.property_id:
+        return None, None
+    events = (
+        db.query(ICalEvent)
+          .filter(ICalEvent.property_id == j.property_id, ICalEvent.event_type == "reservation")
+          .all()
+    )
+    events.sort(key=lambda e: e.checkin_date or "")
+    booking = None
+    if j.ical_event_id:
+        booking = next((e for e in events if e.id == j.ical_event_id), None)
+    if booking is None:
+        iso = j.scheduled_date.isoformat() if hasattr(j.scheduled_date, "isoformat") \
+            else (str(j.scheduled_date) if j.scheduled_date else None)
+        booking = next((e for e in events if e.checkout_date == iso), None)
+    next_arrival = None
+    if booking is not None:
+        next_arrival = next(
+            (e for e in events if e.checkin_date and e.checkin_date >= booking.checkout_date
+             and e.uid != booking.uid),
+            None,
+        )
+    return booking, next_arrival
+
+
+def _job_to_dict_enriched(db: Session, j: Job, **kwargs) -> dict:
+    """job_to_dict() plus single-job booking enrichment — the wiring
+    get_job/create_job/update_job/get_job_details need for a str_turnover
+    job's `booking`/`next_arrival`/`is_immediate_turnover`/
+    `turnover_lead_hours` to ever be populated outside the jobs list."""
+    booking, next_arrival = _job_booking_info(db, j)
+    kwargs.setdefault("lead_buffer_hours", _get_turnover_lead_buffer_hours(db))
+    return job_to_dict(j, booking_event=booking, next_arrival=next_arrival, **kwargs)
+
+
+def _get_turnover_lead_buffer_hours(db: Session) -> float:
+    from modules.settings.router import turnover_lead_buffer_hours
+    return turnover_lead_buffer_hours(db)
 
 
 from typing import Annotated
@@ -584,11 +698,17 @@ def get_jobs(
         # Bulk-fetch property names for the property_name field on JobResponse
         # (needed by Schedule / Dashboard after the Job/Visit unification).
         all_prop_ids = {j.property_id for j, _ in rows if j.property_id}
-        prop_names = (
-            {p.id: p.name for p in
-             db.query(Property.id, Property.name).filter(Property.id.in_(all_prop_ids)).all()}
+        # (name, check_in_time) — the latter feeds turnover_lead_hours below
+        # without a per-row lazy-load of j.property.
+        prop_meta = (
+            {p.id: (p.name, p.check_in_time) for p in
+             db.query(Property.id, Property.name, Property.check_in_time)
+               .filter(Property.id.in_(all_prop_ids)).all()}
             if all_prop_ids else {}
         )
+        prop_names = {pid: meta[0] for pid, meta in prop_meta.items()}
+        from modules.settings.router import turnover_lead_buffer_hours
+        lead_buffer_hours = turnover_lead_buffer_hours(db)
         prop_ids = {j.property_id for j, _ in rows if j.property_id and j.job_type == "str_turnover"}
         events_by_prop = {}
         if prop_ids:
@@ -627,7 +747,9 @@ def get_jobs(
             rendered.append(job_to_dict(j, effective_date=eff,
                                         booking_event=booking,
                                         next_arrival=next_arrival,
-                                        property_name=prop_names.get(j.property_id)))
+                                        property_name=prop_names.get(j.property_id),
+                                        lead_buffer_hours=lead_buffer_hours,
+                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1]))
     if paginated:
         return {
             "items": rendered,
@@ -640,6 +762,27 @@ def get_jobs(
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    # Resolved once up front (was re-resolved 3x further down via a separate
+    # `_org_scope` local) and used everywhere below that needs the caller's
+    # workspace, including the quote/job lookups just below — those used to
+    # query by caller-supplied id with no org filter at all, so a user in one
+    # org could read (and get returned in full) another org's Job by passing
+    # its quote_id here.
+    org_id = resolve_org_id(org_id, db)
+
+    # ── CLIENT OWNERSHIP ── data.client_id is caller-supplied; nothing further
+    # down validated it belonged to this org before using it to seed a new
+    # Property (copying the client's name/address) and stamping it onto the
+    # new Job — a user in one org could pass another org's client_id and get
+    # a job created that's linked to (and leaks the name/address of) that
+    # other org's client.
+    owned_client = db.query(Client).filter(
+        Client.id == data.client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not owned_client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
     # ── QUOTE LINKAGE (P1-A) ──
     # When a job is scheduled from an accepted quote, link it back and convert
     # the quote. Idempotent: a double-submit (or a second click of "Set up
@@ -650,10 +793,15 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     source_quote = None
     if data.quote_id:
         from database.models import Quote
-        source_quote = db.query(Quote).filter(Quote.id == data.quote_id).first()
+        source_quote = db.query(Quote).filter(
+            Quote.id == data.quote_id,
+            or_(Quote.org_id == org_id, Quote.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
         if source_quote and source_quote.status == "converted":
-            existing = (db.query(Job).filter(Job.quote_id == source_quote.id)
-                        .order_by(Job.id.asc()).first())
+            existing = (db.query(Job).filter(
+                Job.quote_id == source_quote.id,
+                or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+            ).order_by(Job.id.asc()).first())
             if existing:
                 return job_to_dict(existing)
 
@@ -678,23 +826,22 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # ── CLEANER GUARDS ── double-booking, time-off, capacity. All overridable
     # via allow_conflicts so an operator can intentionally force an assignment.
     if not data.allow_conflicts:
-        _org_scope = resolve_org_id(org_id, db)
         conflicts = _find_cleaner_conflicts(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
             start_time=data.start_time, end_time=data.end_time,
-            org_id=_org_scope,
+            org_id=org_id,
         )
         if conflicts:
             raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
         unavailable = _find_unavailable_cleaners(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
-            org_id=_org_scope,
+            org_id=org_id,
         )
         if unavailable:
             raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
         over = _find_over_capacity(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
-            org_id=_org_scope,
+            org_id=org_id,
         )
         if over:
             who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
@@ -733,6 +880,15 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # Quick-schedule flow lets the user skip it. Resolve to the client's existing
     # property, or create a sensible default, so a fast booking never fails here.
     resolved_property_id = data.property_id
+    if resolved_property_id:
+        # Caller-supplied property_id — same class of issue as client_id above:
+        # verify it's this org's property before linking a new Job to it.
+        owned_property = db.query(Property).filter(
+            Property.id == resolved_property_id,
+            or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
+        if not owned_property:
+            raise HTTPException(status_code=404, detail="Property not found")
     if not resolved_property_id:
         existing_prop = (db.query(Property)
                          .filter(Property.client_id == data.client_id)
@@ -740,7 +896,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         if existing_prop:
             resolved_property_id = existing_prop.id
         else:
-            client = db.query(Client).filter(Client.id == data.client_id).first()
+            client = owned_client
             ptype = "str" if data.job_type == "str_turnover" else (
                 data.job_type if data.job_type in ("residential", "commercial") else "residential")
             new_prop = Property(
@@ -750,7 +906,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                 property_type=ptype,
             )
             if hasattr(new_prop, "org_id"):
-                new_prop.org_id = resolve_org_id(org_id, db)
+                new_prop.org_id = org_id
             db.add(new_prop); db.commit(); db.refresh(new_prop)
             resolved_property_id = new_prop.id
 
@@ -763,7 +919,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     payload["start_time"] = _to_time(payload.get("start_time"))
     payload["end_time"] = _to_time(payload.get("end_time"))
     job = Job(**payload)
-    job.org_id = resolve_org_id(org_id, db)  # MT-2: stamp the caller's workspace (robust to in-process calls)
+    job.org_id = org_id  # MT-2: stamp the caller's workspace
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -847,21 +1003,26 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         logger.warning(f"Connecteam auto-dispatch failed for job {job.id}: {e}")
         ct_status = {"dispatched": False, "reason": "error"}
 
-    result = job_to_dict(job)
+    result = _job_to_dict_enriched(db, job)
     result["gcal"] = gcal_status
     result["connecteam"] = ct_status
     return result
 
 
-@router.get("/client/{client_id}/gcal-events")
-def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 180, db: Session = Depends(get_db)):
+@router.get("/client/{client_id}/gcal-events", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 180,
+                       db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Live Google Calendar events linked to this client (Twenty-style timeline).
 
     Matches events by the client's email (attendee) or our brightbase_client_id
     tag, across every configured calendar. Returns {connected, events} so the
     profile can show the real linked timeline, or a connect prompt when Google
     isn't linked yet."""
-    client = db.query(Client).filter(Client.id == client_id).first()
+    oid = resolve_org_id(org_id, db)
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == oid, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -1089,6 +1250,7 @@ def cleaner_availability(
     end: Optional[str] = None,
     exclude_job_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """Per-cleaner availability status for the given date + time window.
 
@@ -1106,9 +1268,11 @@ def cleaner_availability(
     d = _to_date(date)
     if d is None:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD.")
+    oid = resolve_org_id(org_id, db)
     # 1) Time-off: everyone off that day.
     off_rows = db.query(CleanerTimeOff).filter(
-        CleanerTimeOff.start_date <= d, CleanerTimeOff.end_date >= d
+        CleanerTimeOff.start_date <= d, CleanerTimeOff.end_date >= d,
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
     ).all()
     off_by_id = {str(r.cleaner_id): r for r in off_rows}
 
@@ -1118,17 +1282,11 @@ def cleaner_availability(
         Job.scheduled_date == d.isoformat(),
         Job.status.notin_(["cancelled"]),
         Job.cleaner_ids.isnot(None),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
     )
     if exclude_job_id is not None:
         q = q.filter(Job.id != exclude_job_id)
     same_day_jobs = q.all()
-
-    def _overlaps(a_start, a_end, b_start, b_end):
-        # Simple HH:MM interval overlap. Missing times treated as full-day
-        # (worst-case: assume they overlap so the operator gets a warning).
-        if not a_start or not a_end or not b_start or not b_end:
-            return True
-        return not (a_end <= b_start or a_start >= b_end)
 
     conflicts: dict[str, list] = {}
     same_day_only: dict[str, list] = {}
@@ -1164,14 +1322,69 @@ def cleaner_availability(
     return out
 
 
+@router.get("/property-availability", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
+def property_availability(
+    property_id: int,
+    date: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    exclude_job_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Other non-cancelled jobs already on the calendar at this property on
+    this date, for a soft "heads up" warning while creating/editing a job.
+
+    Unlike the str_turnover-only hard 409 in create_job (a duplicate-turnover
+    guard), this covers every job_type and never blocks — it's meant to be
+    surfaced as a dismissible warning in the edit form, not a save-blocking
+    error, since a property legitimately CAN have two jobs the same day
+    (e.g. a morning turnover + an afternoon deep clean).
+
+    Returns {"conflicts": [{job_id, title, job_type, start_time, end_time,
+    overlaps}]} — `overlaps` is true when the window actually overlaps
+    start/end (when given), false when it's just "also that day".
+    """
+    d = _to_date(date)
+    if d is None:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD.")
+    oid = resolve_org_id(org_id, db)
+    q = db.query(Job).filter(
+        Job.property_id == property_id,
+        Job.scheduled_date == d.isoformat(),
+        Job.status.notin_(["cancelled"]),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
+    )
+    if exclude_job_id is not None:
+        q = q.filter(Job.id != exclude_job_id)
+    others = q.all()
+    return {
+        "conflicts": [
+            {
+                "job_id": j.id,
+                "title": j.title,
+                "job_type": j.job_type,
+                "start_time": str(j.start_time) if j.start_time else None,
+                "end_time": str(j.end_time) if j.end_time else None,
+                "overlaps": _overlaps(start, end, j.start_time, j.end_time),
+            }
+            for j in others
+        ],
+    }
+
+
 @router.get("/time-off", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def list_time_off(
     cleaner_id: Optional[str] = None,
     upcoming_only: bool = True,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """List cleaner time-off entries. Defaults to current + future ranges."""
-    q = db.query(CleanerTimeOff)
+    oid = resolve_org_id(org_id, db)
+    q = db.query(CleanerTimeOff).filter(
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
+    )
     if cleaner_id:
         q = q.filter(CleanerTimeOff.cleaner_id == str(cleaner_id))
     if upcoming_only:
@@ -1181,7 +1394,7 @@ def list_time_off(
 
 
 @router.post("/time-off", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
+def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Mark a cleaner unavailable for a date range (inclusive)."""
     start = _to_date(data.start_date)
     end = _to_date(data.end_date)
@@ -1195,6 +1408,7 @@ def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
         start_date=start,
         end_date=end,
         reason=data.reason,
+        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
     )
     db.add(row)
     db.commit()
@@ -1203,9 +1417,13 @@ def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/time-off/{time_off_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_time_off(time_off_id: int, db: Session = Depends(get_db)):
+def delete_time_off(time_off_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Remove a time-off entry."""
-    row = db.query(CleanerTimeOff).filter(CleanerTimeOff.id == time_off_id).first()
+    oid = resolve_org_id(org_id, db)
+    row = db.query(CleanerTimeOff).filter(
+        CleanerTimeOff.id == time_off_id,
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Time-off entry not found")
     db.delete(row)
@@ -1218,6 +1436,71 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db)):
     """Assign available cleaners to upcoming unassigned STR turnover jobs.
     Pass ?dry_run=true to preview the picks without writing them."""
     return auto_assign_unassigned_turnovers(db, dry_run=dry_run)
+
+
+class BulkRescheduleRequest(BaseModel):
+    job_ids: List[int]
+    shift_days: int
+
+
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.post("/bulk-reschedule", dependencies=[Depends(require_role("admin", "manager"))])
+def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
+                    org_id: int = Depends(current_org_id)):
+    """Shift a set of jobs by N days in one action — the "weather day" /
+    sick-day move (Tier 4 roadmap): select today's jobs, push the whole day
+    back without touching each one individually.
+
+    Recurring occurrences go through the same reschedule-exception path
+    JobEditModal's "this visit only" scope uses (not a bare scheduled_date
+    PATCH) — otherwise the next generate_jobs tick would regenerate the
+    original date alongside the shifted one instead of replacing it, the
+    same duplicate-occurrence bug Fix 1 closed for the single-job path.
+    """
+    if body.shift_days == 0:
+        raise HTTPException(status_code=400, detail="shift_days must be non-zero")
+    if not body.job_ids:
+        raise HTTPException(status_code=400, detail="job_ids must not be empty")
+
+    oid = resolve_org_id(org_id, db)
+    jobs = (
+        db.query(Job)
+        .filter(Job.id.in_(body.job_ids), or_(Job.org_id == oid, Job.org_id.is_(None)))
+        .all()
+    )
+    found_ids = {j.id for j in jobs}
+
+    from modules.recurring.router import _reschedule_occurrence, _get_schedule_or_404
+
+    shifted, skipped = [], []
+    for job_id in body.job_ids:
+        job = next((j for j in jobs if j.id == job_id), None)
+        if job is None:
+            skipped.append({"job_id": job_id, "reason": "not found"})
+            continue
+        if job.status in ("cancelled", "completed"):
+            skipped.append({"job_id": job_id, "reason": f"job is {job.status}"})
+            continue
+        if not job.scheduled_date:
+            skipped.append({"job_id": job_id, "reason": "no scheduled_date"})
+            continue
+        new_date = job.scheduled_date + timedelta(days=body.shift_days)
+        try:
+            if job.recurring_schedule_id:
+                sched = _get_schedule_or_404(db, job.recurring_schedule_id, oid)
+                _reschedule_occurrence(
+                    db, sched, job.scheduled_date, new_date,
+                    rescheduled_start_time=job.start_time, rescheduled_end_time=job.end_time,
+                    cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
+                )
+            else:
+                job.status = "scheduled" if job.status == "unscheduled" else job.status
+                job.scheduled_date = new_date
+            shifted.append(job_id)
+        except HTTPException as e:
+            skipped.append({"job_id": job_id, "reason": e.detail})
+    db.commit()
+    return {"shifted": len(shifted), "shifted_ids": shifted, "skipped": skipped}
 
 
 def _job_source(j: Job) -> str:
@@ -1336,6 +1619,116 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
     return {"dry_run": dry_run, "count": len(changes), "jobs": changes}
 
 
+def _ensure_job_public_token(job: Job) -> str:
+    """Return the job's public confirm-link token, generating one if missing."""
+    if not job.public_token:
+        job.public_token = secrets.token_urlsafe(32)
+    return job.public_token
+
+
+def _job_by_token(token: str, db: Session) -> Job:
+    job = db.query(Job).filter(Job.public_token == token).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _public_job_dict(job: Job, db: Session) -> dict:
+    """Client-facing serialization for the public confirm page — no internal
+    IDs/notes/cleaner assignments, just what the customer needs to recognize
+    and confirm their own visit."""
+    from modules.quoting.router import _company_info
+    company = _company_info(db)
+    prop = job.property
+    return {
+        "title": job.title,
+        "status": job.status,
+        "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None,
+        "start_time": str(job.start_time) if job.start_time else None,
+        "end_time": str(job.end_time) if job.end_time else None,
+        "address": (prop.address if prop else None) or job.address,
+        "company_name": company["company_name"],
+        "company_phone": company["company_phone"],
+        "brand_color": company["brand_color"],
+        "company_logo_url": company["company_logo_url"],
+        "customer_confirmed_at": job.customer_confirmed_at.isoformat() if job.customer_confirmed_at else None,
+        "reschedule_requested_at": job.reschedule_requested_at.isoformat() if job.reschedule_requested_at else None,
+        "is_cancelled": job.status == "cancelled",
+    }
+
+
+def _notify_owner_job_event(subject: str, lines: list) -> None:
+    """Best-effort owner email for a customer job-confirm-link event. Never
+    raises — mirrors modules/quoting/router.py's _notify_owner_quote_event_core."""
+    try:
+        from integrations.email import _load_smtp_creds, send_email
+        creds = _load_smtp_creds()
+        owner = creds.get("from_email")
+        if not owner:
+            return
+        import html as _html
+        body = "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines)
+        send_email(to=owner, subject=subject, html_body=f"<div style='font-family:sans-serif'>{body}</div>",
+                   text_body="\n".join(lines))
+    except Exception as e:
+        logger.warning(f"[jobs] owner notification failed: {e}")
+
+
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "job_view"))])
+def public_view_job(token: str, db: Session = Depends(get_db)):
+    """Client-facing view of a single job via its confirm-link token."""
+    job = _job_by_token(token, db)
+    return _public_job_dict(job, db)
+
+
+@router.post("/public/{token}/confirm", dependencies=[Depends(rate_limit(20, 3600, "job_confirm"))])
+def public_confirm_job(token: str, db: Session = Depends(get_db)):
+    """Customer confirms they'll be home/ready for the visit. Idempotent."""
+    job = _job_by_token(token, db)
+    if job.status == "cancelled":
+        raise HTTPException(status_code=409, detail="This visit was cancelled.")
+    if not job.customer_confirmed_at:
+        job.customer_confirmed_at = datetime.now(timezone.utc)
+        log_activity(
+            db, "job_customer_confirmed", job_id=job.id, client_id=job.client_id,
+            actor="client", summary="Customer confirmed the visit", commit=False,
+        )
+        db.commit()
+    return {"status": "confirmed"}
+
+
+class PublicRescheduleRequest(BaseModel):
+    message: Optional[str] = None
+
+
+@router.post("/public/{token}/request-reschedule", dependencies=[Depends(rate_limit(20, 3600, "job_reschedule_request"))])
+def public_request_reschedule(token: str, data: PublicRescheduleRequest = None, db: Session = Depends(get_db)):
+    """Customer asks to reschedule from the public link. Does NOT move the
+    job — it queues the request for staff, same as a change-request on a
+    quote; an operator still picks the new date/time from the schedule."""
+    job = _job_by_token(token, db)
+    if job.status == "cancelled":
+        raise HTTPException(status_code=409, detail="This visit was cancelled.")
+    msg = ((data.message if data else None) or "").strip()
+    job.reschedule_requested_at = datetime.now(timezone.utc)
+    job.reschedule_request_message = msg or None
+    log_activity(
+        db, "job_reschedule_requested", job_id=job.id, client_id=job.client_id,
+        actor="client",
+        summary=f"Customer requested a reschedule: {msg[:500]}" if msg else "Customer requested a reschedule",
+        commit=False,
+    )
+    db.commit()
+    when = f"{job.scheduled_date} {job.start_time}".strip()
+    lines = [f"A customer requested to reschedule an upcoming visit ({when}).".strip()]
+    if msg:
+        lines += ["", f"“{msg}”"]
+    lines += ["", "Open the schedule to pick a new time."]
+    _notify_owner_job_event(f"\U0001f4c5 Reschedule requested: {job.title}", lines)
+    return {"status": "received"}
+
+
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
 def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     org_id = resolve_org_id(org_id, db)
@@ -1345,7 +1738,7 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job_to_dict(job)
+    return _job_to_dict_enriched(db, job)
 
 
 @router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
@@ -1376,7 +1769,7 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     ).order_by(Activity.created_at.desc()).limit(50).all()
 
     return {
-        **job_to_dict(job),
+        **_job_to_dict_enriched(db, job),
         "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
@@ -1532,6 +1925,27 @@ def add_job_note(job_id: int, data: dict, db: Session = Depends(get_db),
     return activity_to_dict(act)
 
 
+def _get_job_or_404(db: Session, job_id: int, org_id: int) -> Job:
+    """Fetch a Job scoped to the caller's org, 404 otherwise.
+
+    Several job-action endpoints (complete/skip/invite-client/auto-assign/
+    crew-suggestions) used to do a bare `db.query(Job).filter(Job.id ==
+    job_id).first()` with no org filter at all — a cross-tenant IDOR: any
+    authenticated user in any org could act on any other org's job by
+    guessing/incrementing an id. Matches the `or_(Job.org_id == org_id,
+    Job.org_id.is_(None))` convention already used by get_job/update_job
+    (Job.org_id is still nullable — MT-4 NOT NULL backfill hasn't shipped).
+    404, not 403, so the response doesn't reveal that the id exists at all.
+    """
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
     """Auto-create a draft Invoice the first time a job lands on 'completed'.
 
@@ -1610,7 +2024,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")
     if "property_id" in updates:
-        prop = db.query(Property).filter(Property.id == updates["property_id"]).first()
+        prop = db.query(Property).filter(
+            Property.id == updates["property_id"],
+            or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
         if not prop:
             raise HTTPException(status_code=404, detail="Property not found")
         # Ownership must stay consistent: re-pointing a job at another
@@ -1812,7 +2229,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     except Exception as e:
         logger.warning(f"Connecteam sync failed for job {job.id}: {e}")
 
-    out = job_to_dict(job)
+    out = _job_to_dict_enriched(db, job)
     # So the caller (JobDetail.jsx's "Ready to bill?" banner) can tell an
     # invoice was already auto-created by this same request and skip
     # prompting for a second one — the banner used to check stale
@@ -1833,15 +2250,14 @@ def update_reminder_settings(
     data: ReminderSettings,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
+    org_id: int = Depends(current_org_id),
 ):
     """Toggle SMS reminder suppression for a single job (hybrid model).
 
     Reminders are on by default; setting skip_reminder=true suppresses the 24h
     SMS for this job only, without disabling the system-wide reminder job.
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
     job.skip_sms_reminder = bool(data.skip_reminder)
     db.commit()
@@ -1902,12 +2318,16 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
 
 
 @router.post("/{job_id}/invite-client", dependencies=[Depends(require_role("admin", "manager"))])
-def invite_client(job_id: int, db: Session = Depends(get_db)):
+def invite_client(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """
     Send the Google Calendar invite to the client for this job.
     Use this when you've finalized the schedule and are ready for the client to see it.
     """
-    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+    oid = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -2172,7 +2592,7 @@ class JobCompleteRequest(BaseModel):
 
 @router.post("/{job_id}/complete", dependencies=[Depends(require_role("admin", "manager", "cleaner"))])
 def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
-                 db: Session = Depends(get_db)):
+                 db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Mark a job as completed in a single call.
 
     Sets status='completed' and stamps completed_at / completed_by / checklist /
@@ -2185,9 +2605,7 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
     route that didn't, so a job completed through the field checklist UI
     (the actual completion flow) never got billed automatically.
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
     prev_status = job.status
     job.status = "completed"
@@ -2227,15 +2645,14 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
 
 
 @router.post("/{job_id}/skip", dependencies=[Depends(require_role("admin", "manager"))])
-def skip_job(job_id: int, reason: Optional[str] = None, db: Session = Depends(get_db)):
+def skip_job(job_id: int, reason: Optional[str] = None,
+             db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Cancel a single occurrence without affecting the recurring schedule.
 
     Mirrors the old POST /api/visits/{id}/skip: mark this job cancelled, keep
     the RecurringSchedule running, and record a RecurrenceException so the skip
     is durable even if the row is later hard-deleted."""
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
     prev_status = job.status
     job.status = "cancelled"
@@ -2275,7 +2692,7 @@ def skip_job(job_id: int, reason: Optional[str] = None, db: Session = Depends(ge
 
 
 @router.get("/{job_id}/crew-suggestions", dependencies=[Depends(require_role("admin", "manager"))])
-def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
+def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Suggest crew for a job based on recent assignments at the same property.
 
     Ordered by scheduled_date DESC so "recent" actually means recent — the
@@ -2286,9 +2703,8 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
 
     Sorted by frequency, top 5.
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    oid = resolve_org_id(org_id, db)
+    job = _get_job_or_404(db, job_id, oid)
     if not job.property_id:
         return {"job_id": job_id, "property_id": None, "suggestions": []}
 
@@ -2297,6 +2713,7 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
         .filter(
             Job.property_id == job.property_id,
             Job.cleaner_ids.isnot(None),
+            or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
         )
         .order_by(Job.scheduled_date.desc().nullslast(), Job.id.desc())
         .limit(20)
@@ -2320,20 +2737,20 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/auto-assign", dependencies=[Depends(require_role("admin", "manager"))])
-def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db)):
+def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Assign the most-frequent cleaner at this property to the job.
 
     Mirrors /api/visits/{id}/auto-assign — no history means the job is
     unassigned (cleaner_ids cleared), matching the old semantics."""
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    oid = resolve_org_id(org_id, db)
+    job = _get_job_or_404(db, job_id, oid)
     if not job.property_id:
         return {"status": "no_property", "message": "Job has no associated property"}
 
     recent_jobs = db.query(Job).filter(
         Job.property_id == job.property_id,
         Job.cleaner_ids.isnot(None),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
     ).limit(30).all()
 
     crew_freq: dict = {}

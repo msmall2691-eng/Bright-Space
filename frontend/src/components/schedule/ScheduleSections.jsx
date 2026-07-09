@@ -1,10 +1,12 @@
-import { AlertCircle, Clock, Calendar as CalendarIcon, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { AlertCircle, Clock, Calendar as CalendarIcon, Trash2, ArrowLeftRight } from 'lucide-react'
 import StatCard from '../ui/StatCard'
 
 /** Two sub-sections of the Schedule page, all pure props-in:
  *  - ScheduleHealthStrip: today/this-week count cards + optional
  *    out-of-sync "Needs attention" strip.
- *  - ScheduleBulkBar: "Select all visible" checkbox + Clear + bulk cancel.
+ *  - ScheduleBulkBar: "Select all visible" checkbox + Clear + bulk cancel +
+ *    bulk shift ("weather day" move — Tier 4 roadmap).
  *
  *  ScheduleListView + its VisitCard were removed when the time-grid Week
  *  view superseded the old grouped-list week view — the branch was already
@@ -36,7 +38,7 @@ export function ScheduleHealthStrip({
     stats.notGcal > 0 || needsCleaner > 0 || assignedNotPushed > 0
 
   return (
-    <div className="bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
+    <div className="no-print bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
       <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
         <StatCard className="bg-panel border border-hairline rounded-lg" label="Today" value={stats.today} icon={CalendarIcon} />
         <StatCard className="bg-panel border border-hairline rounded-lg" label={weekLabel} value={stats.week} icon={Clock} />
@@ -97,9 +99,12 @@ export function ScheduleBulkBar({
   onClear,
   onBulkDelete,
   bulkDeleting,
+  onBulkShift,
+  bulkShifting,
 }) {
+  const [shiftDays, setShiftDays] = useState(1)
   return (
-    <div className="bg-panel border-b border-hairline px-4 py-2">
+    <div className="no-print bg-panel border-b border-hairline px-4 py-2">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <label className="flex items-center gap-2 text-xs text-ink-2 cursor-pointer select-none">
           <input
@@ -112,12 +117,38 @@ export function ScheduleBulkBar({
           <span>Select all visible ({visibleCount})</span>
         </label>
         {selectedCount > 0 && (
-          <div className="flex items-center gap-2" data-testid="visits-bulk-actions">
+          <div className="flex items-center gap-2 flex-wrap justify-end" data-testid="visits-bulk-actions">
             <span className="text-xs text-ink-2 font-medium">{selectedCount} selected</span>
             <button onClick={onClear}
               className="text-xs text-ink-3 hover:text-ink-2 px-2 py-1 rounded">
               Clear
             </button>
+            {/* "Weather day" move — shift the whole selection by N days in
+                one action instead of dragging each job individually. */}
+            {onBulkShift && (
+              <div className="flex items-center gap-1" title="Shift the selected visits by N days">
+                <input
+                  type="number"
+                  value={shiftDays}
+                  onChange={e => setShiftDays(parseInt(e.target.value, 10) || 0)}
+                  className="w-12 text-xs border border-hairline rounded px-1.5 py-1.5 bg-panel text-ink text-center"
+                  aria-label="Days to shift"
+                />
+                <span className="text-xs text-ink-3">days</span>
+                <button onClick={() => onBulkShift(-Math.abs(shiftDays))} disabled={bulkShifting || !shiftDays}
+                  data-testid="visits-bulk-shift-back"
+                  title="Move back"
+                  className="flex items-center gap-1 bg-bg-2 hover:bg-hairline disabled:opacity-50 text-ink-2 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                  <ArrowLeftRight className="w-3.5 h-3.5" />−
+                </button>
+                <button onClick={() => onBulkShift(Math.abs(shiftDays))} disabled={bulkShifting || !shiftDays}
+                  data-testid="visits-bulk-shift-forward"
+                  title="Move forward"
+                  className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                  {bulkShifting ? 'Working...' : <>+ Shift</>}
+                </button>
+              </div>
+            )}
             <button onClick={onBulkDelete} disabled={bulkDeleting}
               data-testid="visits-bulk-delete"
               className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">

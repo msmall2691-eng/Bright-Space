@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { get, post } from '../api'
 
 /** Tools-menu business logic for the Schedule page:
- *  - Google Calendar sync (pull) + push
+ *  - Google Calendar sync now (one combined pull+push call — auto-sync in
+ *    Settings -> Automation is what's meant to keep this current day-to-day)
  *  - Auto-assign turnovers (preview → apply)
  *  - Fix missing job times (diagnose → preview → apply)
  *
@@ -13,43 +14,31 @@ import { get, post } from '../api'
  *  Parent passes `toast` (from useToast) and `refresh` (from useScheduleData)
  *  so this hook stays free of shared context — just business logic. */
 export function useScheduleTools({ toast, refresh }) {
-  const [gcalSyncing, setGcalSyncing] = useState(false)
-  const [gcalPushing, setGcalPushing] = useState(false)
   const [autoAssign, setAutoAssign] = useState(null)
   const [fixTimes, setFixTimes] = useState(null)
 
-  const syncFromGoogle = async () => {
-    if (gcalSyncing) return
-    setGcalSyncing(true)
+  // Single "Sync now" action for the Tools menu — auto-sync (Settings ->
+  // Automation) is meant to keep Google Calendar current in the background,
+  // so a small team shouldn't need to think about "pull vs push" as two
+  // separate manual steps; this is the one-button fallback for "do it now".
+  const [syncingNow, setSyncingNow] = useState(false)
+  const syncNow = async () => {
+    if (syncingNow) return
+    setSyncingNow(true)
     try {
-      const r = await post('/api/jobs/sync-gcal', {})
-      const c = r?.jobs_created || 0, u = r?.jobs_updated || 0, x = r?.jobs_cancelled || 0
+      const pullRes = await post('/api/jobs/sync-gcal', {}).catch(() => null)
+      const pushRes = await post('/api/jobs/push-to-gcal', {}).catch(() => null)
       const parts = []
+      const c = pullRes?.jobs_created || 0, u = pullRes?.jobs_updated || 0
       if (c) parts.push(`${c} new`)
       if (u) parts.push(`${u} updated`)
-      if (x) parts.push(`${x} cancelled`)
-      toast.success(parts.length ? `Synced from Google — ${parts.join(', ')}` : 'Synced from Google — up to date')
+      if (pushRes?.pushed) parts.push(`${pushRes.pushed} pushed`)
+      toast.success(parts.length ? `Synced with Google — ${parts.join(', ')}` : 'Synced with Google — up to date')
       refresh()
     } catch (e) {
-      toast.error(e.message || 'Google sync failed')
+      toast.error(e.message || 'Sync failed')
     }
-    setGcalSyncing(false)
-  }
-
-  const pushToGoogle = async () => {
-    if (gcalPushing) return
-    setGcalPushing(true)
-    try {
-      const r = await post('/api/jobs/push-to-gcal', {})
-      toast.success(r?.message || `Pushed ${r?.pushed || 0} job(s) to Google`)
-      refresh()
-    } catch (e) {
-      const msg = e?.message || 'Push failed'
-      toast.error(/not configured/i.test(msg)
-        ? 'Google Calendar isn’t connected on the server (credentials missing)'
-        : msg)
-    }
-    setGcalPushing(false)
+    setSyncingNow(false)
   }
 
   // One-click repair for the "Needs attention" strip: pushes unsynced jobs to
@@ -130,8 +119,7 @@ export function useScheduleTools({ toast, refresh }) {
   }
 
   return {
-    gcalSyncing, syncFromGoogle,
-    gcalPushing, pushToGoogle,
+    syncingNow, syncNow,
     fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,

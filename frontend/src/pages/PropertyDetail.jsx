@@ -257,7 +257,7 @@ export default function PropertyDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-bg">
+      <div className="flex items-center justify-center h-full bg-bg">
         <p className="text-ink-2">Loading property...</p>
       </div>
     )
@@ -265,7 +265,7 @@ export default function PropertyDetail() {
 
   if (!property) {
     return (
-      <div className="flex items-center justify-center h-screen bg-bg">
+      <div className="flex items-center justify-center h-full bg-bg">
         <GlassCard>
           <div className="text-center py-12">
             <AlertCircle className="w-12 h-12 text-ink-3 mx-auto mb-3" />
@@ -302,7 +302,7 @@ export default function PropertyDetail() {
   })
 
   return (
-    <div className="flex flex-col h-screen bg-bg">
+    <div className="flex flex-col h-full bg-bg">
       {/* Header */}
       <div className="bg-panel border-b border-hairline p-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto">
@@ -327,6 +327,35 @@ export default function PropertyDetail() {
                 <span className={`px-2 py-1 rounded text-xs font-medium ${propertyTypeConfig.badge}`}>
                   {propertyTypeConfig.label}
                 </span>
+                {/* STR feed health + upcoming turnover count (Tier 3 roadmap) —
+                    the detail page previously had zero iCal/turnover
+                    information at all; a dead feed was invisible unless you
+                    ran the manual sweep from the properties list. */}
+                {property.property_type === 'str' && property.ical_health && property.ical_health !== 'no_feed' && (
+                  <span
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                      property.ical_health === 'healthy' ? 'text-green-600 bg-green-500/10' : 'text-amber-600 bg-amber-500/10'
+                    }`}
+                    title={property.ical_health === 'healthy'
+                      ? 'A feed synced cleanly within the last 24h'
+                      : "No feed has synced cleanly in 24h+ — check it"}
+                  >
+                    {property.ical_health === 'healthy' ? <CheckCircle className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                    {property.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
+                  </span>
+                )}
+                {property.property_type === 'str' && property.ical_health === 'no_feed' && (
+                  <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-red-600 bg-red-500/10"
+                    title="No active calendar feed configured">
+                    <AlertCircle className="w-3.5 h-3.5" />No feed
+                  </span>
+                )}
+                {property.property_type === 'str' && typeof property.turnovers_next_30d === 'number' && (
+                  <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-ink-2 bg-bg-2"
+                    title="Turnovers scheduled in the next 30 days">
+                    <Calendar className="w-3.5 h-3.5" />{property.turnovers_next_30d} next 30d
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1.5 text-sm text-ink-2 mt-1">
                 <MapPin className="w-4 h-4 flex-shrink-0" />

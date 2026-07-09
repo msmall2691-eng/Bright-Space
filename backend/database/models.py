@@ -403,6 +403,21 @@ class RecurringSchedule(Base):
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
+    # Exclusive upper bound on generated dates — set when a "this and all
+    # future" edit splits the series: this schedule stops here, and a new
+    # RecurringSchedule picks up from the split date with the edited rule.
+    # NULL (the common case) means open-ended.
+    series_end_date = Column(Date, nullable=True)
+    # Inclusive lower bound — set on the NEW schedule a split creates, so a
+    # changed day-of-week can't generate occurrences before the split point
+    # (generate_dates always expands from today forward with no floor
+    # otherwise). NULL (the common case) means no floor.
+    series_start_date = Column(Date, nullable=True)
+    # User-facing "ends after N occurrences" choice, kept purely for display
+    # round-trip (see migration 051) — series_end_date remains the single
+    # column generate_dates() enforces; this is NULL whenever the series
+    # never ends or ends on an explicit date instead of a count.
+    series_end_occurrences = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
@@ -526,6 +541,16 @@ class Job(Base):
     completed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     checklist_results = Column(JSON, nullable=True)
     photos = Column(JSON, default=list)
+
+    # Customer-facing confirm/reschedule-request link (Part 2 Tier 2 — mirrors
+    # Quote.public_token). Lazily generated the first time it's needed (the
+    # reminder SMS, or a staff-initiated "send confirm link").
+    public_token = Column(String(64), nullable=True, unique=True, index=True)
+    customer_confirmed_at = Column(DateTime, nullable=True)
+    # A request does NOT auto-reschedule the job — it queues for staff to
+    # action, same as the roadmap doc's "requests land in your queue".
+    reschedule_requested_at = Column(DateTime, nullable=True)
+    reschedule_request_message = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

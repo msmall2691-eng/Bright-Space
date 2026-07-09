@@ -1,8 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown } from 'lucide-react'
+import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
+import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
+
+/** JS Date.getDay() is 0=Sun..6=Sat; the backend's day_of_week is 0=Mon..6=Sun
+ *  (matches Python's date.weekday()). Parses as local midnight, not UTC, so a
+ *  "YYYY-MM-DD" string doesn't shift a day depending on the caller's timezone. */
+function isoDateToBackendDow(isoDate) {
+  const d = new Date(`${isoDate}T00:00:00`)
+  return (d.getDay() + 6) % 7
+}
 
 /** Resolve a Connecteam employee to an id+name pair, defensively.
  *  Connecteam returns shapes like { userId, firstName, lastName, displayName }
@@ -16,6 +25,9 @@ function normalizeEmployee(e) {
 
 export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave, notify }) {
   const isNew = !job?.id
+  const isRecurring = !isNew && Boolean(job?.recurring_schedule_id)
+  // 'edit' | 'delete' | null — which scope prompt (if any) is currently showing.
+  const [scopeDialog, setScopeDialog] = useState(null)
   const [formData, setFormData] = useState({
     title: job?.title || '',
     job_type: job?.job_type || 'residential',
@@ -69,6 +81,32 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }, 250)
     return () => clearTimeout(t)
   }, [formData.scheduled_date, formData.start_time, formData.end_time, job?.id])
+
+  // Property-level double-booking: a soft, dismissible heads-up (not a
+  // save-blocking error — a property CAN legitimately have two jobs the
+  // same day, e.g. a morning turnover + an afternoon deep clean). Tier 1
+  // roadmap item: previously only str_turnover got a check at all, and
+  // only as a hard 409 on save; this covers every job_type and surfaces
+  // proactively while editing, same debounce pattern as cleaner availability.
+  const [propertyConflicts, setPropertyConflicts] = useState([])
+  const [dismissedPropertyWarning, setDismissedPropertyWarning] = useState(false)
+  useEffect(() => {
+    setDismissedPropertyWarning(false)
+    if (!formData.scheduled_date || !formData.property_id) { setPropertyConflicts([]); return }
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({
+        property_id: String(formData.property_id),
+        date: formData.scheduled_date,
+      })
+      if (formData.start_time) params.append('start', formData.start_time)
+      if (formData.end_time) params.append('end', formData.end_time)
+      if (job?.id) params.append('exclude_job_id', String(job.id))
+      get(`/api/jobs/property-availability?${params.toString()}`)
+        .then(res => setPropertyConflicts(Array.isArray(res?.conflicts) ? res.conflicts : []))
+        .catch(() => setPropertyConflicts([]))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [formData.scheduled_date, formData.start_time, formData.end_time, formData.property_id, job?.id])
 
   // Editing keeps ownership consistent: only the job's client's properties
   // are offered (the backend rejects cross-client moves anyway). New jobs see
@@ -126,8 +164,17 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
 
   // Hard delete: removes the job AND its Google Calendar event (the backend's
   // DELETE /api/jobs/{id} calls delete_event). Irreversible, so confirm first.
+  //
+  // A recurring occurrence never goes through a bare DELETE: the daily
+  // generation tick treats a hard-deleted row as "never happened" and
+  // resurrects it next run. Route through the same skip-exception the
+  // /recurring page already uses so the cancellation survives regeneration.
   const handleDelete = async () => {
     if (!job?.id) return
+    if (isRecurring) {
+      setScopeDialog('delete')
+      return
+    }
     if (!window.confirm('Delete this job? This permanently removes it and its Google Calendar event.')) return
     setRemoving(true)
     setError('')
@@ -142,6 +189,24 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }
   }
 
+  const handleSkipOccurrence = async () => {
+    setScopeDialog(null)
+    setRemoving(true)
+    setError('')
+    try {
+      await post(`/api/recurring/${job.recurring_schedule_id}/skip`, {
+        exception_date: job.scheduled_date,
+        reason: 'Cancelled from the calendar',
+      })
+      notify?.('This visit was skipped — the recurring schedule is unchanged')
+      onSave?.() // series-level change; let the parent refetch rather than patch one visit
+      onClose()
+    } catch (err) {
+      setError(err.message || 'Failed to skip this visit')
+      setRemoving(false)
+    }
+  }
+
   // Softer option: keep the record but mark it cancelled (the calendar event is
   // updated/removed by the backend on the status change).
   const handleCancelJob = async () => {
@@ -149,9 +214,27 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     if (!window.confirm('Cancel this job? It will be marked cancelled.')) return
     setRemoving(true)
     setError('')
+    const prevStatus = job.status
     try {
       const updated = await patch(`/api/jobs/${job.id}`, { status: 'cancelled' })
-      notify?.('Job cancelled')
+      // "Removes the fear" (Tier 1 roadmap): an Undo action on the toast
+      // reverts to whatever status the job actually had before — the modal
+      // is already closed by the time this fires, but notify/notifyParent
+      // are plain closures over props that stay valid after unmount.
+      notify?.('Job cancelled', {
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            try {
+              const restored = await patch(`/api/jobs/${job.id}`, { status: prevStatus })
+              notifyParent('update', restored || { ...job, status: prevStatus })
+              notify?.('Cancellation undone')
+            } catch {
+              notify?.('Could not undo — edit the job to restore it manually')
+            }
+          },
+        },
+      })
       notifyParent('update', updated || { ...job, status: 'cancelled' })
       onClose()
     } catch (err) {
@@ -160,6 +243,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }
   }
 
+  // Entry point for the Save button. A recurring job's edit is ambiguous \u2014
+  // does a date/time/crew change apply to just this occurrence, this-and-
+  // future, or the whole series? \u2014 so it interrupts here for the scope
+  // dialog instead of saving right away; performDirectSave/performRecurringSave
+  // (below) do the actual work once that's resolved.
   const handleSave = async (allowConflicts = false) => {
     if (!formData.property_id) {
       setError('Please select a property')
@@ -169,7 +257,17 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       setError('Please pick a date')
       return
     }
+    if (isRecurring) {
+      // Recurring endpoints (reschedule/split/resync) don't have a
+      // conflict-check pass, so there's no allowConflicts to carry through —
+      // the scope choice is the only thing performRecurringSave needs.
+      setScopeDialog('edit')
+      return
+    }
+    await performDirectSave(allowConflicts)
+  }
 
+  const performDirectSave = async (allowConflicts = false) => {
     setSaving(true)
     setError('')
     setConflict(null)
@@ -210,6 +308,111 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     }
   }
 
+  // Routes a recurring job's edit to the mechanism that keeps the series
+  // consistent for the chosen scope \u2014 see RecurrenceScopeDialog's header
+  // comment for why a bare PATCH is unsafe here.
+  const performRecurringSave = async (scope) => {
+    setScopeDialog(null)
+    setSaving(true)
+    setError('')
+    setConflict(null)
+    try {
+      const schedId = job.recurring_schedule_id
+      const originalDate = job.scheduled_date
+      const originalStart = (job.start_time || '').slice(0, 5)
+      const originalEnd = (job.end_time || '').slice(0, 5)
+      const newDate = formData.scheduled_date || originalDate
+      const dateChanged = newDate !== originalDate
+      const timeChanged = formData.start_time !== originalStart || formData.end_time !== originalEnd
+
+      if (scope === 'this') {
+        if (dateChanged || timeChanged) {
+          const res = await post(`/api/recurring/${schedId}/reschedule`, {
+            exception_date: originalDate,
+            rescheduled_date: newDate,
+            rescheduled_start_time: formData.start_time || null,
+            rescheduled_end_time: formData.end_time || null,
+            cleaner_ids: formData.cleaner_ids,
+            reason: 'Edited from the calendar (this visit only)',
+          })
+          // The exception model has no title/notes/address/job_type/status
+          // columns \u2014 those land on the materialized Job via a follow-up PATCH.
+          const extra = {}
+          if (formData.title) extra.title = formData.title
+          if (formData.address) extra.address = formData.address
+          extra.notes = formData.notes
+          if (formData.job_type) extra.job_type = formData.job_type
+          if (formData.status && formData.status !== job.status) extra.status = formData.status
+          if (res?.job_id && Object.keys(extra).length) {
+            await patch(`/api/jobs/${res.job_id}`, extra)
+          }
+        } else {
+          // No date/time change \u2014 a normal PATCH can't create the
+          // duplicate-occurrence footgun, so skip the exception machinery.
+          await patch(`/api/jobs/${job.id}`, {
+            title: formData.title || undefined,
+            job_type: formData.job_type || undefined,
+            status: formData.status || undefined,
+            address: formData.address || undefined,
+            cleaner_ids: formData.cleaner_ids,
+            notes: formData.notes,
+          })
+        }
+        notify?.('Updated this visit only \u2014 the rest of the series is unchanged')
+      } else if (scope === 'future') {
+        const payload = { cleaner_ids: formData.cleaner_ids, split_date: originalDate }
+        if (formData.title) payload.title = formData.title
+        if (formData.address) payload.address = formData.address
+        payload.notes = formData.notes
+        if (formData.start_time) payload.start_time = formData.start_time
+        if (formData.end_time) payload.end_time = formData.end_time
+        // Only override the weekly pattern when the occurrence actually
+        // moved to a different day \u2014 a pure time/crew edit shouldn't touch
+        // a monthly schedule's day-of-month by accident.
+        if (dateChanged) {
+          const dow = isoDateToBackendDow(newDate)
+          payload.days_of_week = [dow]
+          payload.day_of_week = dow
+        }
+        await post(`/api/recurring/${schedId}/split`, payload)
+        notify?.('Updated this visit and every future one in the series')
+      } else if (scope === 'all') {
+        const payload = { cleaner_ids: formData.cleaner_ids, resync: true }
+        if (formData.title) payload.title = formData.title
+        if (formData.address) payload.address = formData.address
+        payload.notes = formData.notes
+        if (formData.start_time) payload.start_time = formData.start_time
+        if (formData.end_time) payload.end_time = formData.end_time
+        if (dateChanged) {
+          const dow = isoDateToBackendDow(newDate)
+          payload.days_of_week = [dow]
+          payload.day_of_week = dow
+        }
+        const res = await patch(`/api/recurring/${schedId}`, payload)
+        notify?.(`Updated the whole series (${res?.resynced_jobs || 0} upcoming visit(s) re-synced)`)
+      }
+      onSave?.() // series-level change (possibly many jobs) \u2014 let the parent refetch
+      onClose()
+    } catch (err) {
+      const msg = err.message || 'Failed to save this recurring job'
+      if (/conflict|unavailable|over capacity|time off|already booked/i.test(msg)) {
+        setConflict(msg)
+      } else {
+        setError(msg)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleScopeChoice = (scope) => {
+    if (scopeDialog === 'delete') {
+      handleSkipOccurrence()
+    } else {
+      performRecurringSave(scope)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
@@ -217,7 +420,14 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       <div className="relative h-full w-full sm:max-w-lg bg-panel shadow-2xl flex flex-col overflow-hidden animate-fade-in">
         {/* Header */}
         <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
-          <h2 className="text-xl sm:text-2xl font-bold">{isNew ? "New Job" : "Edit Job"}</h2>
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-xl sm:text-2xl font-bold truncate">{isNew ? "New Job" : "Edit Job"}</h2>
+            {isRecurring && (
+              <span className="shrink-0 text-[11px] font-semibold bg-white/20 px-2 py-1 rounded-full">
+                Repeating visit
+              </span>
+            )}
+          </div>
           <button onClick={onClose} className="p-2 sm:p-1 hover:bg-blue-400 rounded transition-colors -mr-2 sm:mr-0">
             <X className="w-5 sm:w-6 h-5 sm:h-6" />
           </button>
@@ -326,6 +536,37 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               </p>
             )}
           </div>
+
+          {/* Property double-booking heads-up — soft warning, never blocks
+              Save. A property can legitimately have more than one job the
+              same day (morning turnover + afternoon deep clean), so this is
+              informational and dismissible, not a validation error. */}
+          {!dismissedPropertyWarning && propertyConflicts.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0 text-sm">
+                <p className="font-semibold text-amber-800">
+                  {propertyConflicts.some(c => c.overlaps) ? 'Overlapping job at this property' : 'Another job at this property that day'}
+                </p>
+                <ul className="mt-1 space-y-0.5 text-amber-900">
+                  {propertyConflicts.map(c => (
+                    <li key={c.job_id} className="truncate">
+                      {c.title}{c.start_time ? ` · ${c.start_time.slice(0, 5)}–${(c.end_time || '').slice(0, 5)}` : ''}
+                      {c.overlaps && <span className="font-semibold"> (overlaps)</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedPropertyWarning(true)}
+                className="shrink-0 p-1 text-amber-500 hover:text-amber-700"
+                aria-label="Dismiss warning"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Cleaner Selector */}
           <div>
@@ -550,6 +791,15 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           </div>
         </div>
       </div>
+
+      {scopeDialog && (
+        <RecurrenceScopeDialog
+          mode={scopeDialog}
+          busy={saving || removing}
+          onChoose={handleScopeChoice}
+          onCancel={() => setScopeDialog(null)}
+        />
+      )}
     </div>
   )
 }

@@ -24,10 +24,8 @@ export default function ScheduleToolbar({
   toolsOpen,
   onToggleTools,
   onCloseTools,
-  gcalSyncing,
-  gcalPushing,
-  onSyncFromGoogle,
-  onPushToGoogle,
+  syncingNow,
+  onSyncNow,
   onPreviewAutoAssign,
   onPreviewFixTimes,
   onNewJob,
@@ -59,7 +57,7 @@ export default function ScheduleToolbar({
   const filterActive = selectedPropertyType !== 'all' || selectedStatus !== 'all'
     || unassignedOnly || noConnecteamOnly || noGcalOnly
   return (
-    <div className="bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
+    <div className="no-print bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
         {/* Single compact row: title · date nav · view toggle · New Job */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -121,13 +119,14 @@ export default function ScheduleToolbar({
               <>
                 <div className="fixed inset-0 z-40" onClick={onCloseTools} />
                 <div className="absolute right-0 mt-1 w-56 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
-                  <button onClick={() => { onCloseTools(); onSyncFromGoogle() }} disabled={gcalSyncing}
+                  {/* Auto-sync (Settings -> Automation) keeps Google Calendar
+                      current in the background — this is just the manual
+                      "do it right now" fallback, one button instead of a
+                      separate pull/push pair a small team shouldn't need to
+                      think about. */}
+                  <button onClick={() => { onCloseTools(); onSyncNow() }} disabled={syncingNow}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
-                    <RefreshCw className={`w-4 h-4 ${gcalSyncing ? 'animate-spin' : ''}`} /> {gcalSyncing ? 'Syncing…' : 'Sync from Google'}
-                  </button>
-                  <button onClick={() => { onCloseTools(); onPushToGoogle() }} disabled={gcalPushing}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
-                    <CalendarIcon className="w-4 h-4" /> {gcalPushing ? 'Pushing…' : 'Push to Google'}
+                    <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} /> {syncingNow ? 'Syncing…' : 'Sync now'}
                   </button>
                   <div className="my-1 border-t border-hairline" />
                   <button onClick={() => { onCloseTools(); onPreviewAutoAssign() }}

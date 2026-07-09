@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Home, RotateCw, X, ArrowRight, ArrowLeft, Ban, Zap, Users, ExternalLink, Plus } from 'lucide-react'
 import { get, patch } from "../api"
 import { toLocalYMD } from '../utils/format'
@@ -6,6 +6,7 @@ import { PROPERTY_TYPE_CONFIG } from './schedule/constants'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useEmployees } from '../hooks/useEmployees'
 import { monthGridRange, rangeContains } from '../utils/dateRange'
+import MonthDayCell from './schedule/MonthDayCell'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -96,6 +97,11 @@ export default function CalendarView({
 
   const [draggingJob, setDraggingJob] = useState(null)
   const [dropTarget, setDropTarget]   = useState(null)
+  // Mirrors draggingJob so the drop handlers below can read its CURRENT
+  // value without depending on the state itself (which would rebuild the
+  // handler — and re-render every memoized day cell — on every drag start).
+  const draggingJobRef = useRef(null)
+  useEffect(() => { draggingJobRef.current = draggingJob }, [draggingJob])
 
   const isMobile = useIsMobile()
   const today = toLocalYMD(now)
@@ -183,7 +189,12 @@ export default function CalendarView({
   // memoize parentJobs at the caller.
   }, [parentCoversMonth, parentJobs])
 
-  const filteredJobs = jobs.filter(j => {
+  // Memoized so the day-cell lookup arrays keep the SAME reference across
+  // renders that don't actually change jobs/filters/icalEvents/exceptions —
+  // MonthDayCell is wrapped in React.memo, and a fresh array reference on
+  // every render (e.g. from a dropTarget/selected state tick elsewhere)
+  // would make every cell look "changed" and defeat that memoization.
+  const filteredJobs = useMemo(() => jobs.filter(j => {
     // Hide cancelled jobs by default so a deleted/cancelled job comes OFF the
     // calendar instead of lingering crossed-out. Still reachable by explicitly
     // filtering for the "Cancelled" status.
@@ -192,37 +203,51 @@ export default function CalendarView({
     if (filters.status && j.status !== filters.status) return false
     if (filters.property_id && String(j.property_id) !== filters.property_id) return false
     return true
-  })
+  }), [jobs, filters.status, filters.job_type, filters.property_id])
 
-  const jobsByDay = {}
-  filteredJobs.forEach(j => {
-    if (!jobsByDay[j.scheduled_date]) jobsByDay[j.scheduled_date] = []
-    jobsByDay[j.scheduled_date].push(j)
-  })
-
-  const bookingsByDay = {}
-  icalEvents.forEach(ev => {
-    if (!ev.checkin_date || !ev.checkout_date) return
-    const stayDays = eachDay(ev.checkin_date, ev.checkout_date)
-    stayDays.forEach(d => {
-      if (!bookingsByDay[d]) bookingsByDay[d] = []
-      bookingsByDay[d].push(ev)
+  const jobsByDay = useMemo(() => {
+    const map = {}
+    filteredJobs.forEach(j => {
+      if (!map[j.scheduled_date]) map[j.scheduled_date] = []
+      map[j.scheduled_date].push(j)
     })
-  })
+    return map
+  }, [filteredJobs])
 
-  const skipsByDay = {}
-  const reschedulesFromByDay = {}
-  const reschedulesToByDay = {}
-  exceptions.forEach(ex => {
-    if (ex.exception_type === 'skip') {
-      ;(skipsByDay[ex.exception_date] ||= []).push(ex)
-    } else if (ex.exception_type === 'reschedule') {
-      ;(reschedulesFromByDay[ex.exception_date] ||= []).push(ex)
-      if (ex.rescheduled_date) {
-        ;(reschedulesToByDay[ex.rescheduled_date] ||= []).push(ex)
+  const bookingsByDay = useMemo(() => {
+    const map = {}
+    icalEvents.forEach(ev => {
+      if (!ev.checkin_date || !ev.checkout_date) return
+      const stayDays = eachDay(ev.checkin_date, ev.checkout_date)
+      stayDays.forEach(d => {
+        if (!map[d]) map[d] = []
+        map[d].push(ev)
+      })
+    })
+    return map
+  }, [icalEvents])
+
+  const { skipsByDay, reschedulesFromByDay, reschedulesToByDay } = useMemo(() => {
+    const skipsByDay = {}
+    const reschedulesFromByDay = {}
+    const reschedulesToByDay = {}
+    exceptions.forEach(ex => {
+      if (ex.exception_type === 'skip') {
+        ;(skipsByDay[ex.exception_date] ||= []).push(ex)
+      } else if (ex.exception_type === 'reschedule') {
+        ;(reschedulesFromByDay[ex.exception_date] ||= []).push(ex)
+        if (ex.rescheduled_date) {
+          ;(reschedulesToByDay[ex.rescheduled_date] ||= []).push(ex)
+        }
       }
-    }
-  })
+    })
+    return { skipsByDay, reschedulesFromByDay, reschedulesToByDay }
+  }, [exceptions])
+
+  // Stable empty arrays so a day with no jobs/bookings/exceptions doesn't
+  // get a brand-new `[]` on every render (same memoization reasoning as
+  // above — MonthDayCell's props must be reference-stable to skip re-render).
+  const EMPTY_ARR = useMemo(() => [], [])
 
   const cleanerInitials = (id) => {
     const e = employees.find(e => e.id === id || e.userId === id)
@@ -251,39 +276,74 @@ export default function CalendarView({
     _emitMonth(now.getFullYear(), now.getMonth())
   }
 
-  const onDragStart = (e, job) => {
+  // Also stable (see below) so MonthDayCell's memo isn't defeated by a
+  // fresh onSelectDay closure on every render.
+  const onSelectDay = useCallback((date) => {
+    setSelected(date)
+    onDayClick?.(date)
+  }, [onDayClick])
+
+  // useCallback + functional state updates throughout this drag/touch block:
+  // MonthDayCell is React.memo'd, and every cell receives the SAME handler
+  // references (it binds `date`/`job` itself when calling them) — so if a
+  // handler's identity changed on every dragover/touchmove tick (because it
+  // read `dropTarget`/`touchDrag` state directly), ALL cells would see a
+  // "changed" prop and re-render on every tick, defeating the memoization
+  // this file exists to add. Reading through refs instead of the closed-over
+  // state value keeps these stable for the component's whole lifetime.
+  const onDragStart = useCallback((e, job) => {
     if (isMobile) return
     setDraggingJob(job)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', JSON.stringify({ jobId: job.id }))
     if (e.target) e.target.style.opacity = '0.5'
-  }
-  const onDragEnd = (e) => {
+  }, [isMobile])
+  const onDragEnd = useCallback((e) => {
     if (e.target) e.target.style.opacity = '1'
     setDraggingJob(null)
     setDropTarget(null)
-  }
-  const onDragOver = (e, date) => {
+  }, [])
+  const onDragOver = useCallback((e, date) => {
     if (isMobile) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    if (dropTarget !== date) setDropTarget(date)
-  }
-  const onDragLeave = () => setDropTarget(null)
+    setDropTarget(prev => (prev !== date ? date : prev))
+  }, [isMobile])
+  const onDragLeave = useCallback(() => setDropTarget(null), [])
 
   // Shared reschedule commit for both the desktop drop handler and the touch
   // drag end. On 409 (double-booking / time-off / capacity) we surface a toast
   // with a "Reschedule anyway" retry that re-issues the PATCH with
   // allow_conflicts=true — matches the edit-modal escape hatch that already
   // exists for save-in-modal, instead of silently snapping the chip back.
-  const commitReschedule = async (jobId, originalDate, targetDate, opts = {}) => {
-    const { allowConflicts = false, isRetry = false } = opts
+  //
+  // useCallback'd (with rangeStart/rangeEnd/toast deps, which only change on
+  // month navigation) so onDrop/onChipTouchEnd below — themselves stable
+  // across drag ticks — don't close over a stale rangeStart/rangeEnd from
+  // whatever month was active when they were first created.
+  const commitReschedule = useCallback(async (jobId, originalDate, targetDate, opts = {}) => {
+    const { allowConflicts = false, isRetry = false, isUndo = false } = opts
     try {
       await patch(`/api/jobs/${jobId}`, {
         scheduled_date: targetDate,
         ...(allowConflicts ? { allow_conflicts: true } : {}),
       })
       if (isRetry && toast) toast.success('Rescheduled with conflict override')
+      else if (isUndo && toast) toast.success('Reschedule undone')
+      else if (toast) {
+        // "Removes the fear of dragging things around" (Tier 1 roadmap) — every
+        // successful drag/touch reschedule gets an Undo action, not just the
+        // conflict-override retry path above.
+        toast.success('Job rescheduled', {
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: originalDate } : j))
+              commitRescheduleRef.current(jobId, targetDate, originalDate, { isUndo: true })
+            },
+          },
+        })
+      }
     } catch (err) {
       const status = err && (err.status || err.statusCode)
       const detail = err && (err.detail || err.message) || ''
@@ -298,7 +358,7 @@ export default function CalendarView({
               onClick: () => {
                 // Optimistically push again so the chip visually jumps on retry.
                 setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
-                commitReschedule(jobId, originalDate, targetDate, { allowConflicts: true, isRetry: true })
+                commitRescheduleRef.current(jobId, originalDate, targetDate, { allowConflicts: true, isRetry: true })
               },
             },
           },
@@ -314,20 +374,27 @@ export default function CalendarView({
         .then(d => setJobs(Array.isArray(d) ? d : []))
         .catch(() => {})
     }
-  }
+  }, [rangeStart, rangeEnd, toast])
+  // The "Reschedule anyway" retry above fires from inside a toast, long
+  // after this specific commitReschedule closure was created — mirror into
+  // a ref so that retry always calls the CURRENT version, not a stale one
+  // pinned to whatever month was active when the toast was raised.
+  const commitRescheduleRef = useRef(commitReschedule)
+  useEffect(() => { commitRescheduleRef.current = commitReschedule }, [commitReschedule])
 
-  const onDrop = async (e, targetDate) => {
+  const onDrop = useCallback(async (e, targetDate) => {
     if (isMobile) return
     e.preventDefault()
     setDropTarget(null)
-    if (!draggingJob) return
-    if (draggingJob.scheduled_date === targetDate) { setDraggingJob(null); return }
-    const jobId = draggingJob.id
-    const originalDate = draggingJob.scheduled_date
+    const job = draggingJobRef.current
+    if (!job) return
+    if (job.scheduled_date === targetDate) { setDraggingJob(null); return }
+    const jobId = job.id
+    const originalDate = job.scheduled_date
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
     setDraggingJob(null)
-    await commitReschedule(jobId, originalDate, targetDate)
-  }
+    await commitRescheduleRef.current(jobId, originalDate, targetDate)
+  }, [isMobile])
 
   // Touch drag-to-reschedule. HTML5 DnD doesn't fire on touch, so we
   // implement a small custom gesture: 200ms press-and-hold to activate,
@@ -337,27 +404,36 @@ export default function CalendarView({
   const [touchDrag, setTouchDrag] = useState(null) // {x, y, hoverDate} | null
   const touchStartRef = useRef(null)               // {x, y, job, timer}
   const justDraggedRef = useRef(false)             // suppress synthetic click
+  // dragArmedRef/touchDragRef mirror touchDrag so onChipTouchMove/End/Cancel
+  // (below) can read its current value without depending on the touchDrag
+  // STATE — which changes on every finger movement and would otherwise
+  // rebuild these callbacks (and re-render every memoized day cell) on
+  // every touchmove tick, same reasoning as the mouse-drag handlers above.
+  const dragArmedRef = useRef(false)
+  const touchDragRef = useRef(null)
 
-  const onChipTouchStart = (e, job) => {
+  const onChipTouchStart = useCallback((e, job) => {
     if (e.touches.length !== 1) return
     const t = e.touches[0]
     const startX = t.clientX
     const startY = t.clientY
     const timer = setTimeout(() => {
       // Press-and-hold fired — activate drag.
-      setTouchDrag({ x: startX, y: startY, hoverDate: null })
+      dragArmedRef.current = true
+      touchDragRef.current = { x: startX, y: startY, hoverDate: null }
+      setTouchDrag(touchDragRef.current)
       setDraggingJob(job)
     }, 200)
     touchStartRef.current = { x: startX, y: startY, job, timer }
-  }
+  }, [])
 
-  const onChipTouchMove = (e) => {
+  const onChipTouchMove = useCallback((e) => {
     const start = touchStartRef.current
     if (!start || e.touches.length !== 1) return
     const t = e.touches[0]
     const dx = Math.abs(t.clientX - start.x)
     const dy = Math.abs(t.clientY - start.y)
-    if (touchDrag === null) {
+    if (!dragArmedRef.current) {
       // Drag not active yet. If finger moves > 8px before the press-and-hold
       // timer fires, it's a scroll/swipe — cancel the drag arming.
       if (dx > 8 || dy > 8) {
@@ -370,15 +446,19 @@ export default function CalendarView({
     const el = typeof document !== 'undefined' ? document.elementFromPoint(t.clientX, t.clientY) : null
     const cell = el?.closest?.('[data-day-cell]')
     const date = cell?.getAttribute('data-day-cell') || null
-    setTouchDrag({ x: t.clientX, y: t.clientY, hoverDate: date })
-    if (dropTarget !== date) setDropTarget(date)
-  }
+    touchDragRef.current = { x: t.clientX, y: t.clientY, hoverDate: date }
+    setTouchDrag(touchDragRef.current)
+    setDropTarget(prev => (prev !== date ? date : prev))
+  }, [])
 
-  const onChipTouchEnd = async (e) => {
+  const onChipTouchEnd = useCallback(async (e) => {
     const start = touchStartRef.current
     if (start?.timer) clearTimeout(start.timer)
     touchStartRef.current = null
-    if (!touchDrag || !start) {
+    const drag = touchDragRef.current
+    dragArmedRef.current = false
+    touchDragRef.current = null
+    if (!drag || !start) {
       setTouchDrag(null)
       setDropTarget(null)
       setDraggingJob(null)
@@ -387,7 +467,7 @@ export default function CalendarView({
     // We did a real drag — suppress the synthetic click that fires after
     // touchend on touch devices (don't open the Job Edit modal).
     justDraggedRef.current = true
-    const targetDate = touchDrag.hoverDate
+    const targetDate = drag.hoverDate
     const job = start.job
     setTouchDrag(null)
     setDropTarget(null)
@@ -398,16 +478,18 @@ export default function CalendarView({
     // anyway" toast instead of a silent revert.
     const originalDate = job.scheduled_date
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: targetDate } : j))
-    await commitReschedule(job.id, originalDate, targetDate)
-  }
+    await commitRescheduleRef.current(job.id, originalDate, targetDate)
+  }, [])
 
-  const onChipTouchCancel = () => {
+  const onChipTouchCancel = useCallback(() => {
     if (touchStartRef.current?.timer) clearTimeout(touchStartRef.current.timer)
     touchStartRef.current = null
+    dragArmedRef.current = false
+    touchDragRef.current = null
     setTouchDrag(null)
     setDropTarget(null)
     setDraggingJob(null)
-  }
+  }, [])
 
   const startDow = firstDay.getDay()
   const totalDays = lastDay.getDate()
@@ -562,6 +644,12 @@ export default function CalendarView({
                               <Zap className="w-2.5 h-2.5" /> immediate
                             </span>
                           )}
+                          {!j.is_immediate_turnover && j.turnover_lead_warning && (
+                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 border border-amber-200 px-1 rounded shrink-0"
+                                  title={`Only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`}>
+                              <Zap className="w-2.5 h-2.5" /> tight
+                            </span>
+                          )}
                           {j.title}
                         </div>
                         <div className="text-xs text-ink-3 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>
@@ -709,191 +797,39 @@ export default function CalendarView({
           {cells.map((date, i) => {
             if (!date) return <div key={i} className="bg-bg" />
 
-            const dayJobs = jobsByDay[date] || []
-            const dayBookings = bookingsByDay[date] || []
-            const daySkips = skipsByDay[date] || []
-            const dayReschedFrom = reschedulesFromByDay[date] || []
-            const dayReschedTo = reschedulesToByDay[date] || []
-            const isToday = date === today
-            const isSelected = date === selected
             const isCheckout = icalEvents.some(e => e.checkout_date === date)
             const isCheckin  = icalEvents.some(e => e.checkin_date  === date)
-            const isDropTarget = dropTarget === date
-            const maxPills = isMobile ? 2 : 3
 
             return (
-              <div
+              <MonthDayCell
                 key={date}
-                data-day-cell={date}
-                onClick={() => { setSelected(date); onDayClick?.(date) }}
-                onDragOver={e => onDragOver(e, date)}
-                onDragLeave={onDragLeave}
-                onDrop={e => onDrop(e, date)}
-                className={`relative p-1 sm:p-1.5 min-h-[64px] sm:min-h-[80px] cursor-pointer transition-colors ${
-                  isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
-                  isSelected ? 'bg-blue-50/60' :
-                  dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
-                  'bg-panel hover:bg-bg'
-                }`}
-              >
-                {/* Day header — date circle + a small density chip on packed
-                    days so the operator reads volume at a glance without
-                    having to fan out the chips or open the day panel.
-                    Audit §10: month cells hide most of a busy day. */}
-                <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                  <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${
-                    isToday ? 'bg-blue-500 text-white' :
-                    isSelected ? 'text-blue-600' :
-                    'text-ink-2'
-                  }`}>
-                    {parseInt(date.slice(8))}
-                  </div>
-                  {dayJobs.length > maxPills && (
-                    <span
-                      className="hidden sm:inline text-[9px] font-semibold text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 leading-4"
-                      title={`${dayJobs.length} jobs scheduled`}
-                    >
-                      {dayJobs.length}
-                    </span>
-                  )}
-                </div>
-
-                {dayBookings.length > 0 && !isMobile && (
-                  <div className="text-[10px] text-orange-600/70 mb-0.5 truncate leading-tight">
-                    {isCheckin && '> '}
-                    {dayBookings[0].property_name || 'Guest'}
-                    {isCheckout && ' (out)'}
-                  </div>
-                )}
-
-                {daySkips.length > 0 && (
-                  <div
-                    className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/60 text-purple-700 border-purple-200 line-through truncate leading-tight"
-                    title={`${daySkips.length} occurrence(s) skipped on this date${daySkips[0].reason ? ': ' + daySkips[0].reason : ''}`}
-                  >
-                    <Ban className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">skipped</span>
-                  </div>
-                )}
-
-                {dayReschedFrom.length > 0 && (
-                  <div
-                    className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50/40 text-purple-600 border-purple-200 italic truncate leading-tight"
-                    title={`Moved to ${dayReschedFrom[0].rescheduled_date}`}
-                  >
-                    <ArrowRight className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">→ {dayReschedFrom[0].rescheduled_date?.slice(5)}</span>
-                  </div>
-                )}
-
-                {dayReschedTo.length > 0 && (
-                  <div
-                    className="flex items-center gap-0.5 text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 mb-0.5 rounded border bg-purple-50 text-purple-700 border-purple-300 truncate leading-tight"
-                    title={`Moved from ${dayReschedTo[0].exception_date}`}
-                  >
-                    <ArrowLeft className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">moved</span>
-                  </div>
-                )}
-
-                <div className="space-y-0.5">
-                  {dayJobs.slice(0, maxPills).map(j => {
-                    const tc = TYPE_CONFIG[j.job_type] || TYPE_CONFIG.residential
-                    // Readable label: time + who (client, falling back to area/title).
-                    const chipTime = j.start_time ? j.start_time.slice(0, 5) : ''
-                    const chipWho = j.client_name || (j.address ? j.address.split(',')[0] : '') || j.title
-                    const isDuplicate = j.job_type === 'str_turnover' && j.property_id &&
-                      dayJobs.filter(dj => dj.job_type === 'str_turnover' && dj.property_id === j.property_id).length > 1
-                    const isCancelled = j.status === 'cancelled'
-                    return (
-                      <div
-                        key={j.id}
-                        draggable={!isMobile}
-                        onDragStart={e => onDragStart(e, j)}
-                        onDragEnd={onDragEnd}
-                        onTouchStart={e => onChipTouchStart(e, j)}
-                        onTouchMove={onChipTouchMove}
-                        onTouchEnd={onChipTouchEnd}
-                        onTouchCancel={onChipTouchCancel}
-                        style={{ touchAction: 'none' }}
-                        onClick={e => {
-                          // Suppress the synthetic click that fires after a touch-drag.
-                          if (justDraggedRef.current) {
-                            justDraggedRef.current = false
-                            e.stopPropagation()
-                            return
-                          }
-                          e.stopPropagation()
-                          onJobClick?.(j)
-                        }}
-                        className={`flex items-center gap-1 text-[10px] sm:text-[11px] px-1 sm:px-1.5 py-0.5 rounded border leading-tight cursor-grab active:cursor-grabbing ${
-                          isCancelled ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
-                          isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
-                          `${tc.pill} ${tc.pillHover}`
-                        }`}
-                        title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
-                        {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
-                        {j.is_immediate_turnover && (
-                          <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
-                        )}
-                        {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
-                        {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
-                        <span className="truncate">{chipWho}</span>
-                      </div>
-                    )
-                  })}
-                  {dayJobs.length > maxPills && (
-                    // Group wraps the "+N more" button + a hover popover. The
-                    // popover lists the HIDDEN jobs at full width, wrapped
-                    // (no truncation), so a packed day is inspectable without
-                    // opening the day panel. Click still opens the day panel
-                    // (works on touch, no hover). Audit §10.
-                    <div className="relative group/more">
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); setSelected(date); onDayClick?.(date) }}
-                        className="text-[9px] sm:text-[10px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
-                      >
-                        +{dayJobs.length - maxPills} more
-                      </button>
-                      <div
-                        className="hidden group-hover/more:block absolute z-30 left-0 top-full mt-1 w-56 max-w-[16rem] bg-panel rounded-lg shadow-xl border border-hairline p-2"
-                        onClick={e => e.stopPropagation()}
-                        role="tooltip"
-                      >
-                        <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wide mb-1.5">
-                          {dayJobs.length - maxPills} more · {new Date(date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                        </div>
-                        <div className="space-y-0.5 max-h-72 overflow-auto">
-                          {dayJobs.slice(maxPills).map(j2 => {
-                            const tc2 = TYPE_CONFIG[j2.job_type] || TYPE_CONFIG.residential
-                            const chipTime2 = j2.start_time ? j2.start_time.slice(0, 5) : ''
-                            const chipWho2 = j2.client_name || (j2.address ? j2.address.split(',')[0] : '') || j2.title
-                            const isCancelled2 = j2.status === 'cancelled'
-                            return (
-                              <button
-                                key={j2.id}
-                                type="button"
-                                onClick={e => { e.stopPropagation(); onJobClick?.(j2) }}
-                                className={`w-full text-left flex items-center gap-1 text-[11px] px-1.5 py-1 rounded border leading-tight ${
-                                  isCancelled2 ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
-                                  `${tc2.pill} ${tc2.pillHover}`
-                                }`}
-                              >
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc2.dot}`} />
-                                {chipTime2 && <span className="font-semibold tabular-nums shrink-0">{chipTime2}</span>}
-                                <span className="whitespace-normal break-words">{chipWho2}</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+                date={date}
+                dayJobs={jobsByDay[date] || EMPTY_ARR}
+                dayBookings={bookingsByDay[date] || EMPTY_ARR}
+                daySkips={skipsByDay[date] || EMPTY_ARR}
+                dayReschedFrom={reschedulesFromByDay[date] || EMPTY_ARR}
+                dayReschedTo={reschedulesToByDay[date] || EMPTY_ARR}
+                isToday={date === today}
+                isSelected={date === selected}
+                isDropTarget={dropTarget === date}
+                isCheckin={isCheckin}
+                isCheckout={isCheckout}
+                isMobile={isMobile}
+                maxPills={isMobile ? 2 : 3}
+                typeConfig={TYPE_CONFIG}
+                onSelectDay={onSelectDay}
+                onDragOverDay={onDragOver}
+                onDragLeaveDay={onDragLeave}
+                onDropDay={onDrop}
+                onChipDragStart={onDragStart}
+                onChipDragEnd={onDragEnd}
+                onChipTouchStart={onChipTouchStart}
+                onChipTouchMove={onChipTouchMove}
+                onChipTouchEnd={onChipTouchEnd}
+                onChipTouchCancel={onChipTouchCancel}
+                onJobClick={onJobClick}
+                justDraggedRef={justDraggedRef}
+              />
             )
           })}
         </div>

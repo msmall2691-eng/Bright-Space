@@ -149,8 +149,7 @@ export default function Schedule() {
   const [toolsOpen, setToolsOpen] = useState(false)
 
   const {
-    gcalSyncing, syncFromGoogle,
-    gcalPushing, pushToGoogle,
+    syncingNow, syncNow,
     fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
@@ -240,7 +239,14 @@ export default function Schedule() {
   const {
     selectedVisitIds, toggleVisitSelect, selectAllVisible,
     clearVisitSelection, bulkDeleteVisits, bulkDeleting,
-  } = useVisitSelection({ visits, setVisits, currentlyVisibleVisits, toast })
+    bulkShiftVisits, bulkShifting,
+  } = useVisitSelection({
+    visits, setVisits, currentlyVisibleVisits, toast,
+    // Shifted visits land on a different date — the month grid caches its
+    // own jobs list keyed off calRefresh, so bump it the same way a job
+    // save/delete does (handleJobSave above) to pick up the moved jobs.
+    onAfterShift: () => setCalRefresh(k => k + 1),
+  })
 
   const handleEditJob = (job) => {
     setEditingJob(job)
@@ -314,7 +320,7 @@ export default function Schedule() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-bg">
+      <div className="flex flex-col items-center justify-center h-full bg-bg">
         <ErrorState
           title="Couldn't load the schedule"
           description="The server didn't respond. Check your connection and try again."
@@ -332,7 +338,7 @@ export default function Schedule() {
   // no cached data yet.
 
   return (
-    <div className="flex flex-col h-screen bg-bg">
+    <div className="flex flex-col h-full bg-bg">
       {/* Header */}
       <ScheduleToolbar
         viewMode={viewMode}
@@ -350,10 +356,8 @@ export default function Schedule() {
         toolsOpen={toolsOpen}
         onToggleTools={() => setToolsOpen(o => !o)}
         onCloseTools={() => setToolsOpen(false)}
-        gcalSyncing={gcalSyncing}
-        gcalPushing={gcalPushing}
-        onSyncFromGoogle={syncFromGoogle}
-        onPushToGoogle={pushToGoogle}
+        syncingNow={syncingNow}
+        onSyncNow={syncNow}
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
@@ -398,6 +402,8 @@ export default function Schedule() {
           onClear={clearVisitSelection}
           onBulkDelete={bulkDeleteVisits}
           bulkDeleting={bulkDeleting}
+          onBulkShift={bulkShiftVisits}
+          bulkShifting={bulkShifting}
         />
       )}
 
@@ -439,8 +445,6 @@ export default function Schedule() {
             />
           </div>
           <StickyActionBar
-            unassignedCount={todayStats.unassigned}
-            onAssign={() => setUnassignedOnly(true)}
             onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
           />
         </div>
@@ -546,7 +550,7 @@ export default function Schedule() {
           clients={Object.values(clients)}
           onClose={() => setShowJobModal(false)}
           onSave={handleJobSave}
-          notify={(m) => toast.success(m)}
+          notify={(m, opts) => toast.success(m, opts)}
         />
       )}
 
