@@ -322,13 +322,28 @@ export default function CalendarView({
   // across drag ticks — don't close over a stale rangeStart/rangeEnd from
   // whatever month was active when they were first created.
   const commitReschedule = useCallback(async (jobId, originalDate, targetDate, opts = {}) => {
-    const { allowConflicts = false, isRetry = false } = opts
+    const { allowConflicts = false, isRetry = false, isUndo = false } = opts
     try {
       await patch(`/api/jobs/${jobId}`, {
         scheduled_date: targetDate,
         ...(allowConflicts ? { allow_conflicts: true } : {}),
       })
       if (isRetry && toast) toast.success('Rescheduled with conflict override')
+      else if (isUndo && toast) toast.success('Reschedule undone')
+      else if (toast) {
+        // "Removes the fear of dragging things around" (Tier 1 roadmap) — every
+        // successful drag/touch reschedule gets an Undo action, not just the
+        // conflict-override retry path above.
+        toast.success('Job rescheduled', {
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: originalDate } : j))
+              commitRescheduleRef.current(jobId, targetDate, originalDate, { isUndo: true })
+            },
+          },
+        })
+      }
     } catch (err) {
       const status = err && (err.status || err.statusCode)
       const detail = err && (err.detail || err.message) || ''

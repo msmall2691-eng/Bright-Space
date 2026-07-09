@@ -546,7 +546,7 @@ export default function Schedule() {
           clients={Object.values(clients)}
           onClose={() => setShowJobModal(false)}
           onSave={handleJobSave}
-          notify={(m) => toast.success(m)}
+          notify={(m, opts) => toast.success(m, opts)}
         />
       )}
 

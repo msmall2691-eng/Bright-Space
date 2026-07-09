@@ -214,9 +214,27 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
     if (!window.confirm('Cancel this job? It will be marked cancelled.')) return
     setRemoving(true)
     setError('')
+    const prevStatus = job.status
     try {
       const updated = await patch(`/api/jobs/${job.id}`, { status: 'cancelled' })
-      notify?.('Job cancelled')
+      // "Removes the fear" (Tier 1 roadmap): an Undo action on the toast
+      // reverts to whatever status the job actually had before — the modal
+      // is already closed by the time this fires, but notify/notifyParent
+      // are plain closures over props that stay valid after unmount.
+      notify?.('Job cancelled', {
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            try {
+              const restored = await patch(`/api/jobs/${job.id}`, { status: prevStatus })
+              notifyParent('update', restored || { ...job, status: prevStatus })
+              notify?.('Cancellation undone')
+            } catch {
+              notify?.('Could not undo — edit the job to restore it manually')
+            }
+          },
+        },
+      })
       notifyParent('update', updated || { ...job, status: 'cancelled' })
       onClose()
     } catch (err) {
