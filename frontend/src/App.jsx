@@ -13,6 +13,7 @@ import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
+import PublicJobConfirm from './pages/PublicJobConfirm'
 import { useUnreadCount } from './hooks/useUnreadCount'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
@@ -74,7 +75,7 @@ class ErrorBoundary extends Component {
 
 // Wraps Sidebar with the global unread poller. Lives inline in App so the
 // poll only runs when the user is actually inside the authenticated shell
-// (skipped on /login and public /quote/:token, /pay/:token routes).
+// (skipped on /login and public /quote/:token, /pay/:token, /job/:token routes).
 function SidebarWithUnread(props) {
   const navigate = useNavigate()
   const { unreadConversations } = useUnreadCount({
@@ -149,6 +150,7 @@ export default function App() {
   }
 
   const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
+    || location.pathname.startsWith('/job/')
   const isLoginRoute = location.pathname === '/login'
   const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
@@ -157,6 +159,7 @@ export default function App() {
       <Routes>
         <Route path="/quote/:token" element={<PublicQuote />} />
         <Route path="/pay/:token" element={<PublicPayment />} />
+        <Route path="/job/:token" element={<PublicJobConfirm />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     )

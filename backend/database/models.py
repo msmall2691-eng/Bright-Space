@@ -537,6 +537,16 @@ class Job(Base):
     checklist_results = Column(JSON, nullable=True)
     photos = Column(JSON, default=list)
 
+    # Customer-facing confirm/reschedule-request link (Part 2 Tier 2 — mirrors
+    # Quote.public_token). Lazily generated the first time it's needed (the
+    # reminder SMS, or a staff-initiated "send confirm link").
+    public_token = Column(String(64), nullable=True, unique=True, index=True)
+    customer_confirmed_at = Column(DateTime, nullable=True)
+    # A request does NOT auto-reschedule the job — it queues for staff to
+    # action, same as the roadmap doc's "requests land in your queue".
+    reschedule_requested_at = Column(DateTime, nullable=True)
+    reschedule_request_message = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

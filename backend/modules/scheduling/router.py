@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
@@ -18,6 +19,7 @@ from utils.activity_logger import (
 )
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import business_today
+from ratelimit import rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1447,6 +1449,116 @@ def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db))
     if not dry_run and changes:
         db.commit()
     return {"dry_run": dry_run, "count": len(changes), "jobs": changes}
+
+
+def _ensure_job_public_token(job: Job) -> str:
+    """Return the job's public confirm-link token, generating one if missing."""
+    if not job.public_token:
+        job.public_token = secrets.token_urlsafe(32)
+    return job.public_token
+
+
+def _job_by_token(token: str, db: Session) -> Job:
+    job = db.query(Job).filter(Job.public_token == token).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _public_job_dict(job: Job, db: Session) -> dict:
+    """Client-facing serialization for the public confirm page — no internal
+    IDs/notes/cleaner assignments, just what the customer needs to recognize
+    and confirm their own visit."""
+    from modules.quoting.router import _company_info
+    company = _company_info(db)
+    prop = job.property
+    return {
+        "title": job.title,
+        "status": job.status,
+        "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None,
+        "start_time": str(job.start_time) if job.start_time else None,
+        "end_time": str(job.end_time) if job.end_time else None,
+        "address": (prop.address if prop else None) or job.address,
+        "company_name": company["company_name"],
+        "company_phone": company["company_phone"],
+        "brand_color": company["brand_color"],
+        "company_logo_url": company["company_logo_url"],
+        "customer_confirmed_at": job.customer_confirmed_at.isoformat() if job.customer_confirmed_at else None,
+        "reschedule_requested_at": job.reschedule_requested_at.isoformat() if job.reschedule_requested_at else None,
+        "is_cancelled": job.status == "cancelled",
+    }
+
+
+def _notify_owner_job_event(subject: str, lines: list) -> None:
+    """Best-effort owner email for a customer job-confirm-link event. Never
+    raises — mirrors modules/quoting/router.py's _notify_owner_quote_event_core."""
+    try:
+        from integrations.email import _load_smtp_creds, send_email
+        creds = _load_smtp_creds()
+        owner = creds.get("from_email")
+        if not owner:
+            return
+        import html as _html
+        body = "<br>".join(_html.escape(l) if l else "&nbsp;" for l in lines)
+        send_email(to=owner, subject=subject, html_body=f"<div style='font-family:sans-serif'>{body}</div>",
+                   text_body="\n".join(lines))
+    except Exception as e:
+        logger.warning(f"[jobs] owner notification failed: {e}")
+
+
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.get("/public/{token}", dependencies=[Depends(rate_limit(120, 3600, "job_view"))])
+def public_view_job(token: str, db: Session = Depends(get_db)):
+    """Client-facing view of a single job via its confirm-link token."""
+    job = _job_by_token(token, db)
+    return _public_job_dict(job, db)
+
+
+@router.post("/public/{token}/confirm", dependencies=[Depends(rate_limit(20, 3600, "job_confirm"))])
+def public_confirm_job(token: str, db: Session = Depends(get_db)):
+    """Customer confirms they'll be home/ready for the visit. Idempotent."""
+    job = _job_by_token(token, db)
+    if job.status == "cancelled":
+        raise HTTPException(status_code=409, detail="This visit was cancelled.")
+    if not job.customer_confirmed_at:
+        job.customer_confirmed_at = datetime.now(timezone.utc)
+        log_activity(
+            db, "job_customer_confirmed", job_id=job.id, client_id=job.client_id,
+            actor="client", summary="Customer confirmed the visit", commit=False,
+        )
+        db.commit()
+    return {"status": "confirmed"}
+
+
+class PublicRescheduleRequest(BaseModel):
+    message: Optional[str] = None
+
+
+@router.post("/public/{token}/request-reschedule", dependencies=[Depends(rate_limit(20, 3600, "job_reschedule_request"))])
+def public_request_reschedule(token: str, data: PublicRescheduleRequest = None, db: Session = Depends(get_db)):
+    """Customer asks to reschedule from the public link. Does NOT move the
+    job — it queues the request for staff, same as a change-request on a
+    quote; an operator still picks the new date/time from the schedule."""
+    job = _job_by_token(token, db)
+    if job.status == "cancelled":
+        raise HTTPException(status_code=409, detail="This visit was cancelled.")
+    msg = ((data.message if data else None) or "").strip()
+    job.reschedule_requested_at = datetime.now(timezone.utc)
+    job.reschedule_request_message = msg or None
+    log_activity(
+        db, "job_reschedule_requested", job_id=job.id, client_id=job.client_id,
+        actor="client",
+        summary=f"Customer requested a reschedule: {msg[:500]}" if msg else "Customer requested a reschedule",
+        commit=False,
+    )
+    db.commit()
+    when = f"{job.scheduled_date} {job.start_time}".strip()
+    lines = [f"A customer requested to reschedule an upcoming visit ({when}).".strip()]
+    if msg:
+        lines += ["", f"“{msg}”"]
+    lines += ["", "Open the schedule to pick a new time."]
+    _notify_owner_job_event(f"\U0001f4c5 Reschedule requested: {job.title}", lines)
+    return {"status": "received"}
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])

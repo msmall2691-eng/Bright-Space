@@ -21,12 +21,14 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from datetime import datetime, timedelta, timezone, date as date_cls
 
 from sqlalchemy.orm import Session
 
 from database.models import Job, Client, Conversation, Message
 from integrations.twilio_client import send_sms
+from config import app_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,14 @@ def _format_time(t) -> str:
         return str(t)
 
 
+def _job_confirm_url(job: Job) -> str:
+    """Lazily generate (and persist via the caller's later commit) the job's
+    public confirm-link token, mirroring the Quote public_token pattern."""
+    if not job.public_token:
+        job.public_token = secrets.token_urlsafe(32)
+    return f"{app_base_url().rstrip('/')}/job/{job.public_token}"
+
+
 def build_reminder_body(job: Job, client: Client) -> str:
     """Compose the client-facing reminder text. Kept small + plain so it reads
     well as a single SMS segment for the common case."""
@@ -66,9 +76,10 @@ def build_reminder_body(job: Job, client: Client) -> str:
         where = f" at {job.property.name}"
     elif job.address:
         where = f" at {job.address}"
+    link = _job_confirm_url(job)
     return (
         f"Hi {first}, this is a reminder for your cleaning {when}{where}. "
-        "Reply here if you need to reschedule. Thanks!"
+        f"Confirm or request a change: {link}"
     )
 
 
