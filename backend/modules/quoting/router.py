@@ -197,10 +197,10 @@ def create_quote(
     # Carry the customer's stated cadence onto the quote: prefer an explicit
     # value, else inherit it from the linked lead so a won quote can pre-fill
     # the recurring-plan setup without re-asking.
-    frequency = quote_data.frequency
-    if not frequency and quote_data.intake_id:
+    intake = None
+    if quote_data.intake_id:
         intake = db.query(LeadIntake).filter(LeadIntake.id == quote_data.intake_id).first()
-        frequency = getattr(intake, "frequency", None) if intake else None
+    frequency = quote_data.frequency or (getattr(intake, "frequency", None) if intake else None)
 
     quote = Quote(
         client_id=quote_data.client_id,
@@ -233,6 +233,14 @@ def create_quote(
     db.add(quote)
     db.flush()  # assign id
     _assign_quote_number(quote)
+    # Stamp the source lead as quoted. This is the ONLY quote-creation path
+    # the live "Create Quote" button actually calls (Requests.jsx -> Quoting.jsx
+    # -> here), unlike /intake/{id}/convert-to-quote which has no UI caller —
+    # so without this, lead_intakes.status/converted_quote_id never advance
+    # past "new"/"reviewed" and Requests list filtering by quoted status lies.
+    if intake and not intake.converted_quote_id:
+        intake.status = "quoted"
+        intake.converted_quote_id = quote.id
     # Pipeline: surface this quote as a deal (reuse the client's active one).
     from utils.opportunity_helper import ensure_opportunity, advance_opportunity
     opp = ensure_opportunity(
