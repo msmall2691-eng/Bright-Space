@@ -56,6 +56,14 @@ class ScheduleCreate(BaseModel):
     property_id: Optional[int] = None
     generate_weeks_ahead: Optional[int] = 8
     notes: Optional[str] = None
+    # "Ends" (Google-Calendar-style): 'never' | 'on_date' | 'after_count'.
+    # Omitted/None on create means "never" (the historical default — every
+    # schedule before this feature ran open-ended). ends_on is the INCLUSIVE
+    # last occurrence date (the user-facing convention); the endpoint converts
+    # it to series_end_date's exclusive-boundary storage internally.
+    ends_mode: Optional[str] = None
+    ends_on: Optional[str] = None
+    ends_after_count: Optional[int] = None
 
 
 class ExceptionCreate(BaseModel):
@@ -108,6 +116,13 @@ class ScheduleUpdate(BaseModel):
     property_id: Optional[int] = None
     generate_weeks_ahead: Optional[int] = None
     notes: Optional[str] = None
+    # "Ends" (see ScheduleCreate) — omitted entirely means "don't touch the
+    # existing end setting" (this is a PATCH); the frontend always sends all
+    # three together whenever the Ends section is present in the save, so
+    # `ends_mode`'s presence is the signal to apply this block at all.
+    ends_mode: Optional[str] = None
+    ends_on: Optional[str] = None
+    ends_after_count: Optional[int] = None
     # "All visits" scope (Fix 3): when true, re-sync every non-completed,
     # non-exception future Job already generated under this schedule to the
     # edited rule instead of leaving them stale until they age off the
@@ -177,6 +192,17 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
         "generate_weeks_ahead": s.generate_weeks_ahead,
         "series_end_date": s.series_end_date.isoformat() if s.series_end_date else None,
         "series_start_date": s.series_start_date.isoformat() if s.series_start_date else None,
+        "series_end_occurrences": s.series_end_occurrences,
+        # Frontend-friendly "Ends" summary so Recurring.jsx doesn't have to
+        # re-derive the exclusive/inclusive date-math itself: ends_on is the
+        # INCLUSIVE last occurrence (series_end_date minus a day), and
+        # ends_mode tells the edit form which radio to pre-select.
+        "ends_on": (s.series_end_date - timedelta(days=1)).isoformat() if s.series_end_date else None,
+        "ends_mode": (
+            "after_count" if s.series_end_occurrences else
+            "on_date" if s.series_end_date else
+            "never"
+        ),
         "notes": s.notes,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
@@ -279,6 +305,114 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
                 current += timedelta(weeks=weeks_interval)
 
     return sorted(set(result))
+
+
+def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
+    """Date of the Nth occurrence (1-indexed) this schedule's rule would
+    produce, counting from series_start_date (if set and later) or today —
+    the same expansion generate_dates() does, bounded by a COUNT instead of
+    a date window. Used to translate the "ends after N occurrences" UI
+    choice into series_end_date, the single column generate_dates() actually
+    enforces. Returns None if the rule can't produce N occurrences within a
+    10-year safety cap (e.g. days_of_week somehow empty)."""
+    today = business_today()
+    series_start = _as_date(getattr(sched, "series_start_date", None))
+    if series_start is not None and series_start > today:
+        today = series_start
+    safety_cap = today + timedelta(days=365 * 10)
+
+    if sched.frequency == "daily":
+        step = max(1, sched.interval_weeks or 1)
+        chosen = set(_effective_days(sched)) if sched.days_of_week else None
+        current = today
+        count = 0
+        while current <= safety_cap:
+            if chosen is None or current.weekday() in chosen:
+                count += 1
+                if count == n:
+                    return current
+            current += timedelta(days=step)
+        return None
+
+    if sched.frequency == "monthly":
+        dom = sched.day_of_month or 1
+        current = date(today.year, today.month, 1)
+        count = 0
+        while current <= safety_cap:
+            try:
+                target = date(current.year, current.month, dom)
+                if target >= today:
+                    count += 1
+                    if count == n:
+                        return target
+            except ValueError:
+                pass  # invalid day for this month (e.g., Feb 30)
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
+        return None
+
+    # weekly/biweekly/custom-interval: each chosen weekday advances
+    # independently by weeks_interval, same as generate_dates.
+    weeks_interval = max(1, sched.interval_weeks or 1)
+    days = _effective_days(sched)
+    if not days:
+        return None
+    candidates = []
+    for dow in days:
+        days_ahead = (dow - today.weekday()) % 7
+        current = today + timedelta(days=days_ahead)
+        while current <= safety_cap:
+            candidates.append(current)
+            current += timedelta(weeks=weeks_interval)
+    candidates = sorted(set(candidates))
+    return candidates[n - 1] if len(candidates) >= n else None
+
+
+def _apply_ends_fields(sched: RecurringSchedule, updates: dict) -> None:
+    """Pop ends_mode/ends_on/ends_after_count out of `updates` (they aren't
+    real RecurringSchedule columns) and translate them onto
+    series_end_date/series_end_occurrences. Call AFTER every other field has
+    already been applied to `sched` — an occurrence count must be computed
+    against the schedule's (possibly just-edited) frequency/days/interval,
+    not stale prior values.
+
+    No-ops when `ends_mode` isn't present at all, so a caller that doesn't
+    touch "Ends" (e.g. an update that's just renaming the schedule) leaves
+    the existing end setting untouched.
+    """
+    if "ends_mode" not in updates:
+        return
+    mode = updates.pop("ends_mode")
+    ends_on_raw = updates.pop("ends_on", None)
+    ends_count_raw = updates.pop("ends_after_count", None)
+
+    if mode == "never" or mode is None:
+        sched.series_end_date = None
+        sched.series_end_occurrences = None
+    elif mode == "on_date":
+        d = _as_date(ends_on_raw)
+        if d is None:
+            raise HTTPException(status_code=400, detail="ends_on is required when ends_mode='on_date'")
+        # series_end_date is an EXCLUSIVE boundary; ends_on is the user-facing
+        # INCLUSIVE last occurrence, so the stored value is one day later.
+        sched.series_end_date = d + timedelta(days=1)
+        sched.series_end_occurrences = None
+    elif mode == "after_count":
+        try:
+            n = int(ends_count_raw)
+        except (TypeError, ValueError):
+            n = None
+        if not n or n < 1:
+            raise HTTPException(status_code=400, detail="ends_after_count must be a positive integer when ends_mode='after_count'")
+        nth = _nth_occurrence_date(sched, n)
+        if nth is None:
+            raise HTTPException(status_code=400, detail="Could not compute an end date for that many occurrences — check the schedule's days/frequency")
+        sched.series_end_date = nth + timedelta(days=1)
+        sched.series_end_occurrences = n
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid ends_mode: {mode!r} (expected 'never', 'on_date', or 'after_count')")
 
 
 def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[date]) -> List[date]:
@@ -516,13 +650,26 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
 def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
                     org_id: int = Depends(current_org_id)):
     payload = data.model_dump()
+    # ends_mode/ends_on/ends_after_count aren't real RecurringSchedule
+    # columns — pulled out and applied via _apply_ends_fields below, once
+    # the schedule (and its frequency/days/interval) actually exists.
+    ends_fields = {
+        "ends_mode": payload.pop("ends_mode"),
+        "ends_on": payload.pop("ends_on"),
+        "ends_after_count": payload.pop("ends_after_count"),
+    }
     # Normalise: if days_of_week not set, derive from day_of_week
     if not payload.get("days_of_week"):
         payload["days_of_week"] = [payload.get("day_of_week", 0)]
     # Keep day_of_week in sync with first day for legacy compat
     payload["day_of_week"] = payload["days_of_week"][0]
+    # SQLite's Time column rejects raw strings outright (Postgres casts them
+    # leniently) — coerce here the same way update_schedule already does.
+    payload["start_time"] = _as_time(payload["start_time"])
+    payload["end_time"] = _as_time(payload["end_time"])
     sched = RecurringSchedule(**payload)
     sched.org_id = resolve_org_id(org_id, db)  # MT-2: stamp the caller's workspace
+    _apply_ends_fields(sched, ends_fields)
     db.add(sched)
     db.commit()
     db.refresh(sched)
@@ -650,6 +797,16 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
     sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
     updates = data.model_dump(exclude_none=True)
     resync = updates.pop("resync", False)
+    # ends_mode's presence is the signal the frontend actually touched the
+    # "Ends" section this save (see _apply_ends_fields) — pulled out before
+    # the generic setattr loop below since these aren't real columns, and
+    # applied afterward so an occurrence count reflects any frequency/day
+    # changes from the SAME request.
+    ends_fields = {}
+    if "ends_mode" in updates:
+        ends_fields["ends_mode"] = updates.pop("ends_mode")
+        ends_fields["ends_on"] = updates.pop("ends_on", None)
+        ends_fields["ends_after_count"] = updates.pop("ends_after_count", None)
     # Phase 0 fix: an empty days_of_week list would silently collapse a
     # multi-day schedule. Reject it explicitly rather than dropping days.
     if "days_of_week" in updates and not updates["days_of_week"]:
@@ -671,6 +828,7 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
     # Keep day_of_week in sync with first element of days_of_week
     if "days_of_week" in updates and updates["days_of_week"]:
         sched.day_of_week = updates["days_of_week"][0]
+    _apply_ends_fields(sched, ends_fields)
     db.commit()
     db.refresh(sched)
     resynced = _resync_future_jobs(db, sched) if resync else 0

@@ -413,6 +413,11 @@ class RecurringSchedule(Base):
     # (generate_dates always expands from today forward with no floor
     # otherwise). NULL (the common case) means no floor.
     series_start_date = Column(Date, nullable=True)
+    # User-facing "ends after N occurrences" choice, kept purely for display
+    # round-trip (see migration 051) — series_end_date remains the single
+    # column generate_dates() enforces; this is NULL whenever the series
+    # never ends or ends on an explicit date instead of a count.
+    series_end_occurrences = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 

@@ -4,6 +4,7 @@ import { get, post, put, del } from '../../api'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import { useToast } from '../ui/Toast'
+import EndsPicker from './EndsPicker'
 
 /** Two self-contained tab views for the Schedule page.
  *  - AvailabilityPanel: cleaner time-off entries (CRUD against /api/jobs/time-off).
@@ -25,6 +26,9 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
     end_time: '11:00',
     generate_weeks_ahead: 8,
     notes: '',
+    ends_mode: 'never',
+    ends_on: '',
+    ends_after_count: 10,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -52,6 +56,12 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
     if (form.frequency !== 'monthly' && form.days_of_week.length === 0) {
       setError('Pick at least one day of week'); return
     }
+    if (form.ends_mode === 'on_date' && !form.ends_on) {
+      setError('Pick an end date'); return
+    }
+    if (form.ends_mode === 'after_count' && (!form.ends_after_count || parseInt(form.ends_after_count) < 1)) {
+      setError('Occurrence count must be at least 1'); return
+    }
     setSaving(true); setError('')
     try {
       const payload = {
@@ -69,6 +79,9 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
         end_time: form.end_time + ':00',
         generate_weeks_ahead: parseInt(form.generate_weeks_ahead) || 8,
         notes: form.notes || null,
+        ends_mode: form.ends_mode,
+        ends_on: form.ends_mode === 'on_date' ? form.ends_on : null,
+        ends_after_count: form.ends_mode === 'after_count' ? parseInt(form.ends_after_count) : null,
       }
       await post('/api/recurring', payload)
       onCreated(); onClose()
@@ -158,6 +171,10 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
               <input type="time" value={form.end_time} onChange={e => setForm(f => ({...f, end_time: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg" />
             </div>
           </div>
+          <EndsPicker
+            value={{ ends_mode: form.ends_mode, ends_on: form.ends_on, ends_after_count: form.ends_after_count }}
+            onChange={(next) => setForm(f => ({ ...f, ...next }))}
+          />
           <div>
             <label className="block text-sm font-semibold mb-1">Generate weeks ahead</label>
             <input type="number" min="1" max="52" value={form.generate_weeks_ahead} onChange={e => setForm(f => ({...f, generate_weeks_ahead: e.target.value}))} className="w-32 px-3 py-2 border border-hairline rounded-lg" />
