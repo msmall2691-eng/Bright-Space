@@ -28,6 +28,11 @@ export const PROPERTY_TYPE_CONFIG = {
     dot:   'bg-amber-500',
     pill:  'bg-amber-50 text-amber-700 border-amber-200',
     pillHover: 'hover:bg-amber-100',
+    // Tailwind's amber-500 as a literal hex — for callers that need a real
+    // color value (inline-styled/absolutely-positioned blocks: the dispatch
+    // timeline, route ribbon) rather than a class, so those views can't drift
+    // from this single source of truth the way CalendarView once did.
+    hex: '#F59E0B',
   },
   residential: {
     label: 'Residential',
@@ -37,6 +42,7 @@ export const PROPERTY_TYPE_CONFIG = {
     dot:   'bg-blue-500',
     pill:  'bg-blue-50 text-blue-700 border-blue-200',
     pillHover: 'hover:bg-blue-100',
+    hex: '#3B82F6', // Tailwind blue-500
   },
   commercial: {
     label: 'Commercial',
@@ -46,6 +52,7 @@ export const PROPERTY_TYPE_CONFIG = {
     dot:   'bg-purple-500',
     pill:  'bg-purple-50 text-purple-700 border-purple-200',
     pillHover: 'hover:bg-purple-100',
+    hex: '#A855F7', // Tailwind purple-500
   },
 }
 // Job.job_type = 'str_turnover' resolves to the same palette entry as 'str'.

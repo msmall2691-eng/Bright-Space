@@ -18,13 +18,6 @@ const AXIS_END_HOUR = 20
 const HOURS = AXIS_END_HOUR - AXIS_START_HOUR
 const ROW_PX = 48 // one hour cell height
 
-const TYPE_COLOR = {
-  residential: '#3B82F6',
-  str: '#F59E0B',
-  str_turnover: '#F59E0B',
-  commercial: '#8B5CF6',
-}
-
 const parseHHMM = (s) => {
   if (!s) return null
   const [h, m] = String(s).slice(0, 5).split(':').map(Number)
@@ -111,7 +104,7 @@ export default function DispatchTimeline({ visits, jobs, properties, clients, em
             const height = Math.max(30, (e - s) * ROW_PX - 2)
             const widthPct = 100 / total
             const leftPct = col * widthPct
-            const color = TYPE_COLOR[type] || TYPE_COLOR.residential
+            const color = PROPERTY_TYPE_CONFIG[type]?.hex || PROPERTY_TYPE_CONFIG.residential.hex
             const start = (v.start_time || '').slice(0, 5)
             const end = (v.end_time || '').slice(0, 5)
             const crewLabel = (v.cleaner_ids || [])

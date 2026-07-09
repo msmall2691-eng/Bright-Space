@@ -9,20 +9,11 @@
  * height, which is fine as a signal ("this hour is busy — go check the
  * agenda").
  */
+import { PROPERTY_TYPE_CONFIG } from './constants'
+
 const AXIS_START_HOUR = 6
 const AXIS_END_HOUR = 20 // exclusive upper bound for display, block edges can go slightly past 20
 const AXIS_HOURS = AXIS_END_HOUR - AXIS_START_HOUR // 14
-
-// Type → block color. Uses hex directly (not Tailwind classes) so the
-// mixed-color striping is dense per pixel and doesn't fight the class
-// cascade. Same hues as PROPERTY_TYPE_CONFIG's "amber-400 / blue-500 /
-// purple-500" so the ribbon reads the same as the cards below it.
-const TYPE_COLOR = {
-  residential: '#3B82F6',
-  str: '#F59E0B',
-  str_turnover: '#F59E0B',
-  commercial: '#8B5CF6',
-}
 
 const parseHHMM = (s) => {
   if (!s) return null
@@ -122,9 +113,9 @@ export default function RouteRibbon({ visits, jobs, properties }) {
                 width: `${b.width}%`,
                 top: b.row === 0 ? '2px' : '22px',
                 height: '18px',
-                background: b.unassigned ? 'transparent' : TYPE_COLOR[b.type] || TYPE_COLOR.residential,
+                background: b.unassigned ? 'transparent' : (PROPERTY_TYPE_CONFIG[b.type]?.hex || PROPERTY_TYPE_CONFIG.residential.hex),
                 border: b.unassigned
-                  ? `1.5px dashed ${TYPE_COLOR[b.type] || '#F59E0B'}`
+                  ? `1.5px dashed ${PROPERTY_TYPE_CONFIG[b.type]?.hex || PROPERTY_TYPE_CONFIG.str.hex}`
                   : 'none',
                 boxShadow: b.unassigned ? 'none' : 'inset 0 0 0 1px rgba(255,255,255,0.15)',
               }}
