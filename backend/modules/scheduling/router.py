@@ -640,6 +640,27 @@ def get_jobs(
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    # Resolved once up front (was re-resolved 3x further down via a separate
+    # `_org_scope` local) and used everywhere below that needs the caller's
+    # workspace, including the quote/job lookups just below — those used to
+    # query by caller-supplied id with no org filter at all, so a user in one
+    # org could read (and get returned in full) another org's Job by passing
+    # its quote_id here.
+    org_id = resolve_org_id(org_id, db)
+
+    # ── CLIENT OWNERSHIP ── data.client_id is caller-supplied; nothing further
+    # down validated it belonged to this org before using it to seed a new
+    # Property (copying the client's name/address) and stamping it onto the
+    # new Job — a user in one org could pass another org's client_id and get
+    # a job created that's linked to (and leaks the name/address of) that
+    # other org's client.
+    owned_client = db.query(Client).filter(
+        Client.id == data.client_id,
+        or_(Client.org_id == org_id, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not owned_client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
     # ── QUOTE LINKAGE (P1-A) ──
     # When a job is scheduled from an accepted quote, link it back and convert
     # the quote. Idempotent: a double-submit (or a second click of "Set up
@@ -650,10 +671,15 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     source_quote = None
     if data.quote_id:
         from database.models import Quote
-        source_quote = db.query(Quote).filter(Quote.id == data.quote_id).first()
+        source_quote = db.query(Quote).filter(
+            Quote.id == data.quote_id,
+            or_(Quote.org_id == org_id, Quote.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
         if source_quote and source_quote.status == "converted":
-            existing = (db.query(Job).filter(Job.quote_id == source_quote.id)
-                        .order_by(Job.id.asc()).first())
+            existing = (db.query(Job).filter(
+                Job.quote_id == source_quote.id,
+                or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+            ).order_by(Job.id.asc()).first())
             if existing:
                 return job_to_dict(existing)
 
@@ -678,23 +704,22 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # ── CLEANER GUARDS ── double-booking, time-off, capacity. All overridable
     # via allow_conflicts so an operator can intentionally force an assignment.
     if not data.allow_conflicts:
-        _org_scope = resolve_org_id(org_id, db)
         conflicts = _find_cleaner_conflicts(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
             start_time=data.start_time, end_time=data.end_time,
-            org_id=_org_scope,
+            org_id=org_id,
         )
         if conflicts:
             raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
         unavailable = _find_unavailable_cleaners(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
-            org_id=_org_scope,
+            org_id=org_id,
         )
         if unavailable:
             raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
         over = _find_over_capacity(
             db, cleaner_ids=data.cleaner_ids, scheduled_date=data.scheduled_date,
-            org_id=_org_scope,
+            org_id=org_id,
         )
         if over:
             who = ", ".join(f"cleaner {cid} ({n} jobs)" for cid, n in over)
@@ -733,6 +758,15 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     # Quick-schedule flow lets the user skip it. Resolve to the client's existing
     # property, or create a sensible default, so a fast booking never fails here.
     resolved_property_id = data.property_id
+    if resolved_property_id:
+        # Caller-supplied property_id — same class of issue as client_id above:
+        # verify it's this org's property before linking a new Job to it.
+        owned_property = db.query(Property).filter(
+            Property.id == resolved_property_id,
+            or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
+        if not owned_property:
+            raise HTTPException(status_code=404, detail="Property not found")
     if not resolved_property_id:
         existing_prop = (db.query(Property)
                          .filter(Property.client_id == data.client_id)
@@ -740,7 +774,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         if existing_prop:
             resolved_property_id = existing_prop.id
         else:
-            client = db.query(Client).filter(Client.id == data.client_id).first()
+            client = owned_client
             ptype = "str" if data.job_type == "str_turnover" else (
                 data.job_type if data.job_type in ("residential", "commercial") else "residential")
             new_prop = Property(
@@ -750,7 +784,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                 property_type=ptype,
             )
             if hasattr(new_prop, "org_id"):
-                new_prop.org_id = resolve_org_id(org_id, db)
+                new_prop.org_id = org_id
             db.add(new_prop); db.commit(); db.refresh(new_prop)
             resolved_property_id = new_prop.id
 
@@ -763,7 +797,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     payload["start_time"] = _to_time(payload.get("start_time"))
     payload["end_time"] = _to_time(payload.get("end_time"))
     job = Job(**payload)
-    job.org_id = resolve_org_id(org_id, db)  # MT-2: stamp the caller's workspace (robust to in-process calls)
+    job.org_id = org_id  # MT-2: stamp the caller's workspace
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -853,15 +887,20 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
     return result
 
 
-@router.get("/client/{client_id}/gcal-events")
-def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 180, db: Session = Depends(get_db)):
+@router.get("/client/{client_id}/gcal-events", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def client_gcal_events(client_id: int, days_back: int = 90, days_ahead: int = 180,
+                       db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Live Google Calendar events linked to this client (Twenty-style timeline).
 
     Matches events by the client's email (attendee) or our brightbase_client_id
     tag, across every configured calendar. Returns {connected, events} so the
     profile can show the real linked timeline, or a connect prompt when Google
     isn't linked yet."""
-    client = db.query(Client).filter(Client.id == client_id).first()
+    oid = resolve_org_id(org_id, db)
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        or_(Client.org_id == oid, Client.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -1089,6 +1128,7 @@ def cleaner_availability(
     end: Optional[str] = None,
     exclude_job_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """Per-cleaner availability status for the given date + time window.
 
@@ -1106,9 +1146,11 @@ def cleaner_availability(
     d = _to_date(date)
     if d is None:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD.")
+    oid = resolve_org_id(org_id, db)
     # 1) Time-off: everyone off that day.
     off_rows = db.query(CleanerTimeOff).filter(
-        CleanerTimeOff.start_date <= d, CleanerTimeOff.end_date >= d
+        CleanerTimeOff.start_date <= d, CleanerTimeOff.end_date >= d,
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
     ).all()
     off_by_id = {str(r.cleaner_id): r for r in off_rows}
 
@@ -1118,6 +1160,7 @@ def cleaner_availability(
         Job.scheduled_date == d.isoformat(),
         Job.status.notin_(["cancelled"]),
         Job.cleaner_ids.isnot(None),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
     )
     if exclude_job_id is not None:
         q = q.filter(Job.id != exclude_job_id)
@@ -1169,9 +1212,13 @@ def list_time_off(
     cleaner_id: Optional[str] = None,
     upcoming_only: bool = True,
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """List cleaner time-off entries. Defaults to current + future ranges."""
-    q = db.query(CleanerTimeOff)
+    oid = resolve_org_id(org_id, db)
+    q = db.query(CleanerTimeOff).filter(
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
+    )
     if cleaner_id:
         q = q.filter(CleanerTimeOff.cleaner_id == str(cleaner_id))
     if upcoming_only:
@@ -1181,7 +1228,7 @@ def list_time_off(
 
 
 @router.post("/time-off", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
-def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
+def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Mark a cleaner unavailable for a date range (inclusive)."""
     start = _to_date(data.start_date)
     end = _to_date(data.end_date)
@@ -1195,6 +1242,7 @@ def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
         start_date=start,
         end_date=end,
         reason=data.reason,
+        org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
     )
     db.add(row)
     db.commit()
@@ -1203,9 +1251,13 @@ def create_time_off(data: TimeOffCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/time-off/{time_off_id}", status_code=204, dependencies=[Depends(require_role("admin", "manager"))])
-def delete_time_off(time_off_id: int, db: Session = Depends(get_db)):
+def delete_time_off(time_off_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Remove a time-off entry."""
-    row = db.query(CleanerTimeOff).filter(CleanerTimeOff.id == time_off_id).first()
+    oid = resolve_org_id(org_id, db)
+    row = db.query(CleanerTimeOff).filter(
+        CleanerTimeOff.id == time_off_id,
+        or_(CleanerTimeOff.org_id == oid, CleanerTimeOff.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not row:
         raise HTTPException(status_code=404, detail="Time-off entry not found")
     db.delete(row)
@@ -1532,6 +1584,27 @@ def add_job_note(job_id: int, data: dict, db: Session = Depends(get_db),
     return activity_to_dict(act)
 
 
+def _get_job_or_404(db: Session, job_id: int, org_id: int) -> Job:
+    """Fetch a Job scoped to the caller's org, 404 otherwise.
+
+    Several job-action endpoints (complete/skip/invite-client/auto-assign/
+    crew-suggestions) used to do a bare `db.query(Job).filter(Job.id ==
+    job_id).first()` with no org filter at all — a cross-tenant IDOR: any
+    authenticated user in any org could act on any other org's job by
+    guessing/incrementing an id. Matches the `or_(Job.org_id == org_id,
+    Job.org_id.is_(None))` convention already used by get_job/update_job
+    (Job.org_id is still nullable — MT-4 NOT NULL backfill hasn't shipped).
+    404, not 403, so the response doesn't reveal that the id exists at all.
+    """
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
     """Auto-create a draft Invoice the first time a job lands on 'completed'.
 
@@ -1610,7 +1683,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")
     if "property_id" in updates:
-        prop = db.query(Property).filter(Property.id == updates["property_id"]).first()
+        prop = db.query(Property).filter(
+            Property.id == updates["property_id"],
+            or_(Property.org_id == org_id, Property.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
         if not prop:
             raise HTTPException(status_code=404, detail="Property not found")
         # Ownership must stay consistent: re-pointing a job at another
@@ -1833,15 +1909,14 @@ def update_reminder_settings(
     data: ReminderSettings,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
+    org_id: int = Depends(current_org_id),
 ):
     """Toggle SMS reminder suppression for a single job (hybrid model).
 
     Reminders are on by default; setting skip_reminder=true suppresses the 24h
     SMS for this job only, without disabling the system-wide reminder job.
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
     job.skip_sms_reminder = bool(data.skip_reminder)
     db.commit()
@@ -1902,12 +1977,16 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
 
 
 @router.post("/{job_id}/invite-client", dependencies=[Depends(require_role("admin", "manager"))])
-def invite_client(job_id: int, db: Session = Depends(get_db)):
+def invite_client(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """
     Send the Google Calendar invite to the client for this job.
     Use this when you've finalized the schedule and are ready for the client to see it.
     """
-    job = db.query(Job).options(joinedload(Job.client)).filter(Job.id == job_id).first()
+    oid = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -2172,7 +2251,7 @@ class JobCompleteRequest(BaseModel):
 
 @router.post("/{job_id}/complete", dependencies=[Depends(require_role("admin", "manager", "cleaner"))])
 def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
-                 db: Session = Depends(get_db)):
+                 db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Mark a job as completed in a single call.
 
     Sets status='completed' and stamps completed_at / completed_by / checklist /
@@ -2185,9 +2264,7 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
     route that didn't, so a job completed through the field checklist UI
     (the actual completion flow) never got billed automatically.
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
     prev_status = job.status
     job.status = "completed"
@@ -2227,15 +2304,14 @@ def complete_job(job_id: int, data: JobCompleteRequest = JobCompleteRequest(),
 
 
 @router.post("/{job_id}/skip", dependencies=[Depends(require_role("admin", "manager"))])
-def skip_job(job_id: int, reason: Optional[str] = None, db: Session = Depends(get_db)):
+def skip_job(job_id: int, reason: Optional[str] = None,
+             db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Cancel a single occurrence without affecting the recurring schedule.
 
     Mirrors the old POST /api/visits/{id}/skip: mark this job cancelled, keep
     the RecurringSchedule running, and record a RecurrenceException so the skip
     is durable even if the row is later hard-deleted."""
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
 
     prev_status = job.status
     job.status = "cancelled"
@@ -2275,7 +2351,7 @@ def skip_job(job_id: int, reason: Optional[str] = None, db: Session = Depends(ge
 
 
 @router.get("/{job_id}/crew-suggestions", dependencies=[Depends(require_role("admin", "manager"))])
-def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
+def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Suggest crew for a job based on recent assignments at the same property.
 
     Ordered by scheduled_date DESC so "recent" actually means recent — the
@@ -2286,9 +2362,8 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
 
     Sorted by frequency, top 5.
     """
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    oid = resolve_org_id(org_id, db)
+    job = _get_job_or_404(db, job_id, oid)
     if not job.property_id:
         return {"job_id": job_id, "property_id": None, "suggestions": []}
 
@@ -2297,6 +2372,7 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
         .filter(
             Job.property_id == job.property_id,
             Job.cleaner_ids.isnot(None),
+            or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
         )
         .order_by(Job.scheduled_date.desc().nullslast(), Job.id.desc())
         .limit(20)
@@ -2320,20 +2396,20 @@ def get_job_crew_suggestions(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/auto-assign", dependencies=[Depends(require_role("admin", "manager"))])
-def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db)):
+def auto_assign_job_crew(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Assign the most-frequent cleaner at this property to the job.
 
     Mirrors /api/visits/{id}/auto-assign — no history means the job is
     unassigned (cleaner_ids cleared), matching the old semantics."""
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    oid = resolve_org_id(org_id, db)
+    job = _get_job_or_404(db, job_id, oid)
     if not job.property_id:
         return {"status": "no_property", "message": "Job has no associated property"}
 
     recent_jobs = db.query(Job).filter(
         Job.property_id == job.property_id,
         Job.cleaner_ids.isnot(None),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
     ).limit(30).all()
 
     crew_freq: dict = {}
