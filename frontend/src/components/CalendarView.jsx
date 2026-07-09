@@ -644,6 +644,12 @@ export default function CalendarView({
                               <Zap className="w-2.5 h-2.5" /> immediate
                             </span>
                           )}
+                          {!j.is_immediate_turnover && j.turnover_lead_warning && (
+                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 border border-amber-200 px-1 rounded shrink-0"
+                                  title={`Only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`}>
+                              <Zap className="w-2.5 h-2.5" /> tight
+                            </span>
+                          )}
                           {j.title}
                         </div>
                         <div className="text-xs text-ink-3 mt-0.5">{j.start_time || "—"} – {j.end_time || "—"}</div>

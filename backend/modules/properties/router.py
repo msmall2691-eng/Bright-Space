@@ -3,14 +3,21 @@ from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
+from datetime import datetime, timezone, timedelta
 import re
 import logging
 
 from database.db import get_db
-from database.models import Property, ICalEvent, PropertyIcal, Client
+from database.models import Property, ICalEvent, PropertyIcal, Client, Job
 from integrations.ical_sync import sync_property
 from modules.auth.router import require_role, current_org_id
 from utils.dates import business_today
+
+# A feed that hasn't synced cleanly in this long is loudly "stale" rather than
+# quietly missing — auto-sync runs every 15 min by default (scheduler.py), so
+# 24h is ~96 missed cycles: long enough to not flap on a transient blip, short
+# enough that a truly dead feed doesn't sit hidden for days.
+_ICAL_STALE_AFTER = timedelta(hours=24)
 
 
 log = logging.getLogger(__name__)
@@ -112,7 +119,74 @@ def _normalize_ical_url(raw: str) -> str:
     return url
 
 
-def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
+def _property_ical_health(p: Property) -> Optional[str]:
+    """Rolled-up per-property feed health for STR properties (Tier 3 roadmap:
+    a dead feed should be loud, not something you find via an on-demand
+    sweep). One of:
+      - None       — not an STR property; health doesn't apply
+      - "no_feed"  — STR property with zero active iCal feeds configured
+      - "healthy"  — at least one active feed synced cleanly within
+                     _ICAL_STALE_AFTER
+      - "stale"    — every active feed is either failing or hasn't synced
+                     recently enough to trust
+    """
+    if p.property_type != "str":
+        return None
+    active_feeds = [f for f in (p.property_icals or []) if f.active]
+    if not active_feeds:
+        return "no_feed"
+    cutoff = datetime.now(timezone.utc) - _ICAL_STALE_AFTER
+    for f in active_feeds:
+        if f.last_sync_status == "ok" and f.last_synced_at:
+            synced_at = f.last_synced_at
+            if synced_at.tzinfo is None:
+                synced_at = synced_at.replace(tzinfo=timezone.utc)
+            if synced_at >= cutoff:
+                return "healthy"
+    return "stale"
+
+
+def _turnovers_next_30d(db: Session, property_id: int) -> int:
+    """Single-property turnover count for the next 30 days (Tier 3 roadmap's
+    'N turnovers next 30d' indicator). See _turnovers_next_30d_bulk for the
+    list-endpoint equivalent that avoids one query per property."""
+    today = business_today()
+    return (
+        db.query(func.count(Job.id))
+          .filter(
+              Job.property_id == property_id,
+              Job.job_type == "str_turnover",
+              Job.status != "cancelled",
+              Job.scheduled_date >= today,
+              Job.scheduled_date <= today + timedelta(days=30),
+          )
+          .scalar() or 0
+    )
+
+
+def _turnovers_next_30d_bulk(db: Session, property_ids: list) -> dict:
+    """{property_id: count} for every id in property_ids, in one query —
+    used by the properties list endpoint instead of N single-property
+    queries."""
+    if not property_ids:
+        return {}
+    today = business_today()
+    rows = (
+        db.query(Job.property_id, func.count(Job.id))
+          .filter(
+              Job.property_id.in_(property_ids),
+              Job.job_type == "str_turnover",
+              Job.status != "cancelled",
+              Job.scheduled_date >= today,
+              Job.scheduled_date <= today + timedelta(days=30),
+          )
+          .group_by(Job.property_id)
+          .all()
+    )
+    return dict(rows)
+
+
+def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Optional[int] = None) -> dict:
     data = {
         "id": p.id,
         "client_id": p.client_id,
@@ -138,6 +212,8 @@ def prop_to_dict(p: Property, include_icals: bool = True) -> dict:
         "custom_fields": getattr(p, 'custom_fields', None) or {},
         "active": p.active,
         "created_at": p.created_at.isoformat() if p.created_at else None,
+        "ical_health": _property_ical_health(p),
+        "turnovers_next_30d": turnovers_next_30d,
     }
 
     if include_icals:
@@ -181,7 +257,13 @@ def get_properties(
         q = q.filter(Property.client_id == client_id)
     if property_type:
         q = q.filter(Property.property_type == property_type)
-    return [prop_to_dict(p) for p in q.order_by(Property.name).all()]
+    props = q.order_by(Property.name).all()
+    str_ids = [p.id for p in props if p.property_type == "str"]
+    counts = _turnovers_next_30d_bulk(db, str_ids)
+    return [
+        prop_to_dict(p, turnovers_next_30d=(counts.get(p.id, 0) if p.property_type == "str" else None))
+        for p in props
+    ]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
@@ -194,7 +276,7 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id:
     db.add(prop)
     db.commit()
     db.refresh(prop)
-    return prop_to_dict(prop)
+    return prop_to_dict(prop, turnovers_next_30d=(0 if prop.property_type == "str" else None))
 
 
 @router.get("/all-ical-events", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
@@ -249,7 +331,8 @@ def get_property(property_id: int, db: Session = Depends(get_db), org_id: int = 
     ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    return prop_to_dict(prop)
+    n30 = _turnovers_next_30d(db, prop.id) if prop.property_type == "str" else None
+    return prop_to_dict(prop, turnovers_next_30d=n30)
 
 
 @router.patch("/{property_id}", dependencies=[Depends(require_role("admin", "manager"))])
@@ -264,7 +347,8 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
         setattr(prop, field, value)
     db.commit()
     db.refresh(prop)
-    return prop_to_dict(prop)
+    n30 = _turnovers_next_30d(db, prop.id) if prop.property_type == "str" else None
+    return prop_to_dict(prop, turnovers_next_30d=n30)
 
 
 @router.post("/{property_id}/sync", dependencies=[Depends(require_role("admin", "manager"))])

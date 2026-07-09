@@ -138,6 +138,10 @@ function MonthDayCell({
               {j.is_immediate_turnover && (
                 <Zap className="w-2.5 h-2.5 shrink-0 text-red-600" title="Immediate turnover — same-day check-in" />
               )}
+              {!j.is_immediate_turnover && j.turnover_lead_warning && (
+                <Zap className="w-2.5 h-2.5 shrink-0 text-amber-600"
+                     title={`Tight turnaround — only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`} />
+              )}
               {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
               {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
               <span className="truncate">{chipWho}</span>

@@ -16,6 +16,7 @@ export function useAutomationSettings({ toast, active }) {
     gcal_sync_interval: 10,
     recurring_auto_generate_enabled: true,
     invite_customers: true,
+    turnover_lead_buffer_hours: 3,
   })
   const [automationSaving, setAutomationSaving] = useState(false)
 
@@ -158,6 +159,23 @@ export default function AutomationTab({ state, toast, active }) {
             {s.recurring_auto_generate_enabled && (
               <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
             )}
+          </div>
+
+          <div className="border-t border-hairline pt-6">
+            <h3 className="font-semibold text-ink">Turnover lead-time guardrail</h3>
+            <p className="text-xs text-ink-3 mt-1">
+              Flag an Airbnb/VRBO turnover as a "tight turnaround" when it ends
+              less than this many hours before the next guest's check-in
+              (same-day turnovers are always flagged regardless of this
+              setting).
+            </p>
+            <div className="mt-3 max-w-[200px]">
+              <label className={lbl}>Buffer (hours)</label>
+              <input type="number" min="0" max="48" step="0.5" value={s.turnover_lead_buffer_hours}
+                onChange={e => setAutomationSettings(x => ({ ...x, turnover_lead_buffer_hours: parseFloat(e.target.value) || 0 }))}
+                className={inp} />
+              <p className="text-xs text-ink-3 mt-1">Recommended: 3 hours</p>
+            </div>
           </div>
 
           {/* Customer messaging status — was a red/amber banner on Integrations.

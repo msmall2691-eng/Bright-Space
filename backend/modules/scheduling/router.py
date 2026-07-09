@@ -115,6 +115,11 @@ class JobResponse(BaseModel):
     booking: Optional[BookingInfo] = None
     next_arrival: Optional[BookingInfo] = None
     is_immediate_turnover: bool = False
+    # Tier 3 roadmap: hours between this turnover's scheduled end and the next
+    # guest's check-in (property.check_in_time is the proxy — iCal feeds only
+    # carry a check-in DATE, not a time); None when it can't be computed.
+    turnover_lead_hours: Optional[float] = None
+    turnover_lead_warning: bool = False
 
 
 def _detect_booking_source(uid: str) -> str:
@@ -434,9 +439,41 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
     }
 
 
+def _turnover_lead_hours(j: Job, next_arrival: Optional[ICalEvent],
+                          check_in_time: Optional[str] = None) -> Optional[float]:
+    """Hours between this turnover job's scheduled end and the next guest's
+    check-in. iCal feeds only carry a check-in DATE (no time), so the
+    property's configured check_in_time stands in for "what time do they
+    actually arrive" (default 16:00, the common STR standard, when unset).
+    None when there isn't enough data to compute a real gap (no next
+    arrival, or the job/property is missing a time).
+
+    ``check_in_time`` lets bulk callers (get_jobs) pass a pre-fetched value
+    instead of triggering a lazy-load of ``j.property`` per row; single-job
+    callers can omit it and fall back to the relationship."""
+    if next_arrival is None or not next_arrival.checkin_date or not j.end_time or not j.scheduled_date:
+        return None
+    if check_in_time is None:
+        prop = getattr(j, "property", None)
+        check_in_time = prop.check_in_time if prop else None
+    checkin_time_str = check_in_time or "16:00"
+    try:
+        checkin_date = (next_arrival.checkin_date if isinstance(next_arrival.checkin_date, date)
+                        else date.fromisoformat(str(next_arrival.checkin_date)))
+        hh, mm = (int(x) for x in checkin_time_str.split(":")[:2])
+        checkin_dt = datetime.combine(checkin_date, time(hh, mm))
+        end_date = j.scheduled_date if isinstance(j.scheduled_date, date) else date.fromisoformat(str(j.scheduled_date))
+        end_t = j.end_time if isinstance(j.end_time, time) else time.fromisoformat(str(j.end_time))
+        end_dt = datetime.combine(end_date, end_t)
+        return (checkin_dt - end_dt).total_seconds() / 3600
+    except (ValueError, TypeError):
+        return None
+
+
 def job_to_dict(j: Job, client: Client = None, effective_date=None,
                 booking_event: ICalEvent = None, next_arrival: ICalEvent = None,
-                property_name: Optional[str] = None) -> dict:
+                property_name: Optional[str] = None, lead_buffer_hours: float = 3.0,
+                property_check_in_time: Optional[str] = None) -> dict:
     # Resolve client name if not passed in
     client_name = ""
     if client:
@@ -451,6 +488,8 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
     # after the Job/Visit unification (migration 039) Job.scheduled_date is the
     # single source. The kwarg is kept for callers that still pass an override.
     sched = effective_date if effective_date is not None else j.scheduled_date
+    lead_hours = (_turnover_lead_hours(j, next_arrival, check_in_time=property_check_in_time)
+                  if booking_event is not None else None)
     return {
         "id": j.id,
         "client_id": j.client_id,
@@ -487,7 +526,63 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
             and next_arrival is not None
             and next_arrival.checkin_date == booking_event.checkout_date
         ),
+        "turnover_lead_hours": lead_hours,
+        "turnover_lead_warning": lead_hours is not None and lead_hours < lead_buffer_hours,
     }
+
+
+def _job_booking_info(db: Session, j: Job):
+    """Single-job counterpart to get_jobs()'s bulk booking/next-arrival match
+    (lines ~611-648): finds the ICalEvent this str_turnover job's checkout
+    corresponds to, and the next reservation's check-in at the same property
+    (the pair job_to_dict needs for `booking`/`next_arrival`/
+    `is_immediate_turnover`). get_jobs() bulk-fetches this per property to
+    stay O(1) queries for a whole list; single-job endpoints (get_job,
+    create_job, update_job) call this instead since they're already O(1) —
+    they used to skip this entirely and silently return is_immediate_turnover
+    always False.
+
+    Returns (booking, next_arrival) — both None for non-turnover jobs, jobs
+    with no property, or a turnover with no matching iCal reservation.
+    """
+    if j.job_type != "str_turnover" or not j.property_id:
+        return None, None
+    events = (
+        db.query(ICalEvent)
+          .filter(ICalEvent.property_id == j.property_id, ICalEvent.event_type == "reservation")
+          .all()
+    )
+    events.sort(key=lambda e: e.checkin_date or "")
+    booking = None
+    if j.ical_event_id:
+        booking = next((e for e in events if e.id == j.ical_event_id), None)
+    if booking is None:
+        iso = j.scheduled_date.isoformat() if hasattr(j.scheduled_date, "isoformat") \
+            else (str(j.scheduled_date) if j.scheduled_date else None)
+        booking = next((e for e in events if e.checkout_date == iso), None)
+    next_arrival = None
+    if booking is not None:
+        next_arrival = next(
+            (e for e in events if e.checkin_date and e.checkin_date >= booking.checkout_date
+             and e.uid != booking.uid),
+            None,
+        )
+    return booking, next_arrival
+
+
+def _job_to_dict_enriched(db: Session, j: Job, **kwargs) -> dict:
+    """job_to_dict() plus single-job booking enrichment — the wiring
+    get_job/create_job/update_job/get_job_details need for a str_turnover
+    job's `booking`/`next_arrival`/`is_immediate_turnover`/
+    `turnover_lead_hours` to ever be populated outside the jobs list."""
+    booking, next_arrival = _job_booking_info(db, j)
+    kwargs.setdefault("lead_buffer_hours", _get_turnover_lead_buffer_hours(db))
+    return job_to_dict(j, booking_event=booking, next_arrival=next_arrival, **kwargs)
+
+
+def _get_turnover_lead_buffer_hours(db: Session) -> float:
+    from modules.settings.router import turnover_lead_buffer_hours
+    return turnover_lead_buffer_hours(db)
 
 
 from typing import Annotated
@@ -603,11 +698,17 @@ def get_jobs(
         # Bulk-fetch property names for the property_name field on JobResponse
         # (needed by Schedule / Dashboard after the Job/Visit unification).
         all_prop_ids = {j.property_id for j, _ in rows if j.property_id}
-        prop_names = (
-            {p.id: p.name for p in
-             db.query(Property.id, Property.name).filter(Property.id.in_(all_prop_ids)).all()}
+        # (name, check_in_time) — the latter feeds turnover_lead_hours below
+        # without a per-row lazy-load of j.property.
+        prop_meta = (
+            {p.id: (p.name, p.check_in_time) for p in
+             db.query(Property.id, Property.name, Property.check_in_time)
+               .filter(Property.id.in_(all_prop_ids)).all()}
             if all_prop_ids else {}
         )
+        prop_names = {pid: meta[0] for pid, meta in prop_meta.items()}
+        from modules.settings.router import turnover_lead_buffer_hours
+        lead_buffer_hours = turnover_lead_buffer_hours(db)
         prop_ids = {j.property_id for j, _ in rows if j.property_id and j.job_type == "str_turnover"}
         events_by_prop = {}
         if prop_ids:
@@ -646,7 +747,9 @@ def get_jobs(
             rendered.append(job_to_dict(j, effective_date=eff,
                                         booking_event=booking,
                                         next_arrival=next_arrival,
-                                        property_name=prop_names.get(j.property_id)))
+                                        property_name=prop_names.get(j.property_id),
+                                        lead_buffer_hours=lead_buffer_hours,
+                                        property_check_in_time=prop_meta.get(j.property_id, (None, None))[1]))
     if paginated:
         return {
             "items": rendered,
@@ -900,7 +1003,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
         logger.warning(f"Connecteam auto-dispatch failed for job {job.id}: {e}")
         ct_status = {"dispatched": False, "reason": "error"}
 
-    result = job_to_dict(job)
+    result = _job_to_dict_enriched(db, job)
     result["gcal"] = gcal_status
     result["connecteam"] = ct_status
     return result
@@ -1570,7 +1673,7 @@ def get_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(cu
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job_to_dict(job)
+    return _job_to_dict_enriched(db, job)
 
 
 @router.get("/{job_id}/details", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
@@ -1601,7 +1704,7 @@ def get_job_details(job_id: int, db: Session = Depends(get_db), org_id: int = De
     ).order_by(Activity.created_at.desc()).limit(50).all()
 
     return {
-        **job_to_dict(job),
+        **_job_to_dict_enriched(db, job),
         "property": ({"id": job.property.id, "name": job.property.name, "address": job.property.address}
                      if job.property else None),
         "opportunity": ({"id": job.opportunity.id, "title": job.opportunity.title, "stage": job.opportunity.stage}
@@ -2061,7 +2164,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     except Exception as e:
         logger.warning(f"Connecteam sync failed for job {job.id}: {e}")
 
-    out = job_to_dict(job)
+    out = _job_to_dict_enriched(db, job)
     # So the caller (JobDetail.jsx's "Ready to bill?" banner) can tell an
     # invoice was already auto-created by this same request and skip
     # prompting for a second one — the banner used to check stale

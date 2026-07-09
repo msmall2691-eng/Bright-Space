@@ -1,4 +1,4 @@
-import { AlertTriangle, Calendar, Clock, Home, Link, RefreshCw, Users } from 'lucide-react'
+import { AlertTriangle, Calendar, CheckCircle2, Clock, Home, Link, RefreshCw, Users } from 'lucide-react'
 import { ICAL_SOURCES, PROPERTY_TYPE_CONFIG } from './constants'
 import { IcalFeedRow } from './IcalFeedRow'
 
@@ -80,6 +80,33 @@ export function PropertyRow({
                     {(p.icals?.length || 0) > 0 && (
                       <span className="flex items-center gap-1 text-xs text-green-600">
                         <Link className="w-3 h-3" />{p.icals.length} feed{p.icals.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {/* Rolled-up feed health (Tier 3 roadmap): a dead feed
+                        used to only surface via an on-demand sweep or a
+                        per-feed pill you had to expand the card to see. */}
+                    {p.ical_health && p.ical_health !== 'no_feed' && (
+                      <span
+                        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
+                          p.ical_health === 'healthy' ? 'text-green-600 bg-green-500/10' : 'text-amber-600 bg-amber-500/10'
+                        }`}
+                        title={p.ical_health === 'healthy'
+                          ? 'A feed synced cleanly within the last 24h'
+                          : "No feed has synced cleanly in 24h+ — check it"}
+                      >
+                        {p.ical_health === 'healthy' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                        {p.ical_health === 'healthy' ? 'Feed healthy' : 'Feed stale'}
+                      </span>
+                    )}
+                    {p.ical_health === 'no_feed' && (
+                      <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded text-red-600 bg-red-500/10"
+                        title="STR property with no active calendar feed configured">
+                        <AlertTriangle className="w-3 h-3" />No feed
+                      </span>
+                    )}
+                    {typeof p.turnovers_next_30d === 'number' && (
+                      <span className="flex items-center gap-1 text-xs text-ink-3" title="Turnovers scheduled in the next 30 days">
+                        <Calendar className="w-3 h-3" />{p.turnovers_next_30d} next 30d
                       </span>
                     )}
                   </>
