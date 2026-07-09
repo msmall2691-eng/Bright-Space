@@ -1,8 +1,24 @@
 """
-Alembic migration: Add quote email tracking
+Alembic migration: Add quote email tracking (retired design — now a no-op)
 Alembic version: 014
 
-Add new table to track quote email deliveries and status
+This migration originally created `quote_emails` keyed by String(36) UUID-as-
+text, with a FK to the UUID-keyed `quotes.id` from migration 013. Migration
+013 is itself a no-op now (see its docstring) because the app's real `quotes`
+table (from migration 001) is integer-keyed — so this table's FK could never
+be created on a from-scratch replay (DatatypeMismatch: varchar vs integer).
+
+The per-channel quote_emails/quote_sms tracking this table fed was later
+retired entirely in favor of IntegrationEvent (migration 035 — "retire
+quote_emails / quote_sms in favor of IntegrationEvent"), which already guards
+every step behind `_has_table(bind, "quote_emails")` so it does the right
+thing whether or not this table ever existed. No ORM model or router reads
+`quote_emails` directly today (modules/quoting/router.py's own comment: "...
+after the per-channel quote_emails/quote_sms tables were retired").
+
+Turned into a no-op rather than deleted outright so existing `alembic_version`
+rows already stamped at this revision (or past it) keep resolving to a valid
+revision id.
 """
 
 from alembic import op
@@ -17,36 +33,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create quote_emails table for tracking email deliveries
-    op.create_table(
-        'quote_emails',
-        sa.Column('id', sa.String(36), nullable=False),
-        sa.Column('quote_id', sa.String(36), nullable=False),
-        sa.Column('recipient_email', sa.String(255), nullable=False),
-        sa.Column('sent_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('delivery_status', sa.String(50), nullable=False, server_default='sent'),
-        sa.Column('email_id', sa.String(255), nullable=True),  # Resend email ID
-        sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['quote_id'], ['quotes.id'], ondelete='CASCADE'),
-    )
-
-    # Add indexes for common queries
-    op.create_index('idx_quote_emails_quote_id', 'quote_emails', ['quote_id'])
-    op.create_index('idx_quote_emails_sent_at', 'quote_emails', ['sent_at'])
-    op.create_index('idx_quote_emails_status', 'quote_emails', ['delivery_status'])
-    op.create_index('idx_quote_emails_email_id', 'quote_emails', ['email_id'], unique=True)
-
-    # Add check constraint for valid delivery statuses
-    op.create_check_constraint(
-        'quote_emails_valid_status',
-        'quote_emails',
-        "delivery_status IN ('sent', 'delivered', 'bounced', 'complained', 'failed')"
-    )
+    pass
 
 
 def downgrade() -> None:
-    # Remove the table
-    op.drop_table('quote_emails')
+    pass

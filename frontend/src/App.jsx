@@ -116,6 +116,7 @@ const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const Settings = lazy(() => import('./pages/Settings'))
+const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -230,6 +231,10 @@ export default function App() {
               <Route path="/recurring" element={<Recurring />} />
               <Route path="/owner" element={<OwnerDashboard />} />
               <Route path="/settings" element={<Settings />} />
+              {/* Living style guide — every design token + components/ui/
+                  primitive in its documented states. Internal reference,
+                  not linked from the main nav. */}
+              <Route path="/design-system" element={<DesignSystem />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>

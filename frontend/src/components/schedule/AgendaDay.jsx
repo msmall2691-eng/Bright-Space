@@ -16,6 +16,10 @@ import { toLocalYMD } from '../../utils/format'
 export default function AgendaDay({
   currentDate, visits, jobs, properties, clients, onSelect, isToday, empName,
   onJumpToToday,
+  // Hide AgendaDay's own sticky day header when a parent (AgendaHero) is
+  // already carrying the "Tuesday · Jul 8" hierarchy. Default keeps the
+  // original behavior so other callers of AgendaDay aren't affected.
+  hideHeader = false,
 }) {
   // Sort by start_time so the day reads top-down chronologically. Visits
   // without a start_time sink to the bottom.
@@ -34,23 +38,27 @@ export default function AgendaDay({
       <div className="max-w-2xl mx-auto px-3 pb-24 sm:pb-6">
         {/* Day header — sticky so the date + count stay visible during scroll.
             top-0 sits it below the parent toolbar (also sticky) inside this
-            scroll container. bg matches the panel so it fully covers cards. */}
-        <div className="sticky top-0 z-[5] -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-            {isToday ? 'Today' : ''}
+            scroll container. bg matches the panel so it fully covers cards.
+            Hidden when the parent AgendaHero is already rendering the
+            weekday hierarchy above. */}
+        {!hideHeader && (
+          <div className="sticky top-0 z-[5] -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+              {isToday ? 'Today' : ''}
+            </div>
+            <h2 className="text-xl font-bold text-ink tracking-tight">
+              {new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
+                weekday: 'long', month: 'long', day: 'numeric',
+              })}
+            </h2>
+            {sorted.length > 0 && (
+              <p className="text-[12px] text-ink-3 mt-0.5">
+                {sorted.length} job{sorted.length === 1 ? '' : 's'}
+                {completed > 0 && ` · ${completed} done`}
+              </p>
+            )}
           </div>
-          <h2 className="text-xl font-bold text-ink tracking-tight">
-            {new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
-              weekday: 'long', month: 'long', day: 'numeric',
-            })}
-          </h2>
-          {sorted.length > 0 && (
-            <p className="text-[12px] text-ink-3 mt-0.5">
-              {sorted.length} job{sorted.length === 1 ? '' : 's'}
-              {completed > 0 && ` · ${completed} done`}
-            </p>
-          )}
-        </div>
+        )}
 
         {sorted.length === 0 ? (
           <div className="bg-panel border border-hairline rounded-2xl p-10 text-center">

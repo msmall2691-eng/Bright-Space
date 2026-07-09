@@ -58,6 +58,10 @@ export default function CalendarView({
   // parentJobs. anchorDate tells us which month to open on (defaults to
   // "now" so this component still works standalone with no parent state).
   parentJobs, parentRange, anchorDate, onMonthChange,
+  // Airbnb/VRBO iCal guest-stay overlay — off by default (Schedule.jsx
+  // persists the operator's choice). When off, skip the fetch entirely
+  // rather than fetching-then-hiding.
+  showGuestStays = false,
 }) {
   const now = anchorDate ? new Date(anchorDate) : new Date()
   const [year,  setYear]  = useState(now.getFullYear())
@@ -130,17 +134,24 @@ export default function CalendarView({
   }, [year, month, refreshKey, parentCoversMonth])
 
   useEffect(() => {
-    // iCal + exceptions overlays are always fetched — they aren't in the
-    // parent's payload and their failures still just log so a bad iCal
-    // endpoint can't gray out the whole schedule.
-    get(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
-      .then(d => setIcalEvents(Array.isArray(d) ? d : []))
-      .catch(err => console.error("[CalendarView] Failed to load iCal events:", err.message || err))
+    // Guest-stay overlay is opt-in (see `showGuestStays`) — skip the fetch
+    // entirely when it's off rather than fetching data nobody sees. Clear
+    // any events left over from a previous "on" state.
+    if (!showGuestStays) {
+      setIcalEvents([])
+    } else {
+      get(`/api/properties/all-ical-events?start=${rangeStart}&end=${rangeEnd}`)
+        .then(d => setIcalEvents(Array.isArray(d) ? d : []))
+        .catch(err => console.error("[CalendarView] Failed to load iCal events:", err.message || err))
+    }
 
+    // Exceptions overlay is always fetched — it isn't in the parent's
+    // payload and its failures still just log so a bad endpoint can't gray
+    // out the whole schedule.
     get(`/api/recurring/exceptions?date_from=${rangeStart}&date_to=${rangeEnd}`)
       .then(d => setExceptions(Array.isArray(d) ? d : []))
       .catch(err => console.error("[CalendarView] Failed to load exceptions:", err.message || err))
-  }, [year, month, refreshKey])
+  }, [year, month, refreshKey, showGuestStays])
 
   const retryMonthFetch = () => {
     setMonthLoading(true)
@@ -651,7 +662,9 @@ export default function CalendarView({
             <span className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${TYPE_CONFIG.residential.dot}`} />Residential</span>
             <span className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${TYPE_CONFIG.commercial.dot}`} />Commercial</span>
             <span className="flex items-center gap-1.5"><span className={`w-2 h-2 rounded-full ${TYPE_CONFIG.str_turnover.dot}`} />Turnover</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-100 border border-orange-200" />Guest Stay</span>
+            {showGuestStays && (
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-100 border border-orange-200" />Guest Stay</span>
+            )}
           </div>
         </div>
 

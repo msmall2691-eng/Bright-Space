@@ -13,9 +13,28 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(bind, table, column) -> bool:
+    insp = sa.inspect(bind)
+    if table not in insp.get_table_names():
+        return False
+    return column in {c["name"] for c in insp.get_columns(table)}
+
+
+def _has_index(bind, table, name) -> bool:
+    insp = sa.inspect(bind)
+    if table not in insp.get_table_names():
+        return False
+    return name in {ix["name"] for ix in insp.get_indexes(table)}
+
+
 def upgrade():
-    op.add_column("quotes", sa.Column("public_token", sa.String(64), nullable=True))
-    op.create_index("ix_quotes_public_token", "quotes", ["public_token"], unique=True)
+    # Guarded: a from-scratch install's quotes table (built straight from
+    # today's ORM models) already has public_token from the start.
+    bind = op.get_bind()
+    if not _has_column(bind, "quotes", "public_token"):
+        op.add_column("quotes", sa.Column("public_token", sa.String(64), nullable=True))
+    if not _has_index(bind, "quotes", "ix_quotes_public_token"):
+        op.create_index("ix_quotes_public_token", "quotes", ["public_token"], unique=True)
 
 
 def downgrade():

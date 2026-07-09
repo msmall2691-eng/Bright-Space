@@ -2,11 +2,15 @@
 instant-quote estimate. Regression: the endpoint previously imported a
 non-existent quote_to_dict and never set quote_number (NOT NULL), so it was fully
 broken."""
+from types import SimpleNamespace
+
 import pytest
 
 from database.db import SessionLocal
 from database.models import LeadIntake, Client, Quote, Property
 from modules.intake.router import convert_intake_to_quote
+from modules.quoting.router import create_quote
+from schemas.quotes import QuoteCreate
 
 
 @pytest.fixture
@@ -70,6 +74,55 @@ def test_convert_intake_is_idempotent(intake_ctx):
     # Only one Quote row exists for this intake — not two.
     count = db.query(Quote).filter(Quote.intake_id == intake.id).count()
     assert count == 1, f"expected 1 quote for this intake, found {count}"
+
+
+def test_create_quote_stamps_source_intake_as_quoted(intake_ctx):
+    """The live "Create Quote" button (Requests.jsx -> Quoting.jsx) never
+    calls /convert-to-quote — it goes straight to POST /api/quotes
+    (create_quote) with intake_id in the body. That path used to leave
+    lead_intakes.status/converted_quote_id untouched, so the Requests list
+    could never actually show a request as quoted/converted even after a
+    real quote was created for it. create_quote() must stamp the source
+    intake exactly like convert_intake_to_quote does."""
+    db, intake = intake_ctx
+    client = Client(name="Web Lead", email="lead@example.com", status="lead")
+    db.add(client); db.commit(); db.refresh(client)
+    intake.client_id = client.id
+    db.commit()
+
+    user = SimpleNamespace(id=None)
+    out = create_quote(
+        QuoteCreate(client_id=client.id, intake_id=intake.id, title="T", items=[]),
+        db=db, current_user=user,
+    )
+    db.refresh(intake)
+    assert intake.status == "quoted"
+    assert intake.converted_quote_id == out["id"]
+
+
+def test_create_quote_does_not_reassign_an_already_converted_intake(intake_ctx):
+    """A second quote created against an intake that's already linked to one
+    (however that happened) must not silently repoint converted_quote_id at
+    the new quote — the intake's provenance should point at whichever quote
+    actually converted it first."""
+    db, intake = intake_ctx
+    client = Client(name="Web Lead", email="lead@example.com", status="lead")
+    db.add(client); db.commit(); db.refresh(client)
+    intake.client_id = client.id
+    db.commit()
+
+    user = SimpleNamespace(id=None)
+    first = create_quote(
+        QuoteCreate(client_id=client.id, intake_id=intake.id, title="First", items=[]),
+        db=db, current_user=user,
+    )
+    second = create_quote(
+        QuoteCreate(client_id=client.id, intake_id=intake.id, title="Second", items=[]),
+        db=db, current_user=user,
+    )
+    assert second["id"] != first["id"]  # create_quote has no dedup guard itself
+    db.refresh(intake)
+    assert intake.converted_quote_id == first["id"]
 
 
 def test_core_models_have_audit_fields():

@@ -28,7 +28,7 @@ import sqlalchemy as sa
 from database.rls import apply_org_rls, drop_org_rls
 
 revision = "034_merge_quote_requests_into_lead_intakes"
-down_revision = "033_canonical_client_source"
+down_revision = "033b_widen_alembic_version"
 branch_labels = None
 depends_on = None
 

@@ -9,19 +9,27 @@ depends_on = None
 
 
 def upgrade():
-    # Create all base tables using idempotent raw SQL
-    op.execute("""
+    # Create all base tables using idempotent raw SQL.
+    # Postgres has no auto-increment shorthand for INTEGER PRIMARY KEY (unlike
+    # SQLite, where it's a ROWID alias that auto-increments) — without a real
+    # sequence, every insert that omits `id` fails with a NOT NULL violation.
+    # Base.metadata.create_all() (the other schema-creation path) already gets
+    # this right via SQLAlchemy's Integer+primary_key=True -> SERIAL mapping;
+    # match it explicitly here so both paths produce the same schema.
+    bind = op.get_bind()
+    pk = "SERIAL PRIMARY KEY" if bind.dialect.name == "postgresql" else "INTEGER PRIMARY KEY"
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS app_settings (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             key VARCHAR NOT NULL UNIQUE,
             value VARCHAR,
             updated_at TIMESTAMP
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS clients (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             name VARCHAR,
             email VARCHAR,
             phone VARCHAR,
@@ -42,46 +50,63 @@ def upgrade():
             phone_tail VARCHAR,
             phone_id INTEGER,
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            city VARCHAR,
+            state VARCHAR,
+            zip_code VARCHAR,
+            notes TEXT,
+            source VARCHAR,
+            created_by INTEGER,
+            updated_by INTEGER
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS contact_phones (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             phone VARCHAR,
             type VARCHAR,
             phone_tail VARCHAR,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            is_primary BOOLEAN,
+            phone_type VARCHAR,
+            source VARCHAR
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS contact_emails (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             email VARCHAR,
             type VARCHAR,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            is_primary BOOLEAN,
+            source VARCHAR
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS field_definitions (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             entity_type VARCHAR,
             field_name VARCHAR,
             field_type VARCHAR,
             label VARCHAR,
             is_system INTEGER,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            name VARCHAR NOT NULL,
+            key VARCHAR NOT NULL,
+            options JSON,
+            required BOOLEAN,
+            sort_order INTEGER
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS ical_events (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             property_id INTEGER,
             ical_uid VARCHAR,
             ical_source VARCHAR,
@@ -92,13 +117,18 @@ def upgrade():
             event_type VARCHAR,
             synced_at TIMESTAMP,
             job_id INTEGER,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            uid VARCHAR NOT NULL,
+            summary VARCHAR,
+            checkout_date VARCHAR NOT NULL,
+            checkin_date VARCHAR,
+            raw_event JSON
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS lead_intakes (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER,
             opportunity_id INTEGER,
             name VARCHAR NOT NULL,
@@ -127,26 +157,38 @@ def upgrade():
             internal_notes VARCHAR,
             followed_up_at TIMESTAMP,
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            preferred_date VARCHAR,
+            source VARCHAR,
+            custom_fields JSON,
+            created_by INTEGER,
+            updated_by INTEGER
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS opportunities (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             title VARCHAR,
             amount FLOAT,
             status VARCHAR,
             custom_fields VARCHAR,
             updated_at TIMESTAMP,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            stage VARCHAR NOT NULL,
+            close_date VARCHAR,
+            probability INTEGER,
+            service_type VARCHAR,
+            owner VARCHAR,
+            lost_reason VARCHAR,
+            notes TEXT
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS properties (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             name VARCHAR,
             address VARCHAR,
@@ -156,26 +198,58 @@ def upgrade():
             house_code VARCHAR(255),
             ical_url VARCHAR,
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            city VARCHAR,
+            state VARCHAR,
+            zip_code VARCHAR,
+            ical_last_synced_at TIMESTAMP,
+            default_duration_hours FLOAT,
+            default_crew_size INTEGER,
+            access_notes TEXT,
+            parking_notes TEXT,
+            notes TEXT,
+            timezone VARCHAR,
+            business_name VARCHAR,
+            hours_of_operation TEXT,
+            site_contact_name VARCHAR,
+            site_contact_phone VARCHAR,
+            site_contact_email VARCHAR,
+            active BOOLEAN NOT NULL,
+            bedrooms INTEGER,
+            bathrooms INTEGER,
+            square_footage INTEGER,
+            created_by INTEGER,
+            updated_by INTEGER
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             email VARCHAR,
             name VARCHAR,
             role VARCHAR,
             hashed_password VARCHAR,
             is_active INTEGER,
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            password_hash VARCHAR,
+            google_sub VARCHAR,
+            auth_provider VARCHAR,
+            full_name VARCHAR,
+            client_id INTEGER,
+            phone VARCHAR,
+            active BOOLEAN NOT NULL,
+            status VARCHAR NOT NULL,
+            approved_by INTEGER,
+            approved_at TIMESTAMP,
+            last_login_at TIMESTAMP
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS quotes (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             title VARCHAR,
             description VARCHAR,
@@ -188,25 +262,61 @@ def upgrade():
             address VARCHAR,
             service_type VARCHAR,
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            opportunity_id INTEGER,
+            property_id INTEGER,
+            created_by INTEGER,
+            frequency VARCHAR,
+            notes TEXT,
+            items JSON NOT NULL,
+            subtotal FLOAT NOT NULL,
+            tax_rate FLOAT NOT NULL,
+            tax FLOAT NOT NULL,
+            discount FLOAT NOT NULL,
+            total FLOAT NOT NULL,
+            customer_message TEXT,
+            internal_notes TEXT,
+            valid_until DATE,
+            sent_at TIMESTAMP,
+            accepted_at TIMESTAMP,
+            declined_at TIMESTAMP,
+            last_send_attempt_at TIMESTAMP,
+            last_send_error TEXT,
+            accepted_by_name VARCHAR,
+            accepted_by_email VARCHAR,
+            custom_fields JSON
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS recurring_schedules (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             job_id INTEGER,
             frequency VARCHAR,
             end_date VARCHAR,
             days_of_week VARCHAR,
             interval_weeks INTEGER,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            client_id INTEGER NOT NULL,
+            job_type VARCHAR NOT NULL,
+            title VARCHAR NOT NULL,
+            address VARCHAR NOT NULL,
+            day_of_week INTEGER NOT NULL,
+            day_of_month INTEGER,
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            cleaner_ids JSON,
+            quote_id INTEGER,
+            property_id INTEGER,
+            active BOOLEAN NOT NULL,
+            generate_weeks_ahead INTEGER,
+            notes TEXT
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             property_id INTEGER REFERENCES properties(id),
             quote_id INTEGER REFERENCES quotes(id),
@@ -230,13 +340,15 @@ def upgrade():
             dispatched INTEGER,
             connecteam_shift_ids VARCHAR,
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            gcal_account_id INTEGER,
+            gcal_ical_uid VARCHAR
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS visits (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             job_id INTEGER NOT NULL REFERENCES jobs(id),
             scheduled_date VARCHAR,
             start_time VARCHAR,
@@ -259,31 +371,60 @@ def upgrade():
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
+            channel VARCHAR NOT NULL DEFAULT 'sms',
             created_at TIMESTAMP,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMP,
+            opportunity_id INTEGER,
+            external_contact VARCHAR,
+            subject VARCHAR,
+            status VARCHAR NOT NULL,
+            priority VARCHAR NOT NULL,
+            assignee VARCHAR,
+            tags JSON,
+            last_message_at TIMESTAMP,
+            last_inbound_at TIMESTAMP,
+            last_outbound_at TIMESTAMP,
+            first_response_at TIMESTAMP,
+            unread_count INTEGER NOT NULL,
+            sla_response_minutes INTEGER,
+            sla_deadline TIMESTAMP,
+            snoozed_until TIMESTAMP,
+            resolved_at TIMESTAMP,
+            synced_by_google_account_id INTEGER
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             conversation_id INTEGER REFERENCES conversations(id),
             content VARCHAR,
             sender VARCHAR,
             external_id VARCHAR,
             author VARCHAR,
             is_internal_note INTEGER,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            client_id INTEGER,
+            job_id INTEGER,
+            opportunity_id INTEGER,
+            channel VARCHAR,
+            direction VARCHAR,
+            from_addr VARCHAR,
+            to_addr VARCHAR,
+            subject VARCHAR,
+            body TEXT,
+            status VARCHAR,
+            synced_by_google_account_id INTEGER
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS invoices (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             client_id INTEGER REFERENCES clients(id),
             job_id INTEGER REFERENCES jobs(id),
             amount FLOAT,
@@ -291,21 +432,32 @@ def upgrade():
             custom_fields VARCHAR,
             opportunity_id INTEGER REFERENCES opportunities(id),
             updated_at TIMESTAMP,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            invoice_number VARCHAR,
+            items JSON,
+            subtotal FLOAT,
+            tax_rate FLOAT,
+            tax FLOAT,
+            total FLOAT,
+            due_date VARCHAR,
+            paid_at TIMESTAMP,
+            notes TEXT,
+            created_by INTEGER,
+            updated_by INTEGER
         )
     """)
 
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_invoice_opportunity_id ON invoices(opportunity_id)
+    op.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_invoice_opportunity_id ON invoices(opportunity_id)
     """)
 
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_invoice_updated_at ON invoices(updated_at)
+    op.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_invoice_updated_at ON invoices(updated_at)
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS property_icals (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             property_id INTEGER NOT NULL REFERENCES properties(id),
             url VARCHAR NOT NULL,
             source VARCHAR,
@@ -314,29 +466,42 @@ def upgrade():
             last_sync_status VARCHAR,
             last_sync_error VARCHAR,
             sync_retry_count INTEGER,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            checkout_time VARCHAR,
+            duration_hours FLOAT,
+            house_code VARCHAR,
+            access_links JSON,
+            instructions TEXT
         )
     """)
 
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS ix_property_icals_property_id ON property_icals(property_id)
+    op.execute(f"""
+            CREATE INDEX IF NOT EXISTS ix_property_icals_property_id ON property_icals(property_id)
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             entity_type VARCHAR,
             entity_id INTEGER,
             action VARCHAR,
             actor_id INTEGER,
             details VARCHAR,
-            created_at TIMESTAMP
+            created_at TIMESTAMP,
+            client_id INTEGER,
+            opportunity_id INTEGER,
+            job_id INTEGER,
+            message_id INTEGER,
+            actor VARCHAR,
+            activity_type VARCHAR NOT NULL,
+            summary VARCHAR,
+            extra_data JSON
         )
     """)
 
-    op.execute("""
+    op.execute(f"""
         CREATE TABLE IF NOT EXISTS integration_events (
-            id INTEGER PRIMARY KEY,
+            id {pk},
             entity_type VARCHAR NOT NULL,
             entity_id INTEGER NOT NULL,
             provider VARCHAR NOT NULL,
@@ -351,8 +516,8 @@ def upgrade():
         )
     """)
 
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS ix_integration_events_created_at ON integration_events(created_at)
+    op.execute(f"""
+            CREATE INDEX IF NOT EXISTS ix_integration_events_created_at ON integration_events(created_at)
     """)
 
 

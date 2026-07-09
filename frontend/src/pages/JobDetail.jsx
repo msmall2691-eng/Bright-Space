@@ -89,21 +89,28 @@ export default function JobDetail() {
 
   const saveField = (body) =>
     patch(`/api/jobs/${id}`, body)
-      .then(updated => setJob(j => ({ ...j, ...updated })))
+      .then(updated => { setJob(j => ({ ...j, ...updated })); return updated })
       .catch(() => { toast.error('Could not save change'); load() })
 
   // Show an "invoice this?" banner when a job flips to Completed and doesn't
   // already have an invoice. Cleared once the user acts or dismisses. Audit
   // finding: nothing was connecting job completion to billing, so completed
   // jobs silently didn't get invoiced.
+  //
+  // The backend now auto-creates a draft invoice on this same PATCH when the
+  // job completes (so billing doesn't depend on which "mark complete" UI was
+  // used) — wait for that response's `has_invoice` flag before deciding to
+  // prompt, instead of checking the stale pre-request `job.invoices`, which
+  // could never see an invoice this exact request was about to create.
   const [showInvoicePrompt, setShowInvoicePrompt] = useState(false)
   const setStatus = (status) => {
+    const wasCompleting = status === 'completed' && job?.status !== 'completed'
     setJob(j => ({ ...j, status }))
-    saveField({ status })
-    if (status === 'completed' && job?.status !== 'completed' &&
-        (!job?.invoices || job.invoices.length === 0)) {
-      setShowInvoicePrompt(true)
-    }
+    saveField({ status }).then(updated => {
+      if (wasCompleting && !updated?.has_invoice) {
+        setShowInvoicePrompt(true)
+      }
+    })
   }
 
   const addNote = async () => {
