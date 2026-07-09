@@ -15,7 +15,7 @@ export default function StickyActionBar({ unassignedCount, onAssign, onNewJob })
   const hasUnassigned = unassignedCount > 0
   return (
     <div
-      className="lg:hidden fixed left-0 right-0 z-30 flex items-center gap-2 px-4"
+      className="no-print lg:hidden fixed left-0 right-0 z-30 flex items-center gap-2 px-4"
       style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 78px)' }}
     >
       <button

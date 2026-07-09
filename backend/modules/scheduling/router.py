@@ -1438,6 +1438,71 @@ def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db)):
     return auto_assign_unassigned_turnovers(db, dry_run=dry_run)
 
 
+class BulkRescheduleRequest(BaseModel):
+    job_ids: List[int]
+    shift_days: int
+
+
+# Registered before /{job_id} so the literal path isn't swallowed by the int route.
+@router.post("/bulk-reschedule", dependencies=[Depends(require_role("admin", "manager"))])
+def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
+                    org_id: int = Depends(current_org_id)):
+    """Shift a set of jobs by N days in one action — the "weather day" /
+    sick-day move (Tier 4 roadmap): select today's jobs, push the whole day
+    back without touching each one individually.
+
+    Recurring occurrences go through the same reschedule-exception path
+    JobEditModal's "this visit only" scope uses (not a bare scheduled_date
+    PATCH) — otherwise the next generate_jobs tick would regenerate the
+    original date alongside the shifted one instead of replacing it, the
+    same duplicate-occurrence bug Fix 1 closed for the single-job path.
+    """
+    if body.shift_days == 0:
+        raise HTTPException(status_code=400, detail="shift_days must be non-zero")
+    if not body.job_ids:
+        raise HTTPException(status_code=400, detail="job_ids must not be empty")
+
+    oid = resolve_org_id(org_id, db)
+    jobs = (
+        db.query(Job)
+        .filter(Job.id.in_(body.job_ids), or_(Job.org_id == oid, Job.org_id.is_(None)))
+        .all()
+    )
+    found_ids = {j.id for j in jobs}
+
+    from modules.recurring.router import _reschedule_occurrence, _get_schedule_or_404
+
+    shifted, skipped = [], []
+    for job_id in body.job_ids:
+        job = next((j for j in jobs if j.id == job_id), None)
+        if job is None:
+            skipped.append({"job_id": job_id, "reason": "not found"})
+            continue
+        if job.status in ("cancelled", "completed"):
+            skipped.append({"job_id": job_id, "reason": f"job is {job.status}"})
+            continue
+        if not job.scheduled_date:
+            skipped.append({"job_id": job_id, "reason": "no scheduled_date"})
+            continue
+        new_date = job.scheduled_date + timedelta(days=body.shift_days)
+        try:
+            if job.recurring_schedule_id:
+                sched = _get_schedule_or_404(db, job.recurring_schedule_id, oid)
+                _reschedule_occurrence(
+                    db, sched, job.scheduled_date, new_date,
+                    rescheduled_start_time=job.start_time, rescheduled_end_time=job.end_time,
+                    cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
+                )
+            else:
+                job.status = "scheduled" if job.status == "unscheduled" else job.status
+                job.scheduled_date = new_date
+            shifted.append(job_id)
+        except HTTPException as e:
+            skipped.append({"job_id": job_id, "reason": e.detail})
+    db.commit()
+    return {"shifted": len(shifted), "shifted_ids": shifted, "skipped": skipped}
+
+
 def _job_source(j: Job) -> str:
     """Best-effort inference of what created a job, to explain missing times."""
     if j.ical_event_id is not None:

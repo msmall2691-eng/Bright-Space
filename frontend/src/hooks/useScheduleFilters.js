@@ -2,6 +2,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { todayYMD } from '../utils/format'
 
+// Persisted across sessions (Tier 4 roadmap: "saved views / filters ...
+// persisted in localStorage") — just the two standing "how I like to view
+// my schedule" chips. unassignedOnly/noGcalOnly/noConnecteamOnly are
+// deliberately NOT persisted: those are one-shot "jump to the problem list"
+// actions (triggered from a dashboard follow-up or a health-strip counter),
+// not a durable preference — silently reapplying one of those on a later
+// visit would read as "why is my schedule filtered?" rather than a saved view.
+const FILTER_KEY = 'brightbase_schedule_filters'
+
+function loadSavedFilters() {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 /** Derived views over the week's visits: filter chip state (property type
  *  + status + unassigned-only) + the four cascading useMemos every render
  *  branch uses.
@@ -16,8 +36,8 @@ import { todayYMD } from '../utils/format'
  *  `currentlyVisibleVisits` narrows to the current day in agenda mode so
  *  "select all visible" can't reach hidden days (a P1 fix from earlier). */
 export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr }) {
-  const [selectedPropertyType, setSelectedPropertyType] = useState('all')
-  const [selectedStatus, setSelectedStatus] = useState('all')
+  const [selectedPropertyType, setSelectedPropertyType] = useState(() => loadSavedFilters().propertyType || 'all')
+  const [selectedStatus, setSelectedStatus] = useState(() => loadSavedFilters().status || 'all')
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   // "no-Google" / "no-Connecteam" quick filters — driven both by a URL
   // param (deep links from the dashboard's follow-up cards) and by the
@@ -25,6 +45,13 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
   // counters were dead numbers; now they narrow the list to the offenders.
   const [noGcalOnly, setNoGcalOnly] = useState(false)
   const [noConnecteamOnly, setNoConnecteamOnly] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem(FILTER_KEY, JSON.stringify({
+      propertyType: selectedPropertyType,
+      status: selectedStatus,
+    }))
+  }, [selectedPropertyType, selectedStatus])
 
   // One-shot sync from URL ?filter=unassigned|no_gcal|no_connecteam so a
   // click on a dashboard follow-up lands the operator on the queue with the

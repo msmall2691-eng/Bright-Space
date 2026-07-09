@@ -19,6 +19,7 @@ import OpsSummary from './OpsSummary'
 import RouteRibbon from './RouteRibbon'
 import DateStrip from './DateStrip'
 import OpsAlerts from './OpsAlerts'
+import DayActionButtons from './DayActionButtons'
 import { toLocalYMD, todayYMD } from '../../utils/format'
 
 export default function AgendaHero({
@@ -45,36 +46,44 @@ export default function AgendaHero({
   return (
     <div className="border-b border-hairline bg-bg">
       {/* Header — takes the place of AgendaDay's own header when hero is on */}
-      <div className="px-4 pt-3 pb-1">
-        {isToday && (
-          <div className="text-[10px] font-mono tracking-widest uppercase text-ink-3 mb-0.5">
-            Today
+      <div className="px-4 pt-3 pb-1 flex items-start justify-between gap-2">
+        <div>
+          {isToday && (
+            <div className="text-[10px] font-mono tracking-widest uppercase text-ink-3 mb-0.5">
+              Today
+            </div>
+          )}
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[26px] font-bold text-ink tracking-tight leading-tight">
+              {weekday}
+            </h2>
+            <span className="text-[20px] text-ink-3 font-medium leading-tight">
+              {monthDay}
+            </span>
           </div>
-        )}
-        <div className="flex items-baseline gap-2">
-          <h2 className="text-[26px] font-bold text-ink tracking-tight leading-tight">
-            {weekday}
-          </h2>
-          <span className="text-[20px] text-ink-3 font-medium leading-tight">
-            {monthDay}
-          </span>
         </div>
+        <DayActionButtons visits={todayVisits} jobs={jobs} properties={properties} className="mt-1" />
       </div>
 
-      <OpsSummary stats={todayStats} isToday={isToday} />
-      <RouteRibbon visits={todayVisits} jobs={jobs} properties={properties} />
-      <DateStrip
-        weekDates={weekDates}
-        loadByDate={loadByDate}
-        currentDate={currentDate}
-        onSelect={onDateSelect}
-        todayStr={todayYMD()}
-      />
-      <OpsAlerts
-        stats={todayStats}
-        unassignedToday={unassignedToday}
-        onFocusUnassigned={onFocusUnassigned}
-      />
+      {/* Dashboard-y sub-sections — not useful on a printed day sheet, so
+          they're hidden there; the weekday header + AgendaDay's job list
+          below are what should actually print. */}
+      <div className="no-print">
+        <OpsSummary stats={todayStats} isToday={isToday} />
+        <RouteRibbon visits={todayVisits} jobs={jobs} properties={properties} />
+        <DateStrip
+          weekDates={weekDates}
+          loadByDate={loadByDate}
+          currentDate={currentDate}
+          onSelect={onDateSelect}
+          todayStr={todayYMD()}
+        />
+        <OpsAlerts
+          stats={todayStats}
+          unassignedToday={unassignedToday}
+          onFocusUnassigned={onFocusUnassigned}
+        />
+      </div>
     </div>
   )
 }

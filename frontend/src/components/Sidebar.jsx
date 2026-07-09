@@ -51,6 +51,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
       )}
 
       <aside className={`
+        no-print
         fixed inset-y-0 left-0 z-50 w-[260px]
         bg-panel/95 backdrop-blur-lg border-r border-hairline
         flex flex-col shrink-0 transform transition-transform duration-200 ease-in-out

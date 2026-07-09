@@ -882,6 +882,105 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
     return _ex_to_dict(ex)
 
 
+def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date, rescheduled_date,
+                           rescheduled_start_time=None, rescheduled_end_time=None,
+                           cleaner_ids=None, reason=None):
+    """Core "move this one occurrence" logic — writes/updates the
+    RecurrenceException and materializes the Job for the new date, exactly
+    as the /{schedule_id}/reschedule endpoint does. Factored out so bulk
+    callers (jobs/bulk-reschedule) get the same recurring-aware behavior
+    instead of a bare scheduled_date PATCH that generate_jobs would later
+    duplicate/resurrect (the same bug class Fix 1 closed for the single-job
+    path). Returns (exception, job).
+    """
+    exception_date = _as_date(exception_date)
+    rescheduled_date = _as_date(rescheduled_date)
+    body_start = _as_time(rescheduled_start_time)
+    body_end = _as_time(rescheduled_end_time)
+    _validate_timing(body_start or sched.start_time, body_end or sched.end_time)
+
+    existing = (
+        db.query(RecurrenceException)
+        .filter(
+            RecurrenceException.recurring_schedule_id == sched.id,
+            RecurrenceException.exception_date == exception_date,
+        )
+        .first()
+    )
+    if existing:
+        ex = existing
+        ex.exception_type = "reschedule"
+        ex.rescheduled_date = rescheduled_date
+        ex.rescheduled_start_time = body_start
+        ex.rescheduled_end_time = body_end
+        if reason:
+            ex.reason = reason
+    else:
+        ex = RecurrenceException(
+            recurring_schedule_id=sched.id,
+            exception_date=exception_date,
+            exception_type="reschedule",
+            rescheduled_date=rescheduled_date,
+            rescheduled_start_time=body_start,
+            rescheduled_end_time=body_end,
+            reason=reason,
+            org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
+        )
+        db.add(ex)
+
+    # A same-date "reschedule" (rescheduled_date == exception_date — a pure
+    # time/crew change, no day move) targets the exact same Job row this
+    # would otherwise cancel. Skipping the cancel there — instead of
+    # cancelling then re-finding it below — matters because this Session
+    # runs with autoflush=False (database/db.py): the "find the rescheduled
+    # job" query a few lines down would still see the PRE-cancel database
+    # row (the pending status='cancelled' isn't flushed yet), match it as
+    # "existing", update its times, and then db.commit() at the end would
+    # persist both the leftover cancelled status AND the new times —
+    # silently cancelling a visit the user just meant to retime.
+    if rescheduled_date != exception_date:
+        _cancel_existing_job(db, sched.id, exception_date, reason)
+
+    # Materialize (or update) the Job for the rescheduled date with the
+    # exception times. generate_jobs uses series times only, so without this
+    # step a "reschedule to 2pm" would surface as a 9am job on the calendar.
+    new_start = body_start or sched.start_time
+    new_end = body_end or sched.end_time
+    rescheduled_job = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched.id,
+            Job.scheduled_date == rescheduled_date,
+            Job.status != "cancelled",
+        )
+        .first()
+    )
+    if rescheduled_job is not None:
+        rescheduled_job.start_time = new_start
+        rescheduled_job.end_time = new_end
+        if cleaner_ids is not None:
+            rescheduled_job.cleaner_ids = cleaner_ids
+    else:
+        rescheduled_job = Job(
+            client_id=sched.client_id,
+            recurring_schedule_id=sched.id,
+            property_id=sched.property_id,
+            job_type=sched.job_type,
+            title=sched.title,
+            scheduled_date=rescheduled_date,
+            start_time=new_start,
+            end_time=new_end,
+            address=sched.address,
+            cleaner_ids=(cleaner_ids if cleaner_ids is not None else (sched.cleaner_ids or [])),
+            status="scheduled",
+            notes=sched.notes,
+            org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
+        )
+        db.add(rescheduled_job)
+
+    return ex, rescheduled_job
+
+
 @router.post("/{schedule_id}/reschedule", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
 def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Session = Depends(get_db),
                              org_id: int = Depends(current_org_id)):
@@ -901,97 +1000,13 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         )
 
     sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
-    # Coerce once up front — RecurrenceException.rescheduled_start_time/
-    # rescheduled_end_time and Job.start_time/end_time are real Time columns;
-    # body.rescheduled_start_time arrives as a plain "HH:MM" string (matching
-    # this module's API convention), which Postgres's psycopg2 leniently
-    # casts but SQLite's Time type rejects outright.
-    body_start = _as_time(body.rescheduled_start_time)
-    body_end = _as_time(body.rescheduled_end_time)
-    # Validate the EFFECTIVE window — a caller changing only the start (or
-    # only the end) still falls back to the series' own time for the other
-    # side, exactly as the Job that gets materialized below will.
-    _validate_timing(body_start or sched.start_time, body_end or sched.end_time)
-
-    existing = (
-        db.query(RecurrenceException)
-        .filter(
-            RecurrenceException.recurring_schedule_id == schedule_id,
-            RecurrenceException.exception_date == body.exception_date,
-        )
-        .first()
+    ex, rescheduled_job = _reschedule_occurrence(
+        db, sched, body.exception_date, body.rescheduled_date,
+        rescheduled_start_time=body.rescheduled_start_time,
+        rescheduled_end_time=body.rescheduled_end_time,
+        cleaner_ids=body.cleaner_ids,
+        reason=body.reason,
     )
-    if existing:
-        ex = existing
-        ex.exception_type = "reschedule"
-        ex.rescheduled_date = body.rescheduled_date
-        ex.rescheduled_start_time = body_start
-        ex.rescheduled_end_time = body_end
-        if body.reason:
-            ex.reason = body.reason
-    else:
-        ex = RecurrenceException(
-            recurring_schedule_id=schedule_id,
-            exception_date=body.exception_date,
-            exception_type="reschedule",
-            rescheduled_date=body.rescheduled_date,
-            rescheduled_start_time=body_start,
-            rescheduled_end_time=body_end,
-            reason=body.reason,
-            org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
-        )
-        db.add(ex)
-
-    # A same-date "reschedule" (rescheduled_date == exception_date — a pure
-    # time/crew change, no day move) targets the exact same Job row this
-    # would otherwise cancel. Skipping the cancel there — instead of
-    # cancelling then re-finding it below — matters because this Session
-    # runs with autoflush=False (database/db.py): the "find the rescheduled
-    # job" query a few lines down would still see the PRE-cancel database
-    # row (the pending status='cancelled' isn't flushed yet), match it as
-    # "existing", update its times, and then db.commit() at the end would
-    # persist both the leftover cancelled status AND the new times —
-    # silently cancelling a visit the user just meant to retime.
-    if _as_date(body.rescheduled_date) != _as_date(body.exception_date):
-        _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
-
-    # Materialize (or update) the Job for the rescheduled date with the
-    # exception times. generate_jobs uses series times only, so without this
-    # step a "reschedule to 2pm" would surface as a 9am job on the calendar.
-    new_date = _as_date(body.rescheduled_date)
-    new_start = body_start or sched.start_time
-    new_end = body_end or sched.end_time
-    rescheduled_job = (
-        db.query(Job)
-        .filter(
-            Job.recurring_schedule_id == schedule_id,
-            Job.scheduled_date == new_date,
-            Job.status != "cancelled",
-        )
-        .first()
-    )
-    if rescheduled_job is not None:
-        rescheduled_job.start_time = new_start
-        rescheduled_job.end_time = new_end
-        if body.cleaner_ids is not None:
-            rescheduled_job.cleaner_ids = body.cleaner_ids
-    else:
-        rescheduled_job = Job(
-            client_id=sched.client_id,
-            recurring_schedule_id=sched.id,
-            property_id=sched.property_id,
-            job_type=sched.job_type,
-            title=sched.title,
-            scheduled_date=new_date,
-            start_time=new_start,
-            end_time=new_end,
-            address=sched.address,
-            cleaner_ids=(body.cleaner_ids if body.cleaner_ids is not None else (sched.cleaner_ids or [])),
-            status="scheduled",
-            notes=sched.notes,
-            org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
-        )
-        db.add(rescheduled_job)
 
     db.commit()
     db.refresh(ex)

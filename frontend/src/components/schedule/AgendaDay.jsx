@@ -1,7 +1,9 @@
-import { Calendar, CornerUpLeft } from 'lucide-react'
+import { Calendar, CornerUpLeft, MapPin } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
 import { TurnoverInfo, SyncStatusChips } from './SyncBadge'
 import { toLocalYMD } from '../../utils/format'
+import { mapsSearchUrl } from '../../utils/maps'
+import DayActionButtons from './DayActionButtons'
 
 /** Single-day mobile-first view. Renders the day's visits as full-width
  *  cards. Tap a card to open the existing detail drawer via onSelect (same
@@ -42,21 +44,24 @@ export default function AgendaDay({
             Hidden when the parent AgendaHero is already rendering the
             weekday hierarchy above. */}
         {!hideHeader && (
-          <div className="sticky top-0 z-[5] -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-              {isToday ? 'Today' : ''}
+          <div className="sticky top-0 z-[5] -mx-3 px-3 pt-3 pb-2 mb-2 bg-bg border-b border-hairline/50 flex items-start justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+                {isToday ? 'Today' : ''}
+              </div>
+              <h2 className="text-xl font-bold text-ink tracking-tight">
+                {new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
+                  weekday: 'long', month: 'long', day: 'numeric',
+                })}
+              </h2>
+              {sorted.length > 0 && (
+                <p className="text-[12px] text-ink-3 mt-0.5">
+                  {sorted.length} job{sorted.length === 1 ? '' : 's'}
+                  {completed > 0 && ` · ${completed} done`}
+                </p>
+              )}
             </div>
-            <h2 className="text-xl font-bold text-ink tracking-tight">
-              {new Date(`${toLocalYMD(currentDate)}T00:00`).toLocaleDateString('en-US', {
-                weekday: 'long', month: 'long', day: 'numeric',
-              })}
-            </h2>
-            {sorted.length > 0 && (
-              <p className="text-[12px] text-ink-3 mt-0.5">
-                {sorted.length} job{sorted.length === 1 ? '' : 's'}
-                {completed > 0 && ` · ${completed} done`}
-              </p>
-            )}
+            <DayActionButtons visits={sorted} jobs={jobs} properties={properties} className="mt-1" />
           </div>
         )}
 
@@ -132,8 +137,20 @@ export default function AgendaDay({
                             )}
                           </div>
                           {property?.address && (
-                            <div className="text-[12px] text-ink-3 mt-0.5">
-                              {property.address}
+                            <div className="text-[12px] text-ink-3 mt-0.5 flex items-center gap-1">
+                              <span className="truncate">{property.address}</span>
+                              {/* Plain span, not <a>/<button> — the whole card is
+                                  already a <button>, and HTML forbids nesting
+                                  interactive elements inside one. */}
+                              <span
+                                onClick={e => { e.stopPropagation(); window.open(mapsSearchUrl(property.address), '_blank', 'noopener,noreferrer') }}
+                                className="no-print shrink-0 text-ink-3 hover:text-blue-600 cursor-pointer"
+                                title="Open in Google Maps"
+                                role="button"
+                                tabIndex={-1}
+                              >
+                                <MapPin className="w-3 h-3" />
+                              </span>
                             </div>
                           )}
                         </div>

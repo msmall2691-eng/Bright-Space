@@ -49,7 +49,7 @@ export default function AICommandBar() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-[4.75rem] right-4 lg:bottom-6 lg:right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 bg-panel text-ink-2 rounded-xl shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
+        className="no-print fixed bottom-[4.75rem] right-4 lg:bottom-6 lg:right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 bg-panel text-ink-2 rounded-xl shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
         title="AI Assistant (Ctrl+K)"
       >
         <Sparkles className="w-4 h-4 text-ink-3 group-hover:text-ink-2" />

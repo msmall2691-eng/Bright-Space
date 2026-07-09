@@ -240,7 +240,14 @@ export default function Schedule() {
   const {
     selectedVisitIds, toggleVisitSelect, selectAllVisible,
     clearVisitSelection, bulkDeleteVisits, bulkDeleting,
-  } = useVisitSelection({ visits, setVisits, currentlyVisibleVisits, toast })
+    bulkShiftVisits, bulkShifting,
+  } = useVisitSelection({
+    visits, setVisits, currentlyVisibleVisits, toast,
+    // Shifted visits land on a different date — the month grid caches its
+    // own jobs list keyed off calRefresh, so bump it the same way a job
+    // save/delete does (handleJobSave above) to pick up the moved jobs.
+    onAfterShift: () => setCalRefresh(k => k + 1),
+  })
 
   const handleEditJob = (job) => {
     setEditingJob(job)
@@ -398,6 +405,8 @@ export default function Schedule() {
           onClear={clearVisitSelection}
           onBulkDelete={bulkDeleteVisits}
           bulkDeleting={bulkDeleting}
+          onBulkShift={bulkShiftVisits}
+          bulkShifting={bulkShifting}
         />
       )}
 
