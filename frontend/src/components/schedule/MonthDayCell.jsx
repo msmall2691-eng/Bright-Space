@@ -43,7 +43,7 @@ function MonthDayCell({
           of a busy day. */}
       <div className="flex items-center justify-between mb-0.5 sm:mb-1">
         <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${
-          isToday ? 'bg-blue-500 text-white' :
+          isToday ? 'bg-accent text-accent-ink bb-today-badge' :
           isSelected ? 'text-blue-600' :
           'text-ink-2'
         }`}>

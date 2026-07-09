@@ -23,6 +23,7 @@ import {
 const THEMES = [
   { key: 'paper', label: 'Paper (light)' },
   { key: 'console', label: 'Console (dark)' },
+  { key: 'neon', label: 'Neon (dark/glass)' },
 ]
 const DENSITIES = [
   { key: 'default', label: 'Default' },
@@ -34,21 +35,25 @@ function ThemeSwitcher() {
   const [density, setDensity] = useState('default')
 
   useEffect(() => {
-    // index.css's dark/clean overrides are keyed off `body.theme-console` /
-    // `body.mode-clean` (not the <html> element), so toggle the class there.
+    // index.css's dark/clean/neon overrides are keyed off `body.theme-console`
+    // / `body.mode-clean` / `body.theme-neon` (not the <html> element), so
+    // toggle the class there. Neon is its own skin, not a mode-clean variant,
+    // so it's mutually exclusive with console/clean (matches theme.js).
     const body = document.body
+    body.classList.toggle('theme-neon', theme === 'neon')
     body.classList.toggle('theme-console', theme === 'console')
-    body.classList.toggle('mode-clean', density === 'clean')
+    body.classList.toggle('mode-clean', theme !== 'neon' && density === 'clean')
     // Restore whatever the rest of the app was using when we navigate away.
     return () => {
       const saved = localStorage.getItem('tweaks-panel-prefs')
-      if (!saved) { body.classList.remove('theme-console', 'mode-clean'); return }
+      if (!saved) { body.classList.remove('theme-console', 'mode-clean', 'theme-neon'); return }
       try {
         const prefs = JSON.parse(saved)
+        body.classList.toggle('theme-neon', prefs.theme === 'neon')
         body.classList.toggle('theme-console', prefs.theme === 'console')
-        body.classList.toggle('mode-clean', prefs.density === 'clean')
+        body.classList.toggle('mode-clean', prefs.theme !== 'neon' && prefs.density === 'clean')
       } catch {
-        body.classList.remove('theme-console', 'mode-clean')
+        body.classList.remove('theme-console', 'mode-clean', 'theme-neon')
       }
     }
   }, [theme, density])

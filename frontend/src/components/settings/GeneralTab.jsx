@@ -122,6 +122,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
               {[
                 { value: 'light', label: 'Light' },
                 { value: 'dark', label: 'Dark' },
+                { value: 'neon', label: 'Neon' },
               ].map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => setThemeChoice(applyTheme(opt.value))}

@@ -88,6 +88,73 @@ body.mode-clean.theme-console {
   --accent-ink: #09090b;
 }
 
+/* ----------------------------------------------------------------------
+   Neon theme — dark / glass / electric-violet. A third selectable option
+   (Settings -> General -> Appearance), independent of paper/console/clean;
+   toggled with body.theme-neon. Maps onto the SAME token names everything
+   else already consumes (bg-bg, text-ink, bg-panel, border-hairline, ...),
+   so the whole app re-skins with no per-page changes. Extra tokens below
+   (--glow-*, --blur) are additive and only meaningful under this theme —
+   .bb-* primitives degrade to a plain subtle look everywhere else.
+   ---------------------------------------------------------------------- */
+body.theme-neon {
+  --bg: #101219;
+  --bg-2: #171a23;
+  --bg-3: #1f2430;
+  --panel: #1b1f2a;
+  --ink: #f4f6fb;
+  --ink-2: #b6bccb;
+  --ink-3: #7c8397;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-2: rgba(255, 255, 255, 0.14);
+  --accent: #7c5cff;
+  --accent-ink: #ffffff;
+
+  --c-residential: #f6b73c;   --c-residential-bg: rgba(246, 183, 60, 0.16);
+  --c-commercial:  #60a5fa;   --c-commercial-bg:  rgba(96, 165, 250, 0.16);
+  --c-str:         #22d3ee;   --c-str-bg:          rgba(34, 211, 238, 0.16);
+  --c-alert:       #f2555a;   --c-alert-bg:        rgba(242, 85, 90, 0.16);
+  --c-ok:          #34d399;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-2: 0 8px 24px rgba(0,0,0,0.45);
+
+  /* Neon-only extras: glow + glass, consumed by the .bb-* primitives below. */
+  --blur: 14px;
+  --glow-accent: 0 0 0 1px rgba(124,92,255,0.45), 0 8px 28px rgba(124,92,255,0.35);
+  --glow-cyan:   0 0 0 1px rgba(34,211,238,0.40), 0 8px 28px rgba(34,211,238,0.30);
+}
+
+/* Reusable primitives — safe to use in any theme (neutral by default), but
+   only "light up" with glass blur / neon glow while body.theme-neon is
+   active, since --blur/--glow-* are only ever defined there. */
+.bb-glass {
+  background: var(--panel);
+  backdrop-filter: blur(var(--blur, 0));
+  -webkit-backdrop-filter: blur(var(--blur, 0));
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-2);
+}
+.bb-glow-accent { box-shadow: var(--glow-accent, var(--shadow-2)); }
+.bb-glow-cyan { box-shadow: var(--glow-cyan, var(--shadow-2)); }
+
+/* Week view's current-time line (WeekGrid.jsx) — plain red elsewhere;
+   under Neon it's the accent color with a glow, per the roadmap's "current-
+   time line" ask. Pure CSS override via the existing data-testid, so the
+   component itself needs no theme-awareness. */
+body.theme-neon [data-testid="week-grid-now-line"],
+body.theme-neon [data-testid="week-grid-now-line"] > div {
+  background-color: var(--accent) !important;
+  box-shadow: 0 0 6px var(--accent);
+}
+
+/* "Today" glow (month grid's date-circle badge) — plain flat accent fill
+   elsewhere; under Neon it gets the violet glow, per the roadmap's "today
+   glow" ask. */
+body.theme-neon .bb-today-badge {
+  box-shadow: var(--glow-accent);
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
