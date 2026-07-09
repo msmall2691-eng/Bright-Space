@@ -149,8 +149,7 @@ export default function Schedule() {
   const [toolsOpen, setToolsOpen] = useState(false)
 
   const {
-    gcalSyncing, syncFromGoogle,
-    gcalPushing, pushToGoogle,
+    syncingNow, syncNow,
     fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
@@ -357,10 +356,8 @@ export default function Schedule() {
         toolsOpen={toolsOpen}
         onToggleTools={() => setToolsOpen(o => !o)}
         onCloseTools={() => setToolsOpen(false)}
-        gcalSyncing={gcalSyncing}
-        gcalPushing={gcalPushing}
-        onSyncFromGoogle={syncFromGoogle}
-        onPushToGoogle={pushToGoogle}
+        syncingNow={syncingNow}
+        onSyncNow={syncNow}
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
@@ -448,8 +445,6 @@ export default function Schedule() {
             />
           </div>
           <StickyActionBar
-            unassignedCount={todayStats.unassigned}
-            onAssign={() => setUnassignedOnly(true)}
             onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
           />
         </div>
