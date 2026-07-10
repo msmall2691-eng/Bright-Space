@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { get } from '../api'
 import { toLocalYMD } from '../utils/format'
 import { rangeForView } from '../utils/dateRange'
@@ -47,10 +47,21 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   const range = useMemo(() => rangeForView(currentDate, viewMode), [currentDate, viewMode])
   const rangeKey = `${range.start}|${range.end}`
 
+  // Set by the poll timer right before it bumps refreshKey, consumed by the
+  // very next loadSchedule() run below. Lets a background poll's failure
+  // degrade to a silent no-op (keep showing whatever's already on screen)
+  // instead of the full-page ErrorState or initial skeleton a user-initiated
+  // load/retry is supposed to show on failure.
+  const isBackgroundPollRef = useRef(false)
+
   useEffect(() => {
+    const backgroundPoll = isBackgroundPollRef.current
+    isBackgroundPollRef.current = false
     const loadSchedule = async () => {
-      setLoading(true)
-      setLoadError(false)
+      if (!backgroundPoll) {
+        setLoading(true)
+        setLoadError(false)
+      }
       try {
         const start = range.start
         const end = range.end
@@ -65,10 +76,15 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
           )
         } catch (e) {
           // Total failure (timeout / server down): surface a retryable error
-          // rather than rendering an empty week.
+          // rather than rendering an empty week — but only for a real
+          // (non-background-poll) load. A poll failing is just a transient
+          // blip; the tab already has a valid schedule on screen and should
+          // keep it rather than getting blown away every 45s by a 5xx.
           console.error('[Schedule] Week API error:', e)
-          setLoadError(true)
-          setLoading(false)
+          if (!backgroundPoll) {
+            setLoadError(true)
+            setLoading(false)
+          }
           return
         }
         const jobsMap = {}
@@ -91,7 +107,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
       } catch (err) {
         console.error('[Schedule]', err)
       }
-      setLoading(false)
+      if (!backgroundPoll) setLoading(false)
     }
     loadSchedule()
     // rangeKey is the primitive string form of `range` so React can compare
@@ -104,6 +120,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
     if (!pollMs) return
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
+      isBackgroundPollRef.current = true
       refresh()
     }, pollMs)
     return () => clearInterval(interval)
