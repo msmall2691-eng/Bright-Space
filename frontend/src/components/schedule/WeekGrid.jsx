@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { Calendar as CalendarIcon, Plus, AlertCircle, Users } from 'lucide-react'
 import Button from '../ui/Button'
 import { patch } from '../../api'
@@ -233,6 +234,9 @@ export default function WeekGrid({
             <Plus className="w-4 h-4 mr-1" /> New Job
           </Button>
         )}
+        <p className="text-xs text-ink-3 mt-3">
+          or <Link to="/properties" className="underline hover:text-ink-2">import a property's iCal feed</Link>
+        </p>
       </div>
     )
   }
