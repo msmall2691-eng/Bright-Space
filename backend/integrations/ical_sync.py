@@ -275,6 +275,54 @@ def _push_turnover_to_gcal(db, prop, linked_job, checkout_date) -> bool:
         return False
 
 
+def _push_new_turnover_to_gcal(prop, job, check_out_time, end_time, notes_text,
+                                house_code, guest_metadata, client, client_name) -> None:
+    """Create a fresh Google Calendar event for a turnover Job that has none —
+    shared by the "brand-new job" path and the "reactivate a previously-
+    cancelled duplicate" path, since a cancelled job's GCal event was already
+    deleted (see the cancellation sweep in sync_property) and update_event has
+    nothing to update in that case."""
+    try:
+        from integrations.google_calendar import create_event
+
+        description_parts = [notes_text]
+        if guest_metadata.get('airbnb_reservation_code'):
+            description_parts.append(f"Booking: {guest_metadata['airbnb_reservation_code']}")
+
+        sched = job.scheduled_date
+        job_dict = {
+            "id": job.id,
+            "title": job.title,
+            "job_type": "str_turnover",
+            "scheduled_date": sched.isoformat() if hasattr(sched, "isoformat") else sched,
+            "start_time": check_out_time,
+            "end_time": end_time,
+            "address": prop.address,
+            "notes": " | ".join(description_parts),
+            "property_id": prop.id,
+        }
+        client_dict = {
+            "id": prop.client_id,
+            "name": client_name,
+            "email": getattr(client, "email", None) if client else None,
+        }
+        property_data = {
+            "timezone": prop.timezone,
+            "house_code": house_code,
+            "access_notes": prop.access_notes,
+            "parking_notes": prop.parking_notes,
+            "site_contact_name": prop.site_contact_name,
+            "site_contact_phone": prop.site_contact_phone,
+        }
+        gcal_event_id = create_event(job_dict, client_dict, property_data=property_data)
+        if gcal_event_id:
+            job.gcal_event_id = gcal_event_id
+            job.calendar_invite_sent = True
+            log.info(f"Pushed turnover to GCal: {prop.name} on {job_dict['scheduled_date']} (event={gcal_event_id})")
+    except Exception as e:
+        log.warning(f"Failed to push turnover to GCal for {prop.name} job {job.id}: {e}")
+
+
 async def fetch_ical(url: str) -> bytes:
     _assert_public_url(url)
     async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
@@ -397,6 +445,33 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             'is_all_day': is_all_day,
         })
 
+    # Partial-fetch guard: a truncated/interrupted response can still parse as
+    # valid iCal with a handful of VEVENTs, so "did we see zero events" (the
+    # old guard) doesn't catch it. Compare this tick's count to the feed's own
+    # last known-good count — a big drop means this read is suspect. Only
+    # flag when we have a real prior baseline (>= 3) so a naturally tiny feed
+    # doesn't false-positive on its first couple of syncs. The caller
+    # (sync_property) uses this to decide whether it's safe to trust this
+    # feed's UIDs for the cross-feed cancellation sweep this tick.
+    prior_seen = property_ical.last_events_seen if property_ical else None
+    # seen == 0 always counts as unreliable, matching the old (pre-this-fix)
+    # guard exactly — a feed reporting zero events could be a genuinely
+    # booking-free calendar, but treating it as trustworthy risks mass
+    # cancellation on any transient empty response, which is strictly worse
+    # than occasionally skipping a real "all bookings gone" sweep.
+    is_partial_fetch = seen == 0 or bool(prior_seen and prior_seen >= 3 and seen < prior_seen * 0.5)
+    if is_partial_fetch:
+        log.warning(
+            f"Suspiciously small iCal fetch for {prop.name} ({ical_source_label}): "
+            f"saw {seen} events this tick vs {prior_seen} last time — treating as a "
+            f"partial/unreliable read and skipping this feed's cancellation input."
+        )
+    elif property_ical is not None:
+        # Only update the baseline on a trustworthy read — otherwise a
+        # partial fetch would corrupt the baseline future ticks compare
+        # against, masking the very anomaly this guard exists to catch.
+        property_ical.last_events_seen = seen
+
     # Now process each event
     for event_data in all_events:
         uid = event_data['uid']
@@ -414,6 +489,7 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         if not event:
             event = ICalEvent(
                 property_id=prop.id,
+                property_ical_id=property_ical.id if property_ical else None,
                 uid=uid,
                 summary=summary,
                 event_type="reservation",
@@ -431,6 +507,10 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             db.flush()
             created_events += 1
         else:
+            # Backfill on existing rows too (older events predate this column;
+            # a booking that resyncs naturally picks up which feed owns it).
+            if property_ical is not None:
+                event.property_ical_id = property_ical.id
             event.event_type = "reservation"
             # Detect date changes — guest rescheduled
             old_checkout = event.checkout_date
@@ -504,29 +584,15 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
 
         # Create a Job if: no live job yet + checkout is today or future
         if event.job_id is None and checkout_date >= today:
-            # Check for existing job on this date
-            existing_job = db.query(Job).filter(
-                Job.property_id == prop.id,
-                Job.scheduled_date == checkout_date,
-                Job.job_type == "str_turnover",
-                Job.status.notin_(["cancelled"]),
-            ).first()
-
-            if existing_job:
-                event.job_id = existing_job.id
-                log.info(
-                    f"Dedup: linked iCal event {uid} to existing job {existing_job.id} "
-                    f"for {prop.name} on {checkout_date}"
-                )
-                continue
-
-            # Use PropertyIcal settings (if set) or property defaults
+            # Use PropertyIcal settings (if set) or property defaults. Computed
+            # up front (not just in the "create new" branch below) so the
+            # reactivate-a-cancelled-duplicate branch can push a fresh GCal
+            # event with the same notes/timing a brand-new job would get.
             check_out_time = (property_ical.checkout_time if property_ical else None) or prop.check_out_time or "10:00"
             duration = (property_ical.duration_hours if property_ical else None) or prop.default_duration_hours or 3.0
             house_code = (property_ical.house_code if property_ical else None) or prop.house_code
 
             # Calculate end time: look for next booking on same day
-            end_time = None
             next_booking_checkins = [e['checkin_date'] for e in events_by_checkout.get(checkout_date, []) if e['checkin_date'] and e['checkin_date'] >= checkin_date and e['checkin_date'] != checkin_date]
 
             if next_booking_checkins:
@@ -570,6 +636,71 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 notes_parts.append(f"Instructions: {property_ical.instructions}")
             notes_text = " | ".join(notes_parts)
 
+            # Check for an existing job on this date — INCLUDING cancelled ones.
+            # Excluding cancelled here used to mean: the moment the false-
+            # cancellation sweep flipped a turnover to 'cancelled', the very
+            # next sync tick couldn't find it anymore and inserted a brand-new
+            # Job instead of reactivating the old one — a cancel-then-recreate
+            # loop that, combined with a sweep firing every ~15 minutes,
+            # produced hundreds of duplicate rows for one booking.
+            #
+            # A LIVE (non-cancelled) row always wins over any cancelled one,
+            # regardless of timestamps: the historical bug can leave a
+            # cancelled duplicate with a NEWER updated_at than the one actual
+            # live turnover (migration 052 only guarantees at most one live
+            # row per property/date, not that it's also the most recently
+            # touched). Ordering by recency alone could pick a cancelled row,
+            # reactivate it, and end up with two live turnovers for the same
+            # date — exactly what the unique index exists to prevent. Among
+            # cancelled rows (no live one exists), ties are broken by most
+            # recently updated so a fresh cancel doesn't get shadowed by a
+            # stale duplicate from before.
+            existing_job = db.query(Job).filter(
+                Job.property_id == prop.id,
+                Job.scheduled_date == checkout_date,
+                Job.job_type == "str_turnover",
+            ).order_by(
+                (Job.status != "cancelled").desc(),
+                Job.updated_at.desc().nullslast(),
+                Job.id.desc(),
+            ).first()
+
+            if existing_job:
+                event.job_id = existing_job.id
+                if existing_job.status == "cancelled":
+                    existing_job.status = "scheduled"
+                    existing_job.notes = notes_text
+                    existing_job.start_time = _to_time(check_out_time)
+                    existing_job.end_time = _to_time(end_time)
+                    existing_job.custom_fields = guest_metadata
+                    _refresh_booking_metadata(existing_job, uid, checkin_date, checkout_date)
+                    log.info(
+                        f"Reactivating previously-cancelled turnover {existing_job.id} "
+                        f"for {prop.name} on {checkout_date} instead of creating a duplicate"
+                    )
+                    if existing_job.gcal_event_id:
+                        # The delete on cancellation failed (or hasn't been
+                        # retried yet) and the id was deliberately kept — the
+                        # event is still sitting on the owner's calendar, so
+                        # update it in place rather than creating a second,
+                        # duplicate event alongside it.
+                        _push_turnover_to_gcal(db, prop, existing_job, checkout_date)
+                    else:
+                        # Normal case: the GCal event was actually deleted
+                        # when this job was cancelled, so there's nothing for
+                        # update_event to update — push a fresh one the same
+                        # way a brand-new turnover would get.
+                        _push_new_turnover_to_gcal(
+                            prop, existing_job, check_out_time, end_time, notes_text,
+                            house_code, guest_metadata, client, client_name,
+                        )
+                else:
+                    log.info(
+                        f"Dedup: linked iCal event {uid} to existing job {existing_job.id} "
+                        f"for {prop.name} on {checkout_date}"
+                    )
+                continue
+
             job = Job(
                 client_id=prop.client_id,
                 property_id=prop.id,
@@ -591,85 +722,19 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             created_jobs += 1
 
             # Push to Google Calendar with guest metadata + property info in description
-            try:
-                from integrations.google_calendar import create_event
-
-                description_parts = [notes_text]
-                if guest_metadata.get('airbnb_reservation_code'):
-                    description_parts.append(f"Booking: {guest_metadata['airbnb_reservation_code']}")
-
-                job_dict = {
-                    "id": job.id,
-                    "title": job.title,
-                    "job_type": "str_turnover",
-                    "scheduled_date": checkout_date,
-                    "start_time": check_out_time,
-                    "end_time": end_time,
-                    "address": prop.address,
-                    "notes": " | ".join(description_parts),
-                    "property_id": prop.id,
-                }
-                client_dict = {
-                    "id": prop.client_id,
-                    "name": client_name,
-                    "email": getattr(client, "email", None) if client else None,
-                }
-                # Property metadata for richer GCal event description
-                property_data = {
-                    "timezone": prop.timezone,
-                    "house_code": house_code,
-                    "access_notes": prop.access_notes,
-                    "parking_notes": prop.parking_notes,
-                    "site_contact_name": prop.site_contact_name,
-                    "site_contact_phone": prop.site_contact_phone,
-                }
-                gcal_event_id = create_event(job_dict, client_dict, property_data=property_data)
-                if gcal_event_id:
-                    job.gcal_event_id = gcal_event_id
-                    job.calendar_invite_sent = True
-                    log.info(f"Pushed turnover to GCal: {prop.name} on {checkout_date} (event={gcal_event_id})")
-            except Exception as e:
-                log.warning(f"Failed to push turnover to GCal for {prop.name} on {checkout_date}: {e}")
-
-    # Cancellation detection: find future ICalEvents whose UIDs no longer appear in the feed
-    # These represent cancelled bookings — we should cancel the linked Job + delete GCal event
-    if feed_uids:  # Only run if we successfully parsed at least some events
-        existing_future_events = db.query(ICalEvent).filter(
-            ICalEvent.property_id == prop.id,
-            ICalEvent.checkout_date >= today,
-            ICalEvent.event_type == "reservation",
-        ).all()
-
-        for existing in existing_future_events:
-            if existing.uid in feed_uids:
-                continue  # Still in feed — skip
-            # Booking disappeared from feed → cancellation
-            log.info(
-                f"Cancellation detected for {prop.name}: "
-                f"booking {existing.uid} (checkout {existing.checkout_date}) no longer in feed"
+            _push_new_turnover_to_gcal(
+                prop, job, check_out_time, end_time, notes_text,
+                house_code, guest_metadata, client, client_name,
             )
-            # Cancel the linked job
-            if existing.job_id:
-                linked_job = db.query(Job).filter(Job.id == existing.job_id).first()
-                if linked_job and linked_job.status not in ("cancelled", "completed"):
-                    linked_job.status = "cancelled"
-                    cancelled_jobs += 1
-                    # Delete GCal event if linked
-                    if linked_job.gcal_event_id:
-                        try:
-                            from integrations.google_calendar import delete_event
-                            delete_event(linked_job.gcal_event_id, "str_turnover",
-                                         owner_account_id=getattr(linked_job, "gcal_account_id", None))
-                            log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
-                        except Exception as e:
-                            log.warning(f"Failed to delete GCal for cancelled turnover: {e}")
-                # Phase 0 fix: drop the link to the cancelled Job. Without this,
-                # if the same UID reappears (guest rebooks) the next sync sees
-                # event.job_id set and treats it as already-linked, leaving the
-                # cancelled Job in place and skipping new-Job creation.
-                existing.job_id = None
-            # Mark the iCal event as cancelled (audit trail)
-            existing.event_type = "cancelled"
+
+    # Cancellation is NOT decided here anymore. It used to run once per feed,
+    # comparing every stored ICalEvent for the property against only THIS
+    # feed's UIDs — which false-cancels real bookings on any property with
+    # 2+ active feeds (Airbnb + VRBO is a documented, first-class use case),
+    # since feed B's reservations always look "missing" while feed A is being
+    # synced. sync_property now runs the cancellation sweep exactly once,
+    # after every active feed for the property has been synced this tick,
+    # against the UNION of all feeds' UIDs — see there for the actual sweep.
 
     db.commit()
 
@@ -712,6 +777,11 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
         "skipped_not_reserved": skipped_not_reserved,
         "future_bookings": future_bookings,
         "missing_turnovers": missing_turnovers,
+        # Consumed by sync_property to run ONE cross-feed-aware cancellation
+        # sweep after all of a property's feeds have synced this tick, rather
+        # than each feed sweeping blind to every other feed's bookings.
+        "feed_uids": feed_uids,
+        "is_partial_fetch": is_partial_fetch,
     }
 
 
@@ -803,6 +873,16 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     # broken feed doesn't leave the property looking healthy off stale events.
     sync_errors = []
 
+    # Union of every successfully + reliably synced feed's UIDs this tick, and
+    # whether ANY active feed either failed to fetch or looked like a partial
+    # read — both feed into the single cancellation sweep below. Cancellation
+    # decisions must never be made from one feed's UIDs alone (a property with
+    # 2+ active feeds — Airbnb + VRBO is a documented, first-class case — would
+    # have every OTHER feed's bookings look "missing" while feed A syncs).
+    all_feed_uids = set()
+    any_feed_unreliable = False
+    any_feed_synced = False
+
     # Sync all PropertyIcal entries (or just one, in single-feed retry mode)
     for prop_ical in (prop.property_icals or []):
         if only_ical_id is not None and prop_ical.id != only_ical_id:
@@ -824,6 +904,7 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
             prop_ical.last_sync_error = str(result.get("error", ""))[:500]
             prop_ical.sync_retry_count = (prop_ical.sync_retry_count or 0) + 1
             sync_errors.append({"source": prop_ical.source or "feed", "error": str(result.get("error", ""))[:200]})
+            any_feed_unreliable = True
         else:
             prop_ical.last_sync_status = "ok"
             prop_ical.last_sync_error = None
@@ -831,13 +912,82 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
             total_seen += result["events_seen"]
             total_created_events += result["events_created"]
             total_created_jobs += result["jobs_created"]
-            total_cancelled_jobs += result.get("jobs_cancelled", 0)
             total_rescheduled_jobs += result.get("jobs_rescheduled", 0)
             total_skipped_host_blocks += result["skipped_host_blocks"]
             total_skipped_not_reserved += result["skipped_not_reserved"]
             total_future_bookings += result.get("future_bookings", 0)
             missing_turnovers.extend(result.get("missing_turnovers", []))
             sources_synced.append(prop_ical.source or "unknown")
+            any_feed_synced = True
+            all_feed_uids |= result.get("feed_uids", set())
+            if result.get("is_partial_fetch"):
+                any_feed_unreliable = True
+
+    # Cancellation sweep — run exactly once per tick, only when every active
+    # feed for this property was fetched AND none looked partial, AND this
+    # wasn't a single-feed retry call (only_ical_id set means we deliberately
+    # didn't sync every feed, so we can't safely conclude anything is
+    # "missing from all feeds"). A booking whose uid isn't in the combined set
+    # of every feed that ran this tick is genuinely gone.
+    if any_feed_synced and not any_feed_unreliable and only_ical_id is None:
+        today_iso_for_sweep = business_today().isoformat()
+        existing_future_events = db.query(ICalEvent).filter(
+            ICalEvent.property_id == prop.id,
+            ICalEvent.checkout_date >= today_iso_for_sweep,
+            ICalEvent.event_type == "reservation",
+        ).all()
+        for existing in existing_future_events:
+            if existing.uid in all_feed_uids:
+                continue
+            log.info(
+                f"Cancellation detected for {prop.name}: "
+                f"booking {existing.uid} (checkout {existing.checkout_date}) "
+                f"missing from every active feed synced this tick"
+            )
+            if existing.job_id:
+                linked_job = db.query(Job).filter(Job.id == existing.job_id).first()
+                if linked_job and linked_job.status not in ("cancelled", "completed"):
+                    linked_job.status = "cancelled"
+                    total_cancelled_jobs += 1
+                    if linked_job.gcal_event_id:
+                        # delete_event() never raises — it catches internally
+                        # and returns False on any failure (auth unavailable,
+                        # Google rejects the call, etc). Only clear the id on
+                        # a confirmed True: clearing it after a failed delete
+                        # would leave the stale event visible on the owner's
+                        # actual Google Calendar forever (we'd lose the only
+                        # id that could retry deleting it), and a later
+                        # reactivation would create a second, duplicate event
+                        # alongside the one that was never really removed.
+                        try:
+                            from integrations.google_calendar import delete_event
+                            deleted = delete_event(linked_job.gcal_event_id, "str_turnover",
+                                                    owner_account_id=getattr(linked_job, "gcal_account_id", None))
+                        except Exception as e:
+                            log.warning(f"Failed to delete GCal for cancelled turnover: {e}")
+                            deleted = False
+                        if deleted:
+                            log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
+                            linked_job.gcal_event_id = None
+                        else:
+                            log.warning(
+                                f"GCal delete for turnover {linked_job.id} (event "
+                                f"{linked_job.gcal_event_id}) did not apply — keeping the id "
+                                f"so it can be retried instead of orphaning the calendar event."
+                            )
+                # Drop the link to the cancelled Job. Without this, if the same
+                # UID reappears (guest rebooks) the next sync sees event.job_id
+                # set and treats it as already-linked, leaving the cancelled Job
+                # in place and skipping new-Job creation.
+                existing.job_id = None
+            existing.event_type = "cancelled"
+        db.commit()
+    elif any_feed_unreliable and only_ical_id is None:
+        log.warning(
+            f"Skipping cancellation sweep for {prop.name} this tick — at least "
+            f"one active feed failed or looked like a partial read; will "
+            f"re-evaluate on the next sync."
+        )
 
     # Update property sync timestamp
     prop.ical_last_synced_at = datetime.now(timezone.utc)
