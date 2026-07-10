@@ -428,3 +428,50 @@ class TestSyncIdempotency:
             assert job.status == "scheduled"
         finally:
             db.close()
+
+    def test_prefers_live_job_over_a_newer_cancelled_duplicate(self):
+        """The existing-job dedup lookup must never reactivate a cancelled
+        duplicate when a LIVE job already covers the same property/date —
+        even if that cancelled duplicate has a more recent updated_at. Ordering
+        by recency alone (the original fix's first draft) could pick the
+        cancelled row, flip it back to scheduled, and end up with two live
+        turnovers for one date — exactly what uq_jobs_turnover_property_date_live
+        exists to prevent. Codex P1 on PR #537."""
+        db = SessionLocal()
+        try:
+            prop, (url,) = _seed_property(db)
+            checkout = date.today() + timedelta(days=12)
+
+            live_job = Job(client_id=prop.client_id, property_id=prop.id,
+                            job_type="str_turnover", title="Live turnover",
+                            scheduled_date=checkout, address=prop.address,
+                            status="scheduled")
+            db.add(live_job); db.commit(); db.refresh(live_job)
+
+            # A cancelled duplicate for the SAME date, touched more recently
+            # than the live job (the exact scenario that broke ordering-by-
+            # recency-alone).
+            stale_dupe = Job(client_id=prop.client_id, property_id=prop.id,
+                              job_type="str_turnover", title="Stale cancelled dupe",
+                              scheduled_date=checkout, address=prop.address,
+                              status="cancelled")
+            db.add(stale_dupe); db.commit(); db.refresh(stale_dupe)
+            import datetime as dt
+            stale_dupe.updated_at = dt.datetime.utcnow()
+            live_job.updated_at = dt.datetime.utcnow() - dt.timedelta(days=1)
+            db.commit()
+
+            checkin = checkout - timedelta(days=2)
+            with _patch_feeds({url: _ics([("live-booking@feed", checkin, checkout, "Reserved")])}), \
+                 patch("integrations.google_calendar.create_event", return_value=None), \
+                 patch("integrations.google_calendar.update_event", return_value=True):
+                sync_property(db, prop)
+
+            db.refresh(live_job)
+            db.refresh(stale_dupe)
+            assert live_job.status == "scheduled", "the already-live job must stay the one true turnover"
+            assert stale_dupe.status == "cancelled", "the cancelled duplicate must NOT be reactivated"
+            ev = db.query(ICalEvent).filter_by(property_id=prop.id, uid="live-booking@feed").first()
+            assert ev.job_id == live_job.id
+        finally:
+            db.close()

@@ -642,14 +642,28 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
             # next sync tick couldn't find it anymore and inserted a brand-new
             # Job instead of reactivating the old one — a cancel-then-recreate
             # loop that, combined with a sweep firing every ~15 minutes,
-            # produced hundreds of duplicate rows for one booking. Ties are
-            # broken by most-recently-updated so a fresh cancel doesn't get
-            # shadowed by a stale duplicate from before.
+            # produced hundreds of duplicate rows for one booking.
+            #
+            # A LIVE (non-cancelled) row always wins over any cancelled one,
+            # regardless of timestamps: the historical bug can leave a
+            # cancelled duplicate with a NEWER updated_at than the one actual
+            # live turnover (migration 052 only guarantees at most one live
+            # row per property/date, not that it's also the most recently
+            # touched). Ordering by recency alone could pick a cancelled row,
+            # reactivate it, and end up with two live turnovers for the same
+            # date — exactly what the unique index exists to prevent. Among
+            # cancelled rows (no live one exists), ties are broken by most
+            # recently updated so a fresh cancel doesn't get shadowed by a
+            # stale duplicate from before.
             existing_job = db.query(Job).filter(
                 Job.property_id == prop.id,
                 Job.scheduled_date == checkout_date,
                 Job.job_type == "str_turnover",
-            ).order_by(Job.updated_at.desc().nullslast(), Job.id.desc()).first()
+            ).order_by(
+                (Job.status != "cancelled").desc(),
+                Job.updated_at.desc().nullslast(),
+                Job.id.desc(),
+            ).first()
 
             if existing_job:
                 event.job_id = existing_job.id
@@ -664,13 +678,22 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                         f"Reactivating previously-cancelled turnover {existing_job.id} "
                         f"for {prop.name} on {checkout_date} instead of creating a duplicate"
                     )
-                    # The GCal event was deleted when this job was cancelled, so
-                    # there's nothing for update_event to update — push a fresh
-                    # one the same way a brand-new turnover would get.
-                    _push_new_turnover_to_gcal(
-                        prop, existing_job, check_out_time, end_time, notes_text,
-                        house_code, guest_metadata, client, client_name,
-                    )
+                    if existing_job.gcal_event_id:
+                        # The delete on cancellation failed (or hasn't been
+                        # retried yet) and the id was deliberately kept — the
+                        # event is still sitting on the owner's calendar, so
+                        # update it in place rather than creating a second,
+                        # duplicate event alongside it.
+                        _push_turnover_to_gcal(db, prop, existing_job, checkout_date)
+                    else:
+                        # Normal case: the GCal event was actually deleted
+                        # when this job was cancelled, so there's nothing for
+                        # update_event to update — push a fresh one the same
+                        # way a brand-new turnover would get.
+                        _push_new_turnover_to_gcal(
+                            prop, existing_job, check_out_time, end_time, notes_text,
+                            house_code, guest_metadata, client, client_name,
+                        )
                 else:
                     log.info(
                         f"Dedup: linked iCal event {uid} to existing job {existing_job.id} "
@@ -927,18 +950,31 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
                     linked_job.status = "cancelled"
                     total_cancelled_jobs += 1
                     if linked_job.gcal_event_id:
+                        # delete_event() never raises — it catches internally
+                        # and returns False on any failure (auth unavailable,
+                        # Google rejects the call, etc). Only clear the id on
+                        # a confirmed True: clearing it after a failed delete
+                        # would leave the stale event visible on the owner's
+                        # actual Google Calendar forever (we'd lose the only
+                        # id that could retry deleting it), and a later
+                        # reactivation would create a second, duplicate event
+                        # alongside the one that was never really removed.
                         try:
                             from integrations.google_calendar import delete_event
-                            delete_event(linked_job.gcal_event_id, "str_turnover",
-                                         owner_account_id=getattr(linked_job, "gcal_account_id", None))
-                            log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
+                            deleted = delete_event(linked_job.gcal_event_id, "str_turnover",
+                                                    owner_account_id=getattr(linked_job, "gcal_account_id", None))
                         except Exception as e:
                             log.warning(f"Failed to delete GCal for cancelled turnover: {e}")
-                        # Clear the stale id regardless of delete outcome —
-                        # otherwise a later reactivation (same booking reappears)
-                        # sees a gcal_event_id that points at a deleted event and
-                        # tries to update it instead of creating a fresh one.
-                        linked_job.gcal_event_id = None
+                            deleted = False
+                        if deleted:
+                            log.info(f"Deleted GCal event {linked_job.gcal_event_id} for cancelled turnover")
+                            linked_job.gcal_event_id = None
+                        else:
+                            log.warning(
+                                f"GCal delete for turnover {linked_job.id} (event "
+                                f"{linked_job.gcal_event_id}) did not apply — keeping the id "
+                                f"so it can be retried instead of orphaning the calendar event."
+                            )
                 # Drop the link to the cancelled Job. Without this, if the same
                 # UID reappears (guest rebooks) the next sync sees event.job_id
                 # set and treats it as already-linked, leaving the cancelled Job
