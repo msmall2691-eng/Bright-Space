@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Calendar, CornerUpLeft, MapPin } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG, VISIT_STATUS_CONFIG, computeDisplayStatus } from './constants'
 import { TurnoverInfo, SyncStatusChips } from './SyncBadge'
@@ -69,6 +70,9 @@ export default function AgendaDay({
           <div className="bg-panel border border-hairline rounded-2xl p-10 text-center">
             <Calendar className="w-8 h-8 text-ink-3 mx-auto mb-2" />
             <p className="text-[13px] text-ink-3">Nothing scheduled for this day</p>
+            <p className="text-[12px] text-ink-3 mt-2">
+              Create one, or <Link to="/properties" className="underline hover:text-ink-2">import a property's iCal feed</Link>
+            </p>
           </div>
         ) : (
           <ul className="space-y-2.5">

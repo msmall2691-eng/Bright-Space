@@ -20,8 +20,15 @@ import { useEmployees } from './useEmployees'
  *  parent already covers its month) + a `refresh()` bump, plus
  *  `setVisits` / `setJobs` so the parent can patch local state after a
  *  successful mutation without waiting for a full refetch. `empName(id)`
- *  resolves a cleaner id to a display name. */
-export function useScheduleData(currentDate, viewMode = 'week') {
+ *  resolves a cleaner id to a display name.
+ *
+ *  Tier 5 roadmap #16 "realtime refresh": also polls every `pollMs` (default
+ *  45s) so a second admin's edits show up without a manual Refresh click.
+ *  Paused while the tab is hidden (Page Visibility API) so background tabs
+ *  don't burn requests. This is deliberately last-write-wins, same as a
+ *  manual refresh — no optimistic locking — it just shortens the staleness
+ *  window between two people editing the same schedule. */
+export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000 } = {}) {
   const [visits, setVisits] = useState([])
   const [jobs, setJobs] = useState({})
   const [properties, setProperties] = useState({})
@@ -92,6 +99,16 @@ export function useScheduleData(currentDate, viewMode = 'week') {
   }, [rangeKey, refreshKey])
 
   const refresh = () => setRefreshKey(k => k + 1)
+
+  useEffect(() => {
+    if (!pollMs) return
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      refresh()
+    }, pollMs)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollMs])
 
   return {
     visits, setVisits,
