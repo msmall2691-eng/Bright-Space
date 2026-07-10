@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, Date, Time, BigInteger,
-    JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY
+    JSON, ForeignKey, Boolean, UniqueConstraint, Index, Enum as SQLEnum, ARRAY, text
 )
 from sqlalchemy.orm import relationship, validates
 
@@ -344,6 +344,12 @@ class PropertyIcal(Base):
     last_sync_status = Column(String, nullable=True)  # 'ok', 'failed', 'retrying', 'paused'
     last_sync_error = Column(Text, nullable=True)     # Error message from last failed sync
     sync_retry_count = Column(Integer, default=0)     # How many times we've retried after failure
+    # events_seen from this feed's most recent successful sync — lets the next
+    # sync detect a suspiciously small/partial fetch (a truncated response can
+    # still parse as valid iCal with a handful of VEVENTs) and skip the
+    # cancellation sweep for that tick rather than false-cancelling bookings
+    # that just didn't make it into the partial read.
+    last_events_seen = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
 
@@ -357,6 +363,11 @@ class ICalEvent(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False, index=True)
+    # Which specific feed produced this event — lets the multi-feed
+    # cancellation sweep tell "this booking's own feed says it's gone" apart
+    # from "a DIFFERENT feed on this property just didn't mention it".
+    # Nullable: rows created before this column existed are unattributed.
+    property_ical_id = Column(Integer, ForeignKey("property_icals.id"), nullable=True, index=True)
 
     uid = Column(String, nullable=False)            # Airbnb UID: "airbnb_XXX@airbnb.com"
     summary = Column(String, nullable=True)         # SUMMARY field (booking label)
@@ -571,6 +582,19 @@ class Job(Base):
         Index("idx_job_property_date", property_id, scheduled_date),
         Index("idx_job_client_status", client_id, status),
         Index("idx_job_scheduled_date_status", scheduled_date, status),
+        # DB-level backstop against the cancel<->recreate duplicate-turnover
+        # bug: at most one live (non-cancelled) str_turnover job per
+        # property/checkout-date. Scoped to str_turnover only — residential/
+        # commercial properties can legitimately have more than one job on
+        # the same date. Mirrors migration 052's Postgres/SQLite index so the
+        # constraint is enforced in the create_all-based test schema too.
+        Index(
+            "uq_jobs_turnover_property_date_live",
+            property_id, scheduled_date, job_type,
+            unique=True,
+            postgresql_where=text("status <> 'cancelled' AND job_type = 'str_turnover'"),
+            sqlite_where=text("status <> 'cancelled' AND job_type = 'str_turnover'"),
+        ),
     )
 
 

@@ -410,14 +410,29 @@ END:VCALENDAR""".encode()
             assert events["John Smith"] == "would create turnover"
             assert "host block" in events["Airbnb (Not available)"]
         finally:
+            # Clean up the PropertyIcal row — left behind otherwise, and on
+            # SQLite a later test's freshly-created Property can reuse this
+            # row's id and inherit a dangling feed url via the relationship.
+            db.rollback()
+            db.query(PropertyIcal).filter(PropertyIcal.property_id == prop.id).delete(synchronize_session=False)
+            db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)
+            db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
+            db.commit()
             db.close()
 
 
 class TestResurrectCancelledTurnover:
     """An active booking always keeps a turnover: if its turnover was cancelled
-    (manually, or when its GCal event was deleted) the next sync recreates it."""
+    (manually, or when its GCal event was deleted) the next sync recreates it.
 
-    def test_cancelled_turnover_recreated_while_booking_active(self):
+    "Recreates" means REACTIVATES the same Job row, not a fresh insert — an
+    earlier version of this dedup lookup excluded cancelled jobs, so recovery
+    could only ever look like "insert a new row", which is precisely the
+    cancel-then-recreate loop that produced hundreds of duplicate turnovers
+    for one Airbnb booking in production (one booking flapped through this
+    exact resurrect path on every ~15-minute sync tick)."""
+
+    def test_cancelled_turnover_reactivated_in_place_while_booking_active(self):
         from integrations.ical_sync import _sync_ical_url
         db = SessionLocal()
         try:
@@ -459,13 +474,15 @@ END:VCALENDAR""".encode()
             job.status = "cancelled"
             db.commit()
 
-            # Next sync must resurrect: a new active turnover on the same date,
-            # with the iCal event repointed to it.
+            # Next sync must resurrect: the SAME job reactivated in place, not
+            # a new row (that would be the duplicate-creation bug), with the
+            # iCal event repointed to it.
             r2 = run_sync()
-            assert r2["jobs_created"] == 1
+            assert r2["jobs_created"] == 0
+            assert db.query(Job).filter_by(property_id=prop.id).count() == 1
             active = db.query(Job).filter_by(property_id=prop.id, status="scheduled").all()
             assert len(active) == 1
-            assert active[0].id != job.id
+            assert active[0].id == job.id
             assert active[0].scheduled_date == checkout
             db.refresh(ev)
             assert ev.job_id == active[0].id
@@ -660,6 +677,11 @@ END:VCALENDAR""".encode()
             db.query(Job).filter(Job.property_id == prop.id).delete(synchronize_session=False)
             from database.models import ICalEvent
             db.query(ICalEvent).filter(ICalEvent.property_id == prop.id).delete(synchronize_session=False)
+            # Without this, the PropertyIcal row this test creates outlives
+            # the Property it points at; a later test's freshly-created
+            # Property can reuse the same id on SQLite and silently inherit
+            # this dangling feed url via the relationship.
+            db.query(PropertyIcal).filter(PropertyIcal.property_id == prop.id).delete(synchronize_session=False)
             db.query(Property).filter(Property.id == prop.id).delete(synchronize_session=False)
             db.query(Client).filter(Client.id == client.id).delete(synchronize_session=False)
             db.commit()
