@@ -201,11 +201,67 @@ async def get_employees() -> list:
     return users
 
 
+# ─── Jobs (the mapping that was never wired) ─────────────────────────────────
+
+async def list_jobs() -> list:
+    """List the scheduler's Jobs so we can map a Bright Space property/customer
+    to a Connecteam Job entity and attach its id to pushed shifts.
+
+    NOTE: confirm the exact path against Connecteam's API docs for your plan.
+    The scheduler-scoped jobs collection is:
+        GET /scheduler/v1/schedulers/{schedulerId}/jobs
+    Returns a flat list of {id, name}.
+    """
+    sched = _get_scheduler_id()
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(
+            f"{CONNECTEAM_BASE}/scheduler/v1/schedulers/{sched}/jobs",
+            headers=_headers(),
+        )
+        _raise_for_status(r)
+        data = r.json()
+    jobs = ((data.get("data") or {}).get("jobs")) or data.get("jobs") or []
+    out = []
+    for j in jobs:
+        jid = j.get("id") if j.get("id") is not None else j.get("jobId")
+        if jid is None:
+            continue
+        out.append({"id": str(jid), "name": (j.get("name") or "").strip()})
+    return out
+
+
+def list_jobs_sync() -> list:
+    """Synchronous wrapper for the sync push-open-shifts endpoint."""
+    return _run_sync(list_jobs())
+
+
+def match_job_id(name: Optional[str], jobs: list) -> Optional[str]:
+    """Match a Bright Space property/customer name to a Connecteam Job id.
+
+    Exact case-insensitive match first (a Job named exactly "4 Red Barn
+    Circle"), falling back to substring containment either way (a Job named
+    "123 Main St - Turnover" should still match a property named "123 Main
+    St"). Returns None — never raises — on no match / no name / no jobs, so
+    callers can fall back to a free-text address instead of failing the push.
+    """
+    needle = (name or "").strip().lower()
+    if not needle or not jobs:
+        return None
+    for j in jobs:
+        if (j.get("name") or "").strip().lower() == needle:
+            return j.get("id")
+    for j in jobs:
+        jname = (j.get("name") or "").strip().lower()
+        if jname and (jname in needle or needle in jname):
+            return j.get("id")
+    return None
+
+
 # ─── Shifts ────────────────────────────────────────────────────────────────
 
 def _shift_payload(*, start_datetime, end_datetime, title,
                    address=None, notes=None, user_id=None,
-                   open_shift=False, is_published=True) -> dict:
+                   open_shift=False, is_published=True, job_id=None) -> dict:
     """Shape a single shift the way Connecteam expects. Bulk-create takes an
     ARRAY of these — call sites wrap accordingly."""
     payload = {
@@ -219,15 +275,18 @@ def _shift_payload(*, start_datetime, end_datetime, title,
         payload["assignedUserIds"] = []  # required to stay empty for open shifts
     elif user_id is not None:
         payload["assignedUserIds"] = [int(user_id)] if str(user_id).isdigit() else [user_id]
-    if address:
-        # locationData is a structured object. `isReferencedToJob` is REQUIRED
-        # by Connecteam's validator whenever locationData is present — their
-        # public docs (developer.connecteam.com/docs/scheduler-create-shifts)
-        # don't mention it, but the API returns error_code 1002 without it:
-        #   "body.0.locationData.isReferencedToJob": {"message":"Field..."}
-        # false = free-text address, not tied to a Connecteam Job entity. Once
-        # we wire up Job lookup by customer name (follow-up), a matched Job
-        # will flip this to true and add a jobId to the shift.
+    if job_id:
+        # Matched a Connecteam Job entity: tie the shift to it so it shows up
+        # LABELED (not "Job: None"). isReferencedToJob MUST be True here and a
+        # jobId supplied; address is optional (Connecteam pulls it from the Job).
+        loc = {"isReferencedToJob": True, "jobId": str(job_id)}
+        if address:
+            loc["address"] = address
+        payload["locationData"] = loc
+    elif address:
+        # No matched Job: fall back to a free-text address. isReferencedToJob is
+        # REQUIRED by Connecteam's validator whenever locationData is present
+        # (error_code 1002 without it); False = not tied to a Job entity.
         payload["locationData"] = {
             "address": address,
             "isReferencedToJob": False,
@@ -280,6 +339,7 @@ async def create_shift(
     title: str,
     address: Optional[str] = None,
     notes: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> dict:
     """Create a single ASSIGNED shift for one cleaner. Returns {"id": "..."}
     so callers that read `res["id"]` (like connecteam_auto.auto_dispatch_job)
@@ -287,6 +347,7 @@ async def create_shift(
     payload = _shift_payload(
         start_datetime=start_datetime, end_datetime=end_datetime,
         title=title, address=address, notes=notes, user_id=employee_id,
+        job_id=job_id,
     )
     ids = await create_shifts([payload])
     return {"id": ids[0]} if ids else {}
@@ -298,11 +359,13 @@ async def create_open_shift(
     title: str,
     address: Optional[str] = None,
     notes: Optional[str] = None,
+    job_id: Optional[str] = None,
 ) -> dict:
     """Create a single OPEN shift (unassigned, cleaners can self-claim)."""
     payload = _shift_payload(
         start_datetime=start_datetime, end_datetime=end_datetime,
         title=title, address=address, notes=notes, open_shift=True,
+        job_id=job_id,
     )
     ids = await create_shifts([payload])
     return {"id": ids[0]} if ids else {}
