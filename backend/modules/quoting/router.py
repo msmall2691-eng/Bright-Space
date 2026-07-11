@@ -870,10 +870,26 @@ def _convert_quote_to_job(
     try:
         db.commit()
     except IntegrityError:
-        # A concurrent convert won the race and inserted the job first; the
-        # unique index on jobs.quote_id rejected ours. Return the winner.
+        # Two different things raise IntegrityError here and must not be
+        # confused: (a) a concurrent convert won the race and inserted the
+        # job first — jobs.quote_id's unique index rejected ours, and the
+        # winner is now findable by quote_id; (b) any OTHER constraint
+        # violation (e.g. schema drift between a CHECK constraint and a
+        # status value the app actually uses — see migration 053, where
+        # status="unscheduled" above violated a CHECK constraint that had
+        # never been updated for it). Silently treating (b) as (a) meant the
+        # job was simply never created, the quote never flipped to
+        # 'converted', and the caller got back None with no error at all —
+        # for a schema-drift class of bug specifically, that's a silent
+        # total failure of quote-to-job conversion. Only swallow the error
+        # when a winning job can actually be found; otherwise this wasn't a
+        # race, so let the real error surface instead of returning None
+        # (this function's return type is Job, never Optional[Job]).
         db.rollback()
-        return _existing_job_for_quote(db, quote)
+        winner = _existing_job_for_quote(db, quote)
+        if winner is None:
+            raise
+        return winner
     db.refresh(job)
     return job
 

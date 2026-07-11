@@ -17,13 +17,25 @@ os.environ.setdefault("BRIGHTBASE_API_KEY", "test-api-key")
 
 import pytest
 
-from database.db import engine
-from database.models import Base
+from database.db import engine, SessionLocal
+from database.models import Base, Org
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_schema():
     Base.metadata.create_all(bind=engine)
+    # In production this row comes from migration 030b's data seed, which
+    # create_all() (schema only, no data) never runs. Dozens of tests
+    # hardcode org_id=1 on Client/User/etc rows, relying on that seed having
+    # happened — on Postgres the org_id FK enforces it and every one of
+    # those inserts fails; SQLite doesn't enforce the FK so it went unnoticed.
+    db = SessionLocal()
+    try:
+        if not db.query(Org).filter(Org.id == 1).first():
+            db.add(Org(id=1, name="Maine Cleaning Co", slug="maine-cleaning-co"))
+            db.commit()
+    finally:
+        db.close()
     yield
 
 

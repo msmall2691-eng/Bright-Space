@@ -34,6 +34,11 @@ def client_and_job():
     yield c, j
     db.query(Activity).filter(Activity.client_id == c.id).delete(synchronize_session=False)
     db.query(Job).filter(Job.id == j.id).delete(synchronize_session=False)
+    # Property was never cleaned up here before — deleting the Client without
+    # it first violated properties_client_id_fkey on Postgres (SQLite doesn't
+    # enforce the FK), aborting this whole teardown transaction and leaving
+    # every row from the test uncleaned for whatever ran next.
+    db.query(Property).filter(Property.id == p.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
     db.commit(); db.close()
 

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import LeadIntake, Client, Activity
+from database.models import LeadIntake, Client, Activity, ContactEmail, ContactPhone, Opportunity, Property
 from modules.intake.normalize import build_intake, upsert_lead
 
 client = TestClient(app)
@@ -29,6 +29,18 @@ def _cleanup_email(email):
         client_ids = [c.id for c in db.query(Client).filter(Client.email.ilike(email)).all()]
         if client_ids:
             db.query(Activity).filter(Activity.client_id.in_(client_ids)).delete(synchronize_session=False)
+            # upsert_lead's canonical-contacts path also writes ContactEmail/
+            # ContactPhone rows for the client — never cleaned up here
+            # before, so deleting the Client without them violated their
+            # client_id FKs on Postgres, aborting this whole cleanup
+            # transaction and leaving every row from the test uncleaned.
+            db.query(ContactEmail).filter(ContactEmail.client_id.in_(client_ids)).delete(synchronize_session=False)
+            db.query(ContactPhone).filter(ContactPhone.client_id.in_(client_ids)).delete(synchronize_session=False)
+            # upsert_lead also auto-creates/advances an Opportunity for the
+            # client, and can auto-create a Property for a booking address —
+            # same FK-on-delete problem as above.
+            db.query(Opportunity).filter(Opportunity.client_id.in_(client_ids)).delete(synchronize_session=False)
+            db.query(Property).filter(Property.client_id.in_(client_ids)).delete(synchronize_session=False)
         db.query(LeadIntake).filter(LeadIntake.email.ilike(email)).delete(synchronize_session=False)
         db.query(Client).filter(Client.email.ilike(email)).delete(synchronize_session=False)
         db.commit()

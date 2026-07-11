@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import Client, Quote, Opportunity, Job, LeadIntake
+from database.models import Client, Quote, Opportunity, Job, LeadIntake, User, Property
 from modules.auth.router import get_current_user, current_org_id
 
 
@@ -21,6 +21,15 @@ class _Admin:
 def client():
     app.dependency_overrides[get_current_user] = lambda: _Admin()
     app.dependency_overrides[current_org_id] = lambda: 1
+    # Quote.created_by (and similar) FKs to users.id — on SQLite this silently
+    # passes with no matching row, but Postgres enforces the FK and rejects
+    # any insert stamped with _Admin.id unless a real row exists for it.
+    db = SessionLocal()
+    if not db.query(User).filter(User.id == _Admin.id).first():
+        db.add(User(id=_Admin.id, email=_Admin.email, role=_Admin.role,
+                     org_id=_Admin.org_id, status=_Admin.status, active=_Admin.active))
+        db.commit()
+    db.close()
     api = TestClient(app)
     ids = {"clients": []}
     yield api, ids
@@ -32,7 +41,15 @@ def client():
     db.query(Quote).filter(Quote.client_id.in_(cids)).delete(synchronize_session=False)
     db.query(LeadIntake).filter(LeadIntake.client_id.in_(cids)).delete(synchronize_session=False)
     db.query(Opportunity).filter(Opportunity.client_id.in_(cids)).delete(synchronize_session=False)
+    # convert-to-job auto-creates a Property for the client (_resolve_property_
+    # for_quote) — never cleaned up here before, so deleting the Client below
+    # violated properties_client_id_fkey on Postgres (silently tolerated on
+    # SQLite, which doesn't enforce the FK), which aborted this WHOLE teardown
+    # transaction and left every row from the test — client, quote,
+    # opportunity, job, property — uncleaned for whatever ran next.
+    db.query(Property).filter(Property.client_id.in_(cids)).delete(synchronize_session=False)
     db.query(Client).filter(Client.id.in_(cids)).delete(synchronize_session=False)
+    db.query(User).filter(User.id == _Admin.id).delete(synchronize_session=False)
     db.commit(); db.close()
 
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from database.db import SessionLocal
-from database.models import LeadIntake, Client, Quote, Property
+from database.models import LeadIntake, Client, Quote, Property, Opportunity
 from modules.intake.router import convert_intake_to_quote
 from modules.quoting.router import create_quote
 from schemas.quotes import QuoteCreate
@@ -32,6 +32,12 @@ def intake_ctx():
     cids = [c.id for c in db.query(Client).filter(Client.email == "lead@example.com").all()]
     if cids:
         db.query(Property).filter(Property.client_id.in_(cids)).delete(synchronize_session=False)
+        # create_quote auto-creates/advances an Opportunity for the client —
+        # never cleaned up here before, so deleting the Client without it
+        # violated opportunities_client_id_fkey on Postgres, aborting this
+        # whole teardown transaction and leaving every row from the test
+        # uncleaned for whatever ran next.
+        db.query(Opportunity).filter(Opportunity.client_id.in_(cids)).delete(synchronize_session=False)
     db.query(Client).filter(Client.email == "lead@example.com").delete(synchronize_session=False)
     db.commit(); db.close()
 
