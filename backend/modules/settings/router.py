@@ -496,6 +496,35 @@ def _cache_schedulers(db: Session, schedulers: list) -> None:
     set_setting(db, _SCHEDULERS_CACHE_KEY, _json.dumps(schedulers or []))
 
 
+_JOBS_CACHE_KEY = "connecteam_jobs_cache"
+
+
+def read_cached_connecteam_jobs(db: Session) -> list:
+    """Read the last successfully-fetched Connecteam Jobs list from AppSetting.
+    Returns [] on empty / malformed cache so callers never get None.
+
+    Public (unlike _read_cached_schedulers) because integrations/connecteam_auto.py
+    reads this to match a job's property/client name to a Connecteam Job id
+    without re-hitting Connecteam on every dispatch — mirrors the scheduler
+    cache's rate-limit rationale."""
+    import json as _json
+    raw = get_setting(db, _JOBS_CACHE_KEY) or ""
+    if not raw:
+        return []
+    try:
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def _cache_connecteam_jobs(db: Session, jobs: list) -> None:
+    """Overwrite the cached Connecteam Jobs list. Called after a successful
+    /connecteam/test only — a failed list_jobs doesn't wipe a good cache."""
+    import json as _json
+    set_setting(db, _JOBS_CACHE_KEY, _json.dumps(jobs or []))
+
+
 @router.get("/connecteam-status", dependencies=[Depends(require_role("admin", "manager"))])
 def connecteam_status(db: Session = Depends(get_db)):
     """Whether Connecteam is wired up + a masked hint of the saved key so the
@@ -552,11 +581,12 @@ def save_connecteam_settings(config: ConnecteamConfig, db: Session = Depends(get
     if sched is not None:
         set_setting(db, "connecteam_company_id", sched.strip())
     # A key change points at a different account — the previous account's
-    # cached scheduler list is meaningless now. Clear the cache so the next
+    # cached scheduler/jobs lists are meaningless now. Clear both so the next
     # /connecteam/test re-fetches against the new key. Scheduler-id-only
     # changes keep the cache (same account, just picking a different one).
     if key_changed:
         _cache_schedulers(db, [])
+        _cache_connecteam_jobs(db, [])
     db.commit()
     return connecteam_status(db)
 
@@ -571,7 +601,7 @@ def test_connecteam(db: Session = Depends(get_db)):
     the same X-API-KEY header — if the key is wrong, /me 401s and we surface
     that before ever hitting the scheduler list."""
     from integrations.connecteam import (
-        is_configured, ConnecteamAuthError, get_me, list_schedulers,
+        is_configured, ConnecteamAuthError, get_me, list_schedulers, list_jobs,
     )
     if not is_configured():
         raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Scheduler ID first.")
@@ -585,17 +615,30 @@ def test_connecteam(db: Session = Depends(get_db)):
             # returned. Don't fail the whole test on a scheduler-list hiccup.
             logger.warning(f"Connecteam list_schedulers failed after /me OK: {e}")
             schedulers = []
-        # Persist the list so future page loads and the connected-card picker
-        # don't need to re-hit Connecteam (rate-limit-friendly). Only cache
-        # non-empty results — an empty response (from a 429/scope failure)
-        # would overwrite a previously-good cache.
+        try:
+            jobs = asyncio.run(list_jobs())
+        except Exception as e:
+            # Same rationale as schedulers — a Jobs-list hiccup shouldn't fail
+            # the whole test. Job-name matching just falls back to a
+            # free-text address until the next successful test.
+            logger.warning(f"Connecteam list_jobs failed after /me OK: {e}")
+            jobs = []
+        # Persist the lists so future page loads, the connected-card picker,
+        # and job-id matching on dispatch don't need to re-hit Connecteam
+        # (rate-limit-friendly). Only cache non-empty results — an empty
+        # response (from a 429/scope failure) would overwrite a
+        # previously-good cache.
         if schedulers:
             _cache_schedulers(db, schedulers)
+        if jobs:
+            _cache_connecteam_jobs(db, jobs)
+        if schedulers or jobs:
             db.commit()
         return {
             "ok": True,
             "account": me.get("data") or me,
             "schedulers": schedulers,
+            "jobs": jobs,
         }
     except ConnecteamAuthError:
         # ConnecteamAuthError's message is a fixed literal we author in
@@ -630,11 +673,12 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
     """
     from integrations.connecteam import (
         is_configured, ConnecteamAuthError,
-        build_shift_payload, create_shifts_sync,
+        build_shift_payload, create_shifts_sync, match_job_id,
     )
     from database.models import Job
     from utils.integration_log import log_integration_event as _log
     from datetime import date, timedelta
+    from sqlalchemy.orm import joinedload
 
     if not is_configured():
         raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Scheduler ID first.")
@@ -648,8 +692,11 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
     if end < start:
         raise HTTPException(400, "end_date must be on or after start_date")
 
+    # Eager-load property/client so the per-job Connecteam-Job-name match below
+    # doesn't N+1 query the DB once per job in the range.
     jobs = (
         db.query(Job)
+        .options(joinedload(Job.property), joinedload(Job.client))
         .filter(
             Job.scheduled_date >= start,
             Job.scheduled_date <= end,
@@ -658,6 +705,7 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
         .order_by(Job.scheduled_date, Job.start_time)
         .all()
     )
+    connecteam_jobs = read_cached_connecteam_jobs(db)
 
     # Build the bulk payload in one pass so we only hit Connecteam ONCE. The
     # pre-Jul-4 loop did N sequential POSTs against Connecteam's per-shift
@@ -680,6 +728,12 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
         if not job.scheduled_date or not job.start_time or not job.end_time:
             skipped += 1
             continue
+        prop_name = job.property.name if job.property else None
+        client_name = job.client.name if job.client else None
+        matched_job_id = (
+            match_job_id(prop_name, connecteam_jobs)
+            or match_job_id(client_name, connecteam_jobs)
+        )
         sendable.append(build_shift_payload(
             start_datetime=f"{job.scheduled_date}T{str(job.start_time)[:5]}:00",
             end_datetime=f"{job.scheduled_date}T{str(job.end_time)[:5]}:00",
@@ -692,6 +746,7 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
             # making shifts visible to cleaners. Publishing is a one-click
             # step on Connecteam's side.
             is_published=False,
+            job_id=matched_job_id,
         ))
         job_by_index.append(job)
 
