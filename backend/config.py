@@ -16,6 +16,13 @@ DEFAULT_APP_BASE_URL = "https://brightbase-production.up.railway.app"
 # the unrelated bright-space.com domain.
 DEFAULT_FROM_EMAIL = "no-reply@brightbase.app"
 
+# Neutral last-resort business name shown to customers on public quote pages
+# and quote emails when Settings→Company Name is unset (true for every fresh
+# signup). Must NOT be "Bright Space" — that's this app's own codename, not a
+# real business name, and a customer of ANY tenant seeing it is a branding
+# leak, not just a cosmetic default.
+DEFAULT_COMPANY_NAME = "Your Cleaning Company"
+
 
 def app_base_url() -> str:
     """Customer-facing base URL for public quote links (no trailing slash).

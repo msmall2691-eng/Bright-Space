@@ -30,7 +30,7 @@ from modules.auth.router import get_current_user, require_role, current_org_id, 
 from utils.integration_log import log_integration_event as _log_integration
 from utils.dates import coerce_date, fmt_long_date
 from utils.address import format_address
-from config import app_base_url
+from config import app_base_url, DEFAULT_COMPANY_NAME
 
 import re as _re
 # A greeting override that is really an intake/display label ("TEST"), a phone
@@ -842,7 +842,13 @@ def _convert_quote_to_job(
             cleaner_ids=[str(c) for c in (cleaner_ids or [])],
             notes=quote.notes,
         )
-        job_dict = create_job(payload, db=db)
+        # create_job's org_id is a FastAPI dependency (Depends(current_org_id))
+        # that only resolves through real request injection; called in-process
+        # like this it arrives as the unresolved Depends sentinel and silently
+        # falls back to org 1 (see resolve_org_id), so every quote outside the
+        # default workspace 404'd on "Client not found" here. Pass the quote's
+        # own org explicitly instead of relying on that fallback.
+        job_dict = create_job(payload, db=db, org_id=quote.org_id)
         job = db.query(Job).filter(Job.id == job_dict["id"]).first()
         return job
 
@@ -1007,7 +1013,7 @@ def _company_info(db: Session) -> dict:
     Powers the public quote page footer and the quote email."""
     from modules.settings.router import get_setting
     return {
-        "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", "Bright Space"),
+        "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", DEFAULT_COMPANY_NAME),
         "company_email": (get_setting(db, "company_email") or os.getenv("COMPANY_EMAIL")
                           or get_setting(db, "from_email") or os.getenv("SMTP_USER")),
         "company_phone": get_setting(db, "company_phone") or os.getenv("COMPANY_PHONE"),
@@ -1477,19 +1483,26 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
     try:
         if existing:
             # Re-date the already-created job (keeps one job per quote) + sync GCal.
+            # org_id explicit for the same reason as the create_job call below —
+            # in-process calls skip FastAPI's Depends resolution entirely.
             update_job(existing.id, JobUpdate(
                 scheduled_date=d.isoformat(), start_time=start, end_time=end,
-                allow_conflicts=True), db=db)
+                allow_conflicts=True), db=db, org_id=quote.org_id)
             job_id = existing.id
         else:
             svc, job_type, prop_type = _quote_job_vocab(quote)
             prop = _resolve_property_for_quote(db, quote, prop_type)
+            # Without org_id explicit, the Depends(current_org_id) default
+            # arrives unresolved and falls back to org 1 (see resolve_org_id),
+            # so this 404'd on "Client not found" for every quote outside the
+            # default workspace — the customer saw "we couldn't lock that
+            # slot" for a perfectly good date.
             created = create_job(JobCreate(
                 client_id=quote.client_id, title=quote.title or f"{svc.title()} clean",
                 job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
                 address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
                 cleaner_ids=[], notes=quote.notes, allow_conflicts=True,
-            ), db=db)
+            ), db=db, org_id=quote.org_id)
             job_id = created["id"]
     except HTTPException as e:
         # Defense in depth: even with allow_conflicts=True, an unrelated
