@@ -17,6 +17,7 @@ from integrations.connecteam import (
     create_shift_sync,
     delete_shift_sync,
     is_configured,
+    match_job_id,
 )
 from utils.integration_log import log_integration_event as _log
 
@@ -27,6 +28,21 @@ def _shift_times(job):
     """Connecteam wants ISO 8601 datetimes; the job stores date + HH:MM."""
     return (f"{job.scheduled_date}T{job.start_time}:00",
             f"{job.scheduled_date}T{job.end_time}:00")
+
+
+def _matched_job_id(db, job) -> str:
+    """Resolve ``job`` (a Bright Space Job) to a Connecteam Job id by matching
+    the property name, falling back to the client name, against the cached
+    Connecteam Jobs list (refreshed on /connecteam/test). Best-effort: any
+    failure here just means the shift falls back to a free-text address."""
+    try:
+        from modules.settings.router import read_cached_connecteam_jobs
+        jobs = read_cached_connecteam_jobs(db)
+    except Exception:
+        return None
+    prop_name = job.property.name if getattr(job, "property", None) else None
+    client_name = job.client.name if getattr(job, "client", None) else None
+    return match_job_id(prop_name, jobs) or match_job_id(client_name, jobs)
 
 
 def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
@@ -56,6 +72,7 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
         return status
 
     start_dt, end_dt = _shift_times(job)
+    matched_job_id = _matched_job_id(db, job)
     shift_ids, errors = [], []
     for emp in job.cleaner_ids:
         try:
@@ -66,6 +83,7 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
                 title=job.title,
                 address=job.address,
                 notes=job.notes,
+                job_id=matched_job_id,
             )
             sid = res.get("id") or res.get("shiftId") or ""
             if sid:
