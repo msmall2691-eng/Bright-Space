@@ -12,6 +12,7 @@ import PropertiesTab from '../components/client/PropertiesTab'
 import ActivityTimeline from '../components/client/ActivityTimeline'
 import ClientMobileHeader from '../components/client/ClientMobileHeader'
 import ClientDetailsTab from '../components/client/ClientDetailsTab'
+import ClientProfileSkeleton from '../components/client/ClientProfileSkeleton'
 import {
   RecurringTab, JobsListTab, QuotesListTab, InvoicesListTab, OpportunitiesTab,
 } from '../components/client/ClientListTabs'
@@ -328,9 +329,7 @@ export default function ClientProfile() {
     setSending(false)
   }
 
-  if (!client) return (
-    <div className="flex items-center justify-center h-full text-ink-3 text-sm">Loading...</div>
-  )
+  if (!client) return <ClientProfileSkeleton />
 
   return (
     <div className="flex h-full overflow-hidden" data-testid="client-profile-root">

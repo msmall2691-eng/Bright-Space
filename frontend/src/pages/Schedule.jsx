@@ -494,6 +494,7 @@ export default function Schedule() {
                 : v
             ))
           }}
+          onRefresh={refresh}
           toast={toast}
         />
       ) : viewMode === 'month' ? (

@@ -61,9 +61,13 @@ describe('JobEditModal — everything editable', () => {
     const title = screen.getByDisplayValue('Original title')
     fireEvent.change(title, { target: { value: 'Renamed — deep clean' } })
 
-    // Type, status, and address are editable too
+    // Status is a pill row (button), not a <select> — click the target pill.
+    fireEvent.click(screen.getByRole('button', { name: 'In progress' }))
+
+    // Type and address live behind "Advanced options" (collapsed by default
+    // when the job has no notes) — open it before querying those fields.
+    fireEvent.click(screen.getByRole('button', { name: /Advanced options/ }))
     fireEvent.change(screen.getByDisplayValue('Residential'), { target: { value: 'commercial' } })
-    fireEvent.change(screen.getByDisplayValue('Scheduled'), { target: { value: 'in_progress' } })
     fireEvent.change(screen.getByDisplayValue('1 First St'), { target: { value: '99 New Rd' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))

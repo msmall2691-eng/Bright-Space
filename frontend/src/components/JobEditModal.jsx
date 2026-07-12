@@ -4,14 +4,7 @@ import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
-
-/** JS Date.getDay() is 0=Sun..6=Sat; the backend's day_of_week is 0=Mon..6=Sun
- *  (matches Python's date.weekday()). Parses as local midnight, not UTC, so a
- *  "YYYY-MM-DD" string doesn't shift a day depending on the caller's timezone. */
-function isoDateToBackendDow(isoDate) {
-  const d = new Date(`${isoDate}T00:00:00`)
-  return (d.getDay() + 6) % 7
-}
+import { isoDateToBackendDow } from '../utils/recurringReschedule'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively.
  *  Connecteam returns shapes like { userId, firstName, lastName, displayName }

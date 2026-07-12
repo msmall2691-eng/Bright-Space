@@ -5,6 +5,8 @@ import Button from '../ui/Button'
 import { patch } from '../../api'
 import { toLocalYMD, todayYMD } from '../../utils/format'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import RecurrenceScopeDialog from './RecurrenceScopeDialog'
+import { rescheduleRecurringVisit } from '../../utils/recurringReschedule'
 import {
   PROPERTY_TYPE_CONFIG,
   VISIT_STATUS_CONFIG,
@@ -66,6 +68,18 @@ import {
  *                    "Reschedule anyway" notice. When absent, drag-drop still
  *                    works but conflicts fall through to console.error like
  *                    they did before.
+ *   onRefresh()    — called after a recurring-visit drag resolves via
+ *                    "this and future"/"all" scope, since those can move
+ *                    many jobs at once — a single-block optimistic move
+ *                    can't represent that, so the parent refetches instead.
+ *
+ *   Recurring-awareness: dragging a visit with a recurring_schedule_id used
+ *   to silently PATCH just that one Job (the "this visit only" footgun
+ *   RecurrenceScopeDialog's header comment describes) with no indication
+ *   the visit belonged to a series. It now interrupts the drop with the same
+ *   scope dialog JobEditModal's save flow uses, routing to whichever of the
+ *   three recurring endpoints (reschedule/split/resync) matches the chosen
+ *   scope — see utils/recurringReschedule.js.
  */
 const HOUR_ROW_PX = 56
 const UNTIMED_STRIP_PX = 34
@@ -83,6 +97,7 @@ export default function WeekGrid({
   onNewJob,
   onNewSlot,
   onLocalMove,
+  onRefresh,
   toast,
 }) {
   const isMobile = useIsMobile()
@@ -142,6 +157,39 @@ export default function WeekGrid({
   // subtle highlight of the target slot.
   const [draggingVisit, setDraggingVisit] = useState(null)
   const [dropPreview, setDropPreview] = useState(null)  // { date, startHour } | null
+
+  // Pending scope choice for a drag that landed on a recurring visit — set
+  // instead of committing the drop directly; cleared on choice or cancel.
+  // { visitId, jobId, schedId, originalDate, newDate, newStart, newEnd, cleanerIds }
+  const [recurringDrop, setRecurringDrop] = useState(null)
+  const [scopeSaving, setScopeSaving] = useState(false)
+
+  const handleRecurringScopeChoice = useCallback(async (scope) => {
+    if (!recurringDrop) return
+    setScopeSaving(true)
+    try {
+      const { message } = await rescheduleRecurringVisit(scope, recurringDrop)
+      toast?.success(message)
+      // "this" only ever moves one Job — onLocalMove keeps the block from
+      // snapping back before the parent's next refetch. "future"/"all" can
+      // move many jobs at once, which a single-block optimistic update can't
+      // represent, so those refetch instead.
+      if (scope === 'this' && onLocalMove) {
+        onLocalMove(recurringDrop.jobId, {
+          scheduled_date: recurringDrop.newDate,
+          start_time: recurringDrop.newStart,
+          end_time: recurringDrop.newEnd,
+        })
+      } else {
+        onRefresh?.()
+      }
+    } catch (err) {
+      toast?.error(err.message || 'Failed to reschedule this recurring visit')
+    } finally {
+      setScopeSaving(false)
+      setRecurringDrop(null)
+    }
+  }, [recurringDrop, onLocalMove, onRefresh, toast])
 
   /**
    * Optimistic reschedule commit. Mirrors CalendarView.commitReschedule from
@@ -325,12 +373,35 @@ export default function WeekGrid({
                   targetDate,
                   targetHour,
                 })
-                setDraggingVisit(null)
-                setDropPreview(null)
                 // No-op moves shouldn't hit the API.
                 if (next.scheduled_date === original.scheduled_date
                     && next.start_time === original.start_time
-                    && next.end_time === original.end_time) return
+                    && next.end_time === original.end_time) {
+                  setDraggingVisit(null)
+                  setDropPreview(null)
+                  return
+                }
+                // A recurring visit's move is ambiguous — this occurrence
+                // only, this-and-future, or the whole series? Interrupt with
+                // the scope dialog instead of silently PATCHing just this
+                // Job (see RecurrenceScopeDialog's header comment).
+                if (draggingVisit.recurring_schedule_id) {
+                  setRecurringDrop({
+                    visitId: draggingVisit.id,
+                    jobId,
+                    schedId: draggingVisit.recurring_schedule_id,
+                    originalDate: original.scheduled_date,
+                    newDate: next.scheduled_date,
+                    newStart: next.start_time,
+                    newEnd: next.end_time,
+                    cleanerIds: draggingVisit.cleaner_ids || [],
+                  })
+                  setDraggingVisit(null)
+                  setDropPreview(null)
+                  return
+                }
+                setDraggingVisit(null)
+                setDropPreview(null)
                 commitReschedule(draggingVisit.id, jobId, original, next)
               }}
               onEmptySlot={(startTime, endTime) => {
@@ -344,6 +415,14 @@ export default function WeekGrid({
           ))}
         </div>
       </div>
+      {recurringDrop && (
+        <RecurrenceScopeDialog
+          mode="edit"
+          onChoose={handleRecurringScopeChoice}
+          onCancel={() => setRecurringDrop(null)}
+          busy={scopeSaving}
+        />
+      )}
     </div>
   )
 }
@@ -442,6 +521,7 @@ function DayColumn({
           existing blocks stopPropagation so they never fall through here. */}
       <div
         ref={bodyRef}
+        data-testid={`week-grid-day-${date}`}
         className={`relative ${draggingVisit ? 'cursor-copy' : (onEmptySlot ? 'cursor-cell' : '')}`}
         style={{ height: gridHeightPx }}
         onDragOver={handleDragOver}
