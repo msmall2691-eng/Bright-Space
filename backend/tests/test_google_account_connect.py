@@ -113,6 +113,32 @@ def test_connect_callback_stores_encrypted_grant_with_sync_on(ctx):
     assert decrypt_secret(acct.refresh_token) == "rt-1"
 
 
+def test_save_failure_after_google_exchange_redirects_gracefully_not_500(ctx):
+    """Regression: everything after the Google token exchange (the
+    UserGoogleAccount upsert + final db.commit()) used to run with NO
+    exception handling — unlike every other failure branch in this
+    function (invalid state, expired state, missing user, failed Google
+    exchange), which all redirect to /settings with a diagnostic outcome.
+    A malformed TOKEN_ENCRYPTION_KEY, a constraint violation, or any other
+    write-time failure here surfaced as a raw unhandled 500 instead. This
+    must now redirect like every other failure path, not raise."""
+    db, u = ctx
+    from modules.auth.router import google_account_callback, _app_set
+    state = "save-fail-state"
+    _app_set(db, f"gconnect_state_{state}", f"{u.id}|{datetime.now(timezone.utc).isoformat()}")
+    db.commit()
+    with patch("integrations.google_oauth.build_connect_flow", return_value=_fake_flow()), \
+         patch("google.oauth2.id_token.verify_oauth2_token",
+               return_value={"email": "connector@gmail.com", "email_verified": True, "sub": "sub-123"}), \
+         patch("integrations.google_oauth.client_id", return_value="cid"), \
+         patch("utils.crypto.encrypt_secret", side_effect=RuntimeError("boom")):
+        resp = google_account_callback(request=None, code="code", state=state, db=db)
+    assert resp.status_code == 302
+    assert "google_account=save_failed" in resp.headers["location"]
+    # No half-written account row left behind.
+    assert db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == u.id).count() == 0
+
+
 def test_reconnect_without_refresh_token_keeps_existing_one(ctx):
     """Google omits the refresh token on re-consent — we must not wipe ours."""
     db, u = ctx
