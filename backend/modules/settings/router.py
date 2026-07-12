@@ -610,29 +610,34 @@ def test_connecteam(db: Session = Depends(get_db)):
         me = asyncio.run(get_me())
         try:
             schedulers = asyncio.run(list_schedulers())
+            schedulers_ok = True
         except Exception as e:
             # Scheduler list is a nice-to-have — the key is valid if /me
             # returned. Don't fail the whole test on a scheduler-list hiccup.
             logger.warning(f"Connecteam list_schedulers failed after /me OK: {e}")
-            schedulers = []
+            schedulers, schedulers_ok = [], False
         try:
             jobs = asyncio.run(list_jobs())
+            jobs_ok = True
         except Exception as e:
             # Same rationale as schedulers — a Jobs-list hiccup shouldn't fail
             # the whole test. Job-name matching just falls back to a
             # free-text address until the next successful test.
             logger.warning(f"Connecteam list_jobs failed after /me OK: {e}")
-            jobs = []
+            jobs, jobs_ok = [], False
         # Persist the lists so future page loads, the connected-card picker,
         # and job-id matching on dispatch don't need to re-hit Connecteam
-        # (rate-limit-friendly). Only cache non-empty results — an empty
-        # response (from a 429/scope failure) would overwrite a
-        # previously-good cache.
-        if schedulers:
+        # (rate-limit-friendly). Cache on any SUCCESSFUL fetch — including an
+        # empty result, which means "this account really has zero" — so a
+        # scheduler/account switch to one with no jobs doesn't keep serving a
+        # stale list from a previous run. Only a failed fetch (schedulers_ok /
+        # jobs_ok False, e.g. a 429/scope failure) skips the write and keeps
+        # whatever was cached before.
+        if schedulers_ok:
             _cache_schedulers(db, schedulers)
-        if jobs:
+        if jobs_ok:
             _cache_connecteam_jobs(db, jobs)
-        if schedulers or jobs:
+        if schedulers_ok or jobs_ok:
             db.commit()
         return {
             "ok": True,
