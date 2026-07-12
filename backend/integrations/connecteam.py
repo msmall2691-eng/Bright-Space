@@ -204,19 +204,22 @@ async def get_employees() -> list:
 # ─── Jobs (the mapping that was never wired) ─────────────────────────────────
 
 async def list_jobs() -> list:
-    """List the scheduler's Jobs so we can map a Bright Space property/customer
+    """List the account's Jobs so we can map a Bright Space property/customer
     to a Connecteam Job entity and attach its id to pushed shifts.
 
-    NOTE: confirm the exact path against Connecteam's API docs for your plan.
-    The scheduler-scoped jobs collection is:
-        GET /scheduler/v1/schedulers/{schedulerId}/jobs
-    Returns a flat list of {id, name}.
+    Per developer.connecteam.com/docs/get-jobs, Jobs live under the top-level
+    Jobs API (NOT the scheduler path — that 404s): GET /jobs/v1/jobs, scoped
+    to the current scheduler via the `instanceIds` filter. Response shape:
+        { "data": { "jobs": [ { "jobId": "...", "title": "...", ... } ] } }
+    We flatten to a plain list of {id, name} (the "title" field is the job's
+    display name; "id"/"name" are checked first for forward-compat).
     """
     sched = _get_scheduler_id()
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(
-            f"{CONNECTEAM_BASE}/scheduler/v1/schedulers/{sched}/jobs",
+            f"{CONNECTEAM_BASE}/jobs/v1/jobs",
             headers=_headers(),
+            params={"instanceIds": [sched]} if sched else None,
         )
         _raise_for_status(r)
         data = r.json()
@@ -226,7 +229,8 @@ async def list_jobs() -> list:
         jid = j.get("id") if j.get("id") is not None else j.get("jobId")
         if jid is None:
             continue
-        out.append({"id": str(jid), "name": (j.get("name") or "").strip()})
+        name = j.get("name") or j.get("title") or ""
+        out.append({"id": str(jid), "name": name.strip()})
     return out
 
 
@@ -277,12 +281,13 @@ def _shift_payload(*, start_datetime, end_datetime, title,
         payload["assignedUserIds"] = [int(user_id)] if str(user_id).isdigit() else [user_id]
     if job_id:
         # Matched a Connecteam Job entity: tie the shift to it so it shows up
-        # LABELED (not "Job: None"). isReferencedToJob MUST be True here and a
-        # jobId supplied; address is optional (Connecteam pulls it from the Job).
-        loc = {"isReferencedToJob": True, "jobId": str(job_id)}
-        if address:
-            loc["address"] = address
-        payload["locationData"] = loc
+        # LABELED (not "Job: None"). Per developer.connecteam.com/docs/
+        # scheduler-create-shifts, jobId is a TOP-LEVEL shift field (a sibling
+        # of locationData, not nested inside it) — locationData's
+        # isReferencedToJob just tells Connecteam to inherit the Job's
+        # location instead of expecting a custom address/gps.
+        payload["jobId"] = str(job_id)
+        payload["locationData"] = {"isReferencedToJob": True}
     elif address:
         # No matched Job: fall back to a free-text address. isReferencedToJob is
         # REQUIRED by Connecteam's validator whenever locationData is present
