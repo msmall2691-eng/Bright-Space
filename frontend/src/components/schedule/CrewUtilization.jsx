@@ -6,6 +6,11 @@
  * want to hand another job to). Idle crews (0h) with capacity to spare
  * bubble to the bottom of the list with an "X.Xh open" chip so they read
  * as available to take unassigned work.
+ *
+ * Drop target for drag-assign: while a visit is being dragged (from
+ * UnassignedQueue or DispatchTimeline), each card accepts a drop and hands
+ * the crew id back to DispatchBoard's commitAssign. Highlights blue while
+ * hovered so the operator sees exactly where it'll land.
  */
 import { Users } from 'lucide-react'
 import { cleanerInitials } from './constants'
@@ -20,7 +25,9 @@ const toneFor = (id) => {
   return CREW_TONE[Math.abs(n) % CREW_TONE.length]
 }
 
-export default function CrewUtilization({ crewLoad, empName }) {
+export default function CrewUtilization({
+  crewLoad, empName, draggingVisit, dragOverCrewId, onDragOverCrew, onDropCrew,
+}) {
   if (!crewLoad || crewLoad.length === 0) {
     // Previously rendered nothing at all here, leaving the dispatch board's
     // third column blank — a brand-new org (no Connecteam roster yet) or a
@@ -62,8 +69,24 @@ export default function CrewUtilization({ crewLoad, empName }) {
           const isHigh = crew.capacityPct >= 90
           const isIdle = crew.hours === 0
           const openHours = Math.max(0, HOURS_PER_CREW_DAY - crew.hours)
+          const isDropTarget = !!draggingVisit && dragOverCrewId === crew.id
           return (
-            <li key={crew.id} className="bg-panel border border-hairline rounded-xl p-3">
+            <li
+              key={crew.id}
+              data-testid={`crew-card-${crew.id}`}
+              onDragOver={draggingVisit ? (e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                if (dragOverCrewId !== crew.id) onDragOverCrew?.(crew.id)
+              } : undefined}
+              onDragLeave={draggingVisit ? () => {
+                if (dragOverCrewId === crew.id) onDragOverCrew?.(null)
+              } : undefined}
+              onDrop={draggingVisit ? (e) => { e.preventDefault(); onDropCrew?.(crew.id) } : undefined}
+              className={`bg-panel border rounded-xl p-3 transition-colors ${
+                isDropTarget ? 'border-blue-400 ring-2 ring-blue-400/40 bg-blue-50/40' : 'border-hairline'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
                   <span

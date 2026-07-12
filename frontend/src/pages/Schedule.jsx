@@ -170,6 +170,18 @@ export default function Schedule() {
     setShowDetails(true)
   }
 
+  // Optimistic sync into the parent's visit/job state so subsequent renders
+  // keep a dragged block (WeekGrid) or a dragged-to-assign visit
+  // (DispatchBoard) showing the new value without waiting for a full
+  // refetch. Shared by both since both patch a Job's fields locally the
+  // same way — WeekGrid passes {scheduled_date, start_time, end_time},
+  // DispatchBoard passes {cleaner_ids}.
+  const applyLocalMove = (jobId, next) => {
+    setVisits(prev => prev.map(v =>
+      v.job_id === jobId || v.id === jobId ? { ...v, ...next } : v
+    ))
+  }
+
   // When the detail drawer opens for a job, pull its Google Calendar audit rows
   // so we can show whether the last push actually landed (and why, if it didn't).
   useEffect(() => {
@@ -467,6 +479,8 @@ export default function Schedule() {
           clients={clients}
           empName={empName}
           onOpen={handleEdit}
+          onLocalMove={applyLocalMove}
+          toast={toast}
         />
       ) : viewMode === 'week' ? (
         <WeekGrid
@@ -483,17 +497,7 @@ export default function Schedule() {
             setNewJobStartTime(start_time)
             setShowNewJob(true)
           }}
-          onLocalMove={(jobId, next) => {
-            // Optimistic sync into the parent's visit/job state so subsequent
-            // renders keep the block in the moved position without waiting
-            // for a full refetch. The refetch on save still happens; this
-            // just keeps the intermediate frames coherent.
-            setVisits(prev => prev.map(v =>
-              v.job_id === jobId || v.id === jobId
-                ? { ...v, scheduled_date: next.scheduled_date, start_time: next.start_time, end_time: next.end_time }
-                : v
-            ))
-          }}
+          onLocalMove={applyLocalMove}
           onRefresh={refresh}
           toast={toast}
         />
