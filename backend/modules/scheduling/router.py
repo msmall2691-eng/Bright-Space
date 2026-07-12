@@ -2820,17 +2820,42 @@ def schedule_week(
     delegate gets org_id explicitly so the FastAPI Query() defaults on those
     functions never leak in as unresolved Depends sentinels.
     """
-    # Explicit limit/offset/paginated defaults so the FastAPI Query()
-    # sentinels never leak into this in-process call (same pattern the
-    # module docstring flags for org_id). schedule_week always wants the
-    # legacy bare-list shape; the 500 default matches the calendar's
-    # month-view ceiling.
-    jobs = get_jobs(
-        date_from=scheduled_date_from,
-        date_to=scheduled_date_to,
-        limit=500, offset=0, paginated=False,
-        db=db, org_id=org_id,
-    )
+    # Page through get_jobs instead of taking a single limit=500 call.
+    # get_jobs's cap protects an UNBOUNDED query; schedule_week is already
+    # bounded by the caller's date range (a week or a month grid), so it's
+    # safe — and necessary — to fetch every row in that range rather than
+    # silently truncating.
+    #
+    # A single get_jobs(limit=500) call was exactly this bug: get_jobs
+    # orders by scheduled_date ascending, so once an org's requested range
+    # held more than 500 jobs, SQL's LIMIT dropped everything past the
+    # 500th row — the CHRONOLOGICALLY LATEST jobs in the range. Week
+    # view's narrow 7-day window rarely crosses 500 jobs, so it always
+    # looked fine; Month view's ~35-42 day grid crossed it for a
+    # busy-enough org (lots of STR turnovers), so jobs later in the month
+    # (including turnovers 10-20+ days out) silently vanished from the
+    # Calendar view while the same jobs still showed correctly on Week.
+    PAGE_SIZE = 500
+    MAX_PAGES = 20  # 10,000-job ceiling — a runaway-query backstop, not an expected case
+    jobs = []
+    offset = 0
+    for _ in range(MAX_PAGES):
+        page = get_jobs(
+            date_from=scheduled_date_from,
+            date_to=scheduled_date_to,
+            limit=PAGE_SIZE, offset=offset, paginated=False,
+            db=db, org_id=org_id,
+        )
+        jobs.extend(page)
+        if len(page) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+    else:
+        logger.warning(
+            "[schedule_week] hit the %s-page ceiling fetching %s..%s — "
+            "response may still be truncated; investigate job volume for org_id=%s",
+            MAX_PAGES, scheduled_date_from, scheduled_date_to, org_id,
+        )
     return {
         # Visits are derived from jobs post-unification; the shape mirrors what
         # /api/visits used to emit so the FE fallback keeps rendering unchanged.

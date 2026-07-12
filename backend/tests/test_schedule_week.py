@@ -85,6 +85,51 @@ def test_schedule_week_bundles_everything(client):
     assert str(seeded.get("scheduled_date", "")).startswith(target.isoformat())
 
 
+def test_schedule_week_returns_every_job_past_the_500_row_page_size(client):
+    """Regression: schedule_week() used to call get_jobs(limit=500) exactly
+    once. get_jobs orders by scheduled_date ascending, so once a requested
+    range held more than 500 jobs, SQL's LIMIT silently dropped every job
+    past the 500th row — i.e. the chronologically LATEST ones in the range.
+    A busy-enough org's month-view grid (used by the Calendar view) could
+    cross that threshold; a week's 7-day window almost never would, so
+    jobs still showed correctly in Week view while vanishing from Calendar
+    view for the exact same dates. schedule_week must now page through
+    get_jobs until it has the full range, not just the first 500 rows."""
+    api, ids = client
+    db = SessionLocal()
+    cid, pid = _client_with_property(db, ids)
+    start_date = date.today()
+    n = 520
+    jobs = [
+        Job(client_id=cid, property_id=pid, title=f"Bulk {i}",
+            scheduled_date=start_date + timedelta(days=i % 60),
+            start_time=time(9, 0), end_time=time(10, 0),
+            status="scheduled", org_id=1)
+        for i in range(n)
+    ]
+    db.add_all(jobs)
+    db.commit()
+    for j in jobs:
+        db.refresh(j)
+    ids["jobs"].extend(j.id for j in jobs)
+    # The chronologically latest job — exactly what a naive limit=500,
+    # offset=0, order-by-scheduled_date-ascending call would drop.
+    latest = max(jobs, key=lambda j: j.scheduled_date)
+    latest_id = latest.id
+    db.close()
+
+    start = start_date.isoformat()
+    end = (start_date + timedelta(days=59)).isoformat()
+    res = api.get(f"/api/schedule/week?scheduled_date_from={start}&scheduled_date_to={end}")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["jobs"]) >= n
+    assert any(x.get("id") == latest_id for x in body["jobs"]), (
+        "the chronologically latest job in the range was dropped — "
+        "schedule_week is still capping at a single get_jobs page"
+    )
+
+
 def test_schedule_week_excludes_out_of_range_jobs(client):
     api, ids = client
     db = SessionLocal()
