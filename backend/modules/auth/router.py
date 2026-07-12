@@ -896,28 +896,38 @@ def google_account_callback(request: Request, code: str = "", state: str = "",
         db.commit()
         return RedirectResponse(url="/settings?google_account=unverified", status_code=302)
 
-    acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == user.id).first()
-    if not acct:
-        acct = UserGoogleAccount(user_id=user.id, org_id=user.org_id or _default_org_id(db),
-                                 google_sub=info.get("sub") or "", email=info["email"].strip().lower())
-        db.add(acct)
-    acct.google_sub = info.get("sub") or acct.google_sub
-    acct.email = info["email"].strip().lower()
-    acct.access_token = encrypt_secret(creds.token or "")
-    # prompt=consent guarantees a refresh token on first connect; on a
-    # re-connect Google may omit it — keep the one we already have.
-    if creds.refresh_token:
-        acct.refresh_token = encrypt_secret(creds.refresh_token)
-    acct.token_expiry = creds.expiry
-    acct.scopes = sorted(creds.scopes or [])
-    acct.status = "connected"
-    acct.last_sync_error = None
-    acct.connected_at = datetime.now(timezone.utc)
-    # The point of connecting is sync — both channels default ON; the
-    # Settings card has per-channel toggles.
-    acct.gmail_sync_enabled = True
-    acct.gcal_sync_enabled = True
-    db.commit()
+    # This whole section used to run unguarded: a malformed TOKEN_ENCRYPTION_KEY
+    # (encrypt_secret), a constraint violation on commit, or any other write-time
+    # failure surfaced as a raw unhandled 500 ("Internal Server Error") instead of
+    # the graceful /settings?google_account=failed redirect every OTHER failure
+    # mode in this function gets. Match that same pattern here.
+    try:
+        acct = db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id == user.id).first()
+        if not acct:
+            acct = UserGoogleAccount(user_id=user.id, org_id=user.org_id or _default_org_id(db),
+                                     google_sub=info.get("sub") or "", email=info["email"].strip().lower())
+            db.add(acct)
+        acct.google_sub = info.get("sub") or acct.google_sub
+        acct.email = info["email"].strip().lower()
+        acct.access_token = encrypt_secret(creds.token or "")
+        # prompt=consent guarantees a refresh token on first connect; on a
+        # re-connect Google may omit it — keep the one we already have.
+        if creds.refresh_token:
+            acct.refresh_token = encrypt_secret(creds.refresh_token)
+        acct.token_expiry = creds.expiry
+        acct.scopes = sorted(creds.scopes or [])
+        acct.status = "connected"
+        acct.last_sync_error = None
+        acct.connected_at = datetime.now(timezone.utc)
+        # The point of connecting is sync — both channels default ON; the
+        # Settings card has per-channel toggles.
+        acct.gmail_sync_enabled = True
+        acct.gcal_sync_enabled = True
+        db.commit()
+    except Exception as e:
+        logger.error(f"[google-account] saving connected account failed for user {user.id}: {e}")
+        db.rollback()
+        return RedirectResponse(url="/settings?google_account=save_failed", status_code=302)
     logger.info(f"[google-account] {user.email} connected Google account {acct.email}")
     return RedirectResponse(url="/settings?google_account=connected", status_code=302)
 
