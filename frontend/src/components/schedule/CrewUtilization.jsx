@@ -7,6 +7,7 @@
  * bubble to the bottom of the list with an "X.Xh open" chip so they read
  * as available to take unassigned work.
  */
+import { Users } from 'lucide-react'
 import { cleanerInitials } from './constants'
 
 const HOURS_PER_CREW_DAY = 8
@@ -20,7 +21,28 @@ const toneFor = (id) => {
 }
 
 export default function CrewUtilization({ crewLoad, empName }) {
-  if (!crewLoad || crewLoad.length === 0) return null
+  if (!crewLoad || crewLoad.length === 0) {
+    // Previously rendered nothing at all here, leaving the dispatch board's
+    // third column blank — a brand-new org (no Connecteam roster yet) or a
+    // day with zero jobs saw a lopsided 2-column layout that read as broken
+    // rather than "nothing to show yet".
+    return (
+      <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <span className="text-[10px] font-mono tracking-widest uppercase text-ink-3">
+            Crews
+          </span>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center py-8 text-center">
+          <Users className="w-6 h-6 text-ink-3 mb-2" />
+          <p className="text-[13px] text-ink">No crew roster yet</p>
+          <p className="text-[11.5px] text-ink-3 mt-0.5">
+            Connect Connecteam in Settings to see crew capacity here.
+          </p>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
       <div className="flex items-center justify-between mb-3 px-1">

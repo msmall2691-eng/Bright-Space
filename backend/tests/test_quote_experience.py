@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from database.db import SessionLocal
-from database.models import Client, Quote
+from database.models import Client, Quote, Opportunity
 from schemas.quotes import QuoteCreate
 from modules.quoting.router import create_quote, public_quote_pdf
 from utils.dates import business_today
@@ -24,6 +24,11 @@ def client_ctx():
     yield db, c
     db.rollback()
     db.query(Quote).filter(Quote.client_id == c.id).delete(synchronize_session=False)
+    # create_quote auto-creates/advances an Opportunity for the client —
+    # never cleaned up here before, so deleting the Client without it
+    # violated opportunities_client_id_fkey on Postgres, aborting this whole
+    # teardown transaction and leaving every row from the test uncleaned.
+    db.query(Opportunity).filter(Opportunity.client_id == c.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
     db.commit(); db.close()
 

@@ -1,20 +1,40 @@
 """Tests for phone_tail denormalization and indexed lookups."""
 import pytest
-from sqlalchemy.orm import Session
 from database.models import Client, ContactPhone, Base
-from database.db import engine
+from database.db import engine, SessionLocal
 from utils.phone import phone_tail as compute_phone_tail
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_schema():
+    """Create the schema once per session (idempotent) instead of every
+    test — this file runs against the shared engine (same DATABASE_URL as
+    every other test file), not an isolated in-memory DB despite the old
+    docstring's claim. Never drop_all(): User<->Client is a genuine 2-table
+    FK cycle (User.client_id / Client.created_by+updated_by) with no
+    use_alter, so SQLAlchemy can't topologically sort it for DROP — Postgres
+    raised CircularDependencyError on every test's teardown, aborting before
+    anything was dropped, which poisoned every test that ran afterward in
+    the same session (rows never cleaned up, ids never freed)."""
+    Base.metadata.create_all(engine)
 
 
 @pytest.fixture(scope="function")
 def db():
-    """Fresh in-memory DB per test."""
-    Base.metadata.create_all(engine)
-    from database.db import SessionLocal
+    """Plain session; teardown explicitly clears the two tables this file
+    touches. (A join_transaction_mode="create_savepoint" rollback-based
+    isolation was tried here first — it works on Postgres but a row still
+    silently survives connection.begin()/trans.rollback() on SQLite even
+    from a genuine file-backed DB, not just :memory:, so it isn't reliable
+    across both dialects this suite runs against.)"""
     session = SessionLocal()
     yield session
     session.close()
-    Base.metadata.drop_all(engine)
+    cleanup = SessionLocal()
+    cleanup.query(ContactPhone).delete(synchronize_session=False)
+    cleanup.query(Client).delete(synchronize_session=False)
+    cleanup.commit()
+    cleanup.close()
 
 
 def test_client_phone_tail_populated_on_insert(db):

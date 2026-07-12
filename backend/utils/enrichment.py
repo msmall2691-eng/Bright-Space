@@ -63,8 +63,12 @@ def enrich_client_data(client_dict: Dict[str, Any]) -> Dict[str, Any]:
 
     email = enriched.get('email')
 
-    # Suggest name from email if name is missing
-    if email and not enriched.get('name'):
+    # Suggest name from email if name is missing. "Missing" means no name in
+    # any form — checking only `name` clobbered a real first_name/last_name
+    # the caller already provided (create_client only derives the combined
+    # `name` field from them AFTER this call), overwriting real typed input
+    # with an email-derived guess.
+    if email and not enriched.get('name') and not enriched.get('first_name') and not enriched.get('last_name'):
         name_suggestion = suggest_name_from_email(email, enriched.get('name'))
         if name_suggestion:
             enriched.update(name_suggestion)

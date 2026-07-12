@@ -18,6 +18,7 @@ a real prospect worth auto-creating a Client for.
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from typing import Optional
 
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox

@@ -146,6 +146,33 @@ def test_accept_without_property_stays_accepted(ctx):
     assert db.query(Job).filter(Job.quote_id == q.id).count() == 0
 
 
+def test_schedule_works_for_non_default_org(ctx):
+    """Regression for the July-2026 audit finding: public_schedule_quote called
+    create_job()/update_job() in-process without org_id, so their
+    Depends(current_org_id) default arrived as the unresolved Depends
+    sentinel and resolve_org_id() silently fell back to the default
+    workspace (org 1). Any quote belonging to a non-default org then 404'd
+    on "Client not found" — self-scheduling was broken for every tenant
+    except whichever one happened to be org 1."""
+    OTHER_ORG = 424242
+    db, c = ctx
+    c.org_id = OTHER_ORG
+    db.commit()
+    p = Property(client_id=c.id, name="P", address="1 St", property_type="residential",
+                 active=True, org_id=OTHER_ORG)
+    db.add(p); db.commit(); db.refresh(p)
+    q = _mk_quote(db, c, "schedtok_org", property_id=p.id)
+    q.org_id = OTHER_ORG
+    db.commit()
+
+    d = _next_weekday()
+    out = public_schedule_quote("schedtok_org", PublicScheduleRequest(
+        date=d.isoformat(), window="morning"), db=db)
+    assert out["scheduled"] is True
+    job = db.query(Job).filter(Job.quote_id == q.id).one()
+    assert job.org_id == OTHER_ORG
+
+
 def test_reaccept_does_not_revert_converted(ctx):
     db, c = ctx
     p = Property(client_id=c.id, name="P", address="1 St", property_type="residential", active=True)

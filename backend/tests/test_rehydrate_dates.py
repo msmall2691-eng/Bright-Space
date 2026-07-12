@@ -3,8 +3,9 @@ import pytest
 from datetime import datetime, date, time
 from unittest.mock import Mock, patch, MagicMock
 from googleapiclient.errors import HttpError
-from database.models import Job, Client, Property
-from database.db import SessionLocal
+from sqlalchemy import inspect, text
+from database.models import Job, Client, Property, ICalEvent, PropertyIcal, RecurringSchedule
+from database.db import SessionLocal, engine
 
 
 def _seed_client_property(db):
@@ -26,6 +27,56 @@ def _clean_jobs():
     yield
     db = SessionLocal()
     try:
+        # This is a genuinely global reset (every Job/Property/Client in the
+        # whole DB, not just rows this test created) — the rehydrate endpoint
+        # itself scans ALL null-date jobs, so any leftover row from ANY test
+        # in the whole session (not just this file) would inflate the next
+        # test's counts. That means this cleanup can't assume it's the only
+        # thing that ever touched these clients/properties, so instead of
+        # hand-listing every table with a client_id/property_id (easy to
+        # miss one, as happened here), discover them dynamically the same
+        # way scripts/cleanup_ical_turnover_duplicates.py does.
+        #
+        # Job.ical_event_id -> ical_events.id AND ical_events.job_id ->
+        # jobs.id is a genuine bidirectional cycle — neither table can be
+        # deleted first while the other still references it, so both FK
+        # columns are nulled out before either table is deleted. Same idea
+        # for ical_events.property_ical_id -> property_icals.id.
+        db.query(Job).update({Job.ical_event_id: None}, synchronize_session=False)
+        db.query(ICalEvent).update(
+            {ICalEvent.job_id: None, ICalEvent.property_ical_id: None},
+            synchronize_session=False,
+        )
+        db.commit()
+
+        insp = inspect(engine)
+        keep = {"clients", "properties", "jobs"}
+        dependent_tables = [
+            table for table in insp.get_table_names()
+            if table not in keep
+            and {"client_id", "property_id", "job_id"} & {c["name"] for c in insp.get_columns(table)}
+        ]
+        # Order among these isn't fully known (e.g. a table could reference
+        # another dependent table, not just clients/properties/jobs
+        # directly), so retry in passes: each pass clears whatever it can,
+        # and a table whose row still has a live reference just waits for a
+        # later pass once whatever was blocking it is gone. Bounded so a
+        # genuinely unresolvable case fails loudly instead of looping forever.
+        remaining = list(dependent_tables)
+        for _ in range(len(dependent_tables) + 1):
+            if not remaining:
+                break
+            still_stuck = []
+            for table in remaining:
+                try:
+                    db.execute(text(f"DELETE FROM {table}"))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    still_stuck.append(table)
+            remaining = still_stuck
+        assert not remaining, f"could not clear dependent table(s), likely a new FK cycle: {remaining}"
+
         db.query(Job).delete(synchronize_session=False)
         db.query(Property).delete(synchronize_session=False)
         db.query(Client).delete(synchronize_session=False)

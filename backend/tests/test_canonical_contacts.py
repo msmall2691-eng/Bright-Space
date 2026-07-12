@@ -11,7 +11,7 @@ import uuid
 import pytest
 
 from database.db import SessionLocal
-from database.models import Client, ContactEmail, ContactPhone, LeadIntake, Activity
+from database.models import Client, ContactEmail, ContactPhone, LeadIntake, Activity, Opportunity
 from utils.contacts import find_client_by_contact, add_contact_email, add_contact_phone
 from modules.intake.normalize import build_intake, upsert_lead
 
@@ -29,6 +29,11 @@ def _cleanup(db, client_id):
     db.query(LeadIntake).filter(LeadIntake.client_id == client_id).delete(synchronize_session=False)
     db.query(ContactEmail).filter(ContactEmail.client_id == client_id).delete(synchronize_session=False)
     db.query(ContactPhone).filter(ContactPhone.client_id == client_id).delete(synchronize_session=False)
+    # upsert_lead auto-creates/advances an Opportunity for the client — never
+    # cleaned up here before, so deleting the Client without it violated
+    # opportunities_client_id_fkey on Postgres, aborting this whole cleanup
+    # transaction and leaving every row from the test uncleaned.
+    db.query(Opportunity).filter(Opportunity.client_id == client_id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == client_id).delete(synchronize_session=False)
     db.commit()
 

@@ -514,10 +514,19 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
 
     client = find_client_by_contact(db, email=data.email, phone=data.phone)
     if not client:
+        # Every entry point here (booking/intake/webhook submit) is public and
+        # unauthenticated, so there's no caller org to stamp — leaving org_id
+        # NULL meant this client matched every tenant's `org_id == X OR
+        # org_id IS NULL` scope filter and leaked into every workspace's
+        # Clients list. Stamp the default (v1) workspace instead, matching
+        # the fallback every other unauthenticated write path already uses
+        # (see modules.auth.router._default_org_id).
+        from modules.auth.router import _default_org_id
         client = Client(
             name=data.name, email=data.email, phone=data.phone,
             address=data.address, city=data.city, state=data.state or "ME",
             zip_code=data.zip_code, status="lead", source=data.source,
+            org_id=_default_org_id(db),
         )
         db.add(client)
         db.flush()  # assign client.id without committing
@@ -583,6 +592,7 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         preferred_date=data.preferred_date, source=data.source, client_id=client.id,
         custom_fields=data.custom_fields or {},
         idempotency_key=data.idempotency_key,
+        org_id=getattr(client, "org_id", None),
     )
     # Race backstop: if two concurrent requests both pass the idempotency
     # SELECT above and both try to insert with the same key, the unique index

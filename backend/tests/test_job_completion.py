@@ -17,7 +17,7 @@ import pytest
 
 from database.db import SessionLocal
 from database.models import (
-    Client, Property, Job, RecurringSchedule, RecurrenceException, Invoice,
+    Client, Property, Job, RecurringSchedule, RecurrenceException, Invoice, User,
 )
 from modules.scheduling.router import (
     complete_job, skip_job, get_job_crew_suggestions, auto_assign_job_crew,
@@ -25,10 +25,23 @@ from modules.scheduling.router import (
 )
 from fastapi import HTTPException
 
+# Job.completed_by FKs to users.id (ON DELETE SET NULL) — SQLite never
+# enforces this, but Postgres does, and this file's tests pass arbitrary
+# ids (1, 2, 42) as completed_by with no matching User row. Seed them
+# idempotently so both dialects behave the same way.
+_FAKE_COMPLETER_IDS = (1, 2, 42)
+
 
 @pytest.fixture
 def ctx():
     db = SessionLocal()
+    created_user_ids = []
+    for uid in _FAKE_COMPLETER_IDS:
+        if not db.query(User).filter(User.id == uid).first():
+            db.add(User(id=uid, email=f"completer-{uid}@example.com", role="cleaner"))
+            created_user_ids.append(uid)
+    if created_user_ids:
+        db.commit()
     c = Client(name="PR-A Test", email="pra@example.com", status="active")
     db.add(c); db.commit(); db.refresh(c)
     p = Property(client_id=c.id, name="PR-A House", address="1 PR-A Rd",
@@ -52,6 +65,8 @@ def ctx():
     ).delete(synchronize_session=False)
     db.query(Property).filter(Property.id == p.id).delete(synchronize_session=False)
     db.query(Client).filter(Client.id == c.id).delete(synchronize_session=False)
+    if created_user_ids:
+        db.query(User).filter(User.id.in_(created_user_ids)).delete(synchronize_session=False)
     db.commit(); db.close()
 
 
