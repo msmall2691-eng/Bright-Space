@@ -117,7 +117,10 @@ def test_email_connection(db: Session = Depends(get_db)):
     results = {"imap": None, "smtp": None, "email_count": 0}
 
     try:
-        mail = imaplib.IMAP4_SSL(imap_host, imap_port)
+        # Explicit timeout — the SMTP check below already had one; this bare
+        # IMAP4_SSL call didn't, so a hung IMAP host here could wedge the
+        # worker indefinitely (T-20 Part A).
+        mail = imaplib.IMAP4_SSL(imap_host, imap_port, timeout=10)
         mail.login(user, passwd)
         mail.select("INBOX", readonly=True)
         _, data = mail.search(None, "ALL")
@@ -880,7 +883,9 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
 
     try:
         flow = build_flow(request, state=state)
-        flow.fetch_token(code=code)
+        # Bounded timeout — same rationale as the auth-router callbacks: a
+        # hung Google token endpoint shouldn't wedge this worker forever.
+        flow.fetch_token(code=code, timeout=10)
         creds = flow.credentials
     except Exception as e:
         logger.warning(f"Google OAuth callback failed: {e}")
