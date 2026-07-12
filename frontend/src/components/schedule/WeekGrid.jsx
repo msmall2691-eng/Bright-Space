@@ -64,7 +64,7 @@ import {
  *                    block stays in the new position instead of snapping back
  *                    on the next render. Optional — the grid keeps a small
  *                    internal override map either way.
- *   toast          — the shared useToast() `toast` object; used for the 409
+ *   toast          — the shared toastBus `toast` object; used for the 409
  *                    "Reschedule anyway" notice. When absent, drag-drop still
  *                    works but conflicts fall through to console.error like
  *                    they did before.

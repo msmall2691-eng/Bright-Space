@@ -353,19 +353,33 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         }
         notify?.('Updated this visit only \u2014 the rest of the series is unchanged')
       } else if (scope === 'future') {
-        const payload = { cleaner_ids: formData.cleaner_ids, split_date: originalDate }
+        // split_date is BOTH the old schedule's cutoff and the new
+        // schedule's floor (see modules/recurring/router.py's
+        // split_schedule) \u2014 anchoring it on originalDate alone breaks when
+        // the visit moved EARLIER (e.g. Wednesday \u2192 the same week's Monday):
+        // the new schedule's floor would exclude the target Monday and that
+        // occurrence would vanish for a full cycle. Use whichever date is
+        // earlier so both the old occurrence's cleanup and the new
+        // occurrence's generation land on the correct side of the boundary.
+        const splitDate = dateChanged && newDate < originalDate ? newDate : originalDate
+        const payload = { cleaner_ids: formData.cleaner_ids, split_date: splitDate }
         if (formData.title) payload.title = formData.title
         if (formData.address) payload.address = formData.address
         payload.notes = formData.notes
         if (formData.start_time) payload.start_time = formData.start_time
         if (formData.end_time) payload.end_time = formData.end_time
-        // Only override the weekly pattern when the occurrence actually
-        // moved to a different day \u2014 a pure time/crew edit shouldn't touch
-        // a monthly schedule's day-of-month by accident.
+        // Only override the day pattern when the occurrence actually moved
+        // to a different day \u2014 a pure time/crew edit shouldn't touch a
+        // monthly schedule's day-of-month (or a weekly one's day-of-week) by
+        // accident. Both fields are sent together: generate_dates reads
+        // whichever one matches the schedule's own frequency and ignores
+        // the other, so this is correct regardless of frequency without
+        // needing to know it here.
         if (dateChanged) {
           const dow = isoDateToBackendDow(newDate)
           payload.days_of_week = [dow]
           payload.day_of_week = dow
+          payload.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
         }
         await post(`/api/recurring/${schedId}/split`, payload)
         notify?.('Updated this visit and every future one in the series')
@@ -380,6 +394,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           const dow = isoDateToBackendDow(newDate)
           payload.days_of_week = [dow]
           payload.day_of_week = dow
+          payload.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
         }
         const res = await patch(`/api/recurring/${schedId}`, payload)
         notify?.(`Updated the whole series (${res?.resynced_jobs || 0} upcoming visit(s) re-synced)`)

@@ -5,7 +5,7 @@ import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
 import CRMHealthPanel from "../components/CRMHealthPanel"
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
 import { useClients } from '../hooks/useClients'
 import { useClientPhones } from '../hooks/useClientPhones'
 import { useClientMutations } from '../hooks/useClientMutations'
@@ -192,7 +192,6 @@ function BucketFilterBanner({
 
 export default function Clients() {
   const navigate = useNavigate()
-  const { toast, ToastContainer } = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const { clients, setClients, filtered: baseFiltered, statusCounts, load } = useClients(statusFilter, search)
@@ -458,7 +457,6 @@ export default function Clients() {
           onCreated={() => { setJobClient(null); toast.success('Job scheduled ✓') }}
         />
       )}
-      <ToastContainer />
     </div>
   )
 }

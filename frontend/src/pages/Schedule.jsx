@@ -6,7 +6,7 @@ import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
 import AgendaDay from '../components/schedule/AgendaDay'
 import AgendaHero from '../components/schedule/AgendaHero'
 import DispatchBoard from '../components/schedule/DispatchBoard'
@@ -29,7 +29,6 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { toLocalYMD, todayYMD } from '../utils/format'
 
 export default function Schedule() {
-  const { toast, ToastContainer } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   // Four view modes today:
   //   agenda   — mobile-first day, hero on top + AgendaDay cards (default on phone)
@@ -596,7 +595,6 @@ export default function Schedule() {
           onComplete={(payload) => handleCompleteVisit(completingVisit.id, payload)}
         />
       )}
-      <ToastContainer />
     </div>
   )
 }

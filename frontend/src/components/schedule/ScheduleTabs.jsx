@@ -3,7 +3,7 @@ import { Calendar, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { get, post, put, del } from '../../api'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
-import { useToast } from '../ui/Toast'
+import { toast } from '../../utils/toastBus'
 import EndsPicker from './EndsPicker'
 
 /** Two self-contained tab views for the Schedule page.
@@ -196,7 +196,6 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
 }
 
 export function AvailabilityPanel() {
-  const { toast, ToastContainer } = useToast()
   const [entries, setEntries] = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
@@ -321,13 +320,11 @@ export function AvailabilityPanel() {
           ))}
         </ul>
       )}
-      <ToastContainer />
     </div>
   )
 }
 
 export function RecurringPanel() {
-  const { toast, ToastContainer } = useToast()
   const [schedules, setSchedules] = useState([])
   const [clients, setClients] = useState({})
   const [propertiesList, setPropertiesList] = useState([])
@@ -452,7 +449,6 @@ export function RecurringPanel() {
           onCreated={load}
         />
       )}
-      <ToastContainer />
     </div>
   )
 }

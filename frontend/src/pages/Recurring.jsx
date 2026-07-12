@@ -9,7 +9,7 @@ import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
 
@@ -826,7 +826,6 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
 export default function Recurring() {
   const [params, setParams] = useSearchParams()
   const seriesId = params.get('series')
-  const { toast, ToastContainer } = useToast()
 
   const [schedules, setSchedules] = useState([])
   const [clientsById, setClientsById] = useState({})
@@ -884,7 +883,6 @@ export default function Recurring() {
           onChanged={loadList}
           toast={toast}
         />
-        <ToastContainer />
       </>
     )
   }
@@ -973,8 +971,6 @@ export default function Recurring() {
           </ul>
         )}
       </div>
-
-      <ToastContainer />
     </>
   )
 }

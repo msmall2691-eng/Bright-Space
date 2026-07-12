@@ -7,7 +7,7 @@ import JobCreateModal from '../components/JobCreateModal'
 import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import { get, post, patch } from "../api"
 import { formatDate, combineAddress } from '../utils/format'
-import Toast from '../components/quoting/Toast'
+import { pushToast } from '../utils/toastBus'
 import LeadRow from '../components/quoting/LeadRow'
 import QuoteRow from '../components/quoting/QuoteRow'
 import FollowUpRow from '../components/quoting/FollowUpRow'
@@ -62,7 +62,6 @@ export default function Quoting() {
   const [sendForm, setSendForm] = useState({ channel: 'email', email: '', phone: '', custom_message: '', subject: '', greeting: '', copy_to: '' })
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
-  const [toast, setToast] = useState(null)
   // The fast path is client → line items → save. Template picker and the
   // scope/internal/message text areas live behind this toggle so the form
   // opens short.
@@ -89,7 +88,7 @@ export default function Quoting() {
   // setAddingClient and hard-crashed the whole Billing page.
   const [addingClient, setAddingClient] = useState(false)
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
+  const showToast = (msg) => pushToast(msg, 'info')
 
   // Selecting a client fills the quote address from the client's address when
   // it's still blank (smart default; never clobbers typed input).
@@ -794,8 +793,6 @@ export default function Quoting() {
           onError={(msg) => showToast(msg || 'Could not convert to job')}
         />
       )}
-
-      {toast && <Toast msg={toast} />}
 
     </div>
   )

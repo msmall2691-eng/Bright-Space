@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Settings2, Mail, Plug, RefreshCw, Users } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
-import Toast from '../components/settings/Toast'
+import { pushToast } from '../utils/toastBus'
 import { useCustomFieldsTab, CustomFieldsBody, CustomFieldsSidePanel } from '../components/settings/CustomFieldsTab'
 import AutomationTab, { useAutomationSettings } from '../components/settings/AutomationTab'
 import EmailTab from '../components/settings/EmailTab'
@@ -19,13 +19,7 @@ export default function Settings() {
     try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
     catch { return false }
   })()
-  const [toasts, setToasts] = useState([])
-
-  const toast = useCallback((message, type = 'success') => {
-    const id = Date.now()
-    setToasts(t => [...t, { id, message, type }])
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000)
-  }, [])
+  const toast = (message, type = 'success') => pushToast(message, type)
 
   const customFields = useCustomFieldsTab({ toast })
   const automation = useAutomationSettings({
@@ -116,8 +110,6 @@ export default function Settings() {
 
       {/* Side panel */}
       {section === 'fields' && <CustomFieldsSidePanel state={customFields} />}
-
-      <Toast toasts={toasts} />
 
     </div>
   )

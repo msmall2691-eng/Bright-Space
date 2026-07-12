@@ -5,8 +5,9 @@ import {
 } from 'lucide-react'
 import {
   Button, GlassCard, StatusBadge, PageHeader, Card, EmptyState,
-  ErrorState, StatCard, Skeleton, useToast,
+  ErrorState, StatCard, Skeleton,
 } from '../components/ui'
+import { toast } from '../utils/toastBus'
 
 /**
  * /design-system — the living style guide.
@@ -165,7 +166,6 @@ const TYPE_SCALE = [
 const STATUSES = ['success', 'warning', 'danger', 'info', 'neutral']
 
 export default function DesignSystem() {
-  const { toast, ToastContainer } = useToast()
   const [showSkeleton, setShowSkeleton] = useState(true)
 
   return (
@@ -365,7 +365,7 @@ export default function DesignSystem() {
           </div>
         </Section>
 
-        <Section title="Toast" description="components/ui/Toast.jsx (useToast) — bottom-center, auto-dismisses; longer if it carries an action.">
+        <Section title="Toast" description="utils/toastBus.js + components/ui/GlobalToasts.jsx — bottom-center, auto-dismisses; longer if it carries an action.">
           <div className="flex gap-3 flex-wrap">
             <Button size="sm" variant="secondary" onClick={() => toast.success('Saved successfully')}>Trigger success</Button>
             <Button size="sm" variant="secondary" onClick={() => toast.error('Something went wrong')}>Trigger error</Button>
@@ -375,8 +375,6 @@ export default function DesignSystem() {
           </div>
         </Section>
       </div>
-
-      <ToastContainer />
     </div>
   )
 }

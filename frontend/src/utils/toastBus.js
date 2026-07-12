@@ -20,10 +20,14 @@ export function subscribe(fn) {
   return () => _subscribers.delete(fn)
 }
 
-/** Push a toast to every subscriber. variant: 'error' | 'success' | 'info'. */
-export function pushToast(message, variant = 'info') {
+/** Push a toast to every subscriber. variant: 'error' | 'success' | 'info'.
+ *  opts.action: { label, onClick } — renders an inline button (e.g. "Undo");
+ *  matches useToast()'s shape so migrating a caller off the per-page hook
+ *  onto this bus is a drop-in swap. */
+export function pushToast(message, variant = 'info', opts = {}) {
   if (!message) return
-  const t = { id: ++_id, message: String(message), variant }
+  const { action } = opts
+  const t = { id: ++_id, message: String(message), variant, action }
   _subscribers.forEach(fn => {
     try { fn(t) } catch { /* a bad subscriber must not break the bus */ }
   })
@@ -32,7 +36,7 @@ export function pushToast(message, variant = 'info') {
 
 /** Convenience matching the useToast() shape so call sites read the same. */
 export const toast = {
-  error: (msg) => pushToast(msg, 'error'),
-  success: (msg) => pushToast(msg, 'success'),
-  info: (msg) => pushToast(msg, 'info'),
+  error: (msg, opts) => pushToast(msg, 'error', opts),
+  success: (msg, opts) => pushToast(msg, 'success', opts),
+  info: (msg, opts) => pushToast(msg, 'info', opts),
 }

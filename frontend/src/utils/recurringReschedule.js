@@ -38,25 +38,46 @@ export async function rescheduleRecurringVisit(scope, {
     return { message: 'Moved this visit only — the rest of the series is unchanged', jobId: res?.job_id }
   }
 
+  // Fields describing the new day, applied to both 'future' and 'all' below.
+  // days_of_week/day_of_week drive weekly/daily frequencies; day_of_month
+  // drives monthly ones (generate_dates reads whichever field matches the
+  // schedule's own frequency and ignores the other — see
+  // modules/recurring/router.py). Sending both unconditionally means this
+  // works correctly regardless of the schedule's frequency without the
+  // caller needing to know it.
+  const dayFields = {}
+  if (dateChanged) {
+    const dow = isoDateToBackendDow(newDate)
+    dayFields.days_of_week = [dow]
+    dayFields.day_of_week = dow
+    dayFields.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
+  }
+
   if (scope === 'future') {
-    const payload = { cleaner_ids: cleanerIds, split_date: originalDate, start_time: newStart, end_time: newEnd }
-    if (dateChanged) {
-      const dow = isoDateToBackendDow(newDate)
-      payload.days_of_week = [dow]
-      payload.day_of_week = dow
-    }
-    await post(`/api/recurring/${schedId}/split`, payload)
+    // split_date becomes BOTH the old schedule's cutoff (it stops
+    // generating on/after this date) and the new schedule's floor (it only
+    // generates on/after this date) — see modules/recurring/router.py's
+    // split_schedule. Anchoring it on originalDate alone breaks when the
+    // visit moved EARLIER (e.g. dragged from Wednesday to the same week's
+    // Monday): the new schedule's floor would then exclude the target
+    // Monday, and that occurrence would vanish for a full cycle. Using
+    // whichever date is earlier keeps both the old occurrence's cleanup and
+    // the new occurrence's generation on the correct side of the boundary.
+    const splitDate = originalDate < newDate ? originalDate : newDate
+    await post(`/api/recurring/${schedId}/split`, {
+      cleaner_ids: cleanerIds, split_date: splitDate,
+      start_time: newStart, end_time: newEnd,
+      ...dayFields,
+    })
     return { message: 'Moved this visit and every future one in the series' }
   }
 
   if (scope === 'all') {
-    const payload = { cleaner_ids: cleanerIds, resync: true, start_time: newStart, end_time: newEnd }
-    if (dateChanged) {
-      const dow = isoDateToBackendDow(newDate)
-      payload.days_of_week = [dow]
-      payload.day_of_week = dow
-    }
-    const res = await patch(`/api/recurring/${schedId}`, payload)
+    const res = await patch(`/api/recurring/${schedId}`, {
+      cleaner_ids: cleanerIds, resync: true,
+      start_time: newStart, end_time: newEnd,
+      ...dayFields,
+    })
     return { message: `Moved the whole series (${res?.resynced_jobs || 0} upcoming visit(s) re-synced)` }
   }
 

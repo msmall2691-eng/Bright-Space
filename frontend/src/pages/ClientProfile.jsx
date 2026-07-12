@@ -23,7 +23,7 @@ import {
   EMPTY_ICAL, OPP_COLORS,
 } from '../components/client/constants'
 import { del, get, post, patch } from "../api"
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
@@ -73,7 +73,6 @@ function SubNav({ items, active, onSelect }) {
 export default function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { toast, ToastContainer } = useToast()
 
   // Tab redirect for backward compatibility (legacy hash names → current tab keys).
   // 'properties' is its own tab again (PR 1) — no redirect.
@@ -556,7 +555,6 @@ export default function ClientProfile() {
         />
       )}
 
-      <ToastContainer />
     </div>
   )
 }
