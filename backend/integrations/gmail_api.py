@@ -10,14 +10,22 @@ IMAP path (kept as the business-inbox fallback, by decision) and this one.
 """
 import base64
 import logging
+import os
 import re
 from email.utils import parseaddr, parsedate_to_datetime
 
+import httplib2
+from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 
 from integrations.gmail_inbox import _is_automated
 
 logger = logging.getLogger(__name__)
+
+# Bare httplib2.Http() (googleapiclient's default transport) has no socket
+# timeout — a hung Gmail API call would wedge the calling uvicorn worker
+# forever, the same class of bug fixed for Twilio/SMTP/IMAP/GCal (T-20).
+_HTTP_TIMEOUT_SECONDS = int(os.getenv("GCAL_HTTP_TIMEOUT_SECONDS", "20"))
 
 
 def _header(headers: list, name: str) -> str:
@@ -63,7 +71,8 @@ def fetch_inbox_for_account(creds, max_results: int = 30, skip_automated: bool =
     threaded messages happens downstream on the Message-ID header, same as
     the IMAP path.
     """
-    service = build("gmail", "v1", credentials=creds)
+    authed_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=_HTTP_TIMEOUT_SECONDS))
+    service = build("gmail", "v1", http=authed_http)
     listing = service.users().messages().list(
         userId="me", labelIds=["INBOX"], maxResults=max_results,
     ).execute()

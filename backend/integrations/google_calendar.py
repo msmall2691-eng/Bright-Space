@@ -8,12 +8,27 @@ import os
 from pathlib import Path
 from datetime import datetime
 
+import httplib2
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# googleapiclient's default transport (a bare httplib2.Http()) has NO socket
+# timeout — a hung Google Calendar API call (rare, but real: TLS stalls, a
+# slow region) would wedge the calling uvicorn worker forever, the same class
+# of bug already fixed for Twilio/SMTP/IMAP (T-20 Part A). Every build()
+# call site below goes through _build_calendar_service() so none of them can
+# regress back to an unbounded call.
+GCAL_HTTP_TIMEOUT_SECONDS = int(os.getenv("GCAL_HTTP_TIMEOUT_SECONDS", "20"))
+
+
+def _build_calendar_service(creds):
+    authed_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=GCAL_HTTP_TIMEOUT_SECONDS))
+    return build("calendar", "v3", http=authed_http)
 
 # Color IDs per job type (Google Calendar color system)
 JOB_TYPE_COLORS = {
@@ -112,7 +127,7 @@ def _account_service(account_id: int | None = None):
                 print(f"[GCal] connected account unusable, falling back to shared token: {e}")
                 return None
             _ACTIVE_ACCOUNT_ID = acct.id
-            return build("calendar", "v3", credentials=creds)
+            return _build_calendar_service(creds)
         finally:
             db.close()
     except Exception as e:
@@ -198,7 +213,7 @@ def _get_service(account_id=_PREFER_CONNECTED):
                 "Settings → Integrations, or set GOOGLE_TOKEN_B64."
             )
 
-    return build("calendar", "v3", credentials=creds)
+    return _build_calendar_service(creds)
 
 
 def is_configured() -> bool:

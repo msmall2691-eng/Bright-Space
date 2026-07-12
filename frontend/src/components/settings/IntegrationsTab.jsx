@@ -124,11 +124,35 @@ export default function IntegrationsTab({ toast, active }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, connecteam.loading, connecteam.configured, ctForm.open, connecteam.has_key])
 
+  // Push now returns 202 + a run_id immediately (T-20 Part B) — the actual
+  // bulk Connecteam POST runs as a background task server-side, so this
+  // polls for the result instead of holding the request open for minutes
+  // (that used to hang the button with zero feedback).
+  const pollPushRun = async (runId) => {
+    for (let i = 0; i < 120; i++) { // ~3 min ceiling
+      const r = await get(`/api/settings/connecteam/push-open-shifts/${runId}`)
+      if (r.status === 'done' || r.status === 'error') return r
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
+    return { status: 'timeout' }
+  }
+
   const pushScheduleToConnecteam = async () => {
     if (!window.confirm('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?')) return
     setCtPushing(true)
     try {
-      const r = await post('/api/settings/connecteam/push-open-shifts', {})
+      const kicked = await post('/api/settings/connecteam/push-open-shifts', {})
+      const r = await pollPushRun(kicked.run_id)
+
+      if (r.status === 'error') {
+        toast(r.error || 'Connecteam push failed — check server logs for the underlying error.', 'error')
+        return
+      }
+      if (r.status === 'timeout') {
+        toast('Push is still running in the background — check Connecteam directly, or try again shortly.', 'error')
+        return
+      }
+
       // Diagnostic toast: the base case ("Pushed 0 · 0 skipped") gave no signal
       // for why nothing went over. Split the message by outcome so the operator
       // knows whether to create jobs, un-dispatch, or check a real error.
