@@ -351,7 +351,7 @@ def sync_reconcile_tick() -> dict:
         try:
             from integrations.connecteam import is_configured as _ct_ok
             if _ct_ok():
-                from integrations.connecteam_auto import auto_dispatch_job
+                from integrations.connecteam_auto import auto_dispatch_job, reconcile_connecteam_drift
                 from database.models import Job
                 start = business_today().isoformat()
                 end = (business_today() + timedelta(days=30)).isoformat()
@@ -374,7 +374,29 @@ def sync_reconcile_tick() -> dict:
                     log.info(f"Sync reconcile: dispatched {dispatched} job(s) to Connecteam")
                 if errors:
                     log.warning(f"Sync reconcile: {errors} Connecteam dispatch error(s)")
-                result["connecteam"] = {"dispatched": dispatched, "errors": errors}
+
+                # 2b) Drift repair — jobs cancelled/completed but still
+                # carrying shift ids, or whose schedule moved since the
+                # shift was pushed (audit #2 + #4). Widened window (-7 days)
+                # so a job cancelled this week is still caught once it's
+                # now in the past.
+                drift_start = (business_today() - timedelta(days=7)).isoformat()
+                drift_jobs = db.query(Job).filter(
+                    Job.scheduled_date >= drift_start,
+                    Job.scheduled_date <= end,
+                ).all()
+                drift = reconcile_connecteam_drift(db, drift_jobs)
+                if drift["resynced"]:
+                    log.info(f"Sync reconcile: retimed {drift['resynced']} drifted Connecteam shift(s)")
+                if drift["removed"]:
+                    log.info(f"Sync reconcile: removed {drift['removed']} stale Connecteam shift(s)")
+                if drift["errors"]:
+                    log.warning(f"Sync reconcile: {len(drift['errors'])} Connecteam drift-repair error(s)")
+
+                result["connecteam"] = {
+                    "dispatched": dispatched, "errors": errors + len(drift["errors"]),
+                    "resynced": drift["resynced"], "removed": drift["removed"],
+                }
             else:
                 result["connecteam"] = {"skipped": "not_configured"}
         except Exception as e:

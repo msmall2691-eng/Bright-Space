@@ -22,7 +22,7 @@ from typing import Optional
 
 from database.models import Client, ContactEmail, Activity, Message
 from integrations.gmail_inbox import fetch_inbox
-from integrations.email_filter import evaluate_inbound_email
+from integrations.email_filter import evaluate_inbound_email, should_thread_inbound_email
 from utils.activity_logger import log_email
 from datetime import datetime, timezone
 import logging
@@ -169,9 +169,17 @@ def run_inbox_sync(
     per-user Gmail-API sync (which passes pre-fetched `emails` plus the
     user_google_accounts id for provenance) so every path behaves identically.
     """
+    # Cursor: only the shared-inbox IMAP path (emails not pre-supplied by a
+    # caller) manages this — the per-account Gmail API path has its own
+    # pagination and callers that inject `emails` directly (tests, one-off
+    # re-syncs) shouldn't have this run's date silently become "the last
+    # time anyone synced anything."
+    advance_cursor = emails is None
     try:
         if emails is None:
-            emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated)
+            from integrations.gmail_inbox import get_last_synced_at
+            since = get_last_synced_at()
+            emails = fetch_inbox(max_results=max_results, skip_automated=skip_automated, since=since)
     except ConnectionError as e:
         err = str(e)
         if "no_credentials" in err:
@@ -211,44 +219,46 @@ def run_inbox_sync(
                 c.email_verified = True
             elif auto_enrich and addr:
                 # Defer to the spam/intent filter before auto-creating a Client.
+                # NOTE: a False here only means "don't auto-create a Client" —
+                # it does NOT mean "hide this email" (see should_thread_inbound_email
+                # below). Content-based misses (a real prospect who didn't
+                # happen to use a cleaning keyword) must still surface somewhere.
                 create_lead, reason = evaluate_inbound_email(em)
                 if not create_lead:
                     skipped_by_filter += 1
                     # Audit log: every skipped sender is traceable, so "didn't
                     # create a lead" never silently drops a real customer.
                     logger.info("[gmail] skip lead for %s: %s", addr, reason)
-                    client_cache[addr] = None
-                    em["client"] = None
-                    em["is_known_contact"] = False
-                    # Still tag the email so the UI can offer "Convert to client"
                     em["can_convert_to_client"] = True
                     em["lead_skip_reason"] = reason
-                    continue
-
-                from_name = em.get("from_name", "").strip() or addr.split("@")[0]
-                parts = from_name.split(" ", 1)
-                c = Client(
-                    name=from_name,
-                    first_name=parts[0],
-                    last_name=parts[1] if len(parts) > 1 else "",
-                    email=addr.lower(),
-                    status="lead",
-                    source="email",
-                    # Trace WHY this lead was auto-created (reply vs cleaning intent).
-                    source_detail=f"gmail auto-enrich:{reason}",
-                    email_verified=True,
-                )
-                db.add(c)
-                db.flush()
-                _ensure_contact_email(c.id, addr, "gmail_sync", db)
-                _log_activity(
-                    db,
-                    client_id=c.id,
-                    activity_type="email_received",
-                    summary=f"Auto-created from email: {em.get('subject', '(no subject)')}",
-                    extra_data={"from_email": addr, "from_name": from_name},
-                )
-                new_contacts += 1
+                    c = None
+                else:
+                    from_name = em.get("from_name", "").strip() or addr.split("@")[0]
+                    parts = from_name.split(" ", 1)
+                    c = Client(
+                        name=from_name,
+                        first_name=parts[0],
+                        last_name=parts[1] if len(parts) > 1 else "",
+                        email=addr.lower(),
+                        status="lead",
+                        source="email",
+                        # Trace WHY this lead was auto-created (reply vs cleaning intent).
+                        source_detail=f"gmail auto-enrich:{reason}",
+                        email_verified=True,
+                    )
+                    db.add(c)
+                    db.flush()
+                    _ensure_contact_email(c.id, addr, "gmail_sync", db)
+                    _log_activity(
+                        db,
+                        client_id=c.id,
+                        activity_type="email_received",
+                        summary=f"Auto-created from email: {em.get('subject', '(no subject)')}",
+                        extra_data={"from_email": addr, "from_name": from_name},
+                    )
+                    new_contacts += 1
+            else:
+                c = None
 
             client_cache[addr] = (
                 {"id": c.id, "name": c.name, "status": c.status,
@@ -257,14 +267,25 @@ def run_inbox_sync(
 
         em["client"] = client_cache[addr]
         em["is_known_contact"] = client_cache[addr] is not None
+        em.setdefault("can_convert_to_client", False)
+        em.setdefault("lead_skip_reason", None)
 
-        # Thread the email into a Conversation (channel='email') so it shows
-        # in the unified inbox alongside SMS. Dedupes on Message-ID and reuses
-        # the comms SLA/unread bookkeeping. Also backfills conversation_id on
-        # any legacy orphaned rows. Only known clients get threaded — unknown
-        # senders surface via the "Convert to client" affordance first.
-        client_id = em["client"]["id"] if em["client"] else None
-        if client_id:
+        # Thread EVERY email into a Conversation (channel='email') so it
+        # shows in the unified inbox alongside SMS — known client or not;
+        # client-less conversations are a first-class shape here (see
+        # find_or_create_conversation). Dedupes on Message-ID and reuses the
+        # comms SLA/unread bookkeeping. Also backfills conversation_id on any
+        # legacy orphaned rows.
+        #
+        # should_thread_inbound_email is a SEPARATE, narrower gate than the
+        # create_lead decision above: it only excludes definitive
+        # automated/bulk senders (no-reply addresses, marketing/SaaS
+        # domains, newsletter headers), never on content. Audit finding #3:
+        # this used to be `if client_id:` — an unknown sender that failed
+        # the keyword classifier was skipped here entirely and was only
+        # ever a log line in Railway, even when it was a real prospect.
+        if should_thread_inbound_email(em):
+            client_id = em["client"]["id"] if em["client"] else None
             # Savepoint per email: one bad message must not poison the whole
             # sync transaction — before this, a single IntegrityError aborted
             # every email in the batch AND the failed message was never
@@ -296,11 +317,20 @@ def run_inbox_sync(
     # Always commit: threading creates Conversations/Messages even when no new
     # Client was enriched, so the prior `new_contacts or auto_enrich` guard
     # would have silently dropped threaded emails on a rollback-free path.
+    commit_ok = True
     try:
         db.commit()
     except Exception as e:
         logger.error(f"[gmail] inbox sync commit failed: {e}")
         db.rollback()
+        commit_ok = False
+
+    # Advance the cursor only after a successful commit of THIS run's own
+    # fetch — a failed commit must not move the watermark forward, or the
+    # next tick would skip re-scanning (and re-threading) today's messages.
+    if advance_cursor and commit_ok:
+        from integrations.gmail_inbox import set_last_synced_at
+        set_last_synced_at(datetime.now(timezone.utc).date().isoformat())
 
     total = len(emails)
     linked = sum(1 for e in emails if e["is_known_contact"])

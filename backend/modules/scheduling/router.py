@@ -1161,7 +1161,7 @@ def sync_reconcile(db: Session = Depends(get_db)):
     try:
         from integrations.connecteam import is_configured as _ct_ok
         if _ct_ok():
-            from integrations.connecteam_auto import auto_dispatch_job
+            from integrations.connecteam_auto import auto_dispatch_job, reconcile_connecteam_drift
             start = business_today().isoformat()
             end = (business_today() + timedelta(days=30)).isoformat()
             jobs = db.query(Job).filter(
@@ -1180,6 +1180,21 @@ def sync_reconcile(db: Session = Depends(get_db)):
                     errors += len(st["errors"])
             db.commit()
             result["connecteam"] = {"dispatched": dispatched, "errors": errors}
+
+            # Drift repair: jobs that already have shifts but shouldn't
+            # (cancelled/completed) or whose shift no longer matches the
+            # job's current schedule (reschedule where the old shift's
+            # delete failed). Widened window (-7 days) so a job cancelled
+            # this week is still caught even though it's now in the past.
+            drift_start = (business_today() - timedelta(days=7)).isoformat()
+            drift_jobs = db.query(Job).filter(
+                Job.scheduled_date >= drift_start,
+                Job.scheduled_date <= end,
+            ).all()
+            drift = reconcile_connecteam_drift(db, drift_jobs)
+            result["connecteam"]["resynced"] = drift["resynced"]
+            result["connecteam"]["removed"] = drift["removed"]
+            result["connecteam"]["errors"] += len(drift["errors"])
         else:
             result["connecteam"]["skipped"] = "not_configured"
     except Exception as e:
@@ -1191,6 +1206,10 @@ def sync_reconcile(db: Session = Depends(get_db)):
         parts.append(f"{result['gcal']['pushed']} pushed to Google")
     if result["connecteam"].get("dispatched"):
         parts.append(f"{result['connecteam']['dispatched']} sent to Connecteam")
+    if result["connecteam"].get("resynced"):
+        parts.append(f"{result['connecteam']['resynced']} Connecteam shift(s) retimed")
+    if result["connecteam"].get("removed"):
+        parts.append(f"{result['connecteam']['removed']} stale Connecteam shift(s) removed")
     total_errors = result["gcal"].get("errors", 0) + result["connecteam"].get("errors", 0)
     if total_errors:
         parts.append(f"{total_errors} error(s)")

@@ -32,11 +32,18 @@ export function useClientProfileData(id) {
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
   const [timelineEvents, setTimelineEvents] = useState([])
 
-  const load = useCallback(async () => {
+  // isStale: checked before every setter so a load() superseded by a newer
+  // one (navigating client A -> client B fast enough that A's response lands
+  // after B's request started) can't overwrite the newer client's state with
+  // the old one's data. Defaults to "never stale" for manual reload callers
+  // (e.g. ClientProfile's onChanged handlers) that aren't racing anything.
+  const load = useCallback(async (isStale = () => false) => {
     try {
       // Load client first (blocking) so the profile can render.
       const profile = await get(`/api/clients/${id}/profile`).catch(() => null)
+      if (isStale()) return
       const c = profile || await get(`/api/clients/${id}`)
+      if (isStale()) return
       setClient(c)
       if (profile?.visit_stats) setVisitStats(profile.visit_stats)
       if (profile?.upcoming_visits || profile?.past_visits) {
@@ -48,22 +55,23 @@ export function useClientProfileData(id) {
 
       // Load the related collections in parallel — none are on the critical path.
       Promise.all([
-        get(`/api/jobs?client_id=${id}`).then(j => setJobs(Array.isArray(j) ? j : [])).catch(() => {}),
-        get(`/api/quotes?client_id=${id}`).then(q => setQuotes(Array.isArray(q) ? q : [])).catch(() => {}),
-        get(`/api/invoices?client_id=${id}`).then(inv => setInvoices(Array.isArray(inv) ? inv : [])).catch(() => {}),
+        get(`/api/jobs?client_id=${id}`).then(j => { if (!isStale()) setJobs(Array.isArray(j) ? j : []) }).catch(() => {}),
+        get(`/api/quotes?client_id=${id}`).then(q => { if (!isStale()) setQuotes(Array.isArray(q) ? q : []) }).catch(() => {}),
+        get(`/api/invoices?client_id=${id}`).then(inv => { if (!isStale()) setInvoices(Array.isArray(inv) ? inv : []) }).catch(() => {}),
         // Unified, contact-linked comms: emails + SMS matched by client_id OR
         // the client's email/phone (server-side), split by channel here.
         get(`/api/comms/client/${id}`).then(r => {
+          if (isStale()) return
           const all = Array.isArray(r?.messages) ? r.messages : []
           setMessages(all.filter(m => m.channel === 'sms'))
           setEmails(all.filter(m => m.channel === 'email').reverse())  // newest first
         }).catch(() => {}),
-        get(`/api/properties?client_id=${id}`).then(props => setProperties(Array.isArray(props) ? props : [])).catch(() => {}),
-        get(`/api/recurring?client_id=${id}`).then(scheds => setSchedules(Array.isArray(scheds) ? scheds : [])).catch(() => {}),
-        get(`/api/opportunities?client_id=${id}`).then(opps => setOpportunities(Array.isArray(opps) ? opps : [])).catch(() => {}),
-        get(`/api/activities?client_id=${id}&limit=50`).then(acts => setActivities(Array.isArray(acts) ? acts : [])).catch(() => {}),
+        get(`/api/properties?client_id=${id}`).then(props => { if (!isStale()) setProperties(Array.isArray(props) ? props : []) }).catch(() => {}),
+        get(`/api/recurring?client_id=${id}`).then(scheds => { if (!isStale()) setSchedules(Array.isArray(scheds) ? scheds : []) }).catch(() => {}),
+        get(`/api/opportunities?client_id=${id}`).then(opps => { if (!isStale()) setOpportunities(Array.isArray(opps) ? opps : []) }).catch(() => {}),
+        get(`/api/activities?client_id=${id}&limit=50`).then(acts => { if (!isStale()) setActivities(Array.isArray(acts) ? acts : []) }).catch(() => {}),
         // Linked Google Calendar events — interleaved into the unified timeline.
-        get(`/api/jobs/client/${id}/gcal-events`).then(r => setTimelineEvents(Array.isArray(r?.events) ? r.events : [])).catch(() => {}),
+        get(`/api/jobs/client/${id}/gcal-events`).then(r => { if (!isStale()) setTimelineEvents(Array.isArray(r?.events) ? r.events : []) }).catch(() => {}),
       ])
     } catch (e) {
       console.error('[useClientProfileData load]', e)
@@ -84,7 +92,11 @@ export function useClientProfileData(id) {
     return arr
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let cancelled = false
+    load(() => cancelled)
+    return () => { cancelled = true }
+  }, [load])
 
   // ── Derived values every tab reads ────────────────────────────────────────
 

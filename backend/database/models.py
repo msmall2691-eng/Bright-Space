@@ -543,6 +543,12 @@ class Job(Base):
     custom_fields = Column(JSON, default=dict)
     dispatched = Column(Boolean, default=False, nullable=False)
     connecteam_shift_ids = Column(JSON, default=list)
+    # Snapshot of {scheduled_date, start_time, end_time} as of the last
+    # successful Connecteam push — lets the reconcile sweep detect "the job
+    # was rescheduled since we pushed" (time drift, audit #4) without a
+    # Connecteam read API. NULL means "never pushed" or "no longer
+    # meaningful" (shifts fully removed).
+    connecteam_synced_schedule = Column(JSON, nullable=True)
 
     # Completion tracking — set when the cleaner marks the job done. Migrated
     # from the Visit table as part of the Job/Visit unification (see
