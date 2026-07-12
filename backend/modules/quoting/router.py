@@ -1563,7 +1563,7 @@ def _qr_to_response(row: LeadIntake) -> dict:
     }
 
 
-@router.post("/requests/", status_code=201)
+@router.post("/requests/", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def create_quote_request(request_data: QuoteRequestCreate, db: Session = Depends(get_db)):
     data = request_data.model_dump()
     pref = data.get("preferred_date")

@@ -92,7 +92,7 @@ def create_field(data: FieldCreate, db: Session = Depends(get_db)):
     return field_to_dict(field)
 
 
-@router.patch("/{field_id}")
+@router.patch("/{field_id}", dependencies=[Depends(require_role("admin"))])
 def update_field(field_id: int, data: FieldUpdate, db: Session = Depends(get_db)):
     field = db.query(FieldDefinition).filter(FieldDefinition.id == field_id).first()
     if not field:
@@ -106,7 +106,7 @@ def update_field(field_id: int, data: FieldUpdate, db: Session = Depends(get_db)
     return field_to_dict(field)
 
 
-@router.delete("/{field_id}", status_code=204)
+@router.delete("/{field_id}", status_code=204, dependencies=[Depends(require_role("admin"))])
 def delete_field(field_id: int, db: Session = Depends(get_db)):
     field = db.query(FieldDefinition).filter(FieldDefinition.id == field_id).first()
     if not field:

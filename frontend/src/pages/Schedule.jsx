@@ -31,8 +31,6 @@ import { toLocalYMD, todayYMD } from '../utils/format'
 export default function Schedule() {
   const { toast, ToastContainer } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
-  if (searchParams.get('tab') === 'recurring') return <RecurringPanel />
-  if (searchParams.get('tab') === 'availability') return <AvailabilityPanel />
   // Four view modes today:
   //   agenda   — mobile-first day, hero on top + AgendaDay cards (default on phone)
   //   dispatch — desktop 3-column ops board: unassigned / timeline / crews (default on desktop)
@@ -317,6 +315,15 @@ export default function Schedule() {
     d.setDate(d.getDate() + ((viewMode === 'agenda' || viewMode === 'dispatch') ? 1 : 7))
     setCurrentDate(d)
   }
+
+  // These used to be early returns at the very top of the component, before
+  // most of the hooks above ran — a Rules-of-Hooks violation (a different
+  // number of hooks fires depending on ?tab=), which crashes the page the
+  // moment client-side navigation lands here with a different ?tab= than
+  // the previous render. Every hook above now always runs; the tab check
+  // only decides what to render, same as the loadError branch below.
+  if (searchParams.get('tab') === 'recurring') return <RecurringPanel />
+  if (searchParams.get('tab') === 'availability') return <AvailabilityPanel />
 
   if (loadError) {
     return (

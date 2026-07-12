@@ -444,8 +444,12 @@ class QuoteEmailService:
             subtotal_val = subtotal if subtotal is not None else total_amount
             rate = float(tax_rate or 0)
 
-            # Render HTML template
-            template = Template(self.get_email_template())
+            # Render HTML template. autoescape=True — every value below is
+            # customer/admin-typed free text (address, notes, item names,
+            # terms) rendered into an HTML email; without escaping, a "<" in
+            # any of them breaks the layout and a crafted submission could
+            # inject phishing markup into an email this account sends.
+            template = Template(self.get_email_template(), autoescape=True)
             html_content = template.render(
                 company_name=self.company_name,
                 company_logo_url=self.company_logo_url,

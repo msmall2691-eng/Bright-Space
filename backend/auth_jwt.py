@@ -5,13 +5,9 @@ Uses bcrypt with 72-byte truncation (bcrypt's hard limit).
 
 import bcrypt
 import jwt
-import logging
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-
-logger = logging.getLogger(__name__)
 
 # BB-SEC-03: previously defaulted to the literal "change-me-in-production",
 # which silently signed JWTs with a public, attacker-known value any time
@@ -19,20 +15,25 @@ logger = logging.getLogger(__name__)
 # branches). With that value, an attacker could forge tokens for any user_id
 # and role, including role="admin".
 #
-# Now: if JWT_SECRET isn't set we mint a random per-process secret. Tokens
-# signed with it become invalid on every restart, which is correct for an
-# unconfigured environment — it nudges the operator to set JWT_SECRET if
-# they want stable sessions, and the public default literal never escapes.
+# A later fix minted a random per-process secret instead of the public
+# literal — better, but wrong in a different way once the deploy runs
+# multiple uvicorn workers (railway.json's --workers 4): this module is
+# imported independently in EACH worker process, so each one would mint its
+# OWN random secret. A token signed by the worker that handled login fails
+# to verify on whichever worker handles the next request, showing up as
+# random, intermittent logouts. There's no way to make "unset" both safe
+# and stable across workers, so this is a hard failure instead — the
+# environment must set JWT_SECRET before the app can start at all.
 _env_secret = os.getenv("JWT_SECRET", "").strip()
-if _env_secret:
-    SECRET_KEY = _env_secret
-else:
-    SECRET_KEY = secrets.token_urlsafe(48)
-    logger.critical(
-        "[auth_jwt] JWT_SECRET is not set. Generated a random per-process "
-        "secret; all JWT sessions will be invalidated on every restart. "
-        "Set JWT_SECRET in the environment for stable sessions."
+if not _env_secret:
+    raise RuntimeError(
+        "JWT_SECRET is not set. Refusing to start: a random per-process "
+        "secret would sign tokens that only verify on whichever worker "
+        "process issued them, causing random logouts under Railway's "
+        "multi-worker deploy. Set JWT_SECRET in the environment "
+        "(e.g. `openssl rand -base64 48`) and redeploy."
     )
+SECRET_KEY = _env_secret
 
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24

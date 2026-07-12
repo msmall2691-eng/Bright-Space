@@ -104,7 +104,12 @@ export default function CalendarView({
   useEffect(() => { draggingJobRef.current = draggingJob }, [draggingJob])
 
   const isMobile = useIsMobile()
-  const today = toLocalYMD(now)
+  // Real "today" for the isToday highlight + "checkout today" badge — NOT
+  // derived from `now` (which is anchorDate once the parent passes one).
+  // Deriving it from the anchor meant that after navigating to a different
+  // month, the highlighted "today" cell silently became "whatever day of
+  // the month the anchor is on" instead of the actual current date.
+  const today = toLocalYMD(new Date())
 
   const firstDay = new Date(year, month, 1)
   const lastDay  = new Date(year, month + 1, 0)
@@ -270,10 +275,15 @@ export default function CalendarView({
     else { setMonth(m => m + 1); _emitMonth(year, month + 1) }
   }
   const goToday = () => {
-    setYear(now.getFullYear())
-    setMonth(now.getMonth())
-    setSelected(today)
-    _emitMonth(now.getFullYear(), now.getMonth())
+    // Same bug as the `today` highlight above: `now` tracks anchorDate, not
+    // the real current date, so this used to jump back to the anchor's
+    // month/day instead of today's — i.e. the button did nothing once you'd
+    // navigated away. Compute the real date fresh at click time.
+    const real = new Date()
+    setYear(real.getFullYear())
+    setMonth(real.getMonth())
+    setSelected(toLocalYMD(real))
+    _emitMonth(real.getFullYear(), real.getMonth())
   }
 
   // Also stable (see below) so MonthDayCell's memo isn't defeated by a
