@@ -4,6 +4,7 @@ import { get, post, put, del } from '../../api'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import { toast } from '../../utils/toastBus'
+import { confirmDialog } from '../../utils/confirmBus'
 import EndsPicker from './EndsPicker'
 
 /** Two self-contained tab views for the Schedule page.
@@ -245,7 +246,7 @@ export function AvailabilityPanel() {
   }
 
   const remove = async (id) => {
-    if (!confirm('Remove this time-off entry?')) return
+    if (!(await confirmDialog('Remove this time-off entry?'))) return
     try {
       await del(`/api/jobs/time-off/${id}`)
       setEntries(entries.filter(e => e.id !== id))

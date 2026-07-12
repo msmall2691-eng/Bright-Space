@@ -24,6 +24,7 @@ import {
 } from '../components/client/constants'
 import { del, get, post, patch } from "../api"
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
@@ -210,7 +211,7 @@ export default function ClientProfile() {
   }
 
   const deleteProp = async (propId) => {
-    if (!confirm('Remove this property?')) return
+    if (!(await confirmDialog('Remove this property?'))) return
     await del(`/api/properties/${propId}`)
     await load()
   }
@@ -271,7 +272,7 @@ export default function ClientProfile() {
   }
 
   const removeIcal = async (propId, icalId) => {
-    if (!confirm('Remove this calendar feed?')) return
+    if (!(await confirmDialog('Remove this calendar feed?'))) return
     try {
       await del(`/api/properties/${propId}/icals/${icalId}`)
       const props = await reloadProperties()

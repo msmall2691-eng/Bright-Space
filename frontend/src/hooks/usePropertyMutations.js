@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
 import { del, patch, post } from '../api'
+import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Server-side mutations for the Properties page.
  *
@@ -39,7 +41,7 @@ export function usePropertyMutations({ load }) {
       await load()
       return { ok: true }
     } catch (e) {
-      alert('Error saving property: ' + e.message)
+      toast.error('Error saving property: ' + e.message)
       return { ok: false, error: e }
     } finally {
       setSaving(false)
@@ -58,18 +60,18 @@ export function usePropertyMutations({ load }) {
       await load()
       return { ok: true }
     } catch (e) {
-      alert('Error adding iCal: ' + e.message)
+      toast.error('Error adding iCal: ' + e.message)
       return { ok: false, error: e }
     }
   }, [load])
 
   const removeIcal = useCallback(async (propId, icalId) => {
-    if (!confirm('Remove this iCal URL?')) return
+    if (!(await confirmDialog('Remove this iCal URL?'))) return
     try {
       await del(`/api/properties/${propId}/icals/${icalId}`)
       await load()
     } catch (e) {
-      alert('Error removing iCal: ' + e.message)
+      toast.error('Error removing iCal: ' + e.message)
     }
   }, [load])
 
@@ -128,7 +130,11 @@ export function usePropertyMutations({ load }) {
   const bulkDelete = useCallback(async ({ ids, hardDelete }) => {
     if (ids.length === 0) return { ok: false, reason: 'empty' }
     const verb = hardDelete ? 'permanently delete' : 'archive'
-    if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be soft-archived (active=false).'} `)) {
+    const confirmed = await confirmDialog(
+      `${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} propert${ids.length === 1 ? 'y' : 'ies'}? ${hardDelete ? 'This removes them from the database entirely.' : 'They will be soft-archived (active=false).'} `,
+      { confirmLabel: verb[0].toUpperCase() + verb.slice(1), danger: hardDelete }
+    )
+    if (!confirmed) {
       return { ok: false, reason: 'cancelled' }
     }
     setBulkDeleting(true)
@@ -138,12 +144,12 @@ export function usePropertyMutations({ load }) {
       } else {
         const results = await Promise.allSettled(ids.map(id => del(`/api/properties/${id}`)))
         const failed = results.filter(r => r.status === 'rejected').length
-        if (failed > 0) alert(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+        if (failed > 0) toast.error(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
       }
       await load()
       return { ok: true }
     } catch (e) {
-      alert('Bulk delete failed: ' + (e?.message || 'unknown'))
+      toast.error('Bulk delete failed: ' + (e?.message || 'unknown'))
       return { ok: false, error: e }
     } finally {
       setBulkDeleting(false)

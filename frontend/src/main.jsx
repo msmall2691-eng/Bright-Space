@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import GlobalToasts from './components/ui/GlobalToasts'
+import GlobalConfirmDialog from './components/ui/GlobalConfirmDialog'
 import './index.css'
 import { applyTheme } from './theme'
 
@@ -43,6 +44,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           error-toast safety net works on every route (login, public /quote
           and /pay, the loading splash), not just the authenticated shell. */}
       <GlobalToasts />
+      <GlobalConfirmDialog />
     </BrowserRouter>
   </React.StrictMode>
 )

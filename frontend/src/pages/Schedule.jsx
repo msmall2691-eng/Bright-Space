@@ -7,6 +7,7 @@ import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
 import CalendarView from '../components/CalendarView'
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import AgendaDay from '../components/schedule/AgendaDay'
 import AgendaHero from '../components/schedule/AgendaHero'
 import DispatchBoard from '../components/schedule/DispatchBoard'
@@ -182,7 +183,7 @@ export default function Schedule() {
   }, [showDetails, selectedVisit?.job?.id])
 
   const handleDelete = async (visitId) => {
-    if (!confirm('Delete this visit?')) return
+    if (!(await confirmDialog('Delete this visit?'))) return
     try {
       // Job/Visit unification (PR-B): occurrences are the Job row itself now.
       // The visits list still uses `id` as the visit id; when the row is a

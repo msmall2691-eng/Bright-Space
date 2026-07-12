@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { del, get, patch, post, upload } from '../api'
 import { EMPTY } from '../components/clients/constants'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Owns every server-hitting mutation on the Clients list page:
  *  save / delete a single client (with optimistic status inline-edit
@@ -97,14 +98,14 @@ export function useClientMutations({
   }
 
   const deleteClient = async (id) => {
-    if (!confirm('Delete this client?')) return
+    if (!(await confirmDialog('Delete this client?', { confirmLabel: 'Delete', danger: true }))) return
     await del(`/api/clients/${id}`); await load(); setShowForm(false); resetPhones()
   }
 
   const bulkDelete = async () => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
-    if (!confirm(`Delete ${ids.length} client${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    if (!(await confirmDialog(`Delete ${ids.length} client${ids.length === 1 ? '' : 's'}? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return
     setBulkDeleting(true)
     try {
       const results = await Promise.allSettled(ids.map(id => del(`/api/clients/${id}`)))

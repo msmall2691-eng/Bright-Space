@@ -11,6 +11,8 @@ import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
+import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 
 const SERVICE_TYPE_CONFIG = {
   residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home },
@@ -319,7 +321,7 @@ export default function Requests() {
   // eyeball what they're removing.
   const handleDelete = async (intake) => {
     const label = intake.name || intake.email || intake.phone || `Request #${intake.id}`
-    if (!confirm(`Permanently delete "${label}"? This can't be undone — Archive keeps it in the "Archived" filter instead.`)) return
+    if (!(await confirmDialog(`Permanently delete "${label}"? This can't be undone — Archive keeps it in the "Archived" filter instead.`, { confirmLabel: 'Delete', danger: true }))) return
     try {
       await del(`/api/intake/${intake.id}`)
       setRequests(prev => prev.filter(r => r.id !== intake.id))
@@ -339,7 +341,7 @@ export default function Requests() {
       }
     } catch (err) {
       console.error('[Requests] Delete failed:', err)
-      alert('Delete failed. See console for details.')
+      toast.error('Delete failed. See console for details.')
     }
   }
 
@@ -360,7 +362,7 @@ export default function Requests() {
   const bulkArchive = async () => {
     const ids = Array.from(selectedIntakes)
     if (ids.length === 0) return
-    if (!confirm(`Archive ${ids.length} lead${ids.length === 1 ? '' : 's'}? You can still find them under the Archived filter.`)) return
+    if (!(await confirmDialog(`Archive ${ids.length} lead${ids.length === 1 ? '' : 's'}? You can still find them under the Archived filter.`, { confirmLabel: 'Archive' }))) return
     setBulkArchiving(true)
     try {
       const results = await Promise.allSettled(
@@ -370,7 +372,7 @@ export default function Requests() {
       const archived = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'))
       setRequests(requests.filter(r => !archived.has(r.id)))
       clearIntakeSelection()
-      if (failed > 0) alert(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
+      if (failed > 0) toast.error(`Archived ${ids.length - failed} of ${ids.length}. ${failed} failed.`)
     } finally {
       setBulkArchiving(false)
     }

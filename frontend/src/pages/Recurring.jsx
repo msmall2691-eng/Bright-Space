@@ -10,6 +10,7 @@ import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
 
@@ -606,7 +607,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     } finally { setBusy('') }
   }
   const cancelSeries = async () => {
-    if (!confirm('Cancel this recurring series? Existing scheduled jobs stay on the calendar; no new ones will be generated.')) return
+    if (!(await confirmDialog('Cancel this recurring series? Existing scheduled jobs stay on the calendar; no new ones will be generated.', { confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true }))) return
     setBusy('delete')
     try {
       await del(`/api/recurring/${id}`)
@@ -619,7 +620,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     }
   }
   const undoException = async (ex) => {
-    if (!confirm(`Undo the ${ex.exception_type} on ${ex.exception_date}?`)) return
+    if (!(await confirmDialog(`Undo the ${ex.exception_type} on ${ex.exception_date}?`, { confirmLabel: 'Undo' }))) return
     try {
       await del(`/api/recurring/${id}/exceptions/${ex.id}`)
       await load(); onChanged?.()

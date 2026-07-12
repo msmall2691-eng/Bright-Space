@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AlertTriangle, ChevronDown, Loader2, RefreshCw, Trash2, Zap } from 'lucide-react'
 import { post } from '../../api'
+import { confirmDialog } from '../../utils/confirmBus'
 import { inp, lbl } from './constants'
 
 /** Danger Zone — collapsed by default at the bottom of the General tab.
@@ -43,7 +44,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
       toast('Select at least one option', 'error')
       return
     }
-    if (!confirm('This will detach BrightBase from Google Calendar and disable iCal feeds. Local jobs/visits/properties remain. Continue?')) return
+    if (!(await confirmDialog('This will detach BrightBase from Google Calendar and disable iCal feeds. Local jobs/visits/properties remain. Continue?', { confirmLabel: 'Unlink', danger: true }))) return
     setUnlinking(true)
     setUnlinkResult(null)
     try {
@@ -69,7 +70,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
   const [resetResult, setResetResult] = useState(null)
   const runResetData = async () => {
     if (resetConfirmText !== 'RESET') return
-    if (!confirm('This will permanently delete ALL clients, properties, jobs, visits, quotes, invoices, conversations, messages, leads, opportunities, and activities. Users and settings are preserved. Continue?')) return
+    if (!(await confirmDialog('This will permanently delete ALL clients, properties, jobs, visits, quotes, invoices, conversations, messages, leads, opportunities, and activities. Users and settings are preserved. Continue?', { confirmLabel: 'Reset all data', danger: true }))) return
     setResetting(true)
     setResetResult(null)
     try {

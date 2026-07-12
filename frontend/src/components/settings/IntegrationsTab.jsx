@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import GoogleAccountCard from '../GoogleAccountCard'
 import { get, post } from '../../api'
+import { confirmDialog } from '../../utils/confirmBus'
 
 /** Integrations tab — the "connect BrightBase to Google / your phone /
  *  external tools" hub, reorganized into two sections:
@@ -73,7 +74,7 @@ export default function IntegrationsTab({ toast, active }) {
   }
 
   const disconnectConnecteam = async () => {
-    if (!window.confirm('Disconnect Connecteam? Bright Space will stop pushing shifts until you re-add the API key.')) return
+    if (!(await confirmDialog('Disconnect Connecteam? Bright Space will stop pushing shifts until you re-add the API key.', { confirmLabel: 'Disconnect', danger: true }))) return
     setCtSaving(true)
     try {
       const r = await post('/api/settings/connecteam', { api_key: '', company_id: '' })
@@ -138,7 +139,7 @@ export default function IntegrationsTab({ toast, active }) {
   }
 
   const pushScheduleToConnecteam = async () => {
-    if (!window.confirm('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?')) return
+    if (!(await confirmDialog('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?', { confirmLabel: 'Push' }))) return
     setCtPushing(true)
     try {
       const kicked = await post('/api/settings/connecteam/push-open-shifts', {})

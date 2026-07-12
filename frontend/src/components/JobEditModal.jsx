@@ -5,6 +5,7 @@ import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
 import { isoDateToBackendDow } from '../utils/recurringReschedule'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively.
  *  Connecteam returns shapes like { userId, firstName, lastName, displayName }
@@ -168,7 +169,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       setScopeDialog('delete')
       return
     }
-    if (!window.confirm('Delete this job? This permanently removes it and its Google Calendar event.')) return
+    if (!(await confirmDialog('Delete this job? This permanently removes it and its Google Calendar event.', { confirmLabel: 'Delete', danger: true }))) return
     setRemoving(true)
     setError('')
     try {
@@ -204,7 +205,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // updated/removed by the backend on the status change).
   const handleCancelJob = async () => {
     if (!job?.id) return
-    if (!window.confirm('Cancel this job? It will be marked cancelled.')) return
+    if (!(await confirmDialog('Cancel this job? It will be marked cancelled.', { confirmLabel: 'Cancel job', danger: true }))) return
     setRemoving(true)
     setError('')
     const prevStatus = job.status
