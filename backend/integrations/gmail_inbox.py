@@ -142,6 +142,49 @@ def _get_credentials():
         return SMTP_USER, SMTP_PASS, IMAP_HOST, IMAP_PORT, "smtp.gmail.com", 587
 
 
+LAST_SYNCED_SETTING_KEY = "gmail_inbox_last_synced_at"
+
+
+def get_last_synced_at():
+    """ISO date the shared IMAP inbox was last successfully scanned through,
+    or None if it's never run (or the DB isn't reachable — same fail-open-
+    to-old-behavior pattern as _get_credentials).
+
+    Backs the cursor fix for audit finding #3: fetch_inbox used to only ever
+    look at the last max_results*3 messages by IMAP sequence number, so a
+    burst of more than that between sync ticks silently skipped anything
+    older than the cutoff — including a real lead."""
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == LAST_SYNCED_SETTING_KEY).first()
+            return row.value if row and row.value else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
+def set_last_synced_at(value: str) -> None:
+    try:
+        from database.db import SessionLocal
+        from database.models import AppSetting
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == LAST_SYNCED_SETTING_KEY).first()
+            if row:
+                row.value = value
+            else:
+                db.add(AppSetting(key=LAST_SYNCED_SETTING_KEY, value=value))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Could not persist {LAST_SYNCED_SETTING_KEY}: {e}")
+
+
 def _connect():
     """Create and authenticate IMAP connection using DB or env credentials.
 
@@ -160,10 +203,19 @@ def _connect():
     return mail
 
 
-def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
+def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True, since=None):
     """
     Fetch recent emails from Gmail inbox via IMAP.
     Returns list of parsed email dicts sorted newest-first.
+
+    since: an ISO date string (e.g. "2026-07-01"). When given, uses IMAP's
+    native SINCE search instead of "last N by sequence number" — a burst of
+    more than max_results*3 messages between sync ticks used to silently
+    skip anything older than that cutoff, which could be a real lead (audit
+    finding #3). IMAP's SINCE is date-granular (whole days, not a
+    timestamp), so callers should keep re-supplying the SAME day's date on
+    every tick within that day rather than advancing hourly — downstream
+    Message-ID dedup makes re-scanning idempotent, so the overlap is free.
     """
     user, passwd, host, port, _, _ = _get_credentials()
     if not user or not passwd:
@@ -174,13 +226,26 @@ def fetch_inbox(max_results=30, folder="INBOX", skip_automated=True):
         mail = _connect()
         mail.select(folder, readonly=True)
 
-        status, data = mail.search(None, "ALL")
+        search_criteria = "ALL"
+        if since:
+            try:
+                since_date = datetime.fromisoformat(since).date()
+                search_criteria = f'(SINCE "{since_date.strftime("%d-%b-%Y")}")'
+            except ValueError:
+                logger.warning(f"Gmail IMAP: bad 'since' cursor {since!r}, scanning ALL instead")
+
+        status, data = mail.search(None, search_criteria)
         if status != "OK" or not data[0]:
             mail.close(); mail.logout()
             return []
 
         message_ids = data[0].split()
+        # A cursor-bounded search is already scoped by date server-side, so
+        # widen the client-side cap well past the old fixed window instead
+        # of re-imposing the same "only the last N" truncation on top of it.
         fetch_count = max_results * 3 if skip_automated else max_results
+        if since:
+            fetch_count = max(fetch_count, min(len(message_ids), 500))
         latest_ids = message_ids[-fetch_count:]
 
         emails = []

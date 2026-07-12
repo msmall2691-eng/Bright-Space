@@ -57,6 +57,13 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   useEffect(() => {
     const backgroundPoll = isBackgroundPollRef.current
     isBackgroundPollRef.current = false
+    // Fast week-to-week navigation can have two loadSchedule() calls in
+    // flight at once; whichever resolves LAST used to win regardless of
+    // which range it was actually fetching, so a slow response for the
+    // week you just left could overwrite the week you navigated to. This
+    // flag (same pattern as the integration-events effect above) makes a
+    // superseded run's result a no-op instead.
+    let cancelled = false
     const loadSchedule = async () => {
       if (!backgroundPoll) {
         setLoading(true)
@@ -75,6 +82,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
             `/api/schedule/week?scheduled_date_from=${start}&scheduled_date_to=${end}`
           )
         } catch (e) {
+          if (cancelled) return
           // Total failure (timeout / server down): surface a retryable error
           // rather than rendering an empty week — but only for a real
           // (non-background-poll) load. A poll failing is just a transient
@@ -87,6 +95,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
           }
           return
         }
+        if (cancelled) return
         const jobsMap = {}
         const propsMap = {}
         const clientsMap = {}
@@ -107,11 +116,12 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
       } catch (err) {
         console.error('[Schedule]', err)
       }
-      if (!backgroundPoll) setLoading(false)
+      if (!cancelled && !backgroundPoll) setLoading(false)
     }
     loadSchedule()
     // rangeKey is the primitive string form of `range` so React can compare
     // it cheaply; refreshKey lets refresh() re-fire without a range change.
+    return () => { cancelled = true }
   }, [rangeKey, refreshKey])
 
   const refresh = () => setRefreshKey(k => k + 1)

@@ -18,6 +18,33 @@ from utils.dates import business_today
 router = APIRouter()
 
 
+def _release_sync_links(db: Session, job: Job) -> None:
+    """Delete a job's linked Google Calendar event + Connecteam shift when
+    cancelling/detaching it (audit finding #2, July 2026): every recurring
+    cancellation path below used to just set status='cancelled' and clear
+    recurring_schedule_id, leaving the old GCal event and Connecteam shift
+    in place. Regeneration then created NEW events/shifts for the same slot
+    under the new rule, so cleaners kept stale Connecteam shifts for
+    skipped/moved/superseded visits and the calendar showed both the old and
+    new occurrence. Mirrors modules.scheduling.router.delete_job's cleanup —
+    best-effort, never raises, so a sync hiccup can't block the cancellation
+    itself (the reconcile sweep catches anything left over)."""
+    if job.gcal_event_id:
+        try:
+            from integrations.google_calendar import delete_event
+            if delete_event(job.gcal_event_id, job.job_type or "residential",
+                            owner_account_id=getattr(job, "gcal_account_id", None)):
+                job.gcal_event_id = None
+        except Exception as e:
+            logger.warning(f"GCal delete failed for job {job.id}: {e}")
+    if job.connecteam_shift_ids:
+        try:
+            from integrations.connecteam_auto import remove_job_from_connecteam
+            remove_job_from_connecteam(db, job, commit=False)
+        except Exception as e:
+            logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
+
+
 def _get_schedule_or_404(db: Session, schedule_id: int, org_id: int) -> RecurringSchedule:
     """Fetch a RecurringSchedule scoped to the caller's org, 404 otherwise.
 
@@ -784,6 +811,7 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
         j.status = "cancelled"
         j.recurring_schedule_id = None
         j.notes = (j.notes or "") + "\n[Superseded by an updated recurring schedule]"
+        _release_sync_links(db, j)
         removed += 1
     if removed:
         db.flush()
@@ -933,6 +961,7 @@ def split_schedule(schedule_id: int, data: ScheduleSplit, db: Session = Depends(
         j.status = "cancelled"
         j.recurring_schedule_id = None
         j.notes = (j.notes or "") + "\n[Superseded by a series split]"
+        _release_sync_links(db, j)
     db.commit()
     db.refresh(new_sched)
 
@@ -995,6 +1024,7 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     job.status = "cancelled"
     if reason:
         job.notes = (job.notes or "") + f"\n[Skipped via exception: {reason}]"
+    _release_sync_links(db, job)
 
 
 @router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])

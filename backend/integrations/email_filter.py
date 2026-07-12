@@ -211,6 +211,30 @@ def is_reply_to_our_thread(email: dict) -> bool:
     return False
 
 
+def should_thread_inbound_email(email: dict) -> bool:
+    """True if this inbound email belongs in the unified Comms inbox at all,
+    independent of whether it also qualifies to auto-create a Client.
+
+    Only excludes on DEFINITIVE automated/bulk signals — a blocked sender
+    (is_spam_sender) or bulk-mail headers (is_bulk_mail) — never on content
+    classification. A message that doesn't happen to mention "cleaning" is
+    still a real human until proven otherwise; evaluate_inbound_email's
+    content heuristics decide whether to auto-create a Client, not whether
+    the message is allowed to exist in BrightBase at all.
+
+    (Audit finding #3, July 2026: unknown senders that failed the keyword
+    classifier weren't threaded into Conversations at all — a message like
+    "Hi, are you free Tuesday? We met at the market" created nothing, and
+    was only ever a log line in Railway. This function is the fix's other
+    half: it decouples "worth showing in the inbox" from "worth
+    auto-creating a lead for.")
+    """
+    addr = (email.get("from_email") or "").strip()
+    if not addr:
+        return False
+    return not (is_spam_sender(addr) or is_bulk_mail(email))
+
+
 def evaluate_inbound_email(email: dict) -> tuple[bool, str]:
     """Decide whether an inbound email should auto-create a Client, with a reason.
 

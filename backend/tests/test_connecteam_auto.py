@@ -133,3 +133,88 @@ def test_resync_replaces_shifts(monkeypatch):
     out = ca.resync_job(FakeDB(), job)
     assert job.connecteam_shift_ids == ["new_emp_a", "new_emp_b"]
     assert out["dispatched"] is True
+
+
+def test_dispatch_stamps_synced_schedule_snapshot(monkeypatch):
+    """auto_dispatch_job must record what it just pushed so drift-detection
+    has a baseline to compare against later."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_shift_sync", lambda **k: {"id": f"shift_{k['employee_id']}"})
+    job = _job()
+    ca.auto_dispatch_job(FakeDB(), job)
+    assert job.connecteam_synced_schedule == {
+        "scheduled_date": "2026-06-20", "start_time": "09:00", "end_time": "11:00",
+    }
+
+
+# ---------------------------------------------------------------------------
+# reconcile_connecteam_drift — the reconcile-sweep drift repair (audit #2, #4)
+# ---------------------------------------------------------------------------
+
+def _synced_job(**over):
+    """A job that already has a live Connecteam shift, with a matching
+    synced-schedule baseline unless overridden."""
+    base = _job(connecteam_shift_ids=["shift_1"], dispatched=True,
+                connecteam_synced_schedule={
+                    "scheduled_date": "2026-06-20", "start_time": "09:00", "end_time": "11:00",
+                })
+    for k, v in over.items():
+        setattr(base, k, v)
+    return base
+
+
+def test_reconcile_drift_skips_jobs_with_no_shifts(monkeypatch):
+    monkeypatch.setattr(ca, "resync_job", lambda *a, **k: pytest.fail("should not resync"))
+    monkeypatch.setattr(ca, "remove_job_from_connecteam", lambda *a, **k: pytest.fail("should not remove"))
+    job = _job(connecteam_shift_ids=[])
+    out = ca.reconcile_connecteam_drift(FakeDB(), [job])
+    assert out == {"resynced": 0, "removed": 0, "errors": []}
+
+
+def test_reconcile_drift_removes_shifts_from_cancelled_job(monkeypatch):
+    job = _synced_job(status="cancelled")
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "delete_shift_sync", lambda sid: None)
+
+    out = ca.reconcile_connecteam_drift(FakeDB(), [job])
+
+    assert out["removed"] == 1 and out["resynced"] == 0
+    assert job.connecteam_shift_ids == []
+    assert job.connecteam_synced_schedule is None
+
+
+def test_reconcile_drift_resyncs_job_with_time_drift(monkeypatch):
+    # Job's actual time (11:00-13:00) no longer matches what was pushed (09:00-11:00).
+    job = _synced_job(start_time="11:00", end_time="13:00")
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "delete_shift_sync", lambda sid: None)
+    monkeypatch.setattr(ca, "create_shift_sync", lambda **k: {"id": f"new_{k['employee_id']}"})
+
+    out = ca.reconcile_connecteam_drift(FakeDB(), [job])
+
+    assert out["resynced"] == 1 and out["removed"] == 0
+    assert job.connecteam_shift_ids == ["new_emp_a", "new_emp_b"]
+    assert job.connecteam_synced_schedule == {
+        "scheduled_date": "2026-06-20", "start_time": "11:00", "end_time": "13:00",
+    }
+
+
+def test_reconcile_drift_no_op_when_schedule_matches(monkeypatch):
+    job = _synced_job()  # synced_schedule already matches current schedule
+    monkeypatch.setattr(ca, "resync_job", lambda *a, **k: pytest.fail("should not resync"))
+    monkeypatch.setattr(ca, "remove_job_from_connecteam", lambda *a, **k: pytest.fail("should not remove"))
+
+    out = ca.reconcile_connecteam_drift(FakeDB(), [job])
+    assert out == {"resynced": 0, "removed": 0, "errors": []}
+
+
+def test_reconcile_drift_no_op_without_a_synced_baseline(monkeypatch):
+    """A job with shift ids but no recorded synced_schedule (legacy data from
+    before this snapshot existed) has no baseline to compare against — must
+    not be treated as drifted just because the field is empty."""
+    job = _job(connecteam_shift_ids=["shift_1"], dispatched=True,
+               connecteam_synced_schedule=None)
+    monkeypatch.setattr(ca, "resync_job", lambda *a, **k: pytest.fail("should not resync"))
+
+    out = ca.reconcile_connecteam_drift(FakeDB(), [job])
+    assert out == {"resynced": 0, "removed": 0, "errors": []}
