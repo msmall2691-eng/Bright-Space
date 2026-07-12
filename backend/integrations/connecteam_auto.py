@@ -30,6 +30,16 @@ def _shift_times(job):
             f"{job.scheduled_date}T{job.end_time}:00")
 
 
+def _job_schedule_snapshot(job) -> dict:
+    """The bits of a job's schedule that determine what time its Connecteam
+    shift(s) represent — comparable snapshot for drift detection."""
+    return {
+        "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None,
+        "start_time": str(job.start_time) if job.start_time else None,
+        "end_time": str(job.end_time) if job.end_time else None,
+    }
+
+
 def _matched_job_id(db, job) -> str:
     """Resolve ``job`` (a Bright Space Job) to a Connecteam Job id by matching
     the property name, falling back to the client name, against the cached
@@ -103,6 +113,10 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
     if shift_ids:
         job.dispatched = True
         job.connecteam_shift_ids = shift_ids
+        # Snapshot what we just pushed so the reconcile sweep can later tell
+        # "the job's schedule changed since this shift went out" (drift) —
+        # there's no Connecteam read API to ask the shift itself.
+        job.connecteam_synced_schedule = _job_schedule_snapshot(job)
 
     if commit:
         try:
@@ -169,3 +183,51 @@ def resync_job(db, job) -> dict:
     """
     remove_job_from_connecteam(db, job, commit=False)
     return auto_dispatch_job(db, job, commit=True)
+
+
+def reconcile_connecteam_drift(db, jobs) -> dict:
+    """Catch the two Connecteam-sync failure modes the create-only dispatch
+    path never repairs (audit findings #2 + #4, July 2026):
+
+    - **Orphaned-but-synced**: a job is cancelled/completed but still carries
+      connecteam_shift_ids — some cancellation path missed cleanup (or a
+      cleanup attempt failed earlier). Remove the stale shift(s).
+    - **Time drift**: a job's schedule changed since its shift was pushed.
+      This happens when a reschedule's delete-then-recreate (resync_job)
+      partially failed: remove_job_from_connecteam left the OLD shift in
+      place (some deletes are retried, not forced), and auto_dispatch_job
+      then refuses to push a new one because connecteam_shift_ids is
+      non-empty ("already_dispatched") — so the cleaner's shift silently
+      stays at the old time. Detected by comparing the job's current
+      schedule to the snapshot taken at the last successful push
+      (connecteam_synced_schedule) — there's no Connecteam read API to ask
+      the shift itself what time it's at.
+
+    ``jobs`` is caller-supplied (not queried here) so the reconcile tick and
+    the manual /sync-reconcile endpoint can each pick their own window
+    without this function needing to know about business_today() or status
+    filters — it only looks at jobs that already carry shift ids.
+    """
+    resynced, removed, errors = 0, 0, []
+    for job in jobs:
+        if not job.connecteam_shift_ids:
+            continue
+        if job.status in ("cancelled", "completed"):
+            st = remove_job_from_connecteam(db, job, commit=False)
+            if st.get("removed"):
+                job.connecteam_synced_schedule = None
+                removed += 1
+            errors.extend(st.get("errors") or [])
+            continue
+        current = _job_schedule_snapshot(job)
+        if job.connecteam_synced_schedule and job.connecteam_synced_schedule != current:
+            st = resync_job(db, job)
+            if st.get("dispatched"):
+                resynced += 1
+            errors.extend(st.get("errors") or [])
+    try:
+        db.commit()
+    except Exception as e:  # pragma: no cover
+        logger.warning("Connecteam drift-reconcile commit failed: %s", e)
+        db.rollback()
+    return {"resynced": resynced, "removed": removed, "errors": errors}
