@@ -474,7 +474,11 @@ def google_login_callback(request: Request, code: str = "", state: str = "", db:
 
     try:
         flow = build_login_flow(request, state=state)
-        flow.fetch_token(code=code)
+        # Bounded timeout — Flow.fetch_token forwards to requests_oauthlib,
+        # which (like bare `requests`) has no default timeout. A hung Google
+        # token endpoint would otherwise wedge this callback's worker
+        # indefinitely (T-20 Part A).
+        flow.fetch_token(code=code, timeout=10)
         creds = flow.credentials
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests
@@ -882,7 +886,11 @@ def google_account_callback(request: Request, code: str = "", state: str = "",
 
     try:
         flow = build_connect_flow(request, state=state)
-        flow.fetch_token(code=code)
+        # Bounded timeout — Flow.fetch_token forwards to requests_oauthlib,
+        # which (like bare `requests`) has no default timeout. A hung Google
+        # token endpoint would otherwise wedge this callback's worker
+        # indefinitely (T-20 Part A).
+        flow.fetch_token(code=code, timeout=10)
         creds = flow.credentials
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests

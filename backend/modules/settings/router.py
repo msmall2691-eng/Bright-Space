@@ -1,7 +1,7 @@
 """
 App Settings Router - email/IMAP credentials, integrations, etc.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -117,7 +117,10 @@ def test_email_connection(db: Session = Depends(get_db)):
     results = {"imap": None, "smtp": None, "email_count": 0}
 
     try:
-        mail = imaplib.IMAP4_SSL(imap_host, imap_port)
+        # Explicit timeout — the SMTP check below already had one; this bare
+        # IMAP4_SSL call didn't, so a hung IMAP host here could wedge the
+        # worker indefinitely (T-20 Part A).
+        mail = imaplib.IMAP4_SSL(imap_host, imap_port, timeout=10)
         mail.login(user, passwd)
         mail.select("INBOX", readonly=True)
         _, data = mail.search(None, "ALL")
@@ -617,10 +620,170 @@ class PushOpenShiftsBody(BaseModel):
     end_date: Optional[str] = None
 
 
-@router.post("/connecteam/push-open-shifts", dependencies=[Depends(require_role("admin", "manager"))])
-def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
-    """Push the Bright Space schedule to Connecteam as OPEN shifts (unassigned)
-    so cleaners can self-claim them.
+def _run_push_open_shifts(run_id: str, start, end) -> None:
+    """The actual bulk-push sweep (T-20 Part B). Runs as a background task —
+    NOT in the request's DB session, since that session is torn down once
+    the response is sent. Owns its own SessionLocal for the run's full
+    lifetime and updates the connecteam_push_runs row as it goes so
+    GET .../push-open-shifts/{run_id} always has something fresh to report,
+    regardless of which uvicorn worker serves the poll.
+    """
+    from datetime import datetime, timezone
+    from database.db import SessionLocal
+    from database.models import ConnecteamPushRun, Job
+    from integrations.connecteam import (
+        ConnecteamAuthError, build_shift_payload, create_shifts_sync,
+    )
+    from utils.integration_log import log_integration_event as _log
+
+    db = SessionLocal()
+    try:
+        run = db.query(ConnecteamPushRun).filter(ConnecteamPushRun.id == run_id).first()
+        if not run:
+            logger.warning(f"push_open_shifts: run {run_id} vanished before it could start")
+            return
+        run.status = "running"
+        db.commit()
+
+        jobs = (
+            db.query(Job)
+            .filter(
+                Job.scheduled_date >= start,
+                Job.scheduled_date <= end,
+                Job.status.notin_(["cancelled", "completed"]),
+            )
+            .order_by(Job.scheduled_date, Job.start_time)
+            .all()
+        )
+
+        # Build the bulk payload in one pass so we only hit Connecteam ONCE. The
+        # pre-Jul-4 loop did N sequential POSTs against Connecteam's per-shift
+        # endpoint which throttled at HTTP 429 "Too many requests" once you had
+        # more than a handful of jobs — Connecteam's scheduler API is bulk-first
+        # (up to 500 shifts in a single array body), and using it that way is
+        # the fix.
+        #
+        # sendable[i] is the shift payload we hand to Connecteam.
+        # job_by_index[i] is the Job that produced it. After the bulk call
+        # returns ids in submission order, we map back through job_by_index[i]
+        # to write connecteam_shift_ids on the right Job row.
+        pushed, skipped, errors = 0, 0, []
+        sendable = []
+        job_by_index = []
+        for job in jobs:
+            if job.connecteam_shift_ids:
+                skipped += 1
+                continue
+            if not job.scheduled_date or not job.start_time or not job.end_time:
+                skipped += 1
+                continue
+            sendable.append(build_shift_payload(
+                start_datetime=f"{job.scheduled_date}T{str(job.start_time)[:5]}:00",
+                end_datetime=f"{job.scheduled_date}T{str(job.end_time)[:5]}:00",
+                title=job.title,
+                address=job.address,
+                notes=job.notes,
+                open_shift=True,
+                # DRAFT, not published. Bright Space pushes the schedule as a
+                # draft so the office can review + adjust in Connecteam before
+                # making shifts visible to cleaners. Publishing is a one-click
+                # step on Connecteam's side.
+                is_published=False,
+            ))
+            job_by_index.append(job)
+
+        if sendable:
+            try:
+                ids = create_shifts_sync(sendable)
+            except ConnecteamAuthError:
+                # Auth failure means the API key is bad — every subsequent push will
+                # fail identically. Surface it as the run's terminal error so the
+                # operator gets one clear "rotate the key" signal.
+                run.status = "error"
+                run.error_message = "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again."
+                run.finished_at = datetime.now(timezone.utc)
+                db.commit()
+                return
+            except Exception as e:
+                # Whole bulk POST failed. Log full detail server-side + to the
+                # admin integration_events audit trail; the response surfaces only
+                # the exception class name plus (if it's an httpx.HTTPStatusError)
+                # Connecteam's HTTP status code and a truncated response body.
+                # Both are safe — CodeQL's exception-exposure concern was about
+                # OUR internal detail (URLs, auth), not the vendor's error text.
+                logger.warning(f"push_open_shifts: bulk create_shifts failed for {len(sendable)} jobs: {e}")
+                entry_common = {"error": type(e).__name__}
+                import httpx as _httpx
+                if isinstance(e, _httpx.HTTPStatusError) and e.response is not None:
+                    entry_common["status"] = e.response.status_code
+                    entry_common["body"] = (e.response.text or "")[:300]
+                # Attribute the failure to every job that was in the bulk batch,
+                # so the frontend toast can say "rejected N pushes" and count is
+                # accurate.
+                for job in job_by_index:
+                    errors.append({"job_id": job.id, **entry_common})
+                    _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                         action="create_open", status="failed", detail=str(e), commit=False)
+            else:
+                # Success path. Connecteam returns ids in submission order; if the
+                # count comes back short (rare — e.g. some validated out per-shift),
+                # we conservatively write only the ids we got, in order, and mark
+                # the remaining jobs as failed with "no shift id returned".
+                for i, job in enumerate(job_by_index):
+                    sid = ids[i] if i < len(ids) else ""
+                    if sid:
+                        job.connecteam_shift_ids = [sid]
+                        job.dispatched = True
+                        _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                             action="create_open", status="ok", external_id=sid, commit=False)
+                        pushed += 1
+                    else:
+                        errors.append({"job_id": job.id, "error": "no shift id returned"})
+                        _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                             action="create_open", status="failed",
+                             detail="no shift id returned", commit=False)
+
+        run.status = "done"
+        run.considered = len(jobs)
+        run.pushed = pushed
+        run.skipped = skipped
+        run.errors = errors
+        run.finished_at = datetime.now(timezone.utc)
+        try:
+            db.commit()
+        except Exception as e:
+            logger.warning(f"push_open_shifts commit failed: {e}")
+            db.rollback()
+    except Exception as e:
+        # Anything unexpected (DB hiccup, programming error) still needs to
+        # flip the run to a terminal state — otherwise a poller spins on
+        # "running" forever with no way to know it died.
+        logger.exception(f"push_open_shifts: run {run_id} crashed: {e}")
+        try:
+            run = db.query(ConnecteamPushRun).filter(ConnecteamPushRun.id == run_id).first()
+            if run:
+                run.status = "error"
+                run.error_message = f"{type(e).__name__}: {e}"
+                run.finished_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+
+
+@router.post("/connecteam/push-open-shifts", status_code=202,
+             dependencies=[Depends(require_role("admin", "manager"))])
+def push_open_shifts(body: PushOpenShiftsBody, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Kick off pushing the Bright Space schedule to Connecteam as OPEN shifts
+    (unassigned) so cleaners can self-claim them.
+
+    Runs asynchronously (T-20 Part B): this just validates the request,
+    writes a connecteam_push_runs row, and schedules the actual bulk-create
+    sweep as a background task, returning 202 + a run_id immediately. Poll
+    GET .../push-open-shifts/{run_id} for progress/result. The bulk POST to
+    Connecteam previously ran inline here and could block the request (and
+    on a single-worker deploy, every other request) for minutes.
 
     - Skips cancelled / completed jobs and anything already dispatched
       (connecteam_shift_ids populated) so re-clicking is idempotent.
@@ -628,13 +791,10 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
       integration event, matching the auto-dispatch path.
     - Defaults to today → today + 14 days when no range is provided.
     """
-    from integrations.connecteam import (
-        is_configured, ConnecteamAuthError,
-        build_shift_payload, create_shifts_sync,
-    )
-    from database.models import Job
-    from utils.integration_log import log_integration_event as _log
+    import uuid
     from datetime import date, timedelta
+    from database.models import ConnecteamPushRun
+    from integrations.connecteam import is_configured
 
     if not is_configured():
         raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Scheduler ID first.")
@@ -648,113 +808,36 @@ def push_open_shifts(body: PushOpenShiftsBody, db: Session = Depends(get_db)):
     if end < start:
         raise HTTPException(400, "end_date must be on or after start_date")
 
-    jobs = (
-        db.query(Job)
-        .filter(
-            Job.scheduled_date >= start,
-            Job.scheduled_date <= end,
-            Job.status.notin_(["cancelled", "completed"]),
-        )
-        .order_by(Job.scheduled_date, Job.start_time)
-        .all()
-    )
+    run_id = uuid.uuid4().hex
+    db.add(ConnecteamPushRun(id=run_id, status="queued", range_start=start, range_end=end))
+    db.commit()
 
-    # Build the bulk payload in one pass so we only hit Connecteam ONCE. The
-    # pre-Jul-4 loop did N sequential POSTs against Connecteam's per-shift
-    # endpoint which throttled at HTTP 429 "Too many requests" once you had
-    # more than a handful of jobs — Connecteam's scheduler API is bulk-first
-    # (up to 500 shifts in a single array body), and using it that way is
-    # the fix.
-    #
-    # sendable[i] is the shift payload we hand to Connecteam.
-    # job_by_index[i] is the Job that produced it. After the bulk call
-    # returns ids in submission order, we map back through job_by_index[i]
-    # to write connecteam_shift_ids on the right Job row.
-    pushed, skipped, errors = 0, 0, []
-    sendable = []
-    job_by_index = []
-    for job in jobs:
-        if job.connecteam_shift_ids:
-            skipped += 1
-            continue
-        if not job.scheduled_date or not job.start_time or not job.end_time:
-            skipped += 1
-            continue
-        sendable.append(build_shift_payload(
-            start_datetime=f"{job.scheduled_date}T{str(job.start_time)[:5]}:00",
-            end_datetime=f"{job.scheduled_date}T{str(job.end_time)[:5]}:00",
-            title=job.title,
-            address=job.address,
-            notes=job.notes,
-            open_shift=True,
-            # DRAFT, not published. Bright Space pushes the schedule as a
-            # draft so the office can review + adjust in Connecteam before
-            # making shifts visible to cleaners. Publishing is a one-click
-            # step on Connecteam's side.
-            is_published=False,
-        ))
-        job_by_index.append(job)
+    background_tasks.add_task(_run_push_open_shifts, run_id, start, end)
+    return {"run_id": run_id, "status": "queued", "range": {"start_date": str(start), "end_date": str(end)}}
 
-    if sendable:
-        try:
-            ids = create_shifts_sync(sendable)
-        except ConnecteamAuthError:
-            # Auth failure means the API key is bad — every subsequent push will
-            # fail identically. Bail with the same 401 the per-shift path used
-            # so the operator gets one clear "rotate the key" signal.
-            db.commit()
-            raise HTTPException(401, "Connecteam rejected the API key. Rotate CONNECTEAM_API_KEY and try again.")
-        except Exception as e:
-            # Whole bulk POST failed. Log full detail server-side + to the
-            # admin integration_events audit trail; the response surfaces only
-            # the exception class name plus (if it's an httpx.HTTPStatusError)
-            # Connecteam's HTTP status code and a truncated response body.
-            # Both are safe — CodeQL's exception-exposure concern was about
-            # OUR internal detail (URLs, auth), not the vendor's error text.
-            logger.warning(f"push_open_shifts: bulk create_shifts failed for {len(sendable)} jobs: {e}")
-            entry_common = {"error": type(e).__name__}
-            import httpx as _httpx
-            if isinstance(e, _httpx.HTTPStatusError) and e.response is not None:
-                entry_common["status"] = e.response.status_code
-                entry_common["body"] = (e.response.text or "")[:300]
-            # Attribute the failure to every job that was in the bulk batch,
-            # so the frontend toast can say "rejected N pushes" and count is
-            # accurate.
-            for job in job_by_index:
-                errors.append({"job_id": job.id, **entry_common})
-                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                     action="create_open", status="failed", detail=str(e), commit=False)
-        else:
-            # Success path. Connecteam returns ids in submission order; if the
-            # count comes back short (rare — e.g. some validated out per-shift),
-            # we conservatively write only the ids we got, in order, and mark
-            # the remaining jobs as failed with "no shift id returned".
-            for i, job in enumerate(job_by_index):
-                sid = ids[i] if i < len(ids) else ""
-                if sid:
-                    job.connecteam_shift_ids = [sid]
-                    job.dispatched = True
-                    _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                         action="create_open", status="ok", external_id=sid, commit=False)
-                    pushed += 1
-                else:
-                    errors.append({"job_id": job.id, "error": "no shift id returned"})
-                    _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                         action="create_open", status="failed",
-                         detail="no shift id returned", commit=False)
 
-    try:
-        db.commit()
-    except Exception as e:
-        logger.warning(f"push_open_shifts commit failed: {e}")
+@router.get("/connecteam/push-open-shifts/{run_id}", dependencies=[Depends(require_role("admin", "manager"))])
+def get_push_open_shifts_status(run_id: str, db: Session = Depends(get_db)):
+    """Poll the status of a push-open-shifts run started by the POST above."""
+    from database.models import ConnecteamPushRun
+
+    run = db.query(ConnecteamPushRun).filter(ConnecteamPushRun.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "Push run not found")
 
     return {
-        "ok": not errors or pushed > 0,
-        "pushed": pushed,
-        "skipped": skipped,
-        "considered": len(jobs),
-        "errors": errors,
-        "range": {"start_date": str(start), "end_date": str(end)},
+        "run_id": run.id,
+        "status": run.status,
+        "ok": run.status == "done" and (not run.errors or (run.pushed or 0) > 0),
+        "considered": run.considered or 0,
+        "pushed": run.pushed or 0,
+        "skipped": run.skipped or 0,
+        "errors": run.errors or [],
+        "error": run.error_message,
+        "range": {
+            "start_date": str(run.range_start) if run.range_start else None,
+            "end_date": str(run.range_end) if run.range_end else None,
+        },
     }
 
 
@@ -800,7 +883,9 @@ def google_callback(request: Request, code: str = "", state: str = "", db: Sessi
 
     try:
         flow = build_flow(request, state=state)
-        flow.fetch_token(code=code)
+        # Bounded timeout — same rationale as the auth-router callbacks: a
+        # hung Google token endpoint shouldn't wedge this worker forever.
+        flow.fetch_token(code=code, timeout=10)
         creds = flow.credentials
     except Exception as e:
         logger.warning(f"Google OAuth callback failed: {e}")

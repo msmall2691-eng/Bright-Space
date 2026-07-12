@@ -51,4 +51,12 @@ EXPOSE 8000
 # Memory headroom is huge (~300 MB per worker × 4 = ~1.2 GB well under the
 # Railway instance). Override via UVICORN_WORKERS env var if we ever need to
 # scale down (dev / staging).
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-4}"]
+#
+# --proxy-headers --forwarded-allow-ips="*": without this, every request
+# behind Railway's edge proxy shows up as the SAME client IP (the proxy's),
+# so ratelimit.py's per-IP limiter (login, /api/intake/submit,
+# /api/booking/submit) was actually a GLOBAL cap — one busy day or one bot
+# could 429 real website leads for everyone. "*" is safe here because the
+# container is only ever reached through Railway's own proxy layer, never
+# directly from the internet.
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-4} --proxy-headers --forwarded-allow-ips=\"*\""]

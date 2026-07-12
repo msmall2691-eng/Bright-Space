@@ -221,7 +221,12 @@ export default function App() {
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
               {/* Calendar dropped — native Schedule covers it (and syncs to GCal). */}
               <Route path="/calendar" element={<Navigate to="/schedule" replace />} />
-              <Route path="/dispatch" element={<Navigate to="/schedule?tab=dispatch" replace />} />
+              {/* Schedule reads the view mode from ?view=, not ?tab= (?tab=
+                  is reserved for recurring/availability) — this redirect
+                  used to send ?tab=dispatch, which Schedule.jsx silently
+                  ignored (it happened to still land on the dispatch board
+                  on desktop only because that's the default view there). */}
+              <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/comms" element={<Comms />} />
               <Route path="/properties" element={<Properties />} />

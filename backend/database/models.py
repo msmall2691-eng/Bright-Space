@@ -1121,6 +1121,35 @@ class IntegrationEvent(Base):
     created_at = Column(DateTime, default=_utcnow, index=True)
 
 
+class ConnecteamPushRun(Base):
+    """Tracks one "Push schedule → open shifts" sweep (T-20 Part B).
+
+    The endpoint used to run the whole bulk-create inline, blocking the
+    request for the entire Connecteam round trip — on Railway's single-worker
+    (now multi-worker) deploy that hung the UI for 3+ minutes with no
+    progress feedback. The POST now just creates this row and schedules the
+    work as a background task, returning immediately; the frontend polls
+    GET .../push-open-shifts/{run_id} for status.
+
+    Persisted rather than kept in an in-process dict because the app runs
+    multiple uvicorn workers — the POST that starts a run and the GET that
+    polls it can land on different worker processes, so only a DB row is
+    visible to both."""
+    __tablename__ = "connecteam_push_runs"
+
+    id = Column(String, primary_key=True)  # uuid4 hex — opaque run token
+    status = Column(String, nullable=False, default="queued")  # queued|running|done|error
+    range_start = Column(Date, nullable=True)
+    range_end = Column(Date, nullable=True)
+    considered = Column(Integer, default=0)
+    pushed = Column(Integer, default=0)
+    skipped = Column(Integer, default=0)
+    errors = Column(JSON, default=list)
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    finished_at = Column(DateTime, nullable=True)
+
+
 class SavedView(Base):
     """A user's saved list-view preset (Twenty's "views"): a named bundle of a
     list page's filters / sort / visible-columns / layout for one entity type.
