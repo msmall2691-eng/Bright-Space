@@ -49,6 +49,21 @@ class IntakeSubmit(BaseModel):
     idempotency_key: Optional[str] = None
 
 
+class ManualIntakeCreate(BaseModel):
+    """Staff-facing "+ New Request" form — manually adding a lead that came in
+    by phone, walk-in, referral, etc. Distinct from IntakeSubmit/`/submit`,
+    which is public, rate-limited, and defaults source="website"."""
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = "ME"
+    zip_code: Optional[str] = None
+    service_type: Optional[str] = "residential"
+    message: Optional[str] = None
+
+
 class IntakeUpdate(BaseModel):
     status: Optional[str] = None
     client_id: Optional[int] = None
@@ -144,6 +159,29 @@ def get_intakes(
     if priority:
         q = q.filter(LeadIntake.priority == priority)
     return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()]
+
+
+@router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def create_intake(data: ManualIntakeCreate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Staff manually adds a lead (the Requests page's "+ New Request" button).
+
+    Goes through the same canonical intake path as the public form
+    (build_intake + upsert_lead) so it gets the same dedup, estimate
+    computation, and Opportunity creation — just authenticated, unlimited,
+    and tagged source="manual" instead of "website".
+    """
+    payload = build_intake(
+        name=data.name, email=data.email, phone=data.phone, address=data.address,
+        city=data.city, state=data.state, zip_code=data.zip_code,
+        service_key=data.service_type, message=data.message, source="manual",
+    )
+    result = upsert_lead(db, payload)
+    intake = db.query(LeadIntake).filter(LeadIntake.id == result["intake_id"]).first()
+    if intake and not intake.org_id:
+        intake.org_id = resolve_org_id(org_id, db)
+        db.commit()
+        db.refresh(intake)
+    return intake_to_dict(intake)
 
 
 @router.get("/stats", dependencies=[Depends(require_role("admin", "manager"))])

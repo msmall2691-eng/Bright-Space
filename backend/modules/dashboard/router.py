@@ -243,13 +243,18 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
     # Joined via Invoice → Job so we can group by the actual delivered
     # service, not what was quoted. paid_at is authoritative here — an
     # invoice can be marked paid before its due_date rolls over.
+    # LEFT OUTER JOIN (not inner): Invoice.job_id is optional (invoices can be
+    # billed straight against a client/opportunity with no scheduled Job), and
+    # an inner join here silently dropped every such paid invoice from the
+    # 90-day total — "Revenue Paid" reading $0 despite real paid invoices.
     revenue_rows = (
         db.query(
             Job.job_type,
             func.count(Invoice.id),
             func.coalesce(func.sum(Invoice.total), 0.0),
         )
-        .join(Invoice, Invoice.job_id == Job.id)
+        .select_from(Invoice)
+        .outerjoin(Job, Invoice.job_id == Job.id)
         .filter(
             org_scope(Invoice),
             Invoice.status == "paid",

@@ -593,6 +593,7 @@ from fastapi import Query as _Query   # local alias to keep the existing `date` 
 def get_jobs(
     client_id: Optional[int] = None,
     property_id: Optional[int] = None,
+    recurring_schedule_id: Optional[int] = None,
     status: Optional[str] = None,
     date: Optional[str] = None,
     date_from: Optional[str] = None,
@@ -633,6 +634,8 @@ def get_jobs(
         q = q.filter(Job.client_id == client_id)
     if property_id:
         q = q.filter(Job.property_id == property_id)
+    if recurring_schedule_id:
+        q = q.filter(Job.recurring_schedule_id == recurring_schedule_id)
     if status:
         q = q.filter(Job.status == status)
     if date:
@@ -1974,14 +1977,24 @@ def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
     complete_job's dedicated endpoint) so invoicing doesn't depend on which
     UI the operator used to mark the job done."""
     try:
-        from database.models import Invoice, Quote
+        from database.models import Invoice, Quote, RecurringSchedule
         existing_inv = db.query(Invoice).filter(Invoice.job_id == job.id).first()
         if existing_inv:
             return
         # Pull line items + tax from the originating quote when the job came
         # from one (quotes are integer-keyed, matching Job.quote_id);
         # otherwise build a default single-line invoice.
+        #
+        # Recurring-generated jobs never carry their own quote_id (Job.quote_id
+        # is unique, and one schedule fans out into many jobs), so look up the
+        # *schedule's* quote instead — otherwise every recurring visit falls
+        # through to the $0 placeholder below even when the series was set up
+        # from a priced quote.
         quote = db.query(Quote).filter(Quote.id == job.quote_id).first() if job.quote_id else None
+        if not quote and job.recurring_schedule_id:
+            sched = db.query(RecurringSchedule).filter(RecurringSchedule.id == job.recurring_schedule_id).first()
+            if sched and sched.quote_id:
+                quote = db.query(Quote).filter(Quote.id == sched.quote_id).first()
         items = (quote.items if (quote and quote.items) else [{
             "name": job.title or "Cleaning",
             "qty": 1,

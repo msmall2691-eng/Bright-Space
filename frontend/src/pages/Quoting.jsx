@@ -132,9 +132,13 @@ export default function Quoting() {
 
   // Honor ?tab=quotes|leads|follow-ups (e.g. from the dashboard's tiles).
   useEffect(() => {
-    const t = new URLSearchParams(location.search).get('tab')
+    const sp = new URLSearchParams(location.search)
+    const t = sp.get('tab')
     if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
     else if (t === 'archived') { setTab('archived'); loadArchived() }
+    // Bare /billing?view=quotes (e.g. GlobalSearch "New quote", direct URL nav)
+    // carries no ?tab= — honor ?view= too so it doesn't fall back to Leads.
+    else if (sp.get('view') === 'quotes') setTab('quotes')
   }, [location.search])
 
   useEffect(() => {
