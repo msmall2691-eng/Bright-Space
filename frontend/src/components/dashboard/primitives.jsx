@@ -37,7 +37,7 @@ export function Tile({ icon: Icon, iconColor, title, badge, action, onAction, ch
       <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-hairline">
         <div className="flex items-center gap-2.5 min-w-0">
           {Icon && (
-            <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${CHIP[iconColor] || 'bg-blue-50 text-blue-600'}`}>
+            <span className={`bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 ${CHIP[iconColor] || 'bg-blue-50 text-blue-600'}`}>
               <Icon className="w-4 h-4" />
             </span>
           )}
@@ -61,7 +61,7 @@ export function KpiCard({ icon: Icon, chip, label, value, sub, accent }) {
     <div className={`${SOFT_CARD} p-4`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide truncate">{label}</span>
-        <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${chip}`}>
+        <span className={`bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 ${chip}`}>
           <Icon className="w-4 h-4" />
         </span>
       </div>

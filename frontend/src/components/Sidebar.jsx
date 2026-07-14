@@ -61,7 +61,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
         {/* Logo area */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-hairline">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-md">
+            <div className="bb-glow-accent w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-md">
               <Zap className="w-4 h-4 text-white" />
             </div>
             <div className="flex-1 min-w-0">
@@ -93,7 +93,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 className={({ isActive }) =>
                   `group relative flex items-center gap-3 px-3 py-2 mx-2 my-0.5 rounded-md transition-colors text-[13px] select-none ${
                     isActive
-                      ? 'bg-bg-2 text-ink font-semibold'
+                      ? 'bb-glow-accent bg-bg-2 text-ink font-semibold'
                       : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/60'
                   }`
                 }

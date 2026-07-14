@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle,
+  Trash2, MessageCircle, Inbox,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
 import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
+import PageHeader from '../components/ui/PageHeader'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -409,16 +410,19 @@ export default function Requests() {
   return (
     <div className="flex flex-col h-full bg-bg">
       {/* Header */}
-      <div className="bg-panel border-b border-hairline p-4 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-ink tracking-tight">Requests</h1>
+      <div className="bg-panel border-b border-hairline sticky top-0 z-10">
+        <PageHeader
+          title="Requests"
+          subtitle="Manually add a lead, or triage what's come in from the website"
+          icon={Inbox}
+          iconColor="blue"
+          actions={
             <Button variant="primary" size="sm" onClick={() => setShowNewRequestModal(true)}>
               <Plus className="w-4 h-4 mr-2" />
               New Request
             </Button>
-          </div>
-
+          }
+        >
           {/* Search */}
           <div className="relative mb-4">
             <Search className="w-4 h-4 text-ink-3 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -469,7 +473,7 @@ export default function Requests() {
               <option value="urgent">Urgent</option>
             </select>
           </div>
-        </div>
+        </PageHeader>
       </div>
 
       {/* Content */}

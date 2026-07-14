@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
-import { EmptyState } from '../components/ui'
+import { EmptyState, PageHeader } from '../components/ui'
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -321,7 +321,15 @@ export default function Clients() {
   return (
     <div className="flex h-full">
       {/* Main list */}
-      <div className="flex-1 flex flex-col p-4 sm:p-6 min-w-0">
+      <div className="flex-1 flex flex-col min-w-0">
+        <PageHeader
+          title="Clients"
+          subtitle={`${clients.length} client${clients.length === 1 ? '' : 's'} — search, filter, and manage your customer list`}
+          icon={Users}
+          iconColor="blue"
+        />
+
+        <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
         <ClientsToolbar
           search={search} setSearch={setSearch}
           viewConfig={viewConfig} applyView={applyView}
@@ -419,6 +427,7 @@ export default function Clients() {
             openNew={openNew}
           />
         )}
+        </div>
       </div>
 
       {showForm && (

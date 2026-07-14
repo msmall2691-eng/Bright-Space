@@ -1,3 +1,5 @@
+import { iconChipClass } from './iconChip'
+
 /**
  * PageHeader — the standard top-of-page header.
  *
@@ -6,16 +8,20 @@
  * design tokens so it adapts to light / dark / alternate themes.
  *
  *   <PageHeader title="Invoices" subtitle="42 total" icon={FileText}
- *     actions={<Button>New invoice</Button>} />
+ *     iconColor="emerald" actions={<Button>New invoice</Button>} />
  *
- * `actions` renders right-aligned on the same row; on narrow screens it wraps
- * underneath. `children` renders below the header row (e.g. a tabs strip).
+ * `iconColor` is one of the semantic keys in `iconChip.js` (blue, violet,
+ * purple, amber, emerald, rose, cyan, slate) — renders as a tinted chip
+ * behind the icon (Twenty/Notion-style), with a soft glow under the Neon
+ * theme. `actions` renders right-aligned on the same row; on narrow screens
+ * it wraps underneath. `children` renders below the header row (e.g. a tabs
+ * strip).
  */
 export default function PageHeader({
   title,
   subtitle,
   icon: Icon,
-  iconColor = 'text-ink-3',
+  iconColor = 'blue',
   actions,
   className = '',
   children,
@@ -23,10 +29,10 @@ export default function PageHeader({
   return (
     <div className={`px-4 sm:px-8 pt-6 sm:pt-7 pb-5 ${className}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           {Icon && (
-            <span className="shrink-0 mt-0.5">
-              <Icon className={`w-5 h-5 ${iconColor}`} />
+            <span className={`bb-icon-chip grid place-items-center w-10 h-10 rounded-xl shrink-0 ${iconChipClass(iconColor)}`}>
+              <Icon className="w-5 h-5" />
             </span>
           )}
           <div className="min-w-0">

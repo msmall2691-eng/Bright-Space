@@ -25,6 +25,7 @@ import {
   CheckCircle2, AlertTriangle,
   MessageCircle, PenLine,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { dayLabel, contactDisplay } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
@@ -150,7 +151,19 @@ export default function Comms() {
   // same conversation list as SMS.
 
   return (
-    <div className="flex h-full bg-bg">
+    <div className="flex flex-col h-full bg-bg">
+      {/* Compact header — PageHeader isn't full-height on its own, and this
+          three-pane inbox needs every remaining pixel, so we skip the
+          subtitle and tighten the vertical padding rather than push the
+          list/thread/contact columns below the fold. */}
+      <PageHeader
+        title="Comms"
+        icon={MessageSquare}
+        iconColor="cyan"
+        className="pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
+      />
+
+    <div className="flex flex-1 min-h-0">
 
       <InboxLeftPanel
         convs={convs}
@@ -245,8 +258,9 @@ export default function Comms() {
         />
       )}
 
+    </div>
 
-      {/* ═══ Compose Modal ═══ */}
+      {/* ═══ Compose Modal ═══ (fixed overlay — lives outside the 3-pane row) */}
       {showCompose && (
         <ComposeModal
           clients={clients}

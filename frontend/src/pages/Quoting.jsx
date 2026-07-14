@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, Calendar, FileText, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
+import PageHeader from '../components/ui/PageHeader'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
@@ -515,10 +516,33 @@ export default function Quoting() {
 
   return (
     <div className="flex h-full">
-      <div className="flex-1 p-6 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Tabs + action */}
-        <div className="flex justify-between items-center mb-5 shrink-0">
+        <PageHeader
+          title="Quotes"
+          subtitle={`${quotes.length} quote${quotes.length === 1 ? '' : 's'} · ${intakes.length} lead${intakes.length === 1 ? '' : 's'}`}
+          icon={FileText}
+          iconColor="violet"
+          actions={
+            <>
+              {canManageTemplates && (
+                <button
+                  disabled={!templatesLoaded}
+                  title={templatesLoaded ? undefined : 'Loading templates…'}
+                  onClick={() => setPanel('templates')}
+                  className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={() => { openQuoteForm(); setTab('quotes') }}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  <Plus className="w-4 h-4" /> New Quote
+                </button>
+              )}
+            </>
+          }
+        >
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1">
             <button onClick={() => switchTab('leads')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'leads' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
@@ -539,24 +563,9 @@ export default function Quoting() {
               Archived
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            {canManageTemplates && (
-              <button
-                disabled={!templatesLoaded}
-                title={templatesLoaded ? undefined : 'Loading templates…'}
-                onClick={() => setPanel('templates')}
-                className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
-              </button>
-            )}
-            {canEdit && (
-              <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                <Plus className="w-4 h-4" /> New Quote
-              </button>
-            )}
-          </div>
-        </div>
+        </PageHeader>
+
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 sm:px-8 pb-6">
 
         {/* Leads tab */}
         {tab === 'leads' && (
@@ -713,6 +722,7 @@ export default function Quoting() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* Quote edit panel — full-screen sheet on mobile (sits above the z-30

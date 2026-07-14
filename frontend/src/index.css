@@ -138,6 +138,15 @@ body.theme-neon {
 .bb-glow-accent { box-shadow: var(--glow-accent, var(--shadow-2)); }
 .bb-glow-cyan { box-shadow: var(--glow-cyan, var(--shadow-2)); }
 
+/* Icon chips (PageHeader, KpiCard, Sidebar logo) — plain tinted box in
+   light/dark; under Neon they pick up the accent glow too, so the "colored
+   icon everywhere" pattern reads as futuristic instead of just flat color. */
+body.theme-neon .bb-icon-chip {
+  box-shadow: var(--glow-accent);
+  background: rgba(124, 92, 255, 0.16) !important;
+  color: #cdbfff !important;
+}
+
 /* Week view's current-time line (WeekGrid.jsx) — plain red elsewhere;
    under Neon it's the accent color with a glow, per the roadmap's "current-
    time line" ask. Pure CSS override via the existing data-testid, so the

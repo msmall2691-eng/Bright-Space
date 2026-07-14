@@ -1,4 +1,4 @@
-import { Send } from 'lucide-react'
+import { Send, Clock, MapPin, Calendar } from 'lucide-react'
 
 /** Single row on the Follow-ups tab. Renders the "waiting X hours"
  *  chip + one-click Send follow-up + Options (opens full send panel). */
@@ -24,11 +24,13 @@ export default function FollowUpRow({
             <span className="font-medium text-ink">{clientName(q.client_id)}</span>
             <span className="text-xs text-ink-3">{q.quote_number}</span>
             <span className={`text-xs px-2.5 py-0.5 rounded-full border ${reasonTone}`}>{reasonLabel}</span>
-            <span className="text-xs text-ink-3">waiting {waited}</span>
+            <span className="flex items-center gap-1 text-xs text-ink-3"><Clock className="w-3.5 h-3.5" />waiting {waited}</span>
             {q.follow_up_sent_at && <span className="text-xs text-ink-3">· nudged before</span>}
           </div>
-          <div className="text-xs text-ink-3 mt-0.5">
-            {[q.address, `${q.items?.length || 0} items`, q.sent_at && `sent ${new Date(q.sent_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3 mt-0.5">
+            {q.address && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 shrink-0" />{q.address}</span>}
+            {q.sent_at && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 shrink-0" />sent {new Date(q.sent_at).toLocaleDateString()}</span>}
+            <span>{`${q.items?.length || 0} items`}</span>
           </div>
         </div>
         <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, RefreshCw, GripVertical, Search } from 'lucide-react'
+import { LayoutGrid, RefreshCw, GripVertical, Search, DollarSign, Calendar } from 'lucide-react'
 import { get, patch } from '../api'
 import SavedViewsBar from '../components/SavedViewsBar'
+import PageHeader from '../components/ui/PageHeader'
 
 // Canonical opportunity pipeline (matches backend Opportunity.stage + the chips
 // already used on the client profile / OpportunityLinker).
@@ -91,16 +92,20 @@ export default function Pipeline() {
   const total = (rows) => rows.reduce((sum, o) => sum + (o.amount || 0), 0)
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <LayoutGrid className="w-5 h-5 text-blue-500 shrink-0" />
-          <h1 className="text-lg sm:text-xl font-bold text-ink tracking-tight">Pipeline</h1>
-          <span className="text-xs text-ink-3 ml-1">
-            {visible.length}{visible.length !== opps.length ? ` / ${opps.length}` : ''} {opps.length === 1 ? 'deal' : 'deals'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="max-w-[1600px] mx-auto">
+      <PageHeader
+        title="Pipeline"
+        subtitle={`${visible.length}${visible.length !== opps.length ? ` of ${opps.length}` : ''} ${opps.length === 1 ? 'deal' : 'deals'} across your opportunity board`}
+        icon={LayoutGrid}
+        iconColor="violet"
+        actions={
+          <button onClick={load}
+            className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        }
+      >
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals…"
@@ -114,13 +119,10 @@ export default function Pipeline() {
             </select>
           )}
           <SavedViewsBar entityType="opportunity" currentConfig={viewConfig} onApply={applyView} defaultLabel="All deals" />
-          <button onClick={load}
-            className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
         </div>
-      </div>
+      </PageHeader>
 
+      <div className="px-4 sm:px-8 pb-4 sm:pb-6">
       {error && (
         <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
       )}
@@ -178,14 +180,20 @@ export default function Pipeline() {
                             </Link>
                           )}
                           <div className="flex items-center justify-between gap-2 mt-1">
-                            <span className="text-[11px] font-semibold text-ink-2">{money(o.amount)}</span>
+                            <span className="flex items-center gap-1 text-[11px] font-semibold text-ink-2">
+                              <DollarSign className="w-3 h-3 text-ink-3" />{money(o.amount).replace(/^\$/, '')}
+                            </span>
                             <div className="flex items-center gap-1.5 shrink-0">
                               {o.service_type && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-2 text-ink-3 border border-hairline capitalize">
                                   {String(o.service_type).replace(/_/g, ' ')}
                                 </span>
                               )}
-                              {o.created_at && <span className="text-[10px] text-ink-3">{age(o.created_at)}</span>}
+                              {o.created_at && (
+                                <span className="flex items-center gap-0.5 text-[10px] text-ink-3">
+                                  <Calendar className="w-3 h-3" />{age(o.created_at)}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -198,6 +206,7 @@ export default function Pipeline() {
           })}
         </div>
       )}
+      </div>
     </div>
   )
 }
