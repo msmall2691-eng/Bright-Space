@@ -153,5 +153,13 @@ export function combineAddress(base, city, state, zip) {
   push(city)
   push(state)
   push(zip)
-  return parts.join(', ')
+  // A bare state with nothing else on file (e.g. LeadIntake.state's "ME"
+  // column default when a lead's flow never captured a street address) isn't
+  // a usable address — it just looks like one to an operator skimming the
+  // quote form. Suppress it so the Service Address field renders empty
+  // (prompting them to fill it in) instead of a lone, misleading "ME".
+  const hasRealAddress = Boolean(
+    (base && base.trim()) || (city && String(city).trim()) || (zip && String(zip).trim()),
+  )
+  return hasRealAddress ? parts.join(', ') : ''
 }

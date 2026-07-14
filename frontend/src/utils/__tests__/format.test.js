@@ -103,6 +103,16 @@ describe('combineAddress (audit July-2026 L1/L3)', () => {
     expect(combineAddress('', '', '', '')).toBe('')
   })
 
+  it('returns empty string for a bare state with nothing else on file', () => {
+    // A lead that came in through a flow that never captured a street
+    // address (e.g. a minimal webhook payload) still gets LeadIntake.state's
+    // "ME" column default. Rendering that alone in the quote form's Service
+    // Address field reads as a real (if minimal) address instead of "we
+    // don't have this" — reported as the New Quote form showing just "ME".
+    expect(combineAddress(null, null, 'ME', null)).toBe('')
+    expect(combineAddress('', '', 'ME', '')).toBe('')
+  })
+
   it('does not append a duplicate second-time (e.g. same state twice)', () => {
     expect(combineAddress('123 Oak', 'Portland', 'ME', 'ME'))
       .toBe('123 Oak, Portland, ME')
