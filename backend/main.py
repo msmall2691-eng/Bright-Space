@@ -293,16 +293,28 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
     # APIKeyMiddleware can't gate this route — auth has to happen here.
     # Browsers can't set headers on WS connects, so JWT and API key both
     # come in via query params (?token=... or ?api_key=...).
-    expected_key = os.getenv("BRIGHTBASE_API_KEY", "")
-    if expected_key:
-        token = websocket.query_params.get("token", "")
-        provided_key = websocket.query_params.get("api_key", "")
-        authed = bool(token and verify_jwt(token)) or (
-            bool(provided_key) and secrets.compare_digest(provided_key, expected_key)
-        )
-        if not authed:
-            await websocket.close(code=1008, reason="unauthorized")
-            return
+    #
+    # Fail CLOSED, mirroring auth.py's APIKeyMiddleware: a valid JWT always
+    # authenticates regardless of whether BRIGHTBASE_API_KEY is configured.
+    # Previously the whole check lived inside `if expected_key:`, so an
+    # unset key skipped authentication entirely — including the JWT check —
+    # and every connection was accepted unauthenticated. No valid JWT and no
+    # key configured now means there's no way to authenticate the
+    # connection, so it's rejected rather than let through.
+    token = websocket.query_params.get("token", "")
+    authed = bool(token and verify_jwt(token))
+    if not authed:
+        expected_key = os.getenv("BRIGHTBASE_API_KEY", "")
+        if not expected_key:
+            _logging.getLogger(__name__).error(
+                "[auth] BRIGHTBASE_API_KEY not set and no valid JWT — rejecting WS connection."
+            )
+        else:
+            provided_key = websocket.query_params.get("api_key", "")
+            authed = bool(provided_key) and secrets.compare_digest(provided_key, expected_key)
+    if not authed:
+        await websocket.close(code=1008, reason="unauthorized")
+        return
 
     await websocket.accept()
     conn_key = f"{id(websocket)}_{agent_name}"
