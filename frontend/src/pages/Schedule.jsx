@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { Calendar } from 'lucide-react'
 import { get, post, put, patch } from '../api'
 import Button from '../components/ui/Button'
+import PageHeader from '../components/ui/PageHeader'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
@@ -358,7 +360,21 @@ export default function Schedule() {
 
   return (
     <div className="flex flex-col h-full bg-bg">
-      {/* Header */}
+      {/* Standardized page header (icon chip + title) for visual consistency
+          with the rest of the app. ScheduleToolbar below still owns the view
+          switcher, date nav, filters, tools menu, and New Job button — it's a
+          tightly-coupled sticky bar (full-bleed background, its own inner
+          max-width + padding) that can't be safely nested inside PageHeader's
+          `children` slot without breaking its edge-to-edge layout, so it stays
+          a sibling. Its own inline "Schedule" label is hidden here (rather
+          than edited in ScheduleToolbar.jsx) to avoid a duplicate title. */}
+      <PageHeader
+        title="Schedule"
+        subtitle="Jobs, crews, and calendar sync in one place"
+        icon={Calendar}
+        iconColor="violet"
+      />
+      <div className="[&_h1]:hidden">
       <ScheduleToolbar
         viewMode={viewMode}
         onViewChange={setViewMode}
@@ -395,6 +411,7 @@ export default function Schedule() {
         showGuestStays={showGuestStays}
         onToggleGuestStays={toggleGuestStays}
       />
+      </div>
 
       <ScheduleHealthStrip
         stats={scheduleStats}

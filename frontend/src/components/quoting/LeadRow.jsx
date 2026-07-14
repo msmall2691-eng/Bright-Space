@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react'
+import { Plus, Phone, Mail, MapPin, Calendar, Clock } from 'lucide-react'
 import InlineSelect from '../InlineSelect'
 import { formatDate } from '../../utils/format'
 import { LEAD_STATUS_OPTIONS } from './constants'
@@ -43,13 +43,28 @@ export default function LeadRow({
               ) : null}
             </div>
           )}
-          <div className="text-xs text-ink-3 space-y-0.5">
-            {(intake.phone || intake.email) && <div>{[intake.phone, intake.email].filter(Boolean).join(' · ')}</div>}
-            {intake.address && <div>{[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}</div>}
-            {intake.preferred_date && <div>Preferred: {formatDate(intake.preferred_date)}</div>}
+          <div className="text-xs text-ink-3 space-y-1">
+            {(intake.phone || intake.email) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {intake.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 shrink-0" />{intake.phone}</span>}
+                {intake.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 shrink-0" />{intake.email}</span>}
+              </div>
+            )}
+            {intake.address && (
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                {[intake.address, intake.city, intake.state].filter(Boolean).join(', ')}
+              </div>
+            )}
+            {intake.preferred_date && (
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 shrink-0" />Preferred: {formatDate(intake.preferred_date)}
+              </div>
+            )}
             {intake.message && <div className="text-ink-3 italic mt-1 line-clamp-2">"{intake.message}"</div>}
           </div>
-          <div className="text-xs text-ink-3 mt-1.5">
+          <div className="flex items-center gap-1.5 text-xs text-ink-3 mt-1.5">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
             {new Date(intake.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </div>
         </div>

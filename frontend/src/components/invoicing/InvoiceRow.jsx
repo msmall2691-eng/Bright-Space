@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, ChevronRight, Send } from 'lucide-react'
+import { AlertTriangle, Calendar, CheckCircle, ChevronRight, Send } from 'lucide-react'
 import { STATUS, avatar, daysOverdue } from './constants'
 
 /** One row in the Invoicing list — client avatar + invoice number,
@@ -54,7 +54,9 @@ export function InvoiceRow({
             <AlertTriangle className="w-3 h-3" />{days}d overdue
           </span>
         ) : (
-          <span className="text-xs text-ink-3">{inv.due_date || '—'}</span>
+          <span className="flex items-center gap-1 text-xs text-ink-3">
+            <Calendar className="w-3.5 h-3.5" />{inv.due_date || '—'}
+          </span>
         )}
       </div>
 

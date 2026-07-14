@@ -1,4 +1,4 @@
-import { FileText, Plus, Search, Sparkles } from 'lucide-react'
+import { Receipt, Plus, Search, Sparkles } from 'lucide-react'
 import { PageHeader, StatCard } from '../ui'
 
 const STATUS_FILTERS = ['', 'draft', 'sent', 'paid', 'overdue']
@@ -24,7 +24,8 @@ export function InvoicingHeader({
     <>
       {/* Page header */}
       <PageHeader
-        icon={FileText}
+        icon={Receipt}
+        iconColor="emerald"
         title="Invoices"
         subtitle={`${invoiceCount} total`}
         actions={

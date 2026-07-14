@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Settings2, Mail, Plug, RefreshCw, Users } from 'lucide-react'
+import { Settings2, Mail, Plug, RefreshCw, Users, Settings as SettingsIcon } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
+import PageHeader from '../components/ui/PageHeader'
 import { pushToast } from '../utils/toastBus'
 import { useCustomFieldsTab, CustomFieldsBody, CustomFieldsSidePanel } from '../components/settings/CustomFieldsTab'
 import AutomationTab, { useAutomationSettings } from '../components/settings/AutomationTab'
@@ -35,41 +36,42 @@ export default function Settings() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Header */}
-        <div className="px-4 sm:px-8 py-6 border-b border-hairline bg-panel">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold text-ink">Settings</h1>
-              <p className="text-sm text-ink-3 mt-1">Manage your account and integrations</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => setSection('general')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-              <Settings2 className="w-3.5 h-3.5" /> General
-            </button>
-            <button onClick={() => setSection('integrations')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-              <Plug className="w-3.5 h-3.5" /> Integrations
-            </button>
-            <button onClick={() => setSection('automation')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-              <RefreshCw className="w-3.5 h-3.5" /> Automation
-            </button>
-            <button onClick={() => setSection('email')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-              <Mail className="w-3.5 h-3.5" /> Email
-            </button>
-            <button onClick={() => setSection('fields')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-              <Settings2 className="w-3.5 h-3.5" /> Custom Fields
-            </button>
-            {isAdmin && (
-              <button onClick={() => setSection('users')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
-                <Users className="w-3.5 h-3.5" /> Users
+        <div className="border-b border-hairline bg-panel">
+          <PageHeader
+            title="Settings"
+            subtitle="Manage your account and integrations"
+            icon={SettingsIcon}
+            iconColor="slate"
+          >
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setSection('general')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                <Settings2 className="w-3.5 h-3.5" /> General
               </button>
-            )}
-          </div>
+              <button onClick={() => setSection('integrations')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                <Plug className="w-3.5 h-3.5" /> Integrations
+              </button>
+              <button onClick={() => setSection('automation')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                <RefreshCw className="w-3.5 h-3.5" /> Automation
+              </button>
+              <button onClick={() => setSection('email')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                <Mail className="w-3.5 h-3.5" /> Email
+              </button>
+              <button onClick={() => setSection('fields')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                <Settings2 className="w-3.5 h-3.5" /> Custom Fields
+              </button>
+              {isAdmin && (
+                <button onClick={() => setSection('users')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                  <Users className="w-3.5 h-3.5" /> Users
+                </button>
+              )}
+            </div>
+          </PageHeader>
         </div>
 
         {/* === USERS SECTION (admin only) === */}

@@ -1,3 +1,6 @@
+import { Sparkles } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
+
 /**
  * Workspace — embedded Agent Command Center.
  *
@@ -12,14 +15,22 @@ const COMMAND_CENTER_EMBED =
 
 export default function Workspace() {
   return (
-    <div className="h-full w-full bg-bg">
-      <iframe
-        src={COMMAND_CENTER_EMBED}
-        title="Agent Command Center"
-        className="w-full h-full border-0"
-        allow="clipboard-write"
-        allowFullScreen
+    <div className="h-full w-full bg-bg flex flex-col">
+      <PageHeader
+        title="Workspace"
+        subtitle="Your embedded agent command center"
+        icon={Sparkles}
+        iconColor="purple"
       />
+      <div className="flex-1 min-h-0">
+        <iframe
+          src={COMMAND_CENTER_EMBED}
+          title="Agent Command Center"
+          className="w-full h-full border-0"
+          allow="clipboard-write"
+          allowFullScreen
+        />
+      </div>
     </div>
   )
 }
