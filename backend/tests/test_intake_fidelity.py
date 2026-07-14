@@ -234,6 +234,29 @@ def test_cross_entrypoint_dedup_merges_into_one_lead():
         _cleanup_email(email)
 
 
+def test_webhook_intake_captures_city():
+    """WebhookPayload used to have no `city` field at all — Pydantic's
+    extra="ignore" silently dropped it even if the site sent one, so a lead
+    that only had a city (no full street address) ended up with just
+    LeadIntake.state's "ME" column default, which the quote form's
+    combineAddress then rendered as a bare, misleading "ME" (reported:
+    Requests -> Create Quote showed "ME" as the whole Service Address)."""
+    email = _uniq_email()
+    try:
+        r = client.post("/api/intake/webhook", json={
+            "name": "City Field Test", "email": email,
+            "city": "Waterboro", "zip": "04061", "serviceType": "residential",
+        })
+        assert r.status_code == 201, r.text
+
+        db = SessionLocal()
+        lead = db.query(LeadIntake).filter(LeadIntake.email.ilike(email)).first()
+        assert lead.city == "Waterboro"
+        db.close()
+    finally:
+        _cleanup_email(email)
+
+
 def test_booking_submit_fires_customer_and_owner_alerts():
     """Every booking landing fires two best-effort side effects: a Twilio SMS
     to the owner, and a confirmation email to the customer. Neither can be

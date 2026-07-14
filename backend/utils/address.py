@@ -82,4 +82,14 @@ def combine_address(
         parts.append(s)
         tokens.add(s.lower())
 
+    # A bare state with nothing else on file (e.g. LeadIntake.state's "ME"
+    # column default when a lead's flow never captured a street address)
+    # isn't a usable address — it just looks like one to an operator
+    # skimming a quote. Suppress it so the caller gets "" (prompting them to
+    # fill it in) instead of a lone, misleading "ME". Mirrors frontend
+    # format.js#combineAddress.
+    has_real_address = bool((base and base.strip()) or (city and str(city).strip()) or (zip_code and str(zip_code).strip()))
+    if not has_real_address:
+        return ""
+
     return ", ".join(parts)

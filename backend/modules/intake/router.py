@@ -394,6 +394,7 @@ class WebhookPayload(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
     zip: Optional[str] = None
     serviceType: Optional[str] = None
     frequency: Optional[str] = None
@@ -436,7 +437,7 @@ def webhook_intake(request: Request, data: WebhookPayload, db: Session = Depends
 
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
-        zip_code=data.zip, service_key=service_key, bathrooms=data.bathrooms,
+        city=data.city, zip_code=data.zip, service_key=service_key, bathrooms=data.bathrooms,
         square_footage=sqft, frequency=data.frequency, message=notes_text or None,
         source=data.source or "website",
         pet_hair=data.petHair, condition=data.condition,

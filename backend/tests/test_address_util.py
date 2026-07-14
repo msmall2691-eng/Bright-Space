@@ -67,6 +67,17 @@ def test_empty_input_returns_empty_string():
     assert combine_address("", "", "", "") == ""
 
 
+def test_returns_empty_string_for_bare_state_with_nothing_else_on_file():
+    # Mirrors the frontend combineAddress fix (utils/format.js): an intake
+    # that never captured a street address still gets LeadIntake.state's
+    # "ME" column default. POST /api/intake/{id}/convert-to-quote calls this
+    # helper directly, so without this fix the API/manual conversion path
+    # could still persist quote.address = "ME" even after the frontend New
+    # Quote form was fixed to leave it blank (codex review on #549).
+    assert combine_address(None, None, "ME", None) == ""
+    assert combine_address("", "", "ME", "") == ""
+
+
 def test_does_not_append_the_same_value_twice_in_one_call():
     assert combine_address("123 Oak", "Portland", "ME", "ME") == "123 Oak, Portland, ME"
 
