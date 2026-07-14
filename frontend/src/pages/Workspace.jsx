@@ -19,6 +19,13 @@ import { todayYMD } from '../utils/format'
  * Three things sit on top of that per-persona chat:
  *   1. ROUTING   — "Auto" mode posts the message to POST /api/ai/route,
  *                  which picks the best-fit field agent for the question.
+ *                  Passes along which agent answered last (lastAgentIdRef)
+ *                  so a short reply ("yes", "do it") continues the same
+ *                  conversation instead of being classified from a single
+ *                  line with no context — without this, a multi-turn Auto
+ *                  conversation could silently jump agents mid-task (the
+ *                  observed symptom: typing the agent's name INTO the
+ *                  message just to force it back, e.g. "yes #6 nova").
  *   2. MODEL TIER — the same routing call also picks how much model the
  *                  reply is worth (haiku/sonnet/opus), so cost tracks task
  *                  difficulty instead of every message paying top rate.
@@ -185,6 +192,12 @@ export default function Workspace() {
   // they've scrolled up to re-read something earlier in the conversation —
   // the classic "stuck to the bottom until you scroll away" chat pattern.
   const stickToBottomRef = useRef(true)
+  // Whichever agent answered the most recent message — passed to the Auto
+  // router so a short reply ("yes", "do it", answering a question just
+  // asked) continues the same conversation instead of being classified
+  // from scratch with no context and possibly landing on someone else.
+  const lastAgentIdRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => {
     get('/api/agents').then(a => setAgents(Array.isArray(a) ? a : [])).catch(() => setAgents([]))
@@ -218,6 +231,21 @@ export default function Workspace() {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     }
   }, [messages])
+
+  // Focus the input as soon as the page is usable, chat-app style.
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [])
+
+  // Auto-grow the textarea with its content (up to the CSS max-h cap, which
+  // takes over with a scrollbar beyond that) instead of a fixed one-line box
+  // that just scrolls its own text out of view.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [input])
 
   function handleMessagesScroll() {
     const el = scrollRef.current
@@ -257,6 +285,7 @@ export default function Workspace() {
   }
 
   async function sendToAgent(agentId, model, text, routing) {
+    lastAgentIdRef.current = agentId
     const bubbleId = nextId()
     setMessages(prev => [...prev, { id: bubbleId, kind: 'agent', agentId, text: '', tools: [], streaming: true }])
 
@@ -323,6 +352,7 @@ export default function Workspace() {
     setInput('')
     setSending(true)
     stickToBottomRef.current = true // you just acted — follow the reply as it streams in
+    textareaRef.current?.focus() // stays ready for a quick follow-up, even after a suggestion-tap send
     setMessages(prev => [...prev, { id: nextId(), kind: 'user', text }])
 
     if (selectedAgentId) {
@@ -335,7 +365,7 @@ export default function Workspace() {
     const routingId = nextId()
     setMessages(prev => [...prev, { id: routingId, kind: 'routing', agent: null, model: null }])
     try {
-      const route = await post('/api/ai/route', { message: text })
+      const route = await post('/api/ai/route', { message: text, current_agent_id: lastAgentIdRef.current })
       const agent = agentById(route.agent_id)
       setMessages(prev => prev.map(m => (m.id === routingId
         ? { ...m, agent, model: route.model, reasoning: route.reasoning }
@@ -428,12 +458,13 @@ export default function Workspace() {
         <div className="shrink-0 pt-3 pb-safe">
           <div className="flex items-end gap-2 bg-panel border border-hairline rounded-2xl p-2 shadow-sm">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder={selectedAgentId ? `Message ${agentById(selectedAgentId)?.name || 'agent'}…` : 'Ask your team anything…'}
               rows={1}
-              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none max-h-32"
+              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none max-h-32 overflow-y-auto"
             />
             <button
               onClick={() => handleSend()}

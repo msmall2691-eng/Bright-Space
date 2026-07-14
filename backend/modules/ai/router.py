@@ -132,6 +132,7 @@ def _strip_json(text: str) -> str:
 
 class RouteRequest(BaseModel):
     message: str
+    current_agent_id: Optional[str] = None
 
 
 def _agent_roster_prompt() -> str:
@@ -141,23 +142,45 @@ def _agent_roster_prompt() -> str:
     return "\n".join(lines)
 
 
-def route_agent(message: str) -> dict:
+def route_agent(message: str, current_agent_id: str = None) -> dict:
     """Classify a user message to the best-fit field agent + a cost-appropriate
     model tier. Returns {agent_id, model, reasoning}. Falls back to a safe
     default (Nova, sonnet) whenever the model is unavailable or misbehaves —
-    routing must never be the reason a message can't be sent."""
-    fallback = {"agent_id": _FALLBACK_AGENT, "model": _FALLBACK_MODEL,
+    routing must never be the reason a message can't be sent.
+
+    `current_agent_id`, when given, is whichever agent answered the PREVIOUS
+    message in this Auto-mode conversation. Without it, routing treats every
+    message as a cold start — a short reply like "yes" or "do it" carries no
+    signal on its own, so the classifier would guess based on nothing, and a
+    multi-turn conversation could silently jump to a different agent mid-task
+    (the observed symptom: a user typing the agent's name INTO the message,
+    e.g. "yes #6 nova", just to force it back to who they were already
+    talking to). Telling the classifier who that was lets it keep a
+    continuation/confirmation with the same agent while still rerouting a
+    message that's clearly a new, unrelated topic."""
+    fallback = {"agent_id": current_agent_id or _FALLBACK_AGENT, "model": _FALLBACK_MODEL,
                 "reasoning": "Default routing (AI classification unavailable)."}
     client = _anthropic_client()
     if client is None or not (message or "").strip():
         return fallback
 
+    continuity = (
+        f"\nThe user's PREVIOUS message in this conversation was answered by "
+        f"'{current_agent_id}'. If this message reads as a continuation, reply, "
+        f"confirmation, or short follow-up to that conversation (e.g. \"yes\", "
+        f"\"do it\", \"go ahead\", answering a question just asked, referencing "
+        f"something just discussed) — keep routing to '{current_agent_id}'. Only "
+        f"pick a different agent if this message is clearly a new, unrelated "
+        f"request that another specialist owns.\n"
+        if current_agent_id else ""
+    )
     system = (
         "You route incoming chat messages to the right specialist agent on a "
         "cleaning-business ops team, AND pick how much model to spend on the "
         "reply. Respond with ONLY a JSON object: "
         '{"agent_id": string, "model": "haiku"|"sonnet"|"opus", "reasoning": string}.\n\n'
-        "Agents:\n" + _agent_roster_prompt() + "\n\n"
+        "Agents:\n" + _agent_roster_prompt() + "\n"
+        + continuity + "\n"
         "Model tier guidance:\n"
         "- haiku: quick factual/business-data lookups, small talk, simple yes/no questions\n"
         "- sonnet: anything needing real reasoning, multi-step planning, writing copy, "
@@ -238,7 +261,7 @@ def review_agent_turn(*, user_message: str, agent_id: str, response_text: str,
 @router.post("/route")
 def route_message(body: RouteRequest, user=Depends(get_current_user)):
     """Pick the best field agent + model tier for a Workspace chat message."""
-    return route_agent(body.message)
+    return route_agent(body.message, current_agent_id=body.current_agent_id)
 
 
 # ── POST /api/ai/quick ──────────────────────────────────────────────────────
