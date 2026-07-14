@@ -17,7 +17,7 @@ import { ErrorState } from '../components/ui'
 import { AIFollowUps } from '../components/AIFollowUps'
 import {
   Calendar, DollarSign,
-  Clock, FileText, TrendingUp,
+  Clock, FileText, TrendingUp, LayoutDashboard,
 } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
 import { KpiCard } from '../components/dashboard/primitives'
@@ -87,7 +87,11 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-bg">
       {/* Greeting */}
-      <div className="px-4 sm:px-6 pt-6 pb-3">
+      <div className="px-4 sm:px-6 pt-6 pb-3 flex items-center gap-3">
+        <span className="bb-icon-chip hidden sm:grid place-items-center w-11 h-11 rounded-xl shrink-0 bg-blue-50 text-blue-600">
+          <LayoutDashboard className="w-5 h-5" />
+        </span>
+        <div className="min-w-0">
         <h1 className="text-2xl sm:text-[28px] font-bold text-ink tracking-tight">{greeting} 👋</h1>
         <p className="text-sm text-ink-3 mt-1">
           {longDate}
@@ -100,6 +104,7 @@ export default function Dashboard() {
             </>
           )}
         </p>
+        </div>
       </div>
 
       {/* KPI row — headline numbers, dashboard-style */}

@@ -12,12 +12,12 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  TrendingUp, DollarSign, Repeat, AlertTriangle, PieChart, Users,
+  TrendingUp, DollarSign, Repeat, AlertTriangle, PieChart, Users, Building2,
 } from 'lucide-react'
 import { get } from '../api'
 import { fmtMoney } from '../components/dashboard/utils'
 import { KpiCard, Tile, TileLoading } from '../components/dashboard/primitives'
-import { ErrorState } from '../components/ui'
+import { ErrorState, PageHeader } from '../components/ui'
 
 // Human-facing labels for the API's job_type values. The backend returns
 // whatever's on Job.job_type, so unknowns fall through to a Start-Cased
@@ -80,14 +80,15 @@ export default function OwnerDashboard() {
   const revenueTotal = revenueByService.reduce((sum, r) => sum + (r.total || 0), 0)
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold text-ink tracking-tight">Owner Dashboard</h1>
-        <p className="text-sm text-ink-3 mt-1">
-          Rolling {data?.window_days || 90}-day metrics
-          {data?.as_of && <> · as of {data.as_of}</>}
-        </p>
-      </header>
+    <div className="max-w-6xl mx-auto space-y-5">
+      <PageHeader
+        title="Owner Dashboard"
+        subtitle={`Close rate, MRR, and revenue for the trailing ${data?.window_days || 90} days${data?.as_of ? ` · as of ${data.as_of}` : ''}`}
+        icon={TrendingUp}
+        iconColor="emerald"
+      />
+
+      <div className="px-4 sm:px-6 pb-6 space-y-5">
 
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -206,7 +207,10 @@ export default function OwnerDashboard() {
                   {i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-ink truncate">{c.client_name}</div>
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-ink truncate">
+                    <Building2 className="w-3.5 h-3.5 text-ink-3 shrink-0" />
+                    <span className="truncate">{c.client_name}</span>
+                  </div>
                   <div className="text-[11px] text-ink-3">
                     {c.invoice_count} {c.invoice_count === 1 ? 'invoice' : 'invoices'}
                   </div>
@@ -217,6 +221,7 @@ export default function OwnerDashboard() {
           </div>
         )}
       </Tile>
+      </div>
     </div>
   )
 }
