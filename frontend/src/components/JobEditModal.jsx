@@ -747,7 +747,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           </>)}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
           )}

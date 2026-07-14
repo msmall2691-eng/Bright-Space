@@ -278,7 +278,7 @@ export default function IntegrationsTab({ toast, active }) {
               </div>
             </div>
             {!gcalConn.loading && !gcalConn.connected && (
-              <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 leading-relaxed">
+              <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 leading-relaxed">
                 <div className="font-semibold mb-1">Appointments aren't reaching Google.</div>
                 {gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}
                 {!gcalConn.oauth_available && (

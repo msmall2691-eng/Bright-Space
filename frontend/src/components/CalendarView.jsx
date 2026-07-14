@@ -775,7 +775,7 @@ export default function CalendarView({
         {/* Audit §12: surface the month-fetch error instead of a silently
             blank grid. Retry re-hits the same endpoint. */}
         {monthError && !monthLoading && (
-          <div className="mx-1 mb-1 flex items-center justify-between gap-2 text-[12px] px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700">
+          <div className="mx-1 mb-1 flex items-center justify-between gap-2 text-[12px] px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300">
             <span className="truncate">Couldn't load this month — <span className="text-red-600/80">{String(monthError).slice(0, 120)}</span></span>
             <button
               type="button"

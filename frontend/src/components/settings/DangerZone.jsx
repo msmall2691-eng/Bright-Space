@@ -177,7 +177,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           </div>
         )}
         {unlinkResult?.error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs">
+          <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 text-xs">
             Unlink failed: {unlinkResult.error}
           </div>
         )}
@@ -228,7 +228,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           </div>
         )}
         {resetResult?.error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs">
+          <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 text-xs">
             Reset failed: {resetResult.error}
           </div>
         )}

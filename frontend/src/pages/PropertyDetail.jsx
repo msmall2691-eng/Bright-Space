@@ -14,18 +14,18 @@ const toArray = (res) => Array.isArray(res) ? res : (res?.items ?? res?.data ?? 
 
 
 const PROPERTY_TYPE_CONFIG = {
-  residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home },
-  commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700', icon: Building2 },
-  str: { label: 'STR', badge: 'bg-amber-100 text-amber-700', icon: Wind },
+  residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300', icon: Home },
+  commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300', icon: Building2 },
+  str: { label: 'STR', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300', icon: Wind },
 }
 
 const JOB_STATUS_CONFIG = {
-  unscheduled: { label: 'Unscheduled', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700' },
-  scheduled: { label: 'Scheduled', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700' },
-  dispatched: { label: 'Dispatched', dot: 'bg-green-500', badge: 'bg-green-100 text-green-700' },
-  in_progress: { label: 'In Progress', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700' },
-  completed: { label: 'Completed', dot: 'bg-green-600', badge: 'bg-green-100 text-green-700' },
-  cancelled: { label: 'Cancelled', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700' },
+  unscheduled: { label: 'Unscheduled', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
+  scheduled: { label: 'Scheduled', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
+  dispatched: { label: 'Dispatched', dot: 'bg-green-500', badge: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
+  in_progress: { label: 'In Progress', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
+  completed: { label: 'Completed', dot: 'bg-green-600', badge: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
+  cancelled: { label: 'Cancelled', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
 }
 
 // Inline checklist editor. Areas + tasks per property.
@@ -391,7 +391,7 @@ export default function PropertyDetail() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto p-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">
               {error}
             </div>
           )}

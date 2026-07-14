@@ -46,9 +46,9 @@ export const OPP_COLORS = {
 }
 
 export const PROPERTY_TYPE_COLORS = {
-  residential: 'bg-blue-50 text-blue-700 border-blue-200',
-  commercial:  'bg-emerald-50 text-emerald-700 border-emerald-200',
-  str:         'bg-orange-50 text-orange-700 border-orange-200',
+  residential: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  commercial:  'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
+  str:         'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800',
 }
 
 export const PROPERTY_TYPE_LABELS = {
@@ -77,9 +77,9 @@ export const JOB_TYPE_LABEL = {
 }
 
 export const STATUS_PILL = {
-  scheduled:   'bg-blue-50 text-blue-700 border-blue-200',
-  in_progress: 'bg-amber-50 text-amber-700 border-amber-200',
-  completed:   'bg-emerald-50 text-emerald-700 border-emerald-200',
+  scheduled:   'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+  in_progress: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
+  completed:   'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800',
   cancelled:   'bg-bg-2 text-ink-3 border-hairline',
 }
 

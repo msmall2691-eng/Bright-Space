@@ -214,7 +214,7 @@ function SkipModal({ schedule, date, onClose, onDone }) {
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm"
         />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -279,7 +279,7 @@ function RescheduleModal({ schedule, date, defaultStart, defaultEnd, onClose, on
           placeholder="Client requested afternoon slot this week"
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -481,7 +481,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -633,7 +633,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
   if (loading) return <div className="p-6 text-sm text-ink-3">Loading…</div>
   if (error) return (
     <div className="p-6">
-      <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>
+      <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>
       <Button variant="secondary" onClick={onBack} className="mt-4">Back to list</Button>
     </div>
   )
@@ -942,7 +942,7 @@ export default function Recurring() {
           </span>
         </div>
 
-        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
+        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>}
 
         {loading ? (
           <div className="text-center text-ink-3 py-12 text-sm">Loading…</div>

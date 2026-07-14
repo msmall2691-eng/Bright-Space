@@ -1,5 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // Dark mode is a manual toggle (theme.js adds body.theme-console), not the
+  // OS-preference `media` default — selector strategy targets that same class
+  // so `dark:` classes activate exactly when the app's own dark theme is on.
+  darkMode: ['selector', '.theme-console'],
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
