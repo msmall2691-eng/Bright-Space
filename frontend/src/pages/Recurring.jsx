@@ -9,7 +9,8 @@ import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import EmptyState from '../components/ui/EmptyState'
 import PageHeader from '../components/ui/PageHeader'
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
 
@@ -213,7 +214,7 @@ function SkipModal({ schedule, date, onClose, onDone }) {
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm"
         />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -278,7 +279,7 @@ function RescheduleModal({ schedule, date, defaultStart, defaultEnd, onClose, on
           placeholder="Client requested afternoon slot this week"
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -480,7 +481,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
           onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm" />
       </div>
-      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+      {error && <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={saving}>
@@ -619,7 +620,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     } finally { setBusy('') }
   }
   const cancelSeries = async () => {
-    if (!confirm('Cancel this recurring series? Existing scheduled jobs stay on the calendar; no new ones will be generated.')) return
+    if (!(await confirmDialog('Cancel this recurring series? Existing scheduled jobs stay on the calendar; no new ones will be generated.', { confirmLabel: 'Cancel series', cancelLabel: 'Never mind', danger: true }))) return
     setBusy('delete')
     try {
       await del(`/api/recurring/${id}`)
@@ -632,7 +633,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     }
   }
   const undoException = async (ex) => {
-    if (!confirm(`Undo the ${ex.exception_type} on ${ex.exception_date}?`)) return
+    if (!(await confirmDialog(`Undo the ${ex.exception_type} on ${ex.exception_date}?`, { confirmLabel: 'Undo' }))) return
     try {
       await del(`/api/recurring/${id}/exceptions/${ex.id}`)
       await load(); onChanged?.()
@@ -645,7 +646,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
   if (loading) return <div className="p-6 text-sm text-ink-3">Loading…</div>
   if (error) return (
     <div className="p-6">
-      <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>
+      <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>
       <Button variant="secondary" onClick={onBack} className="mt-4">Back to list</Button>
     </div>
   )
@@ -853,7 +854,6 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
 export default function Recurring() {
   const [params, setParams] = useSearchParams()
   const seriesId = params.get('series')
-  const { toast, ToastContainer } = useToast()
 
   const [schedules, setSchedules] = useState([])
   const [clientsById, setClientsById] = useState({})
@@ -911,7 +911,6 @@ export default function Recurring() {
           onChanged={loadList}
           toast={toast}
         />
-        <ToastContainer />
       </>
     )
   }
@@ -970,7 +969,7 @@ export default function Recurring() {
           </span>
         </div>
 
-        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
+        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>}
 
         {loading ? (
           <div className="text-center text-ink-3 py-12 text-sm">Loading…</div>
@@ -1000,8 +999,6 @@ export default function Recurring() {
           </ul>
         )}
       </div>
-
-      <ToastContainer />
     </>
   )
 }

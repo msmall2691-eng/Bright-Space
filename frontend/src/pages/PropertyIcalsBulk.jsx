@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, RefreshCw, Trash2, CheckCircle, AlertCircle, Link as LinkIcon, X, ChevronDown } from 'lucide-react'
 import { get, post, del } from '../api'
+import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 
 const SOURCES = [
   { value: 'airbnb',     label: 'Airbnb',      pattern: /airbnb\.com/i },
@@ -113,12 +115,12 @@ export default function PropertyIcalsBulk() {
   }
 
   const removeFeed = async (icalId) => {
-    if (!confirm('Remove this calendar feed?')) return
+    if (!(await confirmDialog('Remove this calendar feed?'))) return
     try {
       await del(`/api/properties/${propertyId}/icals/${icalId}`)
       await load()
     } catch (e) {
-      alert('Could not remove feed: ' + (e?.message || 'unknown'))
+      toast.error('Could not remove feed: ' + (e?.message || 'unknown'))
     }
   }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { patch, post } from '../api'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Bulk-selection state + handlers for the Schedule page.
  *
@@ -45,7 +46,7 @@ export function useVisitSelection({ visits, setVisits, currentlyVisibleVisits, t
   const bulkDeleteVisits = async () => {
     const ids = Array.from(selectedVisitIds)
     if (ids.length === 0) return
-    if (!confirm(`Cancel ${ids.length} visit${ids.length === 1 ? '' : 's'}? They will be marked cancelled (status=cancelled).`)) return
+    if (!(await confirmDialog(`Cancel ${ids.length} visit${ids.length === 1 ? '' : 's'}? They will be marked cancelled (status=cancelled).`, { confirmLabel: 'Cancel visits', danger: true }))) return
     setBulkDeleting(true)
     try {
       const results = await Promise.allSettled(
@@ -71,7 +72,7 @@ export function useVisitSelection({ visits, setVisits, currentlyVisibleVisits, t
     if (ids.length === 0 || !shiftDays) return
     const dayWord = Math.abs(shiftDays) === 1 ? 'day' : 'days'
     const dir = shiftDays > 0 ? `forward ${shiftDays} ${dayWord}` : `back ${Math.abs(shiftDays)} ${dayWord}`
-    if (!confirm(`Shift ${ids.length} visit${ids.length === 1 ? '' : 's'} ${dir}?`)) return
+    if (!(await confirmDialog(`Shift ${ids.length} visit${ids.length === 1 ? '' : 's'} ${dir}?`, { confirmLabel: 'Shift' }))) return
     setBulkShifting(true)
     try {
       const jobIds = ids.map(id => {

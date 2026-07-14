@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { get, patch, post } from '../api'
 import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
@@ -94,9 +95,10 @@ export default function QuoteDetail() {
   // 'converted' is derived from the convert flow — route them accordingly instead
   // of a raw status PATCH that would bypass all of it (audit item 2).
   const runStatusAction = async (action) => {
-    const ok = window.confirm(action === 'accept'
+    const ok = await confirmDialog(action === 'accept'
       ? 'Mark this quote accepted? This converts it to a job (when a property is linked), marks the deal won, and emails the owner and customer.'
-      : 'Mark this quote declined? This closes the deal as lost and notifies the owner.')
+      : 'Mark this quote declined? This closes the deal as lost and notifies the owner.',
+      { confirmLabel: action === 'accept' ? 'Accept' : 'Decline' })
     if (!ok) return
     try {
       const updated = await post(`/api/quotes/${id}/${action}`, {})

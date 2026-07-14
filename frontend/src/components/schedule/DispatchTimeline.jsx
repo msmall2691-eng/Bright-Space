@@ -10,6 +10,9 @@
  * Type color drives the block fill (matches PROPERTY_TYPE_CONFIG). Blocks
  * without a crew get a dashed amber border, no fill — same convention as
  * the route ribbon so unassigned reads the same across views.
+ *
+ * Each block is draggable — drop it on a crew card in CrewUtilization to
+ * (re)assign that visit (see DispatchBoard's commitAssign).
  */
 import { PROPERTY_TYPE_CONFIG } from './constants'
 
@@ -52,7 +55,9 @@ function layoutColumns(visits) {
   return { total, positioned }
 }
 
-export default function DispatchTimeline({ visits, jobs, properties, clients, empName, onOpen }) {
+export default function DispatchTimeline({
+  visits, jobs, properties, clients, empName, onOpen, onDragStartVisit, onDragEndVisit,
+}) {
   const filtered = (visits || []).filter(v => v.status !== 'cancelled')
   const { total, positioned } = layoutColumns(filtered)
 
@@ -116,10 +121,17 @@ export default function DispatchTimeline({ visits, jobs, properties, clients, em
               <button
                 key={v.id}
                 type="button"
+                draggable={!!onDragStartVisit}
+                onDragStart={onDragStartVisit ? (e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  try { e.dataTransfer.setData('text/plain', String(v.id)) } catch { /* ignore */ }
+                  onDragStartVisit(v)
+                } : undefined}
+                onDragEnd={onDragEndVisit}
                 onClick={() => onOpen?.(v, job, prop)}
                 className={`absolute rounded-lg text-left px-2 py-1.5 overflow-hidden transition-shadow hover:shadow-md ${
                   unassigned ? 'bg-amber-50 text-amber-900' : 'text-white'
-                }`}
+                } ${onDragStartVisit ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 style={{
                   top: `${top}px`,
                   height: `${height}px`,

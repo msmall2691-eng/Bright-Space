@@ -2,11 +2,16 @@
  * Left column of the dispatch board — every job today that's still
  * waiting on a crew, sorted by start time. Empty state reads as a win
  * ("Every job today has a crew — nice.") rather than a hollow shell.
+ *
+ * Each card is draggable — drop it on a crew card in CrewUtilization to
+ * assign that visit (see DispatchBoard's commitAssign).
  */
 import { CheckCircle2 } from 'lucide-react'
 import { PROPERTY_TYPE_CONFIG } from './constants'
 
-export default function UnassignedQueue({ visits, jobs, properties, clients, onOpen }) {
+export default function UnassignedQueue({
+  visits, jobs, properties, clients, onOpen, onDragStartVisit, onDragEndVisit,
+}) {
   return (
     <div className="bg-bg-2 border border-hairline rounded-2xl p-3 flex flex-col min-w-0">
       <div className="flex items-center justify-between mb-3 px-1">
@@ -38,8 +43,15 @@ export default function UnassignedQueue({ visits, jobs, properties, clients, onO
               <li key={v.id}>
                 <button
                   type="button"
+                  draggable={!!onDragStartVisit}
+                  onDragStart={onDragStartVisit ? (e) => {
+                    e.dataTransfer.effectAllowed = 'move'
+                    try { e.dataTransfer.setData('text/plain', String(v.id)) } catch { /* ignore */ }
+                    onDragStartVisit(v)
+                  } : undefined}
+                  onDragEnd={onDragEndVisit}
                   onClick={() => onOpen?.(v, job, prop)}
-                  className="w-full text-left bg-panel border border-hairline rounded-xl px-3 py-2.5 hover:border-amber-300 hover:shadow-sm transition-all"
+                  className={`w-full text-left bg-panel border border-hairline rounded-xl px-3 py-2.5 hover:border-amber-300 hover:shadow-sm transition-all ${onDragStartVisit ? 'cursor-grab active:cursor-grabbing' : ''}`}
                   style={{ borderLeft: '3px solid #F59E0B' }}
                 >
                   <div className="text-[11px] font-mono tabular-nums text-ink-3">

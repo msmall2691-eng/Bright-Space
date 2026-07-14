@@ -4,14 +4,8 @@ import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
-
-/** JS Date.getDay() is 0=Sun..6=Sat; the backend's day_of_week is 0=Mon..6=Sun
- *  (matches Python's date.weekday()). Parses as local midnight, not UTC, so a
- *  "YYYY-MM-DD" string doesn't shift a day depending on the caller's timezone. */
-function isoDateToBackendDow(isoDate) {
-  const d = new Date(`${isoDate}T00:00:00`)
-  return (d.getDay() + 6) % 7
-}
+import { isoDateToBackendDow } from '../utils/recurringReschedule'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively.
  *  Connecteam returns shapes like { userId, firstName, lastName, displayName }
@@ -175,7 +169,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       setScopeDialog('delete')
       return
     }
-    if (!window.confirm('Delete this job? This permanently removes it and its Google Calendar event.')) return
+    if (!(await confirmDialog('Delete this job? This permanently removes it and its Google Calendar event.', { confirmLabel: 'Delete', danger: true }))) return
     setRemoving(true)
     setError('')
     try {
@@ -211,7 +205,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // updated/removed by the backend on the status change).
   const handleCancelJob = async () => {
     if (!job?.id) return
-    if (!window.confirm('Cancel this job? It will be marked cancelled.')) return
+    if (!(await confirmDialog('Cancel this job? It will be marked cancelled.', { confirmLabel: 'Cancel job', danger: true }))) return
     setRemoving(true)
     setError('')
     const prevStatus = job.status
@@ -360,19 +354,33 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         }
         notify?.('Updated this visit only \u2014 the rest of the series is unchanged')
       } else if (scope === 'future') {
-        const payload = { cleaner_ids: formData.cleaner_ids, split_date: originalDate }
+        // split_date is BOTH the old schedule's cutoff and the new
+        // schedule's floor (see modules/recurring/router.py's
+        // split_schedule) \u2014 anchoring it on originalDate alone breaks when
+        // the visit moved EARLIER (e.g. Wednesday \u2192 the same week's Monday):
+        // the new schedule's floor would exclude the target Monday and that
+        // occurrence would vanish for a full cycle. Use whichever date is
+        // earlier so both the old occurrence's cleanup and the new
+        // occurrence's generation land on the correct side of the boundary.
+        const splitDate = dateChanged && newDate < originalDate ? newDate : originalDate
+        const payload = { cleaner_ids: formData.cleaner_ids, split_date: splitDate }
         if (formData.title) payload.title = formData.title
         if (formData.address) payload.address = formData.address
         payload.notes = formData.notes
         if (formData.start_time) payload.start_time = formData.start_time
         if (formData.end_time) payload.end_time = formData.end_time
-        // Only override the weekly pattern when the occurrence actually
-        // moved to a different day \u2014 a pure time/crew edit shouldn't touch
-        // a monthly schedule's day-of-month by accident.
+        // Only override the day pattern when the occurrence actually moved
+        // to a different day \u2014 a pure time/crew edit shouldn't touch a
+        // monthly schedule's day-of-month (or a weekly one's day-of-week) by
+        // accident. Both fields are sent together: generate_dates reads
+        // whichever one matches the schedule's own frequency and ignores
+        // the other, so this is correct regardless of frequency without
+        // needing to know it here.
         if (dateChanged) {
           const dow = isoDateToBackendDow(newDate)
           payload.days_of_week = [dow]
           payload.day_of_week = dow
+          payload.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
         }
         await post(`/api/recurring/${schedId}/split`, payload)
         notify?.('Updated this visit and every future one in the series')
@@ -387,6 +395,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           const dow = isoDateToBackendDow(newDate)
           payload.days_of_week = [dow]
           payload.day_of_week = dow
+          payload.day_of_month = new Date(`${newDate}T00:00:00`).getDate()
         }
         const res = await patch(`/api/recurring/${schedId}`, payload)
         notify?.(`Updated the whole series (${res?.resynced_jobs || 0} upcoming visit(s) re-synced)`)
@@ -738,7 +747,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
           </>)}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
           )}

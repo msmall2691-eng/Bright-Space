@@ -1,11 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '../components/ui'
 import { useInvoicing } from '../hooks/useInvoicing'
 import { useInvoicingMutations } from '../hooks/useInvoicingMutations'
 import { EMPTY_ITEM } from '../components/invoicing/constants'
-import { Toast } from '../components/invoicing/Toast'
+import { pushToast } from '../utils/toastBus'
 import { InvoiceRow } from '../components/invoicing/InvoiceRow'
 import { SendPanel } from '../components/invoicing/SendPanel'
 import { ChaserModal } from '../components/invoicing/ChaserModal'
@@ -31,13 +31,8 @@ export default function Invoicing() {
   // line items + total.
   const [showInvAdvanced, setShowInvAdvanced] = useState(false)
   const [sendForm, setSendForm]   = useState({ channel: 'email', email: '', phone: '', custom_message: '' })
-  const [toasts, setToasts]       = useState([])
 
-  const toast = useCallback((message, type = 'success') => {
-    const id = Date.now()
-    setToasts(t => [...t, { id, message, type }])
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500)
-  }, [])
+  const toast = (message, type = 'success') => pushToast(message, type)
 
   const {
     saving, sending, drafting, deleting,
@@ -171,8 +166,6 @@ export default function Invoicing() {
           updateChaserMsg={updateChaserMsg}
         />
       )}
-
-      <Toast toasts={toasts} />
 
     </div>
   )

@@ -3,7 +3,8 @@ import { Calendar, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { get, post, put, del } from '../../api'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
-import { useToast } from '../ui/Toast'
+import { toast } from '../../utils/toastBus'
+import { confirmDialog } from '../../utils/confirmBus'
 import EndsPicker from './EndsPicker'
 
 /** Two self-contained tab views for the Schedule page.
@@ -184,7 +185,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
             <label className="block text-sm font-semibold mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} rows={2} className="w-full px-3 py-2 border border-hairline rounded-lg" />
           </div>
-          {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>}
+          {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded text-sm">{error}</div>}
         </div>
         <div className="border-t border-hairline bg-bg p-4 flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -196,7 +197,6 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
 }
 
 export function AvailabilityPanel() {
-  const { toast, ToastContainer } = useToast()
   const [entries, setEntries] = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
@@ -246,7 +246,7 @@ export function AvailabilityPanel() {
   }
 
   const remove = async (id) => {
-    if (!confirm('Remove this time-off entry?')) return
+    if (!(await confirmDialog('Remove this time-off entry?'))) return
     try {
       await del(`/api/jobs/time-off/${id}`)
       setEntries(entries.filter(e => e.id !== id))
@@ -321,13 +321,11 @@ export function AvailabilityPanel() {
           ))}
         </ul>
       )}
-      <ToastContainer />
     </div>
   )
 }
 
 export function RecurringPanel() {
-  const { toast, ToastContainer } = useToast()
   const [schedules, setSchedules] = useState([])
   const [clients, setClients] = useState({})
   const [propertiesList, setPropertiesList] = useState([])
@@ -400,7 +398,7 @@ export function RecurringPanel() {
             <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}><Plus className="w-4 h-4 mr-1" />New schedule</Button>
           </div>
         </div>
-        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
+        {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>}
         {loading ? (
           <div className="text-center text-ink-3 py-12">Loading...</div>
         ) : schedules.length === 0 ? (
@@ -452,7 +450,6 @@ export function RecurringPanel() {
           onCreated={load}
         />
       )}
-      <ToastContainer />
     </div>
   )
 }

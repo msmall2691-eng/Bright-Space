@@ -12,6 +12,7 @@ import PropertiesTab from '../components/client/PropertiesTab'
 import ActivityTimeline from '../components/client/ActivityTimeline'
 import ClientMobileHeader from '../components/client/ClientMobileHeader'
 import ClientDetailsTab from '../components/client/ClientDetailsTab'
+import ClientProfileSkeleton from '../components/client/ClientProfileSkeleton'
 import {
   RecurringTab, JobsListTab, QuotesListTab, InvoicesListTab, OpportunitiesTab,
 } from '../components/client/ClientListTabs'
@@ -22,7 +23,8 @@ import {
   EMPTY_ICAL, OPP_COLORS,
 } from '../components/client/constants'
 import { del, get, post, patch } from "../api"
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
@@ -72,7 +74,6 @@ function SubNav({ items, active, onSelect }) {
 export default function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { toast, ToastContainer } = useToast()
 
   // Tab redirect for backward compatibility (legacy hash names → current tab keys).
   // 'properties' is its own tab again (PR 1) — no redirect.
@@ -210,7 +211,7 @@ export default function ClientProfile() {
   }
 
   const deleteProp = async (propId) => {
-    if (!confirm('Remove this property?')) return
+    if (!(await confirmDialog('Remove this property?'))) return
     await del(`/api/properties/${propId}`)
     await load()
   }
@@ -271,7 +272,7 @@ export default function ClientProfile() {
   }
 
   const removeIcal = async (propId, icalId) => {
-    if (!confirm('Remove this calendar feed?')) return
+    if (!(await confirmDialog('Remove this calendar feed?'))) return
     try {
       await del(`/api/properties/${propId}/icals/${icalId}`)
       const props = await reloadProperties()
@@ -328,9 +329,7 @@ export default function ClientProfile() {
     setSending(false)
   }
 
-  if (!client) return (
-    <div className="flex items-center justify-center h-full text-ink-3 text-sm">Loading...</div>
-  )
+  if (!client) return <ClientProfileSkeleton />
 
   return (
     <div className="flex h-full overflow-hidden" data-testid="client-profile-root">
@@ -557,7 +556,6 @@ export default function ClientProfile() {
         />
       )}
 
-      <ToastContainer />
     </div>
   )
 }

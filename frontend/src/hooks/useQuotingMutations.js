@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { del, patch, post } from '../api'
+import { confirmDialog } from '../utils/confirmBus'
 
 /** Quoting mutation handlers grouped into one hook so the page component
  *  stays focused on state + render. Every action ends by refetching the
@@ -24,9 +25,10 @@ export function useQuotingMutations({
     // status with NONE of them, so route those two through the real endpoints and
     // confirm first. Everything else (draft/sent/viewed) is a plain status edit.
     if (status === 'accepted' || status === 'declined') {
-      const ok = window.confirm(status === 'accepted'
+      const ok = await confirmDialog(status === 'accepted'
         ? 'Mark this quote accepted? This converts it to a job (when a property is linked), marks the deal won, and emails the owner and customer.'
-        : 'Mark this quote declined? This closes the deal as lost and notifies the owner.')
+        : 'Mark this quote declined? This closes the deal as lost and notifies the owner.',
+        { confirmLabel: status === 'accepted' ? 'Accept' : 'Decline' })
       if (!ok) { loadQuotes(); return }  // revert the optimistic chip
       try {
         await post(`/api/quotes/${id}/${status === 'accepted' ? 'accept' : 'decline'}`, {})
@@ -53,7 +55,7 @@ export function useQuotingMutations({
   }
 
   const archiveQuote = async (quote) => {
-    if (!window.confirm(`Archive quote ${quote.quote_number || quote.id}? It will be hidden from this list.`)) return
+    if (!(await confirmDialog(`Archive quote ${quote.quote_number || quote.id}? It will be hidden from this list.`, { confirmLabel: 'Archive' }))) return
     try {
       await del(`/api/quotes/${quote.id}`)
       if (currentSelectedId === quote.id) onSelectedCleared?.()
@@ -65,7 +67,7 @@ export function useQuotingMutations({
   const bulkArchive = async () => {
     const ids = [...selectedIds]
     if (!ids.length) return
-    if (!window.confirm(`Archive ${ids.length} quote${ids.length === 1 ? '' : 's'}? They'll be hidden from this list.`)) return
+    if (!(await confirmDialog(`Archive ${ids.length} quote${ids.length === 1 ? '' : 's'}? They'll be hidden from this list.`, { confirmLabel: 'Archive' }))) return
     let failed = 0
     for (const id of ids) { try { await del(`/api/quotes/${id}`) } catch { failed++ } }
     clearSelection(); await loadQuotes()
@@ -77,7 +79,7 @@ export function useQuotingMutations({
   const bulkDeletePermanent = async () => {
     const ids = [...selectedIds]
     if (!ids.length) return
-    if (!window.confirm(`Permanently delete ${ids.length} quote${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    if (!(await confirmDialog(`Permanently delete ${ids.length} quote${ids.length === 1 ? '' : 's'}? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return
     let failed = 0
     for (const id of ids) { try { await del(`/api/quotes/${id}/permanent`) } catch { failed++ } }
     clearSelection(); await loadArchived()
@@ -87,7 +89,7 @@ export function useQuotingMutations({
   }
 
   const deletePermanent = async (q) => {
-    if (!window.confirm(`Permanently delete quote ${q.quote_number || q.id}? This cannot be undone.`)) return
+    if (!(await confirmDialog(`Permanently delete quote ${q.quote_number || q.id}? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return
     try { await del(`/api/quotes/${q.id}/permanent`); await loadArchived(); toast('Quote deleted permanently') }
     catch (e) { toast(e.message || 'Could not delete quote') }
   }

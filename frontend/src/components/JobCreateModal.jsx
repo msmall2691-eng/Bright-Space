@@ -651,7 +651,7 @@ export default function JobCreateModal({
           </button>
 
           {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 text-xs">
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg px-3 py-2.5 text-xs">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
             </div>
           )}

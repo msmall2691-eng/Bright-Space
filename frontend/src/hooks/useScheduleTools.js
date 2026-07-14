@@ -11,7 +11,7 @@ import { get, post } from '../api'
  *  (state = {loading} → {preview,…}), run* applies (state → {…, running})
  *  and calls `refresh` on success. Toasts communicate outcomes.
  *
- *  Parent passes `toast` (from useToast) and `refresh` (from useScheduleData)
+ *  Parent passes `toast` (from utils/toastBus) and `refresh` (from useScheduleData)
  *  so this hook stays free of shared context — just business logic. */
 export function useScheduleTools({ toast, refresh }) {
   const [autoAssign, setAutoAssign] = useState(null)

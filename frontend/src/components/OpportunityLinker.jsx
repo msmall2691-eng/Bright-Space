@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { get, patch } from '../api'
 import { X, Link2, Loader, CheckCircle } from 'lucide-react'
+import { toast } from '../utils/toastBus'
 
 const STAGE_COLORS = {
   new:       'bg-amber-100 text-amber-700',
@@ -54,7 +55,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
       setShowModal(false)
     } catch (error) {
       console.error('Error linking to opportunity:', error)
-      alert('Failed to link to opportunity')
+      toast.error('Failed to link to opportunity')
     } finally {
       setSaving(false)
     }
@@ -76,7 +77,7 @@ export default function OpportunityLinker({ clientId, itemType, itemId, itemName
       setSelectedOppId(null)
     } catch (error) {
       console.error('Error unlinking from opportunity:', error)
-      alert('Failed to unlink from opportunity')
+      toast.error('Failed to unlink from opportunity')
     } finally {
       setSaving(false)
     }

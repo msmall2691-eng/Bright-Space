@@ -23,11 +23,11 @@ export const PROPERTY_TYPE_CONFIG = {
   str: {
     label: 'STR',
     icon: Wind,
-    color: 'bg-amber-50 border-l-4 border-l-amber-400',
-    badge: 'bg-amber-100 text-amber-700',
+    color: 'bg-amber-50 dark:bg-amber-950 border-l-4 border-l-amber-400',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
     dot:   'bg-amber-500',
-    pill:  'bg-amber-50 text-amber-700 border-amber-200',
-    pillHover: 'hover:bg-amber-100',
+    pill:  'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800',
+    pillHover: 'hover:bg-amber-100 dark:hover:bg-amber-900',
     // Tailwind's amber-500 as a literal hex — for callers that need a real
     // color value (inline-styled/absolutely-positioned blocks: the dispatch
     // timeline, route ribbon) rather than a class, so those views can't drift
@@ -37,21 +37,21 @@ export const PROPERTY_TYPE_CONFIG = {
   residential: {
     label: 'Residential',
     icon: Home,
-    color: 'bg-blue-50 border-l-4 border-l-blue-400',
-    badge: 'bg-blue-100 text-blue-700',
+    color: 'bg-blue-50 dark:bg-blue-950 border-l-4 border-l-blue-400',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
     dot:   'bg-blue-500',
-    pill:  'bg-blue-50 text-blue-700 border-blue-200',
-    pillHover: 'hover:bg-blue-100',
+    pill:  'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+    pillHover: 'hover:bg-blue-100 dark:hover:bg-blue-900',
     hex: '#3B82F6', // Tailwind blue-500
   },
   commercial: {
     label: 'Commercial',
     icon: Building2,
-    color: 'bg-purple-50 border-l-4 border-l-purple-400',
-    badge: 'bg-purple-100 text-purple-700',
+    color: 'bg-purple-50 dark:bg-purple-950 border-l-4 border-l-purple-400',
+    badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
     dot:   'bg-purple-500',
-    pill:  'bg-purple-50 text-purple-700 border-purple-200',
-    pillHover: 'hover:bg-purple-100',
+    pill:  'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800',
+    pillHover: 'hover:bg-purple-100 dark:hover:bg-purple-900',
     hex: '#A855F7', // Tailwind purple-500
   },
 }
@@ -63,13 +63,13 @@ export const VISIT_STATUS_CONFIG = {
   // is missing a real schedule (no date, no property, or no crew). Shown as
   // amber so operators don't mistake a half-set-up job for one they can walk
   // away from. See computeDisplayStatus() below.
-  needs_setup: { label: 'Needs setup',  dot: 'bg-amber-500',  badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700' },
-  scheduled:   { label: 'Scheduled',   dot: 'bg-blue-500',   badge: 'info',    pillMobile: 'bg-blue-50 text-blue-700' },
-  dispatched:  { label: 'Dispatched',  dot: 'bg-green-500',  badge: 'success', pillMobile: 'bg-green-50 text-green-700' },
-  en_route:    { label: 'En Route',    dot: 'bg-cyan-500',   badge: 'info',    pillMobile: 'bg-cyan-50 text-cyan-700' },
-  in_progress: { label: 'In Progress', dot: 'bg-amber-500',  badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700' },
-  completed:   { label: 'Completed',   dot: 'bg-green-600',  badge: 'success', pillMobile: 'bg-emerald-50 text-emerald-700' },
-  no_show:     { label: 'No Show',     dot: 'bg-red-500',    badge: 'danger',  pillMobile: 'bg-red-50 text-red-700' },
+  needs_setup: { label: 'Needs setup',  dot: 'bg-amber-500',  badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' },
+  scheduled:   { label: 'Scheduled',   dot: 'bg-blue-500',   badge: 'info',    pillMobile: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
+  dispatched:  { label: 'Dispatched',  dot: 'bg-green-500',  badge: 'success', pillMobile: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300' },
+  en_route:    { label: 'En Route',    dot: 'bg-cyan-500',   badge: 'info',    pillMobile: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300' },
+  in_progress: { label: 'In Progress', dot: 'bg-amber-500',  badge: 'warning', pillMobile: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' },
+  completed:   { label: 'Completed',   dot: 'bg-green-600',  badge: 'success', pillMobile: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' },
+  no_show:     { label: 'No Show',     dot: 'bg-red-500',    badge: 'danger',  pillMobile: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300' },
   cancelled:   { label: 'Cancelled',   dot: 'bg-ink-3',      badge: 'danger',  pillMobile: 'bg-bg-2 text-ink-2' },
 }
 

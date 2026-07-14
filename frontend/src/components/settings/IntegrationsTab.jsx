@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import GoogleAccountCard from '../GoogleAccountCard'
 import { get, post } from '../../api'
+import { confirmDialog } from '../../utils/confirmBus'
 
 /** Integrations tab — the "connect BrightBase to Google / your phone /
  *  external tools" hub, reorganized into two sections:
@@ -73,7 +74,7 @@ export default function IntegrationsTab({ toast, active }) {
   }
 
   const disconnectConnecteam = async () => {
-    if (!window.confirm('Disconnect Connecteam? Bright Space will stop pushing shifts until you re-add the API key.')) return
+    if (!(await confirmDialog('Disconnect Connecteam? Bright Space will stop pushing shifts until you re-add the API key.', { confirmLabel: 'Disconnect', danger: true }))) return
     setCtSaving(true)
     try {
       const r = await post('/api/settings/connecteam', { api_key: '', company_id: '' })
@@ -138,7 +139,7 @@ export default function IntegrationsTab({ toast, active }) {
   }
 
   const pushScheduleToConnecteam = async () => {
-    if (!window.confirm('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?')) return
+    if (!(await confirmDialog('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?', { confirmLabel: 'Push' }))) return
     setCtPushing(true)
     try {
       const kicked = await post('/api/settings/connecteam/push-open-shifts', {})
@@ -277,7 +278,7 @@ export default function IntegrationsTab({ toast, active }) {
               </div>
             </div>
             {!gcalConn.loading && !gcalConn.connected && (
-              <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 leading-relaxed">
+              <div className="mt-3 text-xs bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded-lg p-3 leading-relaxed">
                 <div className="font-semibold mb-1">Appointments aren't reaching Google.</div>
                 {gcalConn.detail || 'Google Calendar credentials are missing or invalid on the server.'}
                 {!gcalConn.oauth_available && (

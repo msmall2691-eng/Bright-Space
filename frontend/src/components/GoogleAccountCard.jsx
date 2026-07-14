@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Mail, Calendar, Link2, Unlink, AlertTriangle, CheckCircle } from 'lucide-react'
 import { get, patch, del } from '../api'
+import { confirmDialog } from '../utils/confirmBus'
 
 /**
  * "Your Google account" — the per-user Gmail + Calendar grant (Twenty-style
@@ -49,7 +50,7 @@ export default function GoogleAccountCard() {
   }
 
   const disconnect = async () => {
-    if (!window.confirm('Disconnect your Google account? Gmail and Calendar sync from this account will stop.')) return
+    if (!(await confirmDialog('Disconnect your Google account? Gmail and Calendar sync from this account will stop.', { confirmLabel: 'Disconnect', danger: true }))) return
     setBusy(true)
     try {
       await del('/api/auth/google-account')

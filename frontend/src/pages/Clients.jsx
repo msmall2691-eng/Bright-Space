@@ -5,7 +5,8 @@ import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
 import { EmptyState } from '../components/ui'
 import CRMHealthPanel from "../components/CRMHealthPanel"
-import { useToast } from '../components/ui/Toast'
+import { toast } from '../utils/toastBus'
+import { confirmDialog } from '../utils/confirmBus'
 import { useClients } from '../hooks/useClients'
 import { useClientPhones } from '../hooks/useClientPhones'
 import { useClientMutations } from '../hooks/useClientMutations'
@@ -82,10 +83,11 @@ function BucketFilterBanner({
 
   const doArchive = async () => {
     if (!idsToArchive.length) return
-    const ok = window.confirm(
+    const ok = await confirmDialog(
       `Archive ${idsToArchive.length} ${bucketFilter.label.toLowerCase()} client${idsToArchive.length === 1 ? '' : 's'}?\n\n` +
       `They'll be set to inactive but not deleted — you can un-archive them later. ` +
-      `Existing jobs/quotes/invoices stay intact.`
+      `Existing jobs/quotes/invoices stay intact.`,
+      { confirmLabel: 'Archive' }
     )
     if (!ok) return
     setBusy(true)
@@ -108,11 +110,12 @@ function BucketFilterBanner({
   }
   const applyMerge = async () => {
     if (!dupPreview?.length) return
-    const ok = window.confirm(
+    const ok = await confirmDialog(
       `Merge ${dupPreview.length} duplicate group${dupPreview.length === 1 ? '' : 's'}?\n\n` +
       `The keeper for each group is the client with a real name; placeholder-named ` +
       `duplicates get merged into it. All jobs/quotes/invoices are reassigned first. ` +
-      `This cannot be undone.`
+      `This cannot be undone.`,
+      { confirmLabel: 'Merge', danger: true }
     )
     if (!ok) return
     setBusy(true)
@@ -192,7 +195,6 @@ function BucketFilterBanner({
 
 export default function Clients() {
   const navigate = useNavigate()
-  const { toast, ToastContainer } = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const { clients, setClients, filtered: baseFiltered, statusCounts, load } = useClients(statusFilter, search)
@@ -458,7 +460,6 @@ export default function Clients() {
           onCreated={() => { setJobClient(null); toast.success('Job scheduled ✓') }}
         />
       )}
-      <ToastContainer />
     </div>
   )
 }
