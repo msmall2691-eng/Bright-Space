@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Send, ShieldAlert, ShieldCheck, Wrench } from 'lucide-react'
+import { Sparkles, Send, ShieldAlert, ShieldCheck, Wrench, X } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { EmptyState, Skeleton } from '../components/ui'
 import AgentAvatar from '../components/workspace/AgentAvatar'
 import { get, post, wsUrl } from '../api'
+import { todayYMD } from '../utils/format'
 
 /**
  * Workspace — the Agent Command Center, rebuilt as a native chat room.
@@ -26,7 +27,22 @@ import { get, post, wsUrl } from '../api'
  *                  each persona's own "ask before acting" rule before it
  *                  writes files or runs commands — not a replacement for
  *                  your own confirmation on anything destructive.
+ *
+ * Suggested tasks: reuses the same deterministic, free (no LLM call) scan
+ * that already powers the Dashboard's "needs attention" tile
+ * (GET /api/ai/followup-check — overdue invoices, unassigned jobs, stale
+ * quotes, etc.), refreshed once per business day and cached in
+ * localStorage so opening Workspace repeatedly the same day doesn't
+ * re-fetch. Tapping one sends it straight to the router like any typed
+ * message, so it's answered by whichever agent actually owns that kind
+ * of task.
  */
+
+const SUGGESTIONS_CACHE_KEY = 'brightbase_workspace_suggestions'
+
+function suggestionPrompt(item) {
+  return item.detail ? `${item.action} — ${item.detail}` : item.action
+}
 
 let bubbleSeq = 0
 const nextId = () => `b${++bubbleSeq}`
@@ -115,6 +131,35 @@ function ErrorBubble({ text }) {
   )
 }
 
+function SuggestedTasks({ items, onDismiss, onPick }) {
+  if (!items.length) return null
+  return (
+    <div className="shrink-0 mb-3 rounded-2xl border border-hairline bg-panel p-3.5">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide">Suggested for today</span>
+        <button onClick={onDismiss} className="text-ink-3 hover:text-ink-2 p-0.5">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="space-y-1">
+        {items.map((item, i) => (
+          <button
+            key={i}
+            onClick={() => onPick(item)}
+            className="w-full flex items-start gap-2.5 text-left p-2 rounded-lg hover:bg-bg transition-colors"
+          >
+            <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${item.severity === 'high' ? 'bg-red-500' : 'bg-amber-400'}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink-2 truncate">{item.title}</span>
+              <span className="block text-[11px] text-ink-3 truncate">{item.action}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Workspace() {
   const [agents, setAgents] = useState([])
   const [loadingAgents, setLoadingAgents] = useState(true)
@@ -122,6 +167,8 @@ export default function Workspace() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
 
   const wsMapRef = useRef({}) // `${agentId}:${model}` -> WebSocket
   const scrollRef = useRef(null)
@@ -129,6 +176,28 @@ export default function Workspace() {
   useEffect(() => {
     get('/api/agents').then(a => setAgents(Array.isArray(a) ? a : [])).catch(() => setAgents([]))
       .finally(() => setLoadingAgents(false))
+  }, [])
+
+  useEffect(() => {
+    const today = todayYMD()
+    let cached = null
+    try { cached = JSON.parse(localStorage.getItem(SUGGESTIONS_CACHE_KEY) || 'null') } catch { /* ignore */ }
+    if (cached?.date === today) {
+      setSuggestions(cached.items || [])
+      setSuggestionsDismissed(!!cached.dismissed)
+      return
+    }
+    // Stale or missing — refresh once for the day. This reuses the same
+    // free, deterministic DB scan the Dashboard's "needs attention" tile
+    // already calls; no extra LLM cost for the daily refresh itself.
+    get('/api/ai/followup-check').then(data => {
+      const items = (data?.followups || []).slice(0, 5)
+      setSuggestions(items)
+      setSuggestionsDismissed(false)
+      try {
+        localStorage.setItem(SUGGESTIONS_CACHE_KEY, JSON.stringify({ date: today, items, dismissed: false }))
+      } catch { /* storage full/unavailable — non-fatal, just won't cache */ }
+    }).catch(() => setSuggestions([]))
   }, [])
 
   useEffect(() => {
@@ -218,8 +287,16 @@ export default function Workspace() {
     socket.send(JSON.stringify({ message: text }))
   }
 
-  async function handleSend() {
-    const text = input.trim()
+  function dismissSuggestions() {
+    setSuggestionsDismissed(true)
+    try {
+      const today = todayYMD()
+      localStorage.setItem(SUGGESTIONS_CACHE_KEY, JSON.stringify({ date: today, items: suggestions, dismissed: true }))
+    } catch { /* ignore */ }
+  }
+
+  async function handleSend(overrideText) {
+    const text = (overrideText ?? input).trim()
     if (!text || sending) return
     setInput('')
     setSending(true)
@@ -293,6 +370,14 @@ export default function Workspace() {
           ))}
         </div>
 
+        {messages.length === 0 && !suggestionsDismissed && suggestions.length > 0 && (
+          <SuggestedTasks
+            items={suggestions}
+            onDismiss={dismissSuggestions}
+            onPick={(item) => handleSend(suggestionPrompt(item))}
+          />
+        )}
+
         {/* Message list */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
           {messages.length === 0 ? (
@@ -328,7 +413,7 @@ export default function Workspace() {
               className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none max-h-32"
             />
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!input.trim() || sending}
               className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-blue-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
             >
