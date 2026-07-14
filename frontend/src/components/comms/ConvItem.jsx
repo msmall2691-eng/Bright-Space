@@ -2,6 +2,7 @@ import { Clock } from 'lucide-react'
 import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
 import { Avatar } from './primitives'
+import { htmlToText } from '../../utils/format'
 
 /** Left-list conversation row (Twenty CRM style): avatar + channel chip,
  *  name + relative time, preview, and Overdue/Unassigned chips when
@@ -45,7 +46,7 @@ export function ConvItem({ conv, active, onClick }) {
 
           {/* Preview (single line) */}
           <p className={`text-[12.5px] truncate mt-0.5 ${unread ? 'text-ink-2' : 'text-ink-3'}`}>
-            {conv.preview || 'No messages yet'}
+            {htmlToText(conv.preview) || 'No messages yet'}
           </p>
 
           {/* Status chips — only render when actionable */}

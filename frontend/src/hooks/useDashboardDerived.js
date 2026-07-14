@@ -195,6 +195,13 @@ export function useDashboardDerived({
   const hiddenInvoices = Math.max(0, invoices.filter(i => i.status === 'overdue').length - 2)
   const hiddenLateVisits = Math.max(0, todayVisits.filter(v => v.status === 'scheduled').length - 3)
 
+  // Exclude cancelled jobs — the Schedule/Dispatch views already hide
+  // cancelled visits (useScheduleAnalytics/useScheduleFilters), so counting
+  // them here made the Dashboard disagree with the Schedule page about
+  // whether anything is actually happening today.
+  const activeTodayJobs = todayJobs.filter(j => j.status !== 'cancelled')
+  const activeWeekJobs = weekJobs.filter(j => j.status !== 'cancelled')
+
   return {
     todayRevenue, mtdRevenue, outstanding, pipeline, overdueInvoiceCount,
     quoteActions,
@@ -205,7 +212,8 @@ export function useDashboardDerived({
     arAging,
     attention,
     hiddenOverdueConvs, hiddenUnassignedConvs, hiddenInvoices, hiddenLateVisits,
-    todayCount: todayJobs.length,
-    weekCount: weekJobs.length,
+    todayJobs: activeTodayJobs,
+    todayCount: activeTodayJobs.length,
+    weekCount: activeWeekJobs.length,
   }
 }

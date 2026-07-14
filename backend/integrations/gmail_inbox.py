@@ -99,9 +99,13 @@ def _get_text_body(msg):
                     continue
     else:
         try:
-            return msg.get_payload(decode=True).decode(
+            text = msg.get_payload(decode=True).decode(
                 msg.get_content_charset() or "utf-8", errors="replace"
             )
+            if msg.get_content_type() == "text/html":
+                text = re.sub(r"<[^>]+>", " ", text)
+                text = re.sub(r"\s+", " ", text).strip()
+            return text
         except Exception:
             pass
     return ""

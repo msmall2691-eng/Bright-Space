@@ -235,30 +235,58 @@ export default function Requests() {
   const [drawerTab, setDrawerTab] = useState('details') // 'details' | 'conversation'
   const [selectedIntakes, setSelectedIntakes] = useState(() => new Set()) // bulk-archive selection
   const [bulkArchiving, setBulkArchiving] = useState(false)
+  const [showNewRequestModal, setShowNewRequestModal] = useState(false)
+  const [creatingRequest, setCreatingRequest] = useState(false)
+  const [newRequestForm, setNewRequestForm] = useState({
+    name: '', phone: '', email: '', address: '', service_type: 'residential', message: '',
+  })
 
   // Requests is real service leads only — website booking-form submissions and
   // quote requests. Raw email/SMS conversations (vendor pitches, "thanks!"
   // texts, sales outreach) belong in Comms, not here, so they no longer get
   // merged into this feed.
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams()
-        if (selectedStatus !== 'all') params.append('status', selectedStatus)
-        if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
-        if (selectedPriority !== 'all') params.append('priority', selectedPriority)
+  const loadRequests = async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (selectedStatus !== 'all') params.append('status', selectedStatus)
+      if (selectedServiceType !== 'all') params.append('service_type', selectedServiceType)
+      if (selectedPriority !== 'all') params.append('priority', selectedPriority)
 
-        const intakes = await get(`/api/intake?${params.toString()}`).catch(() => [])
-        setRequests(Array.isArray(intakes) ? intakes : [])
-      } catch (err) {
-        console.error('[Requests]', err)
-      }
-      setLoading(false)
+      const intakes = await get(`/api/intake?${params.toString()}`).catch(() => [])
+      setRequests(Array.isArray(intakes) ? intakes : [])
+    } catch (err) {
+      console.error('[Requests]', err)
     }
+    setLoading(false)
+  }
 
-    load()
+  useEffect(() => {
+    loadRequests()
   }, [selectedStatus, selectedServiceType, selectedPriority])
+
+  const handleCreateRequest = async () => {
+    if (!newRequestForm.name.trim()) return
+    setCreatingRequest(true)
+    try {
+      const created = await post('/api/intake', {
+        name: newRequestForm.name.trim(),
+        phone: newRequestForm.phone.trim() || null,
+        email: newRequestForm.email.trim() || null,
+        address: newRequestForm.address.trim() || null,
+        service_type: newRequestForm.service_type,
+        message: newRequestForm.message.trim() || null,
+      })
+      setShowNewRequestModal(false)
+      setNewRequestForm({ name: '', phone: '', email: '', address: '', service_type: 'residential', message: '' })
+      await loadRequests()
+      if (created?.id) handleViewDetails(created)
+    } catch (err) {
+      console.error('[Requests] Create failed:', err)
+      alert('Could not create the request. Check the details and try again.')
+    }
+    setCreatingRequest(false)
+  }
 
   // De-duplicate then search. The same person can submit the booking form
   // twice (two near-identical leads); collapse by normalized email+phone and
@@ -383,7 +411,7 @@ export default function Requests() {
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-bold text-ink tracking-tight">Requests</h1>
-            <Button variant="primary" size="sm">
+            <Button variant="primary" size="sm" onClick={() => setShowNewRequestModal(true)}>
               <Plus className="w-4 h-4 mr-2" />
               New Request
             </Button>
@@ -662,6 +690,100 @@ export default function Requests() {
               >
                 <FileText className="w-4 h-4" />
                 Create Quote
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Request Modal */}
+      {showNewRequestModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
+          <div className="w-full sm:w-full max-w-lg bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white flex items-center justify-between">
+              <h2 className="text-xl font-bold">New Request</h2>
+              <button onClick={() => setShowNewRequestModal(false)} className="text-white/80 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+              <div>
+                <label className="text-xs font-semibold text-ink-2 uppercase">Name *</label>
+                <input
+                  type="text"
+                  value={newRequestForm.name}
+                  onChange={(e) => setNewRequestForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full mt-1 px-3 py-2 border border-hairline rounded-lg text-sm"
+                  placeholder="Customer name"
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Phone</label>
+                  <input
+                    type="tel"
+                    value={newRequestForm.phone}
+                    onChange={(e) => setNewRequestForm(f => ({ ...f, phone: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 border border-hairline rounded-lg text-sm"
+                    placeholder="(207) 555-0100"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Email</label>
+                  <input
+                    type="email"
+                    value={newRequestForm.email}
+                    onChange={(e) => setNewRequestForm(f => ({ ...f, email: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 border border-hairline rounded-lg text-sm"
+                    placeholder="name@example.com"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-2 uppercase">Address</label>
+                <input
+                  type="text"
+                  value={newRequestForm.address}
+                  onChange={(e) => setNewRequestForm(f => ({ ...f, address: e.target.value }))}
+                  className="w-full mt-1 px-3 py-2 border border-hairline rounded-lg text-sm"
+                  placeholder="123 Main St, Portland, ME"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-2 uppercase">Service Type</label>
+                <select
+                  value={newRequestForm.service_type}
+                  onChange={(e) => setNewRequestForm(f => ({ ...f, service_type: e.target.value }))}
+                  className="w-full mt-1 px-3 py-2 border border-hairline rounded-lg text-sm bg-panel"
+                >
+                  <option value="residential">Residential</option>
+                  <option value="commercial">Commercial</option>
+                  <option value="str">STR</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-2 uppercase">Notes</label>
+                <textarea
+                  value={newRequestForm.message}
+                  onChange={(e) => setNewRequestForm(f => ({ ...f, message: e.target.value }))}
+                  className="w-full mt-1 px-3 py-2 border border-hairline rounded-lg text-sm"
+                  rows={3}
+                  placeholder="What does the customer need?"
+                />
+              </div>
+            </div>
+            <div className="border-t border-hairline bg-bg p-4 sm:p-6 flex flex-col-reverse sm:flex-row gap-3 justify-end sticky bottom-0">
+              <Button variant="secondary" onClick={() => setShowNewRequestModal(false)} className="w-full sm:w-auto">
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                className="w-full sm:w-auto"
+                disabled={!newRequestForm.name.trim() || creatingRequest}
+                onClick={handleCreateRequest}
+              >
+                {creatingRequest ? 'Creating…' : 'Create Request'}
               </Button>
             </div>
           </div>

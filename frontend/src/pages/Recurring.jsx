@@ -552,6 +552,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
   const [schedule, setSchedule] = useState(null)
   const [exceptions, setExceptions] = useState([])
   const [client, setClient] = useState(null)
+  const [generatedDates, setGeneratedDates] = useState(() => new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('') // 'pause' | 'generate' | 'delete'
@@ -560,12 +561,23 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [sch, exs] = await Promise.all([
+      const [sch, exs, jobs] = await Promise.all([
         get(`/api/recurring/${id}`),
         get(`/api/recurring/${id}/exceptions`).catch(() => []),
+        // Real materialized Jobs for this series — the rule projection below
+        // (computeUpcoming) shows what SHOULD happen per the recurrence rule,
+        // which can outrun what's actually been generated. Without this, the
+        // detail page confidently listed dates that had no Job row yet, while
+        // the series list's "N upcoming" (a real Job count) correctly said 0.
+        get(`/api/jobs?recurring_schedule_id=${id}&status=scheduled&limit=200`).catch(() => []),
       ])
       setSchedule(sch)
       setExceptions(Array.isArray(exs) ? exs : [])
+      setGeneratedDates(new Set(
+        (Array.isArray(jobs) ? jobs : [])
+          .map(j => (j.scheduled_date || '').slice(0, 10))
+          .filter(Boolean)
+      ))
       if (sch?.client_id) {
         const c = await get(`/api/clients/${sch.client_id}`).catch(() => null)
         setClient(c)
@@ -583,6 +595,7 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
     () => (schedule ? computeUpcoming(schedule, exceptions, 8) : []),
     [schedule, exceptions],
   )
+  const generatedCount = upcoming.filter(u => generatedDates.has(u.date)).length
 
   const togglePause = async () => {
     if (!schedule) return
@@ -715,7 +728,15 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
             compact
           />
         ) : (
-          <ul className="space-y-1.5">
+          <>
+            {generatedCount < upcoming.length && (
+              <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Only {generatedCount} of these {upcoming.length} dates {generatedCount === 1 ? 'has' : 'have'} an
+                actual job on the Schedule — the rest are projected from the rule but haven't been generated yet.
+                Use "Generate now" above to materialize them.
+              </div>
+            )}
+            <ul className="space-y-1.5">
             {upcoming.map((u) => (
               <li key={u.date}
                 className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
@@ -728,6 +749,11 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
                     {u.rescheduled && (
                       <span className="ml-2 text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
                         rescheduled
+                      </span>
+                    )}
+                    {!generatedDates.has(u.date) && (
+                      <span className="ml-2 text-[10px] font-semibold text-ink-3 bg-bg-2 px-2 py-0.5 rounded-full">
+                        not yet generated
                       </span>
                     )}
                   </div>
@@ -747,7 +773,8 @@ function SeriesDetail({ id, onBack, onChanged, toast }) {
                 </div>
               </li>
             ))}
-          </ul>
+            </ul>
+          </>
         )}
       </div>
 

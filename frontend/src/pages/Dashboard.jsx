@@ -34,7 +34,7 @@ import { useDashboardDerived } from '../hooks/useDashboardDerived'
 export default function Dashboard() {
   const navigate = useNavigate()
   const {
-    todayJobs, weekJobs, invoices, followUps, todayVisits,
+    todayJobs: rawTodayJobs, weekJobs, invoices, followUps, todayVisits,
     overdueConvs, unassignedConvs,
     svcRevenue, commsSummary,
     employees, rosterUnavailable,
@@ -55,12 +55,12 @@ export default function Dashboard() {
     arAging,
     attention,
     hiddenOverdueConvs, hiddenUnassignedConvs, hiddenInvoices, hiddenLateVisits,
-    todayCount, weekCount,
+    todayJobs, todayCount, weekCount,
   } = useDashboardDerived({
     invoices, followUps, todayVisits,
     overdueConvs, unassignedConvs,
     commsSummary, employees,
-    weekJobs, todayJobs,
+    weekJobs, todayJobs: rawTodayJobs,
     summary,
     t,
     navigate,
@@ -91,31 +91,36 @@ export default function Dashboard() {
         <h1 className="text-2xl sm:text-[28px] font-bold text-ink tracking-tight">{greeting} 👋</h1>
         <p className="text-sm text-ink-3 mt-1">
           {longDate}
-          {' · '}
-          {todayCount === 0 ? 'no jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
-          {` · ${weekCount} this week`}
-          {attention.length > 0 && ` · ${attention.length} need attention`}
+          {loading ? ' · loading…' : (
+            <>
+              {' · '}
+              {todayCount === 0 ? 'no jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
+              {` · ${weekCount} this week`}
+              {attention.length > 0 && ` · ${attention.length} need attention`}
+            </>
+          )}
         </p>
       </div>
 
       {/* KPI row — headline numbers, dashboard-style */}
       <div className="px-4 sm:px-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <KpiCard icon={DollarSign} chip="bg-emerald-50 text-emerald-600" label="Collected today"
-          value={fmtMoney(todayRevenue)} sub={todayRevenue > 0 ? 'paid today' : 'nothing yet today'} />
+          value={loading ? '—' : fmtMoney(todayRevenue)}
+          sub={loading ? 'Loading…' : (todayRevenue > 0 ? 'paid today' : 'nothing yet today')} />
         <KpiCard icon={TrendingUp} chip="bg-blue-50 text-blue-600" label="Month to date"
-          value={fmtMoney(mtdRevenue)} sub={`${paidCount} paid`} />
+          value={loading ? '—' : fmtMoney(mtdRevenue)} sub={loading ? 'Loading…' : `${paidCount} paid`} />
         <KpiCard icon={Clock} chip="bg-amber-50 text-amber-600" label="Outstanding"
-          value={fmtMoney(outstanding)}
-          sub={`${unpaidCount} unpaid${overdueInvoiceCount ? ` · ${overdueInvoiceCount} overdue` : ''}`}
-          accent={overdueInvoiceCount > 0 ? 'text-amber-600' : undefined} />
-        <KpiCard icon={FileText} chip="bg-violet-50 text-violet-600" label="Pipeline"
-          value={fmtMoney(pipeline)} sub={`${summary?.quotes?.sent ?? 0} sent`}
+          value={loading ? '—' : fmtMoney(outstanding)}
+          sub={loading ? 'Loading…' : `${unpaidCount} unpaid${overdueInvoiceCount ? ` · ${overdueInvoiceCount} overdue` : ''}`}
+          accent={!loading && overdueInvoiceCount > 0 ? 'text-amber-600' : undefined} />
+        <KpiCard icon={FileText} chip="bg-violet-50 text-violet-600" label="Quote pipeline"
+          value={loading ? '—' : fmtMoney(pipeline)} sub={loading ? 'Loading…' : `${summary?.quotes?.sent ?? 0} sent`}
           accent="text-violet-700" />
       </div>
 
       {/* Lead → client funnel — the conversion pipeline at a glance */}
       <div className="px-4 sm:px-6 pt-4">
-        <Funnel stages={funnel.stages} convRate={funnel.convRate} activeClients={activeClients} />
+        <Funnel stages={funnel.stages} convRate={funnel.convRate} activeClients={activeClients} loading={loading} />
       </div>
 
       {/* Tiles grid */}

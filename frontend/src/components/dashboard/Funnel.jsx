@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { ArrowRight, TrendingUp } from 'lucide-react'
 import { SOFT_CARD } from './constants'
+import { Skeleton } from '../ui'
 
 /** One stage in the horizontal Lead → Quoted → Accepted → Won strip:
  *  large count on top, tinted relative-volume bar under it, optional
@@ -31,7 +32,7 @@ function FunnelStage({ label, n, tone, pct, sub, onClick, last }) {
  *  and arrows between. This is the at-a-glance answer to "are we turning
  *  leads into clients?". Header row shows the conversion rate and the
  *  active-client count. */
-export function Funnel({ stages, convRate, activeClients }) {
+export function Funnel({ stages, convRate, activeClients, loading }) {
   const max = Math.max(1, ...stages.map(s => s.n))
   return (
     <div className={`${SOFT_CARD} p-5`}>
@@ -40,24 +41,35 @@ export function Funnel({ stages, convRate, activeClients }) {
           <span className="grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-purple-50 text-purple-600">
             <TrendingUp className="w-4 h-4" />
           </span>
-          <h2 className="text-sm font-semibold text-ink">Lead → client funnel</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Lead → quote funnel</h2>
+            <p className="text-[10px] text-ink-3">From website intake &amp; quotes — separate from the Opportunities pipeline board</p>
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-[12px]">
-          <span className="text-ink-3">
-            <span className="font-bold text-ink tabular-nums">{convRate}%</span> won
-          </span>
-          {activeClients != null && (
+        {!loading && (
+          <div className="flex items-center gap-4 text-[12px]">
             <span className="text-ink-3">
-              <span className="font-bold text-emerald-600 tabular-nums">{activeClients}</span> active clients
+              <span className="font-bold text-ink tabular-nums">{convRate}%</span> won
             </span>
-          )}
+            {activeClients != null && (
+              <span className="text-ink-3">
+                <span className="font-bold text-emerald-600 tabular-nums">{activeClients}</span> active clients
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {loading ? (
+        <div className="flex flex-col sm:flex-row gap-2">
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-24 flex-1" />)}
         </div>
-      </div>
-      <div className="flex flex-col sm:flex-row gap-2">
-        {stages.map((s, i) => (
-          <FunnelStage key={s.key} {...s} pct={Math.round((s.n / max) * 100)} last={i === stages.length - 1} />
-        ))}
-      </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-2">
+          {stages.map((s, i) => (
+            <FunnelStage key={s.key} {...s} pct={Math.round((s.n / max) * 100)} last={i === stages.length - 1} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

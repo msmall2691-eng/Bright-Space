@@ -1,5 +1,6 @@
 import { Mail, CheckCircle2, AlertTriangle, StickyNote } from 'lucide-react'
 import { fullTime } from './utils'
+import { htmlToText } from '../../utils/format'
 
 /** Chat bubble in the thread view. Internal notes render as a centered
  *  amber card; regular messages align right (outbound) or left (inbound)
@@ -16,7 +17,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
             {m.author && <span className="font-normal text-amber-500">— {m.author}</span>}
             <span className="ml-auto font-normal text-amber-400">{fullTime(m.created_at)}</span>
           </div>
-          <div className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</div>
+          <div className="whitespace-pre-wrap break-words leading-relaxed">{htmlToText(m.body)}</div>
         </div>
       </div>
     )
@@ -46,7 +47,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
               {m.subject}
             </div>
           )}
-          <div className="whitespace-pre-wrap break-words">{m.body}</div>
+          <div className="whitespace-pre-wrap break-words">{htmlToText(m.body)}</div>
           <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-blue-100 justify-end' : 'text-ink-2'}`}>
             {fullTime(m.created_at)}
             {outbound && m.status === 'delivered' && <CheckCircle2 className="w-3 h-3" />}
