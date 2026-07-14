@@ -103,86 +103,128 @@ export default function Properties() {
 
   return (
     <div className="flex h-full">
-      <div className="flex-1 p-6 flex flex-col min-w-0">
-        <PropertiesToolbar
-          currentType={currentType}
-          search={search} setSearch={setSearch}
-          viewConfig={viewConfig} applyView={applyView}
-          typeCounts={typeCounts}
-          showAdvanced={showAdvanced} setShowAdvanced={setShowAdvanced}
-          onAddNew={openNew}
-          setSearchParams={setSearchParams}
-        />
-
-        <BulkActionBar
-          filteredProperties={filteredProperties}
-          selectedIds={selectedIds}
-          toggleSelectAll={toggleSelectAll}
-          clearSelection={clearSelection}
-          hardDelete={hardDelete} setHardDelete={setHardDelete}
-          bulkDelete={bulkDelete} bulkDeleting={bulkDeleting}
-        />
-
-        {syncResult && (
-          <SyncResultBanner syncResult={syncResult} onDismiss={() => setSyncResult(null)} />
-        )}
-
-        {showAdvanced && (
-          <SyncToolsPanel
-            syncAll={syncAll} syncing={syncing}
-            runSweep={runSweep} sweeping={sweeping}
-          />
-        )}
-
-        {showAdvanced && sweep && (
-          <SweepResultsPanel
-            sweep={sweep}
-            onDismiss={() => setSweep(null)}
-            rebuildOne={rebuildOne}
-            rebuildingId={rebuildingId}
-          />
-        )}
-
-        <div className="space-y-3 overflow-y-auto flex-1 scrollbar-thin">
-          {filteredProperties.map(p => (
-            <PropertyRow
-              key={p.id}
-              p={p}
-              clients={clients}
-              clientName={clientName}
-              selectedIds={selectedIds}
-              toggleSelect={toggleSelect}
-              expandedPropId={expandedPropId}
-              setExpandedPropId={setExpandedPropId}
-              syncing={syncing}
-              syncOne={syncOne}
-              navigate={navigate}
-              openEdit={openEdit}
-              icalForm={icalForm}
-              setIcalForm={setIcalForm}
-              showIcalForm={showIcalForm}
-              setShowIcalForm={setShowIcalForm}
-              addIcal={addIcal}
-              removeIcal={removeIcal}
-            />
-          ))}
-
-          {filteredProperties.length === 0 && (
-            <EmptyState
-              icon={Home}
-              title={currentType === 'all'
-                ? 'No properties yet'
-                : `No ${PROPERTY_TYPE_CONFIG[currentType]?.label.toLowerCase()} properties yet`}
-              description={currentType === 'str'
-                ? 'Add an Airbnb or VRBO property to auto-create turnover jobs.'
-                : 'Create a property to organize jobs and services.'}
-              action={
-                <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  Add {currentType === 'all' ? 'Property' : PROPERTY_TYPE_CONFIG[currentType]?.label}
+      <div className="flex-1 flex flex-col min-w-0">
+        <PageHeader
+          title="Properties"
+          subtitle={`${filteredProperties.length}${filteredProperties.length !== typeCounts.all ? ` of ${typeCounts.all}` : ''} propert${typeCounts.all === 1 ? 'y' : 'ies'}`}
+          icon={Home}
+          iconColor="amber"
+          actions={
+            <>
+              {typeCounts.str > 0 && (
+                <button onClick={() => setShowAdvanced(v => !v)}
+                  title="Sync tools and turnover health check"
+                  className={`flex items-center gap-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors ${showAdvanced ? 'bg-bg-2 text-ink' : 'bg-panel hover:bg-bg-2 text-ink-2'}`}>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Sync tools
+                  <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
                 </button>
-              }
+              )}
+              <Button variant="primary" size="sm" onClick={openNew}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Property
+              </Button>
+            </>
+          }
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search properties…"
+                className="bg-bg-2 border border-hairline rounded-lg pl-8 pr-3 py-2 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400 w-40 sm:w-52" />
+            </div>
+            <SavedViewsBar entityType="property" currentConfig={viewConfig} onApply={applyView} defaultLabel="All properties" />
+          </div>
+
+          {/* Type tabs */}
+          <div className="flex gap-2 mt-4 border-b border-hairline">
+            {TYPE_TABS.map(type => (
+              <button
+                key={type}
+                onClick={() => setSearchParams({ type: type === 'all' ? '' : type })}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  currentType === type
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-ink-2 hover:text-ink'
+                }`}
+              >
+                {type === 'all' ? `All (${typeCounts.all})` : `${PROPERTY_TYPE_CONFIG[type].label} (${typeCounts[type]})`}
+              </button>
+            ))}
+          </div>
+        </PageHeader>
+
+        <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
+          <BulkActionBar
+            filteredProperties={filteredProperties}
+            selectedIds={selectedIds}
+            toggleSelectAll={toggleSelectAll}
+            clearSelection={clearSelection}
+            hardDelete={hardDelete} setHardDelete={setHardDelete}
+            bulkDelete={bulkDelete} bulkDeleting={bulkDeleting}
+          />
+
+          {syncResult && (
+            <SyncResultBanner syncResult={syncResult} onDismiss={() => setSyncResult(null)} />
+          )}
+
+          {showAdvanced && (
+            <SyncToolsPanel
+              syncAll={syncAll} syncing={syncing}
+              runSweep={runSweep} sweeping={sweeping}
             />
           )}
+
+          {showAdvanced && sweep && (
+            <SweepResultsPanel
+              sweep={sweep}
+              onDismiss={() => setSweep(null)}
+              rebuildOne={rebuildOne}
+              rebuildingId={rebuildingId}
+            />
+          )}
+
+          <div className="space-y-3 overflow-y-auto flex-1 scrollbar-thin">
+            {filteredProperties.map(p => (
+              <PropertyRow
+                key={p.id}
+                p={p}
+                clients={clients}
+                clientName={clientName}
+                selectedIds={selectedIds}
+                toggleSelect={toggleSelect}
+                expandedPropId={expandedPropId}
+                setExpandedPropId={setExpandedPropId}
+                syncing={syncing}
+                syncOne={syncOne}
+                navigate={navigate}
+                openEdit={openEdit}
+                icalForm={icalForm}
+                setIcalForm={setIcalForm}
+                showIcalForm={showIcalForm}
+                setShowIcalForm={setShowIcalForm}
+                addIcal={addIcal}
+                removeIcal={removeIcal}
+              />
+            ))}
+
+            {filteredProperties.length === 0 && (
+              <EmptyState
+                icon={Home}
+                title={currentType === 'all'
+                  ? 'No properties yet'
+                  : `No ${PROPERTY_TYPE_CONFIG[currentType]?.label.toLowerCase()} properties yet`}
+                description={currentType === 'str'
+                  ? 'Add an Airbnb or VRBO property to auto-create turnover jobs.'
+                  : 'Create a property to organize jobs and services.'}
+                action={
+                  <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Add {currentType === 'all' ? 'Property' : PROPERTY_TYPE_CONFIG[currentType]?.label}
+                  </button>
+                }
+              />
+            )}
+          </div>
         </div>
       </div>
 
