@@ -32,4 +32,23 @@ describe('MarkdownContent', () => {
     render(<MarkdownContent text={'- First item\n- Second item'} />)
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
   })
+
+  it('renders inline code as a small inline span, not a block element', () => {
+    // Regression: react-markdown v9+ no longer passes an `inline` prop to
+    // the code renderer, so a naive `inline ? … : …` branch always takes
+    // the block path — turning "run `npm test`" into a display:block
+    // element that breaks the surrounding sentence's flow.
+    render(<MarkdownContent text="Run `npm test` before you push." />)
+    const code = screen.getByText('npm test')
+    expect(code.tagName).toBe('CODE')
+    expect(code.closest('pre')).toBeNull()
+    expect(code.className).not.toContain('block')
+  })
+
+  it('renders a fenced code block inside a <pre>, distinct from inline code', () => {
+    render(<MarkdownContent text={'```\nnpm install\nnpm test\n```'} />)
+    const pre = document.querySelector('pre')
+    expect(pre).not.toBeNull()
+    expect(pre.textContent).toContain('npm install')
+  })
 })

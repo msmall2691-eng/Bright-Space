@@ -36,10 +36,18 @@ export default function MarkdownContent({ text }) {
               {children}
             </a>
           ),
-          code: ({ inline, children }) => (
-            inline
-              ? <code className="px-1 py-0.5 rounded bg-bg-2 text-[12px] font-mono">{children}</code>
-              : <code className="block p-2 rounded-lg bg-bg-2 text-[12px] font-mono overflow-x-auto whitespace-pre">{children}</code>
+          // react-markdown v9+ no longer passes an `inline` prop to the code
+          // renderer (fenced vs. inline is now conveyed structurally: a
+          // fenced block's <code> is nested inside a <pre>, inline code's
+          // isn't) — override `pre` for the block case and reset the nested
+          // <code>'s own styling there so it doesn't double up.
+          pre: ({ children }) => (
+            <pre className="p-2 rounded-lg bg-bg-2 text-[12px] font-mono overflow-x-auto whitespace-pre mb-2 [&_code]:bg-transparent [&_code]:p-0 [&_code]:rounded-none">
+              {children}
+            </pre>
+          ),
+          code: ({ children }) => (
+            <code className="px-1 py-0.5 rounded bg-bg-2 text-[12px] font-mono">{children}</code>
           ),
           hr: () => <hr className="my-2 border-hairline" />,
           blockquote: ({ children }) => (
