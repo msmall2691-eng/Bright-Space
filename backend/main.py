@@ -180,13 +180,12 @@ agent_histories: dict[str, list] = {}
 # Model tiers the chat UI can request per turn (cost vs. accuracy). "sonnet"
 # is the long-standing default (matches modules/ai/router.py's MODEL) so
 # behavior is unchanged unless a caller explicitly asks for a cheaper/pricier
-# tier. Overridable via env in case the exact model id changes on your
-# Anthropic account — verify these against your console before relying on
-# haiku/opus routing in production.
+# tier. Overridable via env in case Anthropic retires/renames one of these
+# ids before this comment is updated.
 MODEL_TIERS = {
-    "haiku": os.getenv("AGENT_MODEL_HAIKU", "claude-haiku-4-6"),
+    "haiku": os.getenv("AGENT_MODEL_HAIKU", "claude-haiku-4-5-20251001"),
     "sonnet": os.getenv("AGENT_MODEL_SONNET", "claude-sonnet-4-6"),
-    "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-6"),
+    "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-8"),
 }
 DEFAULT_AGENT_MODEL_TIER = "sonnet"
 

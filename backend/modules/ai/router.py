@@ -44,9 +44,9 @@ _VALID_MODEL_TIERS = ("haiku", "sonnet", "opus")
 # the same model ids as the websocket chat — duplicated rather than imported
 # to avoid a circular import (main.py imports FROM this module).
 _TIER_MODEL_IDS = {
-    "haiku": os.getenv("AGENT_MODEL_HAIKU", "claude-haiku-4-6"),
+    "haiku": os.getenv("AGENT_MODEL_HAIKU", "claude-haiku-4-5-20251001"),
     "sonnet": os.getenv("AGENT_MODEL_SONNET", "claude-sonnet-4-6"),
-    "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-6"),
+    "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-8"),
 }
 
 

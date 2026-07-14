@@ -179,6 +179,26 @@ export default function Workspace() {
       return
     }
 
+    // Guards against a socket that closes mid-turn (backend restart, proxy
+    // timeout, provider hiccup) with no "done"/"error" frame ever arriving —
+    // without this, the bubble stays "streaming" and the input stays
+    // disabled until the page is reloaded.
+    let turnDone = false
+    const finishTurn = (patch) => {
+      if (turnDone) return
+      turnDone = true
+      socket.removeEventListener('close', onCloseEarly)
+      patchMessage(bubbleId, patch)
+      setSending(false)
+    }
+    const onCloseEarly = () => {
+      finishTurn((m) => ({
+        streaming: false,
+        text: m.text || 'Connection closed before a response finished. Please try again.',
+      }))
+    }
+    socket.addEventListener('close', onCloseEarly)
+
     socket.onmessage = (evt) => {
       let data
       try { data = JSON.parse(evt.data) } catch { return }
@@ -189,11 +209,9 @@ export default function Workspace() {
       } else if (data.type === 'qc') {
         patchMessage(bubbleId, () => ({ qc: { verdict: data.verdict, note: data.note } }))
       } else if (data.type === 'done') {
-        patchMessage(bubbleId, () => ({ streaming: false }))
-        setSending(false)
+        finishTurn(() => ({ streaming: false }))
       } else if (data.type === 'error') {
-        patchMessage(bubbleId, (m) => ({ streaming: false, text: m.text || data.content }))
-        setSending(false)
+        finishTurn((m) => ({ streaming: false, text: m.text || data.content }))
       }
     }
 
