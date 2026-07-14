@@ -3,6 +3,7 @@ import { Sparkles, Send, ShieldAlert, ShieldCheck, Wrench, X } from 'lucide-reac
 import PageHeader from '../components/ui/PageHeader'
 import { EmptyState, Skeleton } from '../components/ui'
 import AgentAvatar from '../components/workspace/AgentAvatar'
+import MarkdownContent from '../components/workspace/MarkdownContent'
 import { get, post, wsUrl } from '../api'
 import { todayYMD } from '../utils/format'
 
@@ -36,6 +37,13 @@ import { todayYMD } from '../utils/format'
  * re-fetch. Tapping one sends it straight to the router like any typed
  * message, so it's answered by whichever agent actually owns that kind
  * of task.
+ *
+ * Readability: agent replies render as actual markdown (MarkdownContent),
+ * the conversation column is capped at a readable width instead of
+ * stretching edge-to-edge on wide monitors, and the message list only
+ * auto-scrolls to the bottom while you're already there — scrolling up to
+ * re-read something mid-stream no longer gets yanked back down on every
+ * chunk.
  */
 
 const SUGGESTIONS_CACHE_KEY = 'brightbase_workspace_suggestions'
@@ -91,18 +99,18 @@ function QcBadge({ qc }) {
 
 function AgentBubble({ msg, agent }) {
   return (
-    <div className="flex items-start gap-2.5 mt-3 max-w-[92%] sm:max-w-[80%]">
-      <AgentAvatar agent={agent} size="sm" />
+    <div className="flex items-start gap-2.5 mt-4 max-w-full sm:max-w-[85%]">
+      <AgentAvatar agent={agent} size="md" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[12px] font-semibold text-ink-2">{agent?.name || 'Agent'}</span>
-          {agent?.role && <span className="text-[10px] text-ink-3 hidden sm:inline">{agent.role}</span>}
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className="text-[13px] font-bold text-ink">{agent?.name || 'Agent'}</span>
+          {agent?.role && <span className="text-[11px] text-ink-3 truncate">{agent.role}</span>}
         </div>
         <div
-          className="mt-1 px-3.5 py-2.5 rounded-2xl rounded-tl-md bg-panel border border-hairline text-[13px] text-ink leading-relaxed whitespace-pre-wrap break-words"
-          style={agent?.color ? { borderLeftColor: agent.color, borderLeftWidth: '3px' } : undefined}
+          className="px-3.5 py-2.5 rounded-2xl rounded-tl-md bg-panel border border-hairline break-words"
+          style={agent?.color ? { borderLeftColor: agent.color, borderLeftWidth: '3px', backgroundColor: `${agent.color}0a` } : undefined}
         >
-          {msg.text || (msg.streaming ? '…' : '')}
+          {msg.text ? <MarkdownContent text={msg.text} /> : (msg.streaming ? <span className="text-ink-3">…</span> : null)}
         </div>
         {msg.tools?.map((t, i) => <ToolNotice key={i} agent={agent} name={t} />)}
         <QcBadge qc={msg.qc} />
@@ -172,6 +180,11 @@ export default function Workspace() {
 
   const wsMapRef = useRef({}) // `${agentId}:${model}` -> WebSocket
   const scrollRef = useRef(null)
+  // Tracks whether the user was already at the bottom BEFORE this update, so
+  // a long streaming reply doesn't yank them back down every chunk if
+  // they've scrolled up to re-read something earlier in the conversation —
+  // the classic "stuck to the bottom until you scroll away" chat pattern.
+  const stickToBottomRef = useRef(true)
 
   useEffect(() => {
     get('/api/agents').then(a => setAgents(Array.isArray(a) ? a : [])).catch(() => setAgents([]))
@@ -201,8 +214,17 @@ export default function Workspace() {
   }, [])
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    if (stickToBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+    }
   }, [messages])
+
+  function handleMessagesScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 80
+  }
 
   useEffect(() => () => {
     // Close every open agent socket when leaving the page.
@@ -300,6 +322,7 @@ export default function Workspace() {
     if (!text || sending) return
     setInput('')
     setSending(true)
+    stickToBottomRef.current = true // you just acted — follow the reply as it streams in
     setMessages(prev => [...prev, { id: nextId(), kind: 'user', text }])
 
     if (selectedAgentId) {
@@ -341,7 +364,7 @@ export default function Workspace() {
         iconColor="purple"
       />
 
-      <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-8 pb-4">
+      <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-8 pb-4 w-full max-w-4xl mx-auto">
         {/* Agent picker strip */}
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
           <button
@@ -379,7 +402,7 @@ export default function Workspace() {
         )}
 
         {/* Message list */}
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+        <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 min-h-0 overflow-y-auto">
           {messages.length === 0 ? (
             <EmptyState
               icon={Sparkles}
