@@ -5,8 +5,18 @@ import secrets
 import yaml
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
+# Must run before any local import below — auth_jwt (JWT_SECRET) and
+# database.db (DATABASE_URL) both read their required env vars at MODULE
+# IMPORT time and fail closed if unset. Previously load_dotenv() ran at
+# line ~50, after ~25 local imports including both of those — so a
+# JWT_SECRET or DATABASE_URL supplied only via backend/.env (not the
+# parent shell's real environment) would never be loaded in time, and the
+# app would refuse to start even though the secret WAS configured (codex
+# P2 on PR #542, surfaced by the new JWT_SECRET fail-closed check).
+load_dotenv()
+
+import anthropic
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -46,8 +56,6 @@ from modules.admin.router import router as admin_router
 from modules.ai.router import router as ai_router
 from modules.dashboard.router import router as dashboard_router
 from modules.scheduling.router import schedule_router
-
-load_dotenv()
 
 app = FastAPI(title="BrightBase API", version="1.0.0")
 
