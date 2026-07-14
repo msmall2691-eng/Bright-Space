@@ -19,6 +19,13 @@ import { todayYMD } from '../utils/format'
  * Three things sit on top of that per-persona chat:
  *   1. ROUTING   — "Auto" mode posts the message to POST /api/ai/route,
  *                  which picks the best-fit field agent for the question.
+ *                  Passes along which agent answered last (lastAgentIdRef)
+ *                  so a short reply ("yes", "do it") continues the same
+ *                  conversation instead of being classified from a single
+ *                  line with no context — without this, a multi-turn Auto
+ *                  conversation could silently jump agents mid-task (the
+ *                  observed symptom: typing the agent's name INTO the
+ *                  message just to force it back, e.g. "yes #6 nova").
  *   2. MODEL TIER — the same routing call also picks how much model the
  *                  reply is worth (haiku/sonnet/opus), so cost tracks task
  *                  difficulty instead of every message paying top rate.
@@ -178,13 +185,27 @@ export default function Workspace() {
   const [suggestions, setSuggestions] = useState([])
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
 
-  const wsMapRef = useRef({}) // `${agentId}:${model}` -> WebSocket
+  // Keyed by agentId ALONE (not agentId+model) — one persistent connection
+  // per agent, so the server-side conversation history (keyed to the
+  // connection's own identity, see main.py) survives even when the router
+  // picks a different model tier for a later turn. Keying by model too
+  // (as this used to) meant a "yes" follow-up classified into a cheaper
+  // tier than the original turn silently opened a fresh, historyless
+  // socket — model tier is now chosen per-message instead (see
+  // sendToAgent), not baked into which connection a turn uses.
+  const wsMapRef = useRef({}) // agentId -> WebSocket
   const scrollRef = useRef(null)
   // Tracks whether the user was already at the bottom BEFORE this update, so
   // a long streaming reply doesn't yank them back down every chunk if
   // they've scrolled up to re-read something earlier in the conversation —
   // the classic "stuck to the bottom until you scroll away" chat pattern.
   const stickToBottomRef = useRef(true)
+  // Whichever agent answered the most recent message — passed to the Auto
+  // router so a short reply ("yes", "do it", answering a question just
+  // asked) continues the same conversation instead of being classified
+  // from scratch with no context and possibly landing on someone else.
+  const lastAgentIdRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => {
     get('/api/agents').then(a => setAgents(Array.isArray(a) ? a : [])).catch(() => setAgents([]))
@@ -219,6 +240,21 @@ export default function Workspace() {
     }
   }, [messages])
 
+  // Focus the input as soon as the page is usable, chat-app style.
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [])
+
+  // Auto-grow the textarea with its content (up to the CSS max-h cap, which
+  // takes over with a scrollbar beyond that) instead of a fixed one-line box
+  // that just scrolls its own text out of view.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [input])
+
   function handleMessagesScroll() {
     const el = scrollRef.current
     if (!el) return
@@ -237,32 +273,32 @@ export default function Workspace() {
     setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch(m) } : m)))
   }
 
-  function openSocket(agentId, model) {
-    const key = `${agentId}:${model}`
-    const existing = wsMapRef.current[key]
+  function openSocket(agentId) {
+    const existing = wsMapRef.current[agentId]
     if (existing && existing.readyState === WebSocket.OPEN) {
       return Promise.resolve(existing)
     }
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(wsUrl(`/ws/agent/${agentId}?model=${model}`))
+      const socket = new WebSocket(wsUrl(`/ws/agent/${agentId}`))
       const onOpen = () => { resolve(socket) }
       const onError = (e) => reject(e)
       socket.addEventListener('open', onOpen, { once: true })
       socket.addEventListener('error', onError, { once: true })
       socket.addEventListener('close', () => {
-        if (wsMapRef.current[key] === socket) delete wsMapRef.current[key]
+        if (wsMapRef.current[agentId] === socket) delete wsMapRef.current[agentId]
       })
-      wsMapRef.current[key] = socket
+      wsMapRef.current[agentId] = socket
     })
   }
 
   async function sendToAgent(agentId, model, text, routing) {
+    lastAgentIdRef.current = agentId
     const bubbleId = nextId()
     setMessages(prev => [...prev, { id: bubbleId, kind: 'agent', agentId, text: '', tools: [], streaming: true }])
 
     let socket
     try {
-      socket = await openSocket(agentId, model)
+      socket = await openSocket(agentId)
     } catch {
       patchMessage(bubbleId, () => ({ streaming: false, error: true, text: '' }))
       setMessages(prev => [...prev, { id: nextId(), kind: 'error', text: `Couldn't reach ${agentById(agentId)?.name || agentId}. Check the connection and try again.` }])
@@ -306,7 +342,10 @@ export default function Workspace() {
       }
     }
 
-    socket.send(JSON.stringify({ message: text }))
+    // model rides with the message itself (not the connection) — the
+    // backend resolves it per-turn, so the same persistent agent connection
+    // (and its history) can be reused across turns at different tiers.
+    socket.send(JSON.stringify({ message: text, model }))
   }
 
   function dismissSuggestions() {
@@ -323,6 +362,7 @@ export default function Workspace() {
     setInput('')
     setSending(true)
     stickToBottomRef.current = true // you just acted — follow the reply as it streams in
+    textareaRef.current?.focus() // stays ready for a quick follow-up, even after a suggestion-tap send
     setMessages(prev => [...prev, { id: nextId(), kind: 'user', text }])
 
     if (selectedAgentId) {
@@ -335,7 +375,7 @@ export default function Workspace() {
     const routingId = nextId()
     setMessages(prev => [...prev, { id: routingId, kind: 'routing', agent: null, model: null }])
     try {
-      const route = await post('/api/ai/route', { message: text })
+      const route = await post('/api/ai/route', { message: text, current_agent_id: lastAgentIdRef.current })
       const agent = agentById(route.agent_id)
       setMessages(prev => prev.map(m => (m.id === routingId
         ? { ...m, agent, model: route.model, reasoning: route.reasoning }
@@ -428,12 +468,13 @@ export default function Workspace() {
         <div className="shrink-0 pt-3 pb-safe">
           <div className="flex items-end gap-2 bg-panel border border-hairline rounded-2xl p-2 shadow-sm">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder={selectedAgentId ? `Message ${agentById(selectedAgentId)?.name || 'agent'}…` : 'Ask your team anything…'}
               rows={1}
-              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none max-h-32"
+              className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none max-h-32 overflow-y-auto"
             />
             <button
               onClick={() => handleSend()}
