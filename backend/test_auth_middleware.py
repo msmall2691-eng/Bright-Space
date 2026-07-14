@@ -187,5 +187,26 @@ def test_uses_constant_time_comparison():
     )
 
 
+def test_agent_websocket_rejects_when_no_key_and_no_jwt():
+    """BB-SEC-02 regression, WebSocket half: /ws/agent/{agent_name} lived
+    outside APIKeyMiddleware's reach (BaseHTTPMiddleware never sees WS
+    connections) and did its own auth check inside `if expected_key:` — so
+    when BRIGHTBASE_API_KEY was unset, the ENTIRE check was skipped,
+    including the JWT verification, and every socket was accepted with no
+    authentication at all. This asserts the fixed fail-closed behavior:
+    unset key + no valid JWT + no api_key → rejected, not silently accepted
+    (mirrors test_no_api_key_set_rejects_unauthenticated for the HTTP side).
+    """
+    from starlette.websockets import WebSocketDisconnect
+    from fastapi.testclient import TestClient as FastAPITestClient
+    from main import app
+
+    with patch.dict(os.environ, {"BRIGHTBASE_API_KEY": ""}, clear=False):
+        client = FastAPITestClient(app)
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/agent/nova"):
+                pass
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
