@@ -585,3 +585,29 @@ def execute_tool(name: str, input_data: dict, agent_name: str = "") -> dict:
         return {"error": str(e)}
     finally:
         db.close()
+
+
+# ── Agent roster ────────────────────────────────────────────────────────────
+
+_AGENTS_DIR = Path(__file__).parent
+
+
+def load_agent_roster() -> list:
+    """Load every agent persona's public metadata (id/name/emoji/role/
+    description/color) from its YAML file. Shared by GET /api/agents (main.py)
+    and the router/QC helpers in modules/ai/router.py, so the roster is
+    defined in exactly one place."""
+    import yaml
+    roster = []
+    for yaml_file in sorted(_AGENTS_DIR.glob("*.yaml")):
+        with open(yaml_file) as f:
+            config = yaml.safe_load(f)
+        roster.append({
+            "id": yaml_file.stem,
+            "name": config["name"],
+            "emoji": config["emoji"],
+            "role": config["role"],
+            "description": config["description"],
+            "color": config.get("color", "#6b7280"),
+        })
+    return roster

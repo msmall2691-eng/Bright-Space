@@ -13,7 +13,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from agents.tools import get_tools_for_agent, execute_tool
+from agents.tools import get_tools_for_agent, execute_tool, load_agent_roster
+from modules.ai.router import review_agent_turn
 
 from auth import APIKeyMiddleware
 from auth_jwt import verify_jwt
@@ -176,6 +177,19 @@ app.include_router(schedule_router, prefix="/api/schedule", tags=["schedule"])
 AGENT_HISTORY_MAX_MESSAGES = int(os.getenv("AGENT_HISTORY_MAX_MESSAGES", "40"))
 agent_histories: dict[str, list] = {}
 
+# Model tiers the chat UI can request per turn (cost vs. accuracy). "sonnet"
+# is the long-standing default (matches modules/ai/router.py's MODEL) so
+# behavior is unchanged unless a caller explicitly asks for a cheaper/pricier
+# tier. Overridable via env in case the exact model id changes on your
+# Anthropic account — verify these against your console before relying on
+# haiku/opus routing in production.
+MODEL_TIERS = {
+    "haiku": os.getenv("AGENT_MODEL_HAIKU", "claude-haiku-4-6"),
+    "sonnet": os.getenv("AGENT_MODEL_SONNET", "claude-sonnet-4-6"),
+    "opus": os.getenv("AGENT_MODEL_OPUS", "claude-opus-4-6"),
+}
+DEFAULT_AGENT_MODEL_TIER = "sonnet"
+
 
 def _trim_history(conn_key: str) -> None:
     h = agent_histories.get(conn_key)
@@ -271,20 +285,7 @@ async def health():
 
 @app.get("/api/agents")
 async def list_agents():
-    agents_dir = Path(__file__).parent / "agents"
-    agents = []
-    for yaml_file in sorted(agents_dir.glob("*.yaml")):
-        with open(yaml_file) as f:
-            config = yaml.safe_load(f)
-        agents.append({
-            "id": yaml_file.stem,
-            "name": config["name"],
-            "emoji": config["emoji"],
-            "role": config["role"],
-            "description": config["description"],
-            "color": config.get("color", "#6b7280"),
-        })
-    return agents
+    return load_agent_roster()
 
 
 @app.websocket("/ws/agent/{agent_name}")
@@ -327,6 +328,16 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
 
     tools = get_tools_for_agent(agent_name)
 
+    # Model tier: the chat UI's router picks this per-turn (cheap "haiku" for
+    # simple questions, "sonnet" for anything needing real reasoning/tool use)
+    # so cost tracks task difficulty instead of every message paying the same
+    # rate. Query param at connect time — the whole session uses one tier;
+    # switching tiers reconnects. Unknown/missing value silently falls back
+    # to the existing default so old clients that never send ?model= are
+    # unaffected.
+    requested_tier = websocket.query_params.get("model", DEFAULT_AGENT_MODEL_TIER)
+    model_id = MODEL_TIERS.get(requested_tier, MODEL_TIERS[DEFAULT_AGENT_MODEL_TIER])
+
     try:
         while True:
             data = await websocket.receive_json()
@@ -345,13 +356,14 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
             # Agentic tool-use loop
             loop_messages = list(agent_histories[conn_key])
             final_text = ""
+            tools_used = []  # every tool name called this turn, for the QC pass below
 
             while True:
                 full_text = ""
                 tool_uses = []
 
                 with client.messages.stream(
-                    model="claude-sonnet-4-6",
+                    model=model_id,
                     max_tokens=4096,
                     system=config["system_prompt"],
                     messages=loop_messages,
@@ -375,6 +387,7 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                     tool_results = []
                     for block in final_msg.content:
                         if block.type == "tool_use":
+                            tools_used.append(block.name)
                             result = execute_tool(block.name, dict(block.input), agent_name)
                             result_text = json.dumps(result, default=str)
                             tool_results.append({
@@ -399,7 +412,25 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
 
             agent_histories[conn_key].append({"role": "assistant", "content": final_text})
             _trim_history(conn_key)
-            await websocket.send_json({"type": "done"})
+
+            # QC pass: a fast, separate model call reviews this turn's response
+            # (and any tools it invoked) for correctness and security red flags
+            # — a second, automated check on top of each persona's own
+            # "ask before acting" rule, not a replacement for it (destructive
+            # tools still require the human's go-ahead in the conversation
+            # itself; this just catches things a quick human skim might miss).
+            # Never lets a review failure block the actual answer from
+            # reaching the user.
+            try:
+                qc = review_agent_turn(
+                    user_message=message, agent_id=agent_name,
+                    response_text=final_text, tools_used=tools_used,
+                )
+                await websocket.send_json({"type": "qc", **qc})
+            except Exception:
+                _logging.getLogger(__name__).exception("agent QC review failed for %s", agent_name)
+
+            await websocket.send_json({"type": "done", "model": requested_tier})
 
     except WebSocketDisconnect:
         agent_histories.pop(conn_key, None)
