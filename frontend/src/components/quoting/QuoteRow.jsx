@@ -1,4 +1,4 @@
-import { Send, Copy, Check, Calendar, Trash2 } from 'lucide-react'
+import { Send, Copy, Check, Calendar, MapPin, Trash2 } from 'lucide-react'
 import InlineSelect from '../InlineSelect'
 import { QUOTE_STATUS_COLORS, QUOTE_STATUS_OPTIONS, QUOTE_NEXT_STEP } from './constants'
 
@@ -51,8 +51,10 @@ export default function QuoteRow({
               </span>
             )}
           </div>
-          <div className="text-xs text-ink-3 mt-0.5">
-            {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address, `${q.items?.length || 0} items`, new Date(q.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3 mt-0.5">
+            {q.address && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 shrink-0" />{q.address}</span>}
+            <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 shrink-0" />{new Date(q.created_at).toLocaleDateString()}</span>
+            <span>{[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), `${q.items?.length || 0} items`].filter(Boolean).join(' · ')}</span>
           </div>
           {QUOTE_NEXT_STEP[q.status] && (
             <div className={`text-[11px] font-medium mt-1 ${QUOTE_NEXT_STEP[q.status].cls}`}>

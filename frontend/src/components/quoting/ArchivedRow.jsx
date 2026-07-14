@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Trash2, MapPin, Calendar } from 'lucide-react'
 
 /** A row on the Archived tab (soft-deleted quotes). Renders with a
  *  permanent-delete button when the viewer is an admin. */
@@ -25,9 +25,10 @@ export default function ArchivedRow({
             <span className="text-xs text-ink-3">{q.quote_number}</span>
             <span className="text-xs px-2.5 py-0.5 rounded-full border bg-bg-2 text-ink-3 border-hairline">archived</span>
           </div>
-          <div className="text-xs text-ink-3 mt-0.5">
-            {[q.service_type && q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1), q.address,
-              q.archived_at && `archived ${new Date(q.archived_at).toLocaleDateString()}`].filter(Boolean).join(' · ')}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3 mt-0.5">
+            {q.address && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 shrink-0" />{q.address}</span>}
+            {q.archived_at && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 shrink-0" />archived {new Date(q.archived_at).toLocaleDateString()}</span>}
+            {q.service_type && <span>{q.service_type.charAt(0).toUpperCase() + q.service_type.slice(1)}</span>}
           </div>
         </div>
         <div className="font-semibold text-ink shrink-0">${parseFloat(q.total || 0).toFixed(2)}</div>

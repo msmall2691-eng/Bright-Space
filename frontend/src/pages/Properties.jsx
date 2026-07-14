@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Home } from 'lucide-react'
-import { EmptyState } from '../components/ui'
+import { Home, Search, RefreshCw, ChevronRight, Plus } from 'lucide-react'
+import { EmptyState, PageHeader, Button } from '../components/ui'
+import SavedViewsBar from '../components/SavedViewsBar'
 import { PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
 import { PropertyForm } from '../components/properties/PropertyForm'
 import { SyncToolsPanel, SweepResultsPanel } from '../components/properties/SyncToolsPanel'
 import { PropertyRow } from '../components/properties/PropertyRow'
-import { PropertiesToolbar, BulkActionBar, SyncResultBanner } from '../components/properties/PropertiesToolbar'
+import { BulkActionBar, SyncResultBanner } from '../components/properties/PropertiesToolbar'
 import { useProperties } from '../hooks/useProperties'
 import { usePropertyMutations } from '../hooks/usePropertyMutations'
 import { usePropertyForm } from '../hooks/usePropertyForm'
 import { useSelectionSet } from '../hooks/useSelectionSet'
 import { usePropertyFilters } from '../hooks/usePropertyFilters'
 
+// Type tabs shown under the page header — mirrors PROPERTY_TYPE_CONFIG's
+// keys plus the synthetic "all" bucket used by usePropertyFilters.
+const TYPE_TABS = ['all', 'residential', 'commercial', 'str']
 
 export default function Properties() {
   const navigate = useNavigate()
