@@ -27,8 +27,15 @@ import { useEmployees } from './useEmployees'
  *  Paused while the tab is hidden (Page Visibility API) so background tabs
  *  don't burn requests. This is deliberately last-write-wins, same as a
  *  manual refresh — no optimistic locking — it just shortens the staleness
- *  window between two people editing the same schedule. */
-export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000 } = {}) {
+ *  window between two people editing the same schedule.
+ *
+ *  `enabled` (default true) skips the fetch AND the poll entirely — for
+ *  callers like Schedule.jsx that mount this hook unconditionally (Rules of
+ *  Hooks) but sometimes render a sub-page that never reads visits/jobs, so
+ *  the /api/schedule/week fetch + its 45s poll would otherwise run
+ *  continuously in the background for no reason (July-2026 audit #5
+ *  follow-up). Re-enabling refetches immediately at the current range. */
+export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000, enabled = true } = {}) {
   const [visits, setVisits] = useState([])
   const [jobs, setJobs] = useState({})
   const [properties, setProperties] = useState({})
@@ -55,6 +62,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   const isBackgroundPollRef = useRef(false)
 
   useEffect(() => {
+    if (!enabled) return
     const backgroundPoll = isBackgroundPollRef.current
     isBackgroundPollRef.current = false
     // Fast week-to-week navigation can have two loadSchedule() calls in
@@ -121,13 +129,15 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
     loadSchedule()
     // rangeKey is the primitive string form of `range` so React can compare
     // it cheaply; refreshKey lets refresh() re-fire without a range change.
+    // `enabled` is included so flipping it back on triggers an immediate
+    // refetch instead of waiting for the next range change or poll tick.
     return () => { cancelled = true }
-  }, [rangeKey, refreshKey])
+  }, [rangeKey, refreshKey, enabled])
 
   const refresh = () => setRefreshKey(k => k + 1)
 
   useEffect(() => {
-    if (!pollMs) return
+    if (!enabled || !pollMs) return
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       isBackgroundPollRef.current = true
@@ -135,7 +145,7 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
     }, pollMs)
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollMs])
+  }, [pollMs, enabled])
 
   return {
     visits, setVisits,

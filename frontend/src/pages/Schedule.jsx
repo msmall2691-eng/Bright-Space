@@ -33,6 +33,13 @@ import { toLocalYMD, todayYMD } from '../utils/format'
 
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
+  // Read early (not just at the bottom where the tab panels early-return) so
+  // it can gate useScheduleData below — the recurring/availability panels
+  // own their own data loading and never read `visits`/`jobs`, so the
+  // schedule-week fetch + its 45s poll would otherwise run continuously in
+  // the background the whole time an operator sits on one of those tabs
+  // (Codex review on the July-2026 audit #5 fix).
+  const tab = searchParams.get('tab')
   // Four view modes today:
   //   agenda   — mobile-first day, hero on top + AgendaDay cards (default on phone)
   //   dispatch — desktop 3-column ops board: unassigned / timeline / crews (default on desktop)
@@ -85,7 +92,7 @@ export default function Schedule() {
     refresh,
     employees, empName,
     range: dataRange,
-  } = useScheduleData(currentDate, viewMode)
+  } = useScheduleData(currentDate, viewMode, { enabled: !tab })
 
   // Analytics for the dispatch surfaces (mobile hero + desktop board).
   // Purely derived — a filter chip toggle doesn't re-fire this because it
@@ -336,8 +343,9 @@ export default function Schedule() {
   // moment client-side navigation lands here with a different ?tab= than
   // the previous render. Every hook above now always runs; the tab check
   // only decides what to render, same as the loadError branch below.
-  if (searchParams.get('tab') === 'recurring') return <RecurringPanel />
-  if (searchParams.get('tab') === 'availability') return <AvailabilityPanel />
+  // `tab` itself is read up top (see useScheduleData's `enabled` option above).
+  if (tab === 'recurring') return <RecurringPanel />
+  if (tab === 'availability') return <AvailabilityPanel />
 
   if (loadError) {
     return (
