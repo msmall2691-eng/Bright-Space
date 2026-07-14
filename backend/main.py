@@ -347,16 +347,6 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
 
     tools = get_tools_for_agent(agent_name)
 
-    # Model tier: the chat UI's router picks this per-turn (cheap "haiku" for
-    # simple questions, "sonnet" for anything needing real reasoning/tool use)
-    # so cost tracks task difficulty instead of every message paying the same
-    # rate. Query param at connect time — the whole session uses one tier;
-    # switching tiers reconnects. Unknown/missing value silently falls back
-    # to the existing default so old clients that never send ?model= are
-    # unaffected.
-    requested_tier = websocket.query_params.get("model", DEFAULT_AGENT_MODEL_TIER)
-    model_id = MODEL_TIERS.get(requested_tier, MODEL_TIERS[DEFAULT_AGENT_MODEL_TIER])
-
     try:
         while True:
             data = await websocket.receive_json()
@@ -368,6 +358,24 @@ async def agent_websocket(websocket: WebSocket, agent_name: str):
                 agent_histories[conn_key] = []
                 await websocket.send_json({"type": "cleared"})
                 continue
+
+            # Model tier: the chat UI's router picks this per-TURN (cheap
+            # "haiku" for simple questions, "sonnet" for anything needing
+            # real reasoning/tool use), so it's read from each incoming
+            # message rather than fixed once at connect time. This used to
+            # be a `?model=` query param on the socket URL, with sockets
+            # keyed client-side by `${agentId}:${model}` — so a follow-up
+            # the router classified into a cheaper tier than the original
+            # turn (a plain "yes" after a "sonnet" turn, say) opened a
+            # DIFFERENT socket, and since conn_key below is tied to the
+            # websocket connection's own identity, that follow-up landed in
+            # a brand-new, empty history — silently losing the very
+            # conversation the continuity fix was meant to preserve. One
+            # persistent connection per agent, with model chosen per
+            # message, keeps history keyed purely on "which agent," not
+            # "which agent at which price point."
+            requested_tier = data.get("model", DEFAULT_AGENT_MODEL_TIER)
+            model_id = MODEL_TIERS.get(requested_tier, MODEL_TIERS[DEFAULT_AGENT_MODEL_TIER])
 
             agent_histories[conn_key].append({"role": "user", "content": message})
             _trim_history(conn_key)

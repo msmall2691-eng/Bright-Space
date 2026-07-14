@@ -185,7 +185,15 @@ export default function Workspace() {
   const [suggestions, setSuggestions] = useState([])
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
 
-  const wsMapRef = useRef({}) // `${agentId}:${model}` -> WebSocket
+  // Keyed by agentId ALONE (not agentId+model) — one persistent connection
+  // per agent, so the server-side conversation history (keyed to the
+  // connection's own identity, see main.py) survives even when the router
+  // picks a different model tier for a later turn. Keying by model too
+  // (as this used to) meant a "yes" follow-up classified into a cheaper
+  // tier than the original turn silently opened a fresh, historyless
+  // socket — model tier is now chosen per-message instead (see
+  // sendToAgent), not baked into which connection a turn uses.
+  const wsMapRef = useRef({}) // agentId -> WebSocket
   const scrollRef = useRef(null)
   // Tracks whether the user was already at the bottom BEFORE this update, so
   // a long streaming reply doesn't yank them back down every chunk if
@@ -265,22 +273,21 @@ export default function Workspace() {
     setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch(m) } : m)))
   }
 
-  function openSocket(agentId, model) {
-    const key = `${agentId}:${model}`
-    const existing = wsMapRef.current[key]
+  function openSocket(agentId) {
+    const existing = wsMapRef.current[agentId]
     if (existing && existing.readyState === WebSocket.OPEN) {
       return Promise.resolve(existing)
     }
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(wsUrl(`/ws/agent/${agentId}?model=${model}`))
+      const socket = new WebSocket(wsUrl(`/ws/agent/${agentId}`))
       const onOpen = () => { resolve(socket) }
       const onError = (e) => reject(e)
       socket.addEventListener('open', onOpen, { once: true })
       socket.addEventListener('error', onError, { once: true })
       socket.addEventListener('close', () => {
-        if (wsMapRef.current[key] === socket) delete wsMapRef.current[key]
+        if (wsMapRef.current[agentId] === socket) delete wsMapRef.current[agentId]
       })
-      wsMapRef.current[key] = socket
+      wsMapRef.current[agentId] = socket
     })
   }
 
@@ -291,7 +298,7 @@ export default function Workspace() {
 
     let socket
     try {
-      socket = await openSocket(agentId, model)
+      socket = await openSocket(agentId)
     } catch {
       patchMessage(bubbleId, () => ({ streaming: false, error: true, text: '' }))
       setMessages(prev => [...prev, { id: nextId(), kind: 'error', text: `Couldn't reach ${agentById(agentId)?.name || agentId}. Check the connection and try again.` }])
@@ -335,7 +342,10 @@ export default function Workspace() {
       }
     }
 
-    socket.send(JSON.stringify({ message: text }))
+    // model rides with the message itself (not the connection) — the
+    // backend resolves it per-turn, so the same persistent agent connection
+    // (and its history) can be reused across turns at different tiers.
+    socket.send(JSON.stringify({ message: text, model }))
   }
 
   function dismissSuggestions() {
