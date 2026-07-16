@@ -1,37 +1,42 @@
 /**
- * Dashboard — Command Center.
+ * Dashboard — command center, action-first.
  *
- * Three focused tiles, each linking to its dedicated page:
- *   1. INBOX     — what needs attention right now (overdue / unassigned /
- *                  late visits / past-due invoices, deduped)
- *   2. TODAY     — today's schedule preview
- *   3. MONEY     — revenue + AR + pipeline at a glance
- *
- * Replaces the prior 4-KPI + 3-column layout. The MiniCalendar widget was
- * removed because it duplicated /schedule's month view; the "Today's
- * priorities" + "Unified inbox" split was collapsed into a single de-duped
- * inbox tile so the same conversation can't appear in three sections.
+ * Deliberately lean: a compact hero with the four numbers that matter as
+ * inline pills, then ONE "Needs you now" list that merges every actionable
+ * thing (reschedule approvals + overdue replies / late starts / unassigned /
+ * past-due invoices), then Today's schedule, the quotes/leads worklist, and a
+ * money snapshot. The old layout (4 big KPI cards + funnel + 8 tiles +
+ * AI-followups) was a wall of widgets; this is what an owner actually opens
+ * the app to see. Deeper analytics live on the Owner page.
  */
 import { useNavigate } from 'react-router-dom'
 import { ErrorState } from '../components/ui'
-import { AIFollowUps } from '../components/AIFollowUps'
-import {
-  Calendar, DollarSign,
-  Clock, FileText, TrendingUp, LayoutDashboard,
-} from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, FileText } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
-import { KpiCard } from '../components/dashboard/primitives'
-import { Funnel } from '../components/dashboard/Funnel'
-import { InboxTile } from '../components/dashboard/InboxTile'
+import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
 import { TodayTile } from '../components/dashboard/TodayTile'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
-import { TurnoverCoverageTile, CrewWorkloadTile } from '../components/dashboard/OperationsTiles'
 import { MoneyTile } from '../components/dashboard/MoneyTile'
-import { RescheduleRequestsTile } from '../components/dashboard/RescheduleRequestsTile'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useDashboardDerived } from '../hooks/useDashboardDerived'
 
-/* ── Page ─────────────────────────────────────────────────────────── */
+/** One headline number as an inline pill — replaces the old row of big KPI
+ *  cards so the numbers read at a glance without eating half the screen. */
+function MetricPill({ icon: Icon, label, value, tone, accent, onClick }) {
+  return (
+    <button onClick={onClick}
+      className="group flex items-center gap-2.5 rounded-xl border border-hairline bg-panel px-3 py-2 hover:border-hairline-2 hover:shadow-sm transition-all text-left">
+      <span className={`grid place-items-center w-8 h-8 rounded-lg shrink-0 ${tone}`}>
+        <Icon className="w-4 h-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[10px] font-semibold uppercase tracking-wide text-ink-3 leading-none">{label}</span>
+        <span className={`block text-[15px] font-bold tabular-nums leading-tight mt-0.5 ${accent || 'text-ink'}`}>{value}</span>
+      </span>
+    </button>
+  )
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const {
@@ -44,18 +49,12 @@ export default function Dashboard() {
     reload,
     t,
   } = useDashboardData()
-  const activeClients = summary?.active_clients ?? null
 
   const {
     todayRevenue, mtdRevenue, outstanding, pipeline, overdueInvoiceCount,
     quoteActions,
-    funnel,
-    turnover,
-    slaBreached,
-    crew,
     arAging,
     attention,
-    hiddenOverdueConvs, hiddenUnassignedConvs, hiddenInvoices, hiddenLateVisits,
     todayJobs, todayCount, weekCount,
   } = useDashboardDerived({
     invoices, followUps, todayVisits,
@@ -70,12 +69,11 @@ export default function Dashboard() {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const longDate = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
-  const paidCount = invoices.filter(i => i.status === 'paid').length
-  const unpaidCount = invoices.filter(i => ['sent', 'overdue'].includes(i.status)).length
+  const dash = (v) => loading ? '—' : v
 
   if (error && !loading) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <ErrorState
           title="Couldn't load your dashboard"
           description="The server didn't respond. Check your connection and try again."
@@ -87,99 +85,51 @@ export default function Dashboard() {
 
   return (
     <div className="bg-bg">
-      {/* Greeting — compact single row so the numbers sit near the top */}
-      <div className="px-4 sm:px-6 pt-3 pb-2.5 flex items-center gap-2.5">
-        <span className="bb-icon-chip hidden sm:grid place-items-center w-9 h-9 rounded-xl shrink-0 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300">
-          <LayoutDashboard className="w-[18px] h-[18px]" />
-        </span>
-        <div className="min-w-0">
-        <h1 className="text-base sm:text-lg font-bold text-ink tracking-tight leading-tight">{greeting} 👋</h1>
-        <p className="text-xs sm:text-[13px] text-ink-3 mt-0.5">
-          {longDate}
-          {loading ? ' · loading…' : (
-            <>
-              {' · '}
-              {todayCount === 0 ? 'no jobs today' : `${todayCount} job${todayCount > 1 ? 's' : ''} today`}
-              {` · ${weekCount} this week`}
-              {attention.length > 0 && ` · ${attention.length} need attention`}
-            </>
-          )}
-        </p>
-        </div>
-      </div>
+      <div className="px-4 sm:px-6 pt-3 pb-5 max-w-[1400px] mx-auto space-y-3.5">
 
-      {/* KPI row — headline numbers, dashboard-style */}
-      <div className="px-4 sm:px-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <KpiCard icon={DollarSign} chip="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300" label="Collected today"
-          value={loading ? '—' : fmtMoney(todayRevenue)}
-          sub={loading ? 'Loading…' : (todayRevenue > 0 ? 'paid today' : 'nothing yet today')} />
-        <KpiCard icon={TrendingUp} chip="bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300" label="Month to date"
-          value={loading ? '—' : fmtMoney(mtdRevenue)} sub={loading ? 'Loading…' : `${paidCount} paid`} />
-        <KpiCard icon={Clock} chip="bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300" label="Outstanding"
-          value={loading ? '—' : fmtMoney(outstanding)}
-          sub={loading ? 'Loading…' : `${unpaidCount} unpaid${overdueInvoiceCount ? ` · ${overdueInvoiceCount} overdue` : ''}`}
-          accent={!loading && overdueInvoiceCount > 0 ? 'text-amber-600' : undefined} />
-        <KpiCard icon={FileText} chip="bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300" label="Quote pipeline"
-          value={loading ? '—' : fmtMoney(pipeline)} sub={loading ? 'Loading…' : `${summary?.quotes?.sent ?? 0} sent`}
-          accent="text-violet-700" />
-      </div>
-
-      {/* Lead → client funnel — the conversion pipeline at a glance */}
-      <div className="px-4 sm:px-6 pt-3">
-        <Funnel stages={funnel.stages} convRate={funnel.convRate} activeClients={activeClients} loading={loading} />
-      </div>
-
-      {/* Tiles grid */}
-      <div className="px-4 sm:px-6 pt-3 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
-
-        {/* Customer reschedule requests — approve/decline inline. Hides when empty. */}
-        <RescheduleRequestsTile navigate={navigate} />
-
-        <InboxTile
-          loading={loading}
-          attention={attention}
-          slaBreached={slaBreached}
-          hiddenOverdueConvs={hiddenOverdueConvs}
-          hiddenUnassignedConvs={hiddenUnassignedConvs}
-          hiddenLateVisits={hiddenLateVisits}
-          hiddenInvoices={hiddenInvoices}
-          navigate={navigate}
-        />
-
-        <TodayTile
-          loading={loading}
-          todayJobs={todayJobs}
-          todayCount={todayCount}
-          weekCount={weekCount}
-          navigate={navigate}
-        />
-
-        <QuotesLeadsTile
-          loading={loading}
-          quoteActions={quoteActions}
-          navigate={navigate}
-        />
-
-        <TurnoverCoverageTile loading={loading} turnover={turnover} navigate={navigate} />
-        <CrewWorkloadTile loading={loading} crew={crew} rosterUnavailable={rosterUnavailable} navigate={navigate} />
-
-        <div className="lg:col-span-2">
-          <MoneyTile
-            todayRevenue={todayRevenue}
-            mtdRevenue={mtdRevenue}
-            outstanding={outstanding}
-            pipeline={pipeline}
-            invoices={invoices}
-            overdueInvoiceCount={overdueInvoiceCount}
-            summary={summary}
-            arAging={arAging}
-            svcRevenue={svcRevenue}
-            navigate={navigate}
-          />
+        {/* Hero: greeting + the four numbers that matter, as compact pills */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-ink tracking-tight leading-tight">{greeting} 👋</h1>
+            <p className="text-xs sm:text-[13px] text-ink-3 mt-0.5">
+              {longDate}
+              {loading ? ' · loading…' : (
+                <>{' · '}{todayCount === 0 ? 'no jobs today' : `${todayCount} today`}{` · ${weekCount} this week`}</>
+              )}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex gap-2">
+            <MetricPill icon={DollarSign} label="Today" value={dash(fmtMoney(todayRevenue))}
+              tone="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+              onClick={() => navigate('/billing?view=invoices')} />
+            <MetricPill icon={TrendingUp} label="This month" value={dash(fmtMoney(mtdRevenue))}
+              tone="bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300"
+              onClick={() => navigate('/owner')} />
+            <MetricPill icon={Clock} label="Outstanding" value={dash(fmtMoney(outstanding))}
+              tone="bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300"
+              accent={!loading && overdueInvoiceCount > 0 ? 'text-amber-600 dark:text-amber-300' : undefined}
+              onClick={() => navigate('/billing?view=invoices&status=overdue')} />
+            <MetricPill icon={FileText} label="Pipeline" value={dash(fmtMoney(pipeline))}
+              tone="bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300"
+              onClick={() => navigate('/billing?view=quotes')} />
+          </div>
         </div>
 
-        {/* AI-computed operational follow-ups — auto-loads, hides when all clear */}
-        <AIFollowUps title="Operations check" className="lg:col-span-2" />
+        {/* The star: everything that needs the owner, in one list */}
+        <NeedsYouNow attention={attention} loading={loading} navigate={navigate} />
+
+        {/* Today + quotes/leads worklist */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+          <TodayTile loading={loading} todayJobs={todayJobs} todayCount={todayCount}
+            weekCount={weekCount} navigate={navigate} />
+          <QuotesLeadsTile loading={loading} quoteActions={quoteActions} navigate={navigate} />
+        </div>
+
+        {/* Money snapshot — the detail behind the pills (AR aging, by service) */}
+        <MoneyTile
+          todayRevenue={todayRevenue} mtdRevenue={mtdRevenue} outstanding={outstanding}
+          pipeline={pipeline} invoices={invoices} overdueInvoiceCount={overdueInvoiceCount}
+          summary={summary} arAging={arAging} svcRevenue={svcRevenue} navigate={navigate} />
 
       </div>
     </div>
