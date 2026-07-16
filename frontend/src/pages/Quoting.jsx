@@ -140,6 +140,15 @@ export default function Quoting() {
     // Bare /billing?view=quotes (e.g. GlobalSearch "New quote", direct URL nav)
     // carries no ?tab= — honor ?view= too so it doesn't fall back to Leads.
     else if (sp.get('view') === 'quotes') setTab('quotes')
+    // ?new=1 (from the page assistant's "New quote" quick action) opens the
+    // blank quote composer straight away, then strips the flag so a refresh or
+    // back-nav doesn't reopen it.
+    if (sp.get('new')) {
+      openQuoteForm()
+      setTab('quotes')
+      sp.delete('new')
+      navigate({ pathname: location.pathname, search: sp.toString() ? `?${sp}` : '' }, { replace: true })
+    }
   }, [location.search])
 
   useEffect(() => {
@@ -268,7 +277,11 @@ export default function Quoting() {
         }
       }
       setForm({
-        client_id: resolvedClientId, intake_id: intake.id,
+        // A quote drafted from a Comms conversation carries no real LeadIntake —
+        // intake.id is the conversation id, used only to trigger this effect, so
+        // don't persist it as intake_id (that would link the quote to an
+        // unrelated LeadIntake row that happens to share the number).
+        client_id: resolvedClientId, intake_id: intake.from_conversation_id ? null : intake.id,
         // Auto-fill a sensible title and customer-facing scope so the quote is
         // mostly built — the admin just reviews, tweaks, and sends.
         title: titleFromIntake(intake), customer_message: '',

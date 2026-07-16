@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FileText } from 'lucide-react'
 import { EmptyState } from '../components/ui'
 import { useInvoicing } from '../hooks/useInvoicing'
@@ -72,6 +72,20 @@ export default function Invoicing() {
   }
 
   const closePanel = () => { setPanel(null); setSelected(null) }
+
+  // ?new=1 (page assistant "New invoice" quick action) opens the blank invoice
+  // editor, then strips the flag (keeping ?view=invoices) so a refresh doesn't
+  // reopen it.
+  const [invParams, setInvParams] = useSearchParams()
+  useEffect(() => {
+    if (invParams.get('new')) {
+      openNew()
+      const next = new URLSearchParams(invParams)
+      next.delete('new')
+      setInvParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invParams])
 
   return (
     <div className="flex h-full bg-bg">

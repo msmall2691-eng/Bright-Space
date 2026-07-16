@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { X, Phone, Mail, MapPin, User, Hash, StickyNote, ArrowLeft, Send } from 'lucide-react'
+import { X, Phone, Mail, MapPin, User, Hash, StickyNote, ArrowLeft, Send, FileText, Loader2 } from 'lucide-react'
 import { formatPhone } from '../../utils/display'
 import { contactDisplay, relTime } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
@@ -10,7 +10,7 @@ import { useClientQuickLinks } from '../../hooks/useClientQuickLinks'
  *  channel badge, click-to-call/email links, address, "View Full Profile"),
  *  tags row, and a 15-item activity timeline synthesized from the thread's
  *  messages. The Assignee/Priority/Status block was retired in Phase 8. */
-export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }) {
+export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, onDraftQuote, draftingQuote }) {
   if (!detail) return null
   const name = contactDisplay(detail)
   const client = detail.client
@@ -86,9 +86,22 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }
           )}
         </div>
 
+        {/* Turn this conversation into a quote — reads the thread, extracts the
+            service/size/location the customer described, and opens the quote
+            form pre-filled + priced. Works for leads with no client record yet,
+            which is exactly when it's most useful. */}
+        {onDraftQuote && (
+          <button onClick={onDraftQuote} disabled={draftingQuote}
+            className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-60 py-2 rounded-xl transition-all">
+            {draftingQuote
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading conversation…</>
+              : <><FileText className="w-3.5 h-3.5" /> Draft a quote from this</>}
+          </button>
+        )}
+
         {client && (
           <a href={`/clients/${client.id}`}
-            className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 py-2 rounded-xl transition-all">
+            className="mt-2 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 py-2 rounded-xl transition-all">
             <User className="w-3.5 h-3.5" /> View Full Profile
           </a>
         )}

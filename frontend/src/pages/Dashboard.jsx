@@ -16,6 +16,7 @@ import { fmtMoney } from '../components/dashboard/utils'
 import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
 import { TodayTile } from '../components/dashboard/TodayTile'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
+import { TurnoverCoverageTile, CrewWorkloadTile } from '../components/dashboard/OperationsTiles'
 import { MoneyTile } from '../components/dashboard/MoneyTile'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useDashboardDerived } from '../hooks/useDashboardDerived'
@@ -55,6 +56,8 @@ export default function Dashboard() {
     quoteActions,
     arAging,
     attention,
+    turnover,
+    crew,
     todayJobs, todayCount, weekCount,
   } = useDashboardDerived({
     invoices, followUps, todayVisits,
@@ -123,6 +126,12 @@ export default function Dashboard() {
           <TodayTile loading={loading} todayJobs={todayJobs} todayCount={todayCount}
             weekCount={weekCount} navigate={navigate} />
           <QuotesLeadsTile loading={loading} quoteActions={quoteActions} navigate={navigate} />
+        </div>
+
+        {/* Operations — crew load + STR turnover coverage */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+          <CrewWorkloadTile loading={loading} crew={crew} rosterUnavailable={rosterUnavailable} navigate={navigate} />
+          <TurnoverCoverageTile loading={loading} turnover={turnover} navigate={navigate} />
         </div>
 
         {/* Money snapshot — the detail behind the pills (AR aging, by service) */}

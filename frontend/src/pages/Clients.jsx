@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
@@ -245,6 +245,18 @@ export default function Clients() {
     dupes, setDupes,
     openNew, openEdit,
   } = useClientForm({ setSelected, loadPhones, resetPhones })
+  // ?new=1 (page assistant "New client" quick action) opens the blank client
+  // form, then strips the flag so a refresh doesn't reopen it.
+  const [clientParams, setClientParams] = useSearchParams()
+  useEffect(() => {
+    if (clientParams.get('new')) {
+      openNew()
+      const next = new URLSearchParams(clientParams)
+      next.delete('new')
+      setClientParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientParams])
   const { selectedIds, toggle: toggleSelect, toggleAll, clear: clearSelection } = useSelectionSet()
   const toggleSelectAll = () => toggleAll(filtered.map(c => c.id))
 
