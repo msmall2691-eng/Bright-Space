@@ -9,7 +9,7 @@ import { formatDateShort as fmtDate } from '../utils/format'
 import { canEdit } from '../utils/perms'
 import InlineSelect from '../components/InlineSelect'
 import InlineEditField from '../components/InlineEditField'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle, CalendarClock } from 'lucide-react'
 import { computeDisplayStatus } from '../components/schedule/constants'
 import Timeline, { jobTimelineSource } from '../components/Timeline'
 import RecordSkeleton from '../components/record/RecordSkeleton'
@@ -236,6 +236,27 @@ export default function JobDetail() {
                   </div>
                 )
               })()}
+              {/* Customer-link state from the confirm/reschedule page — makes a
+                  customer's confirm or reschedule visible in-app, not just in
+                  the owner's inbox. A pending reschedule request wins (it needs
+                  action); a self-reschedule clears that and lands as confirmed. */}
+              {job.reschedule_requested_at ? (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                  <CalendarClock className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Customer asked to reschedule</p>
+                    {job.reschedule_request_message && (
+                      <p className="text-amber-700/90">“{job.reschedule_request_message}”</p>
+                    )}
+                    <p className="text-amber-700/90">Pick a new time below (or in the schedule).</p>
+                  </div>
+                </div>
+              ) : job.customer_confirmed_at ? (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <p className="font-semibold">Customer confirmed this visit</p>
+                </div>
+              ) : null}
               <InlineEditField label="Job" value={job.title} placeholder="Untitled job"
                 onSave={(v) => saveField({ title: v || 'Untitled job' })} />
             </div>

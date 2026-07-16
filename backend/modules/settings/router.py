@@ -952,6 +952,7 @@ class AutomationConfig(BaseModel):
     gcal_sync_interval: Optional[int] = None
     recurring_auto_generate_enabled: Optional[bool] = None
     invite_customers: Optional[bool] = None
+    customer_self_reschedule: Optional[bool] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
     turnover_lead_buffer_hours: Optional[float] = None
@@ -971,6 +972,16 @@ def freebusy_check_enabled(db: Session) -> bool:
     allow_conflicts). Defaults on; in-app kill switch lives in
     Settings → Automation. No-ops cleanly when Google isn't connected."""
     return _coerce_bool(get_setting(db, "freebusy_check"), True)
+
+
+def customer_self_reschedule_enabled(db: Session) -> bool:
+    """Whether customers can move their own upcoming visit from the confirm link
+    (pick a new open day + arrival window) instead of only sending a reschedule
+    request for staff to action by hand. Defaults on — it's the headline
+    "customers reschedule themselves" behavior — and is the in-app kill switch
+    (Settings → Automation). When off, the public page falls back to the
+    request-only flow."""
+    return _coerce_bool(get_setting(db, "customer_self_reschedule"), True)
 
 
 def turnover_lead_buffer_hours(db: Session) -> float:
@@ -1110,6 +1121,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
             os.getenv("RECURRING_AUTO_GENERATE_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
         ),
         "invite_customers": customer_invites_enabled(db),
+        "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }
 

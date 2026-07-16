@@ -719,6 +719,50 @@ def free_busy_conflicts(job_type, scheduled_date, start_time, end_time, tz: str 
         return []
 
 
+def free_busy_range(job_type, date_from, date_to, tz: str = "America/New_York") -> list:
+    """Query Google Free/Busy for the calendar this job_type lands on across a
+    whole date range in a SINGLE request, returning every busy interval.
+
+    Powers customer self-reschedule availability: instead of one Free/Busy call
+    per candidate day+window (dozens of round trips), we pull the full range
+    once and bucket the blocks locally. ``date_from``/``date_to`` are inclusive
+    dates (date objects or ISO strings); the query spans local-midnight of
+    ``date_from`` to end-of-day of ``date_to``.
+
+    Fails OPEN like free_busy_conflicts(): returns [] when Google isn't
+    connected or the API errors, so a hiccup never hides all availability. Each
+    item is a raw Google busy block: {"start": ISO, "end": ISO}.
+    """
+    if not is_configured():
+        return []
+    try:
+        from datetime import timedelta
+        from zoneinfo import ZoneInfo
+
+        def _d(v):
+            return v if hasattr(v, "isoformat") and not hasattr(v, "hour") else datetime.fromisoformat(str(v)).date()
+
+        tzinfo = ZoneInfo(tz or "America/New_York")
+        start = datetime.fromisoformat(f"{_d(date_from)}T00:00:00").replace(tzinfo=tzinfo)
+        # End-of-day of the last date → start of the day after.
+        end = datetime.fromisoformat(f"{_d(date_to)}T00:00:00").replace(tzinfo=tzinfo) + timedelta(days=1)
+        if end <= start:
+            return []
+
+        service = _get_service()
+        cal_id = _calendar_id(job_type or "residential")
+        resp = service.freebusy().query(body={
+            "timeMin": start.isoformat(),
+            "timeMax": end.isoformat(),
+            "items": [{"id": cal_id}],
+        }).execute()
+        cal = (resp.get("calendars") or {}).get(cal_id, {})
+        return cal.get("busy", []) or []
+    except Exception as e:  # never let a Free/Busy failure hide availability
+        print(f"[GCal] Free/Busy range check failed (showing all slots): {e}")
+        return []
+
+
 def start_watch(calendar_id: str, address: str, token: str, ttl_seconds: int = 7 * 24 * 3600) -> dict | None:
     """Register a Google push channel (events.watch) on a calendar.
 
