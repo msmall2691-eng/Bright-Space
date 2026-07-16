@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle } from 'lucide-react'
+import { X, Search, Check, User, Zap, Trash2, Ban, ChevronDown, AlertTriangle, Send } from 'lucide-react'
 import { get, patch, post, del } from '../api'
 import Button from './ui/Button'
 import { useEmployees } from '../hooks/useEmployees'
@@ -146,6 +146,34 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // that explicitly instead of dead-ending the save.
   const [conflict, setConflict] = useState(null)
   const [removing, setRemoving] = useState(false)
+  const [dispatching, setDispatching] = useState(false)
+  // Already pushed to Connecteam? (drives Dispatch vs Re-dispatch label.)
+  const isDispatched = Boolean(job?.connecteam_shift_ids && job.connecteam_shift_ids.length)
+
+  // Manual Connecteam dispatch — the operator's "send the cleaners now" action.
+  // In manual-dispatch mode (default) nothing goes to Connecteam until this is
+  // pressed. Re-syncs (no duplicate shifts) if already dispatched.
+  const handleDispatch = async () => {
+    if (!job?.id) return
+    setDispatching(true); setError('')
+    try {
+      const res = await post(`/api/jobs/${job.id}/dispatch`, {})
+      const st = res?.connecteam || {}
+      if (st.dispatched || st.resynced || st.reason === 'already_dispatched') {
+        notify?.(isDispatched ? 'Re-synced with Connecteam' : 'Dispatched to Connecteam ✓')
+      } else if (st.reason === 'not_configured') {
+        notify?.('Connecteam isn’t connected — add your API key in Settings → Integrations.', 'error')
+      } else {
+        notify?.(`Dispatch: ${st.reason || 'done'}`)
+      }
+      onSave?.({ action: 'dispatch', jobId: job.id })
+    } catch (e) {
+      const msg = e?.detail || e?.message || 'Dispatch failed'
+      setError(msg); notify?.(msg, 'error')
+    } finally {
+      setDispatching(false)
+    }
+  }
 
   // onSave is invoked with a small envelope describing what changed so the
   // parent can update local state instead of refetching the whole week.
@@ -786,6 +814,16 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                   className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-ink-2 hover:bg-bg-2 disabled:opacity-60 transition-colors"
                 >
                   <Ban className="w-4 h-4" /> Cancel job
+                </button>
+              )}
+              {formData.status !== 'cancelled' && formData.cleaner_ids.length > 0 && (
+                <button
+                  onClick={handleDispatch}
+                  disabled={dispatching || removing || saving}
+                  title="Send the assigned cleaners' shifts to Connecteam now"
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-60 transition-colors"
+                >
+                  <Send className="w-4 h-4" /> {dispatching ? 'Dispatching…' : (isDispatched ? 'Re-dispatch' : 'Dispatch to Connecteam')}
                 </button>
               )}
             </div>

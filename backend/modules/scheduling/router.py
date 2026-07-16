@@ -836,6 +836,30 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                 detail=f"A turnover job already exists for this property on {data.scheduled_date} (Job #{existing.id}: {existing.title}). Edit the existing job or cancel it first."
             )
 
+    # General duplicate guard for one-off jobs: the same PROPERTY can't have two
+    # live jobs at the same date + start time + type — that's a double-submit,
+    # not a real second visit. Keyed on property (not client) so a client with
+    # two homes cleaned simultaneously isn't wrongly blocked. Overridable via
+    # allow_conflicts. Recurring + turnover have their own indexes/checks above.
+    if (not data.allow_conflicts and data.job_type != "str_turnover"
+            and getattr(data, "property_id", None) and data.scheduled_date and data.start_time
+            and not getattr(data, "recurring_schedule_id", None)):
+        dup = db.query(Job).filter(
+            Job.property_id == data.property_id,
+            Job.scheduled_date == data.scheduled_date,
+            Job.start_time == data.start_time,
+            Job.job_type == (data.job_type or "residential"),
+            Job.status.notin_(["cancelled"]),
+            or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
+        ).first()
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"A job already exists for this property on {data.scheduled_date} "
+                        f"at {data.start_time} (Job #{dup.id}: {dup.title}). Edit that job, "
+                        f"or resubmit with allow_conflicts=true to create anyway."),
+            )
+
     # ── CLEANER GUARDS ── double-booking, time-off, capacity. All overridable
     # via allow_conflicts so an operator can intentionally force an assignment.
     if not data.allow_conflicts:
@@ -1011,13 +1035,18 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
                          action="create", status="failed", detail=str(e))
 
     # ── PUSH TO CONNECTEAM (auto-dispatch) ──
-    # If cleaners are already assigned, scheduling the job sends their shifts to
-    # Connecteam now — no separate "Dispatch" click. No-ops cleanly when
+    # Only when auto-dispatch is ON. Default is MANUAL: cleaners are assigned on
+    # the job but nothing goes to Connecteam until the operator presses
+    # "Dispatch" (POST /api/scheduling/{id}/dispatch). No-ops cleanly when
     # Connecteam isn't configured or no one's assigned yet.
     ct_status = {"dispatched": False, "reason": None}
     try:
-        from integrations.connecteam_auto import auto_dispatch_job
-        ct_status = auto_dispatch_job(db, job)
+        from modules.settings.router import connecteam_auto_dispatch_enabled
+        if connecteam_auto_dispatch_enabled(db):
+            from integrations.connecteam_auto import auto_dispatch_job
+            ct_status = auto_dispatch_job(db, job)
+        else:
+            ct_status = {"dispatched": False, "reason": "manual_mode"}
     except Exception as e:
         logger.warning(f"Connecteam auto-dispatch failed for job {job.id}: {e}")
         ct_status = {"dispatched": False, "reason": "error"}
@@ -1190,9 +1219,15 @@ def sync_reconcile(db: Session = Depends(get_db)):
                 Job.scheduled_date >= start,
                 Job.scheduled_date <= end,
             ).all()
+            # In MANUAL dispatch mode, don't batch-dispatch assigned jobs — that
+            # would silently push cleaners the operator hasn't dispatched yet.
+            # Drift repair below still runs (it only fixes ALREADY-dispatched
+            # shifts, never creates new ones).
+            from modules.settings.router import connecteam_auto_dispatch_enabled
+            auto_ok = connecteam_auto_dispatch_enabled(db)
             dispatched, errors = 0, 0
             for job in jobs:
-                if job.connecteam_shift_ids or not job.cleaner_ids:
+                if job.connecteam_shift_ids or not job.cleaner_ids or not auto_ok:
                     continue
                 st = auto_dispatch_job(db, job, commit=False)
                 if st.get("dispatched"):
@@ -1200,7 +1235,8 @@ def sync_reconcile(db: Session = Depends(get_db)):
                 if st.get("errors"):
                     errors += len(st["errors"])
             db.commit()
-            result["connecteam"] = {"dispatched": dispatched, "errors": errors}
+            result["connecteam"] = {"dispatched": dispatched, "errors": errors,
+                                    "manual_mode": not auto_ok}
 
             # Drift repair: jobs that already have shifts but shouldn't
             # (cancelled/completed) or whose shift no longer matches the
@@ -1236,6 +1272,51 @@ def sync_reconcile(db: Session = Depends(get_db)):
         parts.append(f"{total_errors} error(s)")
     result["message"] = ", ".join(parts) if parts else "Everything already in sync"
     return result
+
+
+def find_schedule_issues(db: Session, org_id: int | None = None) -> dict:
+    """Scan the live schedule for problems worth surfacing — read-only, never
+    mutates. Two classes:
+      - duplicate_jobs: more than one LIVE job for the same client + date +
+        start time + type (usually a double-submit).
+      - orphaned_shifts: a cancelled/completed job that still carries Connecteam
+        shift ids (a stale shift that should have been pulled).
+    Used by the /audit endpoint and the background schedule-audit tick."""
+    from collections import defaultdict
+    q = db.query(Job).filter(Job.status.notin_(["cancelled"]))
+    if org_id is not None:
+        q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
+    groups = defaultdict(list)
+    for j in q.all():
+        if j.property_id and j.scheduled_date and j.start_time:
+            key = (j.property_id, str(j.scheduled_date), str(j.start_time), j.job_type or "residential")
+            groups[key].append(j)
+    duplicate_jobs = [
+        {"property_id": k[0], "date": k[1], "start_time": k[2], "job_type": k[3],
+         "client_id": js[0].client_id,
+         "job_ids": [j.id for j in js], "titles": [j.title for j in js]}
+        for k, js in groups.items() if len(js) > 1
+    ]
+
+    oq = db.query(Job).filter(Job.status.in_(["cancelled", "completed"]))
+    if org_id is not None:
+        oq = oq.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
+    orphaned_shifts = [
+        {"job_id": j.id, "status": j.status, "shift_ids": j.connecteam_shift_ids}
+        for j in oq.all() if j.connecteam_shift_ids
+    ]
+    return {
+        "duplicate_jobs": duplicate_jobs,
+        "orphaned_shifts": orphaned_shifts,
+        "counts": {"duplicate_groups": len(duplicate_jobs), "orphaned_shifts": len(orphaned_shifts)},
+    }
+
+
+@router.get("/audit", dependencies=[Depends(require_role("admin", "manager"))])
+def schedule_audit(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """On-demand schedule audit: duplicate jobs + orphaned Connecteam shifts.
+    The same scan the background tick runs, exposed for a Settings/admin view."""
+    return find_schedule_issues(db, resolve_org_id(org_id, db))
 
 
 @router.post("/sync-gcal", dependencies=[Depends(require_role("admin", "manager"))])
@@ -2774,10 +2855,17 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             new_ct_sig = (job.scheduled_date, job.start_time, job.end_time,
                           tuple(str(c) for c in (job.cleaner_ids or [])))
             if job.connecteam_shift_ids:
+                # Already dispatched — a reschedule/reassign must re-sync the
+                # existing shift regardless of the auto-dispatch setting, so a
+                # moved job never strands a stale shift on a cleaner's phone.
                 if new_ct_sig != prev_ct_sig:
                     resync_job(db, job)
             elif job.cleaner_ids:
-                auto_dispatch_job(db, job)
+                # INITIAL dispatch — held in manual mode until the operator
+                # presses Dispatch.
+                from modules.settings.router import connecteam_auto_dispatch_enabled
+                if connecteam_auto_dispatch_enabled(db):
+                    auto_dispatch_job(db, job)
     except Exception as e:
         logger.warning(f"Connecteam sync failed for job {job.id}: {e}")
 
@@ -2869,6 +2957,36 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
             logger.warning(f"Connecteam delete failed for job {job.id}: {e}")
     db.delete(job)
     db.commit()
+
+
+@router.post("/{job_id}/dispatch", dependencies=[Depends(require_role("admin", "manager"))])
+def dispatch_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Manually push this job's assigned cleaners to Connecteam NOW — the
+    operator-triggered dispatch that MANUAL mode holds for. An explicit action,
+    so it runs regardless of the auto-dispatch setting. Re-syncs instead of
+    duplicating if the job was already dispatched."""
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
+    from integrations.connecteam import is_configured as _ct_ok
+    if not _ct_ok():
+        raise HTTPException(status_code=400, detail="Connecteam isn't connected — add your API key in Settings → Integrations first.")
+    if not job.cleaner_ids:
+        raise HTTPException(status_code=400, detail="Assign at least one cleaner before dispatching.")
+    if job.status in ("cancelled", "completed"):
+        raise HTTPException(status_code=400, detail=f"Can't dispatch a {job.status} job.")
+    from integrations.connecteam_auto import auto_dispatch_job, resync_job
+    # Already dispatched → re-sync to the current crew/time instead of creating
+    # duplicate shifts.
+    st = resync_job(db, job) if job.connecteam_shift_ids else auto_dispatch_job(db, job)
+    return {"job_id": job.id, "connecteam": st}
+
+
+@router.post("/{job_id}/undispatch", dependencies=[Depends(require_role("admin", "manager"))])
+def undispatch_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Pull this job's shifts back OFF Connecteam — undo a dispatch."""
+    job = _get_job_or_404(db, job_id, resolve_org_id(org_id, db))
+    from integrations.connecteam_auto import remove_job_from_connecteam
+    st = remove_job_from_connecteam(db, job)
+    return {"job_id": job.id, "connecteam": st}
 
 
 @router.post("/{job_id}/invite-client", dependencies=[Depends(require_role("admin", "manager"))])

@@ -302,6 +302,31 @@ def str_turnover_autoassign_tick() -> dict:
         db.close()
 
 
+def schedule_audit_tick() -> dict:
+    """Frequent, read-only audit of the schedule for duplicate jobs + orphaned
+    Connecteam shifts. Logs a warning when anything's found so problems surface
+    on their own instead of piling up. Never mutates the schedule — the operator
+    (or the reconcile drift-repair) fixes what it flags."""
+    db = SessionLocal()
+    try:
+        from modules.scheduling.router import find_schedule_issues
+        issues = find_schedule_issues(db)
+        c = issues.get("counts", {})
+        if c.get("duplicate_groups") or c.get("orphaned_shifts"):
+            log.warning(
+                "[schedule-audit] %s duplicate job group(s), %s orphaned shift(s) — "
+                "review at GET /api/jobs/audit. dupes=%s orphans=%s",
+                c.get("duplicate_groups", 0), c.get("orphaned_shifts", 0),
+                issues["duplicate_jobs"][:10], issues["orphaned_shifts"][:10],
+            )
+        return c
+    except Exception as e:
+        log.error(f"[schedule-audit] failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def sync_reconcile_tick() -> dict:
     """Self-healing push reconcile for Google Calendar + Connecteam.
 
@@ -360,9 +385,14 @@ def sync_reconcile_tick() -> dict:
                     Job.scheduled_date >= start,
                     Job.scheduled_date <= end,
                 ).all()
+                # Manual dispatch mode: never auto-push assigned jobs from the
+                # background tick. Drift repair (already-dispatched shifts) below
+                # still runs.
+                from modules.settings.router import connecteam_auto_dispatch_enabled
+                _auto_ok = connecteam_auto_dispatch_enabled(db)
                 dispatched, errors = 0, 0
                 for job in jobs:
-                    if job.connecteam_shift_ids or not job.cleaner_ids:
+                    if job.connecteam_shift_ids or not job.cleaner_ids or not _auto_ok:
                         continue
                     st = auto_dispatch_job(db, job, commit=False)
                     if st.get("dispatched"):
@@ -633,6 +663,16 @@ def start_scheduler():
         log.info(f"Sync reconcile enabled (interval: {reconcile_minutes} min)")
     else:
         log.info("Sync reconcile disabled via SYNC_RECONCILE_ENABLED=0")
+
+    # Frequent read-only schedule audit — flags duplicate jobs + orphaned
+    # Connecteam shifts so they surface early. Cheap; runs a few times a day.
+    _scheduler.add_job(
+        schedule_audit_tick,
+        IntervalTrigger(hours=env_int("SCHEDULE_AUDIT_INTERVAL_HOURS", 6)),
+        id="schedule_audit",
+        name="Schedule duplicate/orphan audit",
+        replace_existing=True,
+    )
 
     # iCal auto-sync
     if env_flag("ICAL_AUTO_SYNC_ENABLED", True):
