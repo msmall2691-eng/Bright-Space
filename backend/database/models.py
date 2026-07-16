@@ -568,6 +568,17 @@ class Job(Base):
     # action, same as the roadmap doc's "requests land in your queue".
     reschedule_requested_at = Column(DateTime, nullable=True)
     reschedule_request_message = Column(Text, nullable=True)
+    # Customer self-reschedule that landed on a busy slot (a double-book): the
+    # requested move is held here as a pending approval instead of moving the
+    # job. The owner approves (applies these) or declines (clears them). NULL
+    # when there's no pending self-reschedule. A free-slot self-reschedule
+    # applies immediately and never populates these.
+    reschedule_requested_date = Column(Date, nullable=True)
+    reschedule_requested_start_time = Column(Time, nullable=True)
+    reschedule_requested_end_time = Column(Time, nullable=True)
+    # "this" (single visit) or "future" (this + all future, for a recurring
+    # series) — the scope the customer chose for the pending move.
+    reschedule_requested_scope = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
