@@ -974,9 +974,15 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
             # Invite the customer (attendee + email) so the cleaning lands on
             # their own calendar — gated by the Settings toggle and requires an
             # email to invite to.
-            from modules.settings.router import customer_invites_enabled
+            from modules.settings.router import (
+                customer_invites_enabled, customer_notify_enabled, gcal_reminder_overrides,
+            )
             invite = customer_invites_enabled(db) and bool(client and client.email)
-            event_id = create_event(job_dict, client_dict, send_invite=invite)
+            # notify controls whether Google EMAILS the customer; reminders come
+            # from the operator's Settings choice (default: Google's own).
+            _su = "all" if (invite and customer_notify_enabled(db)) else "none"
+            event_id = create_event(job_dict, client_dict, send_invite=invite,
+                                    reminders=gcal_reminder_overrides(db), send_updates=_su)
             if event_id:
                 job.calendar_invite_sent = invite
                 job.gcal_event_id = event_id
@@ -1128,8 +1134,10 @@ def push_to_gcal(db: Session = Depends(get_db)):
             "property_id": job.property_id,
         }
         try:
+            from modules.settings.router import customer_notify_enabled as _ne, gcal_reminder_overrides as _ro
             invite = invites_on and bool(client and client.email)
-            event_id = create_event(job_dict, client_dict, send_invite=invite)
+            event_id = create_event(job_dict, client_dict, send_invite=invite,
+                                    reminders=_ro(db), send_updates=("all" if (invite and _ne(db)) else "none"))
             if event_id:
                 job.gcal_event_id = event_id
                 from integrations.google_calendar import active_account_id as _gcal_acct
@@ -2614,6 +2622,19 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     # Google Calendar sync. Cancelling pulls the job off the schedule everywhere
     # (Job.status='cancelled' is now the single truth after migration 039) and
     # removes the Google Calendar event.
+    # Google Calendar notification + reminder prefs (Settings → Automation),
+    # resolved once for whichever branch below runs. `_gcal_notify` gates
+    # whether Google emails the customer; `_gcal_reminders` is the event's
+    # reminder block (default: Google's own).
+    from modules.settings.router import (
+        customer_invites_enabled as _inv_enabled,
+        customer_notify_enabled as _notify_enabled,
+        gcal_reminder_overrides as _reminder_overrides,
+    )
+    _gcal_notify = _notify_enabled(db)
+    _gcal_reminders = _reminder_overrides(db)
+    _cancel_su = "all" if _gcal_notify else "none"
+
     if job.status == "cancelled":
         if job.gcal_event_id:
             old_event_id = job.gcal_event_id
@@ -2623,7 +2644,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 # or is unavailable. Only detach the id on success, so a failed
                 # delete can be retried next time rather than orphaning the event.
                 if delete_event(job.gcal_event_id, prev_job_type,
-                                owner_account_id=getattr(job, "gcal_account_id", None)):
+                                owner_account_id=getattr(job, "gcal_account_id", None),
+                                send_updates=_cancel_su):
                     job.gcal_event_id = None
                     _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
                                      action="delete", status="ok", external_id=old_event_id, commit=False)
@@ -2660,7 +2682,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                     "end_time": job.end_time, "address": job.address, "notes": job.notes,
                     "property_id": job.property_id,
                 }
-                new_event_id = create_event(job_dict, client_dict)
+                _inv = _inv_enabled(db) and bool(client and client.email)
+                new_event_id = create_event(
+                    job_dict, client_dict, send_invite=_inv, reminders=_gcal_reminders,
+                    send_updates=("all" if (_inv and _gcal_notify) else "none"))
                 if new_event_id:
                     job.gcal_event_id = new_event_id
                     job.gcal_account_id = _gcal_acct()
@@ -2685,6 +2710,14 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
                 "property_id": job.property_id,
             }
+            # Keep the customer on the invite through a reschedule. events().update
+            # is a full REPLACE, so NOT passing send_invite here silently dropped
+            # the customer as an attendee (their invite went stale) and, with
+            # sendUpdates="none", they were never told the time moved. Pass the
+            # invite + notify/reminder prefs so a reschedule updates their copy
+            # and (per Settings) emails them the change.
+            _inv = _inv_enabled(db) and bool(client and client.email)
+            _upd_su = "all" if (_inv and _gcal_notify) else "none"
             new_type = job.job_type or "residential"
             if _calendar_id(prev_job_type) != _calendar_id(new_type):
                 # The event lives on the OLD type's calendar — updating in
@@ -2692,8 +2725,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 # and leave Google stale (Codex P2 on #271). Move it:
                 # delete from the old calendar, recreate on the new one.
                 if delete_event(job.gcal_event_id, prev_job_type,
-                                owner_account_id=getattr(job, "gcal_account_id", None)):
-                    new_event_id = create_event(job_dict, client_dict)
+                                owner_account_id=getattr(job, "gcal_account_id", None),
+                                send_updates=_upd_su):
+                    new_event_id = create_event(job_dict, client_dict, send_invite=_inv,
+                                                reminders=_gcal_reminders, send_updates=_upd_su)
                     if new_event_id:
                         from integrations.google_calendar import active_account_id as _gcal_acct
                         job.gcal_event_id = new_event_id
@@ -2710,6 +2745,7 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                                    f"'{prev_job_type}' calendar did not apply; will retry")
             else:
                 update_event(job.gcal_event_id, job_dict, client_dict,
+                             send_invite=_inv, reminders=_gcal_reminders, send_updates=_upd_su,
                              owner_account_id=getattr(job, "gcal_account_id", None))
             # Record the reschedule/edit on the client timeline. Create and
             # cancel were already logged; an in-place move/edit used to be silent,
@@ -2817,8 +2853,10 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
     if job.gcal_event_id:
         try:
             from integrations.google_calendar import delete_event
+            from modules.settings.router import customer_notify_enabled
             delete_event(job.gcal_event_id, job.job_type or "residential",
-                         owner_account_id=getattr(job, "gcal_account_id", None))
+                         owner_account_id=getattr(job, "gcal_account_id", None),
+                         send_updates=("all" if customer_notify_enabled(db) else "none"))
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
     # Remove any Connecteam shifts so deleting a job doesn't leave cleaners with

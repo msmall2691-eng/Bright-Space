@@ -428,7 +428,7 @@ def list_events_for_client(
     return sorted(seen.values(), key=lambda e: e.get("start") or "")
 
 
-def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> dict:
+def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None, reminders: dict | None = None) -> dict:
     """Build a Google Calendar event dict from a job and client.
 
     include_attendees: When False (default), creates the event on YOUR calendar only.
@@ -508,7 +508,10 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_
         "start": {"dateTime": start_dt, "timeZone": tz},
         "end":   {"dateTime": end_dt,   "timeZone": tz},
         "colorId": JOB_TYPE_COLORS.get(job_type, "1"),
-        "reminders": {
+        # Reminders come from the operator's Settings → Automation choice
+        # (resolved to a dict by the caller). Falls back to the legacy
+        # email-24h + popup-1h overrides for any caller that doesn't pass one.
+        "reminders": reminders if reminders is not None else {
             "useDefault": False,
             "overrides": [
                 {"method": "email",  "minutes": 24 * 60},  # 24hrs before
@@ -545,13 +548,16 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_
     return event
 
 
-def create_event(job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None) -> str | None:
+def create_event(job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None, reminders: dict | None = None, send_updates: str | None = None) -> str | None:
     """Create a Google Calendar event. Returns the event ID or None on failure.
 
     send_invite: When False (default), event goes on your calendar silently.
                  When True, client is added as attendee and gets an invite email.
     crew_emails: List of cleaner emails to add as attendees (gets event on their phone).
     property_data: Optional property metadata for richer description (timezone, house_code, access_notes, etc.)
+    reminders:   Optional reminders block (Settings → Automation). None = legacy default.
+    send_updates: Explicit "all"/"none" override (Settings → notify_customers). When
+                 None, falls back to "all" if the client is invited or crew are attendees.
     """
     try:
         service = _get_service()
@@ -561,9 +567,10 @@ def create_event(job: dict, client: dict, send_invite: bool = False, crew_emails
             include_attendees=send_invite,
             crew_emails=crew_emails,
             property_data=property_data,
+            reminders=reminders,
         )
         # Send updates to crew even if not officially "inviting" the client
-        send_param = "all" if (send_invite or crew_emails) else "none"
+        send_param = send_updates if send_updates is not None else ("all" if (send_invite or crew_emails) else "none")
         result = service.events().insert(
             calendarId=cal_id,
             body=event,
@@ -578,10 +585,14 @@ def create_event(job: dict, client: dict, send_invite: bool = False, crew_emails
         return None
 
 
-def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None, owner_account_id: int | None = None) -> bool:
+def update_event(event_id: str, job: dict, client: dict, send_invite: bool = False, crew_emails: list[str] | None = None, property_data: dict | None = None, owner_account_id: int | None = None, reminders: dict | None = None, send_updates: str | None = None) -> bool:
     """Update an existing Google Calendar event. owner_account_id is the
     job's recorded gcal_account_id — mutations must hit the calendar the
-    event actually lives on (None = the legacy shared token)."""
+    event actually lives on (None = the legacy shared token).
+
+    NOTE: events().update is a full REPLACE, so callers MUST pass send_invite
+    (to keep the customer on the attendee list) — otherwise a reschedule drops
+    the customer's invite. reminders/send_updates mirror create_event."""
     try:
         service = _get_service(owner_account_id)
         cal_id = _calendar_id(job.get("job_type", "residential"))
@@ -590,8 +601,9 @@ def update_event(event_id: str, job: dict, client: dict, send_invite: bool = Fal
             include_attendees=send_invite,
             crew_emails=crew_emails,
             property_data=property_data,
+            reminders=reminders,
         )
-        send_param = "all" if (send_invite or crew_emails) else "none"
+        send_param = send_updates if send_updates is not None else ("all" if (send_invite or crew_emails) else "none")
         service.events().update(
             calendarId=cal_id,
             eventId=event_id,
@@ -636,15 +648,18 @@ def invite_client_to_event(event_id: str, job_type: str, client_email: str, clie
         return False
 
 
-def delete_event(event_id: str, job_type: str = "residential", owner_account_id: int | None = None) -> bool:
-    """Delete a Google Calendar event from the calendar it lives on."""
+def delete_event(event_id: str, job_type: str = "residential", owner_account_id: int | None = None, send_updates: str = "all") -> bool:
+    """Delete a Google Calendar event from the calendar it lives on.
+
+    send_updates controls whether Google emails the customer the cancellation
+    (Settings → notify_customers). Defaults "all" for backward compatibility."""
     try:
         service = _get_service(owner_account_id)
         cal_id = _calendar_id(job_type)
         service.events().delete(
             calendarId=cal_id,
             eventId=event_id,
-            sendUpdates="all",
+            sendUpdates=send_updates,
         ).execute()
         return True
     except Exception as e:
