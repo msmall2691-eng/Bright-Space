@@ -111,6 +111,24 @@ def _to_int(v) -> Optional[int]:
         return None
 
 
+def _to_float(v) -> Optional[float]:
+    """Coerce to float for the fractional columns (bathrooms — half-baths are
+    real, e.g. 2.5). Never 500s on bad input."""
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
+
+
+# Services the customer-facing site quotes by hand (STR / vacation-rental /
+# commercial) — it shows NO instant number for these, so Bright-Space must not
+# fabricate one either. A leftover auto-computed estimate on an STR lead is
+# exactly the "STR quotes showing a price" bug. Keyed on the CANONICAL type.
+_CUSTOM_QUOTE_CANONICAL = {"str", "commercial"}
+
+
 @dataclass
 class IntakeData:
     """Normalized superset of everything the website can tell us about a lead."""
@@ -123,7 +141,7 @@ class IntakeData:
     zip_code: Optional[str] = None
     service_type: str = "residential"          # canonical (mapped)
     bedrooms: Optional[int] = None
-    bathrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
     square_footage: Optional[int] = None
     guests: Optional[int] = None
     frequency: Optional[str] = None
@@ -185,13 +203,19 @@ def build_intake(
     stores estimate_min/estimate_max. The estimate engine gets the RAW service
     key so deep-clean / move-in-out multipliers are detected.
     """
-    if estimate_min is None or estimate_max is None:
+    canonical = canonical_service_type(service_key)
+    is_custom_quote = canonical in _CUSTOM_QUOTE_CANONICAL
+    # Auto-compute the canonical estimate ONLY for services the site prices
+    # instantly (residential). STR / commercial are quoted by hand — leave the
+    # estimate blank so the Requests page and quote composer show "custom",
+    # not a fabricated number the customer never saw.
+    if not is_custom_quote and (estimate_min is None or estimate_max is None):
         try:
             from modules.booking.pricing import estimate_price
             est = estimate_price(
                 service_type=service_key or "residential",
                 bedrooms=_to_int(bedrooms),
-                bathrooms=bathrooms,          # float ok for pricing (e.g. 2.5)
+                bathrooms=_to_float(bathrooms),   # float ok for pricing (e.g. 2.5)
                 square_footage=_to_int(square_footage),
                 frequency=frequency,
                 message=message,
@@ -202,6 +226,11 @@ def build_intake(
             estimate_max = est.get("estimate_max")
         except Exception as e:  # never let pricing failure drop a lead
             logger.warning("intake estimate computation failed: %s", e)
+    elif is_custom_quote:
+        # Defensive: if an upstream caller passed a stale/derived range on a
+        # custom-quote service, drop it so nothing downstream shows a price.
+        estimate_min = None
+        estimate_max = None
 
     return IntakeData(
         name=(name or "").strip() or "Unknown",
@@ -211,9 +240,9 @@ def build_intake(
         city=city,
         state=state or "ME",
         zip_code=zip_code,
-        service_type=canonical_service_type(service_key),
+        service_type=canonical,
         bedrooms=_to_int(bedrooms),
-        bathrooms=_to_int(bathrooms),
+        bathrooms=_to_float(bathrooms),
         square_footage=_to_int(square_footage),
         guests=_to_int(guests),
         frequency=frequency,

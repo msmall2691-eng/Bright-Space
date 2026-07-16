@@ -1,7 +1,7 @@
 import logging
 import os
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
@@ -136,7 +136,7 @@ class BookingSubmit(BaseModel):
     # Optional fields
     property: Optional[str] = None
     bedrooms: Optional[int] = None
-    bathrooms: Optional[int] = None
+    bathrooms: Optional[float] = None   # half-baths (2.5) are real
     guests: Optional[int] = None
     frequency: Optional[str] = None
     checkIn: Optional[str] = None
@@ -165,6 +165,14 @@ class BookingSubmit(BaseModel):
     petsDetail: Optional[str] = None
     focusAreas: Optional[list] = None        # ["kitchen", "bathrooms", ...]
     specialInstructions: Optional[str] = None
+    # STR / vacation-rental extras the maineclean.co intake collects for
+    # turnover-cleaning leads. Stored on custom_fields (same catch-all as the
+    # essentials) so the operator sees the listing + turnover cadence next to
+    # the request without a per-field schema migration. guests/bedrooms/
+    # bathrooms ride the native columns above.
+    listingUrl: Optional[str] = None         # Airbnb / VRBO listing link
+    turnoverDay: Optional[str] = None        # e.g. "Saturday", "Flexible", "Same-day"
+    petsAllowed: Optional[str] = None        # does the rental allow pets (affects hair/effort)
     # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
     # (retry / dual-forward from the maineclean.co Express middle layer /
     # user tapped Submit twice) collapses to one Lead. Accept both camel and
@@ -200,7 +208,7 @@ class InstantQuoteRequest(BaseModel):
     the user has typed so far."""
     serviceType: Optional[str] = "residential"
     bedrooms: Optional[int] = None
-    bathrooms: Optional[int] = None
+    bathrooms: Optional[float] = None   # half-baths (2.5) are real
     squareFeet: Optional[int] = None
     frequency: Optional[str] = None
     message: Optional[str] = None
@@ -219,9 +227,51 @@ class InstantQuoteResponse(BaseModel):
     breakdown: dict
 
 
+def _enrich_lead_specs(intake_id: int, address: str) -> None:
+    """Best-effort: fill MISSING sqft/beds/baths on a freshly-landed lead from
+    public property data (RentCast), keyed on the service address — so an STR
+    or contact-form lead that didn't type its specs still shows them on the
+    Requests page and pre-fills a quote.
+
+    Runs in a BackgroundTask with its own DB session so it never adds latency
+    to, or can fail, the customer-facing submit. No-op unless the operator has
+    turned on property enrichment and set a RentCast key in Settings (the same
+    integration the quote composer's property-lookup already uses). Never
+    overwrites anything the customer actually told us.
+    """
+    from database.db import SessionLocal
+    from database.models import LeadIntake
+    db = SessionLocal()
+    try:
+        from services.property_media import enrichment_enabled, property_specs
+        from modules.settings.router import get_setting
+        if not enrichment_enabled(db):
+            return
+        row = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+        if row is None or (row.square_footage and row.bedrooms and row.bathrooms):
+            return
+        specs = property_specs(address, get_setting(db, "rentcast_api_key"))
+        if not specs:
+            return
+        changed = False
+        if not row.square_footage and specs.get("square_footage"):
+            row.square_footage = specs["square_footage"]; changed = True
+        if not row.bedrooms and specs.get("bedrooms"):
+            row.bedrooms = specs["bedrooms"]; changed = True
+        if not row.bathrooms and specs.get("bathrooms") is not None:
+            row.bathrooms = specs["bathrooms"]; changed = True
+        if changed:
+            db.commit()
+            logger.info("[booking] enriched lead %s specs from address", intake_id)
+    except Exception as e:
+        logger.warning("[booking] lead spec enrichment failed for %s: %s", intake_id, e)
+    finally:
+        db.close()
+
+
 @router.post("/submit", status_code=201, response_model=BookingResponse)
 @limiter.limit("20/hour")
-def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(get_db)):
+def submit_booking(request: Request, data: BookingSubmit, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Public endpoint — called from maineclean.co booking/quote request form.
 
@@ -272,6 +322,11 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         "pets_detail":          data.petsDetail,
         "focus_areas":          data.focusAreas,
         "special_instructions": data.specialInstructions,
+        # STR extras — dropped inside build_intake if empty, so residential
+        # leads don't grow blank keys.
+        "listing_url":          data.listingUrl,
+        "turnover_day":         data.turnoverDay,
+        "pets_allowed":         data.petsAllowed,
     }
 
     payload = build_intake(
@@ -287,6 +342,12 @@ def submit_booking(request: Request, data: BookingSubmit, db: Session = Depends(
         idempotency_key=data.idempotency_key or data.idempotencyKey,
     )
     result = upsert_lead(db, payload)
+
+    # Best-effort: look the address up and back-fill any specs the customer
+    # didn't provide (esp. STR leads, which skip the sqft/bath calculator).
+    # Fire-and-forget after the response so it never slows the customer down.
+    if data.address:
+        background_tasks.add_task(_enrich_lead_specs, result["intake_id"], data.address)
 
     # Use the post-normalize estimate so both alerts match what the operator
     # sees on the Requests row. When the customer's payload didn't include a
