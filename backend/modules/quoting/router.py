@@ -391,6 +391,29 @@ def property_lookup(address: str = Query(...), db: Session = Depends(get_db)):
     return {"enabled": True, "specs": property_specs(address.strip(), get_setting(db, "rentcast_api_key"))}
 
 
+@router.get("/property-photo", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def property_photo(address: str = Query(..., min_length=3, max_length=300), db: Session = Depends(get_db)):
+    """Stream the Google Street View front-of-house photo for an ADDRESS — the
+    same photo the customer sees on their quote, but keyed on the address so it
+    works on the Requests page and in the quote composer BEFORE a quote exists.
+
+    Authenticated (staff-only). 404 when the feature is off, no key is set, or
+    Google has no imagery for the address — the frontend hides the <img> on a
+    failed load, so a 404 is a normal, expected outcome. Defined before the
+    /{quote_id} route so the static path wins."""
+    from services.property_media import street_view_enabled, street_view_bytes
+    from modules.settings.router import get_setting
+    if not street_view_enabled(db):
+        raise HTTPException(status_code=404, detail="No photo")
+    img = street_view_bytes(address.strip(), get_setting(db, "google_maps_api_key"))
+    if not img:
+        raise HTTPException(status_code=404, detail="No photo")
+    return StreamingResponse(
+        BytesIO(img), media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
 @router.get("/{quote_id}", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_quote(quote_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     return _quote_dict(_get_quote_or_404(quote_id, db, resolve_org_id(org_id, db)))

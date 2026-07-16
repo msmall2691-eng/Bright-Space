@@ -12,6 +12,7 @@ import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
 import PageHeader from '../components/ui/PageHeader'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
+import PropertyPhoto from '../components/PropertyPhoto'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 
@@ -652,6 +653,13 @@ export default function Requests() {
               </div>
             ) : (
             <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+              {/* Front-of-house Street View photo of the service address — the
+                  same one the customer sees on their quote. Hides itself when
+                  photos are off or Google has no imagery. */}
+              <PropertyPhoto
+                address={[selectedRequest.address, selectedRequest.city, selectedRequest.state, selectedRequest.zip_code].filter(Boolean).join(', ')}
+                className="w-full h-44 sm:h-52 object-cover rounded-xl border border-hairline"
+              />
               {/* Quick contact row: one-tap Call / Text / Email / Open thread
                   so the operator can dig into questions before quoting
                   without leaving this page. `tel:` and `sms:` both open the

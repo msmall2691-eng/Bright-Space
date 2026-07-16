@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Plus, Send, Eye, Trash2, ChevronRight, Home, Loader2, Search } from 'lucide-react'
 import AddressAutocomplete from '../AddressAutocomplete'
+import PropertyPhoto from '../PropertyPhoto'
 import { CustomFieldsForm } from '../CustomFields'
 import QuotePreview from '../QuotePreview'
 import OriginalRequestCard from './OriginalRequestCard'
@@ -269,6 +270,23 @@ export default function QuoteEditPanel({
               selectOnFocus
               placeholder="123 Main St, Portland, ME 04101"
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            {/* Street View of the property — the same photo the customer sees on
+                the quote, so you can eyeball the home while pricing. */}
+            <PropertyPhoto address={form.address}
+              className="mt-2 w-full h-40 object-cover rounded-lg border border-hairline" />
+            {/* Free property-record lookups — one click to eyeball beds/baths/
+                sqft on public sites when RentCast auto-fetch isn't enabled. */}
+            {form.address?.trim() && (
+              <div className="mt-1.5 flex items-center gap-3 text-[11px] text-ink-3">
+                <span>Look up specs:</span>
+                <a className="text-blue-500 hover:text-blue-400" target="_blank" rel="noopener noreferrer"
+                  href={`https://www.google.com/search?q=${encodeURIComponent(form.address + ' property records bedrooms bathrooms square feet')}`}>Google records</a>
+                <a className="text-blue-500 hover:text-blue-400" target="_blank" rel="noopener noreferrer"
+                  href={`https://www.zillow.com/homes/${encodeURIComponent(form.address)}_rb/`}>Zillow</a>
+                <a className="text-blue-500 hover:text-blue-400" target="_blank" rel="noopener noreferrer"
+                  href={`https://www.google.com/maps/search/${encodeURIComponent(form.address)}`}>Maps</a>
+              </div>
+            )}
             {specsState === 'done' && specs && (
               <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5">
                 <Home className="w-3.5 h-3.5 text-blue-600 shrink-0" />
