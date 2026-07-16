@@ -3,6 +3,7 @@ import {
   ArrowLeft, Edit2, Mail, Phone, MapPin, Home,
 } from 'lucide-react'
 import { STATUS_COLORS } from './constants'
+import PropertyPhoto from '../PropertyPhoto'
 
 /** Twenty-style click-to-edit field for the record rail. Click the value to
  *  edit in place; Enter or blur saves via onSave, Escape cancels. */
@@ -93,6 +94,12 @@ export default function ClientLeftRail({
           saving={savingField === 'phone'} onSave={v => saveField('phone', v)} />
         <EditableField icon={MapPin} label="Address" value={client.address} placeholder="Add street address"
           saving={savingField === 'address'} onSave={v => saveField('address', v)} />
+        {/* Street View of the client's primary address — hides itself when
+            photos are off or Google has no imagery. */}
+        <PropertyPhoto
+          address={[client.address, client.city, client.state, client.zip_code].filter(Boolean).join(', ')}
+          className="w-full h-32 object-cover rounded-lg border border-hairline"
+        />
       </div>
 
       <div className="p-4 border-b border-hairline space-y-2">
