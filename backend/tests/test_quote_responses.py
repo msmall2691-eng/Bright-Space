@@ -7,8 +7,25 @@ from database.db import SessionLocal
 from database.models import Client, Quote
 from modules.quoting.router import (
     public_accept_quote, public_request_changes, public_decline_quote,
+    public_view_quote,
     PublicAcceptRequest, PublicChangeRequest, PublicDeclineRequest,
 )
+
+
+def test_public_view_exposes_discount(quote_ctx):
+    """A discounted quote must surface `discount` on the public page so the
+    customer sees why Total < Subtotal + Tax — the email/PDF/operator view all
+    show it, and the page must agree."""
+    db, c, q = quote_ctx
+    q.subtotal = 200
+    q.tax = 0
+    q.tax_rate = 0
+    q.discount = 25
+    q.total = 175
+    db.commit()
+    out = public_view_quote("tok-resp-1", db=db)
+    assert out["discount"] == 25
+    assert out["subtotal"] == 200 and out["total"] == 175
 
 
 @pytest.fixture

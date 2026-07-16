@@ -206,7 +206,11 @@ def build_quote_sms_body(
     lines = [greeting, details, f"Total: ${total_val:,.2f}"]
     valid = getattr(quote, "valid_until", None)
     if valid:
-        lines.append(f"Valid until: {valid}")
+        # Long-form date ("August 15, 2026") to match the email/PDF/page —
+        # not the raw ISO/date value the SMS used to paste in.
+        from utils.dates import fmt_long_date
+        valid_str = fmt_long_date(valid) or str(valid)
+        lines.append(f"Valid until: {valid_str}")
     lines.append("")
     lines.append("Tap the link to accept, or reply with any questions.")
     body = "\n".join(lines)
