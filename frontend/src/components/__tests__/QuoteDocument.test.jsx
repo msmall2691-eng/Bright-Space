@@ -167,7 +167,7 @@ describe('PublicQuote accept flow (e-sign + document stays visible)', () => {
     fireEvent.change(screen.getByPlaceholderText(/Your email/), { target: { value: 'megan@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: /Accept — we'll reach out/ }))
 
-    await waitFor(() => expect(screen.getByText(/Accepted ✓/)).toBeDefined())
+    await waitFor(() => expect(screen.getByText(/Quote accepted/i)).toBeDefined())
     // Document is still mounted (not swapped for a standalone thank-you).
     expect(screen.getByText('Bi-weekly residential cleaning — Falmouth, ME')).toBeDefined()
     // The acceptor's typed name/email were sent.
@@ -207,7 +207,8 @@ describe('PublicQuote self-schedule flow', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Accept & book this time/ })).toBeDefined())
     fireEvent.click(screen.getByRole('button', { name: /Accept & book this time/ }))
 
-    await waitFor(() => expect(screen.getByText(/Booked ✓ for January 05, 2099/)).toBeDefined())
+    await waitFor(() => expect(screen.getByText(/You're booked/i)).toBeDefined())
+    expect(screen.getByText(/January 05, 2099/)).toBeDefined()
     // Only the available date was offered as an option.
     const sched = calls.find(c => c.url.endsWith('/schedule'))
     expect(JSON.parse(sched.opts.body).date).toBe('2099-01-05')

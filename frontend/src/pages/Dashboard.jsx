@@ -27,6 +27,7 @@ import { TodayTile } from '../components/dashboard/TodayTile'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
 import { TurnoverCoverageTile, CrewWorkloadTile } from '../components/dashboard/OperationsTiles'
 import { MoneyTile } from '../components/dashboard/MoneyTile'
+import { RescheduleRequestsTile } from '../components/dashboard/RescheduleRequestsTile'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useDashboardDerived } from '../hooks/useDashboardDerived'
 
@@ -130,6 +131,9 @@ export default function Dashboard() {
 
       {/* Tiles grid */}
       <div className="px-4 sm:px-6 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+
+        {/* Customer reschedule requests — approve/decline inline. Hides when empty. */}
+        <RescheduleRequestsTile navigate={navigate} />
 
         <InboxTile
           loading={loading}
