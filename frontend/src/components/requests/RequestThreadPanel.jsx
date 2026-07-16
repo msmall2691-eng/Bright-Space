@@ -6,6 +6,7 @@ import { DaySeparator } from '../comms/primitives'
 import { MessageBubble } from '../comms/MessageBubble'
 import { ComposeBar } from '../comms/ComposeBar'
 import { useIntakeThread } from '../../hooks/useIntakeThread'
+import { post } from '../../api'
 
 /** Inline two-way conversation embedded in the Requests drawer — so an
  *  operator can ask a lead a question and see the reply without leaving
@@ -27,6 +28,7 @@ export function RequestThreadPanel({ intake }) {
   const [replySubject, setReplySubject] = useState('')
   const [noteMode, setNoteMode] = useState(false)
   const [flash, setFlash] = useState(null)
+  const [draftingAI, setDraftingAI] = useState(false)
 
   const groupedMessages = useMemo(() => {
     if (!detail?.messages) return []
@@ -55,6 +57,27 @@ export function RequestThreadPanel({ intake }) {
       setFlash({ ok: false, msg: 'Send failed — see below' })
     }
     setTimeout(() => setFlash(null), 3000)
+  }
+
+  const draftWithAI = async () => {
+    if (!intake?.id || draftingAI) return
+    setDraftingAI(true)
+    try {
+      const ch = detail?.channel || channel
+      const res = await post(`/api/ai/draft-lead-reply/${intake.id}`, { channel: ch })
+      if (res?.message) {
+        setReply(res.message)
+        if (ch === 'email' && res.subject) setReplySubject(res.subject)
+        setFlash({ ok: true, msg: 'Drafted — edit & send' })
+      } else {
+        setFlash({ ok: false, msg: 'Could not draft a reply' })
+      }
+    } catch {
+      setFlash({ ok: false, msg: 'Could not draft a reply' })
+    } finally {
+      setDraftingAI(false)
+      setTimeout(() => setFlash(null), 3000)
+    }
   }
 
   const hasPhone = !!intake?.phone
@@ -146,6 +169,8 @@ export function RequestThreadPanel({ intake }) {
           flash={flash}
           onSend={handleSend}
           allowNotes={!!detail?.id}
+          onDraftAI={draftWithAI}
+          draftingAI={draftingAI}
         />
       </div>
     </div>

@@ -26,6 +26,7 @@ import {
   MessageCircle, PenLine,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import { post } from '../api'
 import { dayLabel, contactDisplay } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
@@ -113,6 +114,22 @@ export default function Comms() {
       setFlash({ ok: true, msg: noteMode ? 'Note saved' : 'Sent!' })
     } catch (e) { setFlash({ ok: false, msg: String(e.message || e) }) }
     setSending(false)
+    setTimeout(() => setFlash(null), 3000)
+  }
+
+  const [draftingAI, setDraftingAI] = useState(false)
+  const draftWithAI = async () => {
+    if (!detail?.id || draftingAI) return
+    setDraftingAI(true)
+    try {
+      const res = await post(`/api/ai/draft-conversation-reply/${detail.id}`, {})
+      if (res?.message) {
+        setReply(res.message)
+        if (detail.channel === 'email' && res.subject) setReplySubject(res.subject)
+        setFlash({ ok: true, msg: 'Drafted — edit & send' })
+      } else { setFlash({ ok: false, msg: 'Could not draft a reply' }) }
+    } catch { setFlash({ ok: false, msg: 'Could not draft a reply' }) }
+    setDraftingAI(false)
     setTimeout(() => setFlash(null), 3000)
   }
 
@@ -241,6 +258,8 @@ export default function Comms() {
               sending={sending}
               flash={flash}
               onSend={sendReply}
+              onDraftAI={draftWithAI}
+              draftingAI={draftingAI}
             />
           </>
         )}

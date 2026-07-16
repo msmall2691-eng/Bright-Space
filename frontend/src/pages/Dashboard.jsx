@@ -87,14 +87,14 @@ export default function Dashboard() {
 
   return (
     <div className="bg-bg">
-      {/* Greeting */}
-      <div className="px-4 sm:px-6 pt-5 pb-3 flex items-center gap-3">
-        <span className="bb-icon-chip hidden sm:grid place-items-center w-10 h-10 rounded-xl shrink-0 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300">
-          <LayoutDashboard className="w-5 h-5" />
+      {/* Greeting — compact single row so the numbers sit near the top */}
+      <div className="px-4 sm:px-6 pt-3 pb-2.5 flex items-center gap-2.5">
+        <span className="bb-icon-chip hidden sm:grid place-items-center w-9 h-9 rounded-xl shrink-0 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300">
+          <LayoutDashboard className="w-[18px] h-[18px]" />
         </span>
         <div className="min-w-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">{greeting} 👋</h1>
-        <p className="text-sm text-ink-3 mt-0.5">
+        <h1 className="text-base sm:text-lg font-bold text-ink tracking-tight leading-tight">{greeting} 👋</h1>
+        <p className="text-xs sm:text-[13px] text-ink-3 mt-0.5">
           {longDate}
           {loading ? ' · loading…' : (
             <>

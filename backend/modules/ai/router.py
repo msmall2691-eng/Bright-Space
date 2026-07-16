@@ -332,6 +332,181 @@ def _client_first_name(client) -> str:
     return "there"
 
 
+# ── POST /api/ai/draft-lead-reply/{intake_id} ───────────────────────────────
+# Draft the first email or SMS reply to a new lead/request. Review-first: this
+# only returns a draft ({subject, message}) — the operator edits it in the
+# composer and sends it through the existing /api/comms/email|sms endpoints.
+
+class DraftLeadRequest(BaseModel):
+    channel: Optional[str] = "email"     # "email" | "sms"
+    instruction: Optional[str] = None    # optional steering, e.g. "offer to send a quote"
+
+
+@router.post("/draft-lead-reply/{intake_id}")
+def draft_lead_reply(intake_id: int, body: DraftLeadRequest = DraftLeadRequest(),
+                     db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """AI-draft the first reply to a new lead/request. Returns {subject, message}
+    (SMS drafts carry an empty subject). Nothing is sent — the operator reviews,
+    edits, and sends from the composer."""
+    from database.models import LeadIntake
+    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).first()
+    if not intake:
+        return {"subject": "", "message": "", "error": "Request not found"}
+    channel = (body.channel or "email").lower()
+    if channel not in ("email", "sms"):
+        channel = "email"
+    return _draft_lead(intake, channel, (body.instruction or "").strip() or None,
+                       _anthropic_client(), db)
+
+
+def _company_name(db: Session) -> str:
+    try:
+        from modules.settings.router import get_setting
+        return get_setting(db, "company_name") or os.getenv("COMPANY_NAME") or "Maine Cleaning Co."
+    except Exception:
+        return "Maine Cleaning Co."
+
+
+def _lead_facts(intake) -> dict:
+    """The customer-request details worth mentioning in a first reply."""
+    size = " · ".join(x for x in [
+        f"{intake.bedrooms} bd" if intake.bedrooms is not None else None,
+        f"{intake.bathrooms} ba" if intake.bathrooms is not None else None,
+        f"{int(intake.square_footage):,} sqft" if intake.square_footage else None,
+    ] if x)
+    where = ", ".join(x for x in [intake.address, intake.city, intake.state] if x)
+    est = None
+    if intake.estimate_min is not None and intake.estimate_max is not None:
+        est = f"${intake.estimate_min:.0f}–${intake.estimate_max:.0f}"
+    return {k: v for k, v in {
+        "name": (intake.name or "").split()[0] if intake.name else "there",
+        "service_type": intake.service_type,
+        "frequency": intake.frequency,
+        "property": size or None,
+        "location": where or None,
+        "requested_date": intake.requested_date or intake.preferred_date,
+        "their_message": (intake.message or "").strip() or None,
+        "website_estimate": est,
+        "source": intake.source,
+    }.items() if v}
+
+
+def _draft_lead(intake, channel: str, instruction, client_ai, db: Session) -> dict:
+    name = (intake.name or "").split()[0] if intake.name else "there"
+    company = _company_name(db)
+    if client_ai is None:
+        return _fallback_lead_reply(name, intake, channel, company)
+
+    facts = _lead_facts(intake)
+    if instruction:
+        facts["operator_instruction"] = instruction
+    if channel == "sms":
+        shape = ("Write a friendly SMS (1–3 sentences, under 300 characters, NO "
+                 "subject line). Sign off with the company name.")
+        subj_default = ""
+    else:
+        shape = ("Write a warm, professional email (a subject line + 3–5 "
+                 "sentences). Sign off with the company name.")
+        subj_default = f"Re: your {(intake.service_type or 'cleaning')} request"
+    system = (
+        f"You write the FIRST reply from {company}, a cleaning business, to a new "
+        f"lead who just submitted a request. {shape} Acknowledge their specific "
+        "request (service, place, dates if given), sound helpful and human, and "
+        "end with a clear next step (offer to send a quote or find a time, and "
+        "invite them to reply). Do not invent prices; if a website estimate is "
+        "given you may reference it as an estimate. Respond with ONLY a JSON "
+        "object: {\"subject\": string, \"message\": string}."
+    )
+    try:
+        text = _run_tool_loop(client_ai, system, json.dumps(facts, default=str),
+                              max_tokens=500, max_iters=1)
+        data = json.loads(_strip_json(text))
+        msg = (data.get("message") or "").strip()
+        if not msg:
+            return _fallback_lead_reply(name, intake, channel, company)
+        subject = "" if channel == "sms" else (data.get("subject") or subj_default).strip()
+        return {"subject": subject, "message": msg}
+    except Exception:
+        logger.exception("ai lead draft failed; using fallback")
+        return _fallback_lead_reply(name, intake, channel, company)
+
+
+@router.post("/draft-conversation-reply/{conversation_id}")
+def draft_conversation_reply(conversation_id: int, body: DraftLeadRequest = DraftLeadRequest(),
+                             db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """AI-draft the next reply in an ongoing Comms conversation, matching its
+    channel. Returns {subject, message}; nothing is sent."""
+    from database.models import Conversation, Message
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        return {"subject": "", "message": "", "error": "Conversation not found"}
+    msgs = (db.query(Message)
+            .filter(Message.conversation_id == conv.id, Message.is_internal_note.isnot(True))
+            .order_by(Message.created_at.desc()).limit(8).all())
+    msgs = list(reversed(msgs))
+    client = db.query(Client).filter(Client.id == conv.client_id).first() if conv.client_id else None
+    name = _client_first_name(client) if client else (conv.external_contact or "there")
+    company = _company_name(db)
+    channel = (conv.channel or "email").lower()
+    if channel not in ("email", "sms"):
+        channel = "email"
+    client_ai = _anthropic_client()
+    if client_ai is None:
+        return _fallback_conversation_reply(name, channel, company)
+
+    transcript = [{"from": ("customer" if m.direction == "inbound" else "us"),
+                   "text": (m.body or "").strip()} for m in msgs if (m.body or "").strip()]
+    facts = {"contact": name, "channel": channel, "recent_messages": transcript}
+    if (body.instruction or "").strip():
+        facts["operator_instruction"] = body.instruction.strip()
+    shape = ("Write a friendly SMS (1–3 sentences, under 300 characters, NO subject)."
+             if channel == "sms" else
+             "Write a professional email reply (subject + a few sentences).")
+    system = (
+        f"You draft the next reply from {company}, a cleaning business, in an "
+        f"ongoing {channel} conversation with a customer. {shape} Address their "
+        "most recent message, be concise, warm, and human, and move things "
+        "forward with a clear next step. Respond with ONLY a JSON object: "
+        "{\"subject\": string, \"message\": string}."
+    )
+    try:
+        text = _run_tool_loop(client_ai, system, json.dumps(facts, default=str),
+                              max_tokens=500, max_iters=1)
+        data = json.loads(_strip_json(text))
+        msg = (data.get("message") or "").strip()
+        if not msg:
+            return _fallback_conversation_reply(name, channel, company)
+        subject = "" if channel == "sms" else (data.get("subject") or f"Re: {conv.subject or 'your message'}").strip()
+        return {"subject": subject, "message": msg}
+    except Exception:
+        logger.exception("ai conversation draft failed; using fallback")
+        return _fallback_conversation_reply(name, channel, company)
+
+
+def _fallback_conversation_reply(name, channel: str, company: str) -> dict:
+    if channel == "sms":
+        return {"subject": "", "message": f"Hi {name}, thanks for your message! "
+                f"We'll take care of this and follow up shortly. – {company}"}
+    return {"subject": "Re: your message",
+            "message": f"Hi {name},\n\nThanks for your message — we're on it and will "
+                       f"follow up shortly. Let us know if there's anything else in the "
+                       f"meantime.\n\nWarmly,\n{company}"}
+
+
+def _fallback_lead_reply(name, intake, channel: str, company: str) -> dict:
+    svc = (intake.service_type or "cleaning").replace("_", " ")
+    if channel == "sms":
+        body = (f"Hi {name}! Thanks for reaching out to {company} about {svc}. "
+                f"We'd love to help — reply here and we'll get you a quote and a time. – {company}")
+        return {"subject": "", "message": body}
+    body = (f"Hi {name},\n\nThanks so much for reaching out to {company} about your "
+            f"{svc} request — we'd love to help. We'll put together a quote for you; "
+            f"is there anything specific you'd like us to focus on, or a day that "
+            f"works best?\n\nJust reply here and we'll take care of the rest.\n\n"
+            f"Warmly,\n{company}")
+    return {"subject": f"Re: your {svc} request", "message": body}
+
+
 def _draft_one(inv: Invoice, client, client_ai) -> dict:
     """Draft a reminder for a single invoice. Uses the LLM when available,
     otherwise a deterministic personalized fallback. Returns {subject, message}.

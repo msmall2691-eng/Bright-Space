@@ -1,0 +1,79 @@
+"""AI-draft a first reply to a new lead/request. With no ANTHROPIC_API_KEY in
+CI, this exercises the deterministic fallback and the {subject, message} shape;
+the email path carries a subject, the SMS path doesn't."""
+import uuid
+import pytest
+from fastapi.testclient import TestClient
+
+from main import app
+from database.db import SessionLocal
+from database.models import Client, LeadIntake, Conversation
+from modules.auth.router import get_current_user, current_org_id
+
+
+class _Admin:
+    id, org_id, role, status, active = 7601, 1, "admin", "active", True
+    email = "ai-admin@example.com"
+
+
+@pytest.fixture
+def api():
+    app.dependency_overrides[get_current_user] = lambda: _Admin()
+    app.dependency_overrides[current_org_id] = lambda: 1
+    c = TestClient(app)
+    yield c
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(current_org_id, None)
+
+
+def test_draft_lead_reply_email_and_sms(api):
+    db = SessionLocal()
+    intake = LeadIntake(name="Dana Lead", email="dana@example.com", phone="+12075550111",
+                        service_type="residential", frequency="biweekly",
+                        message="Looking for biweekly cleaning of my 3 bedroom home.",
+                        city="Portland", state="ME", source="website", org_id=1, status="new")
+    db.add(intake); db.commit(); iid = intake.id
+    db.close()
+    try:
+        r = api.post(f"/api/ai/draft-lead-reply/{iid}", json={"channel": "email"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("message")           # non-empty draft
+        assert body.get("subject")           # email carries a subject
+        assert "Dana" in body["message"]     # personalized by first name
+
+        r2 = api.post(f"/api/ai/draft-lead-reply/{iid}", json={"channel": "sms"})
+        assert r2.status_code == 200, r2.text
+        sms = r2.json()
+        assert sms.get("message")
+        assert sms.get("subject") == ""      # SMS has no subject
+    finally:
+        db = SessionLocal()
+        db.query(LeadIntake).filter(LeadIntake.id == iid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_draft_lead_reply_404(api):
+    r = api.post("/api/ai/draft-lead-reply/999999", json={"channel": "email"})
+    assert r.status_code == 200
+    assert r.json().get("error")
+
+
+def test_draft_conversation_reply_fallback(api):
+    db = SessionLocal()
+    c = Client(name="Convo Client", status="active", org_id=1)
+    db.add(c); db.commit(); db.refresh(c)
+    client_id = c.id
+    conv = Conversation(client_id=client_id, channel="sms", status="open", org_id=1)
+    db.add(conv); db.commit(); cid = conv.id
+    db.close()
+    try:
+        r = api.post(f"/api/ai/draft-conversation-reply/{cid}", json={})
+        assert r.status_code == 200, r.text
+        assert r.json().get("message")
+        assert r.json().get("subject") == ""  # sms channel
+    finally:
+        db = SessionLocal()
+        db.query(Conversation).filter(Conversation.id == cid).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client_id).delete(synchronize_session=False)
+        db.commit(); db.close()

@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Calendar } from 'lucide-react'
 import { get, post, put, patch } from '../api'
 import Button from '../components/ui/Button'
-import PageHeader from '../components/ui/PageHeader'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
 import JobCreateModal from '../components/JobCreateModal'
@@ -53,10 +51,16 @@ export default function Schedule() {
   const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month']
   const rawView = searchParams.get('view')
   const isMobile = useIsMobile(768)
+  // Remember the last view the operator chose so it sticks between visits —
+  // a month-first admin lands back on month, a dispatcher on dispatch — rather
+  // than always resetting to the viewport default.
+  let remembered = null
+  try { remembered = localStorage.getItem('bb_schedule_view') } catch { /* ignore */ }
   const viewMode = VALID_VIEWS.includes(rawView)
     ? rawView
-    : (isMobile ? 'agenda' : 'dispatch')
+    : (VALID_VIEWS.includes(remembered) ? remembered : (isMobile ? 'agenda' : 'dispatch'))
   const setViewMode = (next) => {
+    try { localStorage.setItem('bb_schedule_view', next) } catch { /* ignore */ }
     const params = new URLSearchParams(searchParams)
     params.set('view', next)
     setSearchParams(params, { replace: true })
@@ -368,21 +372,11 @@ export default function Schedule() {
 
   return (
     <div className="flex flex-col h-full bg-bg">
-      {/* Standardized page header (icon chip + title) for visual consistency
-          with the rest of the app. ScheduleToolbar below still owns the view
-          switcher, date nav, filters, tools menu, and New Job button — it's a
-          tightly-coupled sticky bar (full-bleed background, its own inner
-          max-width + padding) that can't be safely nested inside PageHeader's
-          `children` slot without breaking its edge-to-edge layout, so it stays
-          a sibling. Its own inline "Schedule" label is hidden here (rather
-          than edited in ScheduleToolbar.jsx) to avoid a duplicate title. */}
-      <PageHeader
-        title="Schedule"
-        subtitle="Jobs, crews, and calendar sync in one place"
-        icon={Calendar}
-        iconColor="violet"
-      />
-      <div className="[&_h1]:hidden">
+      {/* The sticky ScheduleToolbar is the page's top bar — it carries its own
+          "Schedule" title, the view switcher, date nav, filters, tools, and
+          New Job. We used to stack a separate PageHeader above it, but that was
+          a whole redundant bar of top space above the calendar (this page is
+          calendar-first). Dropped it so month view gets the vertical room. */}
       <ScheduleToolbar
         viewMode={viewMode}
         onViewChange={setViewMode}
@@ -419,7 +413,6 @@ export default function Schedule() {
         showGuestStays={showGuestStays}
         onToggleGuestStays={toggleGuestStays}
       />
-      </div>
 
       <ScheduleHealthStrip
         stats={scheduleStats}
