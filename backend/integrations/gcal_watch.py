@@ -148,3 +148,13 @@ def renew_expiring(db: Session, base_url: str) -> dict:
         return {"renewed": 0}
     res = register_watches(db, base_url, calendar_ids=due)
     return {"renewed": len(due), "result": res}
+
+
+def ensure_watches(db: Session, base_url: str) -> dict:
+    """Idempotent: register push channels if none exist yet, else renew any
+    that are near expiry. Safe to call on every startup / renewal tick so
+    "real-time sync on" self-heals into a working state — the first call after
+    enabling it registers the channels; later calls just keep them alive."""
+    if not _all_watches(db):
+        return {"registered": register_watches(db, base_url)}
+    return renew_expiring(db, base_url)

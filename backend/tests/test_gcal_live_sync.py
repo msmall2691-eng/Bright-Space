@@ -29,13 +29,18 @@ def teardown_function():
     _clear()
 
 
-def test_defaults_are_safe():
+def test_recommended_defaults():
     r = client.get("/api/settings/automation")
     assert r.status_code == 200, r.text
     body = r.json()
-    # Default: BrightBase is master, real-time off — today's behavior.
+    # Recommended combo: BrightBase stays master (safe), real-time sync ON.
     assert body["calendar_source_of_truth"] == "brightbase"
-    assert body["gcal_live_sync"] is False
+    assert body["gcal_live_sync"] is True
+
+
+def test_live_sync_can_be_turned_off_explicitly():
+    client.post("/api/settings/automation", json={"gcal_live_sync": False})
+    assert client.get("/api/settings/automation").json()["gcal_live_sync"] is False
 
 
 def test_enabling_two_way_persists_and_is_read_by_sync():
