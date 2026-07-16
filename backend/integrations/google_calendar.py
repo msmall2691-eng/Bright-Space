@@ -461,12 +461,23 @@ def _build_event(job: dict, client: dict, include_attendees: bool = False, crew_
     if include_attendees:
         # Customer-facing event — the client is an attendee and sees this on
         # their own calendar, so keep it clean: NO gate codes, access notes,
-        # crew, or internal notes. Just what the customer should know.
-        description_lines = [f"{type_label} cleaning" if type_label else "Cleaning"]
+        # crew, or internal notes. Just what the customer should know, plus
+        # secure links to confirm/reschedule this visit and to their portal.
+        description_lines = [f"Your {type_label.lower()} cleaning with The Maine Cleaning Co."
+                             if type_label else "Your cleaning with The Maine Cleaning Co."]
         if job.get("address"):
-            description_lines.append(f"Address: {job['address']}")
-        description_lines.append("\nYour upcoming cleaning with The Maine Cleaning Co.")
-        description_lines.append("Questions or need to reschedule? Just reply to this invitation.")
+            description_lines.append(f"📍 {job['address']}")
+        try:
+            from config import app_base_url
+            base = app_base_url().rstrip("/")
+            token = job.get("public_token")
+            description_lines.append("")
+            if token:
+                description_lines.append(f"Confirm or reschedule this visit:\n{base}/job/{token}")
+            description_lines.append(f"View all your visits, quotes & invoices:\n{base}/portal")
+        except Exception:
+            # A missing base URL must never block the calendar invite.
+            description_lines.append("\nQuestions or need to reschedule? Just reply to this invitation.")
     else:
         # Internal event (your calendar / crew) — full on-site detail.
         description_lines = [
