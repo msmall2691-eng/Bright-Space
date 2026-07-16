@@ -140,10 +140,13 @@ class IntakeData:
     state: str = "ME"
     zip_code: Optional[str] = None
     service_type: str = "residential"          # canonical (mapped)
+    requested_service: Optional[str] = None    # raw service the customer picked (deep, move-in-out, …)
     bedrooms: Optional[int] = None
     bathrooms: Optional[float] = None
     square_footage: Optional[int] = None
     guests: Optional[int] = None
+    condition: Optional[str] = None            # maintenance | moderate | heavy
+    pet_hair: Optional[str] = None             # none | some | heavy
     frequency: Optional[str] = None
     requested_date: Optional[str] = None
     check_in: Optional[str] = None
@@ -241,10 +244,13 @@ def build_intake(
         state=state or "ME",
         zip_code=zip_code,
         service_type=canonical,
+        requested_service=(service_key or "").strip().lower() or None,
         bedrooms=_to_int(bedrooms),
         bathrooms=_to_float(bathrooms),
         square_footage=_to_int(square_footage),
         guests=_to_int(guests),
+        condition=(condition or "").strip().lower() or None,
+        pet_hair=(pet_hair or "").strip().lower() or None,
         frequency=frequency,
         requested_date=requested_date,
         check_in=check_in,
@@ -272,8 +278,9 @@ def build_intake(
 
 # Fields back-filled (fill-if-missing) onto an existing recent lead on dedup.
 _MERGE_FIELDS = (
-    "address", "city", "state", "zip_code", "service_type", "bedrooms",
-    "bathrooms", "square_footage", "guests", "frequency", "requested_date",
+    "address", "city", "state", "zip_code", "service_type", "requested_service",
+    "bedrooms", "bathrooms", "square_footage", "guests", "condition", "pet_hair",
+    "frequency", "requested_date",
     "check_in", "check_out", "estimate_min", "estimate_max", "property_name",
     "preferred_date",
 )
@@ -612,8 +619,10 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         name=data.name or client.name, email=data.email, phone=data.phone,
         address=data.address, city=data.city, state=data.state or "ME",
         zip_code=data.zip_code, service_type=data.service_type,
+        requested_service=data.requested_service,
         bedrooms=data.bedrooms, bathrooms=data.bathrooms,
         square_footage=data.square_footage, guests=data.guests,
+        condition=data.condition, pet_hair=data.pet_hair,
         frequency=data.frequency, requested_date=data.requested_date,
         check_in=data.check_in, check_out=data.check_out,
         estimate_min=data.estimate_min, estimate_max=data.estimate_max,

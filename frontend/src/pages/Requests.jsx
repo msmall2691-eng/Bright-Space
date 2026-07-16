@@ -44,6 +44,36 @@ const SOURCE_CONFIG = {
   email:   { label: 'Email',   icon: Mail,          badge: 'bg-violet-50 text-violet-700' },
   chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-amber-50 text-amber-700' },
 }
+
+// The customer's ACTUAL service pick + the two pricing inputs (condition, pet
+// hair) that the website quote engine uses. A Deep Clean with pets is bucketed
+// to canonical "Residential", so without these the estimate looks unexplained.
+const REQUESTED_SERVICE_LABELS = {
+  standard: 'Standard clean', residential: 'Standard clean',
+  deep: 'Deep clean', 'deep-clean': 'Deep clean', deep_clean: 'Deep clean',
+  'move-in-out': 'Move-in / move-out', 'move-in': 'Move-in / move-out',
+  'move-out': 'Move-in / move-out', move_in_out: 'Move-in / move-out',
+  str: 'STR turnover', 'vacation-rental': 'STR turnover', airbnb: 'STR turnover',
+  commercial: 'Commercial',
+}
+const CONDITION_LABELS = { maintenance: 'Well-maintained', moderate: 'Moderate build-up', heavy: 'Heavy / needs work' }
+const PET_LABELS = { none: 'No pet hair', some: 'Some pet hair', heavy: 'Heavy pet hair' }
+const requestedServiceLabel = (k) => REQUESTED_SERVICE_LABELS[(k || '').toLowerCase()] || null
+const conditionLabel = (k) => k ? (CONDITION_LABELS[(k || '').toLowerCase()] || k) : null
+const petLabel = (k) => (k && k.toLowerCase() !== 'none') ? (PET_LABELS[(k || '').toLowerCase()] || `${k} pet hair`) : null
+// The pricing factors that aren't already obvious from the service icon —
+// shown so the estimate explains itself. Returns [] when nothing noteworthy.
+const pricingFactors = (o) => {
+  const out = []
+  const sv = requestedServiceLabel(o.requested_service)
+  // Only surface the variant when it's more specific than a plain standard clean.
+  if (sv && sv !== 'Standard clean') out.push(sv)
+  const c = conditionLabel(o.condition)
+  if (c && (o.condition || '').toLowerCase() !== 'maintenance') out.push(c)
+  const p = petLabel(o.pet_hair)
+  if (p) out.push(p)
+  return out
+}
 function SourceChip({ source }) {
   const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
   const Ic = cfg.icon
@@ -142,6 +172,19 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
                 {intake.bedrooms ? <span>• {intake.bedrooms} bd</span> : null}
                 {intake.bathrooms ? <span>• {intake.bathrooms} ba</span> : null}
                 {intake.guests ? <span>• {intake.guests} guests</span> : null}
+              </div>
+            )}
+
+            {/* Pricing factors — the customer's service pick + condition + pet
+                hair that push the estimate up. Without these a Deep Clean with
+                pets reads as a plain "Residential" job with an unexplained price. */}
+            {pricingFactors(intake).length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                {pricingFactors(intake).map((f, idx) => (
+                  <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium">
+                    {f}
+                  </span>
+                ))}
               </div>
             )}
           </div>
@@ -702,7 +745,8 @@ export default function Requests() {
                   is a superset of the card, not a subset. */}
               {(selectedRequest.estimate_min || selectedRequest.estimate_max || selectedRequest.frequency
                 || selectedRequest.requested_date || selectedRequest.square_footage
-                || selectedRequest.bedrooms || selectedRequest.bathrooms || selectedRequest.guests) && (
+                || selectedRequest.bedrooms || selectedRequest.bathrooms || selectedRequest.guests
+                || selectedRequest.requested_service || selectedRequest.condition || selectedRequest.pet_hair) && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {(selectedRequest.estimate_min || selectedRequest.estimate_max) ? (
                     <div>
@@ -717,6 +761,24 @@ export default function Requests() {
                       <p className="text-sm font-semibold text-violet-700">Custom quote</p>
                     </div>
                   ))}
+                  {requestedServiceLabel(selectedRequest.requested_service) && (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Cleaning type</label>
+                      <p className="text-sm text-ink">{requestedServiceLabel(selectedRequest.requested_service)}</p>
+                    </div>
+                  )}
+                  {conditionLabel(selectedRequest.condition) && (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Home condition</label>
+                      <p className="text-sm text-ink">{conditionLabel(selectedRequest.condition)}</p>
+                    </div>
+                  )}
+                  {petLabel(selectedRequest.pet_hair) && (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Pet hair</label>
+                      <p className="text-sm text-ink">{petLabel(selectedRequest.pet_hair)}</p>
+                    </div>
+                  )}
                   {selectedRequest.frequency && (
                     <div>
                       <label className="text-xs font-semibold text-ink-2 uppercase">Frequency</label>

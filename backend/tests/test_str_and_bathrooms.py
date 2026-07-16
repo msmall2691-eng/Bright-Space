@@ -74,6 +74,42 @@ def test_str_lead_has_no_instant_estimate_and_keeps_extras():
         _cleanup(intake_id)
 
 
+def test_deep_clean_pricing_inputs_are_stored():
+    """A Deep Clean with condition + pet hair must persist those pricing inputs
+    (and the requested service), so the operator can see WHY the estimate is
+    what it is — a $320-$350 deep clean shouldn't read as a plain residential
+    request with an unexplained number."""
+    payload = {
+        "name": "Deep Detail",
+        "email": f"deep-{uuid.uuid4().hex[:8]}@example.com",
+        "phone": "+12075550144",
+        "address": "4 Balsam Drive, Waterboro, ME 04061",
+        "serviceType": "deep",
+        "requestedDate": "2026-08-15",
+        "squareFeet": 1500,
+        "bathrooms": 2,
+        "frequency": "biweekly",
+        "condition": "moderate",
+        "petHair": "some",
+    }
+    r = client.post("/api/booking/submit", json=payload)
+    assert r.status_code == 201, r.text
+    intake_id = r.json()["bookingId"]
+    try:
+        lead = _get_lead(intake_id)
+        assert lead is not None
+        # Canonical bucket stays "residential" (deep is priced as residential +
+        # a multiplier), but the customer's real pick + pricing inputs persist.
+        assert lead.service_type == "residential"
+        assert lead.requested_service == "deep"
+        assert lead.condition == "moderate"
+        assert lead.pet_hair == "some"
+        # And the estimate matches the deep+moderate+some math the site shows.
+        assert lead.estimate_min == 320 and lead.estimate_max == 350
+    finally:
+        _cleanup(intake_id)
+
+
 def test_residential_lead_keeps_half_bath_and_still_estimates():
     payload = {
         "name": "Half Bath",
