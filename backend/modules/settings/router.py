@@ -986,6 +986,16 @@ class AutomationConfig(BaseModel):
     # (use the reminders you've configured in Google Calendar), "off" (no
     # event reminders), or "email_popup" (email 24h + popup 1h before).
     gcal_reminders_mode: Optional[str] = None
+    # Who wins when the same appointment differs between BrightBase and Google:
+    # "brightbase" (default) = your schedule is the master; edits made directly
+    # in Google are ignored and re-asserted. "google" = two-way; a time/title
+    # edit made in Google syncs BACK into BrightBase. Cancellations always sync
+    # both ways regardless.
+    calendar_source_of_truth: Optional[str] = None
+    # Real-time Google→BrightBase sync via push channels (webhook). When on,
+    # external edits reflect in seconds instead of on the ~poll interval. Needs
+    # a public https base URL.
+    gcal_live_sync: Optional[bool] = None
     customer_self_reschedule: Optional[bool] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
@@ -1193,6 +1203,10 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "invite_customers": customer_invites_enabled(db),
         "notify_customers": customer_notify_enabled(db),
         "gcal_reminders_mode": (get_setting(db, "gcal_reminders_mode") or "google_default"),
+        "calendar_source_of_truth": (get_setting(db, "calendar_source_of_truth")
+                                     or os.getenv("CALENDAR_SOURCE_OF_TRUTH", "brightbase")).strip().lower(),
+        "gcal_live_sync": _coerce_bool(get_setting(db, "gcal_live_sync"),
+                                       os.getenv("GCAL_WATCH_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }
@@ -1206,7 +1220,25 @@ def save_automation_settings(config: AutomationConfig, db: Session = Depends(get
         set_setting(db, key, str(value).lower() if isinstance(value, bool) else str(value))
     db.commit()
     logger.info("automation settings saved: %s", data)
-    return {"status": "saved", **data}
+
+    # Turning real-time sync ON registers the Google push channels right away
+    # (instead of waiting for the renewal tick), so it starts working
+    # immediately. Best-effort — a failure (no public URL / Google not
+    # connected) is surfaced to the UI, not raised.
+    live_sync_result = None
+    if data.get("gcal_live_sync") is True:
+        try:
+            from integrations.gcal_watch import register_watches
+            from config import app_base_url
+            live_sync_result = register_watches(db, app_base_url())
+        except Exception as e:
+            logger.warning("gcal live-sync registration failed: %s", e)
+            live_sync_result = {"ok": False, "error": str(e)}
+
+    out = {"status": "saved", **data}
+    if live_sync_result is not None:
+        out["live_sync"] = live_sync_result
+    return out
 
 
 # ---------- Quote Templates ----------

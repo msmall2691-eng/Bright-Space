@@ -18,6 +18,8 @@ export function useAutomationSettings({ toast, active }) {
     invite_customers: true,
     notify_customers: true,
     gcal_reminders_mode: 'google_default',
+    calendar_source_of_truth: 'brightbase',
+    gcal_live_sync: false,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })
@@ -37,8 +39,17 @@ export function useAutomationSettings({ toast, active }) {
   const saveAutomationSettings = async () => {
     setAutomationSaving(true)
     try {
-      await post('/api/settings/automation', automationSettings)
-      toast('Automation settings saved')
+      const res = await post('/api/settings/automation', automationSettings)
+      // When real-time sync was just turned on, the backend registers Google
+      // push channels and reports whether it worked — surface that so the
+      // operator isn't left thinking it's live when Google rejected it.
+      if (res?.live_sync && res.live_sync.ok === false) {
+        toast(`Saved, but real-time sync couldn't start: ${res.live_sync.error || 'Google not connected / no public URL'}`, 'error')
+      } else if (res?.live_sync) {
+        toast('Automation settings saved — real-time sync connected')
+      } else {
+        toast('Automation settings saved')
+      }
     } catch {
       toast('Failed to save automation settings', 'error')
     }
@@ -139,12 +150,42 @@ export default function AutomationTab({ state, toast, active }) {
             {s.gcal_auto_sync_enabled && (
               <div className="mt-3">
                 <label className={lbl}>Sync Interval (minutes)</label>
-                <input type="number" min="5" max="240" value={s.gcal_sync_interval}
+                <input type="number" min="2" max="240" value={s.gcal_sync_interval}
                   onChange={e => setAutomationSettings(x => ({ ...x, gcal_sync_interval: parseInt(e.target.value) || 10 }))}
                   className={inp} />
-                <p className="text-xs text-ink-3 mt-1">Recommended: 10 minutes</p>
+                <p className="text-xs text-ink-3 mt-1">How often BrightBase polls Google for changes made there. Lower = fresher, more API calls. Turn on “Real-time sync” below to skip polling entirely.</p>
               </div>
             )}
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <div className="mb-3">
+              <h3 className="font-semibold text-ink">Two-way sync</h3>
+              <p className="text-xs text-ink-3 mt-1">Who wins when the same appointment differs between BrightBase and Google. Cancellations always sync both ways either way.</p>
+            </div>
+            <select value={s.calendar_source_of_truth}
+              onChange={e => setAutomationSettings(x => ({ ...x, calendar_source_of_truth: e.target.value }))}
+              className="w-full sm:w-96 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+              <option value="brightbase">BrightBase is the master (recommended) — edits made in Google are re-asserted</option>
+              <option value="google">Two-way — a time/title edit made in Google syncs back into BrightBase</option>
+            </select>
+            {s.calendar_source_of_truth === 'google' && (
+              <p className="text-xs text-amber-600 mt-2">Two-way is on: moving an appointment in Google Calendar will move the BrightBase job to match. Be careful — a stray drag in Google will move a real job.</p>
+            )}
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="font-semibold text-ink">Real-time sync (Google → BrightBase)</h3>
+                <p className="text-xs text-ink-3 mt-1">When ON, BrightBase gets a live push from Google the moment something changes there, so edits reflect in seconds instead of on the poll interval above. Needs Google connected and a public app URL. When OFF, the poll interval above is used.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={s.gcal_live_sync}
+                  onChange={e => setAutomationSettings(x => ({ ...x, gcal_live_sync: e.target.checked }))}
+                  className="w-4 h-4 rounded" />
+              </label>
+            </div>
           </div>
 
           <div className="border-t border-hairline pt-5">

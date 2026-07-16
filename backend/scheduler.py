@@ -529,14 +529,16 @@ def quote_expiry_tick() -> dict:
 
 def gcal_watch_renew_tick() -> dict:
     """Renew Google Calendar push channels before they expire (~weekly cap), so
-    real-time notifications don't silently lapse. Gated by GCAL_WATCH_ENABLED
-    (off by default — needs a public https base URL)."""
-    if not env_flag("GCAL_WATCH_ENABLED", False):
-        return {"skipped": True, "reason": "disabled"}
-    from integrations.gcal_watch import renew_expiring
-    from config import app_base_url
+    real-time notifications don't silently lapse. Enabled by the Settings toggle
+    (`gcal_live_sync` app_setting) OR the GCAL_WATCH_ENABLED env flag — so an
+    operator can turn real-time sync on from the UI without a redeploy. Needs a
+    public https base URL. No-ops when disabled."""
     db = SessionLocal()
     try:
+        if not _db_flag(db, "gcal_live_sync", env_flag("GCAL_WATCH_ENABLED", False)):
+            return {"skipped": True, "reason": "disabled"}
+        from integrations.gcal_watch import renew_expiring
+        from config import app_base_url
         return renew_expiring(db, app_base_url())
     except Exception as e:
         log.error(f"[gcal-watch] renew failed: {e}")
@@ -769,16 +771,17 @@ def start_scheduler():
         log.info("Quote auto-expiry disabled via QUOTE_AUTO_EXPIRE_ENABLED=0")
 
     # Google Calendar push-channel renewal — re-registers watches before their
-    # ~weekly expiry so real-time sync doesn't lapse. Off by default.
-    if env_flag("GCAL_WATCH_ENABLED", False):
-        _scheduler.add_job(
-            gcal_watch_renew_tick,
-            IntervalTrigger(hours=env_int("GCAL_WATCH_RENEW_INTERVAL_HOURS", 12)),
-            id="gcal_watch_renew",
-            name="Google Calendar watch renewal",
-            replace_existing=True,
-        )
-        log.info("Google Calendar watch renewal enabled")
+    # ~weekly expiry so real-time sync doesn't lapse. Registered UNCONDITIONALLY
+    # (the tick self-gates on the `gcal_live_sync` Settings toggle / env flag and
+    # no-ops when off) so real-time sync can be switched on from the UI at
+    # runtime without a redeploy.
+    _scheduler.add_job(
+        gcal_watch_renew_tick,
+        IntervalTrigger(hours=env_int("GCAL_WATCH_RENEW_INTERVAL_HOURS", 12)),
+        id="gcal_watch_renew",
+        name="Google Calendar watch renewal",
+        replace_existing=True,
+    )
 
     _scheduler.start()
     return _scheduler
