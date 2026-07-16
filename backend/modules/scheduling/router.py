@@ -3012,11 +3012,14 @@ def invite_client(job_id: int, db: Session = Depends(get_db), org_id: int = Depe
         try:
             from integrations.google_calendar import create_event
             client_dict = {"id": client.id, "name": client.name, "email": client.email}
+            # Ensure a confirm/reschedule token so the customer event can carry a
+            # direct link to manage this visit.
+            _ensure_job_public_token(job)
             job_dict = {
                 "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
                 "scheduled_date": job.scheduled_date, "start_time": job.start_time,
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
-                "property_id": job.property_id,
+                "property_id": job.property_id, "public_token": job.public_token,
             }
             event_id = create_event(job_dict, client_dict, send_invite=True)
             if event_id:

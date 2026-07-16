@@ -56,6 +56,7 @@ from modules.admin.router import router as admin_router
 from modules.ai.router import router as ai_router
 from modules.dashboard.router import router as dashboard_router
 from modules.scheduling.router import schedule_router
+from modules.portal.router import router as portal_router
 
 app = FastAPI(title="BrightBase API", version="1.0.0")
 
@@ -174,6 +175,7 @@ app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(schedule_router, prefix="/api/schedule", tags=["schedule"])
+app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
 
 # Per-connection conversation histories: {connection_key: [messages]}
 # BB-CODE-03: bounded so a long chat doesn't accumulate megabytes per session

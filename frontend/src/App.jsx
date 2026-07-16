@@ -14,6 +14,8 @@ import Pipeline from './pages/Pipeline'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
 import PublicJobConfirm from './pages/PublicJobConfirm'
+import CustomerPortal from './pages/CustomerPortal'
+import PortalVerify from './pages/PortalVerify'
 import { useUnreadCount } from './hooks/useUnreadCount'
 import { playChime } from './utils/chime'
 import { notify } from './utils/notifications'
@@ -150,7 +152,7 @@ export default function App() {
   }
 
   const isPublicRoute = location.pathname.startsWith('/quote/') || location.pathname.startsWith('/pay/')
-    || location.pathname.startsWith('/job/')
+    || location.pathname.startsWith('/job/') || location.pathname.startsWith('/portal')
   const isLoginRoute = location.pathname === '/login'
   const isAuthenticated = !!user && !!localStorage.getItem('brightbase_jwt')
 
@@ -160,6 +162,8 @@ export default function App() {
         <Route path="/quote/:token" element={<PublicQuote />} />
         <Route path="/pay/:token" element={<PublicPayment />} />
         <Route path="/job/:token" element={<PublicJobConfirm />} />
+        <Route path="/portal/verify" element={<PortalVerify />} />
+        <Route path="/portal" element={<CustomerPortal />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     )

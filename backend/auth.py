@@ -49,6 +49,10 @@ _PUBLIC_PREFIXES = (
     "/api/agents",
     "/api/quotes/public/",
     "/api/jobs/public/",
+    # Customer self-service portal — passwordless. request-link/verify are open
+    # (rate-limited); the data endpoints enforce a portal-session token in the
+    # portal router's own dependency, not the staff API key.
+    "/api/portal/",
     # Customer-facing payment portal — the public invoice endpoints validate an
     # HMAC token themselves, so they don't need (and must not require) the master
     # key now that the SPA is JWT-only.
