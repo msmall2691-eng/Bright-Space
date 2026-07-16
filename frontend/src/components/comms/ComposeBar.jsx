@@ -1,4 +1,4 @@
-import { Send, StickyNote } from 'lucide-react'
+import { Send, StickyNote, Sparkles, Loader2 } from 'lucide-react'
 import { Kbd } from './primitives'
 
 const CANNED_REPLIES = [
@@ -28,6 +28,11 @@ export function ComposeBar({
   // hide the toggle entirely rather than let the operator pick a mode with
   // nowhere to save.
   allowNotes = true,
+  // Optional: when provided, shows a "Draft with AI" button that asks the
+  // caller to fill the reply (e.g. draft a first reply to a new lead). Called
+  // with no args; the caller knows the context (intake / conversation).
+  onDraftAI,
+  draftingAI = false,
 }) {
   return (
     <div className="border-t border-hairline bg-panel p-4">
@@ -45,6 +50,15 @@ export function ComposeBar({
               noteMode ? 'bg-amber-500 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
             }`}>
             <StickyNote className="w-3 h-3" /> Note
+          </button>
+        )}
+
+        {onDraftAI && !noteMode && (
+          <button onClick={onDraftAI} disabled={draftingAI}
+            title="Let AI draft a reply — you can edit before sending"
+            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-500/25 disabled:opacity-50 transition-all">
+            {draftingAI ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            Draft with AI
           </button>
         )}
 
