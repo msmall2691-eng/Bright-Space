@@ -21,6 +21,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
     timezone: 'America/New_York',
     currency: 'USD',
     quote_terms: '',
+    quote_policies: '',
     brand_color: '#1f2937',
     // Must be in the initial state: the /general loader only copies keys that
     // already exist here, so without this the saved logo wouldn't re-hydrate
@@ -230,6 +231,14 @@ export default function GeneralTab({ toast, active, dangerZone }) {
                 placeholder="Payment due upon completion. Cancellations require 24h notice. …"
                 className={inp + ' resize-none'} />
               <p className="text-[11px] text-ink-3 mt-1">Appears at the bottom of every public quote page. Leave blank to hide.</p>
+            </div>
+            <div className="mt-4">
+              <label className={lbl}>Service Policies (one per line)</label>
+              <textarea rows={6} value={generalSettings.quote_policies}
+                onChange={e => setGeneralSettings(s => ({ ...s, quote_policies: e.target.value }))}
+                placeholder={"Please pick up personal items so we can clean thoroughly.\nPlease make sure the home is accessible on your scheduled day.\nCancellations need 24 hours' notice.\nSecure pets during the visit."}
+                className={inp + ' resize-none'} />
+              <p className="text-[11px] text-ink-3 mt-1">Shown as a friendly checklist on the quote email, PDF, and public page (heading “A Few Things Before We Clean”). One policy per line. Leave blank to use the built-in professional defaults.</p>
             </div>
           </div>
         </div>

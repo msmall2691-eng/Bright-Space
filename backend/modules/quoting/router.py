@@ -642,6 +642,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     subtotal=quote.subtotal, tax=quote.tax, discount=quote.discount,
                     tax_rate=quote.tax_rate, address=format_address(quote.address),
                     bcc=owner_copy, property_photo_url=email_photo_url,
+                    scope=quote.notes, service_type=quote.service_type,
                 )
                 if res.get("success"):
                     results["email"] = "sent"
@@ -808,6 +809,80 @@ def _quote_job_vocab(quote: Quote):
     return svc, job_type, prop_type
 
 
+_SERVICE_TITLES = {
+    "residential": "Residential Cleaning",
+    "commercial": "Commercial Cleaning",
+    "str": "Turnover Cleaning",
+    "str_turnover": "Turnover Cleaning",
+    "deep_clean": "Deep Cleaning",
+    "move_in_out": "Move-In / Move-Out Cleaning",
+}
+
+_US_STATE_RE = _re.compile(r"^[A-Za-z]{2}$")
+_ZIP_RE = _re.compile(r"^\d{5}(-\d{4})?$")
+
+
+def _service_title(service_type: str) -> str:
+    key = (service_type or "residential").strip().lower()
+    return _SERVICE_TITLES.get(key, (key.replace("_", " ").title() + " Cleaning"))
+
+
+def _extract_town(address: Optional[str]) -> Optional[str]:
+    """Best-effort town/city from a free-text address like
+    '100 Congress Street, Portland, ME 04101' -> 'Portland'. Returns None when
+    nothing looks like a city."""
+    if not address:
+        return None
+    parts = [p.strip() for p in str(address).replace("\n", ",").split(",") if p.strip()]
+    if not parts:
+        return None
+    # Drop a trailing "ME 04101" / "ME" / "04101" chunk, then the city is the
+    # last remaining part (street lines come before it).
+    while parts:
+        last = parts[-1]
+        toks = last.split()
+        if _ZIP_RE.match(last) or _US_STATE_RE.match(last) or (
+                len(toks) == 2 and _US_STATE_RE.match(toks[0]) and _ZIP_RE.match(toks[1])):
+            parts.pop()
+            continue
+        break
+    if len(parts) < 2:
+        # Only one part left (just a street or just a name) — not a reliable city.
+        return None
+    town = parts[-1]
+    # A lone street ("100 Congress Street") isn't a town; require it to not
+    # start with a house number.
+    if town and town.split()[0].isdigit():
+        return None
+    return town.title()
+
+
+def _resolve_town(db: Session, quote: Quote, prop: Property) -> Optional[str]:
+    """Town/city for a job title: structured Property.city first, then parse the
+    property or quote address, then the client's city."""
+    prop_city = (getattr(prop, "city", None) or "").strip() if prop else ""
+    if prop_city:
+        return prop_city.title()
+    for addr in (getattr(prop, "address", None), quote.address):
+        town = _extract_town(addr)
+        if town:
+            return town
+    if quote.client_id:
+        client = db.query(Client).filter(Client.id == quote.client_id).first()
+        client_city = (getattr(client, "city", None) or "").strip() if client else ""
+        if client_city:
+            return client_city.title()
+    return None
+
+
+def _job_title_for_quote(db: Session, quote: Quote, prop: Property) -> str:
+    """Title a job by town + service, e.g. 'Portland — Residential Cleaning'.
+    Falls back to just the service when no town can be resolved."""
+    town = _resolve_town(db, quote, prop)
+    service = _service_title(quote.service_type)
+    return f"{town} — {service}" if town else service
+
+
 def _resolve_property_for_quote(db: Session, quote: Quote, prop_type: str) -> Property:
     """The client's existing property, or a new one created from the quote
     address (every Job needs a Property)."""
@@ -878,7 +953,7 @@ def _convert_quote_to_job(
         from modules.scheduling.router import create_job, JobCreate
         payload = JobCreate(
             client_id=quote.client_id,
-            title=quote.title or f"{svc.title()} clean",
+            title=_job_title_for_quote(db, quote, prop),
             job_type=job_type,
             scheduled_date=scheduled_date,
             start_time=start_time,
@@ -909,7 +984,7 @@ def _convert_quote_to_job(
         opportunity_id=quote.opportunity_id,
         property_id=prop.id,
         job_type=job_type,
-        title=quote.title or f"{svc.title()} clean",
+        title=_job_title_for_quote(db, quote, prop),
         address=quote.address or prop.address,
         status="unscheduled",
         cleaner_ids=[str(c) for c in cleaner_ids] if cleaner_ids else [],
@@ -1059,13 +1134,16 @@ def _quote_by_token(token: str, db: Session) -> Quote:
 def _company_info(db: Session) -> dict:
     """Customer-facing business identity: Settings rows first, env fallback.
     Powers the public quote page footer and the quote email."""
-    from modules.settings.router import get_setting
+    from modules.settings.router import get_setting, quote_policies_text
     return {
         "company_name": get_setting(db, "company_name") or os.getenv("COMPANY_NAME", DEFAULT_COMPANY_NAME),
         "company_email": (get_setting(db, "company_email") or os.getenv("COMPANY_EMAIL")
                           or get_setting(db, "from_email") or os.getenv("SMTP_USER")),
         "company_phone": get_setting(db, "company_phone") or os.getenv("COMPANY_PHONE"),
         "quote_terms": get_setting(db, "quote_terms") or None,
+        # Customer-facing service policies (pickup, access, 24h cancellation…).
+        # Always present — falls back to a sensible professional default.
+        "quote_policies": quote_policies_text(db),
         # Header band color for every customer-facing quote surface (page,
         # email, PDF). Defaults to the email's original slate.
         "brand_color": get_setting(db, "brand_color") or "#1f2937",
@@ -1101,6 +1179,7 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "company_email": company["company_email"],
         "company_phone": company["company_phone"],
         "terms": company["quote_terms"],
+        "policies": company["quote_policies"],
         "brand_color": company["brand_color"],
         "company_logo_url": company["company_logo_url"],
         "quote_date": fmt_long_date(quote.created_at),
@@ -1424,6 +1503,7 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         company_name=company["company_name"], company_email=company["company_email"] or "",
         company_phone=company["company_phone"], brand_color=company["brand_color"],
         terms=company["quote_terms"], logo_url=company.get("company_logo_url"),
+        policies=company["quote_policies"],
     ).generate_quote_pdf(
         quote_number=quote.quote_number,
         client_name=client.name if client else "",
@@ -1546,7 +1626,7 @@ def public_schedule_quote(token: str, data: PublicScheduleRequest, db: Session =
             # default workspace — the customer saw "we couldn't lock that
             # slot" for a perfectly good date.
             created = create_job(JobCreate(
-                client_id=quote.client_id, title=quote.title or f"{svc.title()} clean",
+                client_id=quote.client_id, title=_job_title_for_quote(db, quote, prop),
                 job_type=job_type, scheduled_date=d.isoformat(), start_time=start, end_time=end,
                 address=quote.address or prop.address, property_id=prop.id, quote_id=quote.id,
                 cleaner_ids=[], notes=quote.notes, allow_conflicts=True,

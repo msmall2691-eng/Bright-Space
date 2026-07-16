@@ -145,6 +145,26 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
               <span>Total</span><span style={{ color: brand }}>{money(total)}</span>
             </div>
           </div>
+
+          {/* Service policies — pickup / access / 24h cancellation, etc. */}
+          {(() => {
+            const lines = String(quote.policies || '')
+              .split('\n').map(l => l.trim().replace(/^[•\-–*]\s*/, '')).filter(Boolean)
+            if (!lines.length) return null
+            return (
+              <div className="mt-8 pt-5 border-t border-hairline">
+                <p className="text-[10px] text-ink-3 uppercase font-semibold tracking-wide mb-2">A Few Things Before We Clean</p>
+                <ul className="space-y-1.5">
+                  {lines.map((p, i) => (
+                    <li key={i} className="flex gap-2 text-sm text-ink-2">
+                      <span className="shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brand }} />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })()}
         </div>
 
         {/* Actions slot — the page's Accept/Request/Decline hierarchy */}

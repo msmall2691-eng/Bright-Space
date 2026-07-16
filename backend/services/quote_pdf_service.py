@@ -35,7 +35,8 @@ class QuotePDFService:
 
     def __init__(self, company_name: str = "Bright-Space", company_email: Optional[str] = None,
                  company_phone: Optional[str] = None, brand_color: str = "#1f2937",
-                 terms: Optional[str] = None, logo_url: Optional[str] = None):
+                 terms: Optional[str] = None, logo_url: Optional[str] = None,
+                 policies: Optional[str] = None):
         from config import DEFAULT_FROM_EMAIL
         company_email = company_email or DEFAULT_FROM_EMAIL
         self.company_name = company_name
@@ -51,6 +52,7 @@ class QuotePDFService:
         except Exception:
             self.brand_color = "#1f2937"
         self.terms = terms
+        self.policies = policies
 
     def generate_quote_pdf(
         self,
@@ -244,6 +246,22 @@ class QuotePDFService:
         ]))
         story.append(Spacer(1, 0.1 * inch))
         story.append(totals_table)
+
+        # ── Service policies (pickup / access / 24h cancellation …)
+        policy_lines = []
+        for line in str(self.policies or "").splitlines():
+            s = line.strip().lstrip('•-–*').strip()
+            if s:
+                policy_lines.append(s)
+        if policy_lines:
+            story.append(Spacer(1, 0.32 * inch))
+            story.append(Paragraph('A FEW THINGS BEFORE WE CLEAN', label_style))
+            story.append(Spacer(1, 4))
+            pol_style = ParagraphStyle('Policy', parent=styles['Normal'], fontSize=9.5,
+                                       textColor=colors.HexColor('#374151'), leading=14,
+                                       leftIndent=10, bulletIndent=0)
+            for p in policy_lines:
+                story.append(Paragraph(_esc(p), pol_style, bulletText='•'))
 
         # ── Contact + terms (trust block, like the web footer)
         story.append(Spacer(1, 0.35 * inch))

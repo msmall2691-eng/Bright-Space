@@ -165,6 +165,9 @@ class GeneralSettings(BaseModel):
     currency: Optional[str] = None
     # Optional terms & conditions shown at the bottom of the public quote page.
     quote_terms: Optional[str] = None
+    # Customer-facing service policies (one per line) shown on the quote email,
+    # PDF, and public page — pickup/tidy, home access, 24h cancellation, etc.
+    quote_policies: Optional[str] = None
     # Header band color for every customer-facing quote surface.
     brand_color: Optional[str] = None
     # Optional logo URL shown on the public quote page, email, and PDF.
@@ -177,10 +180,32 @@ class GeneralSettings(BaseModel):
 
 
 _GENERAL_KEYS = ("company_name", "company_email", "company_phone",
-                 "timezone", "currency", "quote_terms", "brand_color",
-                 "company_logo_url",
+                 "timezone", "currency", "quote_terms", "quote_policies",
+                 "brand_color", "company_logo_url",
                  "service_scope_residential", "service_scope_commercial",
                  "service_scope_str")
+
+
+# Default customer-facing service policies. One per line so email/PDF/page can
+# render a clean bulleted list. Editable in Settings → General → Service
+# Policies; a blank setting falls back to these.
+DEFAULT_QUOTE_POLICIES = (
+    "Please pick up and put away personal items and clutter before your visit so "
+    "we can clean and sanitize surfaces thoroughly.\n"
+    "Please make sure the home is accessible on your scheduled day — a key, lockbox, "
+    "door code, or someone home.\n"
+    "Need to cancel or reschedule? Please give us at least 24 hours' notice; "
+    "same-day cancellations may be subject to a fee.\n"
+    "For everyone's safety, please secure pets during the visit.\n"
+    "Please have running water, power, and heat/AC available so we can do our best work.\n"
+    "Payment is due upon completion unless we've arranged otherwise."
+)
+
+
+def quote_policies_text(db: Session) -> str:
+    """The configured service policies, or the sensible default when unset."""
+    v = get_setting(db, "quote_policies")
+    return v if (v is not None and v.strip()) else DEFAULT_QUOTE_POLICIES
 
 
 @router.get("/general", dependencies=[Depends(require_role("admin", "manager"))])
