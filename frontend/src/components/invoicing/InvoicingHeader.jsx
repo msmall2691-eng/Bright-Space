@@ -46,7 +46,7 @@ export function InvoicingHeader({
       />
 
       {/* Metrics bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-hairline mx-4 sm:mx-8 mb-6 rounded-xl border border-hairline overflow-hidden">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-hairline mx-4 sm:mx-8 mb-4 rounded-xl border border-hairline overflow-hidden">
         <StatCard className="bg-panel" label="Paid" value={`$${totalRevenue.toFixed(2)}`} accent="text-emerald-600" />
         <StatCard className="bg-panel" label="Outstanding" value={`$${outstanding.toFixed(2)}`} accent="text-amber-600" />
         <StatCard className="bg-panel" label="Invoices" value={invoiceCount} />

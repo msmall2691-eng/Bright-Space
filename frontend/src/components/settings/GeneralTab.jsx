@@ -114,10 +114,10 @@ export default function GeneralTab({ toast, active, dangerZone }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-      <div className="max-w-2xl pt-6 space-y-6">
+      <div className="max-w-2xl pt-6 space-y-5">
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Appearance</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-6">
+          <div className="bg-panel rounded-xl border border-hairline p-5">
             <label className={lbl}>Theme</label>
             <div className="flex gap-2 mt-1">
               {[
@@ -160,7 +160,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Company Information</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-6">
+          <div className="bg-panel rounded-xl border border-hairline p-5">
             <div>
               <label className={lbl}>Company Name</label>
               <input type="text" value={generalSettings.company_name}
@@ -245,7 +245,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Service Descriptions</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4">
+          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4">
             <p className="text-[11px] text-ink-3 -mt-1">Default "what's included" text per service type. Pre-fills the scope on a new quote — you can still edit it per quote. Leave blank to use the built-in default.</p>
             <div>
               <label className={lbl}>Residential</label>
@@ -273,7 +273,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Property Photos &amp; Data</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-6 space-y-5">
+          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-5">
             {/* Street View photo */}
             <div>
               <label className="flex items-center justify-between gap-3 cursor-pointer">
@@ -324,7 +324,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Regional Settings</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-6 space-y-4">
+          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4">
             <div>
               <label className={lbl}>Timezone</label>
               <select value={generalSettings.timezone}

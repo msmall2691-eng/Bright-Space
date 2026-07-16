@@ -97,7 +97,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
       {showDangerZone && (<>
 
       {/* Pause all syncs (reversible) */}
-      <div className="bg-panel rounded-xl border border-amber-200 p-6 space-y-4 mb-4">
+      <div className="bg-panel rounded-xl border border-amber-200 dark:border-amber-500/25 p-6 space-y-4 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-ink">Pause all syncs</h3>
           <p className="text-xs text-ink-3 mt-1">
@@ -122,7 +122,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
       </div>
 
       {/* Unlink calendars (irreversible — but data preserved) */}
-      <div className="bg-panel rounded-xl border border-orange-200 p-6 space-y-4 mb-4">
+      <div className="bg-panel rounded-xl border border-orange-200 dark:border-orange-500/25 p-6 space-y-4 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-ink">Unlink calendars</h3>
           <p className="text-xs text-ink-3 mt-1">
@@ -167,7 +167,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           {unlinking ? 'Unlinking...' : 'Unlink calendars'}
         </button>
         {unlinkResult && !unlinkResult.error && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs">
+          <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25 text-emerald-800 dark:text-emerald-300 rounded-lg p-3 text-xs">
             <div className="font-semibold mb-1">✓ Unlinked</div>
             <ul className="list-disc list-inside space-y-0.5">
               <li>Jobs cleared: {unlinkResult.jobs_unlinked}</li>
@@ -183,7 +183,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
         )}
       </div>
 
-      <div className="bg-panel rounded-xl border border-red-200 p-6 space-y-4">
+      <div className="bg-panel rounded-xl border border-red-200 dark:border-red-500/25 p-6 space-y-4">
         <div>
           <h3 className="text-sm font-semibold text-ink">Reset all data</h3>
           <p className="text-xs text-ink-3 mt-1">
@@ -214,7 +214,7 @@ export default function DangerZone({ toast, automationSettings, setAutomationSet
           {resetting ? 'Deleting...' : 'Reset all data'}
         </button>
         {resetResult && !resetResult.error && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs">
+          <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/25 text-emerald-800 dark:text-emerald-300 rounded-lg p-3 text-xs">
             <div className="font-semibold mb-1">
               ✓ Deleted {resetResult.deleted_total} rows
             </div>

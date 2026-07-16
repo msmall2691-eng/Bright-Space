@@ -92,13 +92,13 @@ export default function AutomationTab({ state, toast, active }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-      <div className="max-w-2xl pt-6">
-        <div className="mb-6">
+      <div className="max-w-2xl pt-5">
+        <div className="mb-5">
           <h2 className="text-lg font-bold text-ink">Auto-Sync Settings</h2>
           <p className="text-sm text-ink-2 mt-1">Configure how often your calendar and feeds sync automatically</p>
         </div>
 
-        <div className="bg-panel rounded-xl border border-hairline p-6 space-y-6">
+        <div className="bg-panel rounded-xl border border-hairline p-5 space-y-5">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -122,7 +122,7 @@ export default function AutomationTab({ state, toast, active }) {
             )}
           </div>
 
-          <div className="border-t border-hairline pt-6">
+          <div className="border-t border-hairline pt-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-ink">Google Calendar Auto-Sync</h3>
@@ -145,7 +145,7 @@ export default function AutomationTab({ state, toast, active }) {
             )}
           </div>
 
-          <div className="border-t border-hairline pt-6">
+          <div className="border-t border-hairline pt-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-ink">Recurring Jobs Auto-Generate</h3>
@@ -162,7 +162,7 @@ export default function AutomationTab({ state, toast, active }) {
             )}
           </div>
 
-          <div className="border-t border-hairline pt-6">
+          <div className="border-t border-hairline pt-5">
             <h3 className="font-semibold text-ink">Turnover lead-time guardrail</h3>
             <p className="text-xs text-ink-3 mt-1">
               Flag an Airbnb/VRBO turnover as a "tight turnaround" when it ends
@@ -184,7 +184,7 @@ export default function AutomationTab({ state, toast, active }) {
               relocated to where operators actually look for automation
               toggles. */}
           {!msgStatus.loading && !msgStatus.error && (
-            <div className="border-t border-hairline pt-6">
+            <div className="border-t border-hairline pt-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="font-semibold text-ink">Automatic customer SMS reminders</h3>
@@ -199,7 +199,7 @@ export default function AutomationTab({ state, toast, active }) {
                       the reason so Meg doesn't wonder why flipping the switch
                       doesn't do anything. */}
                   {msgStatus.env_disabled && (
-                    <p className="text-xs text-amber-700 mt-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-md px-2 py-1.5">
                       Deployment kill-switch is active
                       (<code className="text-[10px]">JOB_SMS_REMINDERS_ENABLED=0</code>). Ask
                       your ops contact to lift it before this toggle takes effect.
@@ -214,7 +214,7 @@ export default function AutomationTab({ state, toast, active }) {
                 </label>
               </div>
               {/* Invoice dunning — same shape as SMS reminders. T-03. */}
-              <div className="flex items-center justify-between mt-6 pt-6 border-t border-hairline">
+              <div className="flex items-center justify-between mt-6 pt-5 border-t border-hairline">
                 <div>
                   <h3 className="font-semibold text-ink">Automatic overdue-invoice reminders</h3>
                   <p className="text-xs text-ink-3 mt-1">
@@ -223,7 +223,7 @@ export default function AutomationTab({ state, toast, active }) {
                       : 'Currently OFF — overdue invoices are not chased automatically.'}
                   </p>
                   {msgStatus.invoice_dunning_env_disabled && (
-                    <p className="text-xs text-amber-700 mt-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-md px-2 py-1.5">
                       Deployment kill-switch is active
                       (<code className="text-[10px]">JOB_DUNNING_ENABLED=0</code>). Ask your ops
                       contact to lift it before this toggle takes effect.
@@ -240,7 +240,7 @@ export default function AutomationTab({ state, toast, active }) {
             </div>
           )}
 
-          <div className="border-t border-hairline pt-6">
+          <div className="border-t border-hairline pt-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-ink">Invite customers to their cleanings</h3>
@@ -257,7 +257,7 @@ export default function AutomationTab({ state, toast, active }) {
             )}
           </div>
 
-          <div className="border-t border-hairline pt-6">
+          <div className="border-t border-hairline pt-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-ink">Let customers reschedule themselves</h3>

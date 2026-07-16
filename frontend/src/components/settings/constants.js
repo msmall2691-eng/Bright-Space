@@ -21,10 +21,10 @@ export const FIELD_TYPES = [
 
 export const TYPE_BADGE = {
   text:     'bg-bg-2 text-ink-3',
-  number:   'bg-blue-50 text-blue-700',
-  date:     'bg-violet-50 text-violet-700',
-  select:   'bg-amber-50 text-amber-700',
-  checkbox: 'bg-emerald-50 text-emerald-700',
+  number:   'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  date:     'bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300',
+  select:   'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  checkbox: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
   textarea: 'bg-bg-2 text-ink-3',
 }
 

@@ -35,6 +35,15 @@ function agentIdForPath(path) {
   return (PAGE_AGENT.find(p => p.match.test(path)) || {}).id || DEFAULT_AGENT_ID
 }
 
+// Suggested prompts per agent — one tap asks the agent this about the current
+// section, so the box helps you act, not just chat.
+const SUGGESTIONS = {
+  finn:  ['Draft reminders for overdue invoices', 'Which quotes need a follow-up?', "What's outstanding right now?"],
+  scout: ['Which leads should I quote next?', 'Any duplicate clients to merge?', 'What quotes are going stale?'],
+  mia:   ['What needs dispatching today?', 'Any unassigned jobs this week?', 'Who replied and needs a response?'],
+  nova:  ['What needs my attention today?', 'How is the business doing this week?'],
+}
+
 export default function PageAssistant() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -62,6 +71,25 @@ export default function PageAssistant() {
   // Reset the transient answer when navigating to a new page.
   useEffect(() => { setAnswer(null); setQuery('') }, [location.pathname])
 
+  // This box is the single AI surface — Cmd/Ctrl+K and the header "Ask AI"
+  // button (which dispatches the same shortcut) toggle it; Esc closes it.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault(); setOpen(o => !o)
+      } else if (e.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+    const onOpen = () => setOpen(true)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('bb:open-assistant', onOpen)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('bb:open-assistant', onOpen)
+    }
+  }, [])
+
   // Show the rundown items most relevant to this page first, then the rest.
   const items = useMemo(() => {
     const all = followups?.followups || []
@@ -70,12 +98,14 @@ export default function PageAssistant() {
     return [...here, ...rest].slice(0, 4)
   }, [followups, location.pathname])
 
-  const ask = async () => {
-    if (!query.trim() || asking) return
+  const ask = async (text) => {
+    const q = (typeof text === 'string' ? text : query).trim()
+    if (!q || asking) return
+    setQuery(q)
     setAsking(true); setAnswer(null)
     try {
       const page = location.pathname.replace('/', '') || 'dashboard'
-      const res = await post('/api/ai/quick', { question: query, page_context: page })
+      const res = await post('/api/ai/quick', { question: q, page_context: page })
       setAnswer(res)
     } catch (err) {
       setAnswer({ answer: 'Sorry — I couldn’t answer that right now.', error: true })
@@ -83,26 +113,31 @@ export default function PageAssistant() {
     setAsking(false)
   }
 
-  // Collapsed pill — labels the section's agent.
+  const suggestions = SUGGESTIONS[agentId] || SUGGESTIONS.nova
+
+  // Collapsed pill — labels the section's agent. Bottom-right on desktop; sits
+  // above the mobile bottom-nav on phones.
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
-        title={`${agent.name} · your ${agent.role} for this page`}
-        className="no-print hidden lg:flex fixed bottom-6 right-6 z-40 items-center gap-2 pl-2 pr-3.5 py-2 bg-panel rounded-full shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
+        title={`${agent.name} · your ${agent.role} for this page (⌘K)`}
+        className="no-print flex fixed bottom-[4.75rem] right-4 lg:bottom-6 lg:right-6 z-40 items-center gap-2 pl-2 pr-2 lg:pr-3.5 py-2 bg-panel rounded-full shadow-lg border border-hairline hover:border-hairline-2 hover:shadow-xl transition-all group"
       >
         <AgentAvatar agent={agent} size="sm" />
-        <span className="text-left leading-tight">
+        <span className="hidden lg:block text-left leading-tight">
           <span className="block text-[12px] font-semibold text-ink">{agent.name}</span>
           <span className="block text-[10px] text-ink-3 -mt-0.5">Ask · view rundown</span>
         </span>
-        <Sparkles className="w-3.5 h-3.5 text-ink-3 group-hover:text-blue-500" />
+        <Sparkles className="w-3.5 h-3.5 text-ink-3 group-hover:text-blue-500 lg:ml-0.5" />
       </button>
     )
   }
 
   return (
-    <div className="no-print hidden lg:flex flex-col fixed bottom-6 right-6 z-40 w-[360px] max-h-[70vh] bg-panel rounded-2xl shadow-2xl border border-hairline overflow-hidden">
+    <div className="no-print flex flex-col fixed z-40 bg-panel shadow-2xl border border-hairline overflow-hidden
+      inset-x-0 bottom-0 rounded-t-2xl max-h-[80vh]
+      lg:inset-x-auto lg:bottom-6 lg:right-6 lg:w-[380px] lg:rounded-2xl lg:max-h-[72vh]">
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-hairline">
         <AgentAvatar agent={agent} size="sm" />
@@ -156,6 +191,21 @@ export default function PageAssistant() {
             )}
           </div>
         )}
+
+        {/* Suggested actions — one tap asks the agent about this section */}
+        {!answer && !asking && (
+          <div>
+            <p className="text-[10px] font-bold text-ink-3 uppercase tracking-wider px-1 mb-1.5">Ask {agent.name}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((s, i) => (
+                <button key={i} onClick={() => ask(s)}
+                  className="text-left text-[12px] px-2.5 py-1.5 rounded-lg border border-hairline bg-bg hover:bg-bg-2 hover:border-hairline-2 text-ink-2 transition-colors">
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Ask input */}
@@ -170,7 +220,7 @@ export default function PageAssistant() {
             placeholder={`Ask ${agent.name} about this page…`}
             className="flex-1 resize-none bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none focus:border-blue-400 max-h-24"
           />
-          <button onClick={ask} disabled={!query.trim() || asking}
+          <button onClick={() => ask()} disabled={!query.trim() || asking}
             className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shrink-0">
             {asking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>

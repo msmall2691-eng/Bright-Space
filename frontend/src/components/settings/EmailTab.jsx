@@ -71,7 +71,7 @@ export default function EmailTab({ toast, active }) {
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
       <div className="max-w-2xl pt-6">
-        <div className="mb-6">
+        <div className="mb-5">
           <h2 className="text-lg font-bold text-ink">Gmail Connection</h2>
           <p className="text-sm text-ink-2 mt-1">
             Connect your Gmail to sync emails in Comms, auto-match senders to clients, and create leads from unknown contacts.
@@ -79,15 +79,15 @@ export default function EmailTab({ toast, active }) {
         </div>
 
         {/* Status indicator */}
-        <div className={`flex items-center gap-3 p-4 rounded-xl border mb-6 ${hasCredentials ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+        <div className={`flex items-center gap-3 p-4 rounded-xl border mb-5 ${hasCredentials ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/25' : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25'}`}>
           {hasCredentials
-            ? <><CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /><div><div className="text-sm font-medium text-emerald-800">Credentials Found</div><div className="text-xs text-emerald-600">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div></>
-            : <><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" /><div><div className="text-sm font-medium text-amber-800">Not Connected</div><div className="text-xs text-amber-600">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div></>
+            ? <><CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /><div><div className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Credentials Found</div><div className="text-xs text-emerald-600">{credentialsSource === 'env' ? 'Using Railway environment variables (SMTP_USER / SMTP_PASS)' : 'Using saved database settings'}</div></div></>
+            : <><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" /><div><div className="text-sm font-medium text-amber-800 dark:text-amber-300">Not Connected</div><div className="text-xs text-amber-600">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div></>
           }
         </div>
 
         {/* Credentials form */}
-        <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-6">
+        <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
             <Shield className="w-4 h-4 text-blue-500" /> Credentials
           </div>
@@ -146,7 +146,7 @@ export default function EmailTab({ toast, active }) {
         </div>
 
         {/* Sending identity */}
-        <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-6">
+        <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
             <Plug className="w-4 h-4 text-purple-500" /> Sending Identity
           </div>
@@ -167,7 +167,7 @@ export default function EmailTab({ toast, active }) {
         </div>
 
         {/* Auto-enrichment toggle */}
-        <div className="bg-panel border border-hairline rounded-xl p-5 mb-6">
+        <div className="bg-panel border border-hairline rounded-xl p-5 mb-5">
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={emailConfig.email_auto_enrich === 'true'}
               onChange={e => setEmailConfig(c => ({ ...c, email_auto_enrich: e.target.checked ? 'true' : 'false' }))}
@@ -205,13 +205,13 @@ export default function EmailTab({ toast, active }) {
               <>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.imap === 'connected'
-                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700">IMAP: Connected ({testResult.email_count} emails)</span></>
+                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700 dark:text-emerald-300">IMAP: Connected ({testResult.email_count} emails)</span></>
                     : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">IMAP: {testResult.imap}</span></>
                   }
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   {testResult.smtp === 'connected'
-                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700">SMTP: Connected (outbound email ready)</span></>
+                    ? <><CheckCircle className="w-4 h-4 text-emerald-500" /><span className="text-emerald-700 dark:text-emerald-300">SMTP: Connected (outbound email ready)</span></>
                     : <><AlertTriangle className="w-4 h-4 text-red-500" /><span className="text-red-600">SMTP: {testResult.smtp}</span></>
                   }
                 </div>

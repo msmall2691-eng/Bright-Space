@@ -229,7 +229,7 @@ export default function IntegrationsTab({ toast, active }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 pb-8 bg-bg">
-      <div className="max-w-2xl pt-6 space-y-8">
+      <div className="max-w-2xl pt-6 space-y-6">
 
         {/* One unified "Google" section: per-user account grant (Gmail +
             Calendar) on top; below it the shared business Google Calendar
@@ -264,8 +264,8 @@ export default function IntegrationsTab({ toast, active }) {
                   gcalConn.loading
                     ? 'bg-bg-2 text-ink-3 border-hairline'
                     : gcalConn.connected
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-red-50 text-red-700 border-red-200'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/25'
+                      : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/25'
                 }`}>
                   {gcalConn.loading ? 'Checking…' : gcalConn.connected ? '✓ Connected' : '✗ Not connected'}
                 </span>
@@ -358,8 +358,8 @@ export default function IntegrationsTab({ toast, active }) {
                 gmailConn.loading
                   ? 'bg-bg-2 text-ink-3 border-hairline'
                   : gmailConn.connected
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-red-50 text-red-700 border-red-200'
+                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/25'
+                    : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/25'
               }`}>
                 {gmailConn.loading ? 'Checking…' : gmailConn.connected ? '✓ Connected' : '✗ Not connected'}
               </span>
@@ -414,7 +414,7 @@ export default function IntegrationsTab({ toast, active }) {
                         so you don't have to open Update key to know
                         something's off. */}
                     {!connecteam.loading && connecteam.configured && connecteam.scheduler_id_valid === false && Array.isArray(connecteam.schedulers) && connecteam.schedulers.length > 0 && (
-                      <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1 mt-2 inline-block">
+                      <p className="text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 rounded-md px-2 py-1 mt-2 inline-block">
                         Saved Scheduler ID <code>{connecteam.scheduler_id || connecteam.company_id}</code> isn't on your Connecteam account. Click Update key and pick from the list.
                       </p>
                     )}
@@ -424,7 +424,7 @@ export default function IntegrationsTab({ toast, active }) {
                   connecteam.loading
                     ? 'bg-bg-2 text-ink-3 border-hairline'
                     : connecteam.configured
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/25'
                       : 'bg-bg-2 text-ink-3 border-hairline'
                 }`}>
                   {connecteam.loading ? 'Checking…' : connecteam.configured ? '✓ Connected' : 'Not connected'}
@@ -467,8 +467,8 @@ export default function IntegrationsTab({ toast, active }) {
                             belongs). Empty selection is fine — that's the
                             initial "pick one" state. */}
                         {ctForm.company_id && !connecteam.schedulers.some(s => String(s.id) === String(ctForm.company_id)) && (
-                          <p className="text-[11px] text-red-700 mt-1">
-                            ID <code className="bg-red-50 px-1 rounded">{ctForm.company_id}</code> isn't one of your schedulers — pick from the list above.
+                          <p className="text-[11px] text-red-700 dark:text-red-300 mt-1">
+                            ID <code className="bg-red-50 dark:bg-red-500/10 px-1 rounded">{ctForm.company_id}</code> isn't one of your schedulers — pick from the list above.
                           </p>
                         )}
                       </>
@@ -518,7 +518,7 @@ export default function IntegrationsTab({ toast, active }) {
                     Update key
                   </button>
                   <button onClick={disconnectConnecteam} disabled={ctSaving}
-                    className="ml-auto px-3 py-2 rounded-lg text-xs font-medium text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50">
+                    className="ml-auto px-3 py-2 rounded-lg text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-50 transition-colors disabled:opacity-50">
                     Disconnect
                   </button>
                 </div>
