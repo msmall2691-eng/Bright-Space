@@ -35,7 +35,7 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose }
   return (
     <div className="hidden xl:flex w-[320px] border-l border-hairline bg-panel flex-col overflow-hidden shrink-0">
       {/* Contact header */}
-      <div className="p-5 bg-gradient-to-b from-bg to-white border-b border-hairline">
+      <div className="p-5 bg-gradient-to-b from-bg-2 to-panel border-b border-hairline">
         <div className="flex items-start gap-3">
           <Avatar name={client?.name || detail.external_contact} size="lg" />
           <div className="flex-1 min-w-0">

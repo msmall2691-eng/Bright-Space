@@ -39,7 +39,7 @@ export function ThreadHeader({
         {/* Avatar with channel chip in corner — matches the inbox row */}
         <div className="relative shrink-0">
           <Avatar name={detail.client?.name || detail.external_contact} size="md" />
-          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${ch.bg} ring-2 ring-white flex items-center justify-center`}>
+          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${ch.bg} ring-2 ring-panel flex items-center justify-center`}>
             <ChannelIcon className={`w-2.5 h-2.5 ${ch.text}`} />
           </div>
         </div>
