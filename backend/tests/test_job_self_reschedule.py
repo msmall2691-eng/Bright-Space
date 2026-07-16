@@ -252,3 +252,37 @@ def test_self_reschedule_rejects_cancelled_job():
         assert r.status_code == 409
     finally:
         _cleanup(db, c, p, j)
+
+
+def test_recent_confirmations_feed():
+    """A freshly customer-confirmed visit shows in the dashboard's quiet
+    'customer activity' feed; a stale one (8 days ago) doesn't."""
+    from datetime import datetime, timezone
+    db = SessionLocal()
+    c, p, j = _seed(db)
+    c2, p2, stale = _seed(db)
+    # Capture ids before the session detaches these instances.
+    fresh_id, stale_id = j.id, stale.id
+    cids, pids = [c.id, c2.id], [p.id, p2.id]
+    try:
+        db.query(Job).filter(Job.id == fresh_id).update(
+            {"customer_confirmed_at": datetime.now(timezone.utc)})
+        db.query(Job).filter(Job.id == stale_id).update(
+            {"customer_confirmed_at": datetime.now(timezone.utc) - timedelta(days=8)})
+        db.commit()
+        app.dependency_overrides[get_current_user] = lambda: _Admin()
+        app.dependency_overrides[current_org_id] = lambda: 1
+        try:
+            r = client.get("/api/jobs/recent-confirmations")
+            assert r.status_code == 200, r.text
+            ids = [x["job_id"] for x in r.json()["confirmations"]]
+            assert fresh_id in ids        # confirmed just now
+            assert stale_id not in ids    # outside the 7-day window
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(current_org_id, None)
+    finally:
+        db.query(Job).filter(Job.id.in_([fresh_id, stale_id])).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id.in_(pids)).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id.in_(cids)).delete(synchronize_session=False)
+        db.commit(); db.close()

@@ -14,6 +14,7 @@ import { ErrorState } from '../components/ui'
 import { DollarSign, TrendingUp, Clock, FileText } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
 import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
+import { CustomerActivity } from '../components/dashboard/CustomerActivity'
 import { TodayTile } from '../components/dashboard/TodayTile'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
 import { TurnoverCoverageTile, CrewWorkloadTile } from '../components/dashboard/OperationsTiles'
@@ -120,6 +121,9 @@ export default function Dashboard() {
 
         {/* The star: everything that needs the owner, in one list */}
         <NeedsYouNow attention={attention} loading={loading} navigate={navigate} />
+
+        {/* Quiet FYI: customers who just confirmed their visit (no action). */}
+        <CustomerActivity navigate={navigate} />
 
         {/* Today + quotes/leads worklist */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">

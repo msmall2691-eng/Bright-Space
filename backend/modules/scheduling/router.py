@@ -2117,6 +2117,36 @@ def list_reschedule_requests(db: Session = Depends(get_db), org_id: int = Depend
     return {"requests": [_reschedule_request_dict(j) for j in rows]}
 
 
+@router.get("/recent-confirmations", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def list_recent_confirmations(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Visits a customer just confirmed (accepted their scheduled time), for the
+    dashboard's low-priority 'customer activity' feed — these need no action, so
+    they don't belong in 'Needs you now'. Last 7 days, upcoming visits only."""
+    org_id = resolve_org_id(org_id, db)
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = (
+        db.query(Job).options(joinedload(Job.client))
+        .filter(
+            Job.customer_confirmed_at.isnot(None),
+            Job.customer_confirmed_at >= since,
+            Job.status.notin_(["cancelled", "completed"]),
+            or_(Job.org_id == org_id, Job.org_id.is_(None)),
+        )
+        .order_by(Job.customer_confirmed_at.desc())
+        .limit(12)
+        .all()
+    )
+    return {"confirmations": [{
+        "job_id": j.id,
+        "title": j.title,
+        "client_id": j.client_id,
+        "client_name": j.client.name if j.client else None,
+        "scheduled_date": str(j.scheduled_date) if j.scheduled_date else None,
+        "start_time": str(j.start_time) if j.start_time else None,
+        "confirmed_at": j.customer_confirmed_at.isoformat() if j.customer_confirmed_at else None,
+    } for j in rows]}
+
+
 def _get_owned_job(job_id: int, db: Session, org_id: int) -> Job:
     org_id = resolve_org_id(org_id, db)
     job = db.query(Job).options(joinedload(Job.client)).filter(
