@@ -95,7 +95,7 @@ export default function Pipeline() {
     <div className="max-w-[1600px] mx-auto">
       <PageHeader
         title="Pipeline"
-        subtitle={`${visible.length}${visible.length !== opps.length ? ` of ${opps.length}` : ''} ${opps.length === 1 ? 'deal' : 'deals'} across your opportunity board`}
+        subtitle={`${visible.length}${visible.length !== opps.length ? ` of ${opps.length}` : ''} ${opps.length === 1 ? 'deal' : 'deals'}`}
         icon={LayoutGrid}
         iconColor="violet"
         actions={
@@ -124,7 +124,7 @@ export default function Pipeline() {
 
       <div className="px-4 sm:px-8 pb-4 sm:pb-6">
       {error && (
-        <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+        <div className="mb-3 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 rounded-lg px-3 py-2">{error}</div>
       )}
 
       {loading ? (

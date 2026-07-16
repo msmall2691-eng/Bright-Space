@@ -23,13 +23,13 @@ export function IcalFeedRow({ ical, onRemove }) {
   let statusPill
   if (status === 'failed' || status === 'retrying') {
     statusPill = (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={ical.last_sync_error || ''}>
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300" title={ical.last_sync_error || ''}>
         <AlertTriangle className="w-3 h-3" /> Failed {lastAt || ''}
       </span>
     )
   } else if (status === 'ok' || ical.last_synced_at) {
     statusPill = (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
         <CheckCircle className="w-3 h-3" /> Synced {lastAt || ''}
       </span>
     )
@@ -65,7 +65,7 @@ export function IcalFeedRow({ ical, onRemove }) {
         </div>
       </div>
       {status === 'failed' && ical.last_sync_error && (
-        <div className="text-[11px] text-red-700 bg-red-50 rounded p-1.5 mb-1.5 font-mono break-all">
+        <div className="text-[11px] text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded p-1.5 mb-1.5 font-mono break-all">
           {ical.last_sync_error.slice(0, 200)}
         </div>
       )}

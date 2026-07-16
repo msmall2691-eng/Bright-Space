@@ -21,7 +21,7 @@ export default function StatCard({
   return (
     <Tag
       onClick={onClick}
-      className={`text-left p-4 ${
+      className={`text-left p-3 sm:p-3.5 ${
         interactive ? 'hover:bg-bg active:bg-bg-2 transition-colors cursor-pointer' : ''
       } ${className}`}
     >
@@ -31,10 +31,10 @@ export default function StatCard({
           {label}
         </span>
       </div>
-      <div className={`text-xl sm:text-2xl font-bold mt-1.5 tabular-nums ${accent}`}>
+      <div className={`text-lg sm:text-xl font-bold mt-1 tabular-nums ${accent}`}>
         {value}
       </div>
-      {sub && <div className="text-[11px] text-ink-3 mt-1">{sub}</div>}
+      {sub && <div className="text-[11px] text-ink-3 mt-0.5">{sub}</div>}
     </Tag>
   )
 }
