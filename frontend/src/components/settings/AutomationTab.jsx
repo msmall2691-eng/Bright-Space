@@ -19,7 +19,7 @@ export function useAutomationSettings({ toast, active }) {
     notify_customers: true,
     gcal_reminders_mode: 'google_default',
     calendar_source_of_truth: 'brightbase',
-    gcal_live_sync: false,
+    gcal_live_sync: true,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })

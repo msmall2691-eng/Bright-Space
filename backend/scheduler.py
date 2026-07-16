@@ -535,11 +535,12 @@ def gcal_watch_renew_tick() -> dict:
     public https base URL. No-ops when disabled."""
     db = SessionLocal()
     try:
-        if not _db_flag(db, "gcal_live_sync", env_flag("GCAL_WATCH_ENABLED", False)):
+        # Recommended default is ON — real-time sync works out of the box.
+        if not _db_flag(db, "gcal_live_sync", env_flag("GCAL_WATCH_ENABLED", True)):
             return {"skipped": True, "reason": "disabled"}
-        from integrations.gcal_watch import renew_expiring
+        from integrations.gcal_watch import ensure_watches
         from config import app_base_url
-        return renew_expiring(db, app_base_url())
+        return ensure_watches(db, app_base_url())
     except Exception as e:
         log.error(f"[gcal-watch] renew failed: {e}")
         return {"error": str(e)}
@@ -782,6 +783,24 @@ def start_scheduler():
         name="Google Calendar watch renewal",
         replace_existing=True,
     )
+    # Register push channels ONCE at startup (best-effort) so real-time sync is
+    # live immediately after deploy, instead of waiting up to the renewal
+    # interval for the first tick. Gated by the same flag (default ON) and
+    # no-ops cleanly when Google isn't connected or there's no public URL.
+    try:
+        _dbs = SessionLocal()
+        try:
+            if _db_flag(_dbs, "gcal_live_sync", env_flag("GCAL_WATCH_ENABLED", True)):
+                from integrations.google_calendar import is_configured as _gcal_ok
+                if _gcal_ok():
+                    from integrations.gcal_watch import ensure_watches
+                    from config import app_base_url
+                    res = ensure_watches(_dbs, app_base_url())
+                    log.info(f"Google Calendar real-time sync: {res}")
+        finally:
+            _dbs.close()
+    except Exception as e:
+        log.warning(f"[gcal-watch] startup registration skipped: {e}")
 
     _scheduler.start()
     return _scheduler

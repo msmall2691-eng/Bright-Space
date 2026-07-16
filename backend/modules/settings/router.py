@@ -1205,8 +1205,11 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "gcal_reminders_mode": (get_setting(db, "gcal_reminders_mode") or "google_default"),
         "calendar_source_of_truth": (get_setting(db, "calendar_source_of_truth")
                                      or os.getenv("CALENDAR_SOURCE_OF_TRUTH", "brightbase")).strip().lower(),
-        "gcal_live_sync": _coerce_bool(get_setting(db, "gcal_live_sync"),
-                                       os.getenv("GCAL_WATCH_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}),
+        # Recommended default: real-time sync ON (works out of the box when
+        # Google is connected). Explicitly saving it off wins.
+        "gcal_live_sync": _coerce_bool(
+            get_setting(db, "gcal_live_sync"),
+            os.getenv("GCAL_WATCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }
