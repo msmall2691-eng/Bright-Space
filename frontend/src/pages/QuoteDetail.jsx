@@ -15,6 +15,7 @@ import RecordSkeleton from '../components/record/RecordSkeleton'
 import { EmptyState } from '../components/ui'
 import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import SendQuotePanel from '../components/quoting/SendQuotePanel'
+import OriginalRequestCard from '../components/quoting/OriginalRequestCard'
 import { isPlaceholderName } from '../components/quoting/constants'
 
 const STATUS_OPTIONS = [
@@ -342,6 +343,9 @@ export default function QuoteDetail() {
 
           {/* ── Right: related ────────────────────────────────────── */}
           <div className="space-y-4 self-start">
+            {/* The original request behind this quote — expanded so staff can
+                see what the customer asked for while reviewing/sending. */}
+            <OriginalRequestCard intake={quote.intake} defaultOpen className="bg-panel" />
             <LinkedCard icon={TrendingUp} label="Opportunity"
               to={quote.opportunity ? `/opportunities/${quote.opportunity.id}` : null}
               primary={quote.opportunity?.title} secondary={quote.opportunity?.stage} />

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import Client, Job, Quote, Invoice, Opportunity, Activity, Property
+from database.models import Client, Job, Quote, Invoice, Opportunity, Activity, Property, LeadIntake
 from modules.auth.router import get_current_user, current_org_id
 
 
@@ -60,6 +60,41 @@ def _seed(ids):
     out = (c.id, opp.id, q.id, j.id, inv.id)
     db.close()
     return out
+
+
+def test_quote_details_includes_original_request(client):
+    """The quote detail page surfaces the intake it came from so staff can see
+    the original request while reviewing/sending — via the direct intake_id
+    link OR the converted_quote_id back-reference."""
+    api, ids = client
+    c_id, _, q_id, _, _ = _seed(ids)
+    db = SessionLocal()
+    intake = LeadIntake(
+        client_id=c_id, name="Dana Requester", email="dana@example.com",
+        phone="207-555-0140", service_type="residential", bedrooms=3, bathrooms=2,
+        frequency="biweekly", message="Please focus on the kitchen and hardwood floors.",
+        estimate_min=180, estimate_max=220, source="website", org_id=1,
+        converted_quote_id=q_id)
+    db.add(intake); db.commit(); intake_id = intake.id
+    db.close()
+    try:
+        body = api.get(f"/api/quotes/{q_id}/details").json()
+        assert body["intake"] is not None
+        assert body["intake"]["name"] == "Dana Requester"
+        assert body["intake"]["bedrooms"] == 3
+        assert "kitchen" in body["intake"]["message"]
+        assert body["intake"]["estimate_max"] == 220
+    finally:
+        db = SessionLocal()
+        db.query(LeadIntake).filter(LeadIntake.id == intake_id).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_quote_details_intake_null_when_no_request(client):
+    api, ids = client
+    _, _, q_id, _, _ = _seed(ids)
+    body = api.get(f"/api/quotes/{q_id}/details").json()
+    assert body["intake"] is None
 
 
 def test_job_details_aggregates(client):
