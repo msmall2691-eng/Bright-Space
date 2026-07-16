@@ -13,6 +13,7 @@ import GlassCard from '../components/ui/GlassCard'
 import PageHeader from '../components/ui/PageHeader'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 import PropertyPhoto from '../components/PropertyPhoto'
+import AiInsight from '../components/AiInsight'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 
@@ -674,6 +675,8 @@ export default function Requests() {
               </div>
             ) : (
             <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
+              {/* AI-enriched gist of the lead: what they want + the next step. */}
+              <AiInsight type="lead" id={selectedRequest.id} />
               {/* Front-of-house Street View photo of the service address — the
                   same one the customer sees on their quote. Hides itself when
                   photos are off or Google has no imagery. */}

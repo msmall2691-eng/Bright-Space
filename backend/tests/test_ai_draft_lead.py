@@ -94,6 +94,36 @@ def test_quote_from_conversation_404(api):
     assert r.json().get("error")
 
 
+def test_enrich_lead(api):
+    """Without an API key, enrich returns a deterministic {summary, next_action,
+    tags} card so the insight strip is still useful."""
+    db = SessionLocal()
+    intake = LeadIntake(name="Enrich Lead", email="e@example.com",
+                        service_type="residential", requested_service="deep",
+                        frequency="one-time", city="Portland", state="ME",
+                        message="Need a deep clean before move-in.",
+                        square_footage=1800, status="new", priority="high",
+                        source="website", org_id=1)
+    db.add(intake); db.commit(); iid = intake.id
+    db.close()
+    try:
+        r = api.post(f"/api/ai/enrich/lead/{iid}", json={})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("summary")
+        assert body.get("next_action")
+        assert isinstance(body.get("tags"), list)
+    finally:
+        db = SessionLocal()
+        db.query(LeadIntake).filter(LeadIntake.id == iid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_enrich_unknown_type_and_404(api):
+    assert api.post("/api/ai/enrich/widget/1", json={}).json().get("error")
+    assert api.post("/api/ai/enrich/lead/999999", json={}).json().get("error")
+
+
 def test_draft_conversation_reply_fallback(api):
     db = SessionLocal()
     c = Client(name="Convo Client", status="active", org_id=1)

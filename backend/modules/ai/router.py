@@ -314,6 +314,167 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
         return {"answer": friendly_ai_error(e), "error": True}
 
 
+# ── POST /api/ai/enrich/{entity_type}/{entity_id} ───────────────────────────
+# Lightweight, cheap (haiku) "enriched metadata" for a single record: a one-line
+# gist, the single most useful next action, and a few tags. Powers the AiInsight
+# strip that sits at the top of a lead, conversation, quote, or property. Uses
+# the cheapest tier because this is a summarize-what's-here task, not reasoning —
+# and degrades to a deterministic summary when no API key is set.
+
+_ENRICH_TYPES = ("lead", "conversation", "quote", "property")
+
+
+def _fact_line(pairs) -> str:
+    return " · ".join(f"{k}: {v}" for k, v in pairs if v not in (None, "", []))
+
+
+def _gather_enrich_facts(entity_type: str, entity_id: int, db: Session):
+    """Return (facts_dict, human_title, fallback_action) for the record, or
+    (None, None, None) if it doesn't exist."""
+    if entity_type == "lead":
+        from database.models import LeadIntake
+        o = db.query(LeadIntake).filter(LeadIntake.id == entity_id).first()
+        if not o:
+            return None, None, None
+        where = ", ".join(x for x in [o.city, o.state] if x) or o.address
+        size = " ".join(x for x in [
+            f"{o.square_footage:,}sqft" if o.square_footage else None,
+            f"{o.bedrooms}bd" if o.bedrooms else None,
+            f"{o.bathrooms}ba" if o.bathrooms is not None else None,
+        ] if x)
+        facts = {
+            "name": o.name, "service": o.requested_service or o.service_type,
+            "size": size or None, "location": where, "frequency": o.frequency,
+            "condition": o.condition, "pet_hair": o.pet_hair,
+            "estimate": (f"${o.estimate_min:.0f}–${o.estimate_max:.0f}"
+                         if o.estimate_min is not None and o.estimate_max is not None else None),
+            "status": o.status, "priority": o.priority,
+            "their_message": (o.message or "").strip()[:600] or None,
+        }
+        action = {"new": "Send a quote", "reviewed": "Send a quote",
+                  "quoted": "Follow up on the quote"}.get(o.status or "new", "Review this lead")
+        return facts, f"{o.name or 'Lead'} — {o.requested_service or o.service_type or 'cleaning'}", action
+
+    if entity_type == "conversation":
+        from database.models import Conversation, Message
+        o = db.query(Conversation).filter(Conversation.id == entity_id).first()
+        if not o:
+            return None, None, None
+        msgs = (db.query(Message)
+                .filter(Message.conversation_id == o.id, Message.is_internal_note.isnot(True))
+                .order_by(Message.created_at.desc()).limit(8).all())
+        transcript = [{"from": ("customer" if m.direction == "inbound" else "us"),
+                       "text": (m.body or "").strip()[:400]}
+                      for m in reversed(msgs) if (m.body or "").strip()]
+        facts = {"channel": o.channel, "subject": o.subject, "status": o.status,
+                 "recent_messages": transcript}
+        return facts, f"{o.channel or 'Conversation'} thread", "Reply to this thread"
+
+    if entity_type == "quote":
+        o = db.query(Quote).filter(Quote.id == entity_id).first()
+        if not o:
+            return None, None, None
+        items = ", ".join(i.get("name", "") for i in (o.items or []) if i.get("name"))[:300]
+        facts = {
+            "title": o.title, "service": o.service_type, "frequency": o.frequency,
+            "total": f"${o.total:,.2f}" if o.total is not None else None,
+            "line_items": items or None, "status": o.status,
+            "customer_message": (o.customer_message or "").strip()[:300] or None,
+            "requested_changes": (o.requested_changes_message or "").strip()[:300] or None,
+            "declined_reason": (o.declined_reason or "").strip()[:300] or None,
+        }
+        action = {"draft": "Send this quote", "sent": "Follow up on this quote",
+                  "viewed": "Follow up — customer viewed it",
+                  "changes_requested": "Revise and resend",
+                  "accepted": "Convert to a job"}.get(o.status or "draft", "Review this quote")
+        return facts, o.title or f"Quote {o.quote_number or ''}".strip(), action
+
+    if entity_type == "property":
+        o = db.query(Property).filter(Property.id == entity_id).first()
+        if not o:
+            return None, None, None
+        specs = " ".join(x for x in [
+            f"{o.square_footage:,}sqft" if o.square_footage else None,
+            f"{o.bedrooms}bd" if o.bedrooms else None,
+            f"{o.bathrooms}ba" if o.bathrooms is not None else None,
+        ] if x)
+        facts = {
+            "name": o.name, "type": o.property_type, "specs": specs or None,
+            "address": ", ".join(x for x in [o.address, o.city, o.state] if x) or None,
+            "access_notes": (o.access_notes or "").strip()[:300] or None,
+            "parking_notes": (o.parking_notes or "").strip()[:200] or None,
+            "notes": (o.notes or "").strip()[:300] or None,
+            "hours_of_operation": (o.hours_of_operation or "").strip()[:200] or None,
+        }
+        return facts, o.name or "Property", "Review property details"
+
+    return None, None, None
+
+
+def _deterministic_enrichment(entity_type, facts, title, action) -> dict:
+    """A no-LLM summary so the strip is still useful without an API key."""
+    if entity_type == "conversation":
+        msgs = facts.get("recent_messages") or []
+        last = msgs[-1]["text"] if msgs else ""
+        summary = (f"{facts.get('channel', 'Message')} thread"
+                   + (f" · {facts.get('status')}" if facts.get('status') else "")
+                   + (f" — last: “{last[:120]}”" if last else "."))
+    else:
+        bits = [v for k, v in facts.items()
+                if k not in ("their_message", "recent_messages", "customer_message",
+                             "notes", "access_notes", "parking_notes") and v]
+        summary = title + (" — " + " · ".join(str(b) for b in bits[:4]) if bits else "")
+    tags = [str(facts[k]) for k in ("service", "type", "status", "priority", "frequency")
+            if facts.get(k)][:4]
+    return {"summary": summary[:280], "next_action": action, "tags": tags, "ai": False}
+
+
+@router.post("/enrich/{entity_type}/{entity_id}")
+def enrich_entity(entity_type: str, entity_id: int, db: Session = Depends(get_db),
+                  user=Depends(get_current_user)):
+    """AI-enriched metadata for one record: {summary, next_action, tags, ai}.
+    Cheap (haiku) and read-only — nothing is written."""
+    et = (entity_type or "").lower()
+    if et not in _ENRICH_TYPES:
+        return {"error": f"Unknown type '{entity_type}'"}
+    facts, title, action = _gather_enrich_facts(et, entity_id, db)
+    if facts is None:
+        return {"error": "Not found"}
+
+    client = _anthropic_client()
+    if client is None:
+        return _deterministic_enrichment(et, facts, title, action)
+
+    kind = {"lead": "a new sales lead", "conversation": "a customer conversation",
+            "quote": "a price quote", "property": "a cleaning property"}[et]
+    system = (
+        f"You write a tiny 'insight' card for {kind} in a cleaning-business CRM. "
+        "Given the record's fields, respond with ONLY a JSON object: "
+        '{"summary": string, "next_action": string, "tags": string[]}. '
+        "summary: ONE plain sentence (max ~25 words) capturing what this is and "
+        "anything notable — never restate every field. next_action: the single "
+        "most useful thing the owner should do next, as a short imperative (max 6 "
+        "words). tags: 2-4 short lowercase labels (service, status, urgency, etc). "
+        "Be concrete and specific; don't invent facts that aren't in the data."
+    )
+    try:
+        resp = client.messages.create(
+            model=_TIER_MODEL_IDS["haiku"], max_tokens=250, system=system,
+            messages=[{"role": "user", "content": json.dumps(facts, default=str)}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        data = json.loads(_strip_json(text))
+        summary = (data.get("summary") or "").strip()
+        if not summary:
+            return _deterministic_enrichment(et, facts, title, action)
+        tags = [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()][:4]
+        return {"summary": summary, "next_action": (data.get("next_action") or action).strip(),
+                "tags": tags, "ai": True}
+    except Exception:
+        logger.exception("ai enrich failed; using deterministic summary")
+        return _deterministic_enrichment(et, facts, title, action)
+
+
 # ── POST /api/ai/draft-invoice-reminder/{invoice_id} ────────────────────────
 
 def _days_overdue(inv: Invoice) -> Optional[int]:

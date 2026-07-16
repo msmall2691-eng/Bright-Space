@@ -5,6 +5,7 @@ import PropertyPhoto from '../PropertyPhoto'
 import { CustomFieldsForm } from '../CustomFields'
 import QuotePreview from '../QuotePreview'
 import OriginalRequestCard from './OriginalRequestCard'
+import AiInsight from '../AiInsight'
 import { get } from '../../api'
 import { EMPTY_ITEM, isPlaceholderName, serviceOptions, scopeForService } from './constants'
 
@@ -122,6 +123,10 @@ export default function QuoteEditPanel({
       <div className="flex-1 flex overflow-hidden">
         {/* Editor column */}
         <div className={`overflow-y-auto p-4 space-y-3.5 scrollbar-thin ${previewMode ? 'hidden 2xl:block 2xl:w-[460px] 2xl:shrink-0 2xl:border-r 2xl:border-hairline' : 'flex-1'}`}>
+
+          {/* AI-enriched gist of an existing quote: where it stands + next step
+              (only for a saved quote — a brand-new one has nothing to read). */}
+          {selected?.id && <AiInsight type="quote" id={selected.id} />}
 
           {/* The original request this quote answers — shown while writing so
               staff can see exactly what the customer asked for (message, size,
