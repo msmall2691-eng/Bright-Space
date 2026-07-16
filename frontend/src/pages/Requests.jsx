@@ -191,6 +191,15 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
           </div>
         </div>
 
+        {/* Street View thumbnail of the property. Lazy — only fetches when the
+            card scrolls into view (each is a paid Google call) — and collapses
+            when there's no imagery, so cards without a photo look unchanged. */}
+        <PropertyPhoto
+          lazy
+          address={[intake.address, intake.city, intake.state, intake.zip_code].filter(Boolean).join(', ')}
+          className="hidden sm:block w-20 h-14 object-cover rounded-md border border-hairline bg-bg-2 shrink-0"
+        />
+
         {/* Menu Button */}
         <div className="relative">
           <button
