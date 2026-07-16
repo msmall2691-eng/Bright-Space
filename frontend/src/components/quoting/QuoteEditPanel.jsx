@@ -5,7 +5,7 @@ import { CustomFieldsForm } from '../CustomFields'
 import QuotePreview from '../QuotePreview'
 import OriginalRequestCard from './OriginalRequestCard'
 import { get } from '../../api'
-import { SERVICE_TYPES, EMPTY_ITEM, isPlaceholderName } from './constants'
+import { EMPTY_ITEM, isPlaceholderName, serviceOptions, scopeForService } from './constants'
 
 /** Right-side (bottom-sheet on mobile) quote-editor panel.
  *
@@ -28,6 +28,7 @@ export default function QuoteEditPanel({
   setForm,
   clients,
   quoteTemplates,
+  serviceScopes,
   canEdit,
   company,
   saving,
@@ -223,14 +224,26 @@ export default function QuoteEditPanel({
             </select>
           </div>
 
-          {/* Service type */}
+          {/* Service type — options come from Settings → Service Scopes so
+              operator-added services appear here. Switching service swaps in
+              that service's scope UNLESS the operator has edited the scope
+              (i.e. it no longer matches the current service's default). */}
           <div>
             <label className="block text-xs text-ink-3 mb-1.5">Service Type</label>
-            <div className="flex gap-2">
-              {SERVICE_TYPES.map(t => (
-                <button key={t} onClick={() => setForm(f => ({ ...f, service_type: t }))}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors ${form.service_type === t ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
-                  {t === 'str' ? 'STR / Vacation' : t}
+            <div className="flex flex-wrap gap-2">
+              {serviceOptions(serviceScopes).map(opt => (
+                <button key={opt.key}
+                  onClick={() => setForm(f => {
+                    if (f.service_type === opt.key) return f
+                    const prevScope = scopeForService(serviceScopes, f.service_type)
+                    const cur = (f.notes || '').trim()
+                    const notes = (!cur || cur === prevScope.trim())
+                      ? scopeForService(serviceScopes, opt.key)
+                      : f.notes
+                    return { ...f, service_type: opt.key, notes }
+                  })}
+                  className={`flex-1 min-w-[calc(50%-0.25rem)] py-2 px-2 rounded-lg text-xs font-medium transition-colors ${form.service_type === opt.key ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
+                  {opt.label}
                 </button>
               ))}
             </div>

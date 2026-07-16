@@ -1233,3 +1233,184 @@ def update_quote_templates(body: QuoteTemplatesUpdate, db: Session = Depends(get
         db.add(row)
     db.commit()
     return {"templates": body.templates, "saved": True}
+
+
+# ---------- Service Scopes ----------
+# The editable list of services the company offers, with the customer-facing
+# "what's included" scope for each. This drives BOTH the service-type selector
+# and the scope pre-fill when creating a quote. Stored as ONE JSON app-setting
+# (list of {key,label,scope}) so operators can ADD services — the old fixed
+# service_scope_residential/commercial/str keys couldn't represent that.
+#
+# Defaults mirror the scope-of-services shown on maineclean.co so the quote a
+# customer receives matches what the website promised.
+DEFAULT_SERVICE_SCOPES = [
+    {
+        "key": "residential",
+        "label": "Recurring Maintenance Clean",
+        "scope": (
+            "Ongoing upkeep to keep your home consistently clean between visits.\n\n"
+            "Kitchen: countertops and backsplash wiped and sanitized, sink scrubbed, "
+            "exterior of all appliances, stovetop degreased, microwave inside and out, "
+            "cabinet fronts spot-cleaned, floors swept and mopped, trash emptied.\n"
+            "Bathrooms: toilets cleaned and sanitized inside and out, showers/tubs/glass "
+            "scrubbed, sinks and vanities wiped, mirrors and chrome polished, floors washed, "
+            "trash emptied.\n"
+            "Bedrooms and living areas: dust all reachable surfaces, furniture, decor and "
+            "sills, beds made or linens changed, carpets and rugs vacuumed, hard floors swept "
+            "and mopped, mirrors and glass.\n"
+            "Whole home: high-touch points (switches, handles, knobs), baseboards and trim "
+            "dusted as needed, general tidy and reset."
+        ),
+    },
+    {
+        "key": "deep",
+        "label": "Deep Clean",
+        "scope": (
+            "A detailed, top-to-bottom clean covering everything in the Maintenance Clean "
+            "plus the build-up areas routine service doesn't reach. Recommended for a first "
+            "visit.\n\n"
+            "Includes everything in the Maintenance Clean, plus:\n"
+            "- Baseboards, trim, and door frames detailed\n"
+            "- Interior windows, sills, and tracks\n"
+            "- Blinds and window treatments dusted\n"
+            "- Light fixtures and ceiling fans\n"
+            "- Wall spot-cleaning and cobweb removal\n"
+            "- Cabinet fronts and hardware detailed\n"
+            "- Tile and grout detail in kitchen and baths\n"
+            "- Behind and under movable furniture and appliances\n"
+            "- Inside oven, refrigerator, or cabinets (available on request)"
+        ),
+    },
+    {
+        "key": "move_in_out",
+        "label": "Move-In / Move-Out Clean",
+        "scope": (
+            "A complete clean of an empty property, prepared for new occupants or a final "
+            "walkthrough.\n\n"
+            "Includes everything in the Deep Clean, plus:\n"
+            "- Inside all cabinets, drawers, and closets\n"
+            "- Inside oven and refrigerator\n"
+            "- All appliance interiors and exteriors\n"
+            "- Interior windows throughout\n"
+            "- Full baseboard, trim, and door detail in every room\n"
+            "- Doors, handles, and switch plates throughout"
+        ),
+    },
+    {
+        "key": "str",
+        "label": "Short-Term Rental Turnover",
+        "scope": (
+            "A full guest-ready reset between stays, cleaned and staged to listing standard.\n\n"
+            "Reset and clean: strip and remake all beds with fresh linens, full bathroom clean, "
+            "sanitize and restock, kitchen cleaned and dishes done, all floors vacuumed and "
+            "mopped, surfaces dusted and sanitized, trash and recycling removed.\n"
+            "Restock and stage: replenish provided consumables (paper products, soap, coffee, "
+            "amenities), reset furniture and staging to listing photos, final walkthrough for "
+            "guest-ready presentation.\n"
+            "Inspection and reporting: damage and inventory check, photograph and report any "
+            "issues or missing items, flag low or out-of-stock supplies.\n"
+            "Linens and laundry: on-site laundering of sheets and towels, or fresh linen swap "
+            "where provided."
+        ),
+    },
+    {
+        "key": "commercial",
+        "label": "Commercial Cleaning",
+        "scope": (
+            "Recurring cleaning of your business space on a nightly, weekly, or custom "
+            "schedule.\n\n"
+            "- Restroom sanitization and restocking of consumables\n"
+            "- Break room and kitchen detailing\n"
+            "- Workstation dusting and sanitizing\n"
+            "- Hard floor care and maintenance\n"
+            "- Waste and recycling management\n"
+            "- High-touch surfaces and entryways"
+        ),
+    },
+]
+
+# Legacy fixed keys -> new list key, so an operator's earlier edits in
+# Settings → General → Service Descriptions carry over to the new editor.
+_LEGACY_SCOPE_KEYS = {
+    "residential": "service_scope_residential",
+    "commercial": "service_scope_commercial",
+    "str": "service_scope_str",
+}
+
+
+def service_scopes_list(db: Session) -> list:
+    """The saved service scopes, or defaults (with any legacy per-service
+    edits overlaid) when nothing's been saved yet."""
+    row = db.query(AppSetting).filter(AppSetting.key == "service_scopes").first()
+    if row and row.value:
+        try:
+            data = _json.loads(row.value)
+            if isinstance(data, list) and data:
+                return data
+        except Exception as e:
+            logger.warning(f"Bad service_scopes JSON, falling back to defaults: {e}")
+    # First run: seed from defaults, overlaying any legacy service_scope_* the
+    # operator had customized so their old edits aren't lost.
+    seeded = [dict(s) for s in DEFAULT_SERVICE_SCOPES]
+    for s in seeded:
+        legacy_key = _LEGACY_SCOPE_KEYS.get(s["key"])
+        if legacy_key:
+            legacy_val = get_setting(db, legacy_key)
+            if legacy_val and legacy_val.strip():
+                s["scope"] = legacy_val.strip()
+    return seeded
+
+
+@router.get("/service-scopes")
+def get_service_scopes(db: Session = Depends(get_db)):
+    """The editable list of services + their customer-facing scope. Seeds with
+    website-matched defaults (plus any legacy edits) when nothing is saved."""
+    return {"services": service_scopes_list(db)}
+
+
+class ServiceScopeBody(BaseModel):
+    key: str
+    label: str
+    scope: Optional[str] = ""
+
+
+class ServiceScopesUpdate(BaseModel):
+    services: list
+
+
+_SCOPE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+
+
+@router.put("/service-scopes", dependencies=[Depends(require_role("admin", "manager"))])
+def update_service_scopes(body: ServiceScopesUpdate, db: Session = Depends(get_db)):
+    """Overwrite the service scopes list. Caller sends the full array of
+    {key,label,scope}. Keys must be unique, url-safe slugs (they become the
+    quote's service_type)."""
+    if not isinstance(body.services, list) or not body.services:
+        raise HTTPException(400, "At least one service is required")
+    seen = set()
+    cleaned = []
+    for i, s in enumerate(body.services):
+        if not isinstance(s, dict):
+            raise HTTPException(400, f"Service #{i + 1} is malformed")
+        key = (s.get("key") or "").strip().lower()
+        label = (s.get("label") or "").strip()
+        scope = (s.get("scope") or "").strip()
+        if not key or not _SCOPE_KEY_RE.match(key):
+            raise HTTPException(400, f"Service #{i + 1} needs a url-safe key (lowercase letters, numbers, - or _)")
+        if not label:
+            raise HTTPException(400, f'Service "{key}" needs a label')
+        if key in seen:
+            raise HTTPException(400, f'Duplicate service key "{key}"')
+        seen.add(key)
+        cleaned.append({"key": key, "label": label, "scope": scope})
+    payload = _json.dumps(cleaned)
+    row = db.query(AppSetting).filter(AppSetting.key == "service_scopes").first()
+    if row:
+        row.value = payload
+    else:
+        row = AppSetting(key="service_scopes", value=payload)
+        db.add(row)
+    db.commit()
+    return {"services": cleaned, "saved": True}

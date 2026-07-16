@@ -21,9 +21,9 @@ import { useQuotingMutations } from '../hooks/useQuotingMutations'
 import {
   QUOTE_STATUS_COLORS, LEAD_STATUS_COLORS,
   QUOTE_STATUS_OPTIONS, LEAD_STATUS_OPTIONS, QUOTE_NEXT_STEP,
-  SERVICE_TYPES, EMPTY_ITEM, SERVICE_SCOPE,
+  EMPTY_ITEM,
   serviceLabel, freqLabel, titleFromIntake, roundTo5, defaultValidUntil,
-  isPlaceholderName,
+  isPlaceholderName, scopeForService, labelForService,
 } from '../components/quoting/constants'
 
 // Quote templates (and their prices) live ONLY in the backend
@@ -45,6 +45,7 @@ export default function Quoting() {
     quoteTemplates, setQuoteTemplates,
     templatesLoaded,
     company, companyName,
+    serviceScopes,
     archivedQuotes,
     quotesError,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,
@@ -226,7 +227,7 @@ export default function Quoting() {
       const lineDesc = [mid ? 'From website instant quote' : '', details].filter(Boolean).join(' — ')
       // Friendly line name: "Biweekly residential cleaning".
       const freq = freqLabel(intake.frequency)
-      const lineName = [freq, serviceLabel(svcType).replace(/^STR \/ Vacation rental cleaning$/, 'STR / vacation rental clean')]
+      const lineName = [freq, labelForService(serviceScopes, svcType)]
         .filter(Boolean).join(' ')
       // Resolve a client so "Create Quote" is never stuck on an empty client:
       // use the linked client, else match an existing one by email/phone, else
@@ -274,9 +275,10 @@ export default function Quoting() {
           description: lineDesc,
         }],
         tax_rate: 0,
-        // Admin-configured scope (Settings → Service Descriptions) wins; fall
-        // back to the built-in default for the service type.
-        notes: (company[`service_scope_${svcType}`] || '').trim() || SERVICE_SCOPE[svcType] || '',
+        // Customer-facing scope from Settings → Service Scopes for this service
+        // (falls back to the built-in default). Matches the maineclean.co
+        // scope-of-services so the quote reflects what the website promised.
+        notes: scopeForService(serviceScopes, svcType),
         // The lead's website message is operator context — it leaked onto a
         // live public quote page on June 11. It belongs in internal notes.
         internal_notes: intake.message || '',
@@ -766,6 +768,7 @@ export default function Quoting() {
           setForm={setForm}
           clients={clients}
           quoteTemplates={quoteTemplates}
+          serviceScopes={serviceScopes}
           canEdit={canEdit}
           company={company}
           saving={saving}
