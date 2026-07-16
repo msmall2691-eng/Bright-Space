@@ -86,15 +86,15 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="bg-bg">
       {/* Greeting */}
-      <div className="px-4 sm:px-6 pt-6 pb-3 flex items-center gap-3">
-        <span className="bb-icon-chip hidden sm:grid place-items-center w-11 h-11 rounded-xl shrink-0 bg-blue-50 text-blue-600">
+      <div className="px-4 sm:px-6 pt-5 pb-3 flex items-center gap-3">
+        <span className="bb-icon-chip hidden sm:grid place-items-center w-10 h-10 rounded-xl shrink-0 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300">
           <LayoutDashboard className="w-5 h-5" />
         </span>
         <div className="min-w-0">
-        <h1 className="text-2xl sm:text-[28px] font-bold text-ink tracking-tight">{greeting} 👋</h1>
-        <p className="text-sm text-ink-3 mt-1">
+        <h1 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">{greeting} 👋</h1>
+        <p className="text-sm text-ink-3 mt-0.5">
           {longDate}
           {loading ? ' · loading…' : (
             <>
@@ -110,27 +110,27 @@ export default function Dashboard() {
 
       {/* KPI row — headline numbers, dashboard-style */}
       <div className="px-4 sm:px-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <KpiCard icon={DollarSign} chip="bg-emerald-50 text-emerald-600" label="Collected today"
+        <KpiCard icon={DollarSign} chip="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300" label="Collected today"
           value={loading ? '—' : fmtMoney(todayRevenue)}
           sub={loading ? 'Loading…' : (todayRevenue > 0 ? 'paid today' : 'nothing yet today')} />
-        <KpiCard icon={TrendingUp} chip="bg-blue-50 text-blue-600" label="Month to date"
+        <KpiCard icon={TrendingUp} chip="bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300" label="Month to date"
           value={loading ? '—' : fmtMoney(mtdRevenue)} sub={loading ? 'Loading…' : `${paidCount} paid`} />
-        <KpiCard icon={Clock} chip="bg-amber-50 text-amber-600" label="Outstanding"
+        <KpiCard icon={Clock} chip="bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300" label="Outstanding"
           value={loading ? '—' : fmtMoney(outstanding)}
           sub={loading ? 'Loading…' : `${unpaidCount} unpaid${overdueInvoiceCount ? ` · ${overdueInvoiceCount} overdue` : ''}`}
           accent={!loading && overdueInvoiceCount > 0 ? 'text-amber-600' : undefined} />
-        <KpiCard icon={FileText} chip="bg-violet-50 text-violet-600" label="Quote pipeline"
+        <KpiCard icon={FileText} chip="bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300" label="Quote pipeline"
           value={loading ? '—' : fmtMoney(pipeline)} sub={loading ? 'Loading…' : `${summary?.quotes?.sent ?? 0} sent`}
           accent="text-violet-700" />
       </div>
 
       {/* Lead → client funnel — the conversion pipeline at a glance */}
-      <div className="px-4 sm:px-6 pt-4">
+      <div className="px-4 sm:px-6 pt-3">
         <Funnel stages={funnel.stages} convRate={funnel.convRate} activeClients={activeClients} loading={loading} />
       </div>
 
       {/* Tiles grid */}
-      <div className="px-4 sm:px-6 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+      <div className="px-4 sm:px-6 pt-3 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 items-start">
 
         {/* Customer reschedule requests — approve/decline inline. Hides when empty. */}
         <RescheduleRequestsTile navigate={navigate} />

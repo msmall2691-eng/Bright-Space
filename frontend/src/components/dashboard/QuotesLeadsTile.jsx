@@ -1,6 +1,7 @@
 import { ArrowRight, CheckCircle2, FileText } from 'lucide-react'
 import { EmptyState } from '../ui'
 import { Tile, TileLoading } from './primitives'
+import { TONE } from './constants'
 
 /** "Quotes & leads" tile — surfaces every kind of funnel item that needs
  *  the owner to do something next, one row per bucket:
@@ -13,11 +14,11 @@ import { Tile, TileLoading } from './primitives'
  *  each row deep-links to the matching Quoting tab. */
 export function QuotesLeadsTile({ loading, quoteActions, navigate }) {
   const rows = [
-    { n: quoteActions.followUp,   label: 'Need a follow-up nudge',       tone: 'text-amber-700 bg-amber-50 border-amber-200',       go: () => navigate('/billing?view=quotes&tab=follow-ups') },
-    { n: quoteActions.changes,    label: 'Changes requested',            tone: 'text-amber-700 bg-amber-50 border-amber-200',       go: () => navigate('/billing?view=quotes&tab=quotes') },
-    { n: quoteActions.awaiting,   label: 'Awaiting customer response',   tone: 'text-blue-700 bg-blue-50 border-blue-200',          go: () => navigate('/billing?view=quotes&tab=quotes') },
-    { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', go: () => navigate('/billing?view=quotes&tab=quotes') },
-    { n: quoteActions.newLeads,   label: 'New leads to quote',           tone: 'text-purple-700 bg-purple-50 border-purple-200',    go: () => navigate('/billing?view=quotes&tab=leads') },
+    { n: quoteActions.followUp,   label: 'Need a follow-up nudge',       tone: TONE.amber,   go: () => navigate('/billing?view=quotes&tab=follow-ups') },
+    { n: quoteActions.changes,    label: 'Changes requested',            tone: TONE.amber,   go: () => navigate('/billing?view=quotes&tab=quotes') },
+    { n: quoteActions.awaiting,   label: 'Awaiting customer response',   tone: TONE.blue,    go: () => navigate('/billing?view=quotes&tab=quotes') },
+    { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: TONE.emerald, go: () => navigate('/billing?view=quotes&tab=quotes') },
+    { n: quoteActions.newLeads,   label: 'New leads to quote',           tone: TONE.purple,  go: () => navigate('/billing?view=quotes&tab=leads') },
   ]
   const anyActionable = rows.some(r => r.n > 0)
   return (
