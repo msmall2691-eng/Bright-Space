@@ -1615,8 +1615,13 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
                     cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
                 )
             else:
-                job.status = "scheduled" if job.status == "unscheduled" else job.status
-                job.scheduled_date = new_date
+                # Route one-off moves through update_job so the Google Calendar
+                # event moves too (a bare scheduled_date write left the event on
+                # the old day permanently — reconcile can't fix a job that
+                # already has an event id) and the confirmed/reminder flags reset.
+                update_job(job.id, JobUpdate(
+                    scheduled_date=new_date.isoformat(), allow_conflicts=True),
+                    db=db, org_id=oid)
             shifted.append(job_id)
         except HTTPException as e:
             skipped.append({"job_id": job_id, "reason": e.detail})
@@ -1868,6 +1873,11 @@ def _slot_busy(db: Session, job: Job, d, start: str, end: str) -> bool:
     return False
 
 
+class _GcalSyncSkipped(Exception):
+    """Internal signal: a Google Calendar sync did NOT apply, so the caller
+    should skip recording a success timeline entry. Failure is already logged."""
+
+
 def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope: str) -> Job:
     """Actually move the visit. Returns the resulting Job.
 
@@ -1883,6 +1893,12 @@ def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope
             _reschedule_occurrence, _get_schedule_or_404, split_schedule, ScheduleSplit)
         sched = _get_schedule_or_404(db, job.recurring_schedule_id, org_id)
         if scope == "future":
+            # split_schedule soft-cancels THIS job and regenerates a fresh
+            # series with no token — so grab the customer's link first and move
+            # it onto the new visit, or their confirm/manage link would resolve
+            # to the cancelled original ("this visit was cancelled").
+            token = job.public_token
+            job.public_token = None
             split_date = min(job.scheduled_date, d) if job.scheduled_date else d
             wd = d.weekday()  # 0=Mon.. matches backend days_of_week
             split_schedule(job.recurring_schedule_id, ScheduleSplit(
@@ -1895,6 +1911,9 @@ def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope
                      .filter(Job.scheduled_date == d, Job.property_id == job.property_id,
                              Job.status != "cancelled")
                      .order_by(Job.id.desc()).first())
+            if moved is not None and token and not moved.public_token:
+                moved.public_token = token
+                moved.customer_confirmed_at = None
             return moved or job
         # scope 'this' — move just this occurrence (swaps the Job row).
         token = job.public_token
@@ -2577,6 +2596,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         raise HTTPException(status_code=404, detail="Job not found")
     prev_status = job.status
     prev_job_type = job.job_type or "residential"
+    prev_scheduled_date = job.scheduled_date
+    prev_start_time = job.start_time
     # Signature of the shift-relevant fields BEFORE the edit. The edit modal
     # sends every field, so we compare actual values (not "was it in the body")
     # to decide whether Connecteam shifts need re-syncing.
@@ -2682,6 +2703,22 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
         updates["status"] = "scheduled"
     for field, value in updates.items():
         setattr(job, field, value)
+
+    # A move to a new day/time invalidates two things the customer's OLD time
+    # carried: their confirmation (they agreed to a time that no longer exists)
+    # and the "reminder already sent" flag (the new date deserves its own
+    # reminder). Reset both so a rescheduled visit isn't shown as "confirmed"
+    # for a time the customer never saw, and still gets a 24h reminder. Only
+    # when the visit stays active — a cancel isn't a reschedule.
+    moved = (job.status != "cancelled" and (
+        ("scheduled_date" in updates and job.scheduled_date != prev_scheduled_date)
+        or ("start_time" in updates and job.start_time != prev_start_time)))
+    if moved:
+        if job.customer_confirmed_at is not None:
+            job.customer_confirmed_at = None
+        if getattr(job, "sms_reminder_sent", False):
+            job.sms_reminder_sent = False
+
     db.commit()
     db.refresh(job)
     # Log status transitions to the unified timeline
@@ -2825,9 +2862,23 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                     logger.warning(f"GCal move skipped for job {job.id}: delete on "
                                    f"'{prev_job_type}' calendar did not apply; will retry")
             else:
-                update_event(job.gcal_event_id, job_dict, client_dict,
-                             send_invite=_inv, reminders=_gcal_reminders, send_updates=_upd_su,
-                             owner_account_id=getattr(job, "gcal_account_id", None))
+                # update_event returns False (doesn't raise) when Google rejects
+                # or is unavailable. Capture it so a FAILED sync isn't recorded as
+                # a successful "updated" on the timeline (which made DB↔calendar
+                # divergence invisible — the DB had the new time, Google the old,
+                # and the log claimed success).
+                update_ok = update_event(
+                    job.gcal_event_id, job_dict, client_dict,
+                    send_invite=_inv, reminders=_gcal_reminders, send_updates=_upd_su,
+                    owner_account_id=getattr(job, "gcal_account_id", None))
+                if not update_ok:
+                    logger.warning(f"GCal update did not apply for job {job.id}; DB and "
+                                   f"calendar may differ until the next edit")
+                    _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                     action="update", status="failed", external_id=job.gcal_event_id,
+                                     detail="update_event returned False", commit=False)
+                    db.commit()
+                    raise _GcalSyncSkipped()
             # Record the reschedule/edit on the client timeline. Create and
             # cancel were already logged; an in-place move/edit used to be silent,
             # so "why did this job move?" had no answer on the profile.
@@ -2839,6 +2890,8 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                     scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
                 )
                 db.commit()
+        except _GcalSyncSkipped:
+            pass  # already logged the failure; skip the success timeline entry
         except Exception as e:
             logger.warning(f"GCal update failed for job {job.id}: {e}")
 
@@ -2937,16 +2990,31 @@ def delete_job(job_id: int, db: Session = Depends(get_db), org_id: int = Depends
         client_id=job.client_id, job_id=job.id,
         title=job.title, gcal_event_id=job.gcal_event_id,
     )
-    # Remove from Google Calendar if event exists
+    # Remove from Google Calendar if event exists. The job row is hard-deleted
+    # below regardless, so if the delete doesn't apply the calendar event is
+    # ORPHANED (no id left to retry from). Capture the outcome and log a failure
+    # to the integration log so an orphan is at least visible/auditable rather
+    # than silently stranded on the calendar.
     if job.gcal_event_id:
+        old_event_id = job.gcal_event_id
         try:
             from integrations.google_calendar import delete_event
             from modules.settings.router import customer_notify_enabled
-            delete_event(job.gcal_event_id, job.job_type or "residential",
-                         owner_account_id=getattr(job, "gcal_account_id", None),
-                         send_updates=("all" if customer_notify_enabled(db) else "none"))
+            deleted_ok = delete_event(job.gcal_event_id, job.job_type or "residential",
+                                      owner_account_id=getattr(job, "gcal_account_id", None),
+                                      send_updates=("all" if customer_notify_enabled(db) else "none"))
+            if not deleted_ok:
+                logger.warning(f"GCal delete did not apply for deleted job {job.id}; "
+                               f"event {old_event_id} may be orphaned on the calendar")
+                _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                                 action="delete", status="failed", external_id=old_event_id,
+                                 detail="delete_event returned False on hard-delete (possible orphan)",
+                                 commit=False)
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
+            _log_integration(db, entity_type="job", entity_id=job.id, provider="gcal",
+                             action="delete", status="failed", external_id=old_event_id,
+                             detail=str(e), commit=False)
     # Remove any Connecteam shifts so deleting a job doesn't leave cleaners with
     # orphaned shifts on their schedule.
     if job.connecteam_shift_ids:

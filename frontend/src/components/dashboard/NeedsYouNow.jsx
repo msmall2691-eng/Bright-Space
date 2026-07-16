@@ -25,7 +25,19 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
   const loadReqs = useCallback(() => {
     get('/api/jobs/reschedule-requests').then(d => setReqs(d?.requests || [])).catch(() => setReqs([]))
   }, [])
-  useEffect(() => { loadReqs() }, [loadReqs])
+  // Poll so a customer's busy-slot reschedule request appears here without a
+  // manual reload — this is a time-sensitive approval queue. Pause while the
+  // tab is hidden to avoid pointless background traffic.
+  useEffect(() => {
+    loadReqs()
+    let timer = null
+    const start = () => { if (!timer) timer = setInterval(loadReqs, 60000) }
+    const stop = () => { if (timer) { clearInterval(timer); timer = null } }
+    const onVisibility = () => (document.hidden ? stop() : (loadReqs(), start()))
+    start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [loadReqs])
 
   const act = async (jobId, action) => {
     setBusyId(jobId)
