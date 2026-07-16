@@ -215,7 +215,18 @@ export default function Quoting() {
       const mid = (intake.estimate_min != null && intake.estimate_max != null)
         ? roundTo5((intake.estimate_min + intake.estimate_max) / 2)
         : roundTo5(intake.estimate_max ?? intake.estimate_min ?? 0)
-      const svcType = intake.service_type || 'residential'
+      // Prefer the service the customer actually picked (deep / move-in-out)
+      // over the canonical bucket ("residential"), so the quote starts on the
+      // right service + scope. Maps the website's raw keys to our scope keys.
+      const REQ_TO_SCOPE = {
+        standard: 'residential', residential: 'residential',
+        deep: 'deep', 'deep-clean': 'deep',
+        'move-in-out': 'move_in_out', 'move-in': 'move_in_out', 'move-out': 'move_in_out',
+        'vacation-rental': 'str', str: 'str', airbnb: 'str',
+        commercial: 'commercial',
+      }
+      const svcType = REQ_TO_SCOPE[(intake.requested_service || '').toLowerCase()]
+        || intake.service_type || 'residential'
       // Surface the customer's structured details on the line item so the
       // operator confirms against real data instead of re-deriving it.
       const details = [

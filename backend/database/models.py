@@ -641,11 +641,22 @@ class LeadIntake(Base):
     state = Column(String, default="ME")
     zip_code = Column(String)
     service_type = Column(String, default="residential")  # residential/commercial/str
+    # The service the customer actually chose on maineclean.co (e.g. "deep",
+    # "move-in-out") BEFORE it's bucketed into the canonical service_type above.
+    # A deep clean is priced as residential + a multiplier, so without this the
+    # request shows "Residential" and the deep-driven estimate looks wrong.
+    requested_service = Column(String, nullable=True)
     bedrooms = Column(Integer, nullable=True)
     # Float so half-baths (2½) survive — see the Property.bathrooms note.
     bathrooms = Column(Float, nullable=True)
     square_footage = Column(Integer, nullable=True)
     guests = Column(Integer, nullable=True)
+    # Home condition + pet hair the customer reported. These are pricing inputs
+    # (they add labor on the same engine the website uses), so they were driving
+    # the estimate but weren't stored — the request showed a number with no
+    # explanation. Persist them so the operator sees the whole request.
+    condition = Column(String, nullable=True)   # maintenance | moderate | heavy
+    pet_hair = Column(String, nullable=True)    # none | some | heavy
     frequency = Column(String, nullable=True)
     requested_date = Column(String, nullable=True)
     check_in = Column(String, nullable=True)
