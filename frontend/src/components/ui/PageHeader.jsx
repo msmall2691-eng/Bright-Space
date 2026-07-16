@@ -27,12 +27,12 @@ export default function PageHeader({
   children,
 }) {
   return (
-    <div className={`px-4 sm:px-8 pt-6 sm:pt-7 pb-5 ${className}`}>
+    <div className={`px-4 sm:px-8 pt-4 sm:pt-5 pb-3 ${className}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           {Icon && (
-            <span className={`bb-icon-chip grid place-items-center w-10 h-10 rounded-xl shrink-0 ${iconChipClass(iconColor)}`}>
-              <Icon className="w-5 h-5" />
+            <span className={`bb-icon-chip grid place-items-center w-9 h-9 rounded-xl shrink-0 ${iconChipClass(iconColor)}`}>
+              <Icon className="w-[18px] h-[18px]" />
             </span>
           )}
           <div className="min-w-0">
@@ -48,7 +48,7 @@ export default function PageHeader({
           <div className="flex items-center gap-2 shrink-0">{actions}</div>
         )}
       </div>
-      {children && <div className="mt-4">{children}</div>}
+      {children && <div className="mt-3">{children}</div>}
     </div>
   )
 }

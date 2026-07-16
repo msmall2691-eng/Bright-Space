@@ -81,7 +81,7 @@ export function CrewWorkloadTile({ loading, crew, rosterUnavailable, navigate })
           })}
           {crew.unassigned > 0 && (
             <button onClick={() => navigate('/schedule')}
-              className="w-full flex items-center justify-between gap-2 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-800 hover:opacity-90 transition-opacity mt-1">
+              className="w-full flex items-center justify-between gap-2 border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 rounded-lg px-3 py-2 text-sm text-amber-800 dark:text-amber-300 hover:opacity-90 transition-opacity mt-1">
               <span>Jobs with no crew assigned</span>
               <span className="font-bold flex items-center gap-1">{crew.unassigned} <ArrowRight className="w-3.5 h-3.5" /></span>
             </button>

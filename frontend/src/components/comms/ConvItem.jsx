@@ -28,7 +28,7 @@ export function ConvItem({ conv, active, onClick }) {
         {/* Avatar with channel chip in bottom-right corner */}
         <div className="relative shrink-0">
           <Avatar name={conv.client?.name || conv.external_contact} size="md" />
-          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${channel.bg} ring-2 ring-white flex items-center justify-center`}>
+          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${channel.bg} ring-2 ring-panel flex items-center justify-center`}>
             <ChannelIcon className={`w-2.5 h-2.5 ${channel.text}`} />
           </div>
         </div>

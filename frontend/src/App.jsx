@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import BottomNav from './components/BottomNav'
 import AICommandBar from './components/AICommandBar'
+import PageAssistant from './components/PageAssistant'
 import GlobalSearch from './components/GlobalSearch'
 import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
@@ -251,6 +252,7 @@ export default function App() {
       </div>
       <BottomNav />
       <AICommandBar />
+      <PageAssistant />
       <GlobalSearch />
       {/* GlobalToasts is mounted once at the app root (main.jsx) so it covers
           every route, including /login and the public pages. */}

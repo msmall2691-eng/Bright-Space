@@ -23,17 +23,17 @@ export const SLA_CONFIG = {
 }
 
 export const CHANNEL_CONFIG = {
-  sms:      { icon: Phone,          label: 'SMS',      bg: 'bg-emerald-50',  text: 'text-emerald-700', ring: 'ring-emerald-200' },
-  email:    { icon: Mail,           label: 'Email',    bg: 'bg-blue-50',     text: 'text-blue-700',    ring: 'ring-blue-200' },
-  chat:     { icon: MessageSquare,  label: 'Chat',     bg: 'bg-violet-50',   text: 'text-violet-700',  ring: 'ring-violet-200' },
-  whatsapp: { icon: MessageSquare,  label: 'WhatsApp', bg: 'bg-green-50',    text: 'text-green-700',   ring: 'ring-green-200' },
+  sms:      { icon: Phone,          label: 'SMS',      bg: 'bg-emerald-50 dark:bg-emerald-500/15',  text: 'text-emerald-700 dark:text-emerald-300', ring: 'ring-emerald-200 dark:ring-emerald-500/30' },
+  email:    { icon: Mail,           label: 'Email',    bg: 'bg-blue-50 dark:bg-blue-500/15',     text: 'text-blue-700 dark:text-blue-300',    ring: 'ring-blue-200 dark:ring-blue-500/30' },
+  chat:     { icon: MessageSquare,  label: 'Chat',     bg: 'bg-violet-50 dark:bg-violet-500/15',   text: 'text-violet-700 dark:text-violet-300',  ring: 'ring-violet-200 dark:ring-violet-500/30' },
+  whatsapp: { icon: MessageSquare,  label: 'WhatsApp', bg: 'bg-green-50 dark:bg-green-500/15',    text: 'text-green-700 dark:text-green-300',   ring: 'ring-green-200 dark:ring-green-500/30' },
 }
 
 export const PRIORITY_COLORS = {
   low:    { active: 'bg-bg-2 text-ink-2 ring-hairline-2', dot: 'bg-bg-2' },
-  normal: { active: 'bg-blue-100 text-blue-700 ring-blue-300', dot: 'bg-blue-500' },
-  high:   { active: 'bg-amber-100 text-amber-700 ring-amber-300', dot: 'bg-amber-500' },
-  urgent: { active: 'bg-red-100 text-red-700 ring-red-300', dot: 'bg-red-500' },
+  normal: { active: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 ring-blue-300 dark:ring-blue-500/30', dot: 'bg-blue-500' },
+  high:   { active: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 ring-amber-300 dark:ring-amber-500/30', dot: 'bg-amber-500' },
+  urgent: { active: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 ring-red-300 dark:ring-red-500/30', dot: 'bg-red-500' },
 }
 
 export const TEAM_ASSIGNEES = ['Megan', 'Unassigned']
