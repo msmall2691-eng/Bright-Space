@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
@@ -333,6 +333,18 @@ export default function Requests() {
   const [newRequestForm, setNewRequestForm] = useState({
     name: '', phone: '', email: '', address: '', service_type: 'residential', message: '',
   })
+  // ?new=1 (page assistant "Log a lead" quick action) opens the new-request
+  // modal, then strips the flag so a refresh doesn't reopen it.
+  const [reqParams, setReqParams] = useSearchParams()
+  useEffect(() => {
+    if (reqParams.get('new')) {
+      setShowNewRequestModal(true)
+      const next = new URLSearchParams(reqParams)
+      next.delete('new')
+      setReqParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reqParams])
 
   // Requests is real service leads only — website booking-form submissions and
   // quote requests. Raw email/SMS conversations (vendor pitches, "thanks!"

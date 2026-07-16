@@ -19,7 +19,7 @@
  *   • Mobile-responsive layout
  */
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
   CheckCircle2, AlertTriangle,
@@ -45,6 +45,7 @@ import { useCommsFilters } from '../hooks/useCommsFilters'
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function Comms() {
+  const navigate = useNavigate()
   // ──────── Filter state ────────
   // Phase 8 IA: 3 folders + additive chip filters. Old `filter` state name
   // kept for minimal diff; values renamed. State stays inline (small) so the
@@ -130,6 +131,27 @@ export default function Comms() {
       } else { setFlash({ ok: false, msg: 'Could not draft a reply' }) }
     } catch { setFlash({ ok: false, msg: 'Could not draft a reply' }) }
     setDraftingAI(false)
+    setTimeout(() => setFlash(null), 3000)
+  }
+
+  // Turn this conversation into a quote: the AI reads the thread, extracts the
+  // service/size/location the customer described, prices it with the same
+  // engine the website uses, and we hand that off to the quote form pre-filled.
+  const [draftingQuote, setDraftingQuote] = useState(false)
+  const draftQuote = async () => {
+    if (!detail?.id || draftingQuote) return
+    setDraftingQuote(true)
+    try {
+      const intake = await post(`/api/ai/quote-from-conversation/${detail.id}`, {})
+      if (intake?.error) {
+        setFlash({ ok: false, msg: intake.error })
+      } else {
+        navigate('/billing?view=quotes', { state: { openNewFromIntake: intake } })
+      }
+    } catch (e) {
+      setFlash({ ok: false, msg: 'Could not draft a quote' })
+    }
+    setDraftingQuote(false)
     setTimeout(() => setFlash(null), 3000)
   }
 
@@ -274,6 +296,8 @@ export default function Comms() {
           onPriority={setPriority}
           onStatus={setStatus}
           onClose={() => setShowContactPanel(false)}
+          onDraftQuote={draftQuote}
+          draftingQuote={draftingQuote}
         />
       )}
 

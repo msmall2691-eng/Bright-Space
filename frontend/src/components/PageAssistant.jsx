@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { X, Send, Loader2, Sparkles, ArrowUpRight, ChevronRight } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, ArrowUpRight, ChevronRight, Zap } from 'lucide-react'
 import { get, post } from '../api'
 import AgentAvatar from './workspace/AgentAvatar'
 import MarkdownContent from './workspace/MarkdownContent'
@@ -42,6 +42,15 @@ const SUGGESTIONS = {
   scout: ['Which leads should I quote next?', 'Any duplicate clients to merge?', 'What quotes are going stale?'],
   mia:   ['What needs dispatching today?', 'Any unassigned jobs this week?', 'Who replied and needs a response?'],
   nova:  ['What needs my attention today?', 'How is the business doing this week?'],
+}
+
+// One-tap actions per agent. `to` navigates (create pages auto-open their modal
+// on ?new=1); `run` calls an endpoint and reports back.
+const ACTIONS = {
+  finn:  [{ label: 'Draft overdue reminders', run: 'overdue' }, { label: 'New invoice', to: '/billing?view=invoices&new=1' }],
+  scout: [{ label: 'New quote', to: '/billing?view=quotes&new=1' }, { label: 'Log a lead', to: '/requests?new=1' }],
+  mia:   [{ label: 'New job', to: '/schedule?new=1' }, { label: 'New client', to: '/clients?new=1' }],
+  nova:  [{ label: 'New quote', to: '/billing?view=quotes&new=1' }, { label: 'New client', to: '/clients?new=1' }],
 }
 
 export default function PageAssistant() {
@@ -113,7 +122,25 @@ export default function PageAssistant() {
     setAsking(false)
   }
 
+  const [actionMsg, setActionMsg] = useState(null)
+  const runAction = async (a) => {
+    if (a.to) { setOpen(false); navigate(a.to); return }
+    if (a.run === 'overdue') {
+      setActionMsg('working')
+      try {
+        const res = await get('/api/ai/overdue-reminders')
+        const n = res?.total || (res?.reminders || []).length || 0
+        setActionMsg(n > 0
+          ? { text: `Drafted ${n} reminder${n > 1 ? 's' : ''} — review & send in Invoicing.`, to: '/billing?view=invoices' }
+          : { text: 'No overdue invoices right now. ✨' })
+      } catch {
+        setActionMsg({ text: 'Could not draft reminders right now.' })
+      }
+    }
+  }
+
   const suggestions = SUGGESTIONS[agentId] || SUGGESTIONS.nova
+  const actions = ACTIONS[agentId] || ACTIONS.nova
 
   // Collapsed pill — labels the section's agent. Bottom-right on desktop; sits
   // above the mobile bottom-nav on phones.
@@ -192,7 +219,32 @@ export default function PageAssistant() {
           </div>
         )}
 
-        {/* Suggested actions — one tap asks the agent about this section */}
+        {/* Quick actions — real work: create records or run a task */}
+        {!answer && !asking && (
+          <div>
+            <p className="text-[10px] font-bold text-ink-3 uppercase tracking-wider px-1 mb-1.5">Quick actions</p>
+            <div className="flex flex-wrap gap-1.5">
+              {actions.map((a, i) => (
+                <button key={i} onClick={() => runAction(a)}
+                  className="inline-flex items-center gap-1 text-[12px] font-medium px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-500/25 transition-colors">
+                  <Zap className="w-3 h-3" /> {a.label}
+                </button>
+              ))}
+            </div>
+            {actionMsg && (
+              <div className="mt-1.5 text-[12px] text-ink-2 flex items-center gap-2">
+                {actionMsg === 'working'
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Working…</>
+                  : <>
+                      <span>{actionMsg.text}</span>
+                      {actionMsg.to && <button onClick={() => { setOpen(false); navigate(actionMsg.to) }} className="font-semibold text-blue-600 hover:text-blue-500">Open →</button>}
+                    </>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Suggested prompts — one tap asks the agent about this section */}
         {!answer && !asking && (
           <div>
             <p className="text-[10px] font-bold text-ink-3 uppercase tracking-wider px-1 mb-1.5">Ask {agent.name}</p>

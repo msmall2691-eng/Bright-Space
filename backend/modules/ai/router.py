@@ -286,7 +286,22 @@ def quick_query(body: QuickQuery, db: Session = Depends(get_db),
         "owner's question concisely and directly (2-4 sentences, or a short "
         "list). Use the available tools to look up live data before answering — "
         "never invent numbers. If a question can't be answered from the data, "
-        "say so briefly."
+        "say so briefly.\n\n"
+        "IMPORTANT — know what BrightBase can do, and point the owner to the "
+        "right feature instead of saying it can't be done:\n"
+        "- Email & SMS: the Comms inbox sends both. In any conversation the "
+        "\"Draft with AI\" button drafts a reply; the contact panel's \"Draft a "
+        "quote from this\" button turns a lead's message into a priced quote.\n"
+        "- Quotes: built on the Billing → Quotes tab. A lead's request can be "
+        "turned into a quote from Requests (\"Create Quote\") or from a Comms "
+        "conversation. Quotes are emailed to the customer to accept online.\n"
+        "- Invoices & payment reminders: Billing → Invoices; AI drafts reminders "
+        "for overdue invoices.\n"
+        "- Scheduling: the Schedule page (jobs, Google Calendar sync) and "
+        "Recurring page (repeating visits). Customers can self-reschedule.\n"
+        "So never tell the owner BrightBase lacks email, comms, or quoting — it "
+        "has all three. If they want to do one of these, tell them exactly where "
+        "and which button to use."
     )
     ctx = f"[Current page: {body.page_context}]\n\n" if body.page_context else ""
     try:
@@ -465,8 +480,13 @@ def draft_conversation_reply(conversation_id: int, body: DraftLeadRequest = Draf
     system = (
         f"You draft the next reply from {company}, a cleaning business, in an "
         f"ongoing {channel} conversation with a customer. {shape} Address their "
-        "most recent message, be concise, warm, and human, and move things "
-        "forward with a clear next step. Respond with ONLY a JSON object: "
+        "most recent message SPECIFICALLY — name the service, place, size, and "
+        "dates they mentioned so it reads as a real human reply, not a template. "
+        "Be concise, warm, and human, and end with ONE clear next step. If they "
+        "asked for a quote or pricing, tell them you'll put together a quote (and "
+        "confirm any missing detail you need); if they gave possible dates, "
+        "acknowledge them. Never say you can't help with quotes or scheduling — "
+        "you can. Don't invent a price. Respond with ONLY a JSON object: "
         "{\"subject\": string, \"message\": string}."
     )
     try:
@@ -491,6 +511,116 @@ def _fallback_conversation_reply(name, channel: str, company: str) -> dict:
             "message": f"Hi {name},\n\nThanks for your message — we're on it and will "
                        f"follow up shortly. Let us know if there's anything else in the "
                        f"meantime.\n\nWarmly,\n{company}"}
+
+
+# ── POST /api/ai/quote-from-conversation/{conversation_id} ──────────────────
+# Turn an inbound lead conversation (a customer emailing/texting "can I get a
+# quote for…") into a pre-filled quote. The AI reads the transcript, pulls out
+# the structured facts a quote needs (service, size, location, frequency), and
+# we price it with the SAME instant-quote engine the website uses. Returns an
+# intake-SHAPED object so the frontend reuses its existing openQuoteForm(intake)
+# path — nothing is saved; the operator reviews and edits the quote.
+
+# Map the model's free-text service guess onto the website's raw service keys
+# (which the quote form already knows how to turn into a scope + line item).
+_SVC_ALIASES = {
+    "standard": "standard", "regular": "standard", "residential": "standard",
+    "recurring": "standard", "maintenance": "standard",
+    "deep": "deep", "deep clean": "deep", "deep-clean": "deep",
+    "move": "move-in-out", "move in": "move-in-out", "move out": "move-in-out",
+    "move-in": "move-in-out", "move-out": "move-in-out", "move-in-out": "move-in-out",
+    "str": "str", "airbnb": "str", "vacation rental": "str", "vacation-rental": "str",
+    "turnover": "str", "rental": "str",
+    "commercial": "commercial", "office": "commercial",
+}
+
+
+def _conversation_transcript(db, conv, limit: int = 12):
+    from database.models import Message
+    msgs = (db.query(Message)
+            .filter(Message.conversation_id == conv.id, Message.is_internal_note.isnot(True))
+            .order_by(Message.created_at.desc()).limit(limit).all())
+    msgs = list(reversed(msgs))
+    return [{"from": ("customer" if m.direction == "inbound" else "us"),
+             "text": (m.body or "").strip()} for m in msgs if (m.body or "").strip()]
+
+
+@router.post("/quote-from-conversation/{conversation_id}")
+def quote_from_conversation(conversation_id: int, db: Session = Depends(get_db),
+                            user=Depends(get_current_user)):
+    """Read a lead conversation and return an intake-shaped object the quote
+    form can open pre-filled: {name,email,phone,requested_service,service_type,
+    square_footage,bedrooms,bathrooms,frequency,city,state,address,message,
+    estimate_min,estimate_max}. Prices with the instant-quote engine. Nothing
+    is persisted."""
+    from database.models import Conversation
+    from modules.booking.pricing import estimate_price
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        return {"error": "Conversation not found"}
+    client = db.query(Client).filter(Client.id == conv.client_id).first() if conv.client_id else None
+    contact_name = (client.name if client else None) or conv.external_contact or ""
+    contact_email = (client.email if client else None) or (conv.external_contact if "@" in (conv.external_contact or "") else None)
+    contact_phone = (client.phone if client else None)
+
+    transcript = _conversation_transcript(db, conv)
+    # Extracted facts default to "unknown" — the operator confirms on the form.
+    facts = {}
+    client_ai = _anthropic_client()
+    if client_ai is not None and transcript:
+        system = (
+            "You extract the details needed to price a house-cleaning quote from a "
+            "customer conversation. Read the transcript and return ONLY a JSON object "
+            "with these keys (use null when the customer didn't say): "
+            '{"service": "standard"|"deep"|"move-in-out"|"str"|"commercial"|null, '
+            '"square_footage": integer|null, "bedrooms": integer|null, '
+            '"bathrooms": number|null, "frequency": "one-time"|"weekly"|"biweekly"|"monthly"|null, '
+            '"condition": "maintenance"|"moderate"|"heavy"|null, '
+            '"pet_hair": "none"|"some"|"heavy"|null, '
+            '"city": string|null, "state": string|null, "address": string|null, '
+            '"summary": string}. '
+            "square_footage: if they give a range like \"350-400 sqft\", use the midpoint. "
+            "service: a move-in/move-out or pre-move sanitize is \"move-in-out\"; a "
+            "one-off thorough clean is \"deep\"; an Airbnb/short-term rental turnover is "
+            '"str". summary: one short sentence describing what they want, for the quote notes.'
+        )
+        try:
+            text = _run_tool_loop(client_ai, system, json.dumps(transcript, default=str),
+                                  max_tokens=400, max_iters=1)
+            facts = json.loads(_strip_json(text)) or {}
+        except Exception:
+            logger.exception("quote extraction failed; returning contact-only draft")
+            facts = {}
+
+    raw_service = (facts.get("service") or "").lower().strip()
+    requested_service = _SVC_ALIASES.get(raw_service, raw_service or "standard")
+    sqft = facts.get("square_footage")
+    beds = facts.get("bedrooms")
+    baths = facts.get("bathrooms")
+    freq = (facts.get("frequency") or "one-time")
+
+    est = estimate_price(
+        service_type=requested_service,
+        bedrooms=beds, bathrooms=baths, square_footage=sqft,
+        frequency=freq, condition=facts.get("condition"), pet_hair=facts.get("pet_hair"),
+        message=facts.get("summary"),
+    )
+    return {
+        "id": conv.id,  # openQuoteForm keys its effect off intake.id
+        "from_conversation_id": conv.id,
+        "name": contact_name, "email": contact_email, "phone": contact_phone,
+        "client_id": conv.client_id,
+        "requested_service": requested_service,
+        "service_type": requested_service,
+        "square_footage": int(sqft) if sqft else None,
+        "bedrooms": int(beds) if beds not in (None, "") else None,
+        "bathrooms": float(baths) if baths not in (None, "") else None,
+        "frequency": freq,
+        "city": facts.get("city"), "state": facts.get("state"),
+        "address": facts.get("address"),
+        "message": (facts.get("summary") or "").strip() or None,
+        "estimate_min": est["estimate_min"], "estimate_max": est["estimate_max"],
+    }
 
 
 def _fallback_lead_reply(name, intake, channel: str, company: str) -> dict:

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Zap, Check, X, ChevronRight, Sparkles, CalendarClock } from 'lucide-react'
+import { Zap, Check, X, ChevronRight, Sparkles, ChevronDown } from 'lucide-react'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { SOFT_CARD } from './constants'
@@ -15,9 +15,12 @@ const dotFor = (tone) => ({
   red: 'bg-red-500', amber: 'bg-amber-500', rose: 'bg-rose-500', blue: 'bg-blue-500', violet: 'bg-violet-500',
 }[tone] || 'bg-ink-3')
 
+const CAP = 6  // show this many by default; the rest collapse behind "Show all"
+
 export function NeedsYouNow({ attention = [], loading, navigate }) {
   const [reqs, setReqs] = useState(null)
   const [busyId, setBusyId] = useState(null)
+  const [expanded, setExpanded] = useState(false)
 
   const loadReqs = useCallback(() => {
     get('/api/jobs/reschedule-requests').then(d => setReqs(d?.requests || [])).catch(() => setReqs([]))
@@ -66,10 +69,11 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
           <p className="text-sm font-semibold text-ink">You're all caught up</p>
           <p className="text-[12px] text-ink-3 mt-0.5">No approvals, replies, or overdue items right now.</p>
         </div>
-      ) : (
-        <div className="max-h-[440px] overflow-y-auto scrollbar-thin divide-y divide-hairline">
-          {/* Reschedule approvals first — time-sensitive + inline actions */}
-          {reschedules.map(r => (
+      ) : (() => {
+        // Reschedule approvals first (time-sensitive + inline actions), then
+        // the attention feed. Cap the combined list; the rest collapse.
+        const nodes = [
+          ...reschedules.map(r => (
             <div key={`rq-${r.job_id}`} className="flex items-start gap-3 px-5 py-3">
               <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 bg-violet-500" />
               <button onClick={() => navigate(`/jobs/${r.job_id}`)} className="flex-1 min-w-0 text-left group">
@@ -97,10 +101,8 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
                 <ChevronRight className="w-4 h-4 text-ink-3 shrink-0 mt-1" />
               )}
             </div>
-          ))}
-
-          {/* Attention items */}
-          {attention.map(p => (
+          )),
+          ...attention.map(p => (
             <button key={p.key} onClick={p.onClick}
               className="w-full text-left flex items-start gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors">
               <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotFor(p.tone)}`} />
@@ -110,9 +112,23 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
               </div>
               {p.action && <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{p.action}</span>}
             </button>
-          ))}
-        </div>
-      )}
+          )),
+        ]
+        const shown = expanded ? nodes : nodes.slice(0, CAP)
+        const hidden = nodes.length - shown.length
+        return (
+          <>
+            <div className="divide-y divide-hairline">{shown}</div>
+            {(hidden > 0 || expanded) && (
+              <button onClick={() => setExpanded(e => !e)}
+                className="w-full flex items-center justify-center gap-1 py-2.5 text-[12px] font-semibold text-blue-600 hover:bg-bg border-t border-hairline transition-colors">
+                {expanded ? 'Show less' : `Show all ${nodes.length}`}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+          </>
+        )
+      })()}
     </section>
   )
 }

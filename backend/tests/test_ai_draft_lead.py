@@ -59,6 +59,41 @@ def test_draft_lead_reply_404(api):
     assert r.json().get("error")
 
 
+def test_quote_from_conversation(api):
+    """Without an ANTHROPIC key the extractor no-ops, but the endpoint must
+    still return an intake-shaped, priced object the quote form can open."""
+    db = SessionLocal()
+    c = Client(name="Cabin Lead", email="cabin@example.com", phone="+12075550222",
+               status="lead", org_id=1)
+    db.add(c); db.commit(); db.refresh(c)
+    client_id = c.id
+    conv = Conversation(client_id=client_id, channel="email", status="open", org_id=1)
+    db.add(conv); db.commit(); cid = conv.id
+    db.close()
+    try:
+        r = api.post(f"/api/ai/quote-from-conversation/{cid}", json={})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert not body.get("error")
+        assert body["from_conversation_id"] == cid
+        assert body["name"] == "Cabin Lead"
+        assert body["email"] == "cabin@example.com"
+        assert body["requested_service"]                 # always a service key
+        assert isinstance(body["estimate_min"], int)     # priced by the engine
+        assert body["estimate_max"] >= body["estimate_min"]
+    finally:
+        db = SessionLocal()
+        db.query(Conversation).filter(Conversation.id == cid).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == client_id).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_quote_from_conversation_404(api):
+    r = api.post("/api/ai/quote-from-conversation/999999", json={})
+    assert r.status_code == 200
+    assert r.json().get("error")
+
+
 def test_draft_conversation_reply_fallback(api):
     db = SessionLocal()
     c = Client(name="Convo Client", status="active", org_id=1)
