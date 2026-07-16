@@ -151,6 +151,51 @@ def _quote_dict(q: Quote) -> dict:
     }
 
 
+def _intake_summary(intake) -> Optional[dict]:
+    """Compact view of the original request (LeadIntake) a quote came from, for
+    the "Original request" card on the quote editor/detail — so staff can see
+    exactly what the customer asked for while writing the quote. Only the
+    customer-facing request fields; no internal notes/assignment."""
+    if not intake:
+        return None
+    loc = ", ".join(p for p in [
+        intake.city, intake.state, intake.zip_code] if p) or None
+    return {
+        "id": intake.id,
+        "name": intake.name,
+        "email": intake.email,
+        "phone": intake.phone,
+        "address": intake.address,
+        "location": loc,
+        "service_type": intake.service_type,
+        "bedrooms": intake.bedrooms,
+        "bathrooms": intake.bathrooms,
+        "square_footage": intake.square_footage,
+        "guests": intake.guests,
+        "frequency": intake.frequency,
+        "requested_date": intake.requested_date,
+        "preferred_date": intake.preferred_date,
+        "preferred_time": intake.preferred_time,
+        "check_in": intake.check_in,
+        "check_out": intake.check_out,
+        "estimate_min": intake.estimate_min,
+        "estimate_max": intake.estimate_max,
+        "message": intake.message,
+        "source": intake.source,
+        "created_at": _iso(intake.created_at),
+    }
+
+
+def _quote_intake(db: Session, quote: Quote):
+    """Find the LeadIntake behind a quote: the direct intake_id link, else the
+    row that recorded this quote as its conversion target."""
+    if getattr(quote, "intake_id", None):
+        row = db.query(LeadIntake).filter(LeadIntake.id == quote.intake_id).first()
+        if row:
+            return row
+    return db.query(LeadIntake).filter(LeadIntake.converted_quote_id == quote.id).first()
+
+
 def _ensure_public_token(quote: Quote) -> str:
     """Return the quote's public link token, generating one if missing."""
     if not quote.public_token:
@@ -375,6 +420,9 @@ def get_quote_details(quote_id: int, db: Session = Depends(get_db), org_id: int 
         "property": ({"id": prop.id, "name": prop.name, "address": prop.address} if prop else None),
         "job": ({"id": job.id, "title": job.title, "status": job.status,
                  "scheduled_date": str(job.scheduled_date) if job.scheduled_date else None} if job else None),
+        # The original request this quote answers, so the detail/send page can
+        # show it side-by-side while reviewing the quote.
+        "intake": _intake_summary(_quote_intake(db, quote)),
     }
 
 

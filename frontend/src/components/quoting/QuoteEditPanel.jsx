@@ -3,6 +3,7 @@ import { X, Plus, Send, Eye, Trash2, ChevronRight } from 'lucide-react'
 import AddressAutocomplete from '../AddressAutocomplete'
 import { CustomFieldsForm } from '../CustomFields'
 import QuotePreview from '../QuotePreview'
+import OriginalRequestCard from './OriginalRequestCard'
 import { SERVICE_TYPES, EMPTY_ITEM, isPlaceholderName } from './constants'
 
 /** Right-side (bottom-sheet on mobile) quote-editor panel.
@@ -85,15 +86,11 @@ export default function QuoteEditPanel({
         {/* Editor column */}
         <div className={`overflow-y-auto p-6 space-y-5 scrollbar-thin ${previewMode ? 'hidden 2xl:block 2xl:w-[460px] 2xl:shrink-0 2xl:border-r 2xl:border-hairline' : 'flex-1'}`}>
 
-          {/* Lead's website instant-quote estimate */}
-          {selectedIntake && (selectedIntake.estimate_min != null || selectedIntake.estimate_max != null) && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-              <span className="font-semibold">Website instant quote:</span>{' '}
-              {selectedIntake.estimate_min != null && selectedIntake.estimate_max != null
-                ? `$${selectedIntake.estimate_min}–$${selectedIntake.estimate_max}`
-                : `$${selectedIntake.estimate_max ?? selectedIntake.estimate_min}`}
-              <span className="text-blue-700"> — pre-filled below; adjust as needed.</span>
-            </div>
+          {/* The original request this quote answers — shown while writing so
+              staff can see exactly what the customer asked for (message, size,
+              dates, website estimate). Open by default on create. */}
+          {selectedIntake && (
+            <OriginalRequestCard intake={selectedIntake} defaultOpen />
           )}
 
           {/* Delivery banner — the last send attempt failed */}

@@ -24,6 +24,17 @@ export default function PublicJobConfirm() {
   const [error, setError] = useState(null)
   const [confirming, setConfirming] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
+
+  // Self-reschedule (pick a new open day + arrival window)
+  const [showReschedule, setShowReschedule] = useState(false)
+  const [availability, setAvailability] = useState(null)   // { enabled, windows, dates }
+  const [loadingAvail, setLoadingAvail] = useState(false)
+  const [reschedDate, setReschedDate] = useState('')
+  const [reschedWindow, setReschedWindow] = useState('morning')
+  const [rescheduling, setRescheduling] = useState(false)
+  const [rescheduled, setRescheduled] = useState(null)     // { date_label, window }
+
+  // Message-only request (fallback when self-reschedule is off or no slots fit)
   const [showRequest, setShowRequest] = useState(false)
   const [requestMsg, setRequestMsg] = useState('')
   const [requesting, setRequesting] = useState(false)
@@ -62,6 +73,58 @@ export default function PublicJobConfirm() {
       setError('Connection error. Please try again.')
     } finally {
       setConfirming(false)
+    }
+  }
+
+  const openReschedule = async () => {
+    setShowReschedule(true)
+    setError(null)
+    if (availability) return
+    setLoadingAvail(true)
+    try {
+      const res = await window.fetch(`/api/jobs/public/${token}/availability`)
+      if (!res.ok) { setError('Could not load available times. Please try again.'); return }
+      const data = await res.json()
+      setAvailability(data)
+      const firstOpen = (data.dates || [])[0]
+      if (firstOpen) {
+        setReschedDate(firstOpen.date)
+        setReschedWindow(firstOpen.windows?.[0] || 'morning')
+      }
+    } catch (e) {
+      setError('Connection error. Please try again.')
+    } finally {
+      setLoadingAvail(false)
+    }
+  }
+
+  // Windows offered for the currently-selected day (a day may have only one open).
+  const windowsForSelected = () => {
+    const day = (availability?.dates || []).find(d => d.date === reschedDate)
+    const open = new Set(day?.windows || [])
+    return (availability?.windows || []).filter(w => open.has(w.key))
+  }
+
+  const handleReschedule = async () => {
+    if (!reschedDate) return
+    setRescheduling(true)
+    try {
+      const res = await window.fetch(`/api/jobs/public/${token}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: reschedDate, window: reschedWindow }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.detail || 'Could not move your visit to that time. Please pick another.')
+        return
+      }
+      setRescheduled({ date_label: data.date_label, window: data.window })
+      setShowReschedule(false)
+    } catch (e) {
+      setError('Connection error. Please try again.')
+    } finally {
+      setRescheduling(false)
     }
   }
 
@@ -112,9 +175,13 @@ export default function PublicJobConfirm() {
 
   if (!job) return null
 
-  const isConfirmed = confirmed || !!job.customer_confirmed_at
+  const isConfirmed = confirmed || (!!job.customer_confirmed_at && !rescheduled)
   const isRequested = requested || !!job.reschedule_requested_at
+  const canSelfReschedule = !!job.can_self_reschedule
   const brandColor = job.brand_color || '#1f2937'
+
+  // Effective date/time shown at the top — reflects a just-completed self-move.
+  const shownDate = rescheduled ? null : job.scheduled_date
 
   return (
     <div className="min-h-screen bg-bg">
@@ -147,7 +214,11 @@ export default function PublicJobConfirm() {
                 <div className="space-y-2 text-sm text-ink-2">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-ink-3 shrink-0" />
-                    <span>{formatDate(job.scheduled_date)}{job.start_time ? ` · ${formatTime(job.start_time)}${job.end_time ? `–${formatTime(job.end_time)}` : ''}` : ''}</span>
+                    {rescheduled ? (
+                      <span>{rescheduled.date_label} · {rescheduled.window === 'afternoon' ? 'afternoon (1–4pm)' : 'morning (9am–12pm)'} arrival</span>
+                    ) : (
+                      <span>{formatDate(shownDate)}{job.start_time ? ` · ${formatTime(job.start_time)}${job.end_time ? `–${formatTime(job.end_time)}` : ''}` : ''}</span>
+                    )}
                   </div>
                   {job.address && (
                     <div className="flex items-center gap-2">
@@ -157,7 +228,12 @@ export default function PublicJobConfirm() {
                   )}
                 </div>
 
-                {isConfirmed ? (
+                {rescheduled ? (
+                  <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <p className="text-sm text-emerald-800 font-medium">Rescheduled — you're all set. We'll confirm the exact time shortly.</p>
+                  </div>
+                ) : isConfirmed ? (
                   <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
                     <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
                     <p className="text-sm text-emerald-800 font-medium">Confirmed — see you then!</p>
@@ -166,6 +242,64 @@ export default function PublicJobConfirm() {
                   <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
                     <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
                     <p className="text-sm text-blue-800 font-medium">Reschedule request sent — we'll follow up shortly.</p>
+                  </div>
+                ) : showReschedule ? (
+                  <div className="space-y-3 rounded-xl border border-hairline bg-bg p-4">
+                    <p className="text-sm font-semibold text-ink">Pick a new day &amp; arrival window</p>
+                    {loadingAvail ? (
+                      <p className="text-sm text-ink-3">Loading available times…</p>
+                    ) : (availability?.dates || []).length === 0 ? (
+                      <>
+                        <p className="text-sm text-ink-3">
+                          No open times to book online right now. Tell us what works and we'll sort it out.
+                        </p>
+                        <button
+                          onClick={() => { setShowReschedule(false); setShowRequest(true) }}
+                          className="w-full px-4 py-3 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+                        >
+                          Send a request instead
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          value={reschedDate}
+                          onChange={(e) => {
+                            const day = (availability?.dates || []).find(d => d.date === e.target.value)
+                            setReschedDate(e.target.value)
+                            if (day && !day.windows.includes(reschedWindow)) setReschedWindow(day.windows[0])
+                          }}
+                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-blue-500"
+                        >
+                          {(availability?.dates || []).map(d => (
+                            <option key={d.date} value={d.date}>
+                              {new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="grid grid-cols-2 gap-2">
+                          {windowsForSelected().map(w => (
+                            <button
+                              key={w.key}
+                              onClick={() => setReschedWindow(w.key)}
+                              className={`py-3 rounded-xl text-sm font-medium border transition-colors ${reschedWindow === w.key ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
+                            >
+                              {w.label}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={handleReschedule}
+                          disabled={rescheduling || !reschedDate}
+                          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+                        >
+                          {rescheduling ? 'Moving your visit…' : 'Reschedule to this time'}
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => setShowReschedule(false)} className="w-full text-ink-3 hover:text-ink-2 font-medium py-1 text-sm">
+                      Back
+                    </button>
                   </div>
                 ) : showRequest ? (
                   <div className="space-y-3 rounded-xl border border-hairline bg-bg p-4">
@@ -203,12 +337,29 @@ export default function PublicJobConfirm() {
                     >
                       {confirming ? 'Confirming...' : "I'll be ready"}
                     </button>
-                    <button
-                      onClick={() => setShowRequest(true)}
-                      className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors"
-                    >
-                      Request a reschedule
-                    </button>
+                    {canSelfReschedule ? (
+                      <button
+                        onClick={openReschedule}
+                        className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors"
+                      >
+                        Reschedule this visit
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowRequest(true)}
+                        className="w-full bg-panel hover:bg-bg border border-hairline text-ink-2 font-medium py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors"
+                      >
+                        Request a reschedule
+                      </button>
+                    )}
+                    {canSelfReschedule && (
+                      <button
+                        onClick={() => setShowRequest(true)}
+                        className="w-full text-ink-3 hover:text-ink-2 font-medium py-2 text-sm transition-colors"
+                      >
+                        Need a different time? Message us
+                      </button>
+                    )}
                   </div>
                 )}
               </>

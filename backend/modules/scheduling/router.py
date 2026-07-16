@@ -517,6 +517,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "connecteam_shift_ids": j.connecteam_shift_ids or [],
         "created_at": j.created_at.isoformat() if j.created_at else None,
         "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+        # Customer-link state so the operator UI can badge a visit the customer
+        # confirmed or asked to move (previously email-only — invisible in-app).
+        "customer_confirmed_at": j.customer_confirmed_at.isoformat() if j.customer_confirmed_at else None,
+        "reschedule_requested_at": j.reschedule_requested_at.isoformat() if j.reschedule_requested_at else None,
+        "reschedule_request_message": j.reschedule_request_message,
         # Phase 5: booking enrichment for STR turnovers. Lazy-matched in
         # get_jobs() if the Job has no direct ical_event_id link.
         "booking": _booking_dict(booking_event) if booking_event else None,
@@ -1655,11 +1660,78 @@ def _job_by_token(token: str, db: Session) -> Job:
     return job
 
 
+# ── Customer self-reschedule ──────────────────────────────────────────────
+# Arrival windows offered on the public confirm page. Mirrors the quote
+# self-schedule windows (modules/quoting/router.py) so the two customer-facing
+# flows speak the same language; the owner confirms the exact time, the job
+# carries a concrete start/end so it lands on the calendar.
+SELF_RESCHEDULE_WINDOWS = {"morning": ("09:00", "12:00"), "afternoon": ("13:00", "16:00")}
+SELF_RESCHEDULE_DAYS = 42          # how far ahead a customer can move a visit
+SELF_RESCHEDULE_MIN_LEAD_DAYS = 1  # earliest is tomorrow (never same-day)
+
+
+def _job_self_reschedule_availability(db: Session, job: Job) -> list:
+    """Open days + per-day arrival windows a customer can move this visit to.
+
+    Days come from the same roster/time-off logic the quote self-schedule uses
+    (Sundays closed; a day is unavailable only when every cleaner on record is
+    off). When Google Free/Busy is connected AND enabled, each window is also
+    checked against the calendar this job_type lands on — a window fully covered
+    by a busy block is dropped, so "Google Calendar is the source of truth" for
+    what's actually open. Fails open: no Google, or an API hiccup, and every
+    window stays offered. The job's own current date is excluded (moving a visit
+    onto the day it's already on is a no-op)."""
+    from modules.quoting.router import _quote_availability
+
+    days = _quote_availability(db)  # [{date, available}], respects roster/Sundays
+    cur = job.scheduled_date.isoformat() if job.scheduled_date else None
+
+    # One Free/Busy range query for the whole window, bucketed locally.
+    busy_blocks = []
+    try:
+        from modules.settings.router import freebusy_check_enabled
+        if days and freebusy_check_enabled(db):
+            from integrations.google_calendar import free_busy_range
+            busy_blocks = free_busy_range(
+                job.job_type or "residential", days[0]["date"], days[-1]["date"])
+    except Exception as e:
+        logger.warning(f"[jobs] self-reschedule Free/Busy skipped: {e}")
+
+    def _window_free(day_iso: str, start: str, end: str) -> bool:
+        """True unless a Google busy block covers the whole window."""
+        if not busy_blocks:
+            return True
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo("America/New_York")
+            ws = datetime.fromisoformat(f"{day_iso}T{start}:00").replace(tzinfo=tz)
+            we = datetime.fromisoformat(f"{day_iso}T{end}:00").replace(tzinfo=tz)
+            for b in busy_blocks:
+                bs = datetime.fromisoformat(b["start"])
+                be = datetime.fromisoformat(b["end"])
+                if bs <= ws and be >= we:  # busy spans the entire window
+                    return False
+        except Exception:
+            return True
+        return True
+
+    out = []
+    for d in days:
+        if not d.get("available") or d["date"] == cur:
+            continue
+        windows = [k for k, (s, e) in SELF_RESCHEDULE_WINDOWS.items()
+                   if _window_free(d["date"], s, e)]
+        if windows:
+            out.append({"date": d["date"], "windows": windows})
+    return out
+
+
 def _public_job_dict(job: Job, db: Session) -> dict:
     """Client-facing serialization for the public confirm page — no internal
     IDs/notes/cleaner assignments, just what the customer needs to recognize
-    and confirm their own visit."""
+    and confirm (or move) their own visit."""
     from modules.quoting.router import _company_info
+    from modules.settings.router import customer_self_reschedule_enabled
     company = _company_info(db)
     prop = job.property
     return {
@@ -1676,6 +1748,11 @@ def _public_job_dict(job: Job, db: Session) -> dict:
         "customer_confirmed_at": job.customer_confirmed_at.isoformat() if job.customer_confirmed_at else None,
         "reschedule_requested_at": job.reschedule_requested_at.isoformat() if job.reschedule_requested_at else None,
         "is_cancelled": job.status == "cancelled",
+        # Whether the customer can self-serve a move (feature enabled + visit is
+        # live). The picker still fetches concrete open days from /availability.
+        "can_self_reschedule": (
+            customer_self_reschedule_enabled(db) and job.status != "cancelled"
+        ),
     }
 
 
@@ -1749,6 +1826,105 @@ def public_request_reschedule(token: str, data: PublicRescheduleRequest = None, 
     lines += ["", "Open the schedule to pick a new time."]
     _notify_owner_job_event(f"\U0001f4c5 Reschedule requested: {job.title}", lines)
     return {"status": "received"}
+
+
+@router.get("/public/{token}/availability", dependencies=[Depends(rate_limit(60, 3600, "job_availability"))])
+def public_job_availability(token: str, db: Session = Depends(get_db)):
+    """Open days + arrival windows a customer can move THIS visit to, for the
+    self-reschedule picker on the public confirm page. 404s on a bad token;
+    returns an empty `dates` list (not an error) when self-reschedule is off or
+    nothing is open, so the page cleanly falls back to the request flow."""
+    from modules.settings.router import customer_self_reschedule_enabled
+    job = _job_by_token(token, db)
+    enabled = customer_self_reschedule_enabled(db) and job.status != "cancelled"
+    return {
+        "enabled": enabled,
+        "windows": [
+            {"key": "morning", "label": "Morning (9am–12pm)"},
+            {"key": "afternoon", "label": "Afternoon (1pm–4pm)"},
+        ],
+        "dates": _job_self_reschedule_availability(db, job) if enabled else [],
+    }
+
+
+class PublicSelfRescheduleRequest(BaseModel):
+    date: str
+    window: Optional[str] = "morning"
+
+
+@router.post("/public/{token}/reschedule", dependencies=[Depends(rate_limit(20, 3600, "job_self_reschedule"))])
+def public_self_reschedule(token: str, data: PublicSelfRescheduleRequest, db: Session = Depends(get_db)):
+    """Customer moves their own visit to a new open day + arrival window. Unlike
+    request-reschedule (which only queues a note for staff), this actually moves
+    the job and pushes the change to Google Calendar — mirrors the quote
+    self-schedule flow. Bypasses the operator conflict guards (allow_conflicts):
+    the customer has no way to react to a "double-booked cleaner" 409, and the
+    owner gets an immediate alert to re-shuffle if there's a real collision."""
+    from modules.settings.router import customer_self_reschedule_enabled
+    job = _job_by_token(token, db)
+    if job.status == "cancelled":
+        raise HTTPException(status_code=409, detail="This visit was cancelled.")
+    if not customer_self_reschedule_enabled(db):
+        raise HTTPException(
+            status_code=409,
+            detail="Online rescheduling isn't available right now — please send us a request instead.")
+
+    d = _to_date(data.date)
+    if not d or d < business_today() + timedelta(days=SELF_RESCHEDULE_MIN_LEAD_DAYS):
+        raise HTTPException(status_code=400, detail="Please choose a valid upcoming date.")
+    window = (data.window or "morning").lower()
+    if window not in SELF_RESCHEDULE_WINDOWS:
+        raise HTTPException(status_code=400, detail="Please choose a morning or afternoon window.")
+    # Re-check server-side so a stale page can't book a day/window that closed.
+    avail = _job_self_reschedule_availability(db, job)
+    if not any(a["date"] == d.isoformat() and window in a["windows"] for a in avail):
+        raise HTTPException(status_code=409, detail="That time is no longer available. Please pick another.")
+    start, end = SELF_RESCHEDULE_WINDOWS[window]
+
+    old_when = f"{job.scheduled_date}" + (f" {job.start_time}" if job.start_time else "")
+
+    try:
+        # In-process call: org_id explicit (Depends won't resolve here) so the
+        # move + Google Calendar sync run against the job's own workspace.
+        update_job(job.id, JobUpdate(
+            scheduled_date=d.isoformat(), start_time=start, end_time=end,
+            allow_conflicts=True), db=db, org_id=job.org_id)
+    except HTTPException as e:
+        friendly = ("We couldn't lock that time right now. Please pick another, "
+                    "or give us a call and we'll finish rescheduling by hand.")
+        raise HTTPException(status_code=e.status_code or 400, detail=friendly)
+
+    db.refresh(job)
+    # A self-move IS the customer choosing the slot — treat it as re-confirmed
+    # and clear any prior pending request so it drops off the staff queue.
+    job.customer_confirmed_at = datetime.now(timezone.utc)
+    job.reschedule_requested_at = None
+    job.reschedule_request_message = None
+    nice_date = d.strftime("%B %d, %Y")
+    win_label = "morning" if window == "morning" else "afternoon"
+    log_activity(
+        db, "job_customer_rescheduled", job_id=job.id, client_id=job.client_id,
+        actor="client",
+        summary=f"Customer rescheduled the visit to {nice_date} ({win_label})",
+        extra_data={"from": old_when, "to": f"{d.isoformat()} {start}", "window": window},
+        commit=False,
+    )
+    db.commit()
+
+    who = job.client.name if job.client else "The customer"
+    lines = [
+        f"{who} rescheduled an upcoming visit themselves.",
+        "",
+        f"Was: {old_when}",
+        f"Now: {nice_date} ({win_label} arrival)",
+        "",
+        "The job was moved and the calendar updated — reassign a cleaner if needed.",
+    ]
+    _notify_owner_job_event(f"\U0001f4c5 Visit rescheduled by customer: {job.title}", lines)
+    return {
+        "status": "rescheduled", "date": d.isoformat(), "date_label": nice_date,
+        "window": window, "start_time": start, "end_time": end,
+    }
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])

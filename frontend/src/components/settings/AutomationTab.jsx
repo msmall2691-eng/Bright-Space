@@ -16,6 +16,7 @@ export function useAutomationSettings({ toast, active }) {
     gcal_sync_interval: 10,
     recurring_auto_generate_enabled: true,
     invite_customers: true,
+    customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })
   const [automationSaving, setAutomationSaving] = useState(false)
@@ -254,6 +255,20 @@ export default function AutomationTab({ state, toast, active }) {
             {s.invite_customers && (
               <p className="text-xs text-ink-3 mt-1">Applies to new cleanings and to the Calendar page's “Push to Google” backfill (which emails each client an invite for their upcoming cleanings). Only clients with an email on file are invited.</p>
             )}
+          </div>
+
+          <div className="border-t border-hairline pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-ink">Let customers reschedule themselves</h3>
+                <p className="text-xs text-ink-3 mt-1">From the confirm link in their reminder, a customer can pick a new open day and arrival window and move their own visit — the job moves and the calendar updates automatically, and you get an alert. Open days come from your cleaner availability and, when Google Calendar is connected, its free/busy. Off = they can only send a reschedule request for you to action by hand.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={s.customer_self_reschedule}
+                  onChange={e => setAutomationSettings(x => ({ ...x, customer_self_reschedule: e.target.checked }))}
+                  className="w-4 h-4 rounded" />
+              </label>
+            </div>
           </div>
         </div>
 
