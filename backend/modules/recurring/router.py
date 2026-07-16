@@ -1133,7 +1133,22 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     # "existing", update its times, and then db.commit() at the end would
     # persist both the leftover cancelled status AND the new times —
     # silently cancelling a visit the user just meant to retime.
+    # Capture the customer link off the occurrence we're about to move, so it
+    # follows the visit to its new date instead of dying on the cancelled row.
+    # (Without this, a recurring reschedule broke the customer's confirm/manage
+    # link — it still resolved to the old, now-cancelled Job.)
+    old_occurrence = (
+        db.query(Job)
+        .filter(Job.recurring_schedule_id == sched.id,
+                Job.scheduled_date == exception_date,
+                Job.status != "cancelled")
+        .first()
+    )
+    carried_token = old_occurrence.public_token if old_occurrence else None
+
     if rescheduled_date != exception_date:
+        if old_occurrence is not None:
+            old_occurrence.public_token = None  # freed for the new row below
         _cancel_existing_job(db, sched.id, exception_date, reason)
 
     # Materialize (or update) the Job for the rescheduled date with the
@@ -1172,6 +1187,16 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant
         )
         db.add(rescheduled_job)
+
+    # Carry the customer's confirm/manage link onto the moved visit, and reset
+    # the flags the old time carried: a moved visit is no longer "confirmed"
+    # (they agreed to a different time) and deserves a fresh reminder. For a
+    # same-date time change the token already lives on this row.
+    if carried_token and not rescheduled_job.public_token:
+        rescheduled_job.public_token = carried_token
+    rescheduled_job.customer_confirmed_at = None
+    if getattr(rescheduled_job, "sms_reminder_sent", False):
+        rescheduled_job.sms_reminder_sent = False
 
     return ex, rescheduled_job
 
