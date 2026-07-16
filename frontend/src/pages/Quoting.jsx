@@ -507,7 +507,20 @@ export default function Quoting() {
   // Quotes-tab filtering, persisted by saved views (entityType="quote").
   const quoteViewConfig = { search: quoteSearch, status: quoteStatusFilter }
   const applyQuoteView = (cfg) => { setQuoteSearch(cfg.search ?? ''); setQuoteStatusFilter(cfg.status ?? '') }
+  // While the New Quote composer is open, scope the left list to the client
+  // it's being written for — so composing a quote from a Request shows that
+  // client's own quote history instead of the full global list next to it
+  // (which read as two unrelated panels). Closing the composer restores the
+  // full list. A brand-new client has no history yet, so the list is empty
+  // until it's saved.
+  const isComposing = panel === 'quote'
+  const composeClientId = isComposing ? (form.client_id || '') : ''
+  const composeClientName = composeClientId ? clientName(composeClientId) : ''
   const visibleQuotes = quotes.filter(q => {
+    if (isComposing) {
+      if (!composeClientId) return false
+      if (String(q.client_id) !== String(composeClientId)) return false
+    }
     if (quoteStatusFilter && q.status !== quoteStatusFilter) return false
     const term = quoteSearch.trim().toLowerCase()
     if (!term) return true
@@ -597,6 +610,18 @@ export default function Quoting() {
         {/* Quotes tab */}
         {tab === 'quotes' && (
           <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
+            {isComposing && (
+              <div className="shrink-0 flex items-center justify-between gap-3 bg-violet-500/10 border border-violet-500/30 rounded-xl px-4 py-2.5">
+                <span className="text-sm text-ink">
+                  Composing a new quote{composeClientName ? <> for <span className="font-semibold">{composeClientName}</span></> : ''}.
+                  {composeClientId ? ' Showing their quote history.' : ' Pick a client to see their history.'}
+                </span>
+                <button onClick={() => { setPanel(null); setSelectedIntake(null) }}
+                  className="shrink-0 text-sm px-3 py-1.5 rounded-lg bg-panel border border-hairline text-ink-2 hover:text-ink transition-colors">
+                  Show all quotes
+                </button>
+              </div>
+            )}
             <div className="flex items-center gap-2 shrink-0">
               <div className="relative flex-1 max-w-xs">
                 <Search className="w-3.5 h-3.5 text-ink-3 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -636,7 +661,13 @@ export default function Quoting() {
             )}
             {!quotesError && quotes.length === 0 && <div className="text-center py-16 text-ink-3 text-sm">No quotes yet</div>}
             {!quotesError && quotes.length > 0 && visibleQuotes.length === 0 && (
-              <div className="text-center py-16 text-ink-3 text-sm">No quotes match your filters</div>
+              <div className="text-center py-16 text-ink-3 text-sm">
+                {isComposing
+                  ? (composeClientId
+                      ? 'No previous quotes for this client — this will be their first.'
+                      : 'Pick a client in the composer to see their quote history.')
+                  : 'No quotes match your filters'}
+              </div>
             )}
             {visibleQuotes.length > 0 && (
             <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">

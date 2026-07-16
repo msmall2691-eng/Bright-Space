@@ -117,12 +117,33 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
               <span className={priorityConfig.color}>{priorityConfig.label} Priority</span>
               {intake.requested_date && <span>• {formatDate(intake.requested_date)}</span>}
               {intake.frequency && <span>• {intake.frequency}</span>}
-              {(intake.estimate_min || intake.estimate_max) && (
+              {(intake.estimate_min || intake.estimate_max) ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
                   ${intake.estimate_min ?? '?'}–${intake.estimate_max ?? '?'}
                 </span>
-              )}
+              ) : (['str', 'commercial'].includes(intake.service_type) && (
+                // STR / commercial are quoted by hand — the site shows no
+                // instant number, so make the blank estimate read as
+                // intentional rather than missing data.
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-semibold text-[11px]">
+                  Custom quote
+                </span>
+              ))}
             </div>
+
+            {/* Property specs — the inputs that DRIVE the estimate (sqft,
+                bedrooms, bathrooms, guests). These land in the DB from the
+                website form but used to render nowhere on this page, so an
+                operator couldn't sanity-check the quote against the home
+                size. Only shown when at least one value is present. */}
+            {(intake.square_footage || intake.bedrooms || intake.bathrooms || intake.guests) && (
+              <div className="flex items-center gap-3 text-xs text-ink-3 flex-wrap mt-1.5">
+                {intake.square_footage ? <span>{intake.square_footage.toLocaleString()} sq ft</span> : null}
+                {intake.bedrooms ? <span>• {intake.bedrooms} bd</span> : null}
+                {intake.bathrooms ? <span>• {intake.bathrooms} ba</span> : null}
+                {intake.guests ? <span>• {intake.guests} guests</span> : null}
+              </div>
+            )}
           </div>
         </div>
 
@@ -199,9 +220,25 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
         || intake.custom_fields.pets_detail
         || (intake.custom_fields.focus_areas && intake.custom_fields.focus_areas.length)
         || intake.custom_fields.special_instructions
+        || intake.custom_fields.listing_url
+        || intake.custom_fields.turnover_day
+        || intake.custom_fields.pets_allowed
       ) && (
         <div className="text-[11px] text-ink-2 bg-blue-50 border border-blue-200 rounded p-2 space-y-0.5">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 mb-1">Booking essentials</div>
+          {intake.custom_fields.listing_url && (
+            <div><span className="text-ink-3">Listing:</span>{' '}
+              <a href={intake.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                {intake.custom_fields.listing_url}
+              </a>
+            </div>
+          )}
+          {intake.custom_fields.turnover_day && (
+            <div><span className="text-ink-3">Turnover day:</span> {intake.custom_fields.turnover_day}</div>
+          )}
+          {intake.custom_fields.pets_allowed && (
+            <div><span className="text-ink-3">Pets allowed:</span> {intake.custom_fields.pets_allowed}</div>
+          )}
           {intake.custom_fields.entry_method && (
             <div><span className="text-ink-3">Entry:</span> {intake.custom_fields.entry_method.replace('-', ' ')}</div>
           )}
@@ -656,6 +693,115 @@ export default function Requests() {
                   </p>
                 </div>
               </div>
+
+              {/* Quote & property — the customer-facing estimate plus the
+                  inputs it was priced on. These lived only on the collapsed
+                  list card; the drawer (the operator's "dig in" view) showed
+                  none of them, so opening a request hid the estimate, cadence,
+                  requested date, and home size. Surfaced here so View Details
+                  is a superset of the card, not a subset. */}
+              {(selectedRequest.estimate_min || selectedRequest.estimate_max || selectedRequest.frequency
+                || selectedRequest.requested_date || selectedRequest.square_footage
+                || selectedRequest.bedrooms || selectedRequest.bathrooms || selectedRequest.guests) && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {(selectedRequest.estimate_min || selectedRequest.estimate_max) ? (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Estimate</label>
+                      <p className="text-sm font-semibold text-emerald-700">
+                        ${selectedRequest.estimate_min ?? '?'}–${selectedRequest.estimate_max ?? '?'}
+                      </p>
+                    </div>
+                  ) : (['str', 'commercial'].includes(selectedRequest.service_type) && (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Estimate</label>
+                      <p className="text-sm font-semibold text-violet-700">Custom quote</p>
+                    </div>
+                  ))}
+                  {selectedRequest.frequency && (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Frequency</label>
+                      <p className="text-sm text-ink">{selectedRequest.frequency}</p>
+                    </div>
+                  )}
+                  {selectedRequest.requested_date && (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Requested</label>
+                      <p className="text-sm text-ink">{formatDate(selectedRequest.requested_date)}</p>
+                    </div>
+                  )}
+                  {selectedRequest.square_footage ? (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Square feet</label>
+                      <p className="text-sm text-ink">{selectedRequest.square_footage.toLocaleString()}</p>
+                    </div>
+                  ) : null}
+                  {selectedRequest.bedrooms ? (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Bedrooms</label>
+                      <p className="text-sm text-ink">{selectedRequest.bedrooms}</p>
+                    </div>
+                  ) : null}
+                  {selectedRequest.bathrooms ? (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Bathrooms</label>
+                      <p className="text-sm text-ink">{selectedRequest.bathrooms}</p>
+                    </div>
+                  ) : null}
+                  {selectedRequest.guests ? (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Guests</label>
+                      <p className="text-sm text-ink">{selectedRequest.guests}</p>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Booking essentials from custom_fields — same on-site details
+                  the card shows, mirrored here so the drawer is complete. */}
+              {selectedRequest.custom_fields && (
+                selectedRequest.custom_fields.entry_method
+                || selectedRequest.custom_fields.parking_notes
+                || selectedRequest.custom_fields.pets_detail
+                || (selectedRequest.custom_fields.focus_areas && selectedRequest.custom_fields.focus_areas.length)
+                || selectedRequest.custom_fields.special_instructions
+                || selectedRequest.custom_fields.listing_url
+                || selectedRequest.custom_fields.turnover_day
+                || selectedRequest.custom_fields.pets_allowed
+              ) && (
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 uppercase">Booking essentials</label>
+                  <div className="text-sm text-ink space-y-0.5 mt-1">
+                    {selectedRequest.custom_fields.listing_url && (
+                      <div><span className="text-ink-3">Listing:</span>{' '}
+                        <a href={selectedRequest.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                          {selectedRequest.custom_fields.listing_url}
+                        </a>
+                      </div>
+                    )}
+                    {selectedRequest.custom_fields.turnover_day && (
+                      <div><span className="text-ink-3">Turnover day:</span> {selectedRequest.custom_fields.turnover_day}</div>
+                    )}
+                    {selectedRequest.custom_fields.pets_allowed && (
+                      <div><span className="text-ink-3">Pets allowed:</span> {selectedRequest.custom_fields.pets_allowed}</div>
+                    )}
+                    {selectedRequest.custom_fields.entry_method && (
+                      <div><span className="text-ink-3">Entry:</span> {selectedRequest.custom_fields.entry_method.replace('-', ' ')}</div>
+                    )}
+                    {selectedRequest.custom_fields.parking_notes && (
+                      <div><span className="text-ink-3">Parking:</span> {selectedRequest.custom_fields.parking_notes}</div>
+                    )}
+                    {selectedRequest.custom_fields.pets_detail && (
+                      <div><span className="text-ink-3">Pets:</span> {selectedRequest.custom_fields.pets_detail}</div>
+                    )}
+                    {selectedRequest.custom_fields.focus_areas && selectedRequest.custom_fields.focus_areas.length > 0 && (
+                      <div><span className="text-ink-3">Focus:</span> {selectedRequest.custom_fields.focus_areas.join(', ')}</div>
+                    )}
+                    {selectedRequest.custom_fields.special_instructions && (
+                      <div><span className="text-ink-3">Notes:</span> {selectedRequest.custom_fields.special_instructions}</div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Message</label>
                 <p className="text-sm text-ink whitespace-pre-wrap">{htmlToText(selectedRequest.message) || '—'}</p>

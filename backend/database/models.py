@@ -308,7 +308,10 @@ class Property(Base):
     # Structured size details, carried over from the lead/intake on convert so a
     # quote can pre-fill from the customer's request instead of re-typing.
     bedrooms = Column(Integer, nullable=True)
-    bathrooms = Column(Integer, nullable=True)
+    # Float, not Integer — homes have half-baths (2½). Storing as int rounded
+    # the customer's real bath count and made the operator's view disagree
+    # with the quote the customer was shown.
+    bathrooms = Column(Float, nullable=True)
     square_footage = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -639,7 +642,8 @@ class LeadIntake(Base):
     zip_code = Column(String)
     service_type = Column(String, default="residential")  # residential/commercial/str
     bedrooms = Column(Integer, nullable=True)
-    bathrooms = Column(Integer, nullable=True)
+    # Float so half-baths (2½) survive — see the Property.bathrooms note.
+    bathrooms = Column(Float, nullable=True)
     square_footage = Column(Integer, nullable=True)
     guests = Column(Integer, nullable=True)
     frequency = Column(String, nullable=True)
