@@ -996,6 +996,9 @@ class AutomationConfig(BaseModel):
     # external edits reflect in seconds instead of on the ~poll interval. Needs
     # a public https base URL.
     gcal_live_sync: Optional[bool] = None
+    # Whether assigning cleaners auto-pushes their Connecteam shifts. OFF =
+    # manual dispatch (you press "Dispatch" when ready).
+    connecteam_auto_dispatch_enabled: Optional[bool] = None
     customer_self_reschedule: Optional[bool] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
@@ -1044,6 +1047,15 @@ def gcal_reminder_overrides(db: Session):
             {"method": "popup", "minutes": 60},
         ]}
     return {"useDefault": True}
+
+
+def connecteam_auto_dispatch_enabled(db: Session) -> bool:
+    """Whether assigning cleaners to a job AUTOMATICALLY pushes their Connecteam
+    shifts. OFF by default = MANUAL mode: you assign cleaners, but nothing goes
+    to Connecteam until you hit "Dispatch." Rescheduling a job that's ALREADY
+    been dispatched still re-syncs its shift regardless (so a moved job doesn't
+    strand a stale shift). Settings → Automation."""
+    return _coerce_bool(get_setting(db, "connecteam_auto_dispatch_enabled"), False)
 
 
 def freebusy_check_enabled(db: Session) -> bool:
@@ -1210,6 +1222,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "gcal_live_sync": _coerce_bool(
             get_setting(db, "gcal_live_sync"),
             os.getenv("GCAL_WATCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}),
+        "connecteam_auto_dispatch_enabled": connecteam_auto_dispatch_enabled(db),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }
