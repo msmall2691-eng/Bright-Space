@@ -3,6 +3,7 @@ import { CheckCircle, Loader2 } from 'lucide-react'
 import { del, get, post, upload } from '../../api'
 import { applyTheme, getTheme } from '../../theme'
 import { inp, lbl } from './constants'
+import ServiceScopesEditor from './ServiceScopesEditor'
 
 /** General settings tab — Appearance + Company Info + Logo + Service
  *  Descriptions + Property Photos & Data + Regional Settings + main
@@ -27,9 +28,6 @@ export default function GeneralTab({ toast, active, dangerZone }) {
     // already exist here, so without this the saved logo wouldn't re-hydrate
     // on reload (preview would wrongly show "No logo").
     company_logo_url: '',
-    service_scope_residential: '',
-    service_scope_commercial: '',
-    service_scope_str: '',
   })
   const [generalSaving, setGeneralSaving] = useState(false)
 
@@ -243,33 +241,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
           </div>
         </div>
 
-        <div>
-          <h2 className="text-lg font-bold text-ink mb-4">Service Descriptions</h2>
-          <div className="bg-panel rounded-xl border border-hairline p-5 space-y-4">
-            <p className="text-[11px] text-ink-3 -mt-1">Default "what's included" text per service type. Pre-fills the scope on a new quote — you can still edit it per quote. Leave blank to use the built-in default.</p>
-            <div>
-              <label className={lbl}>Residential</label>
-              <textarea rows={3} value={generalSettings.service_scope_residential}
-                onChange={e => setGeneralSettings(s => ({ ...s, service_scope_residential: e.target.value }))}
-                placeholder="Full home cleaning: kitchen, bathrooms, bedrooms, and living areas — dusting, vacuuming, mopping, and surface sanitizing…"
-                className={inp + ' resize-none'} />
-            </div>
-            <div>
-              <label className={lbl}>Commercial</label>
-              <textarea rows={3} value={generalSettings.service_scope_commercial}
-                onChange={e => setGeneralSettings(s => ({ ...s, service_scope_commercial: e.target.value }))}
-                placeholder="Commercial cleaning of all common and work areas: restrooms, break areas, floors, and high-touch surfaces sanitized…"
-                className={inp + ' resize-none'} />
-            </div>
-            <div>
-              <label className={lbl}>STR / Vacation rental</label>
-              <textarea rows={3} value={generalSettings.service_scope_str}
-                onChange={e => setGeneralSettings(s => ({ ...s, service_scope_str: e.target.value }))}
-                placeholder="Turnover clean between guests: full kitchen and bathroom reset, fresh linens and towels staged…"
-                className={inp + ' resize-none'} />
-            </div>
-          </div>
-        </div>
+        <ServiceScopesEditor toast={toast} />
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Property Photos &amp; Data</h2>

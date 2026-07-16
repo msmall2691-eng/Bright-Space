@@ -33,6 +33,9 @@ export function useQuotingData() {
   // Full customer-facing identity (Settings → General) — drives the REAL
   // public-page preview, SMS copy, and send-panel subject prefill.
   const [company, setCompany] = useState({ company_name: 'The Maine Cleaning Co.' })
+  // Editable services + scopes (Settings → Service Scopes). Drives the quote
+  // composer's Service Type selector and the scope pre-fill.
+  const [serviceScopes, setServiceScopes] = useState([])
   const [archivedQuotes, setArchivedQuotes] = useState([])
 
   const loadQuotes = () => get('/api/quotes')
@@ -57,6 +60,11 @@ export function useQuotingData() {
       // template sticks instead of the hardcoded defaults reappearing on reload.
       if (Array.isArray(d?.templates)) setQuoteTemplates(d.templates)
     }).catch(() => {}).finally(() => setTemplatesLoaded(true))
+    // Services + their scopes (returns website-matched defaults if unset), so
+    // the composer's Service Type list and scope pre-fill reflect Settings.
+    get('/api/settings/service-scopes')
+      .then(d => { if (Array.isArray(d?.services)) setServiceScopes(d.services) })
+      .catch(() => {})
     // Customer-facing identity for previews/SMS/subjects. /general is the
     // canonical source; fall back to the legacy settings dump for viewers.
     get('/api/settings/general')
@@ -75,6 +83,7 @@ export function useQuotingData() {
     templatesLoaded,
     company,
     companyName: company.company_name || 'The Maine Cleaning Co.',
+    serviceScopes,
     archivedQuotes,
     quotesError,
     loadQuotes, loadIntakes, loadFollowUps, loadArchived,

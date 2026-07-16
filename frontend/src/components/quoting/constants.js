@@ -79,6 +79,26 @@ export const SERVICE_SCOPE = {
   str: 'Turnover clean between guests: full kitchen and bathroom reset, fresh linens and towels staged, floors cleaned, trash removed, and the space restocked and guest-ready.',
 }
 
+// The list of services + scopes is editable in Settings (Service Scopes) and
+// loaded from GET /api/settings/service-scopes into a `services` array of
+// {key,label,scope}. These read that array with a safe fallback to the
+// built-ins, so the quote composer keeps working if the fetch fails or an
+// intake references a service the operator has since renamed.
+export const scopeForService = (services, key) => {
+  const hit = Array.isArray(services) ? services.find(s => s.key === key) : null
+  return (hit?.scope || '').trim() || SERVICE_SCOPE[key] || ''
+}
+export const labelForService = (services, key) => {
+  const hit = Array.isArray(services) ? services.find(s => s.key === key) : null
+  return (hit?.label || '').trim() || serviceLabel(key)
+}
+// The service options for the composer's Service Type selector: the loaded
+// list, or the built-in three when nothing's loaded yet.
+export const serviceOptions = (services) =>
+  (Array.isArray(services) && services.length)
+    ? services.map(s => ({ key: s.key, label: s.label || serviceLabel(s.key) }))
+    : SERVICE_TYPES.map(t => ({ key: t, label: serviceLabel(t) }))
+
 // Build a quote title from a lead/request: "Biweekly Residential Cleaning — 24 Pine Street".
 export const titleFromIntake = (intake) => {
   const freq = freqLabel(intake.frequency)
