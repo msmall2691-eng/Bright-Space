@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle, Inbox,
+  Trash2, MessageCircle, Inbox, ChevronRight,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -723,6 +723,17 @@ export default function Requests() {
                     <MessageSquare className="w-3.5 h-3.5" /> Open thread
                   </button>
                 </div>
+              )}
+              {/* Once this lead has become a quote, link straight to it so a
+                  quoted/converted request isn't a dead end. */}
+              {selectedRequest.converted_quote_id && (
+                <button
+                  onClick={() => navigate(`/quotes/${selectedRequest.converted_quote_id}`)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
+                >
+                  <span className="flex items-center gap-1.5"><FileText className="w-4 h-4" /> View the quote this became</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               )}
               <div>
                 <label className="text-xs font-semibold text-ink-2 uppercase">Email</label>
