@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { AlertCircle, Clock, Calendar as CalendarIcon, Trash2, ArrowLeftRight } from 'lucide-react'
-import StatCard from '../ui/StatCard'
 
 /** Two sub-sections of the Schedule page, all pure props-in:
  *  - ScheduleHealthStrip: today/this-week count cards + optional
@@ -38,10 +37,19 @@ export function ScheduleHealthStrip({
     stats.notGcal > 0 || needsCleaner > 0 || assignedNotPushed > 0
 
   return (
-    <div className="no-print bg-bg border-b border-hairline px-3 sm:px-4 py-2.5">
-      <div className="max-w-7xl mx-auto grid grid-cols-2 gap-2 sm:gap-3">
-        <StatCard className="bg-panel border border-hairline rounded-lg" label="Today" value={stats.today} icon={CalendarIcon} />
-        <StatCard className="bg-panel border border-hairline rounded-lg" label={weekLabel} value={stats.week} icon={Clock} />
+    <div className="no-print bg-bg border-b border-hairline px-3 sm:px-4 py-2">
+      <div className="max-w-7xl mx-auto flex items-center gap-4 text-sm">
+        <span className="flex items-center gap-1.5 text-ink-2">
+          <CalendarIcon className="w-4 h-4 text-ink-3" />
+          <span className="font-semibold text-ink tabular-nums">{stats.today}</span>
+          <span className="text-ink-3">today</span>
+        </span>
+        <span className="w-px h-4 bg-hairline" />
+        <span className="flex items-center gap-1.5 text-ink-2">
+          <Clock className="w-4 h-4 text-ink-3" />
+          <span className="font-semibold text-ink tabular-nums">{stats.week}</span>
+          <span className="text-ink-3 lowercase">{weekLabel}</span>
+        </span>
       </div>
       {hasAnyAttention && (
         // Hidden on phones — a compact amber alert button in the sticky toolbar

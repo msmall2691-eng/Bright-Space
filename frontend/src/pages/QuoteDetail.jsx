@@ -196,7 +196,7 @@ export default function QuoteDetail() {
   // (draft = first send; sent/viewed = a follow-up nudge). Any other status —
   // accepted, converted, declined, expired, changes_requested — 400s, so the
   // Send CTA must be disabled for them rather than dead-ending in an error.
-  const canSend = ['draft', 'sent', 'viewed'].includes(quote.status)
+  const canSend = ['draft', 'sent', 'viewed', 'changes_requested'].includes(quote.status)
   const emptyQuote = !items.length || Number(quote.total || 0) <= 0
   const sendDisabled = !canSend || emptyQuote
   const sendTitle = !canSend
@@ -220,7 +220,7 @@ export default function QuoteDetail() {
           </button>
           {editable && (
             <div className="flex flex-wrap items-center gap-2">
-              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : 'Resend'} onClick={openSend} primary
+              <ToolbarButton icon={Send} label={quote.status === 'draft' ? 'Send' : quote.status === 'changes_requested' ? 'Send revised' : 'Resend'} onClick={openSend} primary
                 disabled={sendDisabled}
                 title={sendTitle} />
               <ToolbarButton icon={Eye} label="Preview" onClick={preview} />

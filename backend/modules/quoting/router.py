@@ -550,8 +550,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
     received anything. Returns per-channel results: {"email": "sent", "sms": ...}.
     """
     quote = _get_quote_or_404(quote_id, db)
-    # draft = first send; sent/viewed = a follow-up nudge (re-send).
-    if quote.status not in ("draft", "sent", "viewed"):
+    # draft = first send; sent/viewed = a follow-up nudge (re-send);
+    # changes_requested = the owner revised it and is sending the revised quote
+    # back (which clears the change-request flag below).
+    if quote.status not in ("draft", "sent", "viewed", "changes_requested"):
         raise HTTPException(status_code=400, detail=f"Cannot send a {quote.status} quote")
     # Send guard: never email a customer an empty or $0 quote. The pipeline is
     # PATCH-able, so a quote with no priced line items can reach here — block it
@@ -715,6 +717,14 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
         if prior_status == "draft":
             quote.status = "sent"
             quote.sent_at = _utcnow()
+        elif prior_status == "changes_requested":
+            # The owner revised the quote and sent it back. Move it to "sent"
+            # and CLEAR the change-request flag so the list stops nagging
+            # "revise and resend" — the ball is back in the customer's court.
+            quote.status = "sent"
+            quote.follow_up_sent_at = _utcnow()
+            quote.requested_changes_at = None
+            quote.requested_changes_message = None
         else:
             # A re-send of an already sent/viewed quote is a follow-up nudge:
             # keep the original status/sent_at (so the "viewed" signal and the

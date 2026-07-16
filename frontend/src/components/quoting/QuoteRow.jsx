@@ -70,10 +70,10 @@ export default function QuoteRow({
             title="Open full page">
             Open
           </button>
-          {canEdit && (q.status === 'draft' || q.status === 'sent') && (
+          {canEdit && ['draft', 'sent', 'changes_requested'].includes(q.status) && (
             <button onClick={() => onSend(q)}
               className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
-              <Send className="w-3 h-3" /> Send
+              <Send className="w-3 h-3" /> {q.status === 'changes_requested' ? 'Send revised' : q.status === 'draft' ? 'Send' : 'Resend'}
             </button>
           )}
           {canEdit && q.status === 'sent' && (
