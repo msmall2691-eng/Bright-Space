@@ -7,6 +7,7 @@ import {
 import { get, patch, post } from '../api'
 import Button from '../components/ui/Button'
 import RecordLink from '../components/RecordLink'
+import AiInsight from '../components/AiInsight'
 import GlassCard from '../components/ui/GlassCard'
 // Normalize API responses — some endpoints return raw arrays, others return
 // paginated envelopes like { items, total, limit, offset }.
@@ -390,6 +391,8 @@ export default function PropertyDetail() {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto p-4">
+          {/* AI-enriched gist of the property: specs, access, notable notes. */}
+          <AiInsight type="property" id={propertyId} className="mb-4" />
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 px-4 py-3 rounded-lg mb-4 text-sm">
               {error}

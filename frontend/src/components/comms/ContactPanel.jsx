@@ -4,6 +4,7 @@ import { formatPhone } from '../../utils/display'
 import { contactDisplay, relTime } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
 import RecordLink from '../RecordLink'
+import AiInsight from '../AiInsight'
 import { useClientQuickLinks } from '../../hooks/useClientQuickLinks'
 
 /** Right-side contact detail panel: summary header (avatar, status,
@@ -112,7 +113,9 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, 
           will move into a "⋯" overflow menu later if anyone misses them.
           What stays here: contact summary, tags, activity timeline. */}
       <div className="overflow-y-auto flex-1">
-        <div className="px-4 pt-2 space-y-4">
+        <div className="px-4 pt-3 space-y-4">
+          {/* AI-enriched gist of the thread: what it's about + the next step. */}
+          <AiInsight type="conversation" id={detail.id} />
           {/* Open items — the "linked both ways" piece: this contact panel
               used to be a dead end at phone/email/address. Surfaces the
               client's open quotes, upcoming jobs, and unpaid invoices so an
