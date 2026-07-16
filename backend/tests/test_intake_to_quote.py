@@ -48,10 +48,16 @@ def test_convert_intake_seeds_quote_from_estimate(intake_ctx):
     # A real quote number was assigned (not the PENDING placeholder, not null).
     assert out["quote_number"] and not out["quote_number"].startswith("PENDING-")
     assert out["status"] == "draft"
-    # First line item priced at the estimate midpoint (200..300 -> 250).
+    # First line item priced at the $5-rounded estimate midpoint (200..300 -> 250).
     assert out["items"][0]["unit_price"] == 250
     assert out["subtotal"] == 250
-    assert out["total"] > 250  # tax applied
+    # No tax is baked into the seed — it must match the operator's Create-Quote
+    # seed and the (pre-tax) instant quote the customer saw, and stay inside the
+    # 200..300 range. The operator adds tax later if a job needs it.
+    assert out["tax"] == 0
+    assert out["tax_rate"] == 0
+    assert out["total"] == 250
+    assert 200 <= out["total"] <= 300
     # Lead's address + service carried over; intake marked quoted.
     assert "9 Web St" in (out["address"] or "")
     db.refresh(intake)

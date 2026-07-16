@@ -107,7 +107,8 @@ def test_default_sms_uses_new_greeting_format(quote_ctx):
     assert "Hi Meg, your quote from The Maine Cleaning Co. is ready." in body
     assert f"Quote {q.quote_number} — Residential clean at 24 Pine Street, Portland, ME, 04102" in body
     assert "Total: $100.00" in body
-    assert "Valid until: 2026-08-05" in body
+    # Long-form date, matching the email/PDF/public page — not raw ISO.
+    assert "Valid until: August 05, 2026" in body
     assert "Tap the link to accept, or reply with any questions." in body
     assert "Reply YES" not in body  # don't advertise an unimplemented handler
     assert "/quote/" in body  # accept link still present

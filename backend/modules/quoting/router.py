@@ -1200,6 +1200,11 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "subtotal": quote.subtotal,
         "tax_rate": quote.tax_rate,
         "tax": quote.tax,
+        # Discount was omitted here, so a discounted quote showed a Total lower
+        # than Subtotal + Tax on the public page with no line explaining the
+        # gap — while the email, PDF, and operator view all show it. Include it
+        # so every surface the customer can see agrees.
+        "discount": quote.discount,
         "total": quote.total,
         "valid_until": fmt_long_date(quote.valid_until),
         # Let the page render an "expired" state instead of letting Accept 409.

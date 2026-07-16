@@ -24,6 +24,7 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
   const items = Array.isArray(quote.items) ? quote.items : []
   const subtotal = parseFloat(quote.subtotal) || 0
   const tax = parseFloat(quote.tax) || 0
+  const discount = parseFloat(quote.discount) || 0
   const total = parseFloat(quote.total) || 0
   const brand = quote.brand_color || '#1f2937'
   const hasMeta = !!(quote.address || quote.service_type)
@@ -139,6 +140,11 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
             {tax > 0 && (
               <div className="flex justify-between text-sm text-ink-2">
                 <span>Tax{quote.tax_rate ? ` (${quote.tax_rate}%)` : ''}</span><span>{money(tax)}</span>
+              </div>
+            )}
+            {discount > 0 && (
+              <div className="flex justify-between text-sm text-ink-2">
+                <span>Discount</span><span>-{money(discount)}</span>
               </div>
             )}
             <div className="flex justify-between text-lg font-bold text-ink pt-2 border-t border-hairline">

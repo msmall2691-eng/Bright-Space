@@ -323,16 +323,23 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
 
     # Seed the first line item's price from the website "instant quote" estimate
     # (midpoint of the range) so the operator starts from the customer's number
-    # instead of $0.
+    # instead of $0. This MUST match the operator's Create-Quote seed
+    # (frontend Quoting.jsx openQuoteForm): round the midpoint to the nearest
+    # $5 and bake in NO tax, so the seeded total equals the $5-rounded midpoint
+    # and stays inside the [min, max] range the customer was shown. The old
+    # version rounded to cents and hard-coded 5.5% tax, which pushed the total
+    # above estimate_max and off the $5 grid — a quote the customer never saw.
+    def _round5(n: float) -> int:
+        return int(n / 5 + 0.5) * 5  # half-up on the $5 grid, mirrors JS Math.round
     est = None
     if intake.estimate_min is not None and intake.estimate_max is not None:
-        est = round((intake.estimate_min + intake.estimate_max) / 2, 2)
+        est = _round5((intake.estimate_min + intake.estimate_max) / 2)
     elif intake.estimate_max is not None:
-        est = intake.estimate_max
+        est = _round5(intake.estimate_max)
     elif intake.estimate_min is not None:
-        est = intake.estimate_min
+        est = _round5(intake.estimate_min)
     unit_price = float(est or 0)
-    tax_rate = 5.5
+    tax_rate = 0.0
     subtotal = round(unit_price, 2)
     tax = round(subtotal * tax_rate / 100, 2)
     total = round(subtotal + tax, 2)
