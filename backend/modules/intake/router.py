@@ -109,6 +109,9 @@ def intake_to_dict(i: LeadIntake) -> dict:
         "custom_fields": getattr(i, "custom_fields", None) or {},
         "client_id": i.client_id,
         "opportunity_id": getattr(i, "opportunity_id", None),
+        # The quote this lead became — lets the UI link a quoted/converted lead
+        # straight to its quote instead of dead-ending on the request.
+        "converted_quote_id": getattr(i, "converted_quote_id", None),
         "created_at": i.created_at.isoformat() if i.created_at else None,
     }
 
