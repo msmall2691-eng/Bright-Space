@@ -5,6 +5,7 @@ import {
 import {
   INPUT_CLASS, PROPERTY_TYPE_COLORS, PROPERTY_TYPE_LABELS, EMPTY_ICAL,
 } from './constants'
+import PropertyPhoto from '../PropertyPhoto'
 
 export default function PropertiesTab({
   properties, navigate, setJobModal,
@@ -317,6 +318,13 @@ export default function PropertiesTab({
                     </div>
                   </div>
                 </div>
+                {/* Street View of the property — lazy (loads when scrolled into
+                    view) and collapses when Google has no imagery. */}
+                <PropertyPhoto
+                  lazy
+                  address={[p.address, p.city, p.state, p.zip_code].filter(Boolean).join(', ')}
+                  className="hidden sm:block w-24 h-16 object-cover rounded-md border border-hairline bg-bg-2 shrink-0"
+                />
                 <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                   {isStr && feedCount > 0 && (
                     <button
