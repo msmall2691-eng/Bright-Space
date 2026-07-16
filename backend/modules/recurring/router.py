@@ -32,8 +32,10 @@ def _release_sync_links(db: Session, job: Job) -> None:
     if job.gcal_event_id:
         try:
             from integrations.google_calendar import delete_event
+            from modules.settings.router import customer_notify_enabled
             if delete_event(job.gcal_event_id, job.job_type or "residential",
-                            owner_account_id=getattr(job, "gcal_account_id", None)):
+                            owner_account_id=getattr(job, "gcal_account_id", None),
+                            send_updates=("all" if customer_notify_enabled(db) else "none")):
                 job.gcal_event_id = None
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
@@ -615,10 +617,14 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
 
     # Auto-push new jobs to Google Calendar
     if new_jobs:
-        from modules.settings.router import customer_invites_enabled
+        from modules.settings.router import (
+            customer_invites_enabled, customer_notify_enabled, gcal_reminder_overrides,
+        )
         client = db.query(Client).filter(Client.id == sched.client_id).first()
         client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None)}
         invite = customer_invites_enabled(db) and bool(client and client.email)
+        _rec_su = "all" if (invite and customer_notify_enabled(db)) else "none"
+        _rec_reminders = gcal_reminder_overrides(db)
         for job in new_jobs:
             db.refresh(job)
             job_dict = {
@@ -627,7 +633,8 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 "end_time": job.end_time, "address": job.address, "notes": job.notes,
             }
             try:
-                event_id = create_event(job_dict, client_dict, send_invite=invite)
+                event_id = create_event(job_dict, client_dict, send_invite=invite,
+                                        reminders=_rec_reminders, send_updates=_rec_su)
                 if event_id:
                     job.calendar_invite_sent = invite
                     job.gcal_event_id = event_id

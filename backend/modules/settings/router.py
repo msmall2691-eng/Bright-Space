@@ -977,6 +977,15 @@ class AutomationConfig(BaseModel):
     gcal_sync_interval: Optional[int] = None
     recurring_auto_generate_enabled: Optional[bool] = None
     invite_customers: Optional[bool] = None
+    # Whether Google EMAILS the customer when their cleaning is booked / moved /
+    # cancelled (the calendar `sendUpdates` control). Separate from
+    # invite_customers: you can put the cleaning on their calendar without
+    # emailing them on every change. Turn off to cut notification noise.
+    notify_customers: Optional[bool] = None
+    # How reminders are set on the Google Calendar event: "google_default"
+    # (use the reminders you've configured in Google Calendar), "off" (no
+    # event reminders), or "email_popup" (email 24h + popup 1h before).
+    gcal_reminders_mode: Optional[str] = None
     customer_self_reschedule: Optional[bool] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
@@ -989,6 +998,42 @@ def customer_invites_enabled(db: Session) -> bool:
     Defaults on — it's the headline "customers see their cleanings" behavior —
     and is the in-app kill switch (Settings → Automation)."""
     return _coerce_bool(get_setting(db, "invite_customers"), True)
+
+
+def customer_notify_enabled(db: Session) -> bool:
+    """Whether Google should EMAIL the customer when their cleaning is created,
+    rescheduled, or cancelled (the calendar `sendUpdates="all"` vs "none").
+    Defaults on. Separate knob from `invite_customers` so the operator can keep
+    the cleaning on the customer's calendar while dialing DOWN how many change
+    emails Google sends them (Settings → Automation)."""
+    return _coerce_bool(get_setting(db, "notify_customers"), True)
+
+
+# Valid reminder modes for the Google Calendar event.
+_GCAL_REMINDER_MODES = ("google_default", "off", "email_popup")
+
+
+def gcal_reminder_overrides(db: Session):
+    """The `reminders` block to put on a Google Calendar event, per the operator's
+    Settings → Automation choice:
+
+      - "google_default" (default): {"useDefault": True} — respect whatever
+        reminders the operator has configured in Google Calendar itself, so
+        reminders are controlled in ONE place (Google) rather than hard-coded.
+      - "off": no reminders on the event at all.
+      - "email_popup": email 24h before + popup 1h before (the legacy behavior).
+    """
+    mode = (get_setting(db, "gcal_reminders_mode") or "google_default").strip().lower()
+    if mode not in _GCAL_REMINDER_MODES:
+        mode = "google_default"
+    if mode == "off":
+        return {"useDefault": False, "overrides": []}
+    if mode == "email_popup":
+        return {"useDefault": False, "overrides": [
+            {"method": "email", "minutes": 24 * 60},
+            {"method": "popup", "minutes": 60},
+        ]}
+    return {"useDefault": True}
 
 
 def freebusy_check_enabled(db: Session) -> bool:
@@ -1146,6 +1191,8 @@ def get_automation_settings(db: Session = Depends(get_db)):
             os.getenv("RECURRING_AUTO_GENERATE_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"},
         ),
         "invite_customers": customer_invites_enabled(db),
+        "notify_customers": customer_notify_enabled(db),
+        "gcal_reminders_mode": (get_setting(db, "gcal_reminders_mode") or "google_default"),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }

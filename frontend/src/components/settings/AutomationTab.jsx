@@ -16,6 +16,8 @@ export function useAutomationSettings({ toast, active }) {
     gcal_sync_interval: 10,
     recurring_auto_generate_enabled: true,
     invite_customers: true,
+    notify_customers: true,
+    gcal_reminders_mode: 'google_default',
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })
@@ -255,6 +257,34 @@ export default function AutomationTab({ state, toast, active }) {
             {s.invite_customers && (
               <p className="text-xs text-ink-3 mt-1">Applies to new cleanings and to the Calendar page's “Push to Google” backfill (which emails each client an invite for their upcoming cleanings). Only clients with an email on file are invited.</p>
             )}
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-ink">Email customers when a cleaning changes</h3>
+                <p className="text-xs text-ink-3 mt-1">When ON, Google emails the customer when their cleaning is booked, moved, or cancelled (and their calendar copy updates either way). Turn OFF to cut the email noise — the cleaning still lands on their calendar, they just don't get a change email every time. Reschedules now correctly keep the customer on the invite instead of dropping it.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={s.notify_customers}
+                  onChange={e => setAutomationSettings(x => ({ ...x, notify_customers: e.target.checked }))}
+                  className="w-4 h-4 rounded" />
+              </label>
+            </div>
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <div className="mb-2">
+              <h3 className="font-semibold text-ink">Calendar reminders</h3>
+              <p className="text-xs text-ink-3 mt-1">How the reminders on each cleaning's Google Calendar event are set. “Use Google Calendar's settings” hands reminder control to Google (change them once in your Google Calendar and they apply everywhere) — recommended, since you're already managing reminders there. “No reminders” puts none on the event. “Email 24h + popup 1h” sets those two explicitly.</p>
+            </div>
+            <select value={s.gcal_reminders_mode}
+              onChange={e => setAutomationSettings(x => ({ ...x, gcal_reminders_mode: e.target.value }))}
+              className="w-full sm:w-80 bg-bg-2 border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+              <option value="google_default">Use Google Calendar's settings (recommended)</option>
+              <option value="off">No reminders</option>
+              <option value="email_popup">Email 24h + popup 1h before</option>
+            </select>
           </div>
 
           <div className="border-t border-hairline pt-5">
