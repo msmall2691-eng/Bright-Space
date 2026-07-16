@@ -830,7 +830,7 @@ export default function CalendarView({
                 isCheckin={isCheckin}
                 isCheckout={isCheckout}
                 isMobile={isMobile}
-                maxPills={isMobile ? 2 : 3}
+                maxPills={isMobile ? 4 : 4}
                 typeConfig={TYPE_CONFIG}
                 onSelectDay={onSelectDay}
                 onDragOverDay={onDragOver}

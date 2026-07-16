@@ -30,7 +30,7 @@ function MonthDayCell({
       onDragOver={e => onDragOverDay(e, date)}
       onDragLeave={onDragLeaveDay}
       onDrop={e => onDropDay(e, date)}
-      className={`relative p-1 sm:p-1.5 min-h-[64px] sm:min-h-[80px] cursor-pointer transition-colors ${
+      className={`relative p-1 sm:p-1.5 min-h-[104px] sm:min-h-[96px] cursor-pointer transition-colors ${
         isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
         isSelected ? 'bg-blue-50/60' :
         dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
