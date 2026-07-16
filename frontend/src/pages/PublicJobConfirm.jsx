@@ -25,14 +25,15 @@ export default function PublicJobConfirm() {
   const [confirming, setConfirming] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
 
-  // Self-reschedule (pick a new open day + arrival window)
+  // Self-reschedule (pick a new day + arrival window)
   const [showReschedule, setShowReschedule] = useState(false)
-  const [availability, setAvailability] = useState(null)   // { enabled, windows, dates }
+  const [availability, setAvailability] = useState(null)   // { enabled, windows, dates:[{date, windows:[{key,busy}]}] }
   const [loadingAvail, setLoadingAvail] = useState(false)
   const [reschedDate, setReschedDate] = useState('')
   const [reschedWindow, setReschedWindow] = useState('morning')
+  const [reschedScope, setReschedScope] = useState('this')  // 'this' | 'future' (recurring)
   const [rescheduling, setRescheduling] = useState(false)
-  const [rescheduled, setRescheduled] = useState(null)     // { date_label, window }
+  const [rescheduled, setRescheduled] = useState(null)      // { date_label, window, pending }
 
   // Message-only request (fallback when self-reschedule is off or no slots fit)
   const [showRequest, setShowRequest] = useState(false)
@@ -86,10 +87,11 @@ export default function PublicJobConfirm() {
       if (!res.ok) { setError('Could not load available times. Please try again.'); return }
       const data = await res.json()
       setAvailability(data)
-      const firstOpen = (data.dates || [])[0]
-      if (firstOpen) {
-        setReschedDate(firstOpen.date)
-        setReschedWindow(firstOpen.windows?.[0] || 'morning')
+      const first = (data.dates || [])[0]
+      if (first) {
+        setReschedDate(first.date)
+        const pref = (first.windows || []).find(w => !w.busy) || (first.windows || [])[0]
+        setReschedWindow(pref?.key || 'morning')
       }
     } catch (e) {
       setError('Connection error. Please try again.')
@@ -98,11 +100,18 @@ export default function PublicJobConfirm() {
     }
   }
 
-  // Windows offered for the currently-selected day (a day may have only one open).
+  // Windows for the selected day, each tagged with its label + busy flag.
   const windowsForSelected = () => {
     const day = (availability?.dates || []).find(d => d.date === reschedDate)
-    const open = new Set(day?.windows || [])
-    return (availability?.windows || []).filter(w => open.has(w.key))
+    const byKey = Object.fromEntries((day?.windows || []).map(w => [w.key, w]))
+    return (availability?.windows || [])
+      .filter(w => byKey[w.key])
+      .map(w => ({ ...w, busy: byKey[w.key].busy }))
+  }
+
+  const selectedBusy = () => {
+    const day = (availability?.dates || []).find(d => d.date === reschedDate)
+    return !!(day?.windows || []).find(w => w.key === reschedWindow)?.busy
   }
 
   const handleReschedule = async () => {
@@ -112,14 +121,17 @@ export default function PublicJobConfirm() {
       const res = await window.fetch(`/api/jobs/public/${token}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: reschedDate, window: reschedWindow }),
+        body: JSON.stringify({ date: reschedDate, window: reschedWindow, scope: reschedScope }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(data.detail || 'Could not move your visit to that time. Please pick another.')
         return
       }
-      setRescheduled({ date_label: data.date_label, window: data.window })
+      setRescheduled({
+        date_label: data.date_label, window: data.window,
+        pending: data.status === 'pending_approval',
+      })
       setShowReschedule(false)
     } catch (e) {
       setError('Connection error. Please try again.')
@@ -229,10 +241,18 @@ export default function PublicJobConfirm() {
                 </div>
 
                 {rescheduled ? (
-                  <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                    <p className="text-sm text-emerald-800 font-medium">Rescheduled — you're all set. We'll confirm the exact time shortly.</p>
-                  </div>
+                  rescheduled.pending ? (
+                    <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
+                      <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-blue-800 font-medium">Request received — that time is popular, so we'll confirm it and get right back to you.</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-4 text-center">
+                      <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto mb-1.5" />
+                      <p className="text-base font-bold text-emerald-800">You're rescheduled! 🎉</p>
+                      <p className="text-sm text-emerald-700 mt-0.5">{rescheduled.date_label} · {rescheduled.window === 'afternoon' ? 'afternoon (1–4pm)' : 'morning (9am–12pm)'} arrival. We'll confirm the exact time shortly.</p>
+                    </div>
+                  )
                 ) : isConfirmed ? (
                   <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
                     <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -267,7 +287,8 @@ export default function PublicJobConfirm() {
                           onChange={(e) => {
                             const day = (availability?.dates || []).find(d => d.date === e.target.value)
                             setReschedDate(e.target.value)
-                            if (day && !day.windows.includes(reschedWindow)) setReschedWindow(day.windows[0])
+                            const keys = (day?.windows || []).map(w => w.key)
+                            if (day && !keys.includes(reschedWindow)) setReschedWindow(keys[0])
                           }}
                           className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-blue-500"
                         >
@@ -285,15 +306,39 @@ export default function PublicJobConfirm() {
                               className={`py-3 rounded-xl text-sm font-medium border transition-colors ${reschedWindow === w.key ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
                             >
                               {w.label}
+                              {w.busy && <span className={`block text-[11px] font-normal ${reschedWindow === w.key ? 'text-blue-100' : 'text-amber-600'}`}>needs approval</span>}
                             </button>
                           ))}
                         </div>
+
+                        {job.is_recurring && (
+                          <div className="space-y-1.5 pt-1">
+                            <p className="text-xs font-medium text-ink-2">This is a recurring visit — apply to:</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[['this', 'Just this visit'], ['future', 'This + all future']].map(([val, label]) => (
+                                <button
+                                  key={val}
+                                  onClick={() => setReschedScope(val)}
+                                  className={`py-2.5 rounded-xl text-[13px] font-medium border transition-colors ${reschedScope === val ? 'bg-ink text-white border-ink' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedBusy() && (
+                          <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            That time is popular — we'll confirm it with you before it's locked in.
+                          </p>
+                        )}
                         <button
                           onClick={handleReschedule}
                           disabled={rescheduling || !reschedDate}
                           className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
                         >
-                          {rescheduling ? 'Moving your visit…' : 'Reschedule to this time'}
+                          {rescheduling ? 'Sending…' : selectedBusy() ? 'Request this time' : 'Reschedule to this time'}
                         </button>
                       </>
                     )}

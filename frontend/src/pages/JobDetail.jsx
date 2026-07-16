@@ -92,6 +92,11 @@ export default function JobDetail() {
       .then(updated => { setJob(j => ({ ...j, ...updated })); return updated })
       .catch(() => { toast.error('Could not save change'); load() })
 
+  const resolveReschedule = (action) =>
+    post(`/api/jobs/${id}/${action}-reschedule`, {})
+      .then(() => { toast.success(action === 'approve' ? 'Reschedule approved' : 'Request dismissed'); load() })
+      .catch((e) => toast.error(e?.message || `Could not ${action} the request`))
+
   // Show an "invoice this?" banner when a job flips to Completed and doesn't
   // already have an invoice. Cleared once the user acts or dismisses. Audit
   // finding: nothing was connecting job completion to billing, so completed
@@ -241,15 +246,42 @@ export default function JobDetail() {
                   the owner's inbox. A pending reschedule request wins (it needs
                   action); a self-reschedule clears that and lands as confirmed. */}
               {job.reschedule_requested_at ? (
-                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-                  <CalendarClock className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">Customer asked to reschedule</p>
-                    {job.reschedule_request_message && (
-                      <p className="text-amber-700/90">“{job.reschedule_request_message}”</p>
-                    )}
-                    <p className="text-amber-700/90">Pick a new time below (or in the schedule).</p>
+                <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800">
+                  <div className="flex items-start gap-2">
+                    <CalendarClock className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-semibold">
+                        {job.reschedule_requested_date ? 'Customer wants to reschedule' : 'Customer asked to reschedule'}
+                      </p>
+                      {job.reschedule_requested_date && (
+                        <p className="text-amber-700/90">
+                          To {fmtDate(job.reschedule_requested_date)}
+                          {job.reschedule_requested_scope === 'future' ? ' · this + all future visits' : ' · this visit'}
+                          {' '}— that slot's busy, so it needs your OK.
+                        </p>
+                      )}
+                      {job.reschedule_request_message && (
+                        <p className="text-amber-700/90">“{job.reschedule_request_message}”</p>
+                      )}
+                      {!job.reschedule_requested_date && (
+                        <p className="text-amber-700/90">Pick a new time below (or in the schedule).</p>
+                      )}
+                    </div>
                   </div>
+                  {editable && (
+                    <div className="mt-2 flex gap-2">
+                      {job.reschedule_requested_date && (
+                        <button onClick={() => resolveReschedule('approve')}
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                          Approve &amp; move
+                        </button>
+                      )}
+                      <button onClick={() => resolveReschedule('decline')}
+                        className="flex-1 px-3 py-1.5 rounded-lg bg-panel border border-amber-300 text-amber-800 font-medium hover:bg-amber-100">
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : job.customer_confirmed_at ? (
                 <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">

@@ -227,17 +227,23 @@ export default function PublicQuote() {
   )
 
   const banner = scheduled ? (
-    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-      <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-      <p className="text-sm text-emerald-800 font-medium">
-        Booked ✓ for {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly.
+    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-sm">
+      <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+        <CheckCircle className="w-8 h-8 text-emerald-600" />
+      </div>
+      <p className="text-xl font-bold text-emerald-800">You're booked! 🎉</p>
+      <p className="text-sm text-emerald-700 mt-1">
+        {scheduled.date_label} ({scheduled.window === 'afternoon' ? 'afternoon' : 'morning'}) — we'll confirm the exact time shortly. A confirmation is on its way to your inbox.
       </p>
     </div>
   ) : isAccepted ? (
-    <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-      <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-      <p className="text-sm text-emerald-800 font-medium">
-        {accepted ? `Accepted ✓ on ${todayLong}` : 'Accepted ✓'} — we'll reach out shortly to confirm your scheduled date.
+    <div className="no-print mb-3 rounded-2xl bg-emerald-50 border border-emerald-200 px-5 py-6 text-center shadow-sm">
+      <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+        <CheckCircle className="w-8 h-8 text-emerald-600" />
+      </div>
+      <p className="text-xl font-bold text-emerald-800">Quote accepted — thank you! 🎉</p>
+      <p className="text-sm text-emerald-700 mt-1">
+        {accepted ? `Accepted on ${todayLong}. ` : ''}We'll reach out shortly to lock in your date. A confirmation is on its way to your inbox.
       </p>
     </div>
   ) : requested ? (

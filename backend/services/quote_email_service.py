@@ -58,6 +58,23 @@ def customer_safe_title(title: str | None) -> str | None:
     return t
 
 
+def _service_label(service_type: str | None) -> str | None:
+    """Customer-facing service label ('str_turnover' -> 'Turnover Cleaning',
+    'residential' -> 'Residential Cleaning'). None when unknown/blank."""
+    key = (service_type or "").strip().lower()
+    if not key:
+        return None
+    mapping = {
+        "residential": "Residential Cleaning",
+        "commercial": "Commercial Cleaning",
+        "str": "Short-Term Rental Turnover",
+        "str_turnover": "Short-Term Rental Turnover",
+        "deep_clean": "Deep Cleaning",
+        "move_in_out": "Move-In / Move-Out Cleaning",
+    }
+    return mapping.get(key, key.replace("_", " ").title())
+
+
 def customer_display_name(name: str | None) -> str:
     """The name as greet-able text, or '' when it's a placeholder/phone."""
     name = (name or "").strip()
@@ -217,6 +234,9 @@ class QuoteEmailService:
                               or self.from_email)
         self.company_phone = self._db_setting("company_phone") or os.getenv("COMPANY_PHONE")
         self.quote_terms = self._db_setting("quote_terms")
+        # Customer-facing service policies — falls back to the shared default so
+        # every quote email carries pickup / access / 24h-cancellation policies.
+        self.quote_policies = self._policies_setting()
         self.brand_color = self._db_setting("brand_color") or "#1f2937"
         self.company_logo_url = self._db_setting("company_logo_url")
 
@@ -242,6 +262,34 @@ class QuoteEmailService:
                 db.close()
         except Exception:
             return None
+
+    @staticmethod
+    def _policies_setting():
+        """The configured service policies, or the shared professional default
+        when unset — so every quote email carries them. Best-effort."""
+        try:
+            from database.db import SessionLocal
+            from modules.settings.router import quote_policies_text
+            db = SessionLocal()
+            try:
+                return quote_policies_text(db)
+            finally:
+                db.close()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _policy_lines(text):
+        """Split a policies blob into clean bullet lines (drop blanks / leading
+        bullet chars)."""
+        if not text:
+            return []
+        out = []
+        for line in str(text).splitlines():
+            s = line.strip().lstrip("•-–*").strip()
+            if s:
+                out.append(s)
+        return out
 
     def get_email_template(self) -> str:
         """Quote email HTML. Table-based layout (no flexbox) so it renders
@@ -271,6 +319,10 @@ class QuoteEmailService:
         .totals .grand td { font-weight: bold; font-size: 16px; border-top: 1px solid #e5e7eb; padding-top: 8px; }
         .footer { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none; text-align: center; font-size: 12px; color: #6b7280; }
         .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
+        .section-label { color: #6b7280; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin: 22px 0 8px; }
+        .scope { color: #374151; font-size: 14px; line-height: 1.55; white-space: pre-wrap; margin: 0; }
+        .policies { margin: 8px 0 0; padding-left: 20px; color: #374151; font-size: 13px; line-height: 1.5; }
+        .policies li { margin: 4px 0; }
     </style>
 </head>
 <body>
@@ -298,6 +350,11 @@ class QuoteEmailService:
                 {% if expires_at %}<tr><td style="padding: 4px 16px;"><strong>Valid until:</strong></td><td style="padding: 4px 16px; text-align: right;">{{ expires_at }}</td></tr>{% endif %}
                 {% if address %}<tr><td style="padding: 4px 16px 12px;"><strong>Service address:</strong></td><td style="padding: 4px 16px 12px; text-align: right;">{{ address }}</td></tr>{% endif %}
             </table>
+
+            {% if scope %}
+            <div class="section-label">{% if service_label %}{{ service_label }} — {% endif %}Scope &amp; Details</div>
+            <p class="scope">{{ scope }}</p>
+            {% endif %}
 
             {% if items %}
             <table class="items">
@@ -331,6 +388,14 @@ class QuoteEmailService:
                     <div style="margin-top: 10px; font-size: 13px;"><a href="{{ quote_link }}" style="color: {{ brand_color }}; text-decoration: underline;">or open it in your browser</a></div>
                 </td></tr>
             </table>
+
+            {% if policies %}
+            <div class="divider"></div>
+            <div class="section-label">A Few Things Before We Clean</div>
+            <ul class="policies">
+                {% for p in policies %}<li>{{ p }}</li>{% endfor %}
+            </ul>
+            {% endif %}
 
             <div class="divider"></div>
 
@@ -371,6 +436,8 @@ class QuoteEmailService:
         bcc: Optional[str] = None,
         property_photo_url: Optional[str] = None,
         client_first_name: Optional[str] = None,
+        scope: Optional[str] = None,
+        service_type: Optional[str] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -474,6 +541,9 @@ class QuoteEmailService:
                 company_phone=self.company_phone,
                 company_phone_href=phone_tel_href(self.company_phone),
                 terms=self.quote_terms,
+                scope=(scope or "").strip() or None,
+                service_label=_service_label(service_type),
+                policies=self._policy_lines(self.quote_policies),
                 property_photo_url=(property_photo_url or "").strip() or None,
             )
 

@@ -21,6 +21,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
     title: '',
     address: '',
     frequency: 'weekly',
+    interval_weeks: 1,
     days_of_week: [1],
     day_of_month: 1,
     start_time: '09:00',
@@ -72,7 +73,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
         title: form.title.trim(),
         address: form.address.trim(),
         frequency: form.frequency,
-        interval_weeks: form.frequency === 'biweekly' ? 2 : 1,
+        interval_weeks: form.frequency === 'monthly' ? 1 : (parseInt(form.interval_weeks) || 1),
         days_of_week: form.frequency === 'monthly' ? [] : form.days_of_week,
         day_of_week: form.days_of_week[0] || 0,
         day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
@@ -127,9 +128,20 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-semibold mb-1">Frequency</label>
-              <select value={form.frequency} onChange={e => setForm(f => ({...f, frequency: e.target.value}))} className="w-full px-3 py-2 border border-hairline rounded-lg">
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Biweekly (every 2 weeks)</option>
+              <select
+                value={form.frequency === 'monthly' ? 'monthly' : String(form.interval_weeks || 1)}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === 'monthly') { setForm(f => ({...f, frequency: 'monthly'})); return }
+                  const n = parseInt(v) || 1
+                  setForm(f => ({...f, frequency: n === 2 ? 'biweekly' : 'weekly', interval_weeks: n}))
+                }}
+                className="w-full px-3 py-2 border border-hairline rounded-lg">
+                <option value="1">Weekly</option>
+                <option value="2">Biweekly (every 2 weeks)</option>
+                <option value="3">Every 3 weeks</option>
+                <option value="4">Every 4 weeks</option>
+                <option value="8">Every 8 weeks</option>
                 <option value="monthly">Monthly</option>
               </select>
             </div>

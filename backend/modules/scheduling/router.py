@@ -522,6 +522,11 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "customer_confirmed_at": j.customer_confirmed_at.isoformat() if j.customer_confirmed_at else None,
         "reschedule_requested_at": j.reschedule_requested_at.isoformat() if j.reschedule_requested_at else None,
         "reschedule_request_message": j.reschedule_request_message,
+        # A pending self-reschedule awaiting approval (busy-slot hold): the
+        # requested date + scope so the badge can offer one-tap approve.
+        "reschedule_requested_date": str(j.reschedule_requested_date) if j.reschedule_requested_date else None,
+        "reschedule_requested_scope": j.reschedule_requested_scope,
+        "is_recurring": bool(j.recurring_schedule_id),
         # Phase 5: booking enrichment for STR turnovers. Lazy-matched in
         # get_jobs() if the Job has no direct ical_event_id link.
         "booking": _booking_dict(booking_event) if booking_event else None,
@@ -1670,60 +1675,154 @@ SELF_RESCHEDULE_DAYS = 42          # how far ahead a customer can move a visit
 SELF_RESCHEDULE_MIN_LEAD_DAYS = 1  # earliest is tomorrow (never same-day)
 
 
-def _job_self_reschedule_availability(db: Session, job: Job) -> list:
-    """Open days + per-day arrival windows a customer can move this visit to.
+def _self_reschedule_days(db: Session) -> list:
+    """Every bookable business day over the next SELF_RESCHEDULE_DAYS (Sundays
+    closed). We deliberately do NOT drop days where cleaners are busy — a
+    customer may double-book on purpose; those land as a pending approval — so
+    this is just the calendar of offerable days."""
+    today = business_today()
+    out = []
+    for i in range(SELF_RESCHEDULE_MIN_LEAD_DAYS, SELF_RESCHEDULE_DAYS + 1):
+        d = today + timedelta(days=i)
+        if d.weekday() == 6:  # Sunday: closed
+            continue
+        out.append(d.isoformat())
+    return out
 
-    Days come from the same roster/time-off logic the quote self-schedule uses
-    (Sundays closed; a day is unavailable only when every cleaner on record is
-    off). When Google Free/Busy is connected AND enabled, each window is also
-    checked against the calendar this job_type lands on — a window fully covered
-    by a busy block is dropped, so "Google Calendar is the source of truth" for
-    what's actually open. Fails open: no Google, or an API hiccup, and every
-    window stays offered. The job's own current date is excluded (moving a visit
-    onto the day it's already on is a no-op)."""
-    from modules.quoting.router import _quote_availability
 
-    days = _quote_availability(db)  # [{date, available}], respects roster/Sundays
-    cur = job.scheduled_date.isoformat() if job.scheduled_date else None
-
-    # One Free/Busy range query for the whole window, bucketed locally.
-    busy_blocks = []
+def _gcal_busy_blocks_for(db: Session, job: Job, day_isos: list) -> list:
+    """One Google Free/Busy range query for the job's calendar over the span of
+    the offered days. Empty (fail-open) when Google isn't connected/enabled."""
+    if not day_isos:
+        return []
     try:
         from modules.settings.router import freebusy_check_enabled
-        if days and freebusy_check_enabled(db):
-            from integrations.google_calendar import free_busy_range
-            busy_blocks = free_busy_range(
-                job.job_type or "residential", days[0]["date"], days[-1]["date"])
+        if not freebusy_check_enabled(db):
+            return []
+        from integrations.google_calendar import free_busy_range
+        return free_busy_range(job.job_type or "residential", day_isos[0], day_isos[-1]) or []
     except Exception as e:
         logger.warning(f"[jobs] self-reschedule Free/Busy skipped: {e}")
+        return []
 
-    def _window_free(day_iso: str, start: str, end: str) -> bool:
-        """True unless a Google busy block covers the whole window."""
-        if not busy_blocks:
-            return True
-        try:
-            from zoneinfo import ZoneInfo
-            tz = ZoneInfo("America/New_York")
-            ws = datetime.fromisoformat(f"{day_iso}T{start}:00").replace(tzinfo=tz)
-            we = datetime.fromisoformat(f"{day_iso}T{end}:00").replace(tzinfo=tz)
-            for b in busy_blocks:
-                bs = datetime.fromisoformat(b["start"])
-                be = datetime.fromisoformat(b["end"])
-                if bs <= ws and be >= we:  # busy spans the entire window
-                    return False
-        except Exception:
-            return True
-        return True
+
+def _window_covered_by_busy(day_iso: str, start: str, end: str, busy_blocks: list) -> bool:
+    """True when a Google busy block spans the whole arrival window."""
+    if not busy_blocks:
+        return False
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/New_York")
+        ws = datetime.fromisoformat(f"{day_iso}T{start}:00").replace(tzinfo=tz)
+        we = datetime.fromisoformat(f"{day_iso}T{end}:00").replace(tzinfo=tz)
+        for b in busy_blocks:
+            bs = datetime.fromisoformat(b["start"])
+            be = datetime.fromisoformat(b["end"])
+            if bs <= ws and be >= we:
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _crew_busy_on(db: Session, job: Job, d, start: str, end: str) -> bool:
+    """Whether the job's assigned crew already has a conflicting visit in this
+    window (cheap DB check; skipped when the job has no crew yet)."""
+    if not job.cleaner_ids:
+        return False
+    try:
+        conflicts = _find_cleaner_conflicts(
+            db, cleaner_ids=job.cleaner_ids, scheduled_date=d,
+            start_time=start, end_time=end, exclude_job_id=job.id, org_id=job.org_id)
+        return bool(conflicts)
+    except Exception:
+        return False
+
+
+def _job_self_reschedule_availability(db: Session, job: Job) -> list:
+    """Days + arrival windows for the self-reschedule picker. Every business day
+    is offered (double-book allowed); each window is flagged ``busy`` when the
+    crew is already booked or Google Calendar shows the slot taken. A busy pick
+    doesn't move the job — it lands as a pending approval for the owner. The
+    job's own current date is skipped (moving onto today's date is a no-op)."""
+    day_isos = _self_reschedule_days(db)
+    cur = job.scheduled_date.isoformat() if job.scheduled_date else None
+    busy_blocks = _gcal_busy_blocks_for(db, job, day_isos)
 
     out = []
-    for d in days:
-        if not d.get("available") or d["date"] == cur:
+    for day_iso in day_isos:
+        if day_iso == cur:
             continue
-        windows = [k for k, (s, e) in SELF_RESCHEDULE_WINDOWS.items()
-                   if _window_free(d["date"], s, e)]
-        if windows:
-            out.append({"date": d["date"], "windows": windows})
+        d = _to_date(day_iso)
+        windows = []
+        for key, (s, e) in SELF_RESCHEDULE_WINDOWS.items():
+            busy = _window_covered_by_busy(day_iso, s, e, busy_blocks) or _crew_busy_on(db, job, d, s, e)
+            windows.append({"key": key, "busy": busy})
+        out.append({"date": day_iso, "windows": windows})
     return out
+
+
+def _slot_busy(db: Session, job: Job, d, start: str, end: str) -> bool:
+    """Whether the chosen slot double-books — crew already booked, or Google
+    Calendar shows this job_type's calendar busy in the window. Drives the
+    approval gate: a busy pick is held for the owner instead of moving."""
+    if _crew_busy_on(db, job, d, start, end):
+        return True
+    try:
+        from modules.settings.router import freebusy_check_enabled
+        if freebusy_check_enabled(db):
+            from integrations.google_calendar import free_busy_conflicts
+            if free_busy_conflicts(job.job_type or "residential", d, start, end):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope: str) -> Job:
+    """Actually move the visit. Returns the resulting Job.
+
+    - one-off job → move the row in place (keeps token + Google event).
+    - recurring, scope 'this' → single-occurrence exception (carries the
+      customer link onto the new row).
+    - recurring, scope 'future' → split the series at the earlier of the two
+      dates so this visit and every future one follow the new day/time.
+    All paths keep Google Calendar in sync (update_job / generate_jobs)."""
+    org_id = resolve_org_id(job.org_id, db)
+    if job.recurring_schedule_id:
+        from modules.recurring.router import (
+            _reschedule_occurrence, _get_schedule_or_404, split_schedule, ScheduleSplit)
+        sched = _get_schedule_or_404(db, job.recurring_schedule_id, org_id)
+        if scope == "future":
+            split_date = min(job.scheduled_date, d) if job.scheduled_date else d
+            wd = d.weekday()  # 0=Mon.. matches backend days_of_week
+            split_schedule(job.recurring_schedule_id, ScheduleSplit(
+                split_date=split_date, days_of_week=[wd], day_of_week=wd,
+                day_of_month=d.day, start_time=start, end_time=end,
+                cleaner_ids=[str(c) for c in (job.cleaner_ids or [])],
+            ), db=db, org_id=org_id)
+            db.flush()
+            moved = (db.query(Job)
+                     .filter(Job.scheduled_date == d, Job.property_id == job.property_id,
+                             Job.status != "cancelled")
+                     .order_by(Job.id.desc()).first())
+            return moved or job
+        # scope 'this' — move just this occurrence (swaps the Job row).
+        token = job.public_token
+        _, newjob = _reschedule_occurrence(
+            db, sched, exception_date=job.scheduled_date, rescheduled_date=d,
+            rescheduled_start_time=start, rescheduled_end_time=end,
+            cleaner_ids=job.cleaner_ids, reason="Customer self-reschedule")
+        db.flush()
+        if newjob is not None and newjob.id != job.id:
+            newjob.public_token = token
+            job.public_token = None
+        return newjob or job
+    # One-off visit — move in place so the token + Google event follow it.
+    update_job(job.id, JobUpdate(
+        scheduled_date=d.isoformat(), start_time=start, end_time=end,
+        allow_conflicts=True), db=db, org_id=org_id)
+    return job
 
 
 def _public_job_dict(job: Job, db: Session) -> dict:
@@ -1752,6 +1851,17 @@ def _public_job_dict(job: Job, db: Session) -> dict:
         # live). The picker still fetches concrete open days from /availability.
         "can_self_reschedule": (
             customer_self_reschedule_enabled(db) and job.status != "cancelled"
+        ),
+        # Recurring visits let the customer choose "this visit" vs "all future".
+        "is_recurring": bool(job.recurring_schedule_id),
+        # A pending self-reschedule that's awaiting owner approval (busy slot).
+        "pending_reschedule": (
+            {
+                "date": str(job.reschedule_requested_date),
+                "start_time": str(job.reschedule_requested_start_time) if job.reschedule_requested_start_time else None,
+                "scope": job.reschedule_requested_scope,
+            }
+            if job.reschedule_requested_date else None
         ),
     }
 
@@ -1850,16 +1960,24 @@ def public_job_availability(token: str, db: Session = Depends(get_db)):
 class PublicSelfRescheduleRequest(BaseModel):
     date: str
     window: Optional[str] = "morning"
+    # "this" (single visit) or "future" (this + all future) for a recurring
+    # visit; ignored for one-off jobs (always treated as "this").
+    scope: Optional[str] = "this"
+
+
+def _win_label(window: str) -> str:
+    return "morning (9am–12pm)" if window == "morning" else "afternoon (1pm–4pm)"
 
 
 @router.post("/public/{token}/reschedule", dependencies=[Depends(rate_limit(20, 3600, "job_self_reschedule"))])
 def public_self_reschedule(token: str, data: PublicSelfRescheduleRequest, db: Session = Depends(get_db)):
-    """Customer moves their own visit to a new open day + arrival window. Unlike
-    request-reschedule (which only queues a note for staff), this actually moves
-    the job and pushes the change to Google Calendar — mirrors the quote
-    self-schedule flow. Bypasses the operator conflict guards (allow_conflicts):
-    the customer has no way to react to a "double-booked cleaner" 409, and the
-    owner gets an immediate alert to re-shuffle if there's a real collision."""
+    """Customer moves their own visit to a new day + arrival window.
+
+    Open slot → the job moves immediately (+ Google Calendar). Busy slot (a
+    double-book) → the move is held as a PENDING APPROVAL: the owner gets a
+    notification and approves it from the dashboard. Recurring visits carry a
+    scope ('this' | 'future'). No new quote — the same booked job just moves,
+    keeping its title, price, and details."""
     from modules.settings.router import customer_self_reschedule_enabled
     job = _job_by_token(token, db)
     if job.status == "cancelled":
@@ -1875,56 +1993,183 @@ def public_self_reschedule(token: str, data: PublicSelfRescheduleRequest, db: Se
     window = (data.window or "morning").lower()
     if window not in SELF_RESCHEDULE_WINDOWS:
         raise HTTPException(status_code=400, detail="Please choose a morning or afternoon window.")
-    # Re-check server-side so a stale page can't book a day/window that closed.
+    # Scope only applies to recurring visits.
+    scope = (data.scope or "this").lower()
+    if scope not in ("this", "future") or not job.recurring_schedule_id:
+        scope = "this"
+    # Re-check the day is still offerable (Sundays closed / out of the window).
     avail = _job_self_reschedule_availability(db, job)
-    if not any(a["date"] == d.isoformat() and window in a["windows"] for a in avail):
-        raise HTTPException(status_code=409, detail="That time is no longer available. Please pick another.")
+    day = next((a for a in avail if a["date"] == d.isoformat()), None)
+    if not day or window not in {w["key"] for w in day["windows"]}:
+        raise HTTPException(status_code=409, detail="That day is no longer available. Please pick another.")
     start, end = SELF_RESCHEDULE_WINDOWS[window]
 
     old_when = f"{job.scheduled_date}" + (f" {job.start_time}" if job.start_time else "")
+    nice_date = d.strftime("%B %d, %Y")
+    who = job.client.name if job.client else "The customer"
 
+    # ── Busy slot → hold for owner approval (double-book, don't move yet). ──
+    if _slot_busy(db, job, d, start, end):
+        job.reschedule_requested_at = datetime.now(timezone.utc)
+        job.reschedule_requested_date = d
+        job.reschedule_requested_start_time = _to_time(start)
+        job.reschedule_requested_end_time = _to_time(end)
+        job.reschedule_requested_scope = scope
+        job.reschedule_request_message = None
+        log_activity(
+            db, "job_reschedule_requested", job_id=job.id, client_id=job.client_id,
+            actor="client",
+            summary=f"Customer requested to move the visit to {nice_date} ({window}) — awaiting approval (busy slot)",
+            extra_data={"from": old_when, "to": f"{d.isoformat()} {start}", "window": window, "scope": scope},
+            commit=False,
+        )
+        db.commit()
+        lines = [
+            f"{who} asked to move an upcoming visit onto a time you're already booked.",
+            "", f"Was: {old_when}", f"Requested: {nice_date} ({_win_label(window)})",
+            f"Applies to: {'this and all future visits' if scope == 'future' else 'this visit'}",
+            "", "Approve or decline it from your dashboard — nothing has moved yet.",
+        ]
+        _notify_owner_job_event(f"\U0001f4c5 Reschedule needs approval: {job.title}", lines)
+        return {"status": "pending_approval", "date": d.isoformat(), "date_label": nice_date,
+                "window": window, "scope": scope}
+
+    # ── Open slot → move immediately. ──
     try:
-        # In-process call: org_id explicit (Depends won't resolve here) so the
-        # move + Google Calendar sync run against the job's own workspace.
-        update_job(job.id, JobUpdate(
-            scheduled_date=d.isoformat(), start_time=start, end_time=end,
-            allow_conflicts=True), db=db, org_id=job.org_id)
-    except HTTPException as e:
+        resulting = _apply_reschedule_move(db, job, d, start, end, scope)
+    except HTTPException:
         friendly = ("We couldn't lock that time right now. Please pick another, "
                     "or give us a call and we'll finish rescheduling by hand.")
-        raise HTTPException(status_code=e.status_code or 400, detail=friendly)
+        raise HTTPException(status_code=400, detail=friendly)
 
-    db.refresh(job)
-    # A self-move IS the customer choosing the slot — treat it as re-confirmed
-    # and clear any prior pending request so it drops off the staff queue.
-    job.customer_confirmed_at = datetime.now(timezone.utc)
-    job.reschedule_requested_at = None
-    job.reschedule_request_message = None
-    nice_date = d.strftime("%B %d, %Y")
-    win_label = "morning" if window == "morning" else "afternoon"
+    resulting.customer_confirmed_at = datetime.now(timezone.utc)
+    _clear_pending_reschedule(resulting)
+    _clear_pending_reschedule(job)
     log_activity(
-        db, "job_customer_rescheduled", job_id=job.id, client_id=job.client_id,
+        db, "job_customer_rescheduled", job_id=resulting.id, client_id=resulting.client_id,
         actor="client",
-        summary=f"Customer rescheduled the visit to {nice_date} ({win_label})",
-        extra_data={"from": old_when, "to": f"{d.isoformat()} {start}", "window": window},
+        summary=f"Customer rescheduled the visit to {nice_date} ({window})"
+                + (" and all future visits" if scope == "future" else ""),
+        extra_data={"from": old_when, "to": f"{d.isoformat()} {start}", "window": window, "scope": scope},
         commit=False,
     )
     db.commit()
 
-    who = job.client.name if job.client else "The customer"
     lines = [
         f"{who} rescheduled an upcoming visit themselves.",
-        "",
-        f"Was: {old_when}",
-        f"Now: {nice_date} ({win_label} arrival)",
-        "",
-        "The job was moved and the calendar updated — reassign a cleaner if needed.",
+        "", f"Was: {old_when}", f"Now: {nice_date} ({_win_label(window)})",
+        f"Applies to: {'this and all future visits' if scope == 'future' else 'this visit'}",
+        "", "The job was moved and the calendar updated — reassign a cleaner if needed.",
     ]
     _notify_owner_job_event(f"\U0001f4c5 Visit rescheduled by customer: {job.title}", lines)
+    return {"status": "rescheduled", "date": d.isoformat(), "date_label": nice_date,
+            "window": window, "scope": scope, "start_time": start, "end_time": end}
+
+
+def _clear_pending_reschedule(job: Job) -> None:
+    job.reschedule_requested_at = None
+    job.reschedule_request_message = None
+    job.reschedule_requested_date = None
+    job.reschedule_requested_start_time = None
+    job.reschedule_requested_end_time = None
+    job.reschedule_requested_scope = None
+
+
+def _reschedule_request_dict(job: Job) -> dict:
+    """A pending customer reschedule for the owner's approval queue."""
     return {
-        "status": "rescheduled", "date": d.isoformat(), "date_label": nice_date,
-        "window": window, "start_time": start, "end_time": end,
+        "job_id": job.id,
+        "title": job.title,
+        "client_id": job.client_id,
+        "client_name": job.client.name if job.client else None,
+        "is_recurring": bool(job.recurring_schedule_id),
+        "current_date": str(job.scheduled_date) if job.scheduled_date else None,
+        "current_start_time": str(job.start_time) if job.start_time else None,
+        "requested_at": job.reschedule_requested_at.isoformat() if job.reschedule_requested_at else None,
+        "message": job.reschedule_request_message,
+        # Present only for a concrete self-reschedule proposal (busy-slot hold);
+        # a plain message request has requested_date == None (needs manual move).
+        "requested_date": str(job.reschedule_requested_date) if job.reschedule_requested_date else None,
+        "requested_start_time": str(job.reschedule_requested_start_time) if job.reschedule_requested_start_time else None,
+        "requested_scope": job.reschedule_requested_scope,
+        "needs_approval": job.reschedule_requested_date is not None,
     }
+
+
+# Literal path — declared before the int `/{job_id}` route so it isn't
+# swallowed by the int converter.
+@router.get("/reschedule-requests", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def list_reschedule_requests(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Open customer reschedule requests for the dashboard queue — both concrete
+    self-reschedule proposals awaiting approval (busy-slot holds) and plain
+    'please move me' message requests."""
+    org_id = resolve_org_id(org_id, db)
+    rows = (
+        db.query(Job).options(joinedload(Job.client))
+        .filter(
+            Job.reschedule_requested_at.isnot(None),
+            Job.status.notin_(["cancelled", "completed"]),
+            or_(Job.org_id == org_id, Job.org_id.is_(None)),
+        )
+        .order_by(Job.reschedule_requested_at.desc())
+        .all()
+    )
+    return {"requests": [_reschedule_request_dict(j) for j in rows]}
+
+
+def _get_owned_job(job_id: int, db: Session, org_id: int) -> Job:
+    org_id = resolve_org_id(org_id, db)
+    job = db.query(Job).options(joinedload(Job.client)).filter(
+        Job.id == job_id,
+        or_(Job.org_id == org_id, Job.org_id.is_(None)),
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.post("/{job_id}/approve-reschedule", dependencies=[Depends(require_role("admin", "manager"))])
+def approve_reschedule(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Owner approves a customer's pending (busy-slot) self-reschedule: apply the
+    held date/window (+ Google Calendar) and clear the request."""
+    job = _get_owned_job(job_id, db, org_id)
+    if not job.reschedule_requested_date:
+        raise HTTPException(status_code=409, detail="No pending reschedule to approve for this job.")
+    d = job.reschedule_requested_date
+    start = job.reschedule_requested_start_time.strftime("%H:%M") if job.reschedule_requested_start_time else "09:00"
+    end = job.reschedule_requested_end_time.strftime("%H:%M") if job.reschedule_requested_end_time else "12:00"
+    scope = job.reschedule_requested_scope or "this"
+    old_when = f"{job.scheduled_date}" + (f" {job.start_time}" if job.start_time else "")
+    resulting = _apply_reschedule_move(db, job, d, start, end, scope)
+    resulting.customer_confirmed_at = datetime.now(timezone.utc)
+    _clear_pending_reschedule(resulting)
+    _clear_pending_reschedule(job)
+    log_activity(
+        db, "job_customer_rescheduled", job_id=resulting.id, client_id=resulting.client_id,
+        actor="staff",
+        summary=f"Approved customer reschedule to {d.strftime('%B %d, %Y')}"
+                + (" (this + all future)" if scope == "future" else ""),
+        extra_data={"from": old_when, "to": f"{d.isoformat()} {start}", "scope": scope},
+        commit=False,
+    )
+    db.commit()
+    return {"status": "approved", "job_id": resulting.id, "date": d.isoformat()}
+
+
+@router.post("/{job_id}/decline-reschedule", dependencies=[Depends(require_role("admin", "manager"))])
+def decline_reschedule(job_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Owner declines a pending customer reschedule (or clears a message-only
+    request). The visit stays where it is."""
+    job = _get_owned_job(job_id, db, org_id)
+    if not job.reschedule_requested_at:
+        raise HTTPException(status_code=409, detail="No pending reschedule for this job.")
+    _clear_pending_reschedule(job)
+    log_activity(
+        db, "job_reschedule_requested", job_id=job.id, client_id=job.client_id,
+        actor="staff", summary="Dismissed a customer reschedule request", commit=False,
+    )
+    db.commit()
+    return {"status": "declined", "job_id": job.id}
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role("admin", "manager", "viewer", "cleaner"))])
@@ -2364,6 +2609,39 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                                  detail=str(e), commit=False)
         db.commit()
         db.refresh(job)
+    elif not job.gcal_event_id and job.scheduled_date and job.status not in ("cancelled", "unscheduled"):
+        # No Google event yet (e.g. a converted-quote job, or one created while
+        # Google was disconnected) and it now has a date — create the event
+        # inline so a reschedule shows on Google immediately, instead of waiting
+        # up to 30 min for the reconcile tick. Best-effort; the reconcile sweep
+        # is still the backstop if this no-ops (Google not connected).
+        try:
+            from integrations.google_calendar import (
+                create_event, is_configured, active_account_id as _gcal_acct,
+            )
+            if is_configured():
+                client = db.query(Client).filter(Client.id == job.client_id).first()
+                client_dict = {"id": client.id if client else None,
+                               "name": client.name if client else "",
+                               "email": getattr(client, "email", None)}
+                job_dict = {
+                    "id": job.id, "title": job.title, "job_type": job.job_type or "residential",
+                    "scheduled_date": job.scheduled_date, "start_time": job.start_time,
+                    "end_time": job.end_time, "address": job.address, "notes": job.notes,
+                    "property_id": job.property_id,
+                }
+                new_event_id = create_event(job_dict, client_dict)
+                if new_event_id:
+                    job.gcal_event_id = new_event_id
+                    job.gcal_account_id = _gcal_acct()
+                    log_calendar_event(
+                        db, "created", client_id=job.client_id, job_id=job.id,
+                        title=job.title, gcal_event_id=new_event_id,
+                        scheduled_date=str(job.scheduled_date) if job.scheduled_date else None,
+                    )
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"GCal inline create failed for job {job.id}: {e}")
     elif job.gcal_event_id:
         try:
             from integrations.google_calendar import (

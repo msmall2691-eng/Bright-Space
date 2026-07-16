@@ -43,6 +43,28 @@ def test_send_email_actually_delivers(quote_ctx):
     assert q.status == "sent" and q.sent_at is not None
 
 
+def test_resending_changes_requested_quote_clears_the_flag(quote_ctx):
+    """Revising + resending a 'changes_requested' quote moves it back to 'sent'
+    and clears requested_changes_at/message, so the list stops nagging
+    "revise and resend"."""
+    db, c, q = quote_ctx
+    from datetime import datetime, timezone
+    q.status = "changes_requested"
+    q.requested_changes_message = "Can you lower the price?"
+    q.requested_changes_at = datetime.now(timezone.utc)
+    db.commit()
+    with patch("modules.quoting.router.QuotePDFService") as PDF, \
+         patch("modules.quoting.router.QuoteEmailService") as Email:
+        PDF.return_value.generate_quote_pdf.return_value = b"%PDF"
+        Email.return_value.send_quote_email.return_value = {"success": True, "email_id": "e2"}
+        out = send_quote(q.id, QuoteSendRequest(channel="email"), db=db)
+    assert out["status"] == "sent"
+    db.refresh(q)
+    assert q.status == "sent"
+    assert q.requested_changes_at is None
+    assert q.requested_changes_message is None
+
+
 def test_send_sms_actually_delivers(quote_ctx):
     db, c, q = quote_ctx
     with patch("integrations.twilio_client.send_sms", return_value={"sid": "SM1", "status": "queued"}) as sms:

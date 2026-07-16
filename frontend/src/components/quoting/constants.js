@@ -46,9 +46,21 @@ export const QUOTE_NEXT_STEP = {
 export const SERVICE_TYPES = ['residential', 'commercial', 'str']
 export const EMPTY_ITEM = { name: '', description: '', qty: 1, unit_price: 0 }
 
+// Title-case a phrase for customer-facing display: capitalizes each word but
+// leaves already-uppercase tokens (state codes like "ME", "STR") intact.
+// "ridge rd" -> "Ridge Rd", "100 congress street" -> "100 Congress Street".
+export const titleCase = (s) => (s || '')
+  .split(/(\s+)/)
+  .map(w => {
+    if (!w.trim()) return w
+    if (w.length <= 3 && w === w.toUpperCase()) return w   // ME, STR, LLC…
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+  })
+  .join('')
+
 // Customer-facing label for a service type.
-export const serviceLabel = (t) => t === 'str' ? 'STR / Vacation rental cleaning'
-  : `${(t || 'residential').charAt(0).toUpperCase()}${(t || 'residential').slice(1)} cleaning`
+export const serviceLabel = (t) => t === 'str' ? 'STR / Vacation Rental Cleaning'
+  : `${(t || 'residential').charAt(0).toUpperCase()}${(t || 'residential').slice(1)} Cleaning`
 
 // Friendly cadence label, or '' when one-time / unknown.
 export const freqLabel = (f) => {
@@ -71,7 +83,7 @@ export const SERVICE_SCOPE = {
 export const titleFromIntake = (intake) => {
   const freq = freqLabel(intake.frequency)
   const svc = serviceLabel(intake.service_type)
-  const where = (intake.address || intake.property_name || intake.city || '').split(',')[0].trim()
+  const where = titleCase((intake.address || intake.property_name || intake.city || '').split(',')[0].trim())
   const lead = [freq, svc].filter(Boolean).join(' ')
   return where ? `${lead} — ${where}` : lead
 }

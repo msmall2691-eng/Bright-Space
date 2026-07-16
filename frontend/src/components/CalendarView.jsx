@@ -735,7 +735,7 @@ export default function CalendarView({
 
   return (
     <div className="flex flex-col md:flex-row h-full min-h-0">
-      <div className="flex-1 flex flex-col min-w-0 p-2 sm:p-4">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-4">
         <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 sm:gap-3">
             <button onClick={prev} className="p-1.5 hover:bg-bg-2 active:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-2 transition-colors" aria-label="Previous month">
@@ -787,7 +787,12 @@ export default function CalendarView({
           </div>
         )}
 
-        <div className="relative grid grid-cols-7 flex-1 gap-px bg-bg-2 rounded-xl overflow-hidden border border-hairline">
+        {/* Scroll container: the fixed-height column caps this, and the grid
+            grows to its natural 5–6 week height, so tall months scroll instead
+            of being clipped (previously the grid was flex-1 + overflow-hidden,
+            which cut off the bottom rows with no scrollbar). */}
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+        <div className="relative grid grid-cols-7 gap-px bg-bg-2 rounded-xl overflow-hidden border border-hairline">
           {/* Audit §12: skeleton overlay while the initial month fetch is in
               flight. Only for FIRST load (jobs.length === 0) — a month
               refetch after a save shouldn't blink the whole grid. */}
@@ -842,6 +847,7 @@ export default function CalendarView({
               />
             )
           })}
+        </div>
         </div>
       </div>
 

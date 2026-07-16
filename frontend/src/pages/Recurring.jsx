@@ -347,9 +347,10 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
         title: form.title.trim(),
         address: form.address.trim(),
         frequency: form.frequency,
-        interval_weeks: form.frequency === 'biweekly' ? 2
-          : form.frequency === 'weekly' ? 1
-          : parseInt(form.interval_weeks) || 1,
+        // interval_weeks is the single source of cadence for week-based rules
+        // (1=weekly, 2=biweekly, 4=every 4 weeks, 8=every 8 weeks…); the
+        // backend ignores it for monthly. The Frequency select keeps it in sync.
+        interval_weeks: parseInt(form.interval_weeks) || 1,
         day_of_month: form.frequency === 'monthly' ? parseInt(form.day_of_month) : null,
         start_time: form.start_time + ':00',
         end_time: form.end_time + ':00',
@@ -395,10 +396,20 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
       </div>
       <div>
         <label className="block text-xs font-semibold text-ink-3 mb-1">Frequency</label>
-        <select value={form.frequency} onChange={e => setForm(f => ({ ...f, frequency: e.target.value }))}
+        <select
+          value={form.frequency === 'monthly' ? 'monthly' : String(form.interval_weeks || (form.frequency === 'biweekly' ? 2 : 1))}
+          onChange={e => {
+            const v = e.target.value
+            if (v === 'monthly') { setForm(f => ({ ...f, frequency: 'monthly' })); return }
+            const n = parseInt(v) || 1
+            setForm(f => ({ ...f, frequency: n === 2 ? 'biweekly' : 'weekly', interval_weeks: n }))
+          }}
           className="w-full px-3 py-2 border border-hairline rounded-lg text-sm">
-          <option value="weekly">Weekly</option>
-          <option value="biweekly">Biweekly (every 2 weeks)</option>
+          <option value="1">Weekly</option>
+          <option value="2">Biweekly (every 2 weeks)</option>
+          <option value="3">Every 3 weeks</option>
+          <option value="4">Every 4 weeks</option>
+          <option value="8">Every 8 weeks</option>
           <option value="monthly">Monthly</option>
         </select>
       </div>
