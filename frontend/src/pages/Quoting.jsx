@@ -582,23 +582,25 @@ export default function Quoting() {
             </>
           }
         >
-          <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1">
+          {/* Scrollable on mobile so the four tabs + badges never overflow the
+              rounded container at ~375px. */}
+          <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1 overflow-x-auto scrollbar-thin">
             <button onClick={() => switchTab('leads')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'leads' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'leads' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Leads
               {newLeads > 0 && <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{newLeads}</span>}
             </button>
             <button onClick={() => switchTab('quotes')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Quotes
             </button>
             <button onClick={() => switchTab('follow-ups')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'follow-ups' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Follow-ups
               {followUps.length > 0 && <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{followUps.length}</span>}
             </button>
             <button onClick={() => switchTab('archived')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
+              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'archived' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Archived
             </button>
           </div>

@@ -15,8 +15,8 @@ export default function LeadRow({
 }) {
   return (
     <div className="p-3 hover:bg-bg-2/40 transition-colors">
-      <div className="flex items-start gap-4">
-        <div className="flex-1 min-w-0">
+      <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0 w-full">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="font-medium text-ink">{intake.name}</span>
             <span onClick={e => e.stopPropagation()}>
@@ -68,22 +68,24 @@ export default function LeadRow({
             {new Date(intake.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </div>
         </div>
-        <div className="flex flex-col gap-1.5 shrink-0">
+        {/* Actions: a wrapping row under the content on mobile, a right-hand
+            column on desktop. */}
+        <div className="flex flex-wrap sm:flex-col gap-1.5 shrink-0 w-full sm:w-auto">
           {canEdit && intake.status === 'new' && (
             <button onClick={() => onMarkReviewed(intake.id)}
-              className="text-xs px-3 py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 rounded-lg transition-colors border border-hairline">
+              className="text-xs px-3 py-2 sm:py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-2 rounded-lg transition-colors border border-hairline">
               Mark Reviewed
             </button>
           )}
           {canEdit && intake.status !== 'converted' && (
             <button onClick={() => onCreateQuote(intake)}
-              className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1">
+              className="text-xs px-3 py-2 sm:py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1">
               <Plus className="w-3 h-3" /> Create Quote
             </button>
           )}
           {intake.client_id && (
             <button onClick={() => onOpenClient(intake.client_id)}
-              className="text-xs px-3 py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-3 rounded-lg transition-colors">
+              className="text-xs px-3 py-2 sm:py-1.5 bg-bg-2 hover:bg-bg-2 text-ink-3 rounded-lg transition-colors">
               View Client
             </button>
           )}

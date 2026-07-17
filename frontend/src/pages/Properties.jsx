@@ -136,13 +136,14 @@ export default function Properties() {
             <SavedViewsBar entityType="property" currentConfig={viewConfig} onApply={applyView} defaultLabel="All properties" />
           </div>
 
-          {/* Type tabs */}
-          <div className="flex gap-2 mt-4 border-b border-hairline">
+          {/* Type tabs — scroll horizontally on mobile so "All / Residential /
+              Commercial / STR" (+ counts) never clip past the edge at 375px. */}
+          <div className="flex gap-2 mt-4 border-b border-hairline overflow-x-auto scrollbar-thin">
             {TYPE_TABS.map(type => (
               <button
                 key={type}
                 onClick={() => setSearchParams({ type: type === 'all' ? '' : type })}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                className={`shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                   currentType === type
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-ink-2 hover:text-ink'

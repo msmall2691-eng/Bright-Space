@@ -761,9 +761,9 @@ export default function Requests() {
                   {selectedRequest.address || '—'} {selectedRequest.city ? `, ${selectedRequest.city}` : ''} {selectedRequest.state}
                 </p>
               </div>
-              {/* Service type / status / priority in one compact row instead of
-                  three stacked full-width blocks. */}
-              <div className="grid grid-cols-3 gap-3">
+              {/* Service type / status / priority — 3-up on desktop, but at
+                  375px three columns are too cramped, so 2-up on mobile. */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-ink-2 uppercase">Service</label>
                   <p className="text-sm text-ink">{SERVICE_TYPE_CONFIG[selectedRequest.service_type]?.label}</p>

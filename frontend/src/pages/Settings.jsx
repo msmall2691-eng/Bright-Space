@@ -43,30 +43,30 @@ export default function Settings() {
             icon={SettingsIcon}
             iconColor="slate"
           >
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1">
               <button onClick={() => setSection('general')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'general' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <Settings2 className="w-3.5 h-3.5" /> General
               </button>
               <button onClick={() => setSection('integrations')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'integrations' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <Plug className="w-3.5 h-3.5" /> Integrations
               </button>
               <button onClick={() => setSection('automation')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'automation' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <RefreshCw className="w-3.5 h-3.5" /> Automation
               </button>
               <button onClick={() => setSection('email')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'email' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <Mail className="w-3.5 h-3.5" /> Email
               </button>
               <button onClick={() => setSection('fields')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'fields' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                 <Settings2 className="w-3.5 h-3.5" /> Custom Fields
               </button>
               {isAdmin && (
                 <button onClick={() => setSection('users')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
+                  className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${section === 'users' ? 'bg-blue-600 text-white' : 'bg-panel text-ink-2 border border-hairline hover:border-hairline-2'}`}>
                   <Users className="w-3.5 h-3.5" /> Users
                 </button>
               )}
