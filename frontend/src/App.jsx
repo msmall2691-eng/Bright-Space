@@ -112,6 +112,7 @@ const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Billing = lazy(() => import('./pages/Billing'))
 const Payroll = lazy(() => import('./pages/Payroll'))
+const Connecteam = lazy(() => import('./pages/Connecteam'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
@@ -239,6 +240,7 @@ export default function App() {
                   on desktop only because that's the default view there). */}
               <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
+              <Route path="/connecteam" element={<Connecteam />} />
               <Route path="/comms" element={<Comms />} />
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:propertyId" element={<PropertyDetail />} />

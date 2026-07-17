@@ -33,6 +33,7 @@ from integrations.connecteam import (
     get_time_activities,
     get_employees,
     get_jobs,
+    get_timesheet_totals,
     _employee_name_map,
 )
 from modules.auth.router import require_role
@@ -154,7 +155,11 @@ def _blank_emp(uid, name) -> dict:
     return {
         "employee_id": uid,
         "name": name,
-        "total_hours": 0.0,
+        "total_hours": 0.0,          # authoritative: Connecteam's if available
+        "computed_hours": 0.0,       # our punch-summed total (for reconciliation)
+        "connecteam_hours": None,    # Connecteam's official timesheet total
+        "hours_source": "computed",  # "connecteam" | "computed"
+        "unallocated_hours": 0.0,    # Connecteam total minus classified buckets
         "residential_hours": 0.0,
         "residential_pay": 0.0,
         "rental_weekday_hours": 0.0,
@@ -212,6 +217,15 @@ async def payroll_summary(
         ct_jobs = await get_jobs()
     except Exception:
         ct_jobs = {}
+    # Connecteam's own official total hours (their rounding/break rules applied)
+    # so the headline number reconciles to Connecteam exactly. Capped at 45 days
+    # by Connecteam; skip (fall back to punch-summed) for longer ranges.
+    official_totals: dict = {}
+    if (d1 - d0).days <= 45:
+        try:
+            official_totals = await get_timesheet_totals(start_date, end_date)
+        except Exception:
+            official_totals = {}
     crm_index = _crm_shift_index(db, start_date, end_date)
 
     employees: dict = {}
@@ -226,7 +240,7 @@ async def payroll_summary(
             employees[uid] = emp
 
         hours = r["netHours"]
-        emp["total_hours"] += hours
+        emp["computed_hours"] += hours
         emp["miles"] += r["miles"]
 
         d = _local_date(r["startTimestamp"], r["timezone"])
@@ -299,9 +313,22 @@ async def payroll_summary(
                     detail["pay"] = round(float(rate), 2)
         emp["shifts"].append(detail)
 
-    # Finalize: mileage, gross, rounding, strip internals.
+    # Finalize: reconcile to Connecteam's official total, mileage, gross.
     out_emps = []
     for emp in employees.values():
+        emp["computed_hours"] = round(emp["computed_hours"], 2)
+        official = official_totals.get(str(emp["employee_id"]))
+        if official is not None:
+            emp["connecteam_hours"] = official["hours"]
+            emp["total_hours"] = official["hours"]
+            emp["hours_source"] = "connecteam"
+        else:
+            emp["total_hours"] = emp["computed_hours"]
+        # Classified + unclassified hours we could account for from punches.
+        accounted = (emp["residential_hours"] + emp["rental_weekday_hours"]
+                     + emp["weekend_rental_hours"] + emp["unclassified_hours"])
+        emp["unallocated_hours"] = round(emp["total_hours"] - accounted, 2)
+
         emp["mileage_reimbursement"] = round(emp["miles"] * rates["mileage_rate"], 2)
         emp["gross_pay"] = round(
             emp["residential_pay"] + emp["rental_weekday_pay"]
@@ -320,6 +347,8 @@ async def payroll_summary(
 
     totals = {
         "total_hours": round(sum(e["total_hours"] for e in out_emps), 2),
+        "computed_hours": round(sum(e["computed_hours"] for e in out_emps), 2),
+        "unallocated_hours": round(sum(e["unallocated_hours"] for e in out_emps), 2),
         "residential_hours": round(sum(e["residential_hours"] for e in out_emps), 2),
         "rental_weekday_hours": round(sum(e["rental_weekday_hours"] for e in out_emps), 2),
         "weekend_rental_hours": round(sum(e["weekend_rental_hours"] for e in out_emps), 2),
@@ -337,11 +366,20 @@ async def payroll_summary(
             f"listed as 'unclassified' and left out of pay."
         ))
 
+    hours_source = "connecteam" if official_totals else "computed"
+    if hours_source == "computed" and (d1 - d0).days <= 45:
+        warnings.append(
+            "Couldn't read Connecteam's official timesheet totals for this period "
+            "— hours shown are computed from raw punches and may differ slightly "
+            "from Connecteam's rounded totals."
+        )
+
     return {
         "period": f"{start_date} to {end_date}",
         "start_date": start_date,
         "end_date": end_date,
         "rates": rates,
+        "hours_source": hours_source,
         "employees": out_emps,
         "totals": totals,
         "warnings": warnings,
