@@ -252,11 +252,17 @@ def _iso_utc(dt) -> Optional[str]:
     return dt.isoformat() + "Z"
 
 
-def conv_to_dict(c: Conversation, *, include_client: bool = True) -> dict:
-    last = c.messages[-1] if c.messages else None
-    preview = None
-    if last:
-        preview = (last.body or "")[:200]
+_UNSET = object()
+
+
+def conv_to_dict(c: Conversation, *, include_client: bool = True, preview=_UNSET) -> dict:
+    # `preview` can be passed in precomputed (list endpoint batches it — see
+    # _last_message_previews) so we DON'T touch c.messages, which for a big
+    # conversation is a large lazy/eager load. When omitted (single-conversation
+    # callers), fall back to reading the last message off the relationship.
+    if preview is _UNSET:
+        last = c.messages[-1] if c.messages else None
+        preview = (last.body or "")[:200] if last else None
     out = {
         "id": c.id,
         "client_id": c.client_id,
@@ -421,14 +427,14 @@ def list_conversations(
     db: Session = Depends(get_db),
 ):
     """List conversations with rich filters. Ordered newest-first by activity."""
-    # Eager-load what conv_to_dict reads. Previously each row lazily fetched
-    # its client (many-to-one) and its full message collection (for the
-    # last-message preview), so a 100-row page fired ~200 queries. selectinload
-    # batches both into one query each and coexists with the search outerjoin
-    # below (unlike joinedload, which would double-join Client).
+    # Eager-load the client (many-to-one) in one batched query. We deliberately
+    # do NOT selectinload(Conversation.messages): that pulled EVERY message of
+    # every conversation across the wire just to build a one-line preview — for
+    # an inbox with long threads that's the bulk of the page's load time. The
+    # preview is fetched separately as just the last message per conversation
+    # (see _last_message_previews) — one small query instead of thousands of rows.
     query = db.query(Conversation).options(
         selectinload(Conversation.client),
-        selectinload(Conversation.messages),
     )
     if status:
         query = query.filter(Conversation.status == status)
@@ -469,7 +475,29 @@ def list_conversations(
         convs = convs[:limit]
     else:
         convs = query.limit(limit).all()
-    return [conv_to_dict(c) for c in convs]
+    previews = _last_message_previews(db, [c.id for c in convs])
+    return [conv_to_dict(c, preview=previews.get(c.id)) for c in convs]
+
+
+def _last_message_previews(db: Session, conv_ids: list[int]) -> dict:
+    """Return {conversation_id: preview_text} — just the newest message body of
+    each conversation, truncated. One grouped query + one fetch, instead of
+    loading every message of every conversation. Uses MAX(id) as "newest":
+    message ids are monotonic with insert order, so for a live inbox that's the
+    same row as the latest created_at, without the tie-handling a created_at
+    grouping needs."""
+    if not conv_ids:
+        return {}
+    # Newest message id per conversation (bounded by the page limit, ≤500 rows).
+    max_ids = [mid for (mid,) in
+               db.query(func.max(Message.id))
+                 .filter(Message.conversation_id.in_(conv_ids))
+                 .group_by(Message.conversation_id).all()]
+    if not max_ids:
+        return {}
+    rows = (db.query(Message.conversation_id, Message.body)
+              .filter(Message.id.in_(max_ids)).all())
+    return {cid: (body or "")[:200] for cid, body in rows}
 
 
 @router.get("/conversations/summary", dependencies=[Depends(require_role("admin", "manager"))])
