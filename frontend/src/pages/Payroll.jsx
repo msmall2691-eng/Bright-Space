@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Search, Download, Clock, Car, DollarSign, User, CalendarRange,
-  Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check,
+  Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check, Tag,
 } from 'lucide-react'
 import { get, put, patch } from '../api'
 import { PageHeader } from '../components/ui'
@@ -9,16 +9,39 @@ import { PageHeader } from '../components/ui'
 // Payroll / Connecteam breakdown.
 // Pulls Time Clock punches for a pay period and splits each crew member's
 // hours into residential vs rental, weekday vs weekend, with mileage and a
-// computed gross. Hourly rates and per-property weekend turnover rates are
-// editable right here so the operator can reconcile against Connecteam.
+// computed gross. Rates are editable; and each shift can be manually set to
+// Hourly / Piece rate / Exclude so piece-rate ("Rate Pay") jobs can have their
+// hours swapped out for a flat amount at payroll time.
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`
 const hrs = (n) => `${(Number(n) || 0).toFixed(1)}h`
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
 function isoDaysAgo(n) {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
+  const d = new Date(); d.setDate(d.getDate() - n)
   return d.toISOString().slice(0, 10)
+}
+
+// Effective pay for one shift given a manual override. Returns { pay, mode }.
+// mode 'auto' uses the backend's computed pay; the others let the operator
+// swap a shift to a flat piece rate, re-price it hourly, or drop it entirely.
+function shiftEffective(shift, ov, rates) {
+  const mode = ov?.mode || 'auto'
+  if (mode === 'exclude') return { pay: 0, mode }
+  if (mode === 'piece') return { pay: round2(ov.amount), mode }
+  if (mode === 'hourly') {
+    const rate = shift.kind === 'rental' ? rates.rental_weekday_rate : rates.residential_rate
+    return { pay: round2(shift.hours * rate), mode }
+  }
+  return { pay: round2(shift.pay), mode: 'auto' }
+}
+
+// Recompute an employee's gross from their shifts + overrides + mileage.
+function employeeAdjusted(emp, overrides, rates) {
+  let shiftPay = 0
+  for (const s of emp.shifts) shiftPay += shiftEffective(s, overrides[s.shift_id], rates).pay
+  const gross = round2(shiftPay + emp.mileage_reimbursement)
+  return { gross, changed: Math.abs(gross - emp.gross_pay) > 0.005 }
 }
 
 export default function Payroll() {
@@ -29,6 +52,22 @@ export default function Payroll() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
+  const [overrides, setOverrides] = useState({})
+
+  // Persist manual overrides per pay period so they survive a refresh.
+  const ovKey = `payroll_overrides_${startDate}_${endDate}`
+  useEffect(() => {
+    try { setOverrides(JSON.parse(localStorage.getItem(ovKey) || '{}')) }
+    catch { setOverrides({}) }
+  }, [ovKey])
+  const setOverride = (shiftId, patchObj) => {
+    setOverrides(prev => {
+      const next = { ...prev, [shiftId]: { ...prev[shiftId], ...patchObj } }
+      if (next[shiftId]?.mode === 'auto') delete next[shiftId]
+      try { localStorage.setItem(ovKey, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
 
   const pull = async () => {
     if (!startDate || !endDate) { setError('Select a date range'); return }
@@ -36,7 +75,6 @@ export default function Payroll() {
     try {
       const d = await get(`/api/payroll/summary?start_date=${startDate}&end_date=${endDate}`)
       setData(d)
-      // Best-effort: Connecteam's own stored pay rates, shown alongside ours.
       get(`/api/connecteam/pay-rates?start_date=${startDate}&end_date=${endDate}`)
         .then(r => setCtRates(r.rates || {}))
         .catch(() => setCtRates({}))
@@ -46,17 +84,28 @@ export default function Payroll() {
     setLoading(false)
   }
 
+  const rates = data?.rates
+  // Adjusted per-employee gross (memoized so re-renders on override edits are cheap).
+  const adj = useMemo(() => {
+    if (!data) return {}
+    const out = {}
+    for (const emp of data.employees) out[emp.employee_id] = employeeAdjusted(emp, overrides, rates)
+    return out
+  }, [data, overrides, rates])
+  const adjTotalGross = useMemo(
+    () => round2(Object.values(adj).reduce((s, a) => s + a.gross, 0)),
+    [adj]
+  )
+
   const exportCsv = () => {
     if (!data) return
     const cols = [
-      'Employee', 'Total Hours', 'Residential Hours', 'Residential Pay',
-      'Rental Weekday Hours', 'Rental Weekday Pay', 'Weekend Turnovers',
-      'Weekend Pay', 'Miles', 'Mileage Reimbursement', 'Unclassified Hours', 'Gross Pay',
+      'Employee', 'Total Hours', 'Residential Hours', 'Rental Weekday Hours',
+      'Weekend Turnovers', 'Miles', 'Mileage Reimbursement', 'Gross Pay',
     ]
     const rows = data.employees.map(e => [
-      e.name, e.total_hours, e.residential_hours, e.residential_pay,
-      e.rental_weekday_hours, e.rental_weekday_pay, e.weekend_turnovers,
-      e.weekend_pay, e.miles, e.mileage_reimbursement, e.unclassified_hours, e.gross_pay,
+      e.name, e.total_hours, e.residential_hours, e.rental_weekday_hours,
+      e.weekend_turnovers, e.miles, e.mileage_reimbursement, adj[e.employee_id]?.gross ?? e.gross_pay,
     ])
     const csv = [cols, ...rows]
       .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
@@ -107,9 +156,7 @@ export default function Payroll() {
         <RatesPanel />
 
         {error && (
-          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-            {error}
-          </div>
+          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl p-4">{error}</div>
         )}
 
         {data && (
@@ -125,21 +172,21 @@ export default function Payroll() {
               </div>
             )}
 
-            {/* Totals */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <Stat label="Total Hours" value={hrs(t.total_hours)} icon={Clock} />
               <Stat label="Residential" value={hrs(t.residential_hours)} icon={Home} />
               <Stat label="Rental (wkday)" value={hrs(t.rental_weekday_hours)} icon={KeyRound} />
               <Stat label="Weekend Turnovers" value={t.weekend_turnovers} icon={Sun} />
               <Stat label="Mileage" value={money(t.mileage_reimbursement)} icon={Car} sub={`${t.miles} mi`} />
-              <Stat label="Gross Pay" value={money(t.gross_pay)} icon={DollarSign} color="text-emerald-400" />
+              <Stat label="Gross Pay" value={money(adjTotalGross)} icon={DollarSign} color="text-emerald-400"
+                sub={Math.abs(adjTotalGross - t.gross_pay) > 0.005 ? `auto ${money(t.gross_pay)}` : null} />
             </div>
 
             <div className="text-xs text-ink-3 space-y-0.5">
               <div>
-                Period {data.period} · Residential {money(data.rates.residential_rate)}/hr ·
-                Rental weekday {money(data.rates.rental_weekday_rate)}/hr ·
-                Mileage {money(data.rates.mileage_rate)}/mi · Weekend rentals paid per-property piece rate
+                Period {data.period} · Residential {money(rates.residential_rate)}/hr ·
+                Rental weekday {money(rates.rental_weekday_rate)}/hr ·
+                Mileage {money(rates.mileage_rate)}/mi · Weekend rentals paid per-property piece rate
               </div>
               <div>
                 {data.hours_source === 'connecteam'
@@ -149,84 +196,65 @@ export default function Payroll() {
               </div>
             </div>
 
-            {/* Per employee */}
             <div className="space-y-3">
-              {data.employees.map(emp => (
-                <div key={emp.employee_id} className="bg-panel border border-hairline rounded-xl overflow-hidden">
-                  <button
-                    onClick={() => setExpanded(x => ({ ...x, [emp.employee_id]: !x[emp.employee_id] }))}
-                    className="w-full text-left p-4 hover:bg-bg-2/40 transition-colors">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-1.5 font-medium text-ink flex-wrap">
-                        <User className="w-4 h-4 text-ink-3 shrink-0" />{emp.name}
-                        <span className="text-xs text-ink-3 ml-1">{hrs(emp.total_hours)} total</span>
-                        {emp.hours_source === 'connecteam' && (
-                          <span className="text-[11px] text-emerald-400/90 ml-1" title="From Connecteam's official timesheet">· Connecteam</span>
-                        )}
-                        {ctRates[emp.employee_id]?.rate != null && (
-                          <span className="text-[11px] text-ink-3 ml-1" title="Rate stored in Connecteam">
-                            · CT rate {money(ctRates[emp.employee_id].rate)}/hr
-                          </span>
-                        )}
+              {data.employees.map(emp => {
+                const a = adj[emp.employee_id] || { gross: emp.gross_pay, changed: false }
+                return (
+                  <div key={emp.employee_id} className="bg-panel border border-hairline rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => setExpanded(x => ({ ...x, [emp.employee_id]: !x[emp.employee_id] }))}
+                      className="w-full text-left p-4 hover:bg-bg-2/40 transition-colors">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-1.5 font-medium text-ink flex-wrap">
+                          <User className="w-4 h-4 text-ink-3 shrink-0" />{emp.name}
+                          <span className="text-xs text-ink-3 ml-1">{hrs(emp.total_hours)} total</span>
+                          {emp.hours_source === 'connecteam' && (
+                            <span className="text-[11px] text-emerald-400/90 ml-1" title="From Connecteam's official timesheet">· Connecteam</span>
+                          )}
+                          {ctRates[emp.employee_id]?.rate != null && (
+                            <span className="text-[11px] text-ink-3 ml-1" title="Rate stored in Connecteam">
+                              · CT rate {money(ctRates[emp.employee_id].rate)}/hr
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {a.changed && <span className="text-xs text-ink-3 line-through">{money(emp.gross_pay)}</span>}
+                          <span className="font-bold text-emerald-400">{money(a.gross)}</span>
+                          <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform ${expanded[emp.employee_id] ? 'rotate-180' : ''}`} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-emerald-400">{money(emp.gross_pay)}</span>
-                        <ChevronDown className={`w-4 h-4 text-ink-3 transition-transform ${expanded[emp.employee_id] ? 'rotate-180' : ''}`} />
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                        <Bucket icon={Home} label="Residential" primary={hrs(emp.residential_hours)} secondary={money(emp.residential_pay)} />
+                        <Bucket icon={KeyRound} label="Rental (wkday)" primary={hrs(emp.rental_weekday_hours)} secondary={money(emp.rental_weekday_pay)} />
+                        <Bucket icon={Sun} label="Weekend"
+                          primary={`${emp.weekend_turnovers} turnover${emp.weekend_turnovers === 1 ? '' : 's'}`}
+                          secondary={money(emp.weekend_pay)}
+                          warn={emp.weekend_unpriced_turnovers > 0 ? `${emp.weekend_unpriced_turnovers} unpriced` : null} />
+                        <Bucket icon={Car} label="Mileage" primary={`${emp.miles} mi`} secondary={money(emp.mileage_reimbursement)} />
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                      <Bucket icon={Home} label="Residential"
-                        primary={hrs(emp.residential_hours)} secondary={money(emp.residential_pay)} />
-                      <Bucket icon={KeyRound} label="Rental (wkday)"
-                        primary={hrs(emp.rental_weekday_hours)} secondary={money(emp.rental_weekday_pay)} />
-                      <Bucket icon={Sun} label="Weekend"
-                        primary={`${emp.weekend_turnovers} turnover${emp.weekend_turnovers === 1 ? '' : 's'}`}
-                        secondary={money(emp.weekend_pay)}
-                        warn={emp.weekend_unpriced_turnovers > 0 ? `${emp.weekend_unpriced_turnovers} unpriced` : null} />
-                      <Bucket icon={Car} label="Mileage"
-                        primary={`${emp.miles} mi`} secondary={money(emp.mileage_reimbursement)} />
-                    </div>
-                    {emp.unclassified_hours > 0 && (
-                      <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        {hrs(emp.unclassified_hours)} unclassified (not in pay)
-                      </div>
-                    )}
-                    {emp.hours_source === 'connecteam' && Math.abs(emp.unallocated_hours - emp.unclassified_hours) > 0.05 && (
-                      <div className="mt-1 text-xs text-ink-3 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        Connecteam total {hrs(emp.connecteam_hours)} vs {hrs(emp.computed_hours)} from punches
-                        {emp.unallocated_hours > 0.05 && <> · {hrs(emp.unallocated_hours)} unallocated</>}
-                      </div>
-                    )}
-                  </button>
+                      {emp.unclassified_hours > 0 && (
+                        <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" />{hrs(emp.unclassified_hours)} unclassified (not in pay)
+                        </div>
+                      )}
+                    </button>
 
-                  {expanded[emp.employee_id] && (
-                    <div className="border-t border-hairline bg-bg-2/30 px-4 py-3">
-                      <div className="text-xs text-ink-3 mb-2">Shifts</div>
-                      <div className="space-y-1">
-                        {emp.shifts.map((s, i) => (
-                          <div key={i} className="flex items-center justify-between gap-2 text-sm py-1 border-b border-hairline/50 last:border-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <KindDot kind={s.kind} weekend={s.weekend} />
-                              <span className="text-ink-2 tabular-nums">{s.date}</span>
-                              <span className="text-ink-3 truncate">
-                                {s.property || (s.kind === 'unclassified' ? 'No job linked' : s.kind)}
-                                {s.weekend && <span className="ml-1 text-amber-400">(wknd)</span>}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 shrink-0 tabular-nums">
-                              <span className="text-ink-2">{hrs(s.hours)}</span>
-                              {s.miles > 0 && <span className="text-ink-3">{s.miles} mi</span>}
-                              <span className="text-ink font-medium w-16 text-right">{money(s.pay)}</span>
-                            </div>
-                          </div>
-                        ))}
+                    {expanded[emp.employee_id] && (
+                      <div className="border-t border-hairline bg-bg-2/30 px-4 py-3">
+                        <div className="flex items-center justify-between text-xs text-ink-3 mb-2">
+                          <span>Shifts — set any to piece rate or exclude</span>
+                        </div>
+                        <div className="space-y-2">
+                          {emp.shifts.map((s) => (
+                            <ShiftRow key={s.shift_id} shift={s} rates={rates}
+                              ov={overrides[s.shift_id]} onChange={p => setOverride(s.shift_id, p)} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                )
+              })}
               {data.employees.length === 0 && (
                 <div className="text-sm text-ink-3 bg-panel border border-hairline rounded-xl p-6 text-center">
                   No timesheet punches found for this period.
@@ -234,6 +262,56 @@ export default function Payroll() {
               )}
             </div>
           </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ShiftRow({ shift, rates, ov, onChange }) {
+  const mode = ov?.mode || 'auto'
+  const eff = shiftEffective(shift, ov, rates)
+  const label = shift.shift_title || shift.job_label || shift.property ||
+    (shift.kind === 'unclassified' ? 'No job linked' : shift.kind)
+  return (
+    <div className="bg-panel border border-hairline rounded-lg px-3 py-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <KindDot kind={shift.kind} weekend={shift.weekend} />
+          <span className="text-ink-2 tabular-nums text-sm">{shift.date}</span>
+          <span className="text-ink-3 text-sm truncate">{label}</span>
+          {shift.weekend && <span className="text-[11px] text-amber-400">wknd</span>}
+          {shift.rate_pay && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-purple-300 bg-purple-500/15 rounded px-1 py-0.5">
+              <Tag className="w-2.5 h-2.5" />Rate Pay
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0 tabular-nums text-sm">
+          <span className="text-ink-2">{hrs(shift.hours)}</span>
+          {shift.miles > 0 && <span className="text-ink-3">{shift.miles} mi</span>}
+          <span className={`font-medium w-16 text-right ${mode !== 'auto' ? 'text-purple-300' : 'text-ink'}`}>{money(eff.pay)}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        <select value={mode} onChange={e => onChange({ mode: e.target.value })}
+          className="bg-bg-2 border border-hairline rounded-md px-2 py-1 text-xs focus:outline-none">
+          <option value="auto">Auto ({shift.kind === 'rental' && shift.weekend ? 'piece' : 'hourly'})</option>
+          <option value="hourly">Hourly</option>
+          <option value="piece">Piece rate</option>
+          <option value="exclude">Exclude</option>
+        </select>
+        {mode === 'piece' && (
+          <div className="flex items-center bg-bg-2 border border-hairline rounded-md px-2">
+            <span className="text-ink-3 text-xs">$</span>
+            <input type="number" step="1" min="0" value={ov?.amount ?? ''} autoFocus
+              onChange={e => onChange({ amount: e.target.value })} placeholder="amount"
+              className="w-20 bg-transparent px-1 py-1 text-xs focus:outline-none" />
+          </div>
+        )}
+        {mode !== 'auto' && (
+          <button onClick={() => onChange({ mode: 'auto' })}
+            className="text-xs text-ink-3 hover:text-ink-2">reset</button>
         )}
       </div>
     </div>
@@ -303,17 +381,14 @@ function RatesPanel() {
         rental_weekday_rate: Number(rates.rental_weekday_rate),
         mileage_rate: Number(rates.mileage_rate),
       })
-      setRates(r)
-      setSavedRates(true)
-      setTimeout(() => setSavedRates(false), 2000)
+      setRates(r); setSavedRates(true); setTimeout(() => setSavedRates(false), 2000)
     } catch (e) { setErr(String(e.message || e)) }
     setSavingRates(false)
   }
 
   return (
     <div className="bg-panel border border-hairline rounded-xl">
-      <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between p-4 text-left">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between p-4 text-left">
         <div className="flex items-center gap-2 font-medium text-ink">
           <Settings2 className="w-4 h-4 text-ink-3" />Pay rates
           <span className="text-xs text-ink-3 font-normal">hourly rates & per-property weekend turnover rates</span>
@@ -324,9 +399,7 @@ function RatesPanel() {
       {open && (
         <div className="border-t border-hairline p-4 space-y-5">
           {err && <div className="text-sm text-red-400">{err}</div>}
-          {!rates ? (
-            <div className="text-sm text-ink-3">Loading…</div>
-          ) : (
+          {!rates ? <div className="text-sm text-ink-3">Loading…</div> : (
             <>
               <div className="flex flex-wrap items-end gap-4">
                 <RateInput label="Residential $/hr" value={rates.residential_rate}
@@ -348,15 +421,12 @@ function RatesPanel() {
                 </div>
                 <div className="text-xs text-ink-3 mb-3">
                   Weekend rental turnovers are paid a flat amount per turnover, set per property.
+                  You can also override any single shift's pay right on its row above.
                 </div>
                 {props.length === 0 ? (
                   <div className="text-sm text-ink-3">No short-term rental properties found.</div>
                 ) : (
-                  <div className="space-y-2">
-                    {props.map(p => (
-                      <TurnoverRow key={p.id} property={p} />
-                    ))}
-                  </div>
+                  <div className="space-y-2">{props.map(p => <TurnoverRow key={p.id} property={p} />)}</div>
                 )}
               </div>
             </>
@@ -391,12 +461,9 @@ function TurnoverRow({ property }) {
   const save = async () => {
     setSaving(true); setErr(''); setSaved(false)
     try {
-      await patch(`/api/properties/${property.id}`, {
-        turnover_rate: val === '' ? null : Number(val),
-      })
+      await patch(`/api/properties/${property.id}`, { turnover_rate: val === '' ? null : Number(val) })
       property.turnover_rate = val === '' ? null : Number(val)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e) { setErr(String(e.message || e)) }
     setSaving(false)
   }

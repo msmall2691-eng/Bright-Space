@@ -633,6 +633,22 @@ async def get_timesheet_totals(start_date: str, end_date: str) -> dict:
     return out
 
 
+def _shift_tag_names(shift: dict) -> list:
+    """Shift tag labels (e.g. "Rate Pay") off a scheduler shift, defensively —
+    Connecteam exposes these under a few shapes (list of strings, list of
+    {name}/{title}/{label} objects). Used to auto-flag piece-rate shifts."""
+    raw = shift.get("tags") or shift.get("shiftTags") or shift.get("labels") or []
+    out = []
+    for t in raw:
+        if isinstance(t, str):
+            out.append(t)
+        elif isinstance(t, dict):
+            name = t.get("name") or t.get("title") or t.get("label")
+            if name:
+                out.append(str(name))
+    return out
+
+
 async def get_scheduled_shifts(start_date: str, end_date: str,
                                scheduler_id: Optional[str] = None) -> list:
     """List published + open shifts in the window from the scheduler, as flat
@@ -670,6 +686,7 @@ async def get_scheduled_shifts(start_date: str, end_date: str,
                     "address": loc.get("address") or "",
                     "isOpenShift": bool(s.get("isOpenShift")),
                     "isPublished": bool(s.get("isPublished")),
+                    "tags": _shift_tag_names(s),
                 })
             if len(shifts) < params["limit"]:
                 break
