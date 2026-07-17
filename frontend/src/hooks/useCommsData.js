@@ -23,6 +23,7 @@ export function useCommsData({ folder, chipFilters, channelFilter, search }) {
   const [selectedId, setSelectedId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [loadingList, setLoadingList] = useState(true)
   const [clients, setClients] = useState([])
 
   const threadRef = useRef(null)
@@ -54,6 +55,7 @@ export function useCommsData({ folder, chipFilters, channelFilter, search }) {
       const data = await get(`/api/comms/conversations?${params.toString()}`)
       setConvs(data)
     } catch (e) { console.error('[Comms] loadList:', e) }
+    finally { setLoadingList(false) }
   }, [folder, chipFilters, channelFilter, search])
 
   const loadSummary = useCallback(async () => {
@@ -107,6 +109,7 @@ export function useCommsData({ folder, chipFilters, channelFilter, search }) {
     selectedId, setSelectedId,
     detail,
     loadingDetail,
+    loadingList,
     clients,
     threadRef,
     loadList,

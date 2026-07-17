@@ -74,7 +74,7 @@ export default function Comms() {
   const {
     convs, summary,
     selectedId, setSelectedId,
-    detail, loadingDetail, clients,
+    detail, loadingDetail, loadingList, clients,
     threadRef,
     loadList, loadSummary, loadDetail,
   } = useCommsData({ folder, chipFilters, channelFilter, search })
@@ -209,6 +209,7 @@ export default function Comms() {
 
       <InboxLeftPanel
         convs={convs}
+        loadingList={loadingList}
         selectedId={selectedId}
         mobileView={mobileView}
         search={search} setSearch={setSearch}
