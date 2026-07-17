@@ -129,6 +129,13 @@ export default function App() {
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
   useUnhandledErrorToasts()
 
+  // The mobile bottom nav's "More" button opens the full menu drawer.
+  useEffect(() => {
+    const open = () => setSidebarOpen(true)
+    window.addEventListener('bb:open-menu', open)
+    return () => window.removeEventListener('bb:open-menu', open)
+  }, [])
+
   useEffect(() => {
     const jwt = localStorage.getItem('brightbase_jwt')
     const storedUser = localStorage.getItem('brightbase_user')
