@@ -25,16 +25,21 @@ export default function Payroll() {
   const [startDate, setStartDate] = useState(isoDaysAgo(14))
   const [endDate, setEndDate] = useState(isoDaysAgo(0))
   const [data, setData] = useState(null)
+  const [ctRates, setCtRates] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
 
   const pull = async () => {
     if (!startDate || !endDate) { setError('Select a date range'); return }
-    setLoading(true); setError(''); setData(null)
+    setLoading(true); setError(''); setData(null); setCtRates({})
     try {
       const d = await get(`/api/payroll/summary?start_date=${startDate}&end_date=${endDate}`)
       setData(d)
+      // Best-effort: Connecteam's own stored pay rates, shown alongside ours.
+      get(`/api/connecteam/pay-rates?start_date=${startDate}&end_date=${endDate}`)
+        .then(r => setCtRates(r.rates || {}))
+        .catch(() => setCtRates({}))
     } catch (e) {
       setError(String(e.message || e))
     }
@@ -130,10 +135,18 @@ export default function Payroll() {
               <Stat label="Gross Pay" value={money(t.gross_pay)} icon={DollarSign} color="text-emerald-400" />
             </div>
 
-            <div className="text-xs text-ink-3">
-              Period {data.period} · Residential {money(data.rates.residential_rate)}/hr ·
-              Rental weekday {money(data.rates.rental_weekday_rate)}/hr ·
-              Mileage {money(data.rates.mileage_rate)}/mi · Weekend rentals paid per-property piece rate
+            <div className="text-xs text-ink-3 space-y-0.5">
+              <div>
+                Period {data.period} · Residential {money(data.rates.residential_rate)}/hr ·
+                Rental weekday {money(data.rates.rental_weekday_rate)}/hr ·
+                Mileage {money(data.rates.mileage_rate)}/mi · Weekend rentals paid per-property piece rate
+              </div>
+              <div>
+                {data.hours_source === 'connecteam'
+                  ? <span className="text-emerald-400">✓ Total hours pulled from Connecteam's official timesheet (their rounding applied) — matches Connecteam exactly.</span>
+                  : <span className="text-amber-400">Total hours computed from raw punches (Connecteam's official totals unavailable for this range).</span>}
+                {t.unallocated_hours > 0.05 && <span> · {t.unallocated_hours}h not yet split into a job bucket.</span>}
+              </div>
             </div>
 
             {/* Per employee */}
@@ -144,9 +157,17 @@ export default function Payroll() {
                     onClick={() => setExpanded(x => ({ ...x, [emp.employee_id]: !x[emp.employee_id] }))}
                     className="w-full text-left p-4 hover:bg-bg-2/40 transition-colors">
                     <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-1.5 font-medium text-ink">
+                      <div className="flex items-center gap-1.5 font-medium text-ink flex-wrap">
                         <User className="w-4 h-4 text-ink-3 shrink-0" />{emp.name}
                         <span className="text-xs text-ink-3 ml-1">{hrs(emp.total_hours)} total</span>
+                        {emp.hours_source === 'connecteam' && (
+                          <span className="text-[11px] text-emerald-400/90 ml-1" title="From Connecteam's official timesheet">· Connecteam</span>
+                        )}
+                        {ctRates[emp.employee_id]?.rate != null && (
+                          <span className="text-[11px] text-ink-3 ml-1" title="Rate stored in Connecteam">
+                            · CT rate {money(ctRates[emp.employee_id].rate)}/hr
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-emerald-400">{money(emp.gross_pay)}</span>
@@ -169,6 +190,13 @@ export default function Payroll() {
                       <div className="mt-2 text-xs text-amber-400 flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5" />
                         {hrs(emp.unclassified_hours)} unclassified (not in pay)
+                      </div>
+                    )}
+                    {emp.hours_source === 'connecteam' && Math.abs(emp.unallocated_hours - emp.unclassified_hours) > 0.05 && (
+                      <div className="mt-1 text-xs text-ink-3 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Connecteam total {hrs(emp.connecteam_hours)} vs {hrs(emp.computed_hours)} from punches
+                        {emp.unallocated_hours > 0.05 && <> · {hrs(emp.unallocated_hours)} unallocated</>}
                       </div>
                     )}
                   </button>

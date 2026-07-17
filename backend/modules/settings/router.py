@@ -485,6 +485,8 @@ class ConnecteamConfig(BaseModel):
     # scheduler_id so re-labelled installs Just Work.
     company_id: Optional[str] = None
     scheduler_id: Optional[str] = None
+    # The Time Clock whose punches drive payroll — separate from the scheduler.
+    timeclock_id: Optional[str] = None
 
 
 def _mask_key(v: str) -> str:
@@ -524,6 +526,28 @@ def _cache_schedulers(db: Session, schedulers: list) -> None:
     set_setting(db, _SCHEDULERS_CACHE_KEY, _json.dumps(schedulers or []))
 
 
+_TIMECLOCKS_CACHE_KEY = "connecteam_timeclocks_cache"
+
+
+def _read_cached_timeclocks(db: Session) -> list:
+    """Last successfully-fetched time-clock list (same rate-limit-dodging
+    rationale as the scheduler cache)."""
+    import json as _json
+    raw = get_setting(db, _TIMECLOCKS_CACHE_KEY) or ""
+    if not raw:
+        return []
+    try:
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def _cache_timeclocks(db: Session, timeclocks: list) -> None:
+    import json as _json
+    set_setting(db, _TIMECLOCKS_CACHE_KEY, _json.dumps(timeclocks or []))
+
+
 @router.get("/connecteam-status", dependencies=[Depends(require_role("admin", "manager"))])
 def connecteam_status(db: Session = Depends(get_db)):
     """Whether Connecteam is wired up + a masked hint of the saved key so the
@@ -535,11 +559,15 @@ def connecteam_status(db: Session = Depends(get_db)):
     import os
     db_key = get_setting(db, "connecteam_api_key") or ""
     db_cid = get_setting(db, "connecteam_company_id") or ""
+    db_tc = get_setting(db, "connecteam_timeclock_id") or ""
     env_key = os.getenv("CONNECTEAM_API_KEY", "")
     env_cid = os.getenv("CONNECTEAM_COMPANY_ID", "")
+    env_tc = os.getenv("CONNECTEAM_TIMECLOCK_ID", "")
     key = (db_key or env_key).strip()
     cid = (db_cid or env_cid).strip()
+    tc = (db_tc or env_tc).strip()
     schedulers = _read_cached_schedulers(db)
+    timeclocks = _read_cached_timeclocks(db)
     return {
         "configured": bool(key and cid),
         "has_key": bool(key),
@@ -550,6 +578,9 @@ def connecteam_status(db: Session = Depends(get_db)):
         "scheduler_id": cid,                  # semantic alias — same value
         "source": ("database" if (db_key or db_cid) else ("env" if (env_key or env_cid) else "none")),
         "schedulers": schedulers,
+        "timeclock_id": tc,                   # payroll time clock ("" = auto-pick)
+        "timeclocks": timeclocks,             # cached picker options
+        "has_timeclock_id": bool(tc),
         # Flag the mismatch server-side so the UI can show a persistent warning
         # on the connected card (not just inside the Update-key form).
         "scheduler_id_valid": bool(cid) and (
@@ -579,6 +610,8 @@ def save_connecteam_settings(config: ConnecteamConfig, db: Session = Depends(get
     sched = config.scheduler_id if config.scheduler_id is not None else config.company_id
     if sched is not None:
         set_setting(db, "connecteam_company_id", sched.strip())
+    if config.timeclock_id is not None:
+        set_setting(db, "connecteam_timeclock_id", config.timeclock_id.strip())
     # A key change points at a different account — the previous account's
     # cached scheduler list is meaningless now. Clear the cache so the next
     # /connecteam/test re-fetches against the new key. Scheduler-id-only
@@ -600,6 +633,7 @@ def test_connecteam(db: Session = Depends(get_db)):
     that before ever hitting the scheduler list."""
     from integrations.connecteam import (
         is_configured, ConnecteamAuthError, get_me, list_schedulers,
+        list_time_clocks,
     )
     if not is_configured():
         raise HTTPException(400, "Connecteam isn't configured yet — save an API key and Scheduler ID first.")
@@ -613,17 +647,26 @@ def test_connecteam(db: Session = Depends(get_db)):
             # returned. Don't fail the whole test on a scheduler-list hiccup.
             logger.warning(f"Connecteam list_schedulers failed after /me OK: {e}")
             schedulers = []
-        # Persist the list so future page loads and the connected-card picker
+        try:
+            timeclocks = asyncio.run(list_time_clocks())
+        except Exception as e:
+            logger.warning(f"Connecteam list_time_clocks failed after /me OK: {e}")
+            timeclocks = []
+        # Persist the lists so future page loads and the connected-card pickers
         # don't need to re-hit Connecteam (rate-limit-friendly). Only cache
         # non-empty results — an empty response (from a 429/scope failure)
         # would overwrite a previously-good cache.
         if schedulers:
             _cache_schedulers(db, schedulers)
+        if timeclocks:
+            _cache_timeclocks(db, timeclocks)
+        if schedulers or timeclocks:
             db.commit()
         return {
             "ok": True,
             "account": me.get("data") or me,
             "schedulers": schedulers,
+            "timeclocks": timeclocks,
         }
     except ConnecteamAuthError:
         # ConnecteamAuthError's message is a fixed literal we author in

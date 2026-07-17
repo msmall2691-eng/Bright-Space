@@ -446,6 +446,35 @@ def _shift_net_minutes(shift: dict, user_breaks: list) -> float:
     return max(0.0, minutes)
 
 
+def _breaks_minutes(shift: dict, user_breaks: list) -> float:
+    """Total minutes of manual break inside a shift's window — surfaced in the
+    detailed timesheet view so the operator can see paid time vs break time."""
+    start = (shift.get("start") or {}).get("timestamp")
+    end = (shift.get("end") or {}).get("timestamp")
+    if not start or not end:
+        return 0.0
+    total = 0.0
+    for br in user_breaks or []:
+        bs = (br.get("start") or {}).get("timestamp")
+        be = (br.get("end") or {}).get("timestamp")
+        if bs and be and be > bs and bs >= start and be <= end:
+            total += (be - bs) / 60.0
+    return round(total, 2)
+
+
+def _location_str(node: dict) -> str:
+    """Human-readable clock location from a start/end node's locationData —
+    the address if Connecteam reverse-geocoded it, else raw lat/lng."""
+    loc = (node or {}).get("locationData") or {}
+    addr = loc.get("address")
+    if addr:
+        return str(addr)
+    lat, lng = loc.get("latitude"), loc.get("longitude")
+    if lat is not None and lng is not None:
+        return f"{lat:.5f}, {lng:.5f}"
+    return ""
+
+
 def _extract_mileage(shift: dict) -> float:
     """Pull the mileage number a cleaner entered at clock-out. Connecteam has
     no native mileage field, so operators add it as a shift custom field or
@@ -520,9 +549,196 @@ async def get_time_activities(start_date: str, end_date: str,
                 "subJobId": str(s.get("subJobId")) if s.get("subJobId") is not None else None,
                 "schedulerShiftId": str(s.get("schedulerShiftId")) if s.get("schedulerShiftId") is not None else None,
                 "employeeNote": s.get("employeeNote") or "",
+                "managerNote": s.get("managerNote") or "",
                 "miles": _extract_mileage(s),
+                # Richer fields for the detailed-timesheet view (payroll ignores
+                # these; they're additive so the pay math is unaffected).
+                "breaksMinutes": _breaks_minutes(s, user_breaks),
+                "startLocation": _location_str(s.get("start")),
+                "endLocation": _location_str(s.get("end")),
+                "isAutoClockOut": bool(s.get("isAutoClockOut")),
             })
     return rows
+
+
+def _deep_find_number(obj, keys: tuple):
+    """Return the first numeric value found under any of `keys`, searching one
+    level into nested dicts (Connecteam sometimes nests {"hours": n} under a
+    total object). Used to read totals from an endpoint whose exact field
+    names aren't pinned in the public docs."""
+    if not isinstance(obj, dict):
+        return None
+    for k in keys:
+        if k in obj:
+            v = obj[k]
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, dict):
+                for ik in ("hours", "value", "total", "amount"):
+                    iv = v.get(ik)
+                    if isinstance(iv, (int, float)):
+                        return float(iv)
+    return None
+
+
+async def get_timesheet_totals(start_date: str, end_date: str) -> dict:
+    """Connecteam's OWN official total hours per user for a period — the exact
+    number the Connecteam timesheet UI shows (their rounding, unpaid-break, and
+    overtime rules already applied). We use this as the authoritative "Total
+    Hours" so BrightBase reconciles to Connecteam to the decimal.
+
+    Returns { userId(str) → {"hours": float, "pay": float|None} }. The response
+    schema isn't fully documented, so this probes several container/field names
+    and returns {} on anything it can't read — callers then fall back to the
+    punch-summed total. Range is capped by Connecteam at 45 days."""
+    tc = await _resolve_timeclock_id()
+    params = {"startDate": start_date, "endDate": end_date}
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(
+            f"{CONNECTEAM_BASE}/time-clock/v1/time-clocks/{tc}/timesheet",
+            headers=_headers(), params=params,
+        )
+        _raise_for_status(r)
+        data = r.json()
+    d = data.get("data") if isinstance(data.get("data"), dict) else data
+    rows = None
+    for key in ("timesheets", "usersTimesheets", "timesheetsByUsers",
+                "users", "userTimesheets", "results"):
+        if isinstance(d, dict) and isinstance(d.get(key), list):
+            rows = d[key]
+            break
+    if rows is None and isinstance(d, list):
+        rows = d
+    out: dict = {}
+    for row in (rows or []):
+        if not isinstance(row, dict):
+            continue
+        uid = row.get("userId") if row.get("userId") is not None else row.get("id")
+        if uid is None:
+            continue
+        # "Total hours" in the UI = regular + overtime. Prefer an explicit
+        # total field; else sum regular + overtime; else any hours-ish field.
+        hours = _deep_find_number(row, ("totalHours", "totalWorkedHours",
+                                        "workedHours", "total"))
+        if hours is None:
+            reg = _deep_find_number(row, ("regularHours", "regular")) or 0.0
+            ot = _deep_find_number(row, ("overtimeHours", "overtime")) or 0.0
+            hours = (reg + ot) if (reg or ot) else _deep_find_number(row, ("hours",))
+        if hours is None:
+            continue
+        out[str(uid)] = {
+            "hours": round(float(hours), 2),
+            "pay": _deep_find_number(row, ("totalPay", "pay", "totalCost")),
+        }
+    return out
+
+
+async def get_scheduled_shifts(start_date: str, end_date: str,
+                               scheduler_id: Optional[str] = None) -> list:
+    """List published + open shifts in the window from the scheduler, as flat
+    normalized rows for the Schedule tab. Dates are YYYY-MM-DD; Connecteam wants
+    epoch seconds, so we convert to [00:00 start_date, 23:59:59 end_date]."""
+    sched = scheduler_id or _get_scheduler_id()
+    if not sched:
+        raise ConnecteamAuthError(
+            "No Connecteam scheduler configured — set the Scheduler ID in "
+            "Settings → Integrations."
+        )
+    start_epoch = _to_epoch_seconds(f"{start_date}T00:00:00")
+    end_epoch = _to_epoch_seconds(f"{end_date}T23:59:59")
+    params: dict = {"startTime": start_epoch, "endTime": end_epoch,
+                    "limit": 500, "offset": 0}
+    rows: list = []
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            r = await client.get(
+                f"{CONNECTEAM_BASE}/scheduler/v1/schedulers/{sched}/shifts",
+                headers=_headers(), params=params,
+            )
+            _raise_for_status(r)
+            data = r.json()
+            shifts = ((data.get("data") or {}).get("shifts")) or data.get("shifts") or []
+            for s in shifts:
+                loc = s.get("locationData") or {}
+                rows.append({
+                    "id": str(s.get("id") or ""),
+                    "title": s.get("title") or "",
+                    "startTimestamp": s.get("startTime"),
+                    "endTimestamp": s.get("endTime"),
+                    "assignedUserIds": s.get("assignedUserIds") or [],
+                    "jobId": str(s.get("jobId")) if s.get("jobId") is not None else None,
+                    "address": loc.get("address") or "",
+                    "isOpenShift": bool(s.get("isOpenShift")),
+                    "isPublished": bool(s.get("isPublished")),
+                })
+            if len(shifts) < params["limit"]:
+                break
+            params["offset"] += params["limit"]
+    return rows
+
+
+async def get_team() -> list:
+    """Everyone in Connecteam, normalized for the Team directory: name, phone,
+    email, role/type, archived flag. Reads /users/v1/users (already used by the
+    Settings test), just reshaped."""
+    users = await get_employees()
+    out: list = []
+    for u in users or []:
+        uid = u.get("userId") if u.get("userId") is not None else u.get("id")
+        if uid is None:
+            continue
+        name = " ".join(x for x in [u.get("firstName"), u.get("lastName")] if x).strip()
+        out.append({
+            "id": str(uid),
+            "name": name or u.get("name") or u.get("email") or str(uid),
+            "email": u.get("email") or "",
+            "phone": u.get("phoneNumber") or u.get("phone") or "",
+            "role": u.get("userType") or u.get("role") or u.get("title") or "",
+            "archived": bool(u.get("isArchived")),
+        })
+    out.sort(key=lambda e: e["name"].lower())
+    return out
+
+
+async def get_pay_rates(start_date: str, end_date: str) -> dict:
+    """{ userId(str) → {"rate": float, "type": str, "currency": str} } from
+    Connecteam's Pay Rates API. Best-effort and defensively parsed — the
+    response field names aren't pinned in the public docs, so we probe several
+    common keys and skip anything we can't read as a number. Empty dict when
+    the account doesn't expose pay rates (the feature is plan-gated)."""
+    params: dict = {"startDate": start_date, "endDate": end_date,
+                    "rateType": "hourly", "limit": 500, "offset": 0}
+    out: dict = {}
+    async with httpx.AsyncClient(timeout=20) as client:
+        while True:
+            r = await client.get(f"{CONNECTEAM_BASE}/pay-rates/v1/pay-rates",
+                                 headers=_headers(), params=params)
+            _raise_for_status(r)
+            data = r.json()
+            items = ((data.get("data") or {}).get("payRates")) \
+                or data.get("payRates") or (data.get("data") if isinstance(data.get("data"), list) else []) or []
+            for it in items:
+                uid = it.get("userId") if it.get("userId") is not None else it.get("id")
+                if uid is None:
+                    continue
+                raw = None
+                for k in ("payRate", "rate", "hourlyRate", "amount", "value", "rateValue"):
+                    if it.get(k) is not None:
+                        raw = it.get(k)
+                        break
+                try:
+                    rate = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                out[str(uid)] = {
+                    "rate": rate,
+                    "type": it.get("rateType") or it.get("type") or "hourly",
+                    "currency": it.get("currency") or "USD",
+                }
+            if len(items) < params["limit"]:
+                break
+            params["offset"] += params["limit"]
+    return out
 
 
 def _employee_name_map(employees: list) -> dict:

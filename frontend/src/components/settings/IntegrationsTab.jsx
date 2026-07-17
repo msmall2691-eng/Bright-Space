@@ -19,7 +19,7 @@ export default function IntegrationsTab({ toast, active }) {
   const [gcalConnecting, setGcalConnecting] = useState(false)
   const [gmailConn, setGmailConn] = useState({ loading: true })
   const [connecteam, setConnecteam] = useState({ loading: true })
-  const [ctForm, setCtForm] = useState({ api_key: '', company_id: '', open: false })
+  const [ctForm, setCtForm] = useState({ api_key: '', company_id: '', timeclock_id: '', open: false })
   const [ctSaving, setCtSaving] = useState(false)
   const [ctTesting, setCtTesting] = useState(false)
   const [ctPushing, setCtPushing] = useState(false)
@@ -43,7 +43,7 @@ export default function IntegrationsTab({ toast, active }) {
     return get('/api/settings/connecteam-status')
       .then(r => {
         setConnecteam({ loading: false, ...r })
-        setCtForm(f => ({ ...f, company_id: r.company_id || '' }))
+        setCtForm(f => ({ ...f, company_id: r.company_id || '', timeclock_id: r.timeclock_id || '' }))
       })
       .catch(e => setConnecteam({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
   }
@@ -59,12 +59,12 @@ export default function IntegrationsTab({ toast, active }) {
   const saveConnecteam = async () => {
     setCtSaving(true)
     try {
-      const payload = { company_id: ctForm.company_id.trim() }
+      const payload = { company_id: ctForm.company_id.trim(), timeclock_id: ctForm.timeclock_id.trim() }
       // Only send api_key if the user actually typed one — empty means "leave alone".
       if (ctForm.api_key.trim()) payload.api_key = ctForm.api_key.trim()
       const r = await post('/api/settings/connecteam', payload)
       setConnecteam({ loading: false, ...r })
-      setCtForm(f => ({ ...f, api_key: '', open: false, company_id: r.company_id || f.company_id }))
+      setCtForm(f => ({ ...f, api_key: '', open: false, company_id: r.company_id || f.company_id, timeclock_id: r.timeclock_id || f.timeclock_id }))
       toast('Connecteam credentials saved')
     } catch (e) {
       toast(e?.message || 'Could not save Connecteam credentials', 'error')
@@ -79,7 +79,7 @@ export default function IntegrationsTab({ toast, active }) {
     try {
       const r = await post('/api/settings/connecteam', { api_key: '', company_id: '' })
       setConnecteam({ loading: false, ...r })
-      setCtForm({ api_key: '', company_id: '', open: false })
+      setCtForm({ api_key: '', company_id: '', timeclock_id: '', open: false })
       toast('Connecteam disconnected')
     } catch (e) {
       toast(e?.message || 'Could not disconnect Connecteam', 'error')
@@ -483,8 +483,32 @@ export default function IntegrationsTab({ toast, active }) {
                       />
                     )}
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-ink-2 mb-1">Time Clock ID <span className="text-ink-3 font-normal">(payroll)</span></label>
+                    {Array.isArray(connecteam.timeclocks) && connecteam.timeclocks.length > 0 ? (
+                      <select
+                        value={ctForm.timeclock_id}
+                        onChange={e => setCtForm(f => ({ ...f, timeclock_id: e.target.value }))}
+                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="">— auto (first time clock) —</option>
+                        {connecteam.timeclocks.map(tc => (
+                          <option key={tc.id} value={tc.id}>{tc.name} (ID {tc.id})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        value={ctForm.timeclock_id}
+                        onChange={e => setCtForm(f => ({ ...f, timeclock_id: e.target.value }))}
+                        placeholder="leave blank to auto-pick, or a numeric time clock id"
+                        className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400"
+                      />
+                    )}
+                  </div>
                   <p className="text-[11px] text-ink-3">
-                    Get the API key from Connecteam → <b>Integrations Center → API keys</b>. The Scheduler ID is the numeric id of the specific schedule you want shifts pushed into — save the key first, hit <b>Test connection</b>, and this field turns into a picker of every scheduler on your account.
+                    Get the API key from Connecteam → <b>Integrations Center → API keys</b>. The Scheduler ID is the schedule shifts are pushed into; the Time Clock ID is the clock whose punches drive <b>Payroll</b> (leave it on auto if you only have one). Save the key first, hit <b>Test connection</b>, and both fields turn into pickers of what's on your account.
                   </p>
                   <div className="flex items-center gap-2">
                     <button onClick={saveConnecteam} disabled={ctSaving || (!ctForm.company_id.trim() && !ctForm.api_key.trim())}

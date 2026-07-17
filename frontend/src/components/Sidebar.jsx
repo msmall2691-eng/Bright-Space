@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt,
-  Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox,
+  Send, DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox, Clock,
   ChevronRight, Bell, Building2, LayoutGrid, LogOut, ChevronDown, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
@@ -28,6 +28,7 @@ const nav = [
   { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
   { divider: true, label: 'Team' },
   { to: '/payroll',     icon: DollarSign,      label: 'Payroll' },
+  { to: '/connecteam',  icon: Clock,           label: 'Connecteam' },
   { divider: true, label: 'Settings' },
   { to: '/settings',    icon: Settings,        label: 'Settings' },
 ]
