@@ -195,11 +195,14 @@ export default function Comms() {
           three-pane inbox needs every remaining pixel, so we skip the
           subtitle and tighten the vertical padding rather than push the
           list/thread/contact columns below the fold. */}
+      {/* Hidden on mobile: the list already shows "Inbox" and each thread has
+          its own header, so this outer title is pure wasted top space on a
+          phone. Desktop keeps it for page context. */}
       <PageHeader
         title="Comms"
         icon={MessageSquare}
         iconColor="cyan"
-        className="pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
+        className="hidden lg:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
       />
 
     <div className="flex flex-1 min-h-0">
@@ -221,7 +224,9 @@ export default function Comms() {
 
 
       {/* ═══ CENTER PANEL: Thread View ═══ */}
-      <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'list' ? 'hidden lg:flex' : 'flex'}`}>
+      {/* Mobile shows exactly one pane at a time: list / thread / contact.
+          On lg+ the thread is always visible alongside the list. */}
+      <div className={`flex-1 flex flex-col min-w-0 ${mobileView === 'thread' ? 'flex' : 'hidden lg:flex'}`}>
         {!detail ? (
           /* Empty state */
           <div className="flex-1 flex items-center justify-center bg-bg/50">
@@ -289,9 +294,15 @@ export default function Comms() {
 
 
       {/* ═══ RIGHT PANEL: Contact Detail ═══ */}
-      {detail && showContactPanel && (
+      {/* Shown inline on desktop (showContactPanel) or as a full-screen pane on
+          mobile (mobileView==='contact'). Previously xl-only, so the "Draft a
+          quote", profile, and open-items links were unreachable on a phone. */}
+      {detail && (showContactPanel || mobileView === 'contact') && (
         <ContactPanel
           detail={detail}
+          mobileActive={mobileView === 'contact'}
+          desktopOpen={showContactPanel}
+          onBack={() => setMobileView('thread')}
           onAssign={setAssignee}
           onPriority={setPriority}
           onStatus={setStatus}

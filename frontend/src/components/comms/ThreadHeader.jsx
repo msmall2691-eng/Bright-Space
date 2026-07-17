@@ -67,8 +67,10 @@ export function ThreadHeader({
             <CheckCircle2 className="w-3.5 h-3.5" />
             {detail.status === 'resolved' ? 'Done' : 'Mark done'}
           </button>
-          <button onClick={() => setShowContactPanel(!showContactPanel)}
-            className="w-8 h-8 rounded-lg bg-bg-2 hover:bg-bg-2 flex items-center justify-center text-ink-3 transition-colors hidden lg:flex">
+          {/* Contact/details: on mobile this switches to the contact pane
+              (mobileView='contact'); on desktop it toggles the side panel. */}
+          <button onClick={() => { setShowContactPanel(v => !v); setMobileView('contact') }}
+            className="w-9 h-9 rounded-lg bg-bg-2 hover:bg-hairline flex items-center justify-center text-ink-3 transition-colors">
             <User className="w-4 h-4" />
           </button>
         </div>

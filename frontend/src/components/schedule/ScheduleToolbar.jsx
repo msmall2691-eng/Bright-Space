@@ -171,8 +171,10 @@ export default function ScheduleToolbar({
           </Button>
         </div>
 
-        {/* Mobile-only date nav — desktop has it inline above */}
-        {(
+        {/* Mobile-only date nav — desktop has it inline above. Hidden in month
+            view: the month grid has its own month header, and these arrows shift
+            by a WEEK (wrong axis for a month), which was confusing. */}
+        {viewMode !== 'month' && (
           <div className="sm:hidden flex items-center gap-2 mt-2">
             <button onClick={onPrevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
               <ChevronLeft className="w-4 h-4" />

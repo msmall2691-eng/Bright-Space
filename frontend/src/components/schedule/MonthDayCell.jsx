@@ -30,7 +30,7 @@ function MonthDayCell({
       onDragOver={e => onDragOverDay(e, date)}
       onDragLeave={onDragLeaveDay}
       onDrop={e => onDropDay(e, date)}
-      className={`relative p-1 sm:p-1.5 min-h-[104px] sm:min-h-[96px] cursor-pointer transition-colors ${
+      className={`relative p-1 sm:p-1.5 min-h-[58px] sm:min-h-[96px] cursor-pointer transition-colors ${
         isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
         isSelected ? 'bg-blue-50/60' :
         dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
@@ -97,6 +97,23 @@ function MonthDayCell({
         </div>
       )}
 
+      {/* Mobile: a 52px-wide cell can't fit "10:00 · Name" pills, so show
+          density as colored dots (by service type) + an overflow count. The
+          whole cell taps to open the day's full list (onSelectDay). */}
+      {isMobile && dayJobs.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {dayJobs.slice(0, 5).map(j => {
+            const tc = typeConfig[j.job_type] || typeConfig.residential
+            return <span key={j.id}
+              className={`w-2 h-2 rounded-full ${tc.dot} ${j.status === 'cancelled' ? 'opacity-30' : ''}`} />
+          })}
+          {dayJobs.length > 5 && (
+            <span className="text-[9px] font-bold text-ink-3 leading-none">+{dayJobs.length - 5}</span>
+          )}
+        </div>
+      )}
+
+      {!isMobile && (
       <div className="space-y-0.5">
         {dayJobs.slice(0, maxPills).map(j => {
           const tc = typeConfig[j.job_type] || typeConfig.residential
@@ -197,6 +214,7 @@ function MonthDayCell({
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

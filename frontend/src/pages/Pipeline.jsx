@@ -61,13 +61,12 @@ export default function Pipeline() {
 
   // Drag a card onto a column → optimistically move it, then persist the stage.
   // On failure, reload to snap back to the server's truth.
-  async function moveTo(stage) {
-    const id = dragId
-    setOverStage(null); setDragId(null)
-    if (!id) return
+  // Shared mover — used by desktop drag-and-drop AND the mobile per-card stage
+  // picker (HTML5 drag events never fire on touch, so a phone needs a real
+  // control to change a deal's stage).
+  async function moveCard(id, stage) {
     const card = opps.find(o => o.id === id)
     if (!card || card.stage === stage || !STAGE_KEYS.includes(stage)) return
-
     const prev = card.stage
     setOpps(os => os.map(o => (o.id === id ? { ...o, stage } : o)))
     setSavingId(id)
@@ -79,6 +78,12 @@ export default function Pipeline() {
     } finally {
       setSavingId(null)
     }
+  }
+
+  function moveTo(stage) {
+    const id = dragId
+    setOverStage(null); setDragId(null)
+    if (id) moveCard(id, stage)
   }
 
   const owners = [...new Set(opps.map(o => o.owner).filter(Boolean))].sort()
@@ -130,7 +135,9 @@ export default function Pipeline() {
       {loading ? (
         <div className="text-sm text-ink-3 py-12 text-center">Loading pipeline…</div>
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        // Stack the stages vertically on mobile (a 5-column horizontal board is
+        // a 1150px scroll on a phone); horizontal board on sm+.
+        <div className="flex flex-col sm:flex-row gap-3 sm:overflow-x-auto pb-4">
           {STAGES.map(stage => {
             const rows = byStage(stage.key)
             return (
@@ -139,7 +146,7 @@ export default function Pipeline() {
                 onDragOver={(e) => { e.preventDefault(); setOverStage(stage.key) }}
                 onDragLeave={() => setOverStage(s => (s === stage.key ? null : s))}
                 onDrop={() => moveTo(stage.key)}
-                className={`flex-1 min-w-[230px] rounded-xl border bg-bg-2/40 transition-colors
+                className={`flex-1 sm:min-w-[230px] rounded-xl border bg-bg-2/40 transition-colors
                   ${overStage === stage.key ? 'border-blue-400 bg-blue-500/5' : 'border-hairline'}`}
               >
                 <div className={`flex items-center justify-between px-3 py-2 border-b-2 ${stage.accent}`}>
@@ -198,6 +205,22 @@ export default function Pipeline() {
                           </div>
                         </div>
                       </div>
+                      {/* Touch-friendly stage mover (drag doesn't work on
+                          phones). Hidden on sm+ where drag-and-drop is used. */}
+                      <select
+                        value={o.stage || 'new'}
+                        onChange={e => moveCard(o.id, e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        disabled={savingId === o.id}
+                        className="sm:hidden mt-2 w-full text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-2 text-ink-2 focus:outline-none focus:border-blue-400"
+                        aria-label="Move deal to stage"
+                      >
+                        {STAGES.map(s => (
+                          <option key={s.key} value={s.key}>
+                            {s.key === (o.stage || 'new') ? `● ${s.label}` : `Move to ${s.label}`}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   ))}
                 </div>

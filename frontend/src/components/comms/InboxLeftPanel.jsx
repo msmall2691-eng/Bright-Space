@@ -32,7 +32,7 @@ export function InboxLeftPanel({
 
   return (
     <div className={`w-full lg:w-[340px] border-r border-hairline bg-panel flex flex-col shrink-0
-      ${mobileView === 'thread' ? 'hidden lg:flex' : 'flex'}`}>
+      ${mobileView === 'list' ? 'flex' : 'hidden lg:flex'}`}>
 
       {/* Header */}
       <div className="px-4 pt-4 pb-3">
