@@ -206,7 +206,7 @@ export function ClientForm({
       {saveError && (
         <div className="mx-6 mb-2 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</div>
       )}
-      <div className="p-6 border-t border-hairline flex gap-3">
+      <div className="p-6 pb-bottomnav sm:pb-6 border-t border-hairline flex gap-3">
         {selected && (
           <button onClick={() => deleteClient(selected.id)}
             className="px-4 py-2 text-[13px] text-red-500 hover:text-red-600 border border-red-200 hover:border-red-300 rounded-lg transition-colors font-medium">

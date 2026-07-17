@@ -33,8 +33,8 @@ export function PropertyRow({
     <div className={`bg-panel border rounded-xl ${selectedIds.has(p.id) ? 'border-blue-400' : 'border-hairline'}`}>
       {/* Property header */}
       <div className="p-4 cursor-pointer hover:bg-bg transition-colors" onClick={() => setExpandedPropId(expandedPropId === p.id ? null : p.id)}>
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4 flex-1">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+          <div className="flex items-start gap-4 flex-1 min-w-0">
             <input
               type="checkbox"
               checked={selectedIds.has(p.id)}
@@ -129,7 +129,7 @@ export function PropertyRow({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 ml-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-2 shrink-0">
             {pType === 'str' && (p.icals?.length || 0) > 0 && (
               <button onClick={(e) => { e.stopPropagation(); syncOne(p.id) }} disabled={syncing === p.id}
                 className="flex items-center gap-1.5 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-600/30 px-3 py-1.5 rounded-lg text-xs transition-colors">

@@ -116,8 +116,8 @@ export function CustomFieldsBody({ state }) {
       {/* Field list */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-8 pb-6">
 
-        <div className="rounded-xl border border-hairline overflow-hidden bg-panel">
-          <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-hairline bg-bg">
+        <div className="rounded-xl border border-hairline overflow-x-auto bg-panel">
+          <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-hairline bg-bg min-w-[440px]">
             {['Field name', 'Type', 'Required', ''].map(h => (
               <div key={h} className="text-[10px] font-semibold uppercase tracking-widest text-ink-3">{h}</div>
             ))}
@@ -135,7 +135,7 @@ export function CustomFieldsBody({ state }) {
             </div>
           ) : fields.map((field, idx) => (
             <div key={field.id}
-              className={`group grid grid-cols-[2fr_1fr_1fr_auto] gap-4 items-center px-5 py-3.5 hover:bg-bg cursor-pointer transition-colors
+              className={`group grid grid-cols-[2fr_1fr_1fr_auto] gap-4 items-center px-5 py-3.5 hover:bg-bg cursor-pointer transition-colors min-w-[440px]
                 ${idx < fields.length - 1 ? 'border-b border-hairline' : ''}
                 ${panel === field.id ? 'bg-bg' : ''}`}
               onClick={() => openEdit(field)}>
