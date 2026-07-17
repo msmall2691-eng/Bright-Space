@@ -290,6 +290,11 @@ class Property(Base):
     business_name = Column(String, nullable=True)      # If different from Client.name
     hours_of_operation = Column(Text, nullable=True)   # Hours as text or JSON
 
+    # Weekend rental turnovers are paid piece-rate, not hourly, and the amount
+    # varies per property. Payroll reads this to price weekend str_turnover work.
+    # NULL = not set yet (Payroll flags weekend turnovers it can't price).
+    turnover_rate = Column(Float, nullable=True)
+
     # Onsite contact (different from billing client)
     site_contact_name = Column(String, nullable=True)
     site_contact_phone = Column(String, nullable=True)

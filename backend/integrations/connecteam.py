@@ -68,6 +68,15 @@ def _get_scheduler_id() -> str:
     return _db_setting("connecteam_company_id") or os.getenv("CONNECTEAM_COMPANY_ID", "").strip()
 
 
+def _get_timeclock_id() -> str:
+    """Time Clock ID: the numeric id of the Time Clock whose punches drive
+    payroll. Separate from the scheduler id — the scheduler is where the CRM
+    pushes shifts, the time clock is where crew actually clock in/out. Prefer
+    the Settings value, fall back to env. Empty string when unset — callers
+    auto-pick the first live time clock via list_time_clocks()."""
+    return _db_setting("connecteam_timeclock_id") or os.getenv("CONNECTEAM_TIMECLOCK_ID", "").strip()
+
+
 # Public alias for callers that used to say "company_id"; kept so the auto
 # dispatcher and any external readers keep compiling.
 def _company_id() -> str:  # noqa: N802 — backward compat name
@@ -334,26 +343,234 @@ def delete_shift_sync(shift_id: str) -> None:
     return _run_sync(delete_shift(shift_id))
 
 
-# ─── Payroll helpers (not-yet-re-implemented) ──────────────────────────────
-# The pre-rewrite code exposed get_timesheets / get_mileage against the wrong
-# URL shape (/v1/timesheets etc), so those calls have always 401'd since day
-# one — nothing was actually pulling payroll data. Keep the symbols so
-# modules/payroll/router.py still imports, but raise a clear error until the
-# Time Clock (/timeclock/v1/…) endpoints get wired up properly. The payroll
-# router catches this as a ConnecteamAuthError → 503, so the UI shows
-# "Connecteam error" instead of crashing.
+# ─── Time Clock (payroll) ──────────────────────────────────────────────────
+# Timesheets come out of the Time Clock module, NOT the scheduler. The data
+# model is:
+#   * List time clocks:   GET /time-clock/v1/time-clocks
+#   * Time activities:    GET /time-clock/v1/time-clocks/{id}/time-activities
+#                         ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+#     → { data: { timeActivitiesByUsers: [ { userId, shifts: [...],
+#         manualBreaks: [...], timeOffs: [...] } ] } }
+#     Each shift carries start/end {timestamp, timezone, locationData}, jobId,
+#     subJobId, schedulerShiftId (links back to a CRM-pushed scheduler shift),
+#     employeeNote, and customFields/shiftAttachments (where crew enter mileage
+#     at clock-out — Connecteam has no automatic mileage tracking).
+#   * Jobs (names):       GET /jobs/v1/jobs?instanceIds={id}
+#     → resolve jobId → title so residential vs rental can be classified.
+#
+# The date range Connecteam allows is 92 days max; callers should keep pay
+# periods well under that.
+
+
+async def list_time_clocks() -> list:
+    """List all time clocks on the account. Used by the Settings picker so the
+    operator can choose which time clock feeds payroll (mirrors
+    list_schedulers). Flattens to [{id, name}], skipping archived clocks."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{CONNECTEAM_BASE}/time-clock/v1/time-clocks",
+                             headers=_headers())
+        _raise_for_status(r)
+        data = r.json()
+    clocks = ((data.get("data") or {}).get("timeClocks")) or data.get("timeClocks") or []
+    out = []
+    for c in clocks:
+        cid = c.get("timeClockId") if c.get("timeClockId") is not None else c.get("id")
+        if cid is None or c.get("isArchived"):
+            continue
+        out.append({"id": cid, "name": c.get("name") or f"Time Clock #{cid}"})
+    return out
+
+
+async def _resolve_timeclock_id() -> str:
+    """The configured time clock id, or — when unset — the first live one on
+    the account so payroll works out of the box for single-clock accounts."""
+    tc = _get_timeclock_id()
+    if tc:
+        return tc
+    clocks = await list_time_clocks()
+    if not clocks:
+        raise ConnecteamAuthError(
+            "No Connecteam time clock found. Set the Time Clock ID in "
+            "Settings → Integrations, or check the API key's permissions."
+        )
+    return str(clocks[0]["id"])
+
+
+async def get_jobs(instance_id: Optional[str] = None) -> dict:
+    """Map Connecteam jobId → job metadata for an instance (time clock or
+    scheduler). Returns { jobId: {"name": str, "code": str} } so callers can
+    turn the bare jobId on a shift into a human name for residential/rental
+    classification. Paginates (Connecteam defaults to 10 per page)."""
+    inst = instance_id or _get_timeclock_id() or _get_scheduler_id()
+    params: dict = {"limit": 500, "offset": 0, "includeDeleted": True}
+    if inst:
+        params["instanceIds"] = inst
+    out: dict = {}
+    async with httpx.AsyncClient(timeout=20) as client:
+        while True:
+            r = await client.get(f"{CONNECTEAM_BASE}/jobs/v1/jobs",
+                                 headers=_headers(), params=params)
+            _raise_for_status(r)
+            data = r.json()
+            jobs = ((data.get("data") or {}).get("jobs")) or data.get("jobs") or []
+            for j in jobs:
+                jid = j.get("jobId") if j.get("jobId") is not None else j.get("id")
+                if jid is None:
+                    continue
+                out[str(jid)] = {
+                    "name": j.get("title") or j.get("name") or f"Job {jid}",
+                    "code": j.get("jobCode") or j.get("code") or "",
+                }
+            if len(jobs) < params["limit"]:
+                break
+            params["offset"] += params["limit"]
+    return out
+
+
+def _shift_net_minutes(shift: dict, user_breaks: list) -> float:
+    """Worked minutes for a shift = elapsed time minus any manual breaks that
+    fall inside it. Connecteam's break handling (paid/unpaid) is configured
+    per-clock and not exposed on the activity, so we subtract every manual
+    break overlapping the shift window — the common 'unpaid lunch' case. Open
+    (not-yet-clocked-out) shifts have no end and count as 0."""
+    start = (shift.get("start") or {}).get("timestamp")
+    end = (shift.get("end") or {}).get("timestamp")
+    if not start or not end or end <= start:
+        return 0.0
+    minutes = (end - start) / 60.0
+    for br in user_breaks or []:
+        bs = (br.get("start") or {}).get("timestamp")
+        be = (br.get("end") or {}).get("timestamp")
+        if bs and be and be > bs and bs >= start and be <= end:
+            minutes -= (be - bs) / 60.0
+    return max(0.0, minutes)
+
+
+def _extract_mileage(shift: dict) -> float:
+    """Pull the mileage number a cleaner entered at clock-out. Connecteam has
+    no native mileage field, so operators add it as a shift custom field or
+    shift attachment — we scan both for an entry whose title mentions 'mile'
+    and take its numeric value. Returns 0.0 when none is present."""
+    candidates = list(shift.get("customFields") or [])
+    candidates += list(shift.get("shiftAttachments") or [])
+    for f in candidates:
+        title = str(f.get("title") or f.get("name") or "").lower()
+        if "mile" not in title:
+            continue
+        val = f.get("value")
+        if val is None:
+            val = f.get("number") if f.get("number") is not None else f.get("text")
+        try:
+            return float(str(val).strip())
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+async def get_time_activities(start_date: str, end_date: str,
+                              timeclock_id: Optional[str] = None,
+                              employee_id: Optional[str] = None) -> list:
+    """Fetch every worked shift in the window as flat, normalized rows. Each
+    row is one shift, annotated with the fields payroll actually needs:
+
+      {
+        "userId": int, "shiftId": str,
+        "startTimestamp": int, "endTimestamp": int, "timezone": str,
+        "netMinutes": float, "netHours": float,
+        "jobId": str|None, "subJobId": str|None,
+        "schedulerShiftId": str|None,      # links to CRM connecteam_shift_ids
+        "employeeNote": str, "miles": float,
+      }
+
+    Breaks are subtracted; open shifts are dropped. The caller layers on
+    residential/rental classification and pay rules — this function stays
+    purely about faithfully reading Connecteam."""
+    tc = timeclock_id or await _resolve_timeclock_id()
+    params: dict = {"startDate": start_date, "endDate": end_date}
+    if employee_id:
+        params["userIds"] = employee_id
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(
+            f"{CONNECTEAM_BASE}/time-clock/v1/time-clocks/{tc}/time-activities",
+            headers=_headers(), params=params,
+        )
+        _raise_for_status(r)
+        data = r.json()
+    by_users = ((data.get("data") or {}).get("timeActivitiesByUsers")) \
+        or data.get("timeActivitiesByUsers") or []
+    rows: list = []
+    for u in by_users:
+        uid = u.get("userId")
+        user_breaks = u.get("manualBreaks") or []
+        for s in (u.get("shifts") or []):
+            start = (s.get("start") or {}).get("timestamp")
+            end = (s.get("end") or {}).get("timestamp")
+            if not start or not end:
+                continue  # open / in-progress shift — nothing to pay yet
+            net = _shift_net_minutes(s, user_breaks)
+            rows.append({
+                "userId": uid,
+                "shiftId": str(s.get("id") or ""),
+                "startTimestamp": start,
+                "endTimestamp": end,
+                "timezone": (s.get("start") or {}).get("timezone") or "",
+                "netMinutes": round(net, 2),
+                "netHours": round(net / 60.0, 4),
+                "jobId": str(s.get("jobId")) if s.get("jobId") is not None else None,
+                "subJobId": str(s.get("subJobId")) if s.get("subJobId") is not None else None,
+                "schedulerShiftId": str(s.get("schedulerShiftId")) if s.get("schedulerShiftId") is not None else None,
+                "employeeNote": s.get("employeeNote") or "",
+                "miles": _extract_mileage(s),
+            })
+    return rows
+
+
+def _employee_name_map(employees: list) -> dict:
+    """{ userId(str) → display name } from the /users list, so timesheet rows
+    show real names instead of numeric ids."""
+    out: dict = {}
+    for e in employees or []:
+        uid = e.get("userId") if e.get("userId") is not None else e.get("id")
+        if uid is None:
+            continue
+        name = " ".join(x for x in [e.get("firstName"), e.get("lastName")] if x).strip()
+        out[str(uid)] = name or e.get("name") or e.get("email") or str(uid)
+    return out
+
 
 async def get_timesheets(start_date: str, end_date: str,
                          employee_id: Optional[str] = None) -> list:
-    raise ConnecteamAuthError(
-        "Connecteam timesheet pull isn't wired to the /timeclock/v1 API yet. "
-        "Reach out to update backend/integrations/connecteam.py.get_timesheets."
-    )
+    """Back-compat shape for the legacy /api/payroll/timesheets endpoint: a
+    flat list of per-shift entries with durationMinutes/userId/userName. New
+    code should use get_time_activities (richer) + the /summary endpoint."""
+    rows = await get_time_activities(start_date, end_date, employee_id=employee_id)
+    try:
+        names = _employee_name_map(await get_employees())
+    except Exception:
+        names = {}
+    for r in rows:
+        r["durationMinutes"] = r["netMinutes"]
+        r["userName"] = names.get(str(r["userId"]), str(r["userId"]))
+    return rows
 
 
 async def get_mileage(start_date: str, end_date: str,
                       employee_id: Optional[str] = None) -> list:
-    raise ConnecteamAuthError(
-        "Connecteam mileage pull isn't wired to the current API yet. "
-        "Reach out to update backend/integrations/connecteam.py.get_mileage."
-    )
+    """Back-compat shape for the legacy /api/payroll/mileage endpoint: one row
+    per shift that carries mileage, with distance/userId/userName."""
+    rows = await get_time_activities(start_date, end_date, employee_id=employee_id)
+    try:
+        names = _employee_name_map(await get_employees())
+    except Exception:
+        names = {}
+    out = []
+    for r in rows:
+        if r["miles"] <= 0:
+            continue
+        out.append({
+            "userId": r["userId"],
+            "userName": names.get(str(r["userId"]), str(r["userId"])),
+            "distance": r["miles"],
+            "startTimestamp": r["startTimestamp"],
+        })
+    return out

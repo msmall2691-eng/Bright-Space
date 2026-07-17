@@ -44,6 +44,7 @@ class PropertyCreate(BaseModel):
     business_name: Optional[str] = None
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
+    turnover_rate: Optional[float] = None  # weekend piece rate per rental turnover ($)
     custom_fields: Optional[dict] = {}
 
 
@@ -65,6 +66,7 @@ class PropertyUpdate(BaseModel):
     business_name: Optional[str] = None
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
+    turnover_rate: Optional[float] = None  # weekend piece rate per rental turnover ($)
     active: Optional[bool] = None
     checklist_template: Optional[list] = None
     custom_fields: Optional[dict] = None
@@ -207,6 +209,7 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "timezone": getattr(p, 'timezone', None),
         "business_name": getattr(p, 'business_name', None),
         "hours_of_operation": getattr(p, 'hours_of_operation', None),
+        "turnover_rate": getattr(p, 'turnover_rate', None),
         "notes": p.notes,
         "checklist_template": getattr(p, 'checklist_template', None),
         "custom_fields": getattr(p, 'custom_fields', None) or {},
