@@ -117,7 +117,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
             .filter(item => !item.roles || (user?.role && item.roles.includes(user.role)))
             .map((item, i) =>
             item.divider ? (
-              <div key={i} className={collapsed ? 'lg:mx-3 lg:my-2 lg:border-t lg:border-hairline px-4 pt-6 pb-2' : 'px-4 pt-6 pb-2'}>
+              <div key={i} className={collapsed ? 'lg:mx-3 lg:my-2 lg:border-t lg:border-hairline px-4 pt-3.5 pb-1 lg:pt-6 lg:pb-2' : 'px-4 pt-3.5 pb-1 lg:pt-6 lg:pb-2'}>
                 <span className={`text-[11px] font-bold text-ink-3 uppercase tracking-wider ${labelHide}`}>{item.label}</span>
               </div>
             ) : (
@@ -126,7 +126,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 to={item.to}
                 title={collapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `group relative flex items-center gap-3 px-3 py-2 mx-2 my-0.5 rounded-md transition-colors text-[13px] select-none ${collapsed ? 'lg:justify-center lg:px-0 lg:mx-2' : ''} ${
+                  `group relative flex items-center gap-3 px-3 py-2.5 lg:py-2 mx-2 my-0.5 rounded-md transition-colors text-[13px] select-none ${collapsed ? 'lg:justify-center lg:px-0 lg:mx-2' : ''} ${
                     isActive
                       ? 'bb-glow-accent bg-bg-2 text-ink font-semibold'
                       : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/60'
