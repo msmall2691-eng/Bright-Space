@@ -34,6 +34,7 @@ from integrations.connecteam import (
     get_employees,
     get_jobs,
     get_timesheet_totals,
+    get_scheduled_shifts,
     _employee_name_map,
 )
 from modules.auth.router import require_role
@@ -217,6 +218,17 @@ async def payroll_summary(
         ct_jobs = await get_jobs()
     except Exception:
         ct_jobs = {}
+    # Scheduled-shift index: { schedulerShiftId → {title, tags} }. The shift
+    # TITLE ("Wells Rental Turnover" vs "Residential") is the most reliable
+    # residential/rental signal — the Connecteam job is just the client name.
+    # Tags let us auto-flag piece-rate ("Rate Pay") shifts.
+    sched_index: dict = {}
+    try:
+        for s in await get_scheduled_shifts(start_date, end_date):
+            if s.get("id"):
+                sched_index[str(s["id"])] = {"title": s.get("title") or "", "tags": s.get("tags") or []}
+    except Exception:
+        sched_index = {}
     # Connecteam's own official total hours (their rounding/break rules applied)
     # so the headline number reconciles to Connecteam exactly. Capped at 45 days
     # by Connecteam; skip (fall back to punch-summed) for longer ranges.
@@ -246,21 +258,34 @@ async def payroll_summary(
         d = _local_date(r["startTimestamp"], r["timezone"])
         weekend = _is_weekend(d)
 
-        # ── Classify: CRM job (authoritative) → Connecteam job name → unknown
+        # ── Classify: CRM job (authoritative) → scheduled-shift title → the
+        # Connecteam job (client) name → unknown. The scheduled-shift title is
+        # the real "what kind of clean" signal ("Wells Rental Turnover").
         kind = None
         prop = None
         source = "unlinked"
+        sched = sched_index.get(r["schedulerShiftId"]) if r["schedulerShiftId"] else None
+        shift_title = (sched or {}).get("title") or ""
+        shift_tags = (sched or {}).get("tags") or []
+        rate_pay = any("rate pay" in str(t).lower() or "piece" in str(t).lower() for t in shift_tags)
         crm_job = crm_index.get(r["schedulerShiftId"]) if r["schedulerShiftId"] else None
         if crm_job is not None:
             kind = "rental" if crm_job.job_type == "str_turnover" else "residential"
             prop = crm_job.property
             source = "crm"
+        elif shift_title:
+            kind = _classify_name(shift_title)
+            source = "shift_title"
         elif r["jobId"] and str(r["jobId"]) in ct_jobs:
             kind = _classify_name(ct_jobs[str(r["jobId"])]["name"])
             source = "job_name"
         elif r["jobId"]:
             kind = _classify_name(str(r["jobId"]))
             source = "job_name"
+
+        # A job clock-in name for display: prefer the scheduled-shift title,
+        # else the Connecteam job (client) name.
+        job_label = shift_title or (ct_jobs.get(str(r["jobId"])) or {}).get("name") if r.get("jobId") else shift_title
 
         detail = {
             "shift_id": r["shiftId"],
@@ -271,6 +296,9 @@ async def payroll_summary(
             "kind": kind or "unclassified",
             "source": source,
             "property": prop.name if prop is not None else None,
+            "shift_title": shift_title,
+            "job_label": job_label or "",
+            "rate_pay": rate_pay,
             "note": r["employeeNote"],
             "pay": 0.0,
         }
