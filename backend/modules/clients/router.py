@@ -1140,9 +1140,10 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
     can't blow up), and contact phones/emails (deduped) — backfills the winner's
     empty contact fields from the loser, then deletes the loser.
 
-    Quotes are intentionally NOT touched: that table's client_id is a UUID column
-    (the quoting system is UUID-based and decoupled from the integer Client
-    table), so it never references an integer client id.
+    Quotes ARE re-parented too: Quote.client_id is an integer FK to clients.id
+    with ondelete=CASCADE, and Client.quotes is cascade="all, delete-orphan", so
+    leaving quotes on the loser would DELETE them when the loser is removed
+    (silent data loss). They move to the winner with the other linked tables.
     """
     loser_id = body.loser_id
     if loser_id == winner_id:
@@ -1224,7 +1225,7 @@ def merge_clients(winner_id: int, body: ClientMergeRequest, db: Session = Depend
 
     # 6. Bulk re-parent the unconstrained integer-FK tables (direct UPDATE — no
     #    ORM cascade, so the rows move rather than getting delete-orphaned).
-    for Model in (Job, Invoice, Property, RecurringSchedule, Opportunity, Activity, LeadIntake):
+    for Model in (Job, Invoice, Quote, Property, RecurringSchedule, Opportunity, Activity, LeadIntake):
         db.query(Model).filter(Model.client_id == loser_id).update(
             {Model.client_id: winner_id}, synchronize_session=False
         )

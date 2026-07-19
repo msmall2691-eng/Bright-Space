@@ -12,6 +12,7 @@ import PropertiesTab from '../components/client/PropertiesTab'
 import ActivityTimeline from '../components/client/ActivityTimeline'
 import ClientMobileHeader from '../components/client/ClientMobileHeader'
 import ClientDetailsTab from '../components/client/ClientDetailsTab'
+import ClientOverview from '../components/client/ClientOverview'
 import ClientProfileSkeleton from '../components/client/ClientProfileSkeleton'
 import {
   RecurringTab, JobsListTab, QuotesListTab, InvoicesListTab, OpportunitiesTab,
@@ -29,7 +30,7 @@ import {
   ArrowLeft, Phone, Mail, MapPin, Edit2, Save, X,
   Plus, Calendar, FileText, Receipt, MessageSquare,
   CheckCircle, Clock, AlertCircle, Send, ChevronLeft, ChevronRight, Home, RefreshCw,
-  TrendingUp, DollarSign, Target, Inbox, ArrowUpRight, Zap, Trash2
+  TrendingUp, DollarSign, Target, Inbox, ArrowUpRight, Zap, Trash2, LayoutGrid
 } from 'lucide-react'
 
 function Tab({ label, icon: Icon, active, count, onClick }) {
@@ -104,7 +105,7 @@ export default function ClientProfile() {
     totalRevenue, outstanding, upcomingJobs, pastJobs, allActivity,
   } = useClientProfileData(id)
 
-  const [tab, setTab] = useState('activity')  // Twenty leads with the Timeline
+  const [tab, setTab] = useState('overview')  // Customer 360 at-a-glance landing
   const [activityFilter, setActivityFilter] = useState('all')
   const [noteText, setNoteText] = useState('')
   const [savingNote, setSavingNote] = useState(false)
@@ -379,7 +380,7 @@ export default function ClientProfile() {
 
       {/* Tabs — Overview, Properties, Schedule, Activity, Messages, Money */}
       <div className="flex border-b border-hairline px-4 sm:px-6 bg-panel/95 backdrop-blur shrink-0 overflow-x-auto sticky top-0 z-20 sm:static sm:bg-panel/30 sm:backdrop-blur-0" data-testid="client-profile-tabs">
-        <Tab label="Overview" icon={Edit2} active={['details', 'crm'].includes(tab)} count={0} onClick={() => setTab('details')} />
+        <Tab label="Overview" icon={LayoutGrid} active={['overview', 'details', 'crm'].includes(tab)} count={0} onClick={() => setTab('overview')} />
         <Tab label="Properties" icon={Home} active={tab === 'properties'} count={properties.length} onClick={() => setTab('properties')} />
         <Tab label="Schedule" icon={Calendar} active={['calendar', 'recurring', 'jobs'].includes(tab)} count={upcomingJobs.length} onClick={() => setTab('calendar')} />
         <Tab label="Timeline" icon={Clock} active={tab === 'activity'} count={allActivity.length} onClick={() => setTab('activity')} />
@@ -412,6 +413,18 @@ export default function ClientProfile() {
 
       {/* Tab content */}
       <div className="p-4 sm:p-6 pb-28 sm:pb-6 sm:flex-1 sm:overflow-y-auto sm:scrollbar-thin">
+
+        {/* Customer 360 — at-a-glance overview (default landing) */}
+        {tab === 'overview' && (
+          <ClientOverview
+            client={client} navigate={navigate} setTab={setTab}
+            totalRevenue={totalRevenue} outstanding={outstanding}
+            invoices={invoices} quotes={quotes}
+            upcomingJobs={upcomingJobs} pastJobs={pastJobs}
+            schedules={schedules} properties={properties}
+            visitStats={visitStats} allActivity={allActivity}
+          />
+        )}
 
         {/* CRM Summary */}
         {tab === 'crm' && (

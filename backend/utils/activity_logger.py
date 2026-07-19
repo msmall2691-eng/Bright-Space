@@ -176,6 +176,47 @@ def log_calendar_event(
     )
 
 
+def log_invoice_created(db: Session, invoice, actor: str = "admin") -> Optional[Activity]:
+    """Record an invoice being raised on the client timeline. Activity has no
+    invoice_id anchor column, so (like quote events) we anchor on client_id and
+    carry the invoice id in extra_data for the UI to link."""
+    total = getattr(invoice, "total", None) or getattr(invoice, "amount", None)
+    return log_activity(
+        db,
+        ActivityType.INVOICE_CREATED.value,
+        client_id=getattr(invoice, "client_id", None),
+        actor=actor,
+        summary=f"Invoice {getattr(invoice, 'invoice_number', '') or ''} created"
+                + (f" for ${float(total):.2f}" if total is not None else ""),
+        extra_data={
+            "invoice_id": invoice.id,
+            "invoice_number": getattr(invoice, "invoice_number", None),
+            "total": float(total) if total is not None else None,
+            "status": getattr(invoice, "status", None),
+        },
+    )
+
+
+def log_invoice_paid(db: Session, invoice, actor: str = "admin") -> Optional[Activity]:
+    """Record an invoice being paid on the client timeline — completes the money
+    story (created → paid) the timeline was previously missing entirely."""
+    total = getattr(invoice, "total", None) or getattr(invoice, "amount", None)
+    return log_activity(
+        db,
+        ActivityType.INVOICE_PAID.value,
+        client_id=getattr(invoice, "client_id", None),
+        actor=actor,
+        summary=f"Invoice {getattr(invoice, 'invoice_number', '') or ''} paid"
+                + (f" — ${float(total):.2f}" if total is not None else ""),
+        extra_data={
+            "invoice_id": invoice.id,
+            "invoice_number": getattr(invoice, "invoice_number", None),
+            "total": float(total) if total is not None else None,
+            "paid_at": invoice.paid_at.isoformat() if getattr(invoice, "paid_at", None) else None,
+        },
+    )
+
+
 def log_visit_skipped(db: Session, job, reason: Optional[str] = None) -> Optional[Activity]:
     """Record a single-occurrence skip on the unified activity timeline. The
     argument is a Job now (post-Job/Visit unification); the function keeps its
