@@ -1,18 +1,21 @@
 /**
- * Dashboard — command center, action-first.
+ * Home — the command center, built around the three things the business
+ * runs on: leads, communication, and scheduling.
  *
- * Deliberately lean: a compact hero with the four numbers that matter as
- * inline pills, then ONE "Needs you now" list that merges every actionable
- * thing (reschedule approvals + overdue replies / late starts / unassigned /
- * past-due invoices), then Today's schedule, the quotes/leads worklist, and a
- * money snapshot. The old layout (4 big KPI cards + funnel + 8 tiles +
- * AI-followups) was a wall of widgets; this is what an owner actually opens
- * the app to see. Deeper analytics live on the Owner page.
+ * Reads top-to-bottom the way an owner actually opens the app: a compact
+ * greeting + the money pills, then the THREE PILLAR CARDS (leads / messages /
+ * schedule) that surface the one number that matters for each and route
+ * straight into that workflow, then ONE "Needs you now" list that merges
+ * every actionable thing (reschedule approvals + overdue replies / late
+ * starts / unassigned / past-due invoices), then Today's schedule, the
+ * quotes/leads worklist, customer activity, crew/turnover ops, and a money
+ * snapshot. Deeper analytics live on the Owner page.
  */
 import { useNavigate } from 'react-router-dom'
 import { ErrorState } from '../components/ui'
 import { DollarSign, TrendingUp, Clock, FileText } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
+import { PillarCards } from '../components/dashboard/PillarCards'
 import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
 import { CustomerActivity } from '../components/dashboard/CustomerActivity'
 import { TodayTile } from '../components/dashboard/TodayTile'
@@ -58,6 +61,7 @@ export default function Dashboard() {
     arAging,
     attention,
     turnover,
+    slaBreached,
     crew,
     todayJobs, todayCount, weekCount,
   } = useDashboardDerived({
@@ -118,6 +122,28 @@ export default function Dashboard() {
               onClick={() => navigate('/billing?view=quotes')} />
           </div>
         </div>
+
+        {/* The three pillars the business runs on — leads, communication,
+            and scheduling — as big tappable hero cards. */}
+        <PillarCards
+          loading={loading}
+          leads={{
+            newLeads: quoteActions.newLeads,
+            followUp: quoteActions.followUp,
+            awaiting: quoteActions.awaiting,
+          }}
+          messages={{
+            needsReply: overdueConvs.length + unassignedConvs.length,
+            slaBreached,
+            unassigned: unassignedConvs.length,
+          }}
+          schedule={{
+            today: todayCount,
+            week: weekCount,
+            needCrew: turnover.needCrew,
+          }}
+          navigate={navigate}
+        />
 
         {/* The star: everything that needs the owner, in one list */}
         <NeedsYouNow attention={attention} loading={loading} navigate={navigate} />

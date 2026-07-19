@@ -1,15 +1,16 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Calendar, MessageSquare, Users, Menu } from 'lucide-react'
+import { LayoutDashboard, Calendar, MessageSquare, Inbox, Menu } from 'lucide-react'
 import { useUnreadCount } from '../hooks/useUnreadCount'
 
-// The five thumb-reachable destinations an office admin lives in day-to-day.
-// Everything else (Billing, Requests, Pipeline, Recurring, Properties, Payroll,
-// Owner, Settings) is one tap away under "More", which opens the full menu.
+// The thumb-reachable tabs map to the three pillars the business runs on —
+// Leads, Messages, Schedule — with Home leading and "More" opening the full
+// menu. Everything else (Clients, Billing, Pipeline, Recurring, Properties,
+// Payroll, Owner, Settings) is one tap away under "More".
 const PRIMARY_TABS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
+  { to: '/requests',  icon: Inbox,           label: 'Leads' },
+  { to: '/comms',     icon: MessageSquare,   label: 'Messages', badgeKey: 'comms' },
   { to: '/schedule',  icon: Calendar,        label: 'Schedule' },
-  { to: '/comms',     icon: MessageSquare,   label: 'Comms', badgeKey: 'comms' },
-  { to: '/clients',   icon: Users,           label: 'Clients' },
 ]
 
 function TabInner({ Icon, label, isActive, badge }) {
