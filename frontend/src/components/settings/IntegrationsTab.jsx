@@ -549,6 +549,8 @@ export default function IntegrationsTab({ toast, active }) {
               )}
             </div>
 
+            <SquareCard toast={toast} active={active} />
+
             {/* Stripe / Zapier — not built yet. The "Connect" button here
                 used to be an orphaned <button> with no onClick — clicking it
                 did literally nothing, which set operators up to click and
@@ -576,6 +578,135 @@ export default function IntegrationsTab({ toast, active }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Square — paste an access token, pick a location, test. Enables the Payroll
+// page's "Send to Square" (creates Labor API timecards Square Payroll imports).
+function SquareCard({ toast, active }) {
+  const [st, setSt] = useState({ loading: true })
+  const [form, setForm] = useState({ access_token: '', location_id: '', environment: 'production', open: false })
+  const [busy, setBusy] = useState('')
+
+  const refresh = () => {
+    setSt(s => ({ ...s, loading: true }))
+    return get('/api/settings/square-status')
+      .then(r => { setSt({ loading: false, ...r }); setForm(f => ({ ...f, location_id: r.location_id || '', environment: r.environment || 'production' })) })
+      .catch(e => setSt({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
+  }
+  useEffect(() => { if (active) refresh() }, [active])
+
+  const save = async () => {
+    setBusy('save')
+    try {
+      const payload = { location_id: form.location_id.trim(), environment: form.environment }
+      if (form.access_token.trim()) payload.access_token = form.access_token.trim()
+      const r = await post('/api/settings/square', payload)
+      setSt({ loading: false, ...r })
+      setForm(f => ({ ...f, access_token: '', open: false, location_id: r.location_id || f.location_id }))
+      toast('Square settings saved')
+    } catch (e) { toast(e?.detail || e?.message || 'Could not save Square settings', 'error') }
+    finally { setBusy('') }
+  }
+
+  const test = async () => {
+    setBusy('test')
+    try {
+      const r = await post('/api/settings/square/test', {})
+      setSt(s => ({ ...s, locations: r.locations || [] }))
+      toast(`Square OK — ${r.locations?.length || 0} location${r.locations?.length === 1 ? '' : 's'}, ${r.team_count || 0} team members`)
+    } catch (e) { toast(e?.detail || e?.message || 'Square test failed', 'error') }
+    finally { setBusy('') }
+  }
+
+  const formVisible = !st.loading && (!st.configured || form.open)
+  const locations = Array.isArray(st.locations) ? st.locations : []
+
+  return (
+    <div className="bg-panel rounded-xl border border-hairline p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span className="text-2xl">◼️</span>
+          <div>
+            <h3 className="font-semibold text-ink">Square Payroll</h3>
+            <p className="text-xs text-ink-3">
+              {!st.loading && st.configured
+                ? <>Token {st.token_masked} · {st.environment}{st.location_id ? ` · location ${st.location_id}` : ''}</>
+                : 'Send payroll hours to Square as timecards'}
+            </p>
+          </div>
+        </div>
+        <span className={`px-3 py-1.5 rounded-full text-[11px] font-medium border ${st.loading ? 'bg-bg-2 text-ink-3 border-hairline' : st.configured ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-bg-2 text-ink-3 border-hairline'}`}>
+          {st.loading ? 'Checking…' : st.configured ? '✓ Connected' : 'Not connected'}
+        </span>
+      </div>
+
+      {formVisible && (
+        <div className="mt-4 space-y-3 border-t border-hairline pt-4">
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Access Token</label>
+            <input type="password" autoComplete="off" value={form.access_token}
+              onChange={e => setForm(f => ({ ...f, access_token: e.target.value }))}
+              placeholder={st.has_token ? 'Enter a new token to replace the saved one' : 'Paste your Square access token'}
+              className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400" />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-ink-2 mb-1">Location</label>
+              {locations.length > 0 ? (
+                <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+                  <option value="">— pick a location —</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
+                </select>
+              ) : (
+                <input type="text" value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
+                  placeholder="location id — or hit Test to load a picker"
+                  className="w-full bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink placeholder-ink-3 font-mono focus:outline-none focus:border-blue-400" />
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1">Environment</label>
+              <select value={form.environment} onChange={e => setForm(f => ({ ...f, environment: e.target.value }))}
+                className="bg-bg border border-hairline rounded-lg px-3 py-2 text-sm text-ink focus:outline-none focus:border-blue-400">
+                <option value="production">Production</option>
+                <option value="sandbox">Sandbox</option>
+              </select>
+            </div>
+          </div>
+          <p className="text-[11px] text-ink-3">
+            Get an access token from the <b>Square Developer dashboard</b> (an app with Timecards + Team read/write). Save the token, hit <b>Test connection</b>, then pick your location.
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={save} disabled={busy === 'save' || (!form.access_token.trim() && !st.has_token)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+              {busy === 'save' ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={test} disabled={busy === 'test' || !st.has_token}
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
+              {busy === 'test' ? 'Testing…' : 'Test connection'}
+            </button>
+            {form.open && (
+              <button onClick={() => setForm(f => ({ ...f, open: false, access_token: '' }))}
+                className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">Cancel</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!st.loading && st.configured && !form.open && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
+          <button onClick={test} disabled={busy === 'test'}
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
+            {busy === 'test' ? 'Testing…' : 'Test connection'}
+          </button>
+          <button onClick={() => setForm(f => ({ ...f, open: true, access_token: '' }))}
+            className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
+            Update token / location
+          </button>
+        </div>
+      )}
     </div>
   )
 }

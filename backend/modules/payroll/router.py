@@ -35,6 +35,7 @@ from integrations.connecteam import (
     get_jobs,
     get_timesheet_totals,
     get_scheduled_shifts,
+    get_team,
     _employee_name_map,
 )
 from modules.auth.router import require_role
@@ -412,6 +413,212 @@ async def payroll_summary(
         "totals": totals,
         "warnings": warnings,
     }
+
+
+def _norm_name(s: str) -> str:
+    return " ".join((s or "").lower().split())
+
+
+def _classify_row(r: dict, sched_index: dict, crm_index: dict, ct_jobs: dict):
+    """Same residential/rental classification the /summary endpoint uses, as a
+    helper so the Square export stays consistent: CRM job → scheduled-shift
+    title → Connecteam job name. Returns (kind, property, shift_title)."""
+    sched = sched_index.get(r["schedulerShiftId"]) if r["schedulerShiftId"] else None
+    shift_title = (sched or {}).get("title") or ""
+    crm_job = crm_index.get(r["schedulerShiftId"]) if r["schedulerShiftId"] else None
+    if crm_job is not None:
+        return ("rental" if crm_job.job_type == "str_turnover" else "residential"), crm_job.property, shift_title
+    if shift_title:
+        return _classify_name(shift_title), None, shift_title
+    if r["jobId"] and str(r["jobId"]) in ct_jobs:
+        return _classify_name(ct_jobs[str(r["jobId"])]["name"]), None, shift_title
+    if r["jobId"]:
+        return _classify_name(str(r["jobId"])), None, shift_title
+    return None, None, shift_title
+
+
+class SendToSquareBody(BaseModel):
+    start_date: str
+    end_date: str
+    dry_run: bool = True
+    # Manual per-shift overrides from the Payroll page: { shift_id: {mode, amount} }.
+    overrides: dict = {}
+
+
+@router.post("/send-to-square", dependencies=[Depends(require_role("admin"))])
+async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
+    """Push the period's HOURLY hours to Square as Labor API Timecards (which
+    Square Payroll then imports), and return the piece-rate + mileage amounts as
+    a per-person adjustment list to enter in Square manually.
+
+    Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
+    sent (nothing is written to Square) so the operator can verify before
+    committing. Set dry_run=false to actually create the timecards."""
+    from integrations import square
+    if not square.is_configured():
+        raise HTTPException(status_code=400, detail="Square isn't connected — add a token + location in Settings.")
+    try:
+        d0 = datetime.strptime(body.start_date, "%Y-%m-%d").date()
+        d1 = datetime.strptime(body.end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
+    if d1 < d0:
+        raise HTTPException(status_code=422, detail="End date is before start date")
+
+    rates = _get_rates(db)
+    res_cents = square.dollars_to_cents(rates["residential_rate"])
+    rental_cents = square.dollars_to_cents(rates["rental_weekday_rate"])
+
+    try:
+        rows = await get_time_activities(body.start_date, body.end_date)
+    except ConnecteamAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Connecteam error: {e}")
+
+    # Classification context (best-effort).
+    sched_index: dict = {}
+    try:
+        for s in await get_scheduled_shifts(body.start_date, body.end_date):
+            if s.get("id"):
+                sched_index[str(s["id"])] = {"title": s.get("title") or ""}
+    except Exception:
+        sched_index = {}
+    try:
+        ct_jobs = await get_jobs()
+    except Exception:
+        ct_jobs = {}
+    crm_index = _crm_shift_index(db, body.start_date, body.end_date)
+
+    # Match Connecteam people → Square team members (email first, then name).
+    try:
+        ct_team = {m["id"]: m for m in await get_team()}
+    except Exception:
+        ct_team = {}
+    try:
+        names = _employee_name_map(await get_employees())
+    except Exception:
+        names = {}
+    try:
+        sq_members = await square.list_team_members()
+    except square.SquareAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Square error: {e}")
+    sq_by_email = {m["email"]: m for m in sq_members if m["email"]}
+    sq_by_name = {_norm_name(m["name"]): m for m in sq_members}
+
+    def match_square(uid: str):
+        person = ct_team.get(uid) or {}
+        email = (person.get("email") or "").strip().lower()
+        if email and email in sq_by_email:
+            return sq_by_email[email]
+        nm = _norm_name(person.get("name") or names.get(uid, ""))
+        return sq_by_name.get(nm)
+
+    # Build per-employee timecards + adjustments.
+    emps: dict = {}
+    for r in rows:
+        uid = str(r["userId"])
+        e = emps.get(uid)
+        if e is None:
+            e = {"employee_id": uid, "name": ct_team.get(uid, {}).get("name") or names.get(uid, uid),
+                 "timecards": [], "piece_total": 0.0, "piece_count": 0, "miles": 0.0,
+                 "unpriced": 0, "excluded": 0}
+            emps[uid] = e
+        e["miles"] += r["miles"]
+        kind, prop, title = _classify_row(r, sched_index, crm_index, ct_jobs)
+        d = _local_date(r["startTimestamp"], r["timezone"])
+        weekend = _is_weekend(d)
+        ov = body.overrides.get(r["shiftId"]) or {}
+        mode = ov.get("mode") or "auto"
+        label = title or (ct_jobs.get(str(r["jobId"])) or {}).get("name") or (kind or "Cleaning")
+
+        if mode == "exclude":
+            e["excluded"] += 1
+            continue
+        if mode == "piece" or (mode == "auto" and kind == "rental" and weekend):
+            if mode == "piece":
+                amt = float(ov.get("amount") or 0)
+            else:
+                amt = float(getattr(prop, "turnover_rate", None) or 0)
+            if amt > 0:
+                e["piece_total"] += amt
+                e["piece_count"] += 1
+            else:
+                e["unpriced"] += 1
+            continue
+        if kind is None:
+            e["excluded"] += 1  # unclassified — leave out of Square, flag via excluded
+            continue
+        # Hourly (residential, rental weekday, or override→hourly).
+        rate_cents = rental_cents if kind == "rental" else res_cents
+        # End = start + net hours so Square's computed hours == our net.
+        end_ts = int(r["startTimestamp"] + round(r["netHours"] * 3600))
+        e["timecards"].append({
+            "shift_id": r["shiftId"],
+            "title": label,
+            "start_ts": r["startTimestamp"],
+            "end_ts": end_ts,
+            "hours": round(r["netHours"], 2),
+            "rate": rate_cents / 100.0,
+            "rate_cents": rate_cents,
+            "kind": kind,
+        })
+
+    location = square._get_location()
+    out_emps = []
+    total_timecards = 0
+    for e in emps.values():
+        sq = match_square(e["employee_id"])
+        e["square_team_member_id"] = sq["id"] if sq else None
+        e["square_name"] = sq["name"] if sq else None
+        e["matched"] = bool(sq)
+        e["mileage_reimbursement"] = round(e["miles"] * rates["mileage_rate"], 2)
+        e["piece_total"] = round(e["piece_total"], 2)
+        e["timecard_count"] = len(e["timecards"])
+        total_timecards += len(e["timecards"])
+        out_emps.append(e)
+    out_emps.sort(key=lambda x: str(x["name"]).lower())
+
+    result = {
+        "dry_run": body.dry_run,
+        "period": f"{body.start_date} to {body.end_date}",
+        "location_id": location,
+        "matched": sum(1 for e in out_emps if e["matched"]),
+        "unmatched": [e["name"] for e in out_emps if not e["matched"]],
+        "timecards_total": total_timecards,
+        "employees": out_emps,
+    }
+
+    if body.dry_run:
+        return result
+
+    # Real send — only for matched people; idempotency key makes re-runs safe.
+    created, errors = 0, []
+    for e in out_emps:
+        if not e["matched"]:
+            continue
+        for tc in e["timecards"]:
+            try:
+                res = await square.create_timecard(
+                    team_member_id=e["square_team_member_id"],
+                    start_ts=tc["start_ts"], end_ts=tc["end_ts"],
+                    hourly_rate_cents=tc["rate_cents"], title=tc["title"],
+                    idempotency_key=f"bb-{tc['shift_id']}-{e['square_team_member_id']}",
+                    location_id=location,
+                )
+                if res.get("ok"):
+                    created += 1
+                else:
+                    errors.append({"employee": e["name"], "shift": tc["shift_id"], "error": res.get("error")})
+            except square.SquareAuthError as ex:
+                raise HTTPException(status_code=503, detail=str(ex))
+            except Exception as ex:
+                errors.append({"employee": e["name"], "shift": tc["shift_id"], "error": str(ex)})
+    result["created"] = created
+    result["errors"] = errors
+    return result
 
 
 @router.get("/timesheets", dependencies=[Depends(require_role("admin"))])
