@@ -95,7 +95,7 @@ export default function Header({ onMenuToggle }) {
   const title = PAGE_TITLES[path] || 'BrightBase'
 
   return (
-    <header className="no-print relative z-20 h-14 flex items-center justify-between px-4 sm:px-6 border-b border-hairline bg-panel/80 backdrop-blur-lg shrink-0 shadow-sm">
+    <header className="no-print relative z-20 h-14 flex items-center justify-between px-4 sm:px-6 border-b border-hairline bg-panel/60 backdrop-blur-2xl shrink-0 shadow-sm">
       <div className="flex items-center gap-3 flex-1">
         <button
           onClick={onMenuToggle}
