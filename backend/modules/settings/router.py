@@ -1219,12 +1219,14 @@ def gcal_reminder_overrides(db: Session):
 
 
 def connecteam_auto_dispatch_enabled(db: Session) -> bool:
-    """Whether assigning cleaners to a job AUTOMATICALLY pushes their Connecteam
-    shifts. OFF by default = MANUAL mode: you assign cleaners, but nothing goes
-    to Connecteam until you hit "Dispatch." Rescheduling a job that's ALREADY
-    been dispatched still re-syncs its shift regardless (so a moved job doesn't
-    strand a stale shift). Settings → Automation."""
-    return _coerce_bool(get_setting(db, "connecteam_auto_dispatch_enabled"), False)
+    """Whether creating/editing/generating a job AUTOMATICALLY pushes its
+    Connecteam shift(s) — live, the way jobs write straight to Google Calendar.
+    ON by default: building the schedule in BrightBase pushes DRAFT shifts to
+    Connecteam (open for turnovers/unassigned, assigned otherwise) for the
+    office to publish. Turn OFF for manual mode, where nothing reaches
+    Connecteam until you hit "Dispatch." A reschedule of an already-dispatched
+    job re-syncs its shift regardless. Settings → Automation / Schedule."""
+    return _coerce_bool(get_setting(db, "connecteam_auto_dispatch_enabled"), True)
 
 
 def freebusy_check_enabled(db: Session) -> bool:

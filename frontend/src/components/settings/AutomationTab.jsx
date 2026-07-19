@@ -20,7 +20,7 @@ export function useAutomationSettings({ toast, active }) {
     gcal_reminders_mode: 'google_default',
     calendar_source_of_truth: 'brightbase',
     gcal_live_sync: true,
-    connecteam_auto_dispatch_enabled: false,
+    connecteam_auto_dispatch_enabled: true,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })
@@ -192,8 +192,8 @@ export default function AutomationTab({ state, toast, active }) {
           <div className="border-t border-hairline pt-5">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <h3 className="font-semibold text-ink">Auto-dispatch cleaners to Connecteam</h3>
-                <p className="text-xs text-ink-3 mt-1">When OFF (default), assigning cleaners to a job does NOT push their shifts to Connecteam — you press “Dispatch” on the job when you’re ready. Turn ON to send shifts automatically the moment cleaners are assigned. Either way, rescheduling a job that’s already been dispatched still re-syncs its shift.</p>
+                <h3 className="font-semibold text-ink">Live push to Connecteam</h3>
+                <p className="text-xs text-ink-3 mt-1">When ON (default), building the schedule in BrightBase pushes shifts to Connecteam automatically as <strong>drafts</strong> — Airbnb turnovers and not-yet-assigned jobs go out as <strong>open</strong> shifts, assigned jobs go to that cleaner. Nothing hits a cleaner’s live schedule until you publish the drafts in Connecteam. Turn OFF for manual mode (push each job with “Dispatch”). Rescheduling an already-pushed job always re-syncs its shift.</p>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={s.connecteam_auto_dispatch_enabled}
@@ -202,7 +202,7 @@ export default function AutomationTab({ state, toast, active }) {
               </label>
             </div>
             {!s.connecteam_auto_dispatch_enabled && (
-              <p className="text-xs text-emerald-600 mt-1">Manual dispatch is on — cleaners won’t be notified until you dispatch each job yourself.</p>
+              <p className="text-xs text-amber-600 mt-1">Manual mode — nothing reaches Connecteam until you dispatch each job yourself.</p>
             )}
           </div>
 
