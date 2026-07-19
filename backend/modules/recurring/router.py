@@ -781,16 +781,28 @@ def get_schedules(client_id: Optional[int] = None, db: Session = Depends(get_db)
 
     # Annotate each schedule with the count of upcoming generated jobs so the
     # UI can show "4 upcoming" next to the schedule, instead of leaving the
-    # user guessing whether anything actually got generated.
+    # user guessing whether anything actually got generated. One grouped query
+    # instead of a COUNT per schedule (the old N+1 added a DB round-trip per row
+    # — slow enough to time the page out on a cold connection with many series).
     today = business_today().isoformat()
+    sched_ids = [s.id for s in schedules]
+    counts = {}
+    if sched_ids:
+        rows = (
+            db.query(Job.recurring_schedule_id, func.count(Job.id))
+            .filter(
+                Job.recurring_schedule_id.in_(sched_ids),
+                Job.status != "cancelled",
+                or_(Job.scheduled_date == None, Job.scheduled_date >= today),
+            )
+            .group_by(Job.recurring_schedule_id)
+            .all()
+        )
+        counts = {sid: c for sid, c in rows}
     out = []
     for s in schedules:
         d = sched_to_dict(s)
-        d["upcoming_job_count"] = db.query(Job).filter(
-            Job.recurring_schedule_id == s.id,
-            Job.status != "cancelled",
-            or_(Job.scheduled_date == None, Job.scheduled_date >= today),
-        ).count()
+        d["upcoming_job_count"] = counts.get(s.id, 0)
         out.append(d)
     return out
 

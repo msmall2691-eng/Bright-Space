@@ -543,11 +543,12 @@ function ModalShell({ title, onClose, wide = false, children }) {
 }
 
 // ─── Series list row ─────────────────────────────────────────────────────
-function SeriesRow({ s, clientName, onOpen }) {
+function SeriesRow({ s, clientName, onOpen, isDuplicate }) {
   const next = useMemo(() => {
     const up = computeUpcoming(s, [], 1)
     return up[0]?.date
   }, [s])
+  const hasTime = !!s.start_time
   return (
     <li>
       <button
@@ -556,17 +557,26 @@ function SeriesRow({ s, clientName, onOpen }) {
       >
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="text-base font-semibold text-ink">{s.title || 'Untitled'}</h3>
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.active
                 ? 'bg-emerald-100 text-emerald-700'
                 : 'bg-bg-2 text-ink-3'}`}>
                 {s.active ? 'Active' : 'Paused'}
               </span>
+              {isDuplicate && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700"
+                  title="Another active series for this client has the same cadence and day — likely a duplicate. Open both and pause or cancel one.">
+                  Possible duplicate
+                </span>
+              )}
             </div>
             <p className="text-[13px] text-ink-2 truncate">{clientName} · {s.address}</p>
             <p className="text-[12px] text-ink-3 mt-1">
-              {ruleSummary(s)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
+              {ruleSummary(s)}
+              {hasTime
+                ? <> · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}</>
+                : <> · <span className="text-amber-600 font-medium">no time set</span></>}
               {next && s.active && <> · Next {fmtDate(next)}</>}
               <> · {s.upcoming_job_count || 0} upcoming</>
             </p>
@@ -576,6 +586,16 @@ function SeriesRow({ s, clientName, onOpen }) {
       </button>
     </li>
   )
+}
+
+// Two ACTIVE series with the same client + cadence + day-of-week are almost
+// always an accidental double-create (the confusing "two Sandra Fox, every 4
+// weeks on Fri" case). Key them so the list can flag it — informational only,
+// never auto-removes anything.
+function seriesDupKey(s) {
+  const days = (s.days_of_week && s.days_of_week.length ? s.days_of_week : [s.day_of_week ?? 0])
+    .slice().sort((a, b) => a - b).join(',')
+  return `${s.client_id}|${s.frequency}|${s.interval_weeks || 1}|${s.day_of_month || ''}|${days}`
 }
 
 // ─── Detail view ─────────────────────────────────────────────────────────
@@ -897,20 +917,16 @@ export default function Recurring() {
   const loadList = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [sch, cli, props] = await Promise.all([
+      const [sch, cli] = await Promise.all([
         get('/api/recurring'),
         // T-06: preload up to 1000 so schedule → client-name resolution and
         // the filter dropdown cover the whole book, not just the first 50.
         get('/api/clients?limit=1000').catch(() => []),
-        // Properties feed the create-series modal's property picker (merged in
-        // from the old /schedule?tab=recurring panel, which fetched the same way).
-        get('/api/properties').catch(() => []),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
       const map = {}; cliArr.forEach(c => { map[c.id] = c })
       setSchedules(Array.isArray(sch) ? sch : (sch.items || []))
       setClientsById(map)
-      setProperties(Array.isArray(props) ? props : (props.items || []))
     } catch (e) {
       setError(e.message || 'Failed to load recurring schedules')
     } finally {
@@ -950,6 +966,20 @@ export default function Recurring() {
     }
   }, [loadList])
 
+  // Properties are only needed by the create-series modal's picker. Fetch them
+  // lazily when it opens, NOT on every list load — /api/properties joinloads
+  // iCal feeds + computes per-STR turnover counts, so eagerly loading it on the
+  // list was slow enough to time the whole page out on a cold backend.
+  const openCreate = useCallback(async () => {
+    setShowCreate(true)
+    if (properties.length === 0) {
+      try {
+        const p = await get('/api/properties')
+        setProperties(Array.isArray(p) ? p : (p.items || []))
+      } catch { /* property is optional in the form — the modal still works */ }
+    }
+  }, [properties.length])
+
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
 
@@ -965,6 +995,21 @@ export default function Recurring() {
   const clientOptions = useMemo(
     () => Object.values(clientsById).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [clientsById],
+  )
+
+  // Keys shared by 2+ ACTIVE series — flagged as possible duplicates in the list.
+  const duplicateKeys = useMemo(() => {
+    const counts = {}
+    for (const s of schedules) {
+      if (!s.active) continue
+      const k = seriesDupKey(s)
+      counts[k] = (counts[k] || 0) + 1
+    }
+    return new Set(Object.keys(counts).filter(k => counts[k] > 1))
+  }, [schedules])
+  const dupCount = useMemo(
+    () => filtered.filter(s => s.active && duplicateKeys.has(seriesDupKey(s))).length,
+    [filtered, duplicateKeys],
   )
 
   // Detail view
@@ -997,7 +1042,7 @@ export default function Recurring() {
               title="Find and remove off-cadence duplicate visits left by the old biweekly bug">
               <Sparkles className="w-4 h-4 mr-1" /> {cleaning ? 'Checking…' : 'Clean up duplicates'}
             </Button>
-            <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+            <Button variant="primary" size="sm" onClick={openCreate}>
               <Plus className="w-4 h-4 mr-1" /> New series
             </Button>
           </>
@@ -1037,6 +1082,17 @@ export default function Recurring() {
           </span>
         </div>
 
+        {dupCount > 0 && (
+          <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              {dupCount} active series look like duplicates — same client, cadence, and day as another active one.
+              They're flagged <span className="font-semibold">Possible duplicate</span> below; open each and pause or
+              cancel the one you don't want. (This flag is just a heads-up — nothing is removed automatically.)
+            </span>
+          </div>
+        )}
+
         {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300 rounded">{error}</div>}
 
         {loading ? (
@@ -1049,7 +1105,7 @@ export default function Recurring() {
               ? 'Create one here, from a client, or from a signed quote.'
               : 'Try clearing the client or status filter.'}
             action={schedules.length === 0
-              ? <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+              ? <Button variant="primary" size="sm" onClick={openCreate}>
                   <Plus className="w-4 h-4 mr-1" />New series
                 </Button>
               : null}
@@ -1062,6 +1118,7 @@ export default function Recurring() {
                 s={s}
                 clientName={clientsById[s.client_id]?.name || 'Unknown client'}
                 onOpen={openSeries}
+                isDuplicate={s.active && duplicateKeys.has(seriesDupKey(s))}
               />
             ))}
           </ul>
