@@ -8,7 +8,7 @@ import logging
 
 from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
-from database.models import LeadIntake, Client
+from database.models import LeadIntake, Client, Quote
 from modules.intake.normalize import build_intake, upsert_lead
 from ratelimit import limiter
 
