@@ -213,7 +213,7 @@ function MoneyRead({ loading, outstanding, pipeline, mtdRevenue, overdueInvoiceC
     { label: 'Collected this month', value: fmtMoney(mtdRevenue), go: () => navigate('/owner') },
     { label: 'Outstanding', value: fmtMoney(outstanding), tone: overdueInvoiceCount > 0 ? 'text-amber-600 dark:text-amber-300' : undefined,
       sub: overdueInvoiceCount > 0 ? `${overdueInvoiceCount} overdue` : null, go: () => navigate('/billing?view=invoices') },
-    { label: 'Open pipeline', value: fmtMoney(pipeline), go: () => navigate('/billing?view=quotes') },
+    { label: 'Open quotes', value: fmtMoney(pipeline), go: () => navigate('/billing?view=quotes') },
   ]
   return (
     <section className={`${SOFT} overflow-hidden`}>

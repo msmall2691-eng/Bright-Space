@@ -8,7 +8,7 @@ import { useUnreadCount } from '../hooks/useUnreadCount'
 // Payroll, Owner, Settings) is one tap away under "More".
 const PRIMARY_TABS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
-  { to: '/requests',  icon: Inbox,           label: 'Leads' },
+  { to: '/requests',  icon: Inbox,           label: 'Requests' },
   { to: '/comms',     icon: MessageSquare,   label: 'Messages', badgeKey: 'comms' },
   { to: '/schedule',  icon: Calendar,        label: 'Schedule' },
 ]

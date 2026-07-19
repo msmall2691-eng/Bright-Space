@@ -74,7 +74,7 @@ export default function IntegrationsTab({ toast, active }) {
   }
 
   const disconnectConnecteam = async () => {
-    if (!(await confirmDialog('Disconnect Connecteam? Bright Space will stop pushing shifts until you re-add the API key.', { confirmLabel: 'Disconnect', danger: true }))) return
+    if (!(await confirmDialog('Disconnect Connecteam? BrightBase will stop pushing shifts until you re-add the API key.', { confirmLabel: 'Disconnect', danger: true }))) return
     setCtSaving(true)
     try {
       const r = await post('/api/settings/connecteam', { api_key: '', company_id: '' })
@@ -139,7 +139,7 @@ export default function IntegrationsTab({ toast, active }) {
   }
 
   const pushScheduleToConnecteam = async () => {
-    if (!(await confirmDialog('Push the next 14 days of Bright Space jobs to Connecteam as open shifts?', { confirmLabel: 'Push' }))) return
+    if (!(await confirmDialog('Push the next 14 days of BrightBase jobs to Connecteam as open shifts?', { confirmLabel: 'Push' }))) return
     setCtPushing(true)
     try {
       const kicked = await post('/api/settings/connecteam/push-open-shifts', {})
@@ -173,7 +173,7 @@ export default function IntegrationsTab({ toast, active }) {
         msg = `Pushed ${r.pushed} open shift${r.pushed === 1 ? '' : 's'} to Connecteam · ${r.skipped} skipped${r.errors?.length ? ` · ${r.errors.length} failed` : ''}`
         tone = r.errors?.length ? 'error' : undefined
       } else if (r.considered === 0) {
-        msg = `No Bright Space jobs found${range}. Create jobs on the Schedule page first — this endpoint only pushes real jobs, not iCal turnovers that haven't been materialised.`
+        msg = `No BrightBase jobs found${range}. Create jobs on the Schedule page first — this endpoint only pushes real jobs, not iCal turnovers that haven't been materialised.`
         tone = 'error'
       } else if (r.errors?.length) {
         msg = `Connecteam rejected all ${r.errors.length} job push${r.errors.length === 1 ? '' : 'es'}${firstErr}`

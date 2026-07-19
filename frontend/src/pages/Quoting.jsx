@@ -36,7 +36,10 @@ import {
 export default function Quoting() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [tab, setTab] = useState('leads')
+  // Default to the Quotes list — the sidebar entry is "Quotes & Billing", so
+  // landing on Quotes (not the Leads sub-tab, which duplicates the Requests
+  // page) is what the operator expects. ?tab=leads / the Leads tab still work.
+  const [tab, setTab] = useState('quotes')
   const {
     quotes, setQuotes,
     followUps, setFollowUps,
