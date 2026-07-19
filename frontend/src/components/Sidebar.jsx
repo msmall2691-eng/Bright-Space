@@ -71,7 +71,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
       <aside className={`
         no-print
         fixed inset-y-0 left-0 z-50 w-[260px]
-        bg-panel/95 backdrop-blur-lg border-r border-hairline
+        bg-panel/70 backdrop-blur-2xl border-r border-hairline
         flex flex-col shrink-0 transform transition-[transform,width] duration-200 ease-in-out
         lg:static lg:translate-x-0 ${collapsed ? 'lg:w-[68px]' : 'lg:w-[260px]'}
         ${open ? 'translate-x-0' : '-translate-x-full'}
@@ -132,7 +132,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 className={({ isActive }) =>
                   `group relative flex items-center gap-3 px-3 py-2.5 lg:py-2 mx-2 my-0.5 rounded-lg transition-colors text-[13px] select-none ${collapsed ? 'lg:justify-center lg:px-0 lg:mx-2' : ''} ${
                     isActive
-                      ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold'
+                      ? 'bb-nav-active bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold'
                       : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/70'
                   }`
                 }

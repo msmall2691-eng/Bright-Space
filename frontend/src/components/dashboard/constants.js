@@ -1,7 +1,7 @@
 /** Soft, airy card surface shared by the facelifted dashboard (white +
  *  blue, rounded, gentle shadow — the look from the reference dashboard). */
 export const SOFT_CARD =
-  'bg-panel rounded-2xl border border-hairline shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-16px_rgba(15,23,42,0.12)]'
+  'bb-surface bg-panel rounded-2xl border border-hairline'
 
 /** Map the existing iconColor tokens (passed by tile call sites) to a
  *  tinted chip so the icons read as colored badges without touching any

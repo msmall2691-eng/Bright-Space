@@ -21,7 +21,7 @@ import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useDashboardDerived } from '../hooks/useDashboardDerived'
 
-const SOFT = 'rounded-3xl border border-hairline bg-panel shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_40px_-24px_rgba(15,23,42,0.18)]'
+const SOFT = 'bb-surface rounded-3xl border border-hairline bg-panel'
 
 /** Compact money for the tight hero pods — keeps big totals from clipping:
  *  $24K · $840K · $1.9M. Full precision still shows in the Money tile. */
@@ -299,7 +299,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="relative min-h-full bg-bg">
+    <div className="relative min-h-full">
       {/* Soft canvas glow so the page reads as a designed surface, not a form. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-indigo-500/[0.06] to-transparent" />
       <div className="relative px-4 sm:px-6 pt-4 pb-8 max-w-[1440px] mx-auto space-y-4">

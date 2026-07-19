@@ -208,7 +208,7 @@ export default function App() {
       <SidebarWithUnread open={sidebarOpen} onClose={closeSidebar} user={user} />
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <Header onMenuToggle={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-auto bg-bg pb-bottomnav lg:pb-0 scroll-smooth-mobile">
+        <main className="flex-1 overflow-auto bg-bg bb-app-canvas pb-bottomnav lg:pb-0 scroll-smooth-mobile">
           <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
             <Routes>

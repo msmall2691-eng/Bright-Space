@@ -32,7 +32,7 @@ export default function Card({
 }) {
   const hasHeader = title || action
   return (
-    <Tag className={`bg-panel border border-hairline rounded-2xl flex flex-col ${className}`}>
+    <Tag className={`bb-surface bg-panel border border-hairline rounded-2xl flex flex-col ${className}`}>
       {hasHeader && (
         <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-hairline">
           <div className="flex items-center gap-2 min-w-0">

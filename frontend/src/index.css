@@ -144,6 +144,64 @@ body.theme-neon {
 .bb-glow-accent { box-shadow: var(--glow-accent, var(--shadow-2)); }
 .bb-glow-cyan { box-shadow: var(--glow-cyan, var(--shadow-2)); }
 
+/* ----------------------------------------------------------------------
+   Futuristic surface system — applied to the shared card/panel primitives
+   so EVERY page picks it up at once. A soft luminous top edge (the "glass"
+   read) + a low, wide, indigo-tinted ambient glow (the "floating" read),
+   theme-aware. Neutral enough to stay clean; distinctly not-flat.
+   ---------------------------------------------------------------------- */
+.bb-surface {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 20px 46px -26px rgba(79, 70, 229, 0.28);
+}
+body.theme-console .bb-surface {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 24px 54px -28px rgba(99, 102, 241, 0.40);
+}
+.bb-surface-hover { transition: box-shadow .2s ease, transform .2s ease; }
+.bb-surface-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.6),
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 26px 60px -24px rgba(79, 70, 229, 0.38);
+}
+body.theme-console .bb-surface-hover:hover {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 30px 66px -24px rgba(99, 102, 241, 0.55);
+}
+
+/* Active-nav glow — an inset accent ring + soft outer bloom. */
+.bb-nav-active {
+  box-shadow:
+    inset 0 0 0 1px rgba(99, 102, 241, 0.22),
+    0 0 18px -3px rgba(99, 102, 241, 0.35);
+}
+
+/* App canvas — a faint aurora + fine dot-grid behind everything, so the gaps
+   between panels read as "space", not dead white. Very low contrast on
+   purpose; sits at the app root behind the routed content. */
+.bb-app-canvas {
+  background-image:
+    radial-gradient(60rem 32rem at 78% -8%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(52rem 30rem at 6% 4%, rgba(139, 92, 246, 0.08), transparent 55%),
+    radial-gradient(rgba(15, 23, 42, 0.05) 0.6px, transparent 0.6px);
+  background-size: auto, auto, 22px 22px;
+  background-attachment: fixed, fixed, scroll;
+}
+body.theme-console .bb-app-canvas {
+  background-image:
+    radial-gradient(60rem 32rem at 78% -8%, rgba(99, 102, 241, 0.16), transparent 60%),
+    radial-gradient(52rem 30rem at 6% 4%, rgba(139, 92, 246, 0.12), transparent 55%),
+    radial-gradient(rgba(255, 255, 255, 0.045) 0.6px, transparent 0.6px);
+}
+
 /* Icon chips (PageHeader, KpiCard, Sidebar logo) — plain tinted box in
    light/dark; under Neon they pick up the accent glow too, so the "colored
    icon everywhere" pattern reads as futuristic instead of just flat color. */
