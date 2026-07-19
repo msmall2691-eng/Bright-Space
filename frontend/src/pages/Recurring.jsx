@@ -13,6 +13,7 @@ import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
+import { RecurringCreateModal } from '../components/schedule/ScheduleTabs'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively. Mirrors
  *  JobEditModal's normalizeEmployee — Connecteam returns shapes like
@@ -886,24 +887,30 @@ export default function Recurring() {
 
   const [schedules, setSchedules] = useState([])
   const [clientsById, setClientsById] = useState({})
+  const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [showCreate, setShowCreate] = useState(false)
 
   const loadList = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [sch, cli] = await Promise.all([
+      const [sch, cli, props] = await Promise.all([
         get('/api/recurring'),
         // T-06: preload up to 1000 so schedule → client-name resolution and
         // the filter dropdown cover the whole book, not just the first 50.
         get('/api/clients?limit=1000').catch(() => []),
+        // Properties feed the create-series modal's property picker (merged in
+        // from the old /schedule?tab=recurring panel, which fetched the same way).
+        get('/api/properties').catch(() => []),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
       const map = {}; cliArr.forEach(c => { map[c.id] = c })
       setSchedules(Array.isArray(sch) ? sch : (sch.items || []))
       setClientsById(map)
+      setProperties(Array.isArray(props) ? props : (props.items || []))
     } catch (e) {
       setError(e.message || 'Failed to load recurring schedules')
     } finally {
@@ -990,11 +997,9 @@ export default function Recurring() {
               title="Find and remove off-cadence duplicate visits left by the old biweekly bug">
               <Sparkles className="w-4 h-4 mr-1" /> {cleaning ? 'Checking…' : 'Clean up duplicates'}
             </Button>
-            <Link to="/schedule?tab=recurring">
-              <Button variant="primary" size="sm">
-                <Plus className="w-4 h-4 mr-1" /> New series
-              </Button>
-            </Link>
+            <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-1" /> New series
+            </Button>
           </>
         }
       />
@@ -1041,12 +1046,12 @@ export default function Recurring() {
             icon={Repeat}
             title={schedules.length === 0 ? 'No recurring series yet' : 'Nothing matches your filters'}
             description={schedules.length === 0
-              ? 'Create one from a client, from a signed quote, or from the Schedule tab.'
+              ? 'Create one here, from a client, or from a signed quote.'
               : 'Try clearing the client or status filter.'}
             action={schedules.length === 0
-              ? <Link to="/schedule?tab=recurring">
-                  <Button variant="primary" size="sm"><Plus className="w-4 h-4 mr-1" />New series</Button>
-                </Link>
+              ? <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+                  <Plus className="w-4 h-4 mr-1" />New series
+                </Button>
               : null}
           />
         ) : (
@@ -1062,6 +1067,14 @@ export default function Recurring() {
           </ul>
         )}
       </div>
+      {showCreate && (
+        <RecurringCreateModal
+          clients={clientOptions}
+          properties={properties}
+          onClose={() => setShowCreate(false)}
+          onCreated={loadList}
+        />
+      )}
     </>
   )
 }

@@ -245,10 +245,10 @@ export default function App() {
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:propertyId" element={<PropertyDetail />} />
               <Route path="/properties/:propertyId/icals" element={<PropertyIcalsBulk />} />
-              {/* Dedicated management surface for recurring bookings —
+              {/* The single home for recurring bookings — create a series,
                   list of series, per-visit skip/reschedule (just this visit),
-                  and rule edits (future visits only). Schedule?tab=recurring
-                  still has the summary tab; this is the deep-dive page. */}
+                  and rule edits (future visits only). The old
+                  /schedule?tab=recurring summary tab now redirects here. */}
               <Route path="/recurring" element={<Recurring />} />
               <Route path="/owner" element={<OwnerDashboard />} />
               <Route path="/settings" element={<Settings />} />
