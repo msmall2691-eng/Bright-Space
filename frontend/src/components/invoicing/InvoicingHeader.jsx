@@ -1,7 +1,15 @@
 import { Receipt, Plus, Search, Sparkles } from 'lucide-react'
-import { PageHeader, StatCard } from '../ui'
+import { PageHero } from '../ui'
 
 const STATUS_FILTERS = ['', 'draft', 'sent', 'paid', 'overdue']
+
+/** Compact money for the hero pods — $24K / $1.9M — so big totals never clip. */
+const fmtUsd = (n) => {
+  const v = Math.round(n || 0), a = Math.abs(v)
+  if (a >= 1e6) return `$${(v / 1e6).toFixed(a % 1e6 === 0 ? 0 : 1)}M`
+  if (a >= 1e4) return `$${Math.round(v / 1e3)}K`
+  return `$${v.toLocaleString()}`
+}
 
 /** Page-level header for the Invoicing list: PageHeader (title +
  *  subtitle + "Chase overdue"/"New invoice" CTAs), the 4-way
@@ -22,36 +30,34 @@ export function InvoicingHeader({
 }) {
   return (
     <>
-      {/* Page header */}
-      <PageHeader
-        icon={Receipt}
-        iconColor="emerald"
-        title="Invoices"
-        subtitle={`${invoiceCount} total`}
-        actions={
-          <>
-            {overdueCount > 0 && (
-              <button onClick={openChaser}
-                className="flex items-center gap-2 bg-amber-600 text-white hover:bg-amber-700 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors"
-                title="AI-draft payment reminders for all overdue invoices">
-                <Sparkles className="w-3.5 h-3.5" /> Chase overdue ({overdueCount})
+      {/* Cockpit hero — title + the four money pods, matching Home. */}
+      <div className="px-4 sm:px-6 pt-4 mb-4">
+        <PageHero
+          icon={Receipt}
+          title="Invoices"
+          subtitle={`${invoiceCount} total`}
+          actions={
+            <>
+              {overdueCount > 0 && (
+                <button onClick={openChaser}
+                  className="flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors"
+                  title="AI-draft payment reminders for all overdue invoices">
+                  <Sparkles className="w-3.5 h-3.5" /> Chase overdue ({overdueCount})
+                </button>
+              )}
+              <button onClick={openNew}
+                className="flex items-center gap-2 bg-white/10 border border-white/15 text-white hover:bg-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+                <Plus className="w-3.5 h-3.5" /> New invoice
               </button>
-            )}
-            <button onClick={openNew}
-              className="flex items-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors">
-              <Plus className="w-3.5 h-3.5" /> New invoice
-            </button>
-          </>
-        }
-      />
-
-      {/* Metrics bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-hairline mx-4 sm:mx-8 mb-4 rounded-xl border border-hairline overflow-hidden">
-        <StatCard className="bg-panel" label="Paid" value={`$${totalRevenue.toFixed(2)}`} accent="text-emerald-600" />
-        <StatCard className="bg-panel" label="Outstanding" value={`$${outstanding.toFixed(2)}`} accent="text-amber-600" />
-        <StatCard className="bg-panel" label="Invoices" value={invoiceCount} />
-        <StatCard className="bg-panel" label="Overdue" value={overdueCount}
-          accent={overdueCount > 0 ? 'text-red-600' : 'text-ink-3'} />
+            </>
+          }
+          pods={[
+            { label: 'Paid', value: fmtUsd(totalRevenue), tone: 'text-emerald-300' },
+            { label: 'Outstanding', value: fmtUsd(outstanding), tone: 'text-amber-300' },
+            { label: 'Invoices', value: invoiceCount },
+            { label: 'Overdue', value: overdueCount, tone: overdueCount > 0 ? 'text-red-300' : 'text-white' },
+          ]}
+        />
       </div>
 
       {/* Toolbar */}

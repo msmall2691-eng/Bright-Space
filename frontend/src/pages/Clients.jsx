@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { post } from '../api'
 import JobCreateModal from '../components/JobCreateModal'
-import { EmptyState, PageHeader } from '../components/ui'
+import { EmptyState, PageHero } from '../components/ui'
 import CRMHealthPanel from "../components/CRMHealthPanel"
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
@@ -334,14 +334,21 @@ export default function Clients() {
     <div className="flex h-full">
       {/* Main list */}
       <div className="flex-1 flex flex-col min-w-0">
-        <PageHeader
-          title="Clients"
-          subtitle={`${clients.length} client${clients.length === 1 ? '' : 's'} — search, filter, and manage your customer list`}
-          icon={Users}
-          iconColor="blue"
-        />
+        <div className="px-4 sm:px-8 pt-4">
+          <PageHero
+            title="Clients"
+            subtitle="Search, filter, and manage your customer list"
+            icon={Users}
+            pods={[
+              { label: 'All', value: statusCounts[''] ?? clients.length },
+              { label: 'Active', value: statusCounts.active ?? 0, tone: 'text-emerald-300' },
+              { label: 'Leads', value: statusCounts.lead ?? 0, tone: 'text-indigo-200' },
+              { label: 'Inactive', value: statusCounts.inactive ?? 0, tone: 'text-white/70' },
+            ]}
+          />
+        </div>
 
-        <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
+        <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6 pt-4">
         <ClientsToolbar
           search={search} setSearch={setSearch}
           viewConfig={viewConfig} applyView={applyView}
