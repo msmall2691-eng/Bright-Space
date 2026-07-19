@@ -4,11 +4,27 @@ import {
 } from 'lucide-react'
 import Button from '../ui/Button'
 
-/** Sticky top toolbar: title · view switcher (Calendar/Day) · date nav ·
- *  Filters toggle · Tools menu · New Job. Pure props-in — the parent owns
- *  the view/date/filter state, the tools-menu actions, and the "new job"
- *  callback. Renders both the desktop date nav (inline) and the mobile-only
- *  fallback row, plus the filter-chip row when showFilters is on. */
+// One source of truth for the four views so the mobile (full-width) and desktop
+// (inline) switchers never drift apart.
+const VIEWS = [
+  ['agenda', 'Day'],
+  ['dispatch', 'Dispatch'],
+  ['week', 'Week'],
+  ['month', 'Calendar'],
+]
+
+/** Sticky top toolbar. Two deliberately different layouts, split at `md`
+ *  (768px — the same threshold CalendarView uses to switch to its mobile
+ *  bottom-sheet, so the header and the grid agree about "phone"):
+ *
+ *   • Phone (`md:hidden`): a clean two/three-row stack — identity + actions on
+ *     top, a FULL-WIDTH view switcher with real touch targets below, then the
+ *     date nav (non-month only). No more six controls fighting for one wrapping
+ *     row.
+ *   • Desktop (`hidden md:flex`): the original single compact row.
+ *
+ *  Pure props-in — the parent owns view/date/filter state, the tools-menu
+ *  actions, and the "new job" callback. */
 export default function ScheduleToolbar({
   viewMode,
   onViewChange,
@@ -30,16 +46,14 @@ export default function ScheduleToolbar({
   onPreviewFixTimes,
   onOpenSyncSettings,
   onNewJob,
-  // Compact mobile sync-alert button. `syncAlertCount` = total items out of
-  // sync (notGcal + notConnecteam). When > 0, an amber alert pill shows in
-  // the toolbar (mobile only — desktop keeps the full banner underneath).
-  // `onFixSync` runs the same reconcile as the banner button.
+  // Compact sync-alert button. `syncAlertCount` = total items not yet pushed
+  // out (notGcal + notConnecteam). When > 0, an amber pill shows on phones;
+  // desktop keeps the full "Needs attention" banner underneath. `onFixSync`
+  // runs the same one-way push reconcile as the banner button.
   syncAlertCount = 0,
   onFixSync,
   fixingSync,
-  // Quick-filter toggles + their live counts. Surfaces the three "which
-  // jobs still need something" questions the dispatcher hits every day —
-  // previously reachable only via URL params or the health-strip counters.
+  // Quick-filter toggles + their live counts (in the filter-chip row).
   unassignedOnly = false,
   onToggleUnassigned,
   unassignedCount = 0,
@@ -49,52 +63,131 @@ export default function ScheduleToolbar({
   noGcalOnly = false,
   onToggleNoGcal,
   notGcalCount = 0,
-  // Month view only: Airbnb/VRBO guest-stay overlay on the calendar grid.
-  // Off by default (see Schedule.jsx) — shown here so it can be turned back
-  // on for a turnover-heavy week without digging through Tools.
   showGuestStays = false,
   onToggleGuestStays,
 }) {
   const filterActive = selectedPropertyType !== 'all' || selectedStatus !== 'all'
     || unassignedOnly || noConnecteamOnly || noGcalOnly
+
+  const toolsMenu = (
+    <ToolsMenu
+      open={toolsOpen}
+      onClose={onCloseTools}
+      syncingNow={syncingNow}
+      onSyncNow={onSyncNow}
+      onPreviewAutoAssign={onPreviewAutoAssign}
+      onPreviewFixTimes={onPreviewFixTimes}
+      onOpenSyncSettings={onOpenSyncSettings}
+    />
+  )
+
+  const dateLabel = (opts) => new Date(currentDate).toLocaleDateString('en-US', opts)
+
   return (
     <div className="no-print bg-panel border-b border-hairline sticky top-0 z-10 safe-top">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
-        {/* Single compact row: title · date nav · view toggle · New Job */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Emerald chip echoes the Home "Schedule" pillar so the two
-              surfaces share one visual identity. */}
+      <div className="max-w-7xl mx-auto px-3 md:px-4 py-2.5 md:py-3">
+
+        {/* ============================ PHONE ============================ */}
+        <div className="md:hidden">
+          {/* Row 1 — identity + a tidy cluster of icon actions. The view
+              switcher has moved to its own full-width row, which frees this
+              row so nothing wraps. */}
+          <div className="flex items-center gap-1.5">
+            <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl shrink-0 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+              <CalendarIcon className="w-[18px] h-[18px]" />
+            </span>
+            <h1 className="text-base font-bold text-ink">Schedule</h1>
+            <div className="flex-1" />
+
+            {syncAlertCount > 0 && onFixSync && (
+              <button
+                onClick={onFixSync}
+                disabled={fixingSync}
+                className="shrink-0 flex items-center gap-1 h-9 px-2.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-800 text-xs font-bold disabled:opacity-60 active:scale-95 transition-transform"
+                title={fixingSync ? 'Pushing…' : `${syncAlertCount} not yet pushed — tap to sync`}
+                aria-label={fixingSync ? 'Syncing' : `${syncAlertCount} items not synced, tap to push`}
+                data-testid="mobile-sync-alert"
+              >
+                <AlertCircle className={`w-4 h-4 ${fixingSync ? 'animate-pulse' : ''}`} />
+                <span>{syncAlertCount}</span>
+              </button>
+            )}
+
+            <IconButton onClick={onToggleFilters} label="Filters" active={filterActive}>
+              <Filter className="w-[18px] h-[18px]" />
+              {filterActive && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-blue-500" />}
+            </IconButton>
+
+            <div className="relative">
+              <IconButton onClick={onToggleTools} label="Tools">
+                <Wrench className="w-[18px] h-[18px]" />
+              </IconButton>
+              {toolsMenu}
+            </div>
+
+            <button onClick={onNewJob} aria-label="New job"
+              className="shrink-0 grid place-items-center w-9 h-9 rounded-lg bg-indigo-600 text-white shadow-sm active:scale-95 transition-transform">
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Row 2 — the view switcher, full width, real tap targets. */}
+          <div className="mt-2 flex items-center gap-0.5 bg-bg-2 rounded-xl p-1">
+            {VIEWS.map(([v, label]) => (
+              <button key={v} onClick={() => onViewChange(v)}
+                aria-pressed={viewMode === v}
+                className={`flex-1 py-2 rounded-lg text-[13px] font-semibold transition-colors ${
+                  viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 active:bg-panel/60'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Row 3 — date nav (non-month only; month has CalendarView's own
+              header, and these arrows step by a WEEK which is the wrong axis
+              for a month grid). */}
+          {viewMode !== 'month' && (
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={onPrevWeek} aria-label="Previous"
+                className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="flex-1 text-center text-[13px] font-semibold text-ink-2">
+                {dateLabel({ month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+              <button onClick={onNextWeek} aria-label="Next"
+                className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* =========================== DESKTOP =========================== */}
+        <div className="hidden md:flex items-center gap-3">
           <div className="flex items-center gap-2 shrink-0">
             <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
               <CalendarIcon className="w-[18px] h-[18px]" />
             </span>
-            <h1 className="text-base sm:text-lg font-bold text-ink">Schedule</h1>
+            <h1 className="text-lg font-bold text-ink">Schedule</h1>
           </div>
 
-          {/* View switcher — in-app calendar by default, one tap to Google.
-              Short labels on phones so the toolbar fits narrow viewports. */}
           <div className="flex items-center gap-0.5 bg-bg-2 rounded-lg p-0.5 shrink-0">
-            {[
-              ['agenda', 'Today', 'Day'],
-              ['dispatch', 'Dispatch', 'Dsp'],
-              ['week', 'Week', 'Wk'],
-              ['month', 'Calendar', 'Cal'],
-            ].map(([v, label, short]) => (
+            {VIEWS.map(([v, label]) => (
               <button key={v} onClick={() => onViewChange(v)}
-                className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
-                <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 hover:text-ink-2'}`}>
+                {label}
               </button>
             ))}
           </div>
-          {/* Outer date nav — only for Day. Month mode uses CalendarView's
-              own month nav, so these arrows would otherwise do nothing. */}
+
           {viewMode !== 'month' && (
-            <div className="hidden sm:flex items-center gap-1 ml-1">
+            <div className="flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="text-xs font-semibold text-ink-2 whitespace-nowrap min-w-[64px] text-center">
-                {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {dateLabel({ month: 'short', day: 'numeric' })}
               </span>
               <button onClick={onNextWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Next week">
                 <ChevronRight className="w-4 h-4" />
@@ -104,106 +197,33 @@ export default function ScheduleToolbar({
 
           <div className="flex-1" />
 
-          {/* Filters hidden behind a toggle so the default view stays clean.
-              A dot shows when a filter is actually narrowing the list. */}
           <Button onClick={onToggleFilters} variant="secondary" size="sm" className="whitespace-nowrap relative"
-              title="Filter by property type or status">
-              <Filter className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1.5">Filters</span>
-              {filterActive && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
-              )}
-            </Button>
+            title="Filter by property type or status">
+            <Filter className="w-4 h-4" />
+            <span className="ml-1.5">Filters</span>
+            {filterActive && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500" />
+            )}
+          </Button>
 
-          {/* Power tools tucked into one menu to keep the toolbar clean */}
           <div className="relative">
             <Button onClick={onToggleTools} variant="secondary" size="sm" className="whitespace-nowrap"
               title="Calendar sync & maintenance tools">
               <Wrench className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1.5">Tools</span>
+              <span className="ml-1.5">Tools</span>
               <ChevronDown className="w-3 h-3 ml-0.5" />
             </Button>
-            {toolsOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={onCloseTools} />
-                <div className="absolute right-0 mt-1 w-56 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
-                  {/* Auto-sync (Settings -> Automation) keeps Google Calendar
-                      current in the background — this is just the manual
-                      "do it right now" fallback, one button instead of a
-                      separate pull/push pair a small team shouldn't need to
-                      think about. */}
-                  <button onClick={() => { onCloseTools(); onSyncNow() }} disabled={syncingNow}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
-                    <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} /> {syncingNow ? 'Syncing…' : 'Sync now'}
-                  </button>
-                  <div className="my-1 border-t border-hairline" />
-                  <button onClick={() => { onCloseTools(); onPreviewAutoAssign() }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                    <Wand2 className="w-4 h-4" /> Auto-assign turnovers
-                  </button>
-                  <button onClick={() => { onCloseTools(); onPreviewFixTimes() }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                    <Clock className="w-4 h-4" /> Fix missing times
-                  </button>
-                  <div className="my-1 border-t border-hairline" />
-                  {onOpenSyncSettings && (
-                    <button onClick={() => { onCloseTools(); onOpenSyncSettings() }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                      <SlidersHorizontal className="w-4 h-4" /> Sync &amp; automation settings
-                    </button>
-                  )}
-                  <div className="my-1 border-t border-hairline" />
-                  <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
-                    onClick={onCloseTools}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
-                    <CalendarIcon className="w-4 h-4" /> Open in Google Calendar
-                  </a>
-                </div>
-              </>
-            )}
+            {toolsMenu}
           </div>
-
-          {/* Mobile-only sync alert pill — surfaces the "Needs attention" state
-              without stealing a full row below the toolbar. Tap = Fix sync now.
-              Desktop still shows the full banner underneath. */}
-          {syncAlertCount > 0 && onFixSync && (
-            <button
-              onClick={onFixSync}
-              disabled={fixingSync}
-              className="sm:hidden shrink-0 flex items-center gap-1 px-2 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold disabled:opacity-60 active:scale-95 transition-transform"
-              title={fixingSync ? 'Fixing…' : `${syncAlertCount} item(s) out of sync — tap to fix`}
-              aria-label={fixingSync ? 'Fixing sync' : `${syncAlertCount} items out of sync, tap to fix`}
-              data-testid="mobile-sync-alert"
-            >
-              <AlertCircle className={`w-3.5 h-3.5 ${fixingSync ? 'animate-pulse' : ''}`} />
-              <span>{syncAlertCount}</span>
-            </button>
-          )}
 
           <Button onClick={onNewJob} variant="primary" size="sm" className="whitespace-nowrap">
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline ml-1.5">New Job</span>
+            <span className="ml-1.5">New Job</span>
           </Button>
         </div>
 
-        {/* Mobile-only date nav — desktop has it inline above. Hidden in month
-            view: the month grid has its own month header, and these arrows shift
-            by a WEEK (wrong axis for a month), which was confusing. */}
-        {viewMode !== 'month' && (
-          <div className="sm:hidden flex items-center gap-2 mt-2">
-            <button onClick={onPrevWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-semibold text-ink-2 flex-1 text-center">
-              {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-            <button onClick={onNextWeek} className="p-1.5 hover:bg-bg-2 rounded text-ink-3">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Filter chips — revealed via the Filters toggle to keep the toolbar clean */}
+        {/* Filter chips — shared by both layouts, revealed via the Filters
+            toggle to keep the toolbar clean. */}
         {showFilters && (
           <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
             <select
@@ -289,6 +309,63 @@ export default function ScheduleToolbar({
         )}
       </div>
     </div>
+  )
+}
+
+/** A square icon-only action button for the phone toolbar — big enough to tap
+ *  (36px), quiet until pressed. `active` gives it a subtle selected tint. */
+function IconButton({ onClick, label, active, children }) {
+  return (
+    <button onClick={onClick} aria-label={label}
+      className={`relative shrink-0 grid place-items-center w-9 h-9 rounded-lg active:scale-95 transition-transform ${
+        active ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300' : 'bg-bg-2 text-ink-2'}`}>
+      {children}
+    </button>
+  )
+}
+
+/** The "Tools" dropdown, shared by the phone and desktop triggers so its
+ *  contents never diverge. Rendered inside a `relative` trigger wrapper; the
+ *  backdrop closes it on outside tap. */
+function ToolsMenu({ open, onClose, syncingNow, onSyncNow, onPreviewAutoAssign, onPreviewFixTimes, onOpenSyncSettings }) {
+  if (!open) return null
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute right-0 mt-1 w-60 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
+        {/* One-way is the model now: "Sync now" pushes BrightBase's schedule
+            OUT to Google + Connecteam right away (the background reconcile does
+            this automatically; this is the manual "do it now" button). */}
+        <button onClick={() => { onClose(); onSyncNow() }} disabled={syncingNow}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
+          <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} /> {syncingNow ? 'Pushing…' : 'Push to Google & Connecteam now'}
+        </button>
+        <div className="my-1 border-t border-hairline" />
+        <button onClick={() => { onClose(); onPreviewAutoAssign() }}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
+          <Wand2 className="w-4 h-4" /> Auto-assign turnovers
+        </button>
+        <button onClick={() => { onClose(); onPreviewFixTimes() }}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
+          <Clock className="w-4 h-4" /> Fix missing times
+        </button>
+        {onOpenSyncSettings && (
+          <>
+            <div className="my-1 border-t border-hairline" />
+            <button onClick={() => { onClose(); onOpenSyncSettings() }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
+              <SlidersHorizontal className="w-4 h-4" /> Sync &amp; automation settings
+            </button>
+          </>
+        )}
+        <div className="my-1 border-t border-hairline" />
+        <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
+          onClick={onClose}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
+          <CalendarIcon className="w-4 h-4" /> Open in Google Calendar
+        </a>
+      </div>
+    </>
   )
 }
 

@@ -34,10 +34,19 @@ describe('ScheduleSyncSettings', () => {
   it('loads settings and shows the grouped scheduling controls', async () => {
     renderDrawer()
     await waitFor(() => expect(screen.getByText('Live push to Connecteam')).toBeTruthy())
-    expect(screen.getByText('Live sync with Google')).toBeTruthy()
+    expect(screen.getByText('Live push to Google')).toBeTruthy()
     expect(screen.getByText('Auto-import turnovers')).toBeTruthy()
     expect(screen.getByText('Auto-generate upcoming visits')).toBeTruthy()
     expect(get).toHaveBeenCalledWith('/api/settings/automation')
+  })
+
+  it('is one-way: no "who wins" choice is shown', async () => {
+    renderDrawer()
+    await waitFor(() => expect(screen.getByText('Live push to Google')).toBeTruthy())
+    // One-way means BrightBase is always the master — the two-way conflict
+    // picker is gone.
+    expect(screen.queryByText('Google wins')).toBeNull()
+    expect(screen.queryByText(/who wins/i)).toBeNull()
   })
 
   it('saves a partial update when a toggle is flipped', async () => {
@@ -55,18 +64,10 @@ describe('ScheduleSyncSettings', () => {
     get.mockResolvedValue({ gcal_live_sync: false })
     post.mockResolvedValue({ status: 'saved', live_sync: { ok: false, error: 'Google not connected' } })
     renderDrawer()
-    await waitFor(() => expect(screen.getByText('Live sync with Google')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Live push to Google')).toBeTruthy())
     const googleSwitch = screen.getAllByRole('switch')[1]  // Connecteam, Google, Airbnb, Recurring
     fireEvent.click(googleSwitch)
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/couldn't start.*Google not connected/)))
-  })
-
-  it('sets the source-of-truth via the who-wins buttons', async () => {
-    renderDrawer()
-    await waitFor(() => expect(screen.getByText('Google wins')).toBeTruthy())
-    fireEvent.click(screen.getByText('Google wins'))
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/api/settings/automation', { calendar_source_of_truth: 'google' }))
   })
 })

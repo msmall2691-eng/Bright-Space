@@ -1,9 +1,10 @@
 """Audit #4 Upgrade 2B: Google Calendar push-channel (events.watch) handler.
 
 The public notification endpoint is authenticated by the per-channel token, not
-the API key. These pin: a valid notification triggers an incremental sync for the
-right calendar; a bad/unknown token does nothing; the initial 'sync' handshake is
-acked without syncing.
+the API key. These pin: in two-way mode a valid notification triggers an
+incremental sync for the right calendar; in the default one-way (BrightBase is
+master) mode a valid notification is ack'd but NOT pulled back; a bad/unknown
+token does nothing; the initial 'sync' handshake is acked without syncing.
 """
 from unittest.mock import patch
 
@@ -27,11 +28,12 @@ def _clear(db):
     db.commit()
 
 
-def test_valid_notification_triggers_incremental_sync():
+def test_valid_notification_triggers_incremental_sync_in_two_way_mode():
     db = SessionLocal()
     _seed_watch(db)
     try:
-        with patch("integrations.gcal_sync.sync_calendar") as mock_sync:
+        with patch("integrations.gcal_sync.sync_calendar") as mock_sync, \
+             patch("integrations.gcal_sync.calendar_source_of_truth", return_value="google"):
             out = gcal_watch.handle_notification(db, {
                 "x-goog-channel-id": CHANNEL,
                 "x-goog-channel-token": TOKEN,
@@ -41,6 +43,26 @@ def test_valid_notification_triggers_incremental_sync():
         mock_sync.assert_called_once()
         # synced exactly the matched calendar
         assert mock_sync.call_args.kwargs.get("calendar_ids") == [CAL]
+    finally:
+        _clear(db); db.close()
+
+
+def test_one_way_mode_acks_without_reading_back():
+    """Default (BrightBase master / one-way): a real Google change is
+    authenticated and ack'd, but sync_calendar is NOT called — nothing flows
+    back into BrightBase."""
+    db = SessionLocal()
+    _seed_watch(db)
+    try:
+        with patch("integrations.gcal_sync.sync_calendar") as mock_sync, \
+             patch("integrations.gcal_sync.calendar_source_of_truth", return_value="brightbase"):
+            out = gcal_watch.handle_notification(db, {
+                "x-goog-channel-id": CHANNEL,
+                "x-goog-channel-token": TOKEN,
+                "x-goog-resource-state": "exists",
+            })
+        assert out["ok"] is True and out["synced"] is False and out["reason"] == "one_way"
+        mock_sync.assert_not_called()
     finally:
         _clear(db); db.close()
 

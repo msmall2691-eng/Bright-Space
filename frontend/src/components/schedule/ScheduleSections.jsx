@@ -52,9 +52,11 @@ export function ScheduleHealthStrip({
         </span>
       </div>
       {hasAnyAttention && (
-        // Hidden on phones — a compact amber alert button in the sticky toolbar
-        // takes over on mobile so this banner doesn't eat scroll real estate.
-        <div className="hidden sm:flex max-w-7xl mx-auto mt-2 flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+        // Hidden below md — the compact amber alert pill in the sticky toolbar
+        // takes over on phones so this banner doesn't eat scroll real estate.
+        // Matches the toolbar's md (768px) phone/desktop split so the pill and
+        // the banner never both show at tablet-portrait widths.
+        <div className="hidden md:flex max-w-7xl mx-auto mt-2 flex-wrap items-center gap-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span className="font-medium">Needs attention:</span>
           {stats.notGcal > 0 && (

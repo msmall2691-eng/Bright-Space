@@ -87,8 +87,30 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
     if not is_configured():
         status["reason"] = "not_configured"
         return status
+    # Serialize concurrent dispatchers before the idempotency guard. Inline
+    # dispatch (on job create/edit and recurring generation) and the background
+    # sync-reconcile tick can both reach a not-yet-dispatched job at the same
+    # moment; without a lock each reads connecteam_shift_ids == empty and both
+    # create a shift → a duplicate cleaner shift. A row lock makes the
+    # read-check-write atomic: the second caller blocks until the first commits,
+    # then sees the shift ids and no-ops. Postgres honors FOR UPDATE; SQLite (the
+    # test backend) ignores it but runs single-threaded, so the guard alone is
+    # already sufficient there.
+    #
+    # We refresh-under-lock to reload connecteam_shift_ids from the DB. The
+    # session runs autoflush=False, so refresh() would DISCARD un-flushed edits
+    # on the job — skip the lock when the job is dirty (rare; the concurrent
+    # racers are always clean reads) and fall back to the plain guard. A
+    # not-yet-persisted job or a backend without row locks likewise falls
+    # through harmlessly.
+    try:
+        if job.id is not None and job not in db.dirty:
+            db.refresh(job, with_for_update=True)
+    except Exception:  # pragma: no cover - lock unavailable; guard still applies
+        pass
     if job.connecteam_shift_ids:
         status["reason"] = "already_dispatched"
+        status["count"] = len(job.connecteam_shift_ids or [])
         return status
     # A job with no start/end time is non-dispatchable — don't fabricate a
     # midnight shift (which would put a cleaner on a 00:00 slot). These legacy

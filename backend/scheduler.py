@@ -48,12 +48,20 @@ def sync_gcal_tick() -> dict:
        so step 1 misses them). Soft-cancels the Job + Visits, writes a
        RecurrenceException if the job was from a recurring schedule.
     """
-    from integrations.gcal_sync import sync_gcal_cancellations
+    from integrations.gcal_sync import sync_gcal_cancellations, calendar_source_of_truth
     db = SessionLocal()
     try:
         if not _db_flag(db, "gcal_auto_sync_enabled", env_flag("GCAL_AUTO_SYNC_ENABLED", True)):
             log.debug("GCal auto-sync disabled via app_settings; skipping tick")
             return {"skipped": True, "reason": "disabled"}
+        # One-way (BrightBase is master) is the default: we push the schedule
+        # OUT to Google (sync_reconcile_tick / inline create) and read NOTHING
+        # back — no importing events created in Google, no cancelling a BB job
+        # because its Google event was deleted. Only the explicit two-way mode
+        # (calendar_source_of_truth == "google") pulls Google edits in.
+        if calendar_source_of_truth(db) != "google":
+            log.debug("GCal one-way (BrightBase master); skipping read-back tick")
+            return {"skipped": True, "reason": "one_way"}
         result = sync_calendar(db)
         log.info(f"GCal sync completed: {result}")
         try:
@@ -325,48 +333,6 @@ def schedule_audit_tick() -> dict:
         return c
     except Exception as e:
         log.error(f"[schedule-audit] failed: {e}")
-        return {"error": str(e)}
-    finally:
-        db.close()
-
-
-def connecteam_twoway_tick() -> dict:
-    """Read-only two-way Connecteam scan: detect shifts changed / reassigned /
-    deleted INSIDE Connecteam relative to the matching BrightBase jobs, and log
-    a warning so drift surfaces on its own even when nobody's on the Schedule
-    page. Never mutates — resolving is guided from the "needs attention" panel
-    (GET /api/jobs/connecteam-drift). No-ops when Connecteam isn't connected.
-
-    The mirror of schedule_audit_tick, but for the Connecteam→BrightBase
-    direction (reading Connecteam), so it's gated on the config being present."""
-    db = SessionLocal()
-    try:
-        from integrations.connecteam import is_configured
-        if not is_configured():
-            return {"skipped": "not_configured"}
-        import asyncio
-        from datetime import timedelta
-        from database.models import Job
-        from utils.dates import business_today
-        from integrations.connecteam_twoway import detect_schedule_drift
-        start = business_today() - timedelta(days=7)
-        end = business_today() + timedelta(days=45)
-        jobs = db.query(Job).filter(
-            Job.scheduled_date >= start, Job.scheduled_date <= end,
-            Job.status.notin_(["cancelled", "completed"]),
-        ).all()
-        jobs = [j for j in jobs if j.connecteam_shift_ids]
-        res = asyncio.run(detect_schedule_drift(db, jobs, start.isoformat(), end.isoformat()))
-        changes = res.get("changes") or []
-        if changes:
-            log.warning(
-                "[connecteam-twoway] %s Connecteam schedule change(s) pending review — "
-                "resolve at GET /api/jobs/connecteam-drift. %s",
-                len(changes), [(c["job_id"], c["type"]) for c in changes[:10]],
-            )
-        return {"changes": len(changes), "unlinked": res.get("unlinked_count", 0)}
-    except Exception as e:
-        log.error(f"[connecteam-twoway] failed: {e}")
         return {"error": str(e)}
     finally:
         db.close()
@@ -718,18 +684,6 @@ def start_scheduler():
         name="Schedule duplicate/orphan audit",
         replace_existing=True,
     )
-
-    # Two-way Connecteam scan — detect changes made inside Connecteam so drift
-    # surfaces without anyone opening the Schedule page. Read-only; resolving
-    # stays guided. Gated ON by default, off via CONNECTEAM_TWOWAY_SCAN_ENABLED=0.
-    if env_flag("CONNECTEAM_TWOWAY_SCAN_ENABLED", True):
-        _scheduler.add_job(
-            connecteam_twoway_tick,
-            IntervalTrigger(hours=env_int("CONNECTEAM_TWOWAY_INTERVAL_HOURS", 6)),
-            id="connecteam_twoway",
-            name="Connecteam two-way schedule scan",
-            replace_existing=True,
-        )
 
     # iCal auto-sync
     if env_flag("ICAL_AUTO_SYNC_ENABLED", True):

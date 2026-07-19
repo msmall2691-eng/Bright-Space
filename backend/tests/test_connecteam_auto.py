@@ -12,12 +12,16 @@ import integrations.connecteam_auto as ca
 
 
 class FakeDB:
-    """Minimal stand-in: auto-dispatch only calls commit()/refresh()."""
+    """Minimal stand-in: auto-dispatch only calls commit()/refresh(). refresh
+    accepts with_for_update= (the pre-dispatch row lock) and is a no-op here —
+    the lock is a Postgres concern; the test backend is single-threaded. `dirty`
+    is empty so the lock path (skipped when the job has un-flushed edits) runs."""
+    dirty = ()
     def __init__(self):
         self.commits = 0
     def commit(self):
         self.commits += 1
-    def refresh(self, _obj):
+    def refresh(self, _obj, with_for_update=False):
         pass
 
 
@@ -152,6 +156,29 @@ def test_already_dispatched_does_not_duplicate(monkeypatch):
     monkeypatch.setattr(ca, "create_shift_sync", lambda **k: pytest.fail("should not create"))
     out = ca.auto_dispatch_job(FakeDB(), _job(connecteam_shift_ids=["x"]))
     assert out["reason"] == "already_dispatched"
+
+
+def test_row_lock_catches_a_concurrent_dispatch(monkeypatch):
+    """The refresh-under-lock before the guard must observe shift ids a racing
+    dispatcher committed between the caller's read (empty) and our lock — so we
+    no-op instead of pushing a duplicate shift. Simulated by a DB whose
+    locking refresh() reveals the winner's shift ids."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **k: pytest.fail("must not create after a concurrent dispatch"))
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **k: pytest.fail("must not create after a concurrent dispatch"))
+
+    class RacingDB(FakeDB):
+        # SELECT ... FOR UPDATE reloads the row another transaction just
+        # committed: what looked empty at read time now has the winner's shifts.
+        def refresh(self, obj, with_for_update=False):
+            obj.connecteam_shift_ids = ["shift_from_racer"]
+
+    job = _job(connecteam_shift_ids=[])  # empty when the caller first read it
+    out = ca.auto_dispatch_job(RacingDB(), job)
+    assert out["reason"] == "already_dispatched"
+    assert job.connecteam_shift_ids == ["shift_from_racer"]
 
 
 def test_partial_failure_records_errors(monkeypatch, _capture_logs):
