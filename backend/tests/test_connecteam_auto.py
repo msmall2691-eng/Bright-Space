@@ -22,7 +22,7 @@ class FakeDB:
 
 def _job(**over):
     base = dict(
-        id=1, status="scheduled", title="Turnover",
+        id=1, status="scheduled", title="Turnover", job_type="residential",
         scheduled_date="2026-06-20", start_time="09:00", end_time="11:00",
         address="1 Main St", notes=None,
         cleaner_ids=["emp_a", "emp_b"], connecteam_shift_ids=[], dispatched=False,
@@ -46,10 +46,35 @@ def test_not_configured_is_a_clean_noop(monkeypatch):
     assert job.connecteam_shift_ids == []
 
 
-def test_no_cleaners_is_a_clean_noop(monkeypatch):
+def test_unassigned_regular_job_pushes_one_open_draft(monkeypatch, _capture_logs):
+    """A regular job with no cleaner yet now goes out as a single OPEN draft
+    shift (not a no-op), so the slot still shows on the Connecteam schedule."""
     monkeypatch.setattr(ca, "is_configured", lambda: True)
-    out = ca.auto_dispatch_job(FakeDB(), _job(cleaner_ids=[]))
-    assert out["reason"] == "no_cleaners" and out["dispatched"] is False
+    calls = []
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **kw: (calls.append(kw), {"id": "open_1"})[1])
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **k: pytest.fail("should not create an assigned shift"))
+    job = _job(cleaner_ids=[])
+    out = ca.auto_dispatch_job(FakeDB(), job)
+    assert out["dispatched"] is True and out["count"] == 1
+    assert job.connecteam_shift_ids == ["open_1"]
+    assert calls[0]["is_published"] is False  # DRAFT
+
+
+def test_str_turnover_pushes_open_draft_even_with_cleaners(monkeypatch):
+    """Airbnb/STR turnovers always go out as OPEN drafts, regardless of any
+    auto-assigned cleaner."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    calls = []
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **kw: (calls.append(kw), {"id": "open_str"})[1])
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **k: pytest.fail("turnover must not create assigned shifts"))
+    job = _job(job_type="str_turnover", cleaner_ids=["emp_a"])
+    out = ca.auto_dispatch_job(FakeDB(), job)
+    assert out["dispatched"] is True and job.connecteam_shift_ids == ["open_str"]
+    assert calls[0]["is_published"] is False
 
 
 def test_cancelled_job_not_dispatched(monkeypatch):
@@ -75,6 +100,8 @@ def test_dispatch_creates_one_shift_per_cleaner(monkeypatch, _capture_logs):
     # ISO datetimes assembled from date + HH:MM
     assert calls[0]["start_datetime"] == "2026-06-20T09:00:00"
     assert calls[0]["end_datetime"] == "2026-06-20T11:00:00"
+    # pushed as DRAFTs, not published live
+    assert calls[0]["is_published"] is False and calls[1]["is_published"] is False
     # one ok log per shift
     assert sum(1 for k in _capture_logs if k.get("status") == "ok") == 2
 

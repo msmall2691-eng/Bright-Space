@@ -300,13 +300,16 @@ async def create_shift(
     title: str,
     address: Optional[str] = None,
     notes: Optional[str] = None,
+    is_published: bool = True,
 ) -> dict:
     """Create a single ASSIGNED shift for one cleaner. Returns {"id": "..."}
     so callers that read `res["id"]` (like connecteam_auto.auto_dispatch_job)
-    keep working."""
+    keep working. is_published=False pushes it as an unpublished DRAFT the
+    office can review/publish in Connecteam."""
     payload = _shift_payload(
         start_datetime=start_datetime, end_datetime=end_datetime,
         title=title, address=address, notes=notes, user_id=employee_id,
+        is_published=is_published,
     )
     ids = await create_shifts([payload])
     return {"id": ids[0]} if ids else {}
@@ -318,11 +321,14 @@ async def create_open_shift(
     title: str,
     address: Optional[str] = None,
     notes: Optional[str] = None,
+    is_published: bool = True,
 ) -> dict:
-    """Create a single OPEN shift (unassigned, cleaners can self-claim)."""
+    """Create a single OPEN shift (unassigned, cleaners can self-claim).
+    is_published=False pushes it as an unpublished DRAFT."""
     payload = _shift_payload(
         start_datetime=start_datetime, end_datetime=end_datetime,
         title=title, address=address, notes=notes, open_shift=True,
+        is_published=is_published,
     )
     ids = await create_shifts([payload])
     return {"id": ids[0]} if ids else {}

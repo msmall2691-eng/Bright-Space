@@ -15,11 +15,11 @@ def _mk_client(db, name="Audit Test"):
     return c, p
 
 
-def test_auto_dispatch_off_by_default(monkeypatch):
+def test_auto_dispatch_on_by_default(monkeypatch):
     monkeypatch.setattr(sr, "get_setting", lambda db, k: None)
-    assert sr.connecteam_auto_dispatch_enabled(None) is False   # MANUAL by default
-    monkeypatch.setattr(sr, "get_setting", lambda db, k: "true")
-    assert sr.connecteam_auto_dispatch_enabled(None) is True
+    assert sr.connecteam_auto_dispatch_enabled(None) is True   # LIVE push by default
+    monkeypatch.setattr(sr, "get_setting", lambda db, k: "false")
+    assert sr.connecteam_auto_dispatch_enabled(None) is False  # explicit manual mode
 
 
 def test_find_duplicate_jobs():

@@ -15,6 +15,7 @@ import logging
 from integrations.connecteam import (
     ConnecteamAuthError,
     create_shift_sync,
+    create_open_shift_sync,
     delete_shift_sync,
     is_configured,
 )
@@ -40,11 +41,19 @@ def _job_schedule_snapshot(job) -> dict:
 
 
 def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
-    """Create one Connecteam shift per assigned cleaner for ``job``.
+    """Push ``job`` to Connecteam as DRAFT shift(s) the office reviews/publishes.
+
+    Routing (product decision, July 2026):
+      * STR/Airbnb turnover (job_type == "str_turnover"), OR a regular job with
+        no cleaner assigned yet  → a single OPEN draft shift (unassigned, so it
+        shows on the schedule for someone to claim/fill).
+      * regular job with cleaner(s)  → one ASSIGNED draft shift per cleaner.
+    Everything goes out unpublished (isPublished=false) so nothing hits a
+    cleaner's live schedule until the office publishes it in Connecteam.
 
     Returns a status dict for the API response. No-ops (with a reason) when
-    Connecteam isn't configured, the job has no cleaners, the job isn't active,
-    or it's already dispatched — so it's safe to call unconditionally.
+    Connecteam isn't configured, the job isn't active, or it's already
+    dispatched — so it's safe to call unconditionally.
     """
     status = {
         "dispatched": bool(job.connecteam_shift_ids),
@@ -58,39 +67,57 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
     if not is_configured():
         status["reason"] = "not_configured"
         return status
-    if not job.cleaner_ids:
-        status["reason"] = "no_cleaners"
-        return status
     if job.connecteam_shift_ids:
         status["reason"] = "already_dispatched"
         return status
 
     start_dt, end_dt = _shift_times(job)
     shift_ids, errors = [], []
-    for emp in job.cleaner_ids:
+
+    def _record(res, label):
+        sid = res.get("id") or res.get("shiftId") or ""
+        if sid:
+            shift_ids.append(str(sid))
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="create", status="ok", external_id=str(sid), commit=False)
+        else:
+            errors.append({"target": label, "error": "no shift id returned"})
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="create", status="failed",
+                 detail="create_shift returned no id", commit=False)
+
+    is_turnover = (getattr(job, "job_type", None) == "str_turnover")
+    if is_turnover or not job.cleaner_ids:
+        # OPEN draft: Airbnb turnover, or a not-yet-assigned regular job.
         try:
-            res = create_shift_sync(
-                employee_id=str(emp),
-                start_datetime=start_dt,
-                end_datetime=end_dt,
-                title=job.title,
-                address=job.address,
-                notes=job.notes,
+            res = create_open_shift_sync(
+                start_datetime=start_dt, end_datetime=end_dt,
+                title=job.title, address=job.address, notes=job.notes,
+                is_published=False,
             )
-            sid = res.get("id") or res.get("shiftId") or ""
-            if sid:
-                shift_ids.append(str(sid))
-                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                     action="create", status="ok", external_id=str(sid), commit=False)
-            else:
-                errors.append({"employee_id": str(emp), "error": "no shift id returned"})
-                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                     action="create", status="failed",
-                     detail="create_shift returned no id", commit=False)
-        except (ConnecteamAuthError, Exception) as e:  # noqa: B014 - log both the same way
-            errors.append({"employee_id": str(emp), "error": str(e)})
+            _record(res, "open")
+        except (ConnecteamAuthError, Exception) as e:  # noqa: B014
+            errors.append({"target": "open", "error": str(e)})
             _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
                  action="create", status="failed", detail=str(e), commit=False)
+    else:
+        # ASSIGNED draft: one shift per cleaner on a regular job.
+        for emp in job.cleaner_ids:
+            try:
+                res = create_shift_sync(
+                    employee_id=str(emp),
+                    start_datetime=start_dt,
+                    end_datetime=end_dt,
+                    title=job.title,
+                    address=job.address,
+                    notes=job.notes,
+                    is_published=False,
+                )
+                _record(res, f"emp:{emp}")
+            except (ConnecteamAuthError, Exception) as e:  # noqa: B014 - log both the same way
+                errors.append({"employee_id": str(emp), "error": str(e)})
+                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                     action="create", status="failed", detail=str(e), commit=False)
 
     if shift_ids:
         job.dispatched = True

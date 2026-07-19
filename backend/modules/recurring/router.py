@@ -765,6 +765,25 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
                 logger.warning(f"GCal push failed for job {job.id} (schedule {sched.id}): {e}")
         db.commit()
 
+    # Auto-push new jobs to Connecteam too, mirroring the Google push above, so a
+    # recurring occurrence reaches the cleaner app instead of only Google Calendar
+    # (the gap that made recurring shifts never show up in Connecteam). Gated by
+    # the same setting job create/edit use, and best-effort — a Connecteam hiccup
+    # must never block generation.
+    if new_jobs:
+        try:
+            from modules.settings.router import connecteam_auto_dispatch_enabled
+            if connecteam_auto_dispatch_enabled(db):
+                from integrations.connecteam_auto import auto_dispatch_job
+                for job in new_jobs:
+                    try:
+                        auto_dispatch_job(db, job, commit=False)
+                    except Exception as e:
+                        logger.warning(f"Connecteam push failed for job {job.id} (schedule {sched.id}): {e}")
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Connecteam dispatch pass failed for schedule {sched.id}: {e}")
+
     return created
 
 
