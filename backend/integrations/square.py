@@ -123,11 +123,14 @@ async def list_locations() -> list:
 
 async def list_team_members(location_id: Optional[str] = None) -> list:
     """Active Square team members as [{id, name, email}] for matching against
-    Connecteam users. Filters to the configured location when given."""
+    Connecteam users. Deliberately does NOT filter by location — small teams
+    often have members not assigned to a specific location, and a location
+    filter silently returned 0 members. Matching is by name/email; the location
+    is set per-timecard, so it isn't needed here. Pass location_id explicitly
+    only if you truly want to scope to one location."""
     body: dict = {"query": {"filter": {"status": "ACTIVE"}}, "limit": 200}
-    loc = location_id or _get_location()
-    if loc:
-        body["query"]["filter"]["location_ids"] = {"any": [loc]}
+    if location_id:
+        body["query"]["filter"]["location_ids"] = {"any": [location_id]}
     out: list = []
     async with httpx.AsyncClient(timeout=20) as client:
         cursor = None
