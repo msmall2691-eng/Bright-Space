@@ -2,11 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 
 const get = vi.fn()
-vi.mock('../../../api', () => ({ get: (...a) => get(...a), post: vi.fn(), patch: vi.fn() }))
-vi.mock('../../../utils/toastBus', () => ({ toast: vi.fn() }))
+const post = vi.fn().mockResolvedValue({ ok: true })
+vi.mock('../../../api', () => ({ get: (...a) => get(...a), post: (...a) => post(...a), patch: vi.fn() }))
+// Mirror the REAL toastBus shape (an object with methods, NOT a callable) so a
+// stray toast(...) call is caught by tests instead of throwing at runtime.
+vi.mock('../../../utils/toastBus', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }))
 vi.mock('../../../utils/confirmBus', () => ({ confirmDialog: vi.fn().mockResolvedValue(true) }))
 
 import ScheduleAuditPanel from '../ScheduleAuditPanel'
+import { toast } from '../../../utils/toastBus'
 
 beforeEach(() => {
   get.mockImplementation((url) => {
@@ -47,5 +51,15 @@ describe('ScheduleAuditPanel', () => {
     // The old jargon is gone.
     expect(screen.queryByText(/Keep BrightBase/)).toBeNull()
     expect(screen.queryByText(/orphaned/i)).toBeNull()
+  })
+
+  it('bulk re-send completes and reports success (toast is object-shaped)', async () => {
+    render(<ScheduleAuditPanel />)
+    const btn = await screen.findByText(/Re-send all 2/)
+    fireEvent.click(btn)
+    // Reaches the success toast — which means it didn't throw before
+    // setBusy(null)/scan() (the toast-not-a-function bug).
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Re-sent 2/)))
+    expect(post).toHaveBeenCalledTimes(2)
   })
 })

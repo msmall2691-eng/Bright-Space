@@ -259,6 +259,27 @@ export default function CalendarView({
     return e ? initials(e.name || e.displayName || '') : ''
   }
 
+  // Stable id→employee map + a per-job resolver for the month chips, so each
+  // chip can show who's assigned (initials) or flag that it still needs a
+  // cleaner. useMemo/useCallback keep the reference stable across renders so
+  // MonthDayCell's React.memo isn't defeated (it only changes when the roster
+  // loads, once).
+  const empById = useMemo(() => {
+    const m = {}
+    employees.forEach(e => {
+      if (e.id != null) m[String(e.id)] = e
+      if (e.userId != null) m[String(e.userId)] = e
+    })
+    return m
+  }, [employees])
+  const cleanerFor = useCallback((job) => {
+    const ids = job.cleaner_ids || []
+    if (!ids.length) return null
+    const e = empById[String(ids[0])]
+    const name = e ? (e.name || e.displayName || '') : ''
+    return { count: ids.length, initials: name ? initials(name) : '?' }
+  }, [empById])
+
   // Audit §16: when the parent supplies onMonthChange, prev/next also move
   // the parent's currentDate so useScheduleData refetches at the new
   // range and we don't fall off the parent-covered fast path. Without a
@@ -832,6 +853,7 @@ export default function CalendarView({
                 isMobile={isMobile}
                 maxPills={isMobile ? 4 : 4}
                 typeConfig={TYPE_CONFIG}
+                cleanerFor={cleanerFor}
                 onSelectDay={onSelectDay}
                 onDragOverDay={onDragOver}
                 onDragLeaveDay={onDragLeave}

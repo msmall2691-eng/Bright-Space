@@ -17,7 +17,7 @@ import { Ban, ArrowRight, ArrowLeft, Zap, RotateCw } from 'lucide-react'
 function MonthDayCell({
   date, dayJobs, dayBookings, daySkips, dayReschedFrom, dayReschedTo,
   isToday, isSelected, isDropTarget, isCheckin, isCheckout,
-  isMobile, maxPills, typeConfig,
+  isMobile, maxPills, typeConfig, cleanerFor,
   onSelectDay, onDragOverDay, onDragLeaveDay, onDropDay,
   onChipDragStart, onChipDragEnd,
   onChipTouchStart, onChipTouchMove, onChipTouchEnd, onChipTouchCancel,
@@ -122,6 +122,8 @@ function MonthDayCell({
           const isDuplicate = j.job_type === 'str_turnover' && j.property_id &&
             dayJobs.filter(dj => dj.job_type === 'str_turnover' && dj.property_id === j.property_id).length > 1
           const isCancelled = j.status === 'cancelled'
+          const crew = cleanerFor ? cleanerFor(j) : null
+          const needsCleaner = !isCancelled && !crew
           return (
             <div
               key={j.id}
@@ -146,9 +148,10 @@ function MonthDayCell({
               className={`flex items-center gap-1 text-[10px] sm:text-[11px] px-1 sm:px-1.5 py-0.5 rounded border leading-tight cursor-grab active:cursor-grabbing ${
                 isCancelled ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
                 isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
+                needsCleaner ? `${tc.pill} ring-1 ring-amber-300/60 dark:ring-amber-500/40` :
                 `${tc.pill} ${tc.pillHover}`
               }`}
-              title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
+              title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${crew ? ' · assigned' : ' · needs a cleaner'}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
             >
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
               {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
@@ -162,6 +165,17 @@ function MonthDayCell({
               {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
               {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
               <span className="truncate">{chipWho}</span>
+              {!isCancelled && (
+                crew ? (
+                  <span className="ml-auto shrink-0 inline-flex items-center justify-center h-[15px] min-w-[15px] px-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[8px] font-bold leading-none"
+                    title={`Assigned${crew.count > 1 ? ` · ${crew.count} cleaners` : ''}`}>
+                    {crew.initials}{crew.count > 1 ? `+${crew.count - 1}` : ''}
+                  </span>
+                ) : (
+                  <span className="ml-auto shrink-0 inline-flex items-center justify-center w-[15px] h-[15px] rounded-full border border-dashed border-amber-400 text-amber-500 text-[9px] font-bold leading-none"
+                    title="Needs a cleaner">?</span>
+                )
+              )}
             </div>
           )
         })}
