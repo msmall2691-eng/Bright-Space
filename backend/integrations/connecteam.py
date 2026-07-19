@@ -335,14 +335,21 @@ async def create_open_shift(
 
 
 async def delete_shift(shift_id: str) -> None:
-    """Delete a shift by id."""
+    """Delete a shift by id. Idempotent: a 404 means the shift is already gone
+    from Connecteam, which is exactly the goal of a delete — treat it as
+    success. Without this, re-pushing a job whose shift was deleted IN
+    Connecteam failed here, so remove_job_from_connecteam kept the stale id and
+    auto_dispatch_job then skipped it ("already_dispatched") — the re-send
+    reported success but created no fresh draft (Codex P2)."""
     sched = _get_scheduler_id()
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.delete(
             f"{CONNECTEAM_BASE}/scheduler/v1/schedulers/{sched}/shifts/{shift_id}",
             headers=_headers(),
         )
-        _raise_for_status(r)
+    if r.status_code == 404:
+        return
+    _raise_for_status(r)
 
 
 def create_shift_sync(**kwargs) -> dict:
