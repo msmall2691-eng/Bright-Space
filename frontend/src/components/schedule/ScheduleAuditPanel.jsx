@@ -1,46 +1,35 @@
 import { useState, useEffect, useCallback } from 'react'
-import { AlertTriangle, RefreshCw, ChevronDown, ChevronRight, Ban, Unlink, ArrowLeftRight, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { RefreshCw, ChevronDown, ChevronRight, Ban, Unlink, Send, ArrowDownLeft, Link2Off, Clock, Copy } from 'lucide-react'
 import { get, post, patch } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { confirmDialog } from '../../utils/confirmBus'
 
-// Friendly one-liner + which resolve buttons to show, per drift type.
+// Plain-English description + which resolve buttons to show, per drift type.
+// (No jargon — "Keep BrightBase"/"orphaned shift" meant nothing to an operator.)
 const DRIFT_META = {
-  changed_in_connecteam: { label: 'moved in Connecteam', pull: true, repush: true },
-  conflict: { label: 'changed in BOTH — conflict', pull: true, repush: true },
-  reassigned_in_connecteam: { label: 'reassigned in Connecteam', repush: true },
-  deleted_in_connecteam: { label: 'shift deleted in Connecteam', repush: true, cancel: true },
-  partially_deleted_in_connecteam: { label: 'some shifts removed in Connecteam', repush: true },
+  changed_in_connecteam: { label: 'The time was changed in Connecteam', pull: true, repush: true },
+  conflict: { label: 'Changed in both BrightBase and Connecteam', pull: true, repush: true },
+  reassigned_in_connecteam: { label: 'A different cleaner was set in Connecteam', repush: true },
+  deleted_in_connecteam: { label: 'Its shift is no longer in Connecteam', repush: true, cancel: true },
+  partially_deleted_in_connecteam: { label: 'Some of its shifts were removed in Connecteam', repush: true },
 }
-const when = (o) => o ? `${o.scheduled_date || '—'} ${o.start_time || ''}`.trim() : '—'
+const when = (o) => o ? `${o.scheduled_date || '—'} ${(o.start_time || '').slice(0, 5)}`.trim() : '—'
 
-/** Schedule audit panel — surfaces the same duplicate-jobs + orphaned-shift
- *  findings the background audit logs (GET /api/jobs/audit), and lets the
- *  operator resolve each with one click:
- *   - a duplicate job → Cancel it (PATCH status=cancelled, which also pulls it
- *     off Google Calendar + Connecteam);
- *   - an orphaned Connecteam shift → Remove it (POST /{id}/undispatch).
- *  Renders nothing on a clean schedule. `refreshKey` re-scans when the parent
- *  mutates the schedule; `onResolved` lets the parent refresh its own view. */
+/** Connecteam sync review — surfaces the duplicate-jobs + leftover-shift audit
+ *  (GET /api/jobs/audit) and the live Connecteam drift scan
+ *  (GET /api/jobs/connecteam-drift), each resolvable in one click, in plain
+ *  language. Renders nothing on a clean schedule. */
 export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(null)
-
   const [drift, setDrift] = useState(null)
 
   const scan = useCallback(() => {
     setLoading(true)
-    get('/api/jobs/audit')
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
-    // Two-way Connecteam scan is a separate (network) call — never blocks the
-    // local audit, and quietly no-ops when Connecteam isn't connected.
-    get('/api/jobs/connecteam-drift')
-      .then(setDrift)
-      .catch(() => setDrift(null))
+    get('/api/jobs/audit').then(setData).catch(() => setData(null)).finally(() => setLoading(false))
+    get('/api/jobs/connecteam-drift').then(setDrift).catch(() => setDrift(null))
   }, [])
 
   useEffect(() => { scan() }, [scan, refreshKey])
@@ -48,32 +37,47 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
   const dupes = data?.duplicate_jobs || []
   const orphans = data?.orphaned_shifts || []
   const changes = drift?.changes || []
-  if (!data || (dupes.length === 0 && orphans.length === 0 && changes.length === 0)) return null
+  const total = dupes.length + orphans.length + changes.length
+  if (!data || total === 0) return null
 
-  const applyDrift = async (jobId, action, label) => {
+  const applyDrift = async (jobId, action) => {
     if (action === 'cancel' && !(await confirmDialog(
-      `Cancel Job #${jobId}? Its Connecteam shift is already gone; this marks the job cancelled.`,
+      `Cancel this job? Its Connecteam shift is already gone — this marks the job cancelled in BrightBase too.`,
       { confirmLabel: 'Cancel job', danger: true }))) return
     setBusy(`drift-${jobId}-${action}`)
     try {
       await post('/api/jobs/connecteam-drift/apply', { job_id: jobId, action })
-      toast(action === 'pull' ? 'BrightBase updated to match Connecteam'
-        : action === 'repush' ? 'Connecteam re-synced to match BrightBase'
-        : 'Job cancelled')
+      toast(action === 'pull' ? 'Updated to match Connecteam'
+        : action === 'repush' ? 'Re-sent to Connecteam' : 'Job cancelled')
       scan(); onResolved?.()
-    } catch (e) { toast(e?.detail || e?.message || 'Failed to apply', 'error') }
+    } catch (e) { toast(e?.detail || e?.message || 'Could not apply that', 'error') }
     finally { setBusy(null) }
   }
 
+  const resendable = changes.filter(c => (DRIFT_META[c.type] || {}).repush)
+  const resendAll = async () => {
+    if (!resendable.length) return
+    if (!(await confirmDialog(
+      `Re-send ${resendable.length} job${resendable.length === 1 ? '' : 's'} to Connecteam as fresh drafts? This replaces whatever is (or isn't) there now with what's in BrightBase.`,
+      { confirmLabel: `Re-send ${resendable.length}` }))) return
+    setBusy('resend-all')
+    let ok = 0
+    for (const c of resendable) {
+      try { await post('/api/jobs/connecteam-drift/apply', { job_id: c.job_id, action: 'repush' }); ok++ }
+      catch { /* keep going; report at the end */ }
+    }
+    toast(ok === resendable.length ? `Re-sent ${ok} to Connecteam` : `Re-sent ${ok} of ${resendable.length} — re-scan for the rest`, ok ? 'success' : 'error')
+    setBusy(null); scan(); onResolved?.()
+  }
+
   const cancelJob = async (jobId) => {
-    if (!(await confirmDialog(`Cancel duplicate Job #${jobId}? It'll be marked cancelled and pulled off the calendar + Connecteam.`,
+    if (!(await confirmDialog(`Cancel this duplicate job? It'll be pulled off the calendar and Connecteam.`,
       { confirmLabel: 'Cancel job', danger: true }))) return
     setBusy(`job-${jobId}`)
     try {
       await patch(`/api/jobs/${jobId}`, { status: 'cancelled' })
-      toast('Duplicate cancelled')
-      scan(); onResolved?.()
-    } catch (e) { toast(e?.detail || e?.message || 'Failed to cancel', 'error') }
+      toast('Duplicate cancelled'); scan(); onResolved?.()
+    } catch (e) { toast(e?.detail || e?.message || 'Could not cancel', 'error') }
     finally { setBusy(null) }
   }
 
@@ -81,117 +85,126 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
     setBusy(`orphan-${jobId}`)
     try {
       await post(`/api/jobs/${jobId}/undispatch`, {})
-      toast('Orphaned shifts removed from Connecteam')
-      scan(); onResolved?.()
-    } catch (e) { toast(e?.detail || e?.message || 'Failed to remove shifts', 'error') }
+      toast('Leftover shift removed'); scan(); onResolved?.()
+    } catch (e) { toast(e?.detail || e?.message || 'Could not remove it', 'error') }
     finally { setBusy(null) }
   }
 
-  const total = dupes.length + orphans.length
+  const Btn = ({ onClick, disabled, icon: Icon, children, tone = 'default' }) => (
+    <button onClick={onClick} disabled={disabled}
+      className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50 ${
+        tone === 'primary' ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+        : tone === 'danger' ? 'text-rose-600 hover:bg-rose-500/10'
+        : 'bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink'}`}>
+      <Icon className="w-3.5 h-3.5" /> {children}
+    </button>
+  )
 
   return (
-    <div className="mx-3 my-2 rounded-xl border border-amber-300 bg-amber-50/70 dark:bg-amber-950/30 dark:border-amber-800 overflow-hidden">
-      <button onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-        <span className="text-[13px] font-semibold text-amber-800 dark:text-amber-300 flex-1">
-          Schedule needs attention — {dupes.length} duplicate{dupes.length === 1 ? '' : 's'}, {orphans.length} orphaned shift{orphans.length === 1 ? '' : 's'}
-          {changes.length > 0 && <>, {changes.length} Connecteam change{changes.length === 1 ? '' : 's'}</>}
+    <div className="no-print mx-3 my-2 bb-surface bg-panel border border-hairline rounded-2xl overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
+        <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0 bg-amber-500/15 text-amber-500">
+          <ArrowDownLeft className="w-4 h-4" />
         </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-ink">Connecteam sync — {total} to review</span>
+          <span className="block text-[12px] text-ink-3">
+            {changes.length > 0 && `${changes.length} changed in Connecteam`}
+            {orphans.length > 0 && `${changes.length ? ' · ' : ''}${orphans.length} leftover shift${orphans.length === 1 ? '' : 's'}`}
+            {dupes.length > 0 && `${(changes.length || orphans.length) ? ' · ' : ''}${dupes.length} duplicate${dupes.length === 1 ? '' : 's'}`}
+          </span>
+        </span>
+        {resendable.length > 1 && (
+          <span onClick={e => { e.stopPropagation(); resendAll() }}
+            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg px-3 py-1.5 shrink-0"
+            title="Re-send all these jobs to Connecteam as fresh drafts">
+            <Send className="w-3.5 h-3.5" /> {busy === 'resend-all' ? 'Re-sending…' : `Re-send all ${resendable.length}`}
+          </span>
+        )}
         <span onClick={e => { e.stopPropagation(); scan() }} title="Re-scan"
-          className="p-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900 text-amber-700">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          className="p-1.5 rounded-lg hover:bg-bg-2 text-ink-3 shrink-0">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </span>
-        {open ? <ChevronDown className="w-4 h-4 text-amber-600" /> : <ChevronRight className="w-4 h-4 text-amber-600" />}
+        {open ? <ChevronDown className="w-4 h-4 text-ink-3 shrink-0" /> : <ChevronRight className="w-4 h-4 text-ink-3 shrink-0" />}
       </button>
 
       {open && (
         <div className="px-3 pb-3 space-y-2">
-          {dupes.map((g, i) => (
-            <div key={`d${i}`} className="rounded-lg bg-panel border border-hairline p-2.5">
-              <div className="text-[11px] font-semibold text-ink-2 mb-1.5">
-                Duplicate · {g.date} {g.start_time?.slice(0, 5)} · {g.job_type?.replace('_', ' ')}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(g.job_ids || []).map((jid, k) => (
-                  <span key={jid} className="inline-flex items-center gap-1.5 text-[12px] bg-bg-2 border border-hairline rounded-lg pl-2 pr-1 py-1">
-                    <span className="text-ink truncate max-w-[10rem]">#{jid} {(g.titles || [])[k] || ''}</span>
-                    <button onClick={() => cancelJob(jid)} disabled={busy === `job-${jid}`}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 hover:bg-red-50 rounded px-1.5 py-0.5 disabled:opacity-50">
-                      <Ban className="w-3 h-3" /> Cancel
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <p className="text-[10.5px] text-ink-3 mt-1.5">Keep one, cancel the rest.</p>
+          {resendable.length > 1 && (
+            <div className="sm:hidden">
+              <Btn onClick={resendAll} disabled={busy === 'resend-all'} icon={Send} tone="primary">
+                {busy === 'resend-all' ? 'Re-sending…' : `Re-send all ${resendable.length} to Connecteam`}
+              </Btn>
             </div>
-          ))}
+          )}
 
           {changes.map((c, i) => {
-            const meta = DRIFT_META[c.type] || { label: c.type, repush: true }
+            const meta = DRIFT_META[c.type] || { label: 'Out of sync with Connecteam', repush: true }
             const timed = c.type === 'changed_in_connecteam' || c.type === 'conflict'
             return (
-              <div key={`c${i}`} className="rounded-lg bg-panel border border-hairline p-2.5">
-                <div className="flex items-center gap-1.5 text-[12px] text-ink mb-1">
-                  <ArrowLeftRight className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  <span className="font-medium">Job #{c.job_id}</span>
-                  <span className="text-ink-3 truncate">{c.title}</span>
-                  <span className="text-purple-500 dark:text-purple-300">· {meta.label}</span>
-                </div>
+              <div key={`c${i}`} className="rounded-xl bg-bg-2/40 border border-hairline p-3">
+                <div className="text-[13px] text-ink font-medium truncate">{c.title || `Job #${c.job_id}`}</div>
+                <div className="text-[12px] text-ink-3 mt-0.5">{meta.label}</div>
                 {timed && (
-                  <div className="text-[11px] text-ink-2 mb-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                    <span>BrightBase: <b>{when(c.brightbase)}</b></span>
-                    <span>Connecteam: <b className="text-indigo-600 dark:text-indigo-300">{when(c.connecteam)}</b></span>
+                  <div className="text-[12px] mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
+                    <span className="text-ink-3">Here: <b className="text-ink">{when(c.brightbase)}</b></span>
+                    <span className="text-ink-3">Connecteam: <b className="text-indigo-500">{when(c.connecteam)}</b></span>
                   </div>
                 )}
-                {c.note && <div className="text-[10.5px] text-ink-3 mb-1.5">{c.note}</div>}
-                <div className="flex flex-wrap gap-1.5">
-                  {meta.pull && (
-                    <button onClick={() => applyDrift(c.job_id, 'pull')} disabled={busy === `drift-${c.job_id}-pull`}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded px-2 py-1 disabled:opacity-50">
-                      <ArrowDownLeft className="w-3 h-3" /> Update BrightBase
-                    </button>
-                  )}
+                <div className="flex flex-wrap gap-1.5 mt-2.5">
                   {meta.repush && (
-                    <button onClick={() => applyDrift(c.job_id, 'repush')} disabled={busy === `drift-${c.job_id}-repush`}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded px-2 py-1 disabled:opacity-50">
-                      <ArrowUpRight className="w-3 h-3" /> Keep BrightBase
-                    </button>
+                    <Btn onClick={() => applyDrift(c.job_id, 'repush')} disabled={busy === `drift-${c.job_id}-repush`} icon={Send} tone="primary">
+                      Re-send to Connecteam
+                    </Btn>
+                  )}
+                  {meta.pull && (
+                    <Btn onClick={() => applyDrift(c.job_id, 'pull')} disabled={busy === `drift-${c.job_id}-pull`} icon={ArrowDownLeft}>
+                      Use Connecteam’s version
+                    </Btn>
                   )}
                   {meta.cancel && (
-                    <button onClick={() => applyDrift(c.job_id, 'cancel')} disabled={busy === `drift-${c.job_id}-cancel`}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded px-2 py-1 disabled:opacity-50">
-                      <Ban className="w-3 h-3" /> Cancel job
-                    </button>
+                    <Btn onClick={() => applyDrift(c.job_id, 'cancel')} disabled={busy === `drift-${c.job_id}-cancel`} icon={Ban} tone="danger">
+                      Cancel this job
+                    </Btn>
                   )}
                 </div>
-                <p className="text-[10.5px] text-ink-3 mt-1.5">
-                  {meta.pull
-                    ? '"Update BrightBase" pulls Connecteam\'s version in; "Keep BrightBase" re-syncs Connecteam to match here.'
-                    : '"Keep BrightBase" re-pushes this job\'s shift to Connecteam.'}
-                </p>
               </div>
             )
           })}
 
           {orphans.map((o, i) => (
-            <div key={`o${i}`} className="rounded-lg bg-panel border border-hairline p-2.5 flex items-center justify-between gap-2">
-              <div className="text-[12px] text-ink min-w-0">
-                <span className="font-medium">Job #{o.job_id}</span>
-                <span className="text-ink-3"> ({o.status}) still has {(o.shift_ids || []).length} Connecteam shift{(o.shift_ids || []).length === 1 ? '' : 's'}</span>
+            <div key={`o${i}`} className="rounded-xl bg-bg-2/40 border border-hairline p-3 flex items-center justify-between gap-2">
+              <div className="text-[12.5px] text-ink-2 min-w-0">
+                <Link2Off className="w-3.5 h-3.5 inline mr-1.5 text-ink-3" />
+                A cancelled job still has a leftover shift in Connecteam.
               </div>
-              <button onClick={() => removeShifts(o.job_id)} disabled={busy === `orphan-${o.job_id}`}
-                className="shrink-0 inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:bg-blue-50 rounded-lg px-2 py-1 disabled:opacity-50">
-                <Unlink className="w-3.5 h-3.5" /> Remove shifts
-              </button>
+              <Btn onClick={() => removeShifts(o.job_id)} disabled={busy === `orphan-${o.job_id}`} icon={Unlink}>
+                Remove it
+              </Btn>
             </div>
           ))}
+
+          {dupes.map((g, i) => (
+            <div key={`d${i}`} className="rounded-xl bg-bg-2/40 border border-hairline p-3">
+              <div className="text-[12.5px] text-ink-2">
+                <Copy className="w-3.5 h-3.5 inline mr-1.5 text-ink-3" />
+                Two jobs at the same time · {g.date} {g.start_time?.slice(0, 5)} — keep one, cancel the other.
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {(g.job_ids || []).map((jid, k) => (
+                  <Btn key={jid} onClick={() => cancelJob(jid)} disabled={busy === `job-${jid}`} icon={Ban} tone="danger">
+                    Cancel {(g.titles || [])[k] || `#${jid}`}
+                  </Btn>
+                ))}
+              </div>
+            </div>
+          ))}
+
           {drift?.unlinked_count > 0 && (
-            <p className="text-[10.5px] text-ink-3">
-              {drift.unlinked_count} shift{drift.unlinked_count === 1 ? '' : 's'} in Connecteam aren't linked to a BrightBase job (created directly in Connecteam) — nothing to auto-import.
+            <p className="text-[11px] text-ink-3 px-1">
+              {drift.unlinked_count} shift{drift.unlinked_count === 1 ? '' : 's'} in Connecteam {drift.unlinked_count === 1 ? 'was' : 'were'} created directly there — nothing to bring in.
             </p>
           )}
-          <p className="text-[10.5px] text-ink-3">Duplicates &amp; orphans are auto-checked every few hours; Connecteam changes are read live when this panel loads.</p>
         </div>
       )}
     </div>

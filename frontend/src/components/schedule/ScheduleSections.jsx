@@ -75,7 +75,7 @@ export function ScheduleHealthStrip({
           {needsCleaner > 0 && assignedNotPushed > 0 && <span className="text-amber-300">·</span>}
           {assignedNotPushed > 0 && (
             <button onClick={onFilterNoConnecteam} className="underline underline-offset-2 hover:text-amber-900" title="Filter list to assigned jobs not yet in Connecteam">
-              {assignedNotPushed} assigned but not yet pushed
+              {assignedNotPushed} not sent to Connecteam yet
             </button>
           )}
           {/* "Fix sync now" only makes sense for the pushed queue — a
