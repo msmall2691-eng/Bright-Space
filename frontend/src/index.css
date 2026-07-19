@@ -228,6 +228,55 @@ body.theme-neon .bb-today-badge {
   box-shadow: var(--glow-accent);
 }
 
+/* ----------------------------------------------------------------------
+   Accent palette — the `indigo-*` Tailwind scale is remapped (tailwind.config)
+   onto these channels, so switching the body.accent-* class recolors every
+   button, active-nav item, link and focus ring across the whole app at once.
+   Default (no class) is Indigo. Channels are space-separated RGB.
+   ---------------------------------------------------------------------- */
+:root {
+  --accent-50: 238 242 255;  --accent-100: 224 231 255; --accent-200: 199 210 254;
+  --accent-300: 165 180 252; --accent-400: 129 140 248; --accent-500: 99 102 241;
+  --accent-600: 79 70 229;   --accent-700: 67 56 202;   --accent-800: 55 48 163;
+  --accent-900: 49 46 129;   --accent-950: 30 27 75;
+}
+body.accent-violet {
+  --accent-50: 245 243 255;  --accent-100: 237 233 254; --accent-200: 221 214 254;
+  --accent-300: 196 181 253; --accent-400: 167 139 250; --accent-500: 139 92 246;
+  --accent-600: 124 58 237;  --accent-700: 109 40 217;  --accent-800: 91 33 182;
+  --accent-900: 76 29 149;   --accent-950: 46 16 101;
+}
+body.accent-blue {
+  --accent-50: 239 246 255;  --accent-100: 219 234 254; --accent-200: 191 219 254;
+  --accent-300: 147 197 253; --accent-400: 96 165 250;  --accent-500: 59 130 246;
+  --accent-600: 37 99 235;   --accent-700: 29 78 216;   --accent-800: 30 64 175;
+  --accent-900: 30 58 138;   --accent-950: 23 37 84;
+}
+body.accent-emerald {
+  --accent-50: 236 253 245;  --accent-100: 209 250 229; --accent-200: 167 243 208;
+  --accent-300: 110 231 183; --accent-400: 52 211 153;  --accent-500: 16 185 129;
+  --accent-600: 5 150 105;   --accent-700: 4 120 87;    --accent-800: 6 95 70;
+  --accent-900: 6 78 59;     --accent-950: 2 44 34;
+}
+body.accent-rose {
+  --accent-50: 255 241 242;  --accent-100: 255 228 230; --accent-200: 254 205 211;
+  --accent-300: 253 164 175; --accent-400: 251 113 133; --accent-500: 244 63 94;
+  --accent-600: 225 29 72;   --accent-700: 190 18 60;   --accent-800: 159 18 57;
+  --accent-900: 136 19 55;   --accent-950: 76 5 25;
+}
+body.accent-amber {
+  --accent-50: 255 251 235;  --accent-100: 254 243 199; --accent-200: 253 230 138;
+  --accent-300: 252 211 77;  --accent-400: 251 191 36;  --accent-500: 245 158 11;
+  --accent-600: 217 119 6;   --accent-700: 180 83 9;    --accent-800: 146 64 14;
+  --accent-900: 120 53 15;   --accent-950: 69 26 3;
+}
+body.accent-cyan {
+  --accent-50: 236 254 255;  --accent-100: 207 250 254; --accent-200: 165 243 252;
+  --accent-300: 103 232 249; --accent-400: 34 211 238;  --accent-500: 6 182 212;
+  --accent-600: 8 145 178;   --accent-700: 14 116 144;  --accent-800: 21 94 117;
+  --accent-900: 22 78 99;    --accent-950: 8 51 68;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
