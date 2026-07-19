@@ -279,7 +279,7 @@ body.theme-neon .bb-today-badge {
   }
 
   .btn-primary {
-    @apply btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg focus:ring-indigo-500;
+    @apply btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm focus:ring-indigo-500;
   }
 
   .btn-secondary {
@@ -291,7 +291,7 @@ body.theme-neon .bb-today-badge {
   }
 
   .btn-danger {
-    @apply btn bg-red-600 hover:bg-red-700 text-white shadow-md hover:shadow-lg focus:ring-red-500;
+    @apply btn bg-red-600 hover:bg-red-700 text-white shadow-sm focus:ring-red-500;
   }
 
   /* Button Sizes */

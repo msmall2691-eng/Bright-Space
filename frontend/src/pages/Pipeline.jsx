@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { LayoutGrid, RefreshCw, GripVertical, Search, DollarSign, Calendar } from 'lucide-react'
 import { get, patch } from '../api'
 import SavedViewsBar from '../components/SavedViewsBar'
-import PageHeader from '../components/ui/PageHeader'
+import PageHero from '../components/ui/PageHero'
 
 // Canonical opportunity pipeline (matches backend Opportunity.stage + the chips
 // already used on the client profile / OpportunityLinker).
@@ -102,14 +102,20 @@ export default function Pipeline() {
 
   return (
     <div className="max-w-[1600px] mx-auto">
-      <PageHeader
+      <div className="px-4 sm:px-8 pt-4">
+      <PageHero
         title="Pipeline"
-        subtitle={`${visible.length}${visible.length !== opps.length ? ` of ${opps.length}` : ''} ${opps.length === 1 ? 'deal' : 'deals'}`}
+        subtitle={`${visible.length}${visible.length !== opps.length ? ` of ${opps.length}` : ''} ${opps.length === 1 ? 'deal' : 'deals'} in play`}
         icon={LayoutGrid}
-        iconColor="violet"
+        pods={[
+          { label: 'New', value: byStage('new').length, tone: 'text-amber-300' },
+          { label: 'Qualified', value: byStage('qualified').length, tone: 'text-blue-300' },
+          { label: 'Quoted', value: byStage('quoted').length, tone: 'text-indigo-200' },
+          { label: 'Won', value: byStage('won').length, tone: 'text-emerald-300' },
+        ]}
         actions={
           <button onClick={load}
-            className="flex items-center gap-1.5 bg-bg-2 hover:bg-bg-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors">
+            className="flex items-center gap-1.5 bg-white/10 border border-white/15 text-white hover:bg-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
         }
@@ -133,7 +139,8 @@ export default function Pipeline() {
           </button>
           <SavedViewsBar entityType="opportunity" currentConfig={viewConfig} onApply={applyView} defaultLabel="All deals" />
         </div>
-      </PageHeader>
+      </PageHero>
+      </div>
 
       <div className="px-4 sm:px-8 pb-4 sm:pb-6">
       {error && (

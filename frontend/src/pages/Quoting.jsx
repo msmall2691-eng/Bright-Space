@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, Trash2, Calendar, FileText, Search } from 'lucide-react'
 import SavedViewsBar from '../components/SavedViewsBar'
-import PageHeader from '../components/ui/PageHeader'
+import PageHero from '../components/ui/PageHero'
 import InlineSelect from '../components/InlineSelect'
 import JobCreateModal from '../components/JobCreateModal'
 import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
@@ -557,11 +557,17 @@ export default function Quoting() {
     <div className="flex h-full">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        <PageHeader
+        <div className="px-4 sm:px-8 pt-4">
+        <PageHero
           title="Quotes"
-          subtitle={`${quotes.length} quote${quotes.length === 1 ? '' : 's'} · ${intakes.length} lead${intakes.length === 1 ? '' : 's'}`}
+          subtitle="Turn leads into booked, recurring work"
           icon={FileText}
-          iconColor="violet"
+          pods={[
+            { label: 'Leads', value: intakes.length },
+            { label: 'Quotes', value: quotes.length },
+            { label: 'Follow-ups', value: followUps.length, tone: followUps.length > 0 ? 'text-amber-300' : 'text-white' },
+            { label: 'New', value: newLeads, tone: newLeads > 0 ? 'text-indigo-200' : 'text-white' },
+          ]}
           actions={
             <>
               {canManageTemplates && (
@@ -569,13 +575,13 @@ export default function Quoting() {
                   disabled={!templatesLoaded}
                   title={templatesLoaded ? undefined : 'Loading templates…'}
                   onClick={() => setPanel('templates')}
-                  className="flex items-center gap-1.5 bg-bg-2 hover:bg-hairline text-ink-2 border border-hairline px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="flex items-center gap-1.5 bg-white/10 border border-white/15 text-white hover:bg-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Templates</span>
                 </button>
               )}
               {canEdit && (
                 <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  className="flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
                   <Plus className="w-4 h-4" /> New Quote
                 </button>
               )}
@@ -604,7 +610,8 @@ export default function Quoting() {
               Archived
             </button>
           </div>
-        </PageHeader>
+        </PageHero>
+        </div>
 
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 sm:px-8 pb-6">
 

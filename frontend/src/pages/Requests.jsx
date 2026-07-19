@@ -10,7 +10,7 @@ import { displayContactName } from '../utils/display'
 import { htmlToText, formatDate, formatDateTime } from '../utils/format'
 import Button from '../components/ui/Button'
 import GlassCard from '../components/ui/GlassCard'
-import PageHeader from '../components/ui/PageHeader'
+import PageHero from '../components/ui/PageHero'
 import { RequestThreadPanel } from '../components/requests/RequestThreadPanel'
 import PropertyPhoto from '../components/PropertyPhoto'
 import AiInsight from '../components/AiInsight'
@@ -522,17 +522,22 @@ export default function Requests() {
   return (
     <div className="flex flex-col h-full bg-bg">
       {/* Header */}
-      <div className="bg-panel border-b border-hairline sticky top-0 z-10">
-        <PageHeader
+      <div className="px-4 sm:px-6 pt-4">
+        <PageHero
           title="Requests"
           subtitle="Manually add a lead, or triage what's come in from the website"
           icon={Inbox}
-          iconColor="blue"
+          pods={[
+            { label: 'All', value: requests.length },
+            { label: 'New', value: requests.filter(r => r.status === 'new').length, tone: 'text-amber-300' },
+            { label: 'Reviewed', value: requests.filter(r => r.status === 'reviewed').length },
+            { label: 'Quoted', value: requests.filter(r => r.status === 'quoted').length, tone: 'text-indigo-200' },
+          ]}
           actions={
-            <Button variant="primary" size="sm" onClick={() => setShowNewRequestModal(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Request
-            </Button>
+            <button onClick={() => setShowNewRequestModal(true)}
+              className="flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+              <Plus className="w-4 h-4" /> New Request
+            </button>
           }
         >
           {/* Search */}
@@ -585,7 +590,7 @@ export default function Requests() {
               <option value="urgent">Urgent</option>
             </select>
           </div>
-        </PageHeader>
+        </PageHero>
       </div>
 
       {/* Content */}

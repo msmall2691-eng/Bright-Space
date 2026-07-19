@@ -79,7 +79,7 @@ export default function LeadRow({
           )}
           {canEdit && intake.status !== 'converted' && (
             <button onClick={() => onCreateQuote(intake)}
-              className="text-xs px-3 py-2 sm:py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-1">
+              className="text-xs px-3 py-2 sm:py-1.5 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 rounded-lg transition-colors flex items-center gap-1 font-medium">
               <Plus className="w-3 h-3" /> Create Quote
             </button>
           )}
