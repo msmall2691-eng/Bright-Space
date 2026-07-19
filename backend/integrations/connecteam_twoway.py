@@ -18,13 +18,16 @@ lets us classify:
   * ct_now != synced, job_now != synced → conflict               (offer: choose)
   * shift missing from Connecteam        → deleted in Connecteam  (offer: cancel/re-push)
 
-Timestamps round-trip cleanly because the push path treats naive job times as
-UTC (integrations.connecteam._to_epoch_seconds), so reversing a Connecteam epoch
-with fromtimestamp(..., utc) yields exactly the wall-clock we pushed.
+Timestamps round-trip cleanly because the push path interprets naive job times
+in the BUSINESS timezone (integrations.connecteam._to_epoch_seconds), so we
+reverse a Connecteam epoch with the same business tz here to recover exactly the
+wall-clock we pushed. (Both sides must use business_tz — using UTC on one side
+and business tz on the other would make every shift look drifted by 4-5 hours.)
 """
 import logging
 from datetime import datetime, timezone, date, time
 
+from utils.dates import business_tz
 from integrations.connecteam import get_scheduled_shifts, is_configured, ConnecteamAuthError
 from integrations.connecteam_auto import (
     _job_schedule_snapshot, resync_job, remove_job_from_connecteam,
@@ -48,7 +51,7 @@ def _ct_snapshot(shift: dict) -> dict:
     def parts(ts):
         if not ts:
             return None, None
-        dt = datetime.fromtimestamp(int(ts), timezone.utc)
+        dt = datetime.fromtimestamp(int(ts), business_tz())
         return dt.date().isoformat(), dt.strftime("%H:%M:%S")
     sd, st = parts(shift.get("startTimestamp"))
     _, et = parts(shift.get("endTimestamp"))
@@ -57,8 +60,8 @@ def _ct_snapshot(shift: dict) -> dict:
 
 def _ct_times(shift: dict):
     """(date, start_time, end_time) as python objects for writing onto a Job."""
-    s = datetime.fromtimestamp(int(shift["startTimestamp"]), timezone.utc)
-    e = datetime.fromtimestamp(int(shift["endTimestamp"]), timezone.utc)
+    s = datetime.fromtimestamp(int(shift["startTimestamp"]), business_tz())
+    e = datetime.fromtimestamp(int(shift["endTimestamp"]), business_tz())
     return s.date(), s.time().replace(microsecond=0), e.time().replace(microsecond=0)
 
 

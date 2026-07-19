@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
@@ -221,6 +221,7 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
         "generate_weeks_ahead": s.generate_weeks_ahead,
         "series_end_date": s.series_end_date.isoformat() if s.series_end_date else None,
         "series_start_date": s.series_start_date.isoformat() if s.series_start_date else None,
+        "anchor_date": s.anchor_date.isoformat() if s.anchor_date else None,
         "series_end_occurrences": s.series_end_occurrences,
         # Frontend-friendly "Ends" summary so Recurring.jsx doesn't have to
         # re-derive the exclusive/inclusive date-math itself: ends_on is the
@@ -280,6 +281,69 @@ def _validate_timing(start, end) -> None:
         )
 
 
+def _week_monday(d: date) -> date:
+    """The Monday that starts d's ISO week — the unit we count cadence in."""
+    return d - timedelta(days=d.weekday())
+
+
+def _phase_anchor(sched: RecurringSchedule, today: date, days: List[int]) -> date:
+    """Fixed phase reference for weekly/biweekly/every-N-week expansion.
+
+    The bug this fixes: the old weekly branch started each chosen weekday at the
+    first matching day on/after ``today`` and stepped by ``interval_weeks``.
+    Because ``today`` moves forward and the daily generation tick re-runs, the
+    on-week/off-week phase re-seated itself every day, so a biweekly series kept
+    filling in its off-weeks and collapsed to weekly.
+
+    We now count week-parity relative to a stable anchor instead:
+      * ``anchor_date`` — the persisted first-occurrence phase (set on create
+        and by generate_jobs, backfilled by migration 060); authoritative when
+        present.
+      * else ``series_start_date`` — a split recorded the intended start.
+      * else the series' first upcoming occurrence from ``today`` — correct for
+        a brand-new series before its anchor is persisted (generate_jobs pins it
+        immediately after, so subsequent ticks use the stored value).
+    """
+    anchor = _as_date(getattr(sched, "anchor_date", None))
+    if anchor is None:
+        anchor = _as_date(getattr(sched, "series_start_date", None))
+    if anchor is None and days:
+        anchor = min(today + timedelta(days=(dow - today.weekday()) % 7) for dow in days)
+    return anchor if anchor is not None else today
+
+
+def _daily_anchor(sched: RecurringSchedule, today: date) -> date:
+    """Phase reference for 'every N days' — same drift problem, same fix.
+    Falls back to today so 'every day' (step 1) is unaffected."""
+    anchor = _as_date(getattr(sched, "anchor_date", None))
+    if anchor is None:
+        anchor = _as_date(getattr(sched, "series_start_date", None))
+    return anchor if anchor is not None else today
+
+
+def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
+    """Would this schedule's rule produce date ``d``? Classifies a single date
+    by cadence phase directly (no date-window), so it stays correct for dates
+    beyond generate_weeks_ahead. Used by the off-cadence cleanup to tell a
+    biweekly-drift leftover from a legitimate occurrence."""
+    today = business_today()
+    if sched.frequency == "monthly":
+        dom = sched.day_of_month or 1
+        return d.day == dom
+    interval = max(1, sched.interval_weeks or 1)
+    if sched.frequency == "daily":
+        chosen = set(_effective_days(sched)) if sched.days_of_week else None
+        if (d - _daily_anchor(sched, today)).days % interval != 0:
+            return False
+        return chosen is None or d.weekday() in chosen
+    # weekly / biweekly / every-N-week
+    days = _effective_days(sched)
+    if d.weekday() not in days:
+        return False
+    ref_monday = _week_monday(_phase_anchor(sched, today, days))
+    return ((_week_monday(d) - ref_monday).days // 7) % interval == 0
+
+
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     """Return a sorted list of dates this schedule should run in the next N weeks."""
     today = business_today()
@@ -302,13 +366,17 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     if sched.frequency == "daily":
         # Every N days (interval_weeks reused as the day step for daily; default
         # 1 = every day). If specific weekdays are chosen, keep only those.
+        # Phase the N-day step off a fixed anchor, not today, so it doesn't
+        # re-seat on each daily tick (step 1 is unaffected — every day matches).
         step = max(1, sched.interval_weeks or 1)
         chosen = set(_effective_days(sched)) if sched.days_of_week else None
+        anchor = _daily_anchor(sched, today)
         current = today
         while current <= end:
-            if chosen is None or current.weekday() in chosen:
+            on_step = (current - anchor).days % step == 0
+            if on_step and (chosen is None or current.weekday() in chosen):
                 result.append(current)
-            current += timedelta(days=step)
+            current += timedelta(days=1)
     elif sched.frequency == "monthly":
         dom = sched.day_of_month or 1
         current = date(today.year, today.month, 1)
@@ -324,14 +392,21 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
             else:
                 current = date(current.year, current.month + 1, 1)
     else:
-        weeks_interval = sched.interval_weeks
+        # weekly / biweekly / every-N-week. Walk one week at a time and keep
+        # only the weeks whose parity matches the anchor — this is what makes
+        # biweekly STAY biweekly regardless of which day the tick runs on. For
+        # weekly (interval 1) every week matches, so behaviour is unchanged.
+        weeks_interval = max(1, sched.interval_weeks or 1)
         days = _effective_days(sched)
+        ref_monday = _week_monday(_phase_anchor(sched, today, days))
         for dow in days:
             days_ahead = (dow - today.weekday()) % 7
             current = today + timedelta(days=days_ahead)
             while current <= end:
-                result.append(current)
-                current += timedelta(weeks=weeks_interval)
+                week_index = (_week_monday(current) - ref_monday).days // 7
+                if week_index % weeks_interval == 0:
+                    result.append(current)
+                current += timedelta(weeks=1)
 
     return sorted(set(result))
 
@@ -353,14 +428,16 @@ def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
     if sched.frequency == "daily":
         step = max(1, sched.interval_weeks or 1)
         chosen = set(_effective_days(sched)) if sched.days_of_week else None
+        anchor = _daily_anchor(sched, today)
         current = today
         count = 0
         while current <= safety_cap:
-            if chosen is None or current.weekday() in chosen:
+            on_step = (current - anchor).days % step == 0
+            if on_step and (chosen is None or current.weekday() in chosen):
                 count += 1
                 if count == n:
                     return current
-            current += timedelta(days=step)
+            current += timedelta(days=1)
         return None
 
     if sched.frequency == "monthly":
@@ -382,19 +459,23 @@ def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
                 current = date(current.year, current.month + 1, 1)
         return None
 
-    # weekly/biweekly/custom-interval: each chosen weekday advances
-    # independently by weeks_interval, same as generate_dates.
+    # weekly/biweekly/custom-interval: keep only weeks whose parity matches the
+    # anchor, exactly like generate_dates, so the "ends after N" count lines up
+    # with the dates actually materialized.
     weeks_interval = max(1, sched.interval_weeks or 1)
     days = _effective_days(sched)
     if not days:
         return None
+    ref_monday = _week_monday(_phase_anchor(sched, today, days))
     candidates = []
     for dow in days:
         days_ahead = (dow - today.weekday()) % 7
         current = today + timedelta(days=days_ahead)
         while current <= safety_cap:
-            candidates.append(current)
-            current += timedelta(weeks=weeks_interval)
+            week_index = (_week_monday(current) - ref_monday).days // 7
+            if week_index % weeks_interval == 0:
+                candidates.append(current)
+            current += timedelta(weeks=1)
     candidates = sorted(set(candidates))
     return candidates[n - 1] if len(candidates) >= n else None
 
@@ -476,11 +557,45 @@ def _apply_exceptions(db: Session, sched: RecurringSchedule, dates: List[date]) 
     return sorted((set(dates) - skip_dates) | add_dates)
 
 
+def _ensure_anchor(db: Session, sched: RecurringSchedule) -> None:
+    """Pin the series' cadence phase the first time it materializes jobs, so
+    every later daily tick reads a stored anchor instead of re-deriving one from
+    the moving ``today`` (the biweekly-drift bug). No-op once anchor_date is set
+    (including rows the migration already backfilled). Prefers, in order:
+    series_start_date → earliest existing Job → the rule's first upcoming
+    occurrence from today. Flushes but does not commit — the caller owns the
+    transaction."""
+    if _as_date(getattr(sched, "anchor_date", None)) is not None:
+        return
+    anchor = _as_date(getattr(sched, "series_start_date", None))
+    if anchor is None:
+        earliest = (
+            db.query(func.min(Job.scheduled_date))
+            .filter(Job.recurring_schedule_id == sched.id, Job.scheduled_date.isnot(None))
+            .scalar()
+        )
+        anchor = _as_date(earliest)
+    if anchor is None:
+        today = business_today()
+        days = _effective_days(sched)
+        if sched.frequency == "monthly":
+            anchor = today
+        elif days:
+            anchor = min(today + timedelta(days=(dow - today.weekday()) % 7) for dow in days)
+        else:
+            anchor = today
+    sched.anchor_date = anchor
+    db.flush()
+
+
 def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     """Create Job records for schedule dates that don't already have one.
     Returns count created."""
     from database.models import Client
     from integrations.google_calendar import create_event
+
+    # Pin the cadence phase before expanding dates so biweekly stays biweekly.
+    _ensure_anchor(db, sched)
 
     dates = generate_dates(sched, sched.generate_weeks_ahead)
     # Phase 1: subtract skips and apply reschedules from the exception table.
@@ -882,6 +997,125 @@ def generate_all(db: Session = Depends(get_db), org_id: int = Depends(current_or
     ).all()
     total = sum(generate_jobs(db, s) for s in schedules)
     return {"schedules_processed": len(schedules), "jobs_created": total}
+
+
+def _off_phase_future_jobs(db: Session, sched: RecurringSchedule) -> List[Job]:
+    """Future, non-terminal Jobs on this series that fell on an OFF cadence week
+    (or day) — the leftovers the pre-fix biweekly drift created. Deliberately
+    conservative:
+      * only frequencies the bug could hit (biweekly/every-N-week, every-N-day);
+        weekly and monthly have no off-weeks so are never touched;
+      * only future jobs (>= today) — never rewrites history or completed work;
+      * only jobs on a legitimately-scheduled weekday that landed on the wrong
+        cadence week — anything on an unscheduled day is likely a manual edit
+        and is left alone;
+      * intentional reschedule targets are always kept.
+    """
+    interval = max(1, sched.interval_weeks or 1)
+    freq = sched.frequency
+    if freq == "monthly":
+        return []
+    if freq != "daily" and interval <= 1:
+        return []  # plain weekly — no off-weeks to clean
+    if freq == "daily" and interval <= 1:
+        return []  # every day — no off-days
+    today = business_today()
+    resched_targets = {
+        _as_date(e.rescheduled_date)
+        for e in db.query(RecurrenceException).filter(
+            RecurrenceException.recurring_schedule_id == sched.id,
+            RecurrenceException.exception_type == "reschedule",
+            RecurrenceException.rescheduled_date.isnot(None),
+        ).all()
+    }
+    days = set(_effective_days(sched))
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched.id,
+            Job.status.notin_(("completed", "cancelled")),
+            Job.scheduled_date.isnot(None),
+            Job.scheduled_date >= today,
+        )
+        .order_by(Job.scheduled_date.asc())
+        .all()
+    )
+    out = []
+    for j in jobs:
+        d = _as_date(j.scheduled_date)
+        if d is None or d in resched_targets:
+            continue
+        # Must be on a slot the rule actually schedules (right weekday/day),
+        # just on an off cadence week — that's the drift signature.
+        if freq == "daily":
+            if sched.days_of_week and d.weekday() not in days:
+                continue
+        elif d.weekday() not in days:
+            continue
+        if not _is_on_phase(sched, d):
+            out.append(j)
+    return out
+
+
+@router.get("/cleanup/off-phase-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def preview_off_phase_cleanup(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Dry-run: list the off-cadence duplicate visits the pre-fix biweekly drift
+    left behind, WITHOUT changing anything. Review this before calling apply."""
+    oid = resolve_org_id(org_id, db)
+    schedules = db.query(RecurringSchedule).filter(
+        RecurringSchedule.active == True,
+        or_(RecurringSchedule.org_id == oid, RecurringSchedule.org_id.is_(None)),
+    ).all()
+    candidates = []
+    for s in schedules:
+        for j in _off_phase_future_jobs(db, s):
+            candidates.append({
+                "job_id": j.id,
+                "schedule_id": s.id,
+                "title": s.title,
+                "address": s.address,
+                "scheduled_date": _as_date(j.scheduled_date).isoformat(),
+                "start_time": str(j.start_time) if j.start_time else None,
+                "frequency": s.frequency,
+                "interval_weeks": s.interval_weeks,
+            })
+    candidates.sort(key=lambda c: (c["scheduled_date"], c["schedule_id"]))
+    return {"count": len(candidates), "candidates": candidates}
+
+
+class OffPhaseCleanupApply(BaseModel):
+    # Explicit allowlist of job ids to cancel; omit/null to cancel every
+    # currently-detected off-phase job. Either way the server re-derives the
+    # off-phase set and only ever cancels jobs still in it, so a stale or
+    # hand-crafted id list can never cancel a legitimate visit.
+    job_ids: Optional[List[int]] = None
+
+
+@router.post("/cleanup/off-phase-apply", dependencies=[Depends(require_role("admin", "manager"))])
+def apply_off_phase_cleanup(body: OffPhaseCleanupApply, db: Session = Depends(get_db),
+                            org_id: int = Depends(current_org_id)):
+    """Cancel the off-cadence duplicate visits. Soft-cancel (status=cancelled)
+    matching every other recurring-cancellation path here, releasing the linked
+    Google Calendar event + Connecteam shift. Keeps recurring_schedule_id so
+    generate_jobs' cancelled-date guard won't recreate them."""
+    oid = resolve_org_id(org_id, db)
+    schedules = db.query(RecurringSchedule).filter(
+        RecurringSchedule.active == True,
+        or_(RecurringSchedule.org_id == oid, RecurringSchedule.org_id.is_(None)),
+    ).all()
+    requested = set(body.job_ids) if body.job_ids is not None else None
+    cancelled = []
+    for s in schedules:
+        for j in _off_phase_future_jobs(db, s):
+            if requested is not None and j.id not in requested:
+                continue
+            j.status = "cancelled"
+            j.notes = (j.notes or "") + "\n[Removed off-cadence duplicate — biweekly drift cleanup]"
+            _release_sync_links(db, j)
+            cancelled.append(j.id)
+    if cancelled:
+        db.commit()
+    return {"cancelled_count": len(cancelled), "cancelled_job_ids": cancelled}
 
 
 @router.post("/{schedule_id}/generate", dependencies=[Depends(require_role("admin", "manager"))])

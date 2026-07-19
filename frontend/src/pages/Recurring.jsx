@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
   Calendar, Repeat, RefreshCw, Plus, X, ArrowLeft, Pencil,
-  SkipForward, Clock, Undo2, Pause, Play, AlertTriangle,
+  SkipForward, Clock, Undo2, Pause, Play, AlertTriangle, Sparkles,
 } from 'lucide-react'
 import { get, post, put, patch, del } from '../api'
 import Button from '../components/ui/Button'
@@ -13,6 +13,7 @@ import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import { useEmployees } from '../hooks/useEmployees'
 import EndsPicker from '../components/schedule/EndsPicker'
+import { RecurringCreateModal } from '../components/schedule/ScheduleTabs'
 
 /** Resolve a Connecteam employee to an id+name pair, defensively. Mirrors
  *  JobEditModal's normalizeEmployee — Connecteam returns shapes like
@@ -67,6 +68,9 @@ const parseISO = (s) => {
   const [y, m, d] = s.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
+// Monday that starts d's week — the unit biweekly cadence is counted in.
+const mondayOf = (d) => { const m = new Date(d); m.setDate(m.getDate() - pyWeekday(d)); m.setHours(0, 0, 0, 0); return m }
+const daysBetween = (a, b) => Math.round((a - b) / 86400000)
 
 function ruleSummary(s) {
   if (!s) return ''
@@ -135,21 +139,36 @@ function computeUpcoming(schedule, exceptions, maxCount = 8) {
     const step = Math.max(1, schedule.interval_weeks || 1)
     const chosen = (schedule.days_of_week && schedule.days_of_week.length)
       ? new Set(schedule.days_of_week) : null
+    // Phase the N-day step off the anchor, not today, so it matches the backend
+    // and doesn't shift on every render (step 1 is unaffected).
+    const anchor = parseISO(schedule.anchor_date) || parseISO(schedule.series_start_date) || new Date(today)
     let cur = new Date(today)
     while (cur <= end) {
-      if (!chosen || chosen.has(pyWeekday(cur))) raw.push(new Date(cur))
-      cur.setDate(cur.getDate() + step)
+      const onStep = ((daysBetween(cur, anchor) % step) + step) % step === 0
+      if (onStep && (!chosen || chosen.has(pyWeekday(cur)))) raw.push(new Date(cur))
+      cur.setDate(cur.getDate() + 1)
     }
   } else {
     const days = (schedule.days_of_week && schedule.days_of_week.length)
       ? schedule.days_of_week : [schedule.day_of_week ?? 0]
     const interval = Math.max(1, schedule.interval_weeks || (schedule.frequency === 'biweekly' ? 2 : 1))
+    // Count week-parity from a fixed anchor (matches backend generate_dates), so
+    // biweekly stays biweekly instead of re-seating its phase off "today".
+    let anchor = parseISO(schedule.anchor_date) || parseISO(schedule.series_start_date)
+    if (!anchor) {
+      // Brand-new series before its anchor is persisted: first upcoming occurrence.
+      anchor = new Date(Math.min(...days.map(dow => {
+        const c = new Date(today); c.setDate(c.getDate() + (((dow - pyWeekday(today)) + 7) % 7)); return c.getTime()
+      })))
+    }
+    const refMonday = mondayOf(anchor)
     for (const dow of days) {
       const ahead = ((dow - pyWeekday(today)) + 7) % 7
       let cur = new Date(today); cur.setDate(cur.getDate() + ahead)
       while (cur <= end) {
-        raw.push(new Date(cur))
-        cur.setDate(cur.getDate() + 7 * interval)
+        const weekIndex = Math.round(daysBetween(mondayOf(cur), refMonday) / 7)
+        if (((weekIndex % interval) + interval) % interval === 0) raw.push(new Date(cur))
+        cur.setDate(cur.getDate() + 7)
       }
     }
   }
@@ -868,24 +887,30 @@ export default function Recurring() {
 
   const [schedules, setSchedules] = useState([])
   const [clientsById, setClientsById] = useState({})
+  const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [showCreate, setShowCreate] = useState(false)
 
   const loadList = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [sch, cli] = await Promise.all([
+      const [sch, cli, props] = await Promise.all([
         get('/api/recurring'),
         // T-06: preload up to 1000 so schedule → client-name resolution and
         // the filter dropdown cover the whole book, not just the first 50.
         get('/api/clients?limit=1000').catch(() => []),
+        // Properties feed the create-series modal's property picker (merged in
+        // from the old /schedule?tab=recurring panel, which fetched the same way).
+        get('/api/properties').catch(() => []),
       ])
       const cliArr = Array.isArray(cli) ? cli : (cli.items || [])
       const map = {}; cliArr.forEach(c => { map[c.id] = c })
       setSchedules(Array.isArray(sch) ? sch : (sch.items || []))
       setClientsById(map)
+      setProperties(Array.isArray(props) ? props : (props.items || []))
     } catch (e) {
       setError(e.message || 'Failed to load recurring schedules')
     } finally {
@@ -894,6 +919,36 @@ export default function Recurring() {
   }, [])
 
   useEffect(() => { loadList() }, [loadList])
+
+  const [cleaning, setCleaning] = useState(false)
+  // One-time maintenance: find + remove the off-cadence duplicate visits the
+  // old biweekly-drift bug created. Always previews (dry-run) and asks before
+  // cancelling anything.
+  const cleanupDuplicates = useCallback(async () => {
+    setCleaning(true)
+    try {
+      const preview = await get('/api/recurring/cleanup/off-phase-preview')
+      const items = preview?.candidates || []
+      if (!items.length) {
+        toast.success('No off-cadence duplicate visits found — your recurring schedule is clean.')
+        return
+      }
+      const sample = items.slice(0, 6).map(c => `• ${c.scheduled_date} — ${c.title}`).join('\n')
+      const more = items.length > 6 ? `\n…and ${items.length - 6} more` : ''
+      const ok = await confirmDialog(
+        `Found ${items.length} future visit${items.length === 1 ? '' : 's'} on the wrong week (leftovers from the old biweekly bug):\n\n${sample}${more}\n\nCancel them? Their Google Calendar events and Connecteam shifts are removed too. Past and completed visits are never touched.`,
+        { confirmLabel: `Cancel ${items.length} duplicate${items.length === 1 ? '' : 's'}`, cancelLabel: 'Keep them', danger: true },
+      )
+      if (!ok) return
+      const res = await post('/api/recurring/cleanup/off-phase-apply', {})
+      toast.success(`Removed ${res?.cancelled_count ?? 0} duplicate visit${res?.cancelled_count === 1 ? '' : 's'}.`)
+      loadList()
+    } catch (e) {
+      toast.error(e.message || 'Cleanup failed')
+    } finally {
+      setCleaning(false)
+    }
+  }, [loadList])
 
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
@@ -938,11 +993,13 @@ export default function Recurring() {
             <Button variant="secondary" size="sm" onClick={loadList}>
               <RefreshCw className="w-4 h-4 mr-1" /> Refresh
             </Button>
-            <Link to="/schedule?tab=recurring">
-              <Button variant="primary" size="sm">
-                <Plus className="w-4 h-4 mr-1" /> New series
-              </Button>
-            </Link>
+            <Button variant="secondary" size="sm" onClick={cleanupDuplicates} disabled={cleaning}
+              title="Find and remove off-cadence duplicate visits left by the old biweekly bug">
+              <Sparkles className="w-4 h-4 mr-1" /> {cleaning ? 'Checking…' : 'Clean up duplicates'}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-1" /> New series
+            </Button>
           </>
         }
       />
@@ -989,12 +1046,12 @@ export default function Recurring() {
             icon={Repeat}
             title={schedules.length === 0 ? 'No recurring series yet' : 'Nothing matches your filters'}
             description={schedules.length === 0
-              ? 'Create one from a client, from a signed quote, or from the Schedule tab.'
+              ? 'Create one here, from a client, or from a signed quote.'
               : 'Try clearing the client or status filter.'}
             action={schedules.length === 0
-              ? <Link to="/schedule?tab=recurring">
-                  <Button variant="primary" size="sm"><Plus className="w-4 h-4 mr-1" />New series</Button>
-                </Link>
+              ? <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+                  <Plus className="w-4 h-4 mr-1" />New series
+                </Button>
               : null}
           />
         ) : (
@@ -1010,6 +1067,14 @@ export default function Recurring() {
           </ul>
         )}
       </div>
+      {showCreate && (
+        <RecurringCreateModal
+          clients={clientOptions}
+          properties={properties}
+          onClose={() => setShowCreate(false)}
+          onCreated={loadList}
+        />
+      )}
     </>
   )
 }

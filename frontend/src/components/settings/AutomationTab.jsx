@@ -219,7 +219,7 @@ export default function AutomationTab({ state, toast, active }) {
               </label>
             </div>
             {s.recurring_auto_generate_enabled && (
-              <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Schedule → Recurring tab.</p>
+              <p className="text-xs text-ink-3 mt-1">Runs once every 24 hours. Override per schedule via the Pause button on the Recurring page.</p>
             )}
           </div>
 

@@ -1,6 +1,18 @@
-import { Send, Copy, Check, Calendar, MapPin, Trash2 } from 'lucide-react'
+import { Send, Copy, Check, Calendar, MapPin, Trash2, Eye } from 'lucide-react'
 import InlineSelect from '../InlineSelect'
 import { QUOTE_STATUS_COLORS, QUOTE_STATUS_OPTIONS, QUOTE_NEXT_STEP } from './constants'
+
+// "Opened Jul 18, 2:14 PM" read-receipt from the customer's first view of the
+// public quote link. viewed_at is recorded server-side and already on the quote
+// payload — this just surfaces it.
+function fmtViewed(ts) {
+  const d = new Date(ts)
+  if (isNaN(d)) return ''
+  const today = new Date()
+  const sameDay = d.toDateString() === today.toDateString()
+  const date = sameDay ? 'today' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return `${date}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+}
 
 /** A single row in the Quotes tab. Pure props-in — the parent owns the
  *  selection set, current-quote-id (for the "Copied" flash), and every
@@ -48,6 +60,12 @@ export default function QuoteRow({
               <span className="text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200"
                 title={q.last_send_error}>
                 send failed
+              </span>
+            )}
+            {q.viewed_at && q.status !== 'converted' && (
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-600 border-indigo-200"
+                title={`Customer opened this quote on ${new Date(q.viewed_at).toLocaleString()}`}>
+                <Eye className="w-3 h-3 shrink-0" /> Opened {fmtViewed(q.viewed_at)}
               </span>
             )}
           </div>

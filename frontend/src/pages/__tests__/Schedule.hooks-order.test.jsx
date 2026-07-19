@@ -104,9 +104,19 @@ function renderAt(path) {
 }
 
 describe('Schedule.jsx — hooks order across ?tab= transitions (audit #5)', () => {
-  it('renders RecurringPanel for ?tab=recurring without throwing', () => {
-    const { getByTestId } = renderAt('/schedule?tab=recurring')
-    expect(getByTestId('recurring-panel')).toBeTruthy()
+  it('redirects ?tab=recurring to the dedicated /recurring page (still below all hooks)', () => {
+    // Recurring management was consolidated onto /recurring; the legacy tab now
+    // early-returns <Navigate to="/recurring">. It still sits below every hook,
+    // so the audit-#5 hooks-order guarantee is preserved.
+    const { getByTestId } = render(
+      <MemoryRouter initialEntries={['/schedule?tab=recurring']}>
+        <Routes>
+          <Route path="/schedule" element={<Schedule />} />
+          <Route path="/recurring" element={<div data-testid="recurring-page" />} />
+        </Routes>
+      </MemoryRouter>
+    )
+    expect(getByTestId('recurring-page')).toBeTruthy()
   })
 
   it('renders AvailabilityPanel for ?tab=availability without throwing', () => {
@@ -143,16 +153,19 @@ describe('Schedule.jsx — hooks order across ?tab= transitions (audit #5)', () 
 
     let getByTestId
     expect(() => {
+      // Use ?tab=availability — it early-returns a panel IN PLACE (no route
+      // change), so we genuinely exercise a same-instance tab->no-tab render
+      // transition. (?tab=recurring now redirects away, which would unmount.)
       const utils = render(
-        <MemoryRouter initialEntries={['/schedule?tab=recurring']}>
+        <MemoryRouter initialEntries={['/schedule?tab=availability']}>
           <Routes>
             <Route path="/schedule" element={<Harness />} />
           </Routes>
         </MemoryRouter>
       )
       getByTestId = utils.getByTestId
-      // Confirm we actually started on the recurring branch before navigating.
-      expect(getByTestId('recurring-panel')).toBeTruthy()
+      // Confirm we actually started on the tab branch before navigating.
+      expect(getByTestId('availability-panel')).toBeTruthy()
       fireEvent.click(getByTestId('go-to-dispatch'))
       // If hook order broke, React throws synchronously inside this click's
       // render pass — reaching the next assertion means it survived.

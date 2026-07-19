@@ -131,20 +131,31 @@ def _headers() -> dict:
 def _to_epoch_seconds(value) -> int:
     """Coerce a datetime / ISO string / int-ish into Unix seconds. Connecteam's
     scheduler API rejects millisecond values (anything > 1e12), so pre-1970
-    dates and JS timestamps both need normalising here."""
+    dates and JS timestamps both need normalising here.
+
+    Naive (tz-less) datetimes and strings are the job's BUSINESS-LOCAL wall-clock
+    — a job's scheduled_date + start_time are stored as America/New_York local
+    time (see connecteam_auto._shift_times, which formats them straight into a
+    naive "YYYY-MM-DDTHH:MM:SS"). They must be interpreted in the business
+    timezone, NOT UTC: Connecteam stores shifts as absolute epochs and renders
+    them in the scheduler's own timezone (America/New_York), so a 9:00 AM job
+    tagged as 9:00 UTC would show up on the cleaner's Connecteam schedule 4-5
+    hours off. tz-aware inputs keep their offset untouched. NOTE: the reverse
+    (connecteam_twoway._ct_snapshot/_ct_times) must localize epochs back with the
+    SAME business tz so drift detection round-trips."""
+    from utils.dates import business_tz
     if isinstance(value, int):
         return value if value < 10**12 else value // 1000
     if isinstance(value, float):
         return int(value if value < 10**12 else value / 1000)
     if isinstance(value, datetime):
-        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        dt = value if value.tzinfo else value.replace(tzinfo=business_tz())
         return int(dt.timestamp())
-    # String path — try ISO first, then a bare "YYYY-MM-DDTHH:MM:SS" (no tz);
-    # local naive datetimes are treated as UTC to keep the code Railway-safe.
+    # String path — try ISO first, then a bare "YYYY-MM-DDTHH:MM:SS" (no tz).
     s = str(value).strip()
     dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=business_tz())
     return int(dt.timestamp())
 
 

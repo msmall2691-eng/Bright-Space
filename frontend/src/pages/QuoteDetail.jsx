@@ -240,6 +240,13 @@ export default function QuoteDetail() {
                 </div>
                 <InlineSelect value={quote.status} options={statusOptions} onSelect={setStatus} />
               </div>
+              {quote.viewed_at && (
+                <div className="flex items-center gap-1 text-[11px] text-indigo-600 mb-1"
+                  title={`Customer opened this quote on ${new Date(quote.viewed_at).toLocaleString()}`}>
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
+                  Opened by customer · {new Date(quote.viewed_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </div>
+              )}
               <div className="text-[11px] text-ink-3 mb-0.5">{quote.quote_number}</div>
               <InlineEditField label="Title" value={quote.title} placeholder="Untitled quote"
                 onSave={(v) => saveField({ title: v })} />

@@ -13,7 +13,7 @@ import EndsPicker from './EndsPicker'
  *  Both mount as top-level views (no props) when the ?tab= query param routes
  *  the Schedule page to them, so they own their own data loading. */
 
-function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
+export function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
   const [form, setForm] = useState({
     client_id: '',
     property_id: '',

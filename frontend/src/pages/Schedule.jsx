@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, Navigate } from 'react-router-dom'
 import { get, post, put, patch } from '../api'
 import Button from '../components/ui/Button'
 import ErrorState from '../components/ui/ErrorState'
@@ -20,7 +20,7 @@ import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import ScheduleAuditPanel from '../components/schedule/ScheduleAuditPanel'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
 import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
-import { AvailabilityPanel, RecurringPanel } from '../components/schedule/ScheduleTabs'
+import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials } from '../components/schedule/constants'
 import { useScheduleData } from '../hooks/useScheduleData'
 import { useScheduleAnalytics } from '../hooks/useScheduleAnalytics'
@@ -349,7 +349,11 @@ export default function Schedule() {
   // the previous render. Every hook above now always runs; the tab check
   // only decides what to render, same as the loadError branch below.
   // `tab` itself is read up top (see useScheduleData's `enabled` option above).
-  if (tab === 'recurring') return <RecurringPanel />
+  // Recurring management was consolidated onto the dedicated /recurring page
+  // (which now owns creating a series too) — this legacy tab just forwards
+  // there so the two surfaces stop confusing people. Safe as an early return:
+  // it sits below every hook, same as the availability/loadError branches.
+  if (tab === 'recurring') return <Navigate to="/recurring" replace />
   if (tab === 'availability') return <AvailabilityPanel />
 
   if (loadError) {

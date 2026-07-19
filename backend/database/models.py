@@ -437,6 +437,15 @@ class RecurringSchedule(Base):
     # column generate_dates() enforces; this is NULL whenever the series
     # never ends or ends on an explicit date instead of a count.
     series_end_occurrences = Column(Integer, nullable=True)
+    # Stable phase reference for weekly/biweekly/every-N-week cadence. Before
+    # this column, generate_dates() re-derived the "on-week/off-week" phase
+    # from business_today() on every daily tick, so a biweekly series re-seated
+    # its phase each day and silently filled in the off-weeks — biweekly
+    # collapsed to weekly (see migration 060). anchor_date pins the phase to
+    # the series' first intended occurrence so the cadence stays put. NULL for
+    # rows that predate the column and haven't regenerated yet; generation
+    # falls back to series_start_date → earliest Job → today when unset.
+    anchor_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
