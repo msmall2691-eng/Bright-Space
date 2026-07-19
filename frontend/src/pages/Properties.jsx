@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Home, Search, RefreshCw, ChevronRight, Plus } from 'lucide-react'
-import { EmptyState, PageHeader, Button } from '../components/ui'
+import { EmptyState, PageHero } from '../components/ui'
 import SavedViewsBar from '../components/SavedViewsBar'
 import { PROPERTY_TYPE_CONFIG } from '../components/properties/constants'
 import { TypeSelectorModal } from '../components/properties/TypeSelectorModal'
@@ -104,26 +104,32 @@ export default function Properties() {
   return (
     <div className="flex h-full">
       <div className="flex-1 flex flex-col min-w-0">
-        <PageHeader
+        <div className="px-4 sm:px-8 pt-4">
+        <PageHero
           title="Properties"
-          subtitle={`${filteredProperties.length}${filteredProperties.length !== typeCounts.all ? ` of ${typeCounts.all}` : ''} propert${typeCounts.all === 1 ? 'y' : 'ies'}`}
+          subtitle="Homes, rentals, and commercial sites you service"
           icon={Home}
-          iconColor="amber"
+          pods={[
+            { label: 'All', value: typeCounts.all },
+            { label: 'Residential', value: typeCounts.residential ?? 0, tone: 'text-blue-300' },
+            { label: 'Commercial', value: typeCounts.commercial ?? 0, tone: 'text-amber-300' },
+            { label: 'STR', value: typeCounts.str ?? 0, tone: 'text-emerald-300' },
+          ]}
           actions={
             <>
               {typeCounts.str > 0 && (
                 <button onClick={() => setShowAdvanced(v => !v)}
                   title="Sync tools and turnover health check"
-                  className={`flex items-center gap-2 border border-hairline px-3 py-1.5 rounded-lg text-sm transition-colors ${showAdvanced ? 'bg-bg-2 text-ink' : 'bg-panel hover:bg-bg-2 text-ink-2'}`}>
+                  className={`flex items-center gap-2 border border-white/15 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors ${showAdvanced ? 'bg-white/20 text-white' : 'bg-white/10 hover:bg-white/15 text-white'}`}>
                   <RefreshCw className="w-3.5 h-3.5" />
                   Sync tools
                   <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
                 </button>
               )}
-              <Button variant="primary" size="sm" onClick={openNew}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Property
-              </Button>
+              <button onClick={openNew}
+                className="flex items-center gap-2 bg-white text-slate-900 hover:bg-white/90 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+                <Plus className="w-4 h-4" /> Add Property
+              </button>
             </>
           }
         >
@@ -153,7 +159,8 @@ export default function Properties() {
               </button>
             ))}
           </div>
-        </PageHeader>
+        </PageHero>
+        </div>
 
         <div className="flex-1 flex flex-col min-h-0 px-4 sm:px-8 pb-4 sm:pb-6">
           <BulkActionBar

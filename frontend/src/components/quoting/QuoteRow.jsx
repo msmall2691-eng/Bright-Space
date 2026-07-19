@@ -90,13 +90,13 @@ export default function QuoteRow({
           </button>
           {canEdit && ['draft', 'sent', 'changes_requested'].includes(q.status) && (
             <button onClick={() => onSend(q)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600/20 text-blue-400 hover:bg-indigo-600/30 rounded-lg transition-colors">
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink rounded-lg transition-colors">
               <Send className="w-3 h-3" /> {q.status === 'changes_requested' ? 'Send revised' : q.status === 'draft' ? 'Send' : 'Resend'}
             </button>
           )}
           {canEdit && q.status === 'sent' && (
             <button onClick={() => onCopyLink(q)}
-              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${copiedQuoteId === q.id ? 'bg-green-600/30 text-green-400' : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'}`}>
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${copiedQuoteId === q.id ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-bg-2 text-ink-2 hover:bg-bg-3 hover:text-ink'}`}>
               {copiedQuoteId === q.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               {copiedQuoteId === q.id ? 'Copied' : 'Copy Link'}
             </button>
@@ -106,7 +106,7 @@ export default function QuoteRow({
               are accepted by the customer via their link anyway). */}
           {canEdit && q.status === 'accepted' && (
             <button onClick={() => onSchedule(q)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors">
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 font-medium rounded-lg transition-colors">
               <Calendar className="w-3 h-3" />
               Set up schedule
             </button>
