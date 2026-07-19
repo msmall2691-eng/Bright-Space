@@ -21,6 +21,24 @@ export default {
         'hairline-2': 'var(--hairline-2)',
         accent:    'var(--accent)',
         'accent-ink': 'var(--accent-ink)',
+        // The whole app standardized its primary accent on `indigo-*`. We remap
+        // that scale onto CSS variables so a single accent-picker choice
+        // (body.accent-*) recolors every button / active-nav / link at once.
+        // Channels are space-separated RGB so Tailwind's /opacity modifiers
+        // (e.g. bg-indigo-500/15) keep working.
+        indigo: {
+          50:  'rgb(var(--accent-50) / <alpha-value>)',
+          100: 'rgb(var(--accent-100) / <alpha-value>)',
+          200: 'rgb(var(--accent-200) / <alpha-value>)',
+          300: 'rgb(var(--accent-300) / <alpha-value>)',
+          400: 'rgb(var(--accent-400) / <alpha-value>)',
+          500: 'rgb(var(--accent-500) / <alpha-value>)',
+          600: 'rgb(var(--accent-600) / <alpha-value>)',
+          700: 'rgb(var(--accent-700) / <alpha-value>)',
+          800: 'rgb(var(--accent-800) / <alpha-value>)',
+          900: 'rgb(var(--accent-900) / <alpha-value>)',
+          950: 'rgb(var(--accent-950) / <alpha-value>)',
+        },
         // Primary brand colors
         brand: {
           50:  '#f0f9ff',

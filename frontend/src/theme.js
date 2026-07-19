@@ -15,6 +15,26 @@
 const KEY = 'brightbase_theme'
 const VALID = ['light', 'dark', 'neon']
 
+// Accent color — recolors the whole app's `indigo-*` scale (remapped to CSS
+// vars in index.css / tailwind.config) via a body.accent-* class. Default is
+// Indigo (no class needed, but we set it explicitly for clarity).
+const ACCENT_KEY = 'brightbase_accent'
+export const ACCENTS = ['indigo', 'violet', 'blue', 'emerald', 'rose', 'amber', 'cyan']
+
+export function getAccent() {
+  const saved = localStorage.getItem(ACCENT_KEY)
+  return ACCENTS.includes(saved) ? saved : 'indigo'
+}
+
+export function applyAccent(accent) {
+  const a = ACCENTS.includes(accent) ? accent : getAccent()
+  const body = document.body
+  ACCENTS.forEach(x => body.classList.remove(`accent-${x}`))
+  body.classList.add(`accent-${a}`)
+  localStorage.setItem(ACCENT_KEY, a)
+  return a
+}
+
 export function getTheme() {
   const saved = localStorage.getItem(KEY)
   return VALID.includes(saved) ? saved : 'light'

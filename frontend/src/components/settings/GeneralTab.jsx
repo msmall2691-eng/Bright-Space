@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle, Loader2 } from 'lucide-react'
 import { del, get, post, upload } from '../../api'
-import { applyTheme, getTheme } from '../../theme'
+import { applyTheme, getTheme, applyAccent, getAccent, ACCENTS } from '../../theme'
 import { inp, lbl } from './constants'
+
+// Swatch color per accent (a representative 500/600) for the picker dots.
+const ACCENT_SWATCH = {
+  indigo: '#4f46e5', violet: '#7c3aed', blue: '#2563eb',
+  emerald: '#059669', rose: '#e11d48', amber: '#d97706', cyan: '#0891b2',
+}
 import ServiceScopesEditor from './ServiceScopesEditor'
 
 /** General settings tab — Appearance + Company Info + Logo + Service
@@ -13,6 +19,7 @@ import ServiceScopesEditor from './ServiceScopesEditor'
  *  the bottom of this tab without cross-importing here. */
 export default function GeneralTab({ toast, active, dangerZone }) {
   const [themeChoice, setThemeChoice] = useState(getTheme())
+  const [accentChoice, setAccentChoice] = useState(getAccent())
   const [showScout, setShowScout] = useState(() => localStorage.getItem('brightbase_hide_scout') !== '1')
 
   const [generalSettings, setGeneralSettings] = useState({
@@ -135,6 +142,26 @@ export default function GeneralTab({ toast, active, dangerZone }) {
               ))}
             </div>
             <p className="text-xs text-ink-3 mt-2">Applies instantly and is remembered on this device.</p>
+
+            {/* Accent color — recolors the whole app live. */}
+            <div className="border-t border-hairline mt-5 pt-5">
+              <label className={lbl}>Accent color</label>
+              <div className="flex items-center gap-2.5 mt-2 flex-wrap">
+                {ACCENTS.map(name => (
+                  <button key={name} type="button"
+                    onClick={() => setAccentChoice(applyAccent(name))}
+                    title={name.charAt(0).toUpperCase() + name.slice(1)}
+                    aria-label={`Accent ${name}`}
+                    className={`w-8 h-8 rounded-full transition-transform hover:scale-110 focus:outline-none ${
+                      accentChoice === name ? 'ring-2 ring-offset-2 ring-offset-panel ring-ink-3 scale-110' : ''
+                    }`}
+                    style={{ backgroundColor: ACCENT_SWATCH[name] }}>
+                    {accentChoice === name && <CheckCircle className="w-4 h-4 text-white mx-auto" />}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-ink-3 mt-2 capitalize">{accentChoice} — buttons, links, and highlights across the app.</p>
+            </div>
 
             <div className="border-t border-hairline mt-5 pt-5">
               <label className="flex items-center justify-between gap-3 cursor-pointer">

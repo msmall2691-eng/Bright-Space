@@ -5,10 +5,11 @@ import App from './App'
 import GlobalToasts from './components/ui/GlobalToasts'
 import GlobalConfirmDialog from './components/ui/GlobalConfirmDialog'
 import './index.css'
-import { applyTheme } from './theme'
+import { applyTheme, applyAccent } from './theme'
 
-// Apply the saved theme (default: clean light) before first paint.
+// Apply the saved theme + accent (defaults: clean light, indigo) before first paint.
 applyTheme()
+applyAccent()
 
 
 // ── Global fetch interceptor ──
