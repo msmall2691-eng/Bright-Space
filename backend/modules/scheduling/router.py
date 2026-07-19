@@ -1211,9 +1211,18 @@ def sync_reconcile(db: Session = Depends(get_db)):
     try:
         from integrations.google_calendar import is_configured as _gcal_ok
         if _gcal_ok():
+            # One-way self-heal: restore events deleted in Google (clears the
+            # stale id so push re-creates them) before the normal push.
+            healed = {}
+            try:
+                from integrations.gcal_sync import reassert_deleted_gcal_events
+                healed = reassert_deleted_gcal_events(db)
+            except Exception as e:
+                logger.warning(f"sync-reconcile: Google re-assert failed: {e}")
             pushed = push_to_gcal(db)
             result["gcal"] = {"pushed": pushed.get("pushed", 0),
-                              "errors": len(pushed.get("errors") or [])}
+                              "errors": len(pushed.get("errors") or []),
+                              "restored": healed.get("restored", 0)}
         else:
             result["gcal"]["skipped"] = "not_configured"
     except HTTPException:

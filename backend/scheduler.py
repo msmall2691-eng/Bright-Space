@@ -366,6 +366,16 @@ def sync_reconcile_tick() -> dict:
             from integrations.google_calendar import is_configured as _gcal_ok
             if _gcal_ok():
                 from modules.scheduling.router import push_to_gcal
+                # One-way self-heal (BrightBase is master): re-push events a user
+                # deleted in Google before the normal push, so a cleaning that
+                # vanished from Google reappears instead of staying missing.
+                try:
+                    from integrations.gcal_sync import reassert_deleted_gcal_events
+                    healed = reassert_deleted_gcal_events(db)
+                    if healed.get("restored"):
+                        log.info(f"Sync reconcile: restored {healed['restored']} event(s) deleted in Google")
+                except Exception as e:
+                    log.warning(f"Sync reconcile: Google re-assert failed (non-fatal): {e}")
                 pushed = push_to_gcal(db)
                 if pushed.get("pushed"):
                     log.info(f"Sync reconcile: pushed {pushed['pushed']} job(s) to Google Calendar")

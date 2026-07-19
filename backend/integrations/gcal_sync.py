@@ -56,6 +56,90 @@ def calendar_source_of_truth(db: Session) -> str:
     return "google" if val == "google" else "brightbase"
 
 
+def reassert_deleted_gcal_events(db: Session) -> dict:
+    """One-way self-heal (BrightBase is master): find upcoming jobs whose Google
+    event was DELETED in Google and clear the stale event id so the push step
+    re-creates it on the next reconcile. The ONLY write is clearing a dead id on
+    our own jobs — this never imports, edits, or cancels anything.
+
+    Safety is everything here: a false "missing" would make the push create a
+    DUPLICATE — the exact thing we're guarding against. So a job is cleared only
+    when we POSITIVELY listed Google's events for the window and the job's id is
+    absent (or the event is cancelled). If the list call fails, or an
+    implausibly large share of linked jobs look missing (an API glitch, not a
+    real bulk delete), we clear NOTHING. Only runs in brightbase-master mode.
+    """
+    # Two-way mode already reconciles deletions via sync_calendar; nothing to do.
+    if calendar_source_of_truth(db) == "google":
+        return {"skipped": "two_way"}
+    try:
+        from integrations.google_calendar import _get_service
+        service = _get_service()
+    except Exception as e:  # not configured / auth failure — no-op
+        return {"skipped": "not_configured", "error": str(e)}
+
+    from utils.dates import business_today
+    today = business_today()
+    win_start, win_end = today, today + timedelta(days=45)
+
+    jobs = db.query(Job).filter(
+        Job.gcal_event_id.isnot(None),
+        Job.status.in_(["scheduled", "in_progress"]),
+        Job.scheduled_date >= win_start.isoformat(),
+        Job.scheduled_date <= win_end.isoformat(),
+    ).all()
+    if not jobs:
+        return {"checked": 0, "restored": 0}
+
+    # List Google's events across a slightly WIDER window than the jobs so a job
+    # on the boundary day can't look missing just because its event rendered a
+    # few hours outside the window.
+    time_min = (datetime(win_start.year, win_start.month, win_start.day, tzinfo=timezone.utc) - timedelta(days=2)).isoformat()
+    time_max = (datetime(win_end.year, win_end.month, win_end.day, tzinfo=timezone.utc) + timedelta(days=3)).isoformat()
+
+    existing: set[str] = set()
+    try:
+        for cal_id in resolve_calendar_ids():
+            page_token = None
+            while True:
+                params = {"calendarId": cal_id, "singleEvents": True, "maxResults": 500,
+                          "timeMin": time_min, "timeMax": time_max, "orderBy": "startTime"}
+                if page_token:
+                    # pageToken can't be combined with orderBy/timeMin on some
+                    # paths; drop them once we're paging the same result set.
+                    params = {"calendarId": cal_id, "singleEvents": True,
+                              "maxResults": 500, "pageToken": page_token}
+                resp = service.events().list(**params).execute()
+                for ev in resp.get("items", []):
+                    eid = ev.get("id")
+                    if eid and ev.get("status") != "cancelled":
+                        existing.add(eid)
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+    except Exception as e:
+        log.warning("[gcal-reassert] events.list failed; clearing nothing: %s", e)
+        return {"checked": len(jobs), "restored": 0, "error": str(e)}
+
+    missing = [j for j in jobs if j.gcal_event_id not in existing]
+    # Mass-wipe guard: if a large share look missing, assume an API anomaly (a
+    # truncated list, a transient scope issue) rather than a real bulk delete —
+    # clearing them all would spawn a pile of duplicate events on the next push.
+    if missing and len(missing) > max(5, len(jobs) // 2):
+        log.warning(
+            "[gcal-reassert] %s/%s linked events look missing — implausible; "
+            "skipping to avoid duplicate re-creation.", len(missing), len(jobs))
+        return {"checked": len(jobs), "restored": 0, "skipped": "guard", "suspected": len(missing)}
+
+    for j in missing:
+        j.gcal_event_id = None
+        j.gcal_account_id = None
+    if missing:
+        db.commit()
+        log.info("[gcal-reassert] cleared %s deleted Google event id(s) for re-push", len(missing))
+    return {"checked": len(jobs), "restored": len(missing)}
+
+
 # ── Incremental sync (syncToken) ──────────────────────────────────────────
 # A per-calendar cursor: after the first bounded full list, Google returns only
 # CHANGED events (incl. cancellations) for that token, so polling is cheap and
