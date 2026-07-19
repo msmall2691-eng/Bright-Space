@@ -43,10 +43,10 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
     setBusyId(jobId)
     try {
       await post(`/api/jobs/${jobId}/${action}-reschedule`, {})
-      toast(action === 'approve' ? 'Approved — visit moved' : 'Request dismissed')
+      toast.success(action === 'approve' ? 'Approved — visit moved' : 'Request dismissed')
       setReqs(rs => (rs || []).filter(r => r.job_id !== jobId))
     } catch (e) {
-      toast(e?.message || `Could not ${action}`, 'error')
+      toast.error(e?.message || `Could not ${action}`)
     } finally { setBusyId(null) }
   }
 

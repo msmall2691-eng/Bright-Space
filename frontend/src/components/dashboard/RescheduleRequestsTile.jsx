@@ -23,10 +23,10 @@ export function RescheduleRequestsTile({ navigate }) {
     setBusyId(jobId)
     try {
       await post(`/api/jobs/${jobId}/${action}-reschedule`, {})
-      toast(action === 'approve' ? 'Reschedule approved — visit moved' : 'Request dismissed')
+      toast.success(action === 'approve' ? 'Reschedule approved — visit moved' : 'Request dismissed')
       setRows(rs => (rs || []).filter(r => r.job_id !== jobId))
     } catch (e) {
-      toast(e?.message || `Could not ${action} the request`, 'error')
+      toast.error(e?.message || `Could not ${action} the request`)
     } finally {
       setBusyId(null)
     }

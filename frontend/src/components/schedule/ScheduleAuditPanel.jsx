@@ -47,10 +47,10 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
     setBusy(`drift-${jobId}-${action}`)
     try {
       await post('/api/jobs/connecteam-drift/apply', { job_id: jobId, action })
-      toast(action === 'pull' ? 'Updated to match Connecteam'
+      toast.success(action === 'pull' ? 'Updated to match Connecteam'
         : action === 'repush' ? 'Re-sent to Connecteam' : 'Job cancelled')
       scan(); onResolved?.()
-    } catch (e) { toast(e?.detail || e?.message || 'Could not apply that', 'error') }
+    } catch (e) { toast.error(e?.detail || e?.message || 'Could not apply that') }
     finally { setBusy(null) }
   }
 
@@ -66,7 +66,8 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
       try { await post('/api/jobs/connecteam-drift/apply', { job_id: c.job_id, action: 'repush' }); ok++ }
       catch { /* keep going; report at the end */ }
     }
-    toast(ok === resendable.length ? `Re-sent ${ok} to Connecteam` : `Re-sent ${ok} of ${resendable.length} — re-scan for the rest`, ok ? 'success' : 'error')
+    ;(ok ? toast.success : toast.error)(
+      ok === resendable.length ? `Re-sent ${ok} to Connecteam` : `Re-sent ${ok} of ${resendable.length} — re-scan for the rest`)
     setBusy(null); scan(); onResolved?.()
   }
 
@@ -76,8 +77,8 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
     setBusy(`job-${jobId}`)
     try {
       await patch(`/api/jobs/${jobId}`, { status: 'cancelled' })
-      toast('Duplicate cancelled'); scan(); onResolved?.()
-    } catch (e) { toast(e?.detail || e?.message || 'Could not cancel', 'error') }
+      toast.success('Duplicate cancelled'); scan(); onResolved?.()
+    } catch (e) { toast.error(e?.detail || e?.message || 'Could not cancel') }
     finally { setBusy(null) }
   }
 
@@ -85,8 +86,8 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
     setBusy(`orphan-${jobId}`)
     try {
       await post(`/api/jobs/${jobId}/undispatch`, {})
-      toast('Leftover shift removed'); scan(); onResolved?.()
-    } catch (e) { toast(e?.detail || e?.message || 'Could not remove it', 'error') }
+      toast.success('Leftover shift removed'); scan(); onResolved?.()
+    } catch (e) { toast.error(e?.detail || e?.message || 'Could not remove it') }
     finally { setBusy(null) }
   }
 
