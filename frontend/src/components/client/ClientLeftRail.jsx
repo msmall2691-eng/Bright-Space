@@ -32,7 +32,7 @@ function EditableField({ icon: Icon, label, value, placeholder = 'Add', type = '
               if (e.key === 'Enter') commit()
               else if (e.key === 'Escape') { setDraft(value || ''); setEditing(false) }
             }}
-            className="w-full bg-panel border border-blue-400 rounded px-1.5 py-0.5 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-blue-400/30"
+            className="w-full bg-panel border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-ink focus:outline-none focus:ring-1 focus:ring-indigo-400/30"
           />
         ) : (
           <button
@@ -56,14 +56,17 @@ export default function ClientLeftRail({
 }) {
   return (
     <aside className="hidden lg:flex lg:flex-col w-80 shrink-0 border-r border-hairline bg-panel overflow-y-auto scrollbar-thin">
-      <div className="p-4 border-b border-hairline">
+      {/* Identity — a subtle accent wash so the record header reads as a
+          designed surface, matching the cockpit language elsewhere. */}
+      <div className="relative overflow-hidden p-4 border-b border-hairline">
+        <span className="pointer-events-none absolute -top-10 -right-8 w-32 h-32 rounded-full bg-indigo-400/15 blur-2xl" />
         <button onClick={() => navigate('/clients')}
-          className="flex items-center gap-1.5 text-xs text-ink-3 hover:text-ink mb-4 transition-colors">
+          className="relative flex items-center gap-1.5 text-xs text-ink-3 hover:text-ink mb-4 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" /> Clients
         </button>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
-            <span className="text-blue-500 font-bold text-lg">{(client.first_name || client.name)[0]?.toUpperCase()}</span>
+        <div className="relative flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 flex items-center justify-center shrink-0">
+            <span className="text-indigo-600 dark:text-indigo-300 font-bold text-lg">{(client.first_name || client.name || '?')[0]?.toUpperCase()}</span>
           </div>
           <div className="min-w-0">
             <h1 className="text-base font-bold text-ink truncate">{client.name}</h1>
