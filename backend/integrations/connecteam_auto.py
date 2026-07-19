@@ -24,10 +24,30 @@ from utils.integration_log import log_integration_event as _log
 logger = logging.getLogger(__name__)
 
 
+def _hhmmss(t) -> str:
+    """Normalize a job time to HH:MM:SS. It can arrive as a plain "HH:MM"
+    string (fresh off the API request) OR as a datetime.time (once the row has
+    been read/refreshed from the SQLAlchemy Time column) — e.g. the recurring
+    generator refreshes each job before dispatch, so it's a time object there.
+    Blindly appending ":00" turned "09:00:00" (a time's str) into the invalid
+    "09:00:00:00", which made _to_epoch_seconds raise and silently dropped the
+    Connecteam shift for turnovers/unassigned/recurring jobs (Codex P2)."""
+    if t is None:
+        return "00:00:00"
+    s = str(t)
+    parts = s.split(":")
+    if len(parts) == 2:      # "HH:MM"
+        return f"{s}:00"
+    if len(parts) >= 3:      # "HH:MM:SS" (time object str, or already full)
+        return ":".join(parts[:3]).split(".")[0]  # drop any microseconds
+    return "00:00:00"
+
+
 def _shift_times(job):
-    """Connecteam wants ISO 8601 datetimes; the job stores date + HH:MM."""
-    return (f"{job.scheduled_date}T{job.start_time}:00",
-            f"{job.scheduled_date}T{job.end_time}:00")
+    """Connecteam wants ISO 8601 datetimes; the job stores date + a time that
+    may be a "HH:MM" string or a datetime.time — normalize either to HH:MM:SS."""
+    return (f"{job.scheduled_date}T{_hhmmss(job.start_time)}",
+            f"{job.scheduled_date}T{_hhmmss(job.end_time)}")
 
 
 def _job_schedule_snapshot(job) -> dict:

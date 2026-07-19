@@ -17,6 +17,7 @@ import ScheduleSkeleton from '../components/schedule/ScheduleSkeleton'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
+import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import ScheduleAuditPanel from '../components/schedule/ScheduleAuditPanel'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
 import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
@@ -159,6 +160,7 @@ export default function Schedule() {
   // "Tools" dropdown (declutters the toolbar) — open/close is UI, so it
   // stays here; the actual actions live in useScheduleTools.
   const [toolsOpen, setToolsOpen] = useState(false)
+  const [syncSettingsOpen, setSyncSettingsOpen] = useState(false)
 
   const {
     syncingNow, syncNow,
@@ -402,6 +404,7 @@ export default function Schedule() {
         onSyncNow={syncNow}
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
+        onOpenSyncSettings={() => setSyncSettingsOpen(true)}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
         syncAlertCount={(scheduleStats?.notGcal || 0) + (scheduleStats?.notConnecteam || 0)}
         onFixSync={fixSync}
@@ -606,6 +609,8 @@ export default function Schedule() {
           onCreated={() => { setShowNewJob(false); setNewJobStartTime(''); handleJobSave() }}
         />
       )}
+
+      <ScheduleSyncSettings open={syncSettingsOpen} onClose={() => setSyncSettingsOpen(false)} />
 
       {/* Auto-assign turnovers — preview then confirm */}
       <AutoAssignModal

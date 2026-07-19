@@ -1,6 +1,6 @@
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, Filter, Clock,
-  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, AlertCircle,
+  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, AlertCircle, SlidersHorizontal,
 } from 'lucide-react'
 import Button from '../ui/Button'
 
@@ -28,6 +28,7 @@ export default function ScheduleToolbar({
   onSyncNow,
   onPreviewAutoAssign,
   onPreviewFixTimes,
+  onOpenSyncSettings,
   onNewJob,
   // Compact mobile sync-alert button. `syncAlertCount` = total items out of
   // sync (notGcal + notConnecteam). When > 0, an amber alert pill shows in
@@ -144,6 +145,13 @@ export default function ScheduleToolbar({
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
                     <Clock className="w-4 h-4" /> Fix missing times
                   </button>
+                  <div className="my-1 border-t border-hairline" />
+                  {onOpenSyncSettings && (
+                    <button onClick={() => { onCloseTools(); onOpenSyncSettings() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-2 hover:bg-bg transition-colors">
+                      <SlidersHorizontal className="w-4 h-4" /> Sync &amp; automation settings
+                    </button>
+                  )}
                   <div className="my-1 border-t border-hairline" />
                   <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
                     onClick={onCloseTools}

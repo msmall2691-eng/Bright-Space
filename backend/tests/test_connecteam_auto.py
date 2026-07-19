@@ -3,6 +3,7 @@
 Hermetic: the Connecteam HTTP layer and the integration-event logger are
 monkeypatched, so these exercise the orchestration logic with no network or DB.
 """
+from datetime import time as _time
 from types import SimpleNamespace
 
 import pytest
@@ -75,6 +76,31 @@ def test_str_turnover_pushes_open_draft_even_with_cleaners(monkeypatch):
     out = ca.auto_dispatch_job(FakeDB(), job)
     assert out["dispatched"] is True and job.connecteam_shift_ids == ["open_str"]
     assert calls[0]["is_published"] is False
+
+
+def test_shift_times_normalizes_strings_and_time_objects():
+    # "HH:MM" string, as it arrives fresh off the API request
+    assert ca._shift_times(_job(start_time="09:00", end_time="11:00")) == (
+        "2026-06-20T09:00:00", "2026-06-20T11:00:00")
+    # datetime.time, as it arrives after the row is read/refreshed from the DB
+    # (the recurring generator's path) — must NOT become "09:00:00:00"
+    assert ca._shift_times(_job(start_time=_time(9, 0), end_time=_time(11, 30))) == (
+        "2026-06-20T09:00:00", "2026-06-20T11:30:00")
+
+
+def test_open_draft_produces_valid_iso_for_time_objects(monkeypatch):
+    """Regression (Codex P2): a turnover whose times are datetime.time (as in
+    the recurring path after a refresh) still yields a valid ISO datetime."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    calls = []
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **kw: (calls.append(kw), {"id": "open_t"})[1])
+    job = _job(job_type="str_turnover", cleaner_ids=[],
+               start_time=_time(9, 0), end_time=_time(11, 0))
+    out = ca.auto_dispatch_job(FakeDB(), job)
+    assert out["dispatched"] is True
+    assert calls[0]["start_datetime"] == "2026-06-20T09:00:00"
+    assert calls[0]["end_datetime"] == "2026-06-20T11:00:00"
 
 
 def test_cancelled_job_not_dispatched(monkeypatch):
