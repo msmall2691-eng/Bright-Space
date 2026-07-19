@@ -398,8 +398,8 @@ export default function Workspace() {
   return (
     <div className="h-full w-full bg-bg flex flex-col">
       <PageHeader
-        title="Workspace"
-        subtitle="Chat with your agent team — Nova, Mia, Scout, Finn, Pixel & Deploy"
+        title="Assistant"
+        subtitle="Chat with your AI team — Nova, Mia, Scout, Finn, Pixel & Deploy"
         icon={Sparkles}
         iconColor="purple"
       />

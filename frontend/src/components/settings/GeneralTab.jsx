@@ -167,7 +167,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
               <label className="flex items-center justify-between gap-3 cursor-pointer">
                 <span>
                   <span className={lbl}>AI assistant</span>
-                  <span className="block text-xs text-ink-3 mt-0.5">Show the floating "Ask Scout" button on every page. Applies to this device only.</span>
+                  <span className="block text-xs text-ink-3 mt-0.5">Show the floating AI assistant button on every page. Applies to this device only.</span>
                 </span>
                 <input type="checkbox" checked={showScout}
                   onChange={e => {
