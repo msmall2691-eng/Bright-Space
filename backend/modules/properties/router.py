@@ -249,13 +249,15 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
 def get_properties(
     client_id: Optional[int] = None,
     property_type: Optional[str] = None,
+    include_inactive: bool = False,  # archived properties stay hidden unless asked
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
     # MT-2: scope to the caller's workspace; tolerate legacy NULL-org rows.
     q = (db.query(Property).options(joinedload(Property.property_icals))
-         .filter(Property.active == True,
-                 or_(Property.org_id == org_id, Property.org_id.is_(None))))
+         .filter(or_(Property.org_id == org_id, Property.org_id.is_(None))))
+    if not include_inactive:
+        q = q.filter(Property.active == True)
     if client_id:
         q = q.filter(Property.client_id == client_id)
     if property_type:

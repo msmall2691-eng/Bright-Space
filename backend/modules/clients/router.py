@@ -483,6 +483,12 @@ def client_to_dict(c: Client) -> dict:
 def get_clients(
     status: Optional[str] = None,
     search: Optional[str] = None,
+    # Default True so the many "preload the whole client book to resolve
+    # client_id → name" call sites (Properties, Quoting, Invoicing, Schedule…)
+    # keep seeing inactive clients — a job/property/quote can belong to a client
+    # since archived, and it still needs a name. The Clients PAGE passes
+    # include_inactive=false so archived clients drop off its list view.
+    include_inactive: bool = True,
     # Ceiling raised to 1000 so the Properties page can preload the whole
     # client book to resolve client_id → display name — audit found the old
     # 200 cap would silently drop rows in a workspace with more clients.
@@ -496,6 +502,8 @@ def get_clients(
     q = db.query(Client).filter(or_(Client.org_id == org_id, Client.org_id.is_(None)))
     if status:
         q = q.filter(Client.status == status)
+    elif not include_inactive:
+        q = q.filter(Client.status != "inactive")
     # Typeahead support: case-insensitive match on name / email / phone so the
     # job scheduler can search instead of preloading every client.
     if search and search.strip():

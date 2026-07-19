@@ -38,6 +38,9 @@ export function useClients(statusFilter, search) {
   const _buildUrl = (q) => {
     const params = new URLSearchParams({ limit: String(LOOKUP_LIMIT) })
     if (statusFilter) params.append('status', statusFilter)
+    // "All" tab (no status) hides archived (inactive) clients so archiving
+    // gets them off the list; the Inactive tab (status=inactive) still shows them.
+    else params.append('include_inactive', 'false')
     if (q && q.trim()) params.append('search', q.trim())
     return `/api/clients?${params.toString()}`
   }
