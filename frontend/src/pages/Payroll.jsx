@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Search, Download, Clock, Car, DollarSign, User, CalendarRange,
   Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check, Tag,
+  Send, X,
 } from 'lucide-react'
-import { get, put, patch } from '../api'
+import { get, put, patch, post } from '../api'
 import { PageHeader } from '../components/ui'
 
 // Payroll / Connecteam breakdown.
@@ -53,6 +54,7 @@ export default function Payroll() {
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState({})
   const [overrides, setOverrides] = useState({})
+  const [square, setSquare] = useState(null)   // { mode:'preview'|'sent', data, busy, error }
 
   // Persist manual overrides per pay period so they survive a refresh.
   const ovKey = `payroll_overrides_${startDate}_${endDate}`
@@ -118,6 +120,18 @@ export default function Payroll() {
     URL.revokeObjectURL(a.href)
   }
 
+  const sendSquare = async (dryRun) => {
+    setSquare(s => ({ ...(s || {}), busy: true, error: '' }))
+    try {
+      const r = await post('/api/payroll/send-to-square', {
+        start_date: startDate, end_date: endDate, dry_run: dryRun, overrides,
+      })
+      setSquare({ mode: dryRun ? 'preview' : 'sent', data: r, busy: false, error: '' })
+    } catch (e) {
+      setSquare(s => ({ ...(s || {}), busy: false, error: e?.detail || e?.message || String(e) }))
+    }
+  }
+
   const t = data?.totals
 
   return (
@@ -144,10 +158,16 @@ export default function Payroll() {
             <Search className="w-4 h-4" />{loading ? 'Loading...' : 'Pull Data'}
           </button>
           {data && (
-            <button onClick={exportCsv}
-              className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              <Download className="w-4 h-4" />Export CSV
-            </button>
+            <>
+              <button onClick={exportCsv}
+                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Download className="w-4 h-4" />Export CSV
+              </button>
+              <button onClick={() => sendSquare(true)} disabled={square?.busy}
+                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Send className="w-4 h-4" />Send to Square
+              </button>
+            </>
           )}
         </div>
       </PageHeader>
@@ -171,6 +191,9 @@ export default function Payroll() {
                 </ul>
               </div>
             )}
+
+            {square && <SquarePanel square={square} onClose={() => setSquare(null)}
+              onConfirm={() => sendSquare(false)} />}
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <Stat label="Total Hours" value={hrs(t.total_hours)} icon={Clock} />
@@ -346,6 +369,86 @@ function Stat({ label, value, color = 'text-ink', icon: Icon, sub }) {
       </div>
       <div className={`text-lg font-bold ${color}`}>{value}</div>
       {sub && <div className="text-xs text-ink-3">{sub}</div>}
+    </div>
+  )
+}
+
+// ── Send-to-Square preview / result ────────────────────────────────────────
+function SquarePanel({ square, onClose, onConfirm }) {
+  const d = square.data
+  const sent = square.mode === 'sent'
+  return (
+    <div className="bg-panel border border-blue-500/40 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 font-medium text-ink">
+          <Send className="w-4 h-4 text-blue-500" />
+          {sent ? 'Sent to Square' : 'Send to Square — preview'}
+        </div>
+        <button onClick={onClose} className="text-ink-3 hover:text-ink"><X className="w-4 h-4" /></button>
+      </div>
+
+      {square.error && <div className="text-sm text-red-400 mb-2">{square.error}</div>}
+
+      {d && !sent && (
+        <>
+          <div className="text-sm text-ink-2 mb-3">
+            {d.timecards_total} timecard{d.timecards_total === 1 ? '' : 's'} will be created for{' '}
+            <b>{d.matched}</b> matched {d.matched === 1 ? 'person' : 'people'}. Piece-rate turnovers and
+            mileage are listed as adjustments to enter in Square manually. <b>Nothing is sent yet.</b>
+          </div>
+          {d.unmatched?.length > 0 && (
+            <div className="text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mb-3 text-ink-2">
+              <span className="text-amber-400 font-medium">Not matched to a Square team member:</span>{' '}
+              {d.unmatched.join(', ')}. Their timecards are skipped — match names/emails in Square, or set them up there.
+            </div>
+          )}
+          <div className="space-y-1.5 mb-3">
+            {d.employees.map(e => (
+              <div key={e.employee_id} className="flex items-center justify-between gap-2 text-sm border-b border-hairline/50 last:border-0 py-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {e.matched ? <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                  <span className="text-ink truncate">{e.name}</span>
+                  {e.matched && e.square_name && e.square_name !== e.name &&
+                    <span className="text-xs text-ink-3">→ {e.square_name}</span>}
+                </div>
+                <div className="flex items-center gap-3 shrink-0 text-xs tabular-nums">
+                  <span className="text-ink-2">{e.timecard_count} timecard{e.timecard_count === 1 ? '' : 's'}</span>
+                  {e.piece_count > 0 && <span className="text-purple-400">+{money(e.piece_total)} piece ({e.piece_count})</span>}
+                  {e.mileage_reimbursement > 0 && <span className="text-ink-3">+{money(e.mileage_reimbursement)} mi</span>}
+                  {e.unpriced > 0 && <span className="text-amber-400">{e.unpriced} unpriced</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[11px] text-ink-3 mb-3">
+            Adjustments (piece rate + mileage) aren't timecards — enter them in Square Payroll as additional pay / reimbursements.
+          </div>
+          <button onClick={onConfirm} disabled={square.busy || d.matched === 0}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Send className="w-4 h-4" />{square.busy ? 'Sending…' : `Confirm — create ${d.timecards_total} timecard${d.timecards_total === 1 ? '' : 's'}`}
+          </button>
+        </>
+      )}
+
+      {d && sent && (
+        <div className="text-sm text-ink-2 space-y-1">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+            <Check className="w-4 h-4" />Created {d.created} timecard{d.created === 1 ? '' : 's'} in Square.
+          </div>
+          <div className="text-ink-3">Import them from the Square Payroll dashboard, then add the piece-rate + mileage adjustments.</div>
+          {d.errors?.length > 0 && (
+            <div className="text-xs bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 mt-2">
+              <div className="text-red-400 font-medium mb-1">{d.errors.length} failed:</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {d.errors.slice(0, 8).map((er, i) => <li key={i}>{er.employee}: {er.error}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {square.busy && !d && <div className="text-sm text-ink-3">Working…</div>}
     </div>
   )
 }

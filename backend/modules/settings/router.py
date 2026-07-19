@@ -682,6 +682,88 @@ def test_connecteam(db: Session = Depends(get_db)):
         raise HTTPException(502, "Connecteam call failed — check server logs for the underlying error.")
 
 
+# ─── Square (payroll export) ────────────────────────────────────────────────
+
+class SquareConfig(BaseModel):
+    access_token: Optional[str] = None
+    location_id: Optional[str] = None
+    environment: Optional[str] = None  # "production" | "sandbox"
+
+
+@router.get("/square-status", dependencies=[Depends(require_role("admin", "manager"))])
+def square_status(db: Session = Depends(get_db)):
+    """Whether Square is wired up + a masked token hint, for the Settings card.
+    Also returns cached locations from the last successful /square/test so the
+    location picker survives reloads without re-hitting Square."""
+    import os
+    tok = (get_setting(db, "square_access_token") or os.getenv("SQUARE_ACCESS_TOKEN", "")).strip()
+    loc = (get_setting(db, "square_location_id") or os.getenv("SQUARE_LOCATION_ID", "")).strip()
+    env = (get_setting(db, "square_environment") or os.getenv("SQUARE_ENVIRONMENT", "production")).strip() or "production"
+    locations = _read_cached_square_locations(db)
+    return {
+        "configured": bool(tok and loc),
+        "has_token": bool(tok),
+        "location_id": loc,
+        "environment": env,
+        "token_masked": _mask_key(tok),
+        "locations": locations,
+    }
+
+
+_SQUARE_LOCATIONS_CACHE_KEY = "square_locations_cache"
+
+
+def _read_cached_square_locations(db: Session) -> list:
+    import json as _json
+    raw = get_setting(db, _SQUARE_LOCATIONS_CACHE_KEY) or ""
+    if not raw:
+        return []
+    try:
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+@router.post("/square", dependencies=[Depends(require_role("admin"))])
+def save_square_settings(config: SquareConfig, db: Session = Depends(get_db)):
+    """Save (or clear) Square credentials. A masked token from the status
+    endpoint is ignored so re-saving without retyping doesn't wipe the token."""
+    if config.access_token is not None:
+        v = config.access_token.strip()
+        if v and not v.startswith("••••"):
+            set_setting(db, "square_access_token", v)
+        elif v == "":
+            set_setting(db, "square_access_token", "")
+    if config.location_id is not None:
+        set_setting(db, "square_location_id", config.location_id.strip())
+    if config.environment is not None and config.environment.strip() in ("production", "sandbox"):
+        set_setting(db, "square_environment", config.environment.strip())
+    db.commit()
+    return square_status(db)
+
+
+@router.post("/square/test", dependencies=[Depends(require_role("admin", "manager"))])
+def test_square(db: Session = Depends(get_db)):
+    """Verify the Square token and return the account's locations (so the
+    operator can pick the right Location ID) + a team-member count."""
+    import asyncio, json as _json
+    from integrations.square import has_token, verify, SquareAuthError
+    if not has_token():
+        raise HTTPException(400, "Add a Square access token first.")
+    try:
+        res = asyncio.run(verify())
+        if res.get("locations"):
+            set_setting(db, _SQUARE_LOCATIONS_CACHE_KEY, _json.dumps(res["locations"]))
+            db.commit()
+        return res
+    except SquareAuthError:
+        raise HTTPException(401, "Square rejected the access token. Rotate it and try again.")
+    except Exception as e:
+        logger.warning(f"Square test call failed: {e}")
+        raise HTTPException(502, "Square call failed — check server logs for the underlying error.")
+
+
 class PushOpenShiftsBody(BaseModel):
     # Inclusive date range for jobs to push (YYYY-MM-DD).
     start_date: Optional[str] = None
