@@ -1319,6 +1319,83 @@ def schedule_audit(db: Session = Depends(get_db), org_id: int = Depends(current_
     return find_schedule_issues(db, resolve_org_id(org_id, db))
 
 
+def _drift_window():
+    """The date window the two-way drift scan looks at: a little history (to
+    catch a just-past shift someone edited) through the next month."""
+    start = (business_today() - timedelta(days=7))
+    end = (business_today() + timedelta(days=45))
+    return start, end
+
+
+@router.get("/connecteam-drift", dependencies=[Depends(require_role("admin", "manager"))])
+async def connecteam_drift(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Two-way sync: read Connecteam's live shifts and report what changed
+    THERE relative to the matching BrightBase jobs (moved, reassigned, deleted).
+    Read-only — resolving is a separate, explicit action."""
+    from integrations.connecteam import is_configured as _ct_ok, ConnecteamAuthError
+    if not _ct_ok():
+        return {"changes": [], "unlinked_count": 0, "checked": 0, "reason": "not_configured"}
+    from integrations.connecteam_twoway import detect_schedule_drift
+    oid = resolve_org_id(org_id, db)
+    start, end = _drift_window()
+    jobs = db.query(Job).options(joinedload(Job.property)).filter(
+        Job.scheduled_date >= start, Job.scheduled_date <= end,
+        Job.status.notin_(["cancelled", "completed"]),
+        or_(Job.org_id == oid, Job.org_id.is_(None)),
+    ).all()
+    jobs = [j for j in jobs if j.connecteam_shift_ids]
+    try:
+        return await detect_schedule_drift(db, jobs, start.isoformat(), end.isoformat())
+    except ConnecteamAuthError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.warning(f"connecteam-drift scan failed: {e}")
+        raise HTTPException(status_code=502, detail="Connecteam scan failed — check server logs.")
+
+
+class DriftAction(BaseModel):
+    job_id: int
+    action: str  # pull | repush | cancel
+
+
+@router.post("/connecteam-drift/apply", dependencies=[Depends(require_role("admin", "manager"))])
+async def connecteam_drift_apply(body: DriftAction, db: Session = Depends(get_db),
+                                 org_id: int = Depends(current_org_id)):
+    """Resolve one drift item: pull Connecteam's version onto the job, re-push
+    BrightBase's version to Connecteam, or cancel the job. Explicit per item."""
+    from integrations.connecteam import get_scheduled_shifts, ConnecteamAuthError
+    oid = resolve_org_id(org_id, db)
+    job = db.query(Job).filter(
+        Job.id == body.job_id, or_(Job.org_id == oid, Job.org_id.is_(None)),
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if body.action not in ("pull", "repush", "cancel"):
+        raise HTTPException(status_code=422, detail="action must be pull, repush, or cancel")
+
+    # 'pull' needs the current Connecteam shift; re-fetch and match by shift id.
+    shift = None
+    if body.action == "pull":
+        start, end = _drift_window()
+        try:
+            ct = await get_scheduled_shifts(start.isoformat(), end.isoformat())
+        except ConnecteamAuthError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        by_id = {str(s["id"]): s for s in ct if s.get("id")}
+        for sid in (job.connecteam_shift_ids or []):
+            if str(sid) in by_id:
+                shift = by_id[str(sid)]
+                break
+        if shift is None:
+            raise HTTPException(status_code=409, detail="That Connecteam shift no longer exists — re-scan.")
+
+    from integrations.connecteam_twoway import apply_drift_action as _apply
+    res = _apply(db, job, shift, body.action)
+    if not res.get("ok"):
+        raise HTTPException(status_code=502, detail=res.get("error") or "Apply failed")
+    return res
+
+
 @router.post("/sync-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def sync_from_gcal(db: Session = Depends(get_db)):
     """
