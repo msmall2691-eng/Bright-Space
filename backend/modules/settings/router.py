@@ -688,6 +688,39 @@ class SquareConfig(BaseModel):
     access_token: Optional[str] = None
     location_id: Optional[str] = None
     environment: Optional[str] = None  # "production" | "sandbox"
+    # Square wage "job" titles to tag timecards with, so hours land in the right
+    # bucket the operator runs payroll from.
+    job_residential: Optional[str] = None
+    job_rental: Optional[str] = None
+    job_weekend: Optional[str] = None
+
+
+_SQUARE_JOB_DEFAULTS = {
+    "square_job_residential": "Residential",
+    "square_job_rental": "Rental",
+    "square_job_weekend": "Rate Pay",
+}
+
+
+def _square_jobs(db: Session) -> dict:
+    return {
+        "residential": get_setting(db, "square_job_residential") or _SQUARE_JOB_DEFAULTS["square_job_residential"],
+        "rental": get_setting(db, "square_job_rental") or _SQUARE_JOB_DEFAULTS["square_job_rental"],
+        "weekend": get_setting(db, "square_job_weekend") or _SQUARE_JOB_DEFAULTS["square_job_weekend"],
+    }
+
+
+_SQUARE_JOB_TITLES_CACHE_KEY = "square_job_titles_cache"
+
+
+def _read_cached_square_job_titles(db: Session) -> list:
+    import json as _json
+    raw = get_setting(db, _SQUARE_JOB_TITLES_CACHE_KEY) or ""
+    try:
+        parsed = _json.loads(raw) if raw else []
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
 
 
 @router.get("/square-status", dependencies=[Depends(require_role("admin", "manager"))])
@@ -707,6 +740,8 @@ def square_status(db: Session = Depends(get_db)):
         "environment": env,
         "token_masked": _mask_key(tok),
         "locations": locations,
+        "jobs": _square_jobs(db),
+        "job_titles": _read_cached_square_job_titles(db),
     }
 
 
@@ -739,6 +774,12 @@ def save_square_settings(config: SquareConfig, db: Session = Depends(get_db)):
         set_setting(db, "square_location_id", config.location_id.strip())
     if config.environment is not None and config.environment.strip() in ("production", "sandbox"):
         set_setting(db, "square_environment", config.environment.strip())
+    for field, key in (("job_residential", "square_job_residential"),
+                       ("job_rental", "square_job_rental"),
+                       ("job_weekend", "square_job_weekend")):
+        v = getattr(config, field)
+        if v is not None:
+            set_setting(db, key, v.strip())
     db.commit()
     return square_status(db)
 
@@ -755,6 +796,9 @@ def test_square(db: Session = Depends(get_db)):
         res = asyncio.run(verify())
         if res.get("locations"):
             set_setting(db, _SQUARE_LOCATIONS_CACHE_KEY, _json.dumps(res["locations"]))
+        if res.get("job_titles"):
+            set_setting(db, _SQUARE_JOB_TITLES_CACHE_KEY, _json.dumps(res["job_titles"]))
+        if res.get("locations") or res.get("job_titles"):
             db.commit()
         return res
     except SquareAuthError:

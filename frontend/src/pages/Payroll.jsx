@@ -391,11 +391,19 @@ function SquarePanel({ square, onClose, onConfirm }) {
 
       {d && !sent && (
         <>
-          <div className="text-sm text-ink-2 mb-3">
+          <div className="text-sm text-ink-2 mb-2">
             {d.timecards_total} timecard{d.timecards_total === 1 ? '' : 's'} will be created for{' '}
             <b>{d.matched}</b> matched {d.matched === 1 ? 'person' : 'people'}. Piece-rate turnovers and
             mileage are listed as adjustments to enter in Square manually. <b>Nothing is sent yet.</b>
           </div>
+          {d.jobs && (
+            <div className="text-[11px] text-ink-3 mb-3">
+              Tagged as Square jobs: residential → <b>{d.jobs.residential}</b>, rental → <b>{d.jobs.rental}</b>.
+              {' '}Rates: {d.square_rates_used
+                ? <span className="text-emerald-400">using your Square-configured wage rates.</span>
+                : <span>using the rates set on this page (no matching Square wage found — check the job titles in Settings).</span>}
+            </div>
+          )}
           {d.unmatched?.length > 0 && (
             <div className="text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mb-3 text-ink-2">
               <span className="text-amber-400 font-medium">Not matched to a Square team member:</span>{' '}
