@@ -147,17 +147,26 @@ def get_intakes(
     source: Optional[str] = None,
     service_type: Optional[str] = None,
     priority: Optional[str] = None,
+    include_archived: bool = False,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     org_id: int = Depends(current_org_id),
 ):
-    """List intakes with filtering by status, source, service_type, priority."""
+    """List intakes with filtering by status, source, service_type, priority.
+
+    Archived leads are hidden from the default ("All") view — archiving is meant
+    to get a request off the screen — and only reappear when the operator picks
+    the Archived filter (status=archived) or passes include_archived=true. The
+    old behavior returned archived rows in "All", so archiving didn't visibly do
+    anything."""
     # MT-2: scope to the caller's workspace; tolerate legacy + public-submitted
     # NULL-org leads (the contact form has no logged-in user).
     q = db.query(LeadIntake).filter(or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)))
     if status:
         q = q.filter(LeadIntake.status == status)
+    elif not include_archived:
+        q = q.filter(LeadIntake.status != "archived")
     if source:
         q = q.filter(LeadIntake.source == source)
     if service_type:
