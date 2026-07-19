@@ -44,6 +44,17 @@ import { useCommsFilters } from '../hooks/useCommsFilters'
    MAIN COMMS PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/** Compact at-a-glance stat pill for the page header — echoes the stat row
+ *  on the Home "Messages" pillar so the two surfaces read as one system. */
+function HeaderStat({ n, label, tone }) {
+  return (
+    <span className="inline-flex items-baseline gap-1 rounded-lg bg-bg-2 px-2.5 py-1">
+      <span className={`text-[13px] font-bold tabular-nums ${tone || 'text-ink'}`}>{n}</span>
+      <span className="text-[11px] text-ink-3">{label}</span>
+    </span>
+  )
+}
+
 export default function Comms() {
   const navigate = useNavigate()
   // ──────── Filter state ────────
@@ -56,7 +67,7 @@ export default function Comms() {
   // Pre-fill search from ?q= so deep links from Requests, Client detail,
   // etc. land on the right contact. Falls back to '' when the param is
   // absent — same behavior as before.
-  const [urlParams] = useSearchParams()
+  const [urlParams, setUrlParams] = useSearchParams()
   const [search, setSearch] = useState(() => urlParams.get('q') || '')
   // React Router keeps this component mounted across same-route
   // navigations (e.g. /comms?q=alice -> /comms via a sidebar link), so
@@ -92,6 +103,17 @@ export default function Comms() {
   const [flash, setFlash] = useState(null)
 
   const [showCompose, setShowCompose] = useState(false)
+  // Deep-link entry: /comms?compose=1 (from the header's "+ New → New
+  // message" action) opens the composer straight away, then strips the flag
+  // so a refresh or back-nav doesn't reopen it.
+  useEffect(() => {
+    if (urlParams.get('compose') === '1') {
+      setShowCompose(true)
+      const next = new URLSearchParams(urlParams)
+      next.delete('compose')
+      setUrlParams(next, { replace: true })
+    }
+  }, [urlParams, setUrlParams])
   const [showContactPanel, setShowContactPanel] = useState(true)
   const [mobileView, setMobileView] = useState('list') // list | thread
   const [toast, setToast] = useState(null) // { ok: bool, msg: string }
@@ -199,10 +221,17 @@ export default function Comms() {
           its own header, so this outer title is pure wasted top space on a
           phone. Desktop keeps it for page context. */}
       <PageHeader
-        title="Comms"
+        title="Messages"
         icon={MessageSquare}
-        iconColor="cyan"
+        iconColor="blue"
         className="hidden lg:block pt-4 pb-3 sm:pt-4 sm:pb-3 shrink-0"
+        actions={
+          <div className="flex items-center gap-2">
+            <HeaderStat n={summary.open || 0} label="active" />
+            <HeaderStat n={summary.unread || 0} label="unread" tone={summary.unread > 0 ? 'text-blue-600 dark:text-blue-300' : undefined} />
+            <HeaderStat n={summary.breached || 0} label="past SLA" tone={summary.breached > 0 ? 'text-red-600 dark:text-red-300' : undefined} />
+          </div>
+        }
       />
 
     <div className="flex flex-1 min-h-0">

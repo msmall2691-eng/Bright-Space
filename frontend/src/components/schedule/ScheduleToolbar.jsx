@@ -61,7 +61,14 @@ export default function ScheduleToolbar({
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
         {/* Single compact row: title · date nav · view toggle · New Job */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <h1 className="text-base sm:text-lg font-bold text-ink shrink-0">Schedule</h1>
+          {/* Emerald chip echoes the Home "Schedule" pillar so the two
+              surfaces share one visual identity. */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="bb-icon-chip grid place-items-center w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+              <CalendarIcon className="w-[18px] h-[18px]" />
+            </span>
+            <h1 className="text-base sm:text-lg font-bold text-ink">Schedule</h1>
+          </div>
 
           {/* View switcher — in-app calendar by default, one tap to Google.
               Short labels on phones so the toolbar fits narrow viewports. */}
