@@ -71,7 +71,7 @@ const ACCENTS = {
   blue: {
     chip: 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300',
     wash: 'bg-blue-400/25',
-    ring: 'focus-visible:ring-blue-500',
+    ring: 'focus-visible:ring-indigo-500',
   },
   emerald: {
     chip: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',

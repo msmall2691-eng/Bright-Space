@@ -25,7 +25,7 @@ export default function StickyActionBar({ onNewJob }) {
       <button
         type="button"
         onClick={onNewJob}
-        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-full text-[14px] font-semibold shadow-lg active:scale-[0.99] transition-transform bg-blue-600 text-white"
+        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-full text-[14px] font-semibold shadow-lg active:scale-[0.99] transition-transform bg-indigo-600 text-white"
       >
         <Plus className="w-4 h-4" />
         <span>New job</span>

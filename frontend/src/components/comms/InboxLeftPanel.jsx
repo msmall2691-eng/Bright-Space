@@ -96,13 +96,13 @@ export function InboxLeftPanel({
               className="lg:hidden relative w-9 h-9 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 flex items-center justify-center transition-colors">
               <SlidersHorizontal className="w-4 h-4" />
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full bg-blue-600 text-white text-[9px] font-bold ring-2 ring-panel">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full bg-indigo-600 text-white text-[9px] font-bold ring-2 ring-panel">
                   {activeFilterCount}
                 </span>
               )}
             </button>
             <button onClick={onCompose}
-              className="w-9 h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-sm transition-all active:scale-95">
+              className="w-9 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-sm transition-all active:scale-95">
               <Plus className="w-4 h-4" />
             </button>
           </div>
@@ -113,7 +113,7 @@ export function InboxLeftPanel({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 focus:bg-panel transition-all" />
+            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 focus:bg-panel transition-all" />
         </div>
       </div>
 
@@ -127,7 +127,7 @@ export function InboxLeftPanel({
               }`}>
               <span>{f.label}</span>
               {f.count != null && f.count > 0 && (
-                <span className={`text-[10px] font-bold tabular-nums ${folder === f.key ? 'text-blue-600' : 'text-ink-3'}`}>
+                <span className={`text-[10px] font-bold tabular-nums ${folder === f.key ? 'text-indigo-600' : 'text-ink-3'}`}>
                   {f.count}
                 </span>
               )}
@@ -175,12 +175,12 @@ export function InboxLeftPanel({
             </p>
             {channelFilter && (channelCount('') - channelCount(channelFilter)) > 0 && (
               <button onClick={() => setChannelFilter('')}
-                className="mt-4 text-[12px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
+                className="mt-4 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition-colors">
                 Show all messages
               </button>
             )}
             <button onClick={onCompose}
-              className="mt-4 text-[12px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
+              className="mt-4 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition-colors">
               <Plus className="w-3.5 h-3.5" /> New Message
             </button>
           </div>
@@ -213,7 +213,7 @@ export function InboxLeftPanel({
               </div>
             )}
             <button onClick={() => setFiltersOpen(false)}
-              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
+              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors">
               Done
             </button>
           </div>

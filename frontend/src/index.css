@@ -210,7 +210,7 @@ body.theme-neon .bb-today-badge {
   h5 { @apply text-base font-semibold text-neutral-900; }
 
   p { @apply text-sm text-neutral-600 leading-relaxed; }
-  a { @apply text-blue-600 hover:text-blue-700 underline; }
+  a { @apply text-indigo-600 hover:text-indigo-700 underline; }
   strong { @apply font-semibold; }
 }
 
@@ -221,7 +221,7 @@ body.theme-neon .bb-today-badge {
   }
 
   .btn-primary {
-    @apply btn bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg focus:ring-blue-500;
+    @apply btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg focus:ring-indigo-500;
   }
 
   .btn-secondary {
@@ -229,7 +229,7 @@ body.theme-neon .bb-today-badge {
   }
 
   .btn-tertiary {
-    @apply btn text-blue-600 hover:text-blue-700 hover:bg-blue-50 focus:ring-blue-500;
+    @apply btn text-indigo-600 hover:text-indigo-700 hover:bg-blue-50 focus:ring-indigo-500;
   }
 
   .btn-danger {
@@ -256,7 +256,7 @@ body.theme-neon .bb-today-badge {
 
   /* Form Components */
   .input {
-    @apply w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200;
+    @apply w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors duration-200;
   }
 
   .input:disabled {
@@ -350,7 +350,7 @@ body.theme-neon .bb-today-badge {
 
   /* Gradient Utilities */
   .gradient-hero {
-    @apply bg-gradient-to-r from-blue-600 to-violet-600;
+    @apply bg-gradient-to-r from-indigo-600 to-violet-600;
   }
 
   .gradient-subtle {

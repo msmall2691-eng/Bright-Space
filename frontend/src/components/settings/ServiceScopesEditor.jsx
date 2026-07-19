@@ -115,13 +115,13 @@ export default function ServiceScopesEditor({ toast }) {
             ))}
 
             <button onClick={addService}
-              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium">
+              className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
               <Plus className="w-4 h-4" /> Add a service
             </button>
 
             <div className="pt-2">
               <button onClick={save} disabled={saving}
-                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Save service scopes
               </button>

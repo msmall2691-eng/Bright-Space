@@ -185,11 +185,11 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
               <p className="text-sm text-ink-2 text-center mb-1.5">
                 Questions?{' '}
                 {quote.company_email && (
-                  <a href={`mailto:${quote.company_email}`} className="text-blue-600 hover:underline font-medium">{quote.company_email}</a>
+                  <a href={`mailto:${quote.company_email}`} className="text-indigo-600 hover:underline font-medium">{quote.company_email}</a>
                 )}
                 {quote.company_email && quote.company_phone && <span className="text-ink-3"> · </span>}
                 {quote.company_phone && (
-                  <a href={`tel:${telHref(quote.company_phone)}`} className="text-blue-600 hover:underline font-medium">{quote.company_phone}</a>
+                  <a href={`tel:${telHref(quote.company_phone)}`} className="text-indigo-600 hover:underline font-medium">{quote.company_phone}</a>
                 )}
               </p>
             )}

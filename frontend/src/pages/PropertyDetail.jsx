@@ -66,12 +66,12 @@ function ChecklistEditor({ template, onSave }) {
     <div className="bg-panel border border-hairline rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <ClipboardList className="w-4 h-4 text-blue-600" />
+          <ClipboardList className="w-4 h-4 text-indigo-600" />
           <h3 className="text-sm font-semibold text-ink">Cleaning Checklist</h3>
         </div>
         {dirty && (
           <button onClick={save} disabled={saving}
-            className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
+            className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 px-3 py-1 rounded-lg transition-colors">
             {saving ? 'Saving...' : 'Save'}
           </button>
         )}
@@ -103,7 +103,7 @@ function ChecklistEditor({ template, onSave }) {
               placeholder="Add task..."
               className="flex-1 bg-panel border border-hairline rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
             />
-            <button onClick={() => addTask(ai)} className="text-xs text-blue-600 font-semibold px-2">Add</button>
+            <button onClick={() => addTask(ai)} className="text-xs text-indigo-600 font-semibold px-2">Add</button>
           </div>
         </div>
       ))}
@@ -116,7 +116,7 @@ function ChecklistEditor({ template, onSave }) {
           placeholder="New area (e.g. Kitchen, Bathrooms)..."
           className="flex-1 bg-panel border border-hairline rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-400"
         />
-        <button onClick={addArea} className="text-xs text-blue-600 font-semibold px-2 shrink-0">+ Area</button>
+        <button onClick={addArea} className="text-xs text-indigo-600 font-semibold px-2 shrink-0">+ Area</button>
       </div>
     </div>
   )
@@ -161,7 +161,7 @@ function VisitChecklistRow({ visit, checklistTemplate, onComplete }) {
         {!isCompleted && totalTasks > 0 && (
           <button
             onClick={() => setOpen(!open)}
-            className="text-blue-600 font-semibold hover:text-blue-700"
+            className="text-indigo-600 font-semibold hover:text-indigo-700"
           >
             {open ? 'Close' : `Complete (${doneTasks}/${totalTasks})`}
           </button>
@@ -501,7 +501,7 @@ export default function PropertyDetail() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold">{selectedJob.title}</h2>
                 <p className="text-xs sm:text-sm text-blue-100">Job #{selectedJob.id}</p>

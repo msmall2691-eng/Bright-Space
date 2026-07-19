@@ -271,7 +271,7 @@ export default function IntegrationsTab({ toast, active }) {
                 </span>
                 {!gcalConn.loading && !gcalConn.connected && gcalConn.oauth_available && (
                   <button onClick={connectGoogle} disabled={gcalConnecting}
-                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60 transition-colors">
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60 transition-colors">
                     {gcalConnecting ? 'Opening…' : 'Connect Google'}
                   </button>
                 )}
@@ -337,7 +337,7 @@ export default function IntegrationsTab({ toast, active }) {
               <div className="flex items-center justify-between gap-2 mt-2">
                 <span className="text-[11px] text-ink-3">Leave blank to auto-build from your configured calendar IDs. Only Google Calendar embed URLs are accepted.</span>
                 <button onClick={saveGcalEmbed} disabled={gcalEmbedSaving}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 shrink-0">
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 shrink-0">
                   {gcalEmbedSaving ? 'Saving…' : 'Save embed'}
                 </button>
               </div>
@@ -512,7 +512,7 @@ export default function IntegrationsTab({ toast, active }) {
                   </p>
                   <div className="flex items-center gap-2">
                     <button onClick={saveConnecteam} disabled={ctSaving || (!ctForm.company_id.trim() && !ctForm.api_key.trim())}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
                       {ctSaving ? 'Saving…' : 'Save credentials'}
                     </button>
                     {ctForm.open && (
@@ -530,7 +530,7 @@ export default function IntegrationsTab({ toast, active }) {
               {!connecteam.loading && connecteam.configured && !ctForm.open && (
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
                   <button onClick={pushScheduleToConnecteam} disabled={ctPushing}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
                     {ctPushing ? 'Pushing…' : 'Push schedule → open shifts'}
                   </button>
                   <button onClick={testConnecteam} disabled={ctTesting}

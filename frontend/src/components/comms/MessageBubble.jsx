@@ -36,7 +36,7 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
         )}
         <div className={`px-4 py-2.5 text-[13px] leading-relaxed ${
           outbound
-            ? 'bg-blue-600 text-white rounded-2xl rounded-br-lg shadow-sm'
+            ? 'bg-indigo-600 text-white rounded-2xl rounded-br-lg shadow-sm'
             : 'bg-panel text-ink rounded-2xl rounded-bl-lg shadow-sm border border-hairline'
         }`}>
           {m.subject && (

@@ -167,7 +167,7 @@ export function EditPanel({
       {/* Panel footer */}
       <div className="p-5 border-t border-hairline space-y-2">
         <button onClick={save} disabled={saving || !form.client_id}
-          className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+          className="w-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
           {saving ? 'Saving…' : (selected ? 'Update invoice' : 'Create invoice')}
         </button>
         {selected && (

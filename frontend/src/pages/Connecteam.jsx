@@ -244,7 +244,7 @@ function DateBar({ start, end, setStart, setEnd, onGo, loading }) {
           className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
       </div>
       <button onClick={onGo} disabled={loading}
-        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
         <Search className="w-4 h-4" />{loading ? 'Loading…' : 'Pull'}
       </button>
     </div>

@@ -61,7 +61,7 @@ export function ClientTableView({
         <EmptyState icon={Users} title={search || statusFilter ? 'No matching clients' : 'No clients yet'}
           description={search || statusFilter ? 'Try a different search or filter.' : undefined}
           action={!search && !statusFilter && (
-            <button onClick={openNew} className="text-xs font-semibold text-blue-600 hover:text-blue-700">Add your first client →</button>
+            <button onClick={openNew} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Add your first client →</button>
           )} />
       )}
     </div>

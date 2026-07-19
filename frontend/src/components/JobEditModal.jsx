@@ -456,7 +456,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
       {/* Right-side drawer (Twenty-style): full-height, slides over the record */}
       <div className="relative h-full w-full sm:max-w-lg bg-panel shadow-2xl flex flex-col overflow-hidden animate-fade-in">
         {/* Header */}
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
+        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white">
           <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-xl sm:text-2xl font-bold truncate">{isNew ? "New Job" : "Edit Job"}</h2>
             {isRecurring && (
@@ -484,7 +484,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <div className="flex flex-wrap gap-1.5">
                 {[
                   { v: 'unscheduled', label: 'Unscheduled', activeCls: 'bg-amber-500 text-white border-amber-500' },
-                  { v: 'scheduled',   label: 'Scheduled',   activeCls: 'bg-blue-600 text-white border-blue-600' },
+                  { v: 'scheduled',   label: 'Scheduled',   activeCls: 'bg-indigo-600 text-white border-indigo-600' },
                   { v: 'in_progress', label: 'In progress', activeCls: 'bg-amber-600 text-white border-amber-600' },
                   { v: 'completed',   label: 'Completed',   activeCls: 'bg-emerald-600 text-white border-emerald-600' },
                   { v: 'cancelled',   label: 'Cancelled',   activeCls: 'bg-ink-3 text-white border-ink-3' },
@@ -515,7 +515,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               value={formData.title}
               onChange={e => setFormData(f => ({ ...f, title: e.target.value }))}
               placeholder="Job title (auto-fills from property if blank)"
-              className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base font-medium"
+              className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base font-medium"
             />
           </div>
 
@@ -527,7 +527,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 type="date"
                 value={formData.scheduled_date || ''}
                 onChange={e => setFormData(f => ({ ...f, scheduled_date: e.target.value }))}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
             <div>
@@ -536,7 +536,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 type="time"
                 value={formData.start_time || ''}
                 onChange={e => setFormData(f => ({ ...f, start_time: e.target.value }))}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
             <div>
@@ -545,7 +545,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 type="time"
                 value={formData.end_time || ''}
                 onChange={e => setFormData(f => ({ ...f, end_time: e.target.value }))}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
           </div>
@@ -558,7 +558,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             <select
               value={formData.property_id}
               onChange={handlePropertyChange}
-              className="w-full px-4 py-3 sm:py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+              className="w-full px-4 py-3 sm:py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
             >
               <option value="">Select a property...</option>
               {selectableProperties.map(p => (
@@ -642,7 +642,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                     onChange={(e) => setCleanerSearch(e.target.value)}
                     onFocus={() => setShowCleanerDropdown(true)}
                     disabled={loadingCleaners || cleaners.length === 0}
-                    className="w-full pl-10 pr-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base disabled:bg-bg disabled:text-ink-3"
+                    className="w-full pl-10 pr-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base disabled:bg-bg disabled:text-ink-3"
                   />
                 </div>
               </div>
@@ -722,7 +722,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               <select
                 value={formData.job_type}
                 onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base bg-panel"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
               >
                 {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
                   <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
@@ -742,7 +742,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 value={formData.address}
                 onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
                 placeholder="Service address (auto-fills from the property)"
-                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
               />
             </div>
 
@@ -754,7 +754,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
                 placeholder="Add any notes about this job..."
                 rows={3}
-                className="w-full px-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-base"
+                className="w-full px-4 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-base"
               />
             </div>
 

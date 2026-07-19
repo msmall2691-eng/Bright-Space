@@ -40,7 +40,7 @@ export function ComposeBar({
       <div className="flex items-center gap-1.5 mb-3">
         <button onClick={() => setNoteMode(false)}
           className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
-            !noteMode ? 'bg-blue-600 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
+            !noteMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
           }`}>
           <Send className="w-3 h-3" /> Reply
         </button>
@@ -75,7 +75,7 @@ export function ComposeBar({
       {detail.channel === 'email' && !noteMode && (
         <input value={replySubject} onChange={e => setReplySubject(e.target.value)}
           placeholder={detail.subject ? `Re: ${detail.subject}` : 'Subject'}
-          className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all" />
+          className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 transition-all" />
       )}
 
       {/* Canned responses — one-tap fills the reply box */}
@@ -100,14 +100,14 @@ export function ComposeBar({
           className={`flex-1 border rounded-xl px-4 py-3 text-[13px] resize-none focus:outline-none focus:ring-2 transition-all leading-relaxed ${
             noteMode
               ? 'border-amber-200 bg-amber-50/50 focus:ring-amber-500/20 placeholder-amber-400'
-              : 'border-hairline bg-bg focus:ring-blue-500/20 focus:bg-panel placeholder-ink-3'
+              : 'border-hairline bg-bg focus:ring-indigo-500/20 focus:bg-panel placeholder-ink-3'
           }`}
           onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') onSend() }} />
         <button onClick={onSend} disabled={sending || !reply.trim()}
           className={`px-5 rounded-xl text-[13px] font-semibold self-stretch disabled:opacity-40 transition-all active:scale-95 shadow-sm ${
             noteMode
               ? 'bg-amber-500 hover:bg-amber-600 text-white'
-              : 'bg-blue-600 hover:bg-blue-700 text-white'
+              : 'bg-indigo-600 hover:bg-indigo-700 text-white'
           }`}>
           {sending
             ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

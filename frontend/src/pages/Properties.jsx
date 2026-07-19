@@ -145,7 +145,7 @@ export default function Properties() {
                 onClick={() => setSearchParams({ type: type === 'all' ? '' : type })}
                 className={`shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                   currentType === type
-                    ? 'border-blue-600 text-blue-600'
+                    ? 'border-indigo-600 text-indigo-600'
                     : 'border-transparent text-ink-2 hover:text-ink'
                 }`}
               >
@@ -219,7 +219,7 @@ export default function Properties() {
                   ? 'Add an Airbnb or VRBO property to auto-create turnover jobs.'
                   : 'Create a property to organize jobs and services.'}
                 action={
-                  <button onClick={openNew} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  <button onClick={openNew} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                     Add {currentType === 'all' ? 'Property' : PROPERTY_TYPE_CONFIG[currentType]?.label}
                   </button>
                 }

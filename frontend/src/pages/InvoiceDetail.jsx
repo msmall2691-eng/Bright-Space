@@ -112,7 +112,7 @@ export default function InvoiceDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-blue-600/15 text-blue-500 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
                   <Receipt className="w-5 h-5" />
                 </div>
                 <InlineSelect value={inv.status} options={STATUS_OPTIONS} onSelect={setStatus} />

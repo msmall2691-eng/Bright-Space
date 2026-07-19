@@ -112,7 +112,7 @@ export default function QuoteEditPanel({
           <button onClick={() => setPreviewMode(p => !p)}
             title="Toggle the customer's view"
             className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
-              previewMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-bg-2 text-ink-2 border-hairline hover:bg-hairline'
+              previewMode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-bg-2 text-ink-2 border-hairline hover:bg-hairline'
             }`}>
             <Eye className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Preview</span>
           </button>
@@ -180,7 +180,7 @@ export default function QuoteEditPanel({
               <label className="block text-xs text-ink-3">Client *</label>
               <button type="button"
                 onClick={() => { setAddingClient(a => !a); setClientErr('') }}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                 {addingClient ? 'Cancel' : '+ New client'}
               </button>
             </div>
@@ -199,7 +199,7 @@ export default function QuoteEditPanel({
                 </div>
                 {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
                 <button type="button" onClick={handleCreateClient} disabled={creatingClient || !newClient.name.trim()}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
                   {creatingClient ? 'Creating…' : 'Create & select client'}
                 </button>
               </div>
@@ -248,7 +248,7 @@ export default function QuoteEditPanel({
                       : f.notes
                     return { ...f, service_type: opt.key, notes }
                   })}
-                  className={`flex-1 min-w-[calc(50%-0.25rem)] py-2 px-2 rounded-lg text-xs font-medium transition-colors ${form.service_type === opt.key ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
+                  className={`flex-1 min-w-[calc(50%-0.25rem)] py-2 px-2 rounded-lg text-xs font-medium transition-colors ${form.service_type === opt.key ? 'bg-indigo-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
                   {opt.label}
                 </button>
               ))}
@@ -294,10 +294,10 @@ export default function QuoteEditPanel({
             )}
             {specsState === 'done' && specs && (
               <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5">
-                <Home className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <Home className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                 <span className="text-[12px] text-blue-900 flex-1 truncate">{specsSummary(specs) || 'Property found'}</span>
                 <button type="button" onClick={addSpecsToScope}
-                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-500 shrink-0">Add to scope</button>
+                  className="text-[11px] font-semibold text-indigo-600 hover:text-blue-500 shrink-0">Add to scope</button>
               </div>
             )}
             {specsState === 'none' && (
@@ -464,12 +464,12 @@ export default function QuoteEditPanel({
       {canEdit ? (
         <div className="p-6 border-t border-hairline flex gap-3 shrink-0">
           <button onClick={onSave} disabled={saving || (!form.client_id && !newClient.name.trim())}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
             {saving ? 'Saving...' : selected ? 'Update Quote' : 'Create Quote'}
           </button>
           {selected && (
             <button onClick={() => onSend(selected)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <Send className="w-4 h-4" /> Send
             </button>
           )}

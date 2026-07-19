@@ -143,7 +143,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
           <button onClick={onAddAppointment}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Add appointment
           </button>
         </div>
@@ -181,7 +181,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
               events appear here automatically, linked by their email.
             </p>
             <button onClick={() => navigate('/settings?section=integrations')}
-              className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700">Go to Settings →</button>
+              className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-700">Go to Settings →</button>
           </div>
         ) : (gcalEvents.events || []).length === 0 ? (
           <div className="text-center py-8 bg-panel border border-hairline rounded-xl px-4">
@@ -193,7 +193,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
               <p className="text-[11px] text-ink-3 mt-1">Add an email to this client so their events link automatically.</p>
             )}
             <button onClick={onAddAppointment}
-              className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700">+ Add appointment</button>
+              className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-700">+ Add appointment</button>
           </div>
         ) : (
           <div className="space-y-2">
@@ -212,7 +212,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
           <div className="flex gap-4 text-xs">
             <span className="text-indigo-600"><strong>{visitStats.gcal_synced}</strong> synced</span>
             <span className="text-emerald-600"><strong>{visitStats.invites_sent}</strong> invites sent</span>
-            <span className="text-blue-600"><strong>{visitStats.upcoming}</strong> upcoming</span>
+            <span className="text-indigo-600"><strong>{visitStats.upcoming}</strong> upcoming</span>
             <span className="text-ink-3"><strong>{visitStats.completed}</strong> completed</span>
             {visitStats.cancelled > 0 && <span className="text-red-500"><strong>{visitStats.cancelled}</strong> cancelled</span>}
           </div>
@@ -260,7 +260,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
                 onClick={() => setSelectedDate(selectedDate === date ? null : date)}
                 className={`h-9 flex flex-col items-center justify-center rounded-lg text-xs transition-all relative ${
                   isSelected
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-indigo-600 text-white'
                     : isToday
                     ? 'bg-blue-500/10 text-blue-600 font-semibold'
                     : hasJobs
@@ -318,7 +318,7 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
               {selectedDate ? 'No cleanings on this day' : 'No upcoming cleanings'}
             </p>
             <button onClick={() => navigate(`/scheduling?client_id=${clientId}`)}
-              className="mt-3 text-xs text-blue-600 hover:text-blue-600 font-medium">
+              className="mt-3 text-xs text-indigo-600 hover:text-indigo-600 font-medium">
               + Schedule a cleaning
             </button>
           </div>

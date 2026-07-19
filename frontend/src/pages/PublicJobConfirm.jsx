@@ -243,7 +243,7 @@ export default function PublicJobConfirm() {
                 {rescheduled ? (
                   rescheduled.pending ? (
                     <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
-                      <Clock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                      <Clock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
                       <p className="text-sm text-blue-800 font-medium">Request received — that time is popular, so we'll confirm it and get right back to you.</p>
                     </div>
                   ) : (
@@ -260,7 +260,7 @@ export default function PublicJobConfirm() {
                   </div>
                 ) : isRequested ? (
                   <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
-                    <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
+                    <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
                     <p className="text-sm text-blue-800 font-medium">Reschedule request sent — we'll follow up shortly.</p>
                   </div>
                 ) : showReschedule ? (
@@ -275,7 +275,7 @@ export default function PublicJobConfirm() {
                         </p>
                         <button
                           onClick={() => { setShowReschedule(false); setShowRequest(true) }}
-                          className="w-full px-4 py-3 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+                          className="w-full px-4 py-3 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl"
                         >
                           Send a request instead
                         </button>
@@ -290,7 +290,7 @@ export default function PublicJobConfirm() {
                             const keys = (day?.windows || []).map(w => w.key)
                             if (day && !keys.includes(reschedWindow)) setReschedWindow(keys[0])
                           }}
-                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-3 border border-hairline rounded-xl text-base bg-panel focus:ring-2 focus:ring-indigo-500"
                         >
                           {(availability?.dates || []).map(d => (
                             <option key={d.date} value={d.date}>
@@ -303,7 +303,7 @@ export default function PublicJobConfirm() {
                             <button
                               key={w.key}
                               onClick={() => setReschedWindow(w.key)}
-                              className={`py-3 rounded-xl text-sm font-medium border transition-colors ${reschedWindow === w.key ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
+                              className={`py-3 rounded-xl text-sm font-medium border transition-colors ${reschedWindow === w.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg-2'}`}
                             >
                               {w.label}
                               {w.busy && <span className={`block text-[11px] font-normal ${reschedWindow === w.key ? 'text-blue-100' : 'text-amber-600'}`}>needs approval</span>}
@@ -336,7 +336,7 @@ export default function PublicJobConfirm() {
                         <button
                           onClick={handleReschedule}
                           disabled={rescheduling || !reschedDate}
-                          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white font-semibold py-4 sm:py-3 text-base rounded-xl min-h-[52px] transition-colors disabled:cursor-not-allowed shadow-sm"
                         >
                           {rescheduling ? 'Sending…' : selectedBusy() ? 'Request this time' : 'Reschedule to this time'}
                         </button>
@@ -354,7 +354,7 @@ export default function PublicJobConfirm() {
                       onChange={(e) => setRequestMsg(e.target.value)}
                       placeholder="Let us know what you need (optional)"
                       rows={4}
-                      className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                      className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
                       autoFocus
                     />
                     <div className="flex gap-2">
@@ -367,7 +367,7 @@ export default function PublicJobConfirm() {
                       <button
                         onClick={handleRequestReschedule}
                         disabled={requesting}
-                        className="flex-1 px-4 py-3 text-sm font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white rounded-xl disabled:cursor-not-allowed"
+                        className="flex-1 px-4 py-3 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white rounded-xl disabled:cursor-not-allowed"
                       >
                         {requesting ? 'Sending...' : 'Send request'}
                       </button>

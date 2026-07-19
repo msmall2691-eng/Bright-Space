@@ -49,7 +49,7 @@ export function RescheduleRequestsTile({ navigate }) {
           <div key={r.job_id} className="px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
             <button onClick={() => navigate(`/jobs/${r.job_id}`)}
               className="min-w-0 flex-1 text-left group">
-              <p className="text-[13px] font-medium text-ink truncate group-hover:text-blue-600">
+              <p className="text-[13px] font-medium text-ink truncate group-hover:text-indigo-600">
                 {r.title || `Job #${r.job_id}`}
                 {r.is_recurring && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-violet-600">recurring</span>}
               </p>

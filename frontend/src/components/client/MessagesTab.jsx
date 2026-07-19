@@ -7,7 +7,7 @@ function EmailCard({ em }) {
     <div className="bg-panel border border-hairline rounded-xl p-4 hover:shadow-sm transition-all">
       <div className="flex items-start gap-3">
         <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${outbound ? 'bg-blue-100' : 'bg-cyan-100'}`}>
-          <Mail className={`w-4 h-4 ${outbound ? 'text-blue-600' : 'text-cyan-600'}`} />
+          <Mail className={`w-4 h-4 ${outbound ? 'text-indigo-600' : 'text-cyan-600'}`} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -46,7 +46,7 @@ export default function MessagesTab({
           <button key={f.value} onClick={() => setCommsFilter(f.value)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               commsFilter === f.value
-                ? 'bg-blue-600 text-white border-blue-600'
+                ? 'bg-indigo-600 text-white border-indigo-600'
                 : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
             }`}>
             {f.label} <span className={commsFilter === f.value ? 'text-sky-100' : 'text-ink-3'}>{f.count}</span>
@@ -67,7 +67,7 @@ export default function MessagesTab({
               placeholder="Type a message..."
               className="flex-1 bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hairline" />
             <button onClick={sendSms} disabled={sending || !smsText.trim()}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm transition-colors">
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm transition-colors">
               <Send className="w-3.5 h-3.5" />{sending ? '...' : 'Send'}
             </button>
           </div>
@@ -102,7 +102,7 @@ export default function MessagesTab({
                 <div key={`s${m.id}`} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
                     m.direction === 'outbound'
-                      ? 'bg-blue-600 text-white rounded-br-sm'
+                      ? 'bg-indigo-600 text-white rounded-br-sm'
                       : 'bg-bg-2 text-ink-2 rounded-bl-sm'
                   }`}>
                     <div>{m.body}</div>

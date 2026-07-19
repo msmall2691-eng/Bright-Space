@@ -24,7 +24,7 @@ export function TypeSelectorModal({ selected, onSelect, onCancel, onConfirm }) {
                 onClick={() => onSelect(key)}
                 className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
                   selected === key
-                    ? 'border-blue-600 bg-blue-50'
+                    ? 'border-indigo-600 bg-blue-50'
                     : 'border-hairline hover:border-hairline'
                 }`}
               >
@@ -39,7 +39,7 @@ export function TypeSelectorModal({ selected, onSelect, onCancel, onConfirm }) {
               Cancel
             </button>
             <button onClick={onConfirm}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               Continue
             </button>
           </div>

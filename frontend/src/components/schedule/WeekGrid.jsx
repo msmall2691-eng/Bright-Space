@@ -304,7 +304,7 @@ export default function WeekGrid({
                 key={d}
                 className={`px-2 py-2 text-center border-r border-hairline last:border-r-0 ${isToday ? 'bg-blue-50' : ''}`}
               >
-                <div className={`text-[10px] uppercase font-semibold tracking-wide ${isToday ? 'text-blue-700' : 'text-ink-3'}`}>
+                <div className={`text-[10px] uppercase font-semibold tracking-wide ${isToday ? 'text-indigo-700' : 'text-ink-3'}`}>
                   {DAY_LABELS[i]}
                 </div>
                 <div className={`text-lg font-bold ${isToday ? 'text-blue-800' : 'text-ink'}`}>
@@ -638,7 +638,7 @@ function VisitBlock({
         onDragStart(visit)
       } : undefined}
       onDragEnd={canDrag ? () => onDragEnd && onDragEnd() : undefined}
-      className={`absolute rounded-md border shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${cfg.pill} ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      className={`absolute rounded-md border shadow-sm text-left overflow-hidden transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${cfg.pill} ${isCancelled ? 'opacity-50 line-through' : ''} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
       style={style}
       onClick={(e) => {
         // Stop the click bubbling into the day-column's empty-slot handler.

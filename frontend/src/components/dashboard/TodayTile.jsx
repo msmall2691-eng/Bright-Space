@@ -33,7 +33,7 @@ export function TodayTile({ loading, todayJobs, todayCount, weekCount, navigate 
               onClick={() => navigate(`/jobs/${j.id}`)}
               className="w-full text-left flex items-baseline gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors border-b border-hairline last:border-b-0"
             >
-              <span className="text-[12px] font-semibold text-blue-600 tabular-nums shrink-0 w-12">
+              <span className="text-[12px] font-semibold text-indigo-600 tabular-nums shrink-0 w-12">
                 {(j.start_time || '').slice(0, 5) || '—'}
               </span>
               <span className="flex-1 min-w-0">

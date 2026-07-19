@@ -237,7 +237,7 @@ export default function PageAssistant() {
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Working…</>
                   : <>
                       <span>{actionMsg.text}</span>
-                      {actionMsg.to && <button onClick={() => { setOpen(false); navigate(actionMsg.to) }} className="font-semibold text-blue-600 hover:text-blue-500">Open →</button>}
+                      {actionMsg.to && <button onClick={() => { setOpen(false); navigate(actionMsg.to) }} className="font-semibold text-indigo-600 hover:text-blue-500">Open →</button>}
                     </>}
               </div>
             )}
@@ -273,7 +273,7 @@ export default function PageAssistant() {
             className="flex-1 resize-none bg-bg border border-hairline rounded-lg px-3 py-2 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none focus:border-blue-400 max-h-24"
           />
           <button onClick={() => ask()} disabled={!query.trim() || asking}
-            className="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shrink-0">
+            className="p-2 rounded-lg bg-indigo-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shrink-0">
             {asking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>

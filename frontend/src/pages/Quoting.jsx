@@ -575,7 +575,7 @@ export default function Quoting() {
               )}
               {canEdit && (
                 <button onClick={() => { openQuoteForm(); setTab('quotes') }}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                   <Plus className="w-4 h-4" /> New Quote
                 </button>
               )}
@@ -665,7 +665,7 @@ export default function Quoting() {
               <SavedViewsBar entityType="quote" currentConfig={quoteViewConfig} onApply={applyQuoteView} defaultLabel="All quotes" />
             </div>
             {canEdit && selectedIds.size > 0 && (
-              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-2.5">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-indigo-600/10 border border-indigo-600/30 rounded-xl px-4 py-2.5">
                 <span className="text-sm text-ink font-medium">{selectedIds.size} selected</span>
                 <div className="flex items-center gap-2">
                   <button onClick={bulkArchive}

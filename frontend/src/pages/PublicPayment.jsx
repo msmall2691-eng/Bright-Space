@@ -196,7 +196,7 @@ export default function PublicPayment() {
 
                 {paymentMethod === 'card' && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-xs text-blue-700 flex items-center gap-2">
+                    <p className="text-xs text-indigo-700 flex items-center gap-2">
                       <Lock className="w-3 h-3" />
                       Card details are securely processed by Stripe
                     </p>

@@ -141,7 +141,7 @@ export default function ScheduleAuditPanel({ refreshKey = 0, onResolved }) {
                 {timed && (
                   <div className="text-[11px] text-ink-2 mb-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
                     <span>BrightBase: <b>{when(c.brightbase)}</b></span>
-                    <span>Connecteam: <b className="text-blue-600 dark:text-blue-300">{when(c.connecteam)}</b></span>
+                    <span>Connecteam: <b className="text-indigo-600 dark:text-indigo-300">{when(c.connecteam)}</b></span>
                   </div>
                 )}
                 {c.note && <div className="text-[10.5px] text-ink-3 mb-1.5">{c.note}</div>}

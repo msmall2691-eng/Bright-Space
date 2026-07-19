@@ -82,7 +82,7 @@ export default function TweaksPanel() {
               onClick={() => handleThemeChange(opt.value)}
               className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
                 theme === opt.value
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-indigo-600 text-white'
                   : 'bg-bg-2 text-ink-2 hover:bg-bg-2'
               }`}
             >
@@ -108,7 +108,7 @@ export default function TweaksPanel() {
               onClick={() => handleDensityChange(opt.value)}
               className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
                 density === opt.value
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-indigo-600 text-white'
                   : 'bg-bg-2 text-ink-2 hover:bg-bg-2'
               }`}
             >
@@ -124,7 +124,7 @@ export default function TweaksPanel() {
           onClick={handleSidebarToggle}
           className={`w-full flex items-center justify-between px-2 py-2 rounded text-xs font-medium transition-colors ${
             sidebarCollapsed
-              ? 'bg-blue-600 text-white'
+              ? 'bg-indigo-600 text-white'
               : 'bg-bg-2 text-ink-2 hover:bg-bg-2'
           }`}
         >

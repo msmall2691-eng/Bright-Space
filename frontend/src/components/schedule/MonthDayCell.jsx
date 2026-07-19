@@ -44,7 +44,7 @@ function MonthDayCell({
       <div className="flex items-center justify-between mb-0.5 sm:mb-1">
         <div className={`text-[10px] sm:text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full ${
           isToday ? 'bg-accent text-accent-ink bb-today-badge' :
-          isSelected ? 'text-blue-600' :
+          isSelected ? 'text-indigo-600' :
           'text-ink-2'
         }`}>
           {parseInt(date.slice(8))}
@@ -175,7 +175,7 @@ function MonthDayCell({
             <button
               type="button"
               onClick={e => { e.stopPropagation(); onSelectDay(date) }}
-              className="text-[9px] sm:text-[10px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
+              className="text-[9px] sm:text-[10px] font-medium text-indigo-600 hover:text-indigo-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
             >
               +{dayJobs.length - maxPills} more
             </button>

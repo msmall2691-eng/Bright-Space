@@ -429,7 +429,7 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
               return (
                 <button key={i} type="button" onClick={() => toggleDay(i)}
                   className={'px-3 py-1.5 rounded-full border text-sm ' + (sel
-                    ? 'bg-blue-600 text-white border-blue-600'
+                    ? 'bg-indigo-600 text-white border-indigo-600'
                     : 'bg-panel text-ink-2 border-hairline')}>
                   {lbl}
                 </button>
@@ -509,7 +509,7 @@ function ModalShell({ title, onClose, wide = false, children }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
       <div className={`w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]`}>
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 text-white">
+        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 text-white">
           <h2 className="text-lg font-bold">{title}</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-blue-400 rounded" aria-label="Close">
             <X className="w-5 h-5" />
@@ -969,7 +969,7 @@ export default function Recurring() {
               <button key={o.v}
                 onClick={() => setFilterStatus(o.v)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  filterStatus === o.v ? 'bg-blue-600 text-white' : 'text-ink-3 hover:text-ink'
+                  filterStatus === o.v ? 'bg-indigo-600 text-white' : 'text-ink-3 hover:text-ink'
                 }`}>
                 {o.label}
               </button>

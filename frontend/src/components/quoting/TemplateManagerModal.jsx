@@ -110,7 +110,7 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
                     <button onClick={() => removeTplItem(ti, ii)} className="p-1.5 text-ink-3 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 ))}
-                <button onClick={() => addTplItem(ti)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add line item</button>
+                <button onClick={() => addTplItem(ti)} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Add line item</button>
               </div>
             </div>
           ))}
@@ -121,7 +121,7 @@ export default function TemplateManagerModal({ initial, templatesLoaded, onClose
         <div className="p-4 border-t border-hairline shrink-0 flex gap-2">
           <button onClick={onClose} className="flex-1 bg-bg-2 hover:bg-hairline text-ink-2 px-4 py-2.5 rounded-lg text-sm font-medium">Cancel</button>
           <button onClick={saveTemplates} disabled={savingTemplates}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white px-4 py-2.5 rounded-lg text-sm font-medium">
+            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white px-4 py-2.5 rounded-lg text-sm font-medium">
             {savingTemplates ? 'Saving…' : 'Save templates'}
           </button>
         </div>

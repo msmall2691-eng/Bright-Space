@@ -136,7 +136,7 @@ export default function Timeline({ source, limit = 50 }) {
         {source.filters.map(f => (
           <button key={f.value} onClick={() => setFilter(f.value)}
             className={`px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap transition-colors ${
-              filter === f.value ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-2 hover:bg-bg-3'
+              filter === f.value ? 'bg-indigo-600 text-white' : 'bg-bg-2 text-ink-2 hover:bg-bg-3'
             }`}>
             {f.label}
           </button>

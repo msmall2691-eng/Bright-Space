@@ -26,7 +26,7 @@ export default function PropertiesTab({
         <p className="text-sm text-ink-3">{properties.length} propert{properties.length !== 1 ? 'ies' : 'y'}</p>
         <button onClick={openNewProp}
           data-testid="client-add-property"
-          className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+          className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
           <Plus className="w-3.5 h-3.5" /> Add Property
         </button>
       </div>
@@ -59,7 +59,7 @@ export default function PropertiesTab({
             <div className="flex gap-2">
               {[['residential','Residential'],['commercial','Commercial'],['str','STR / Airbnb']].map(([val, label]) => (
                 <button key={val} onClick={() => setPropForm(f => ({ ...f, property_type: val }))}
-                  className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${propForm.property_type === val ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
+                  className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${propForm.property_type === val ? 'bg-indigo-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
                   {label}
                 </button>
               ))}
@@ -135,7 +135,7 @@ export default function PropertiesTab({
                       type="button"
                       onClick={() => syncProperty(editingProp.id)}
                       disabled={syncingPropId === editingProp.id}
-                      className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 disabled:opacity-50">
+                      className="flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 disabled:opacity-50">
                       <RefreshCw className={`w-3 h-3 ${syncingPropId === editingProp.id ? 'animate-spin' : ''}`} />
                       {syncingPropId === editingProp.id ? 'Syncing…' : 'Sync now'}
                     </button>
@@ -147,7 +147,7 @@ export default function PropertiesTab({
                     type="button"
                     onClick={() => navigate(`/properties/${editingProp.id}/icals`)}
                     data-testid="open-bulk-icals"
-                    className="text-[11px] text-blue-600 hover:text-blue-700 mb-3">
+                    className="text-[11px] text-indigo-600 hover:text-indigo-700 mb-3">
                     Paste multiple URLs at once →
                   </button>
                 )}
@@ -226,7 +226,7 @@ export default function PropertiesTab({
                           <button type="button" onClick={() => addIcal(editingProp.id)}
                             disabled={!icalForm.url.trim()}
                             data-testid="client-property-ical-save"
-                            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-3 py-2 rounded-lg text-xs font-medium">
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-3 py-2 rounded-lg text-xs font-medium">
                             Add Feed
                           </button>
                           <button type="button" onClick={() => { setShowIcalForm(false); setIcalForm(EMPTY_ICAL) }}
@@ -262,7 +262,7 @@ export default function PropertiesTab({
               </button>
             )}
             <button onClick={saveProp} disabled={savingProp || !propForm.name}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               {savingProp ? 'Saving...' : 'Save Property'}
             </button>
           </div>
@@ -349,7 +349,7 @@ export default function PropertiesTab({
                   <button
                     onClick={(e) => { e.stopPropagation(); setJobModal({ propertyId: p.id }) }}
                     data-testid="client-property-add-job"
-                    className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg transition-colors"
+                    className="flex items-center gap-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg transition-colors"
                     title="Schedule a job at this property"
                   >
                     <Plus className="w-3 h-3" /> Job

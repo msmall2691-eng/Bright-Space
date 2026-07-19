@@ -132,7 +132,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 className={({ isActive }) =>
                   `group relative flex items-center gap-3 px-3 py-2.5 lg:py-2 mx-2 my-0.5 rounded-lg transition-colors text-[13px] select-none ${collapsed ? 'lg:justify-center lg:px-0 lg:mx-2' : ''} ${
                     isActive
-                      ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 font-semibold'
+                      ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold'
                       : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/70'
                   }`
                 }
@@ -143,9 +143,9 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                     <>
                       {/* Twenty-style: a thin accent rail marks the active item
                           instead of a saturated blue fill. */}
-                      {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-blue-600" />}
+                      {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-indigo-600" />}
                       <span className="relative shrink-0">
-                        <item.icon className={`w-[18px] h-[18px] ${isActive ? 'text-blue-600' : 'text-ink-3 group-hover:text-ink-2'}`} />
+                        <item.icon className={`w-[18px] h-[18px] ${isActive ? 'text-indigo-600' : 'text-ink-3 group-hover:text-ink-2'}`} />
                         {/* Collapsed: badge shrinks to a dot on the icon corner */}
                         {badge > 0 && collapsed && (
                           <span className="hidden lg:block absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-2 ring-panel" />

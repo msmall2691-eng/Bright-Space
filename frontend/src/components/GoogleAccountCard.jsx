@@ -109,7 +109,7 @@ export default function GoogleAccountCard() {
           )}
           <button onClick={connect}
             disabled={busy || acct?.oauth_available === false || acct?.encryption_available === false}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             <Link2 className="w-4 h-4" /> Connect Google account
           </button>
         </div>
@@ -153,7 +153,7 @@ export default function GoogleAccountCard() {
             <div className="flex items-center gap-2">
               {acct.status === 'expired' && (
                 <button onClick={connect} disabled={busy}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors">
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors">
                   <Link2 className="w-3.5 h-3.5" /> Reconnect
                 </button>
               )}

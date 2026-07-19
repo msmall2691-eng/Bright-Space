@@ -152,7 +152,7 @@ export function ClientForm({
         <div>
           {!showBilling ? (
             <button type="button" onClick={() => setShowBilling(true)}
-              className="text-[11px] font-medium text-blue-600 hover:text-blue-700">
+              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">
               + Add separate billing address
             </button>
           ) : (<>
@@ -196,7 +196,7 @@ export function ClientForm({
               <li key={d.id} className="flex items-center justify-between gap-2">
                 <span className="truncate">{d.name}{d.phone ? ` · ${d.phone}` : ''}{d.email ? ` · ${d.email}` : ''}</span>
                 <button type="button" onClick={() => navigate(`/clients/${d.id}`)}
-                  className="shrink-0 text-blue-600 hover:text-blue-700 font-medium">Open</button>
+                  className="shrink-0 text-indigo-600 hover:text-indigo-700 font-medium">Open</button>
               </li>
             ))}
           </ul>
@@ -214,7 +214,7 @@ export function ClientForm({
           </button>
         )}
         <button onClick={save} disabled={saving || (!form.first_name && !form.last_name)}
-          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
+          className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
           {saving ? 'Saving...' : (dupes.length > 0 ? 'Create anyway' : 'Save')}
         </button>
       </div>

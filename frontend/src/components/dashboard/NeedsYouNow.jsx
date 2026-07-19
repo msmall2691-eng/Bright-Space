@@ -65,7 +65,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
         </span>
         <h2 className="text-sm font-semibold text-ink">Needs you now</h2>
         {total > 0 && (
-          <span className="text-[11px] font-bold text-white bg-blue-600 px-1.5 py-0.5 rounded-full">{total}</span>
+          <span className="text-[11px] font-bold text-white bg-indigo-600 px-1.5 py-0.5 rounded-full">{total}</span>
         )}
       </div>
 
@@ -89,7 +89,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
             <div key={`rq-${r.job_id}`} className="flex items-start gap-3 px-5 py-3">
               <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 bg-violet-500" />
               <button onClick={() => navigate(`/jobs/${r.job_id}`)} className="flex-1 min-w-0 text-left group">
-                <div className="text-[13px] font-medium text-ink truncate group-hover:text-blue-600">
+                <div className="text-[13px] font-medium text-ink truncate group-hover:text-indigo-600">
                   {r.needs_approval ? 'Reschedule to approve' : 'Reschedule requested'} · {r.client_name || r.title || `Job #${r.job_id}`}
                 </div>
                 <div className="text-[11px] text-ink-3 truncate">
@@ -122,7 +122,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
                 <div className="text-[13px] font-medium text-ink truncate">{p.title}</div>
                 {p.sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{p.sub}</div>}
               </div>
-              {p.action && <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{p.action}</span>}
+              {p.action && <span className="text-[11px] font-semibold text-indigo-600 shrink-0 mt-1.5">{p.action}</span>}
             </button>
           )),
         ]
@@ -133,7 +133,7 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
             <div className="divide-y divide-hairline">{shown}</div>
             {(hidden > 0 || expanded) && (
               <button onClick={() => setExpanded(e => !e)}
-                className="w-full flex items-center justify-center gap-1 py-2.5 text-[12px] font-semibold text-blue-600 hover:bg-bg border-t border-hairline transition-colors">
+                className="w-full flex items-center justify-center gap-1 py-2.5 text-[12px] font-semibold text-indigo-600 hover:bg-bg border-t border-hairline transition-colors">
                 {expanded ? 'Show less' : `Show all ${nodes.length}`}
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
               </button>

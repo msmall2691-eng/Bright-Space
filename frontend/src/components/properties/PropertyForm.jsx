@@ -46,7 +46,7 @@ export function PropertyForm({
                 onClick={() => setForm(f => ({ ...f, property_type: type }))}
                 className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
                   form.property_type === type
-                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    ? 'border-indigo-600 bg-blue-50 text-blue-700'
                     : 'border-hairline text-ink-2 hover:border-hairline'
                 }`}
               >
@@ -61,7 +61,7 @@ export function PropertyForm({
             <label className="block text-xs text-ink-3">Client *</label>
             <button type="button"
               onClick={() => { setAddingClient(a => !a); setClientErr('') }}
-              className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
               {addingClient ? 'Cancel' : '+ New client'}
             </button>
           </div>
@@ -86,7 +86,7 @@ export function PropertyForm({
               </div>
               {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
               <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
                 {creatingClient ? 'Creating…' : 'Create & select client'}
               </button>
             </div>
@@ -196,7 +196,7 @@ export function PropertyForm({
       </div>
       <div className="p-6 border-t border-hairline shrink-0">
         <button onClick={onSave} disabled={saving || !form.client_id || !form.name || !form.address}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
           {saving ? 'Saving...' : 'Save Property'}
         </button>
       </div>

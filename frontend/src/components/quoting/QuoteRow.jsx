@@ -72,7 +72,7 @@ export default function QuoteRow({
           </button>
           {canEdit && ['draft', 'sent', 'changes_requested'].includes(q.status) && (
             <button onClick={() => onSend(q)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg transition-colors">
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600/20 text-blue-400 hover:bg-indigo-600/30 rounded-lg transition-colors">
               <Send className="w-3 h-3" /> {q.status === 'changes_requested' ? 'Send revised' : q.status === 'draft' ? 'Send' : 'Resend'}
             </button>
           )}
@@ -88,7 +88,7 @@ export default function QuoteRow({
               are accepted by the customer via their link anyway). */}
           {canEdit && q.status === 'accepted' && (
             <button onClick={() => onSchedule(q)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors">
               <Calendar className="w-3 h-3" />
               Set up schedule
             </button>

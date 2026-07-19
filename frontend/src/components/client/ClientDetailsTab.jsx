@@ -21,7 +21,7 @@ export default function ClientDetailsTab({
           <div className="flex gap-2 overflow-x-auto pb-2">
             {upcomingJobs.slice(0, 5).map(j => {
               const typeColor = j.job_type === 'str_turnover' ? 'border-orange-400/30 bg-orange-500/10' : j.job_type === 'commercial' ? 'border-green-400/30 bg-green-500/10' : 'border-blue-400/30 bg-blue-500/10'
-              const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-blue-600'
+              const textColor = j.job_type === 'str_turnover' ? 'text-orange-600' : j.job_type === 'commercial' ? 'text-green-600' : 'text-indigo-600'
               return (
                 <div key={j.id} className={`flex-shrink-0 ${typeColor} border rounded-lg px-3 py-2 min-w-[130px]`}>
                   <div className={`text-xs font-semibold ${textColor}`}>
@@ -143,7 +143,7 @@ export default function ClientDetailsTab({
 
       <button onClick={save} disabled={saving}
         data-testid="client-save-changes"
-        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-5 py-2.5 sm:py-2 rounded-lg text-sm font-medium transition-colors">
+        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-5 py-2.5 sm:py-2 rounded-lg text-sm font-medium transition-colors">
         <Save className="w-4 h-4" />{saving ? 'Saving...' : 'Save Changes'}
       </button>
     </div>
