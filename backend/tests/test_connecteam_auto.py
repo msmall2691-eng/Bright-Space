@@ -103,6 +103,21 @@ def test_open_draft_produces_valid_iso_for_time_objects(monkeypatch):
     assert calls[0]["end_datetime"] == "2026-06-20T11:00:00"
 
 
+def test_missing_times_is_non_dispatchable(monkeypatch):
+    """A job with NULL start/end time must be skipped, not pushed as a midnight
+    shift (Codex P1) — those rows get repaired then dispatch later."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **k: pytest.fail("must not push a midnight shift"))
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **k: pytest.fail("must not push a midnight shift"))
+    out = ca.auto_dispatch_job(FakeDB(), _job(start_time=None, end_time=None))
+    assert out["reason"] == "missing_times" and out["dispatched"] is False
+    # ...and the same for a turnover (open-shift path).
+    out2 = ca.auto_dispatch_job(FakeDB(), _job(job_type="str_turnover", cleaner_ids=[], end_time=None))
+    assert out2["reason"] == "missing_times" and out2["dispatched"] is False
+
+
 def test_cancelled_job_not_dispatched(monkeypatch):
     monkeypatch.setattr(ca, "is_configured", lambda: True)
     out = ca.auto_dispatch_job(FakeDB(), _job(status="cancelled"))

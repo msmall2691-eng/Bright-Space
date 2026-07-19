@@ -90,6 +90,13 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
     if job.connecteam_shift_ids:
         status["reason"] = "already_dispatched"
         return status
+    # A job with no start/end time is non-dispatchable — don't fabricate a
+    # midnight shift (which would put a cleaner on a 00:00 slot). These legacy
+    # rows get repaired by diagnose_missing_times/backfill_missing_times, then
+    # dispatch on the next pass. (Codex P1.)
+    if not job.start_time or not job.end_time:
+        status["reason"] = "missing_times"
+        return status
 
     start_dt, end_dt = _shift_times(job)
     shift_ids, errors = [], []

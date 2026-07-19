@@ -55,7 +55,13 @@ export default function ScheduleSyncSettings({ open, onClose }) {
   const save = useCallback(async (patch) => {
     setS(prev => ({ ...prev, ...patch }))
     try {
-      await post('/api/settings/automation', patch)
+      const res = await post('/api/settings/automation', patch)
+      // Turning live sync ON registers Google push channels server-side; a 200
+      // can still report it didn't start (no public URL / Google not connected).
+      // Warn instead of leaving the toggle looking successfully on.
+      if (patch.gcal_live_sync === true && res?.live_sync && res.live_sync.ok === false) {
+        toast.error(`Saved, but real-time Google sync couldn't start: ${res.live_sync.error || 'Google not connected or no public URL'}`)
+      }
     } catch (e) {
       toast.error(e?.message || 'Could not save — reverting')
       get('/api/settings/automation').then(d => setS(d || {})).catch(() => {})
