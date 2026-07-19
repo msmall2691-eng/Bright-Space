@@ -153,15 +153,56 @@ async def list_team_members(location_id: Optional[str] = None) -> list:
     return out
 
 
+async def list_team_member_wages() -> dict:
+    """The wage jobs configured in Square — the "Residential / Rental / Rate Pay"
+    buckets each employee is paid under. Returns:
+
+      { "titles": [distinct job titles],
+        "by_member": { (team_member_id, title_lower): hourly_rate_cents } }
+
+    so a timecard can carry the right job title AND Square's own configured rate
+    (rather than a rate re-typed in BrightBase). Best-effort/paginated."""
+    titles: dict = {}   # lower → original casing (first seen)
+    by_member: dict = {}
+    async with httpx.AsyncClient(timeout=20) as client:
+        cursor = None
+        while True:
+            params = {"limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            r = await client.get(f"{_base_url()}/v2/labor/team-member-wages",
+                                 headers=_headers(), params=params)
+            _raise_for_status(r)
+            data = r.json()
+            for w in (data.get("team_member_wages") or []):
+                title = (w.get("title") or "").strip()
+                tmid = w.get("team_member_id")
+                if title:
+                    titles.setdefault(title.lower(), title)
+                amt = ((w.get("hourly_rate") or {}).get("amount"))
+                if tmid and title and amt is not None:
+                    by_member[(str(tmid), title.lower())] = int(amt)
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+    return {"titles": sorted(titles.values(), key=str.lower), "by_member": by_member}
+
+
 async def verify() -> dict:
     """Auth smoke test for the Settings 'Test connection' button: confirm the
-    token works and return locations + a team-member count."""
+    token works and return locations, a team-member count, and the configured
+    job titles (so the operator can map Residential/Rental/Rate-Pay)."""
     locations = await list_locations()
     try:
         team = await list_team_members()
     except Exception:
         team = []
-    return {"ok": True, "locations": locations, "team_count": len(team)}
+    try:
+        wages = await list_team_member_wages()
+        job_titles = wages["titles"]
+    except Exception:
+        job_titles = []
+    return {"ok": True, "locations": locations, "team_count": len(team), "job_titles": job_titles}
 
 
 # ─── Writes ────────────────────────────────────────────────────────────────

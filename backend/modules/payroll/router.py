@@ -516,15 +516,32 @@ async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
         nm = _norm_name(person.get("name") or names.get(uid, ""))
         return sq_by_name.get(nm)
 
+    # Square wage "jobs" the operator runs payroll from (Residential / Rental /
+    # Rate Pay), so timecards carry the right title and Square's own configured
+    # rate for that job (falling back to the BrightBase rate when absent).
+    jobs = {
+        "residential": get_setting(db, "square_job_residential") or "Residential",
+        "rental": get_setting(db, "square_job_rental") or "Rental",
+    }
+    try:
+        sq_wages = (await square.list_team_member_wages())["by_member"]
+    except Exception:
+        sq_wages = {}
+
     # Build per-employee timecards + adjustments.
     emps: dict = {}
     for r in rows:
         uid = str(r["userId"])
         e = emps.get(uid)
         if e is None:
+            sqm = match_square(uid)
             e = {"employee_id": uid, "name": ct_team.get(uid, {}).get("name") or names.get(uid, uid),
                  "timecards": [], "piece_total": 0.0, "piece_count": 0, "miles": 0.0,
-                 "unpriced": 0, "excluded": 0}
+                 "unpriced": 0, "excluded": 0,
+                 "_square": sqm,
+                 "square_team_member_id": sqm["id"] if sqm else None,
+                 "square_name": sqm["name"] if sqm else None,
+                 "matched": bool(sqm)}
             emps[uid] = e
         e["miles"] += r["miles"]
         kind, prop, title = _classify_row(r, sched_index, crm_index, ct_jobs)
@@ -551,18 +568,28 @@ async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
         if kind is None:
             e["excluded"] += 1  # unclassified — leave out of Square, flag via excluded
             continue
-        # Hourly (residential, rental weekday, or override→hourly).
+        # Hourly (residential, rental weekday, or override→hourly). Tag the
+        # timecard with the Square job title so hours land in the right bucket,
+        # and prefer Square's configured rate for that (person, job).
+        job_title = jobs["rental"] if kind == "rental" else jobs["residential"]
         rate_cents = rental_cents if kind == "rental" else res_cents
+        rate_source = "brightbase"
+        if e["_square"]:
+            cfg = sq_wages.get((e["_square"]["id"], job_title.lower()))
+            if cfg:
+                rate_cents = int(cfg)
+                rate_source = "square"
         # End = start + net hours so Square's computed hours == our net.
         end_ts = int(r["startTimestamp"] + round(r["netHours"] * 3600))
         e["timecards"].append({
             "shift_id": r["shiftId"],
-            "title": label,
+            "title": job_title,
             "start_ts": r["startTimestamp"],
             "end_ts": end_ts,
             "hours": round(r["netHours"], 2),
             "rate": rate_cents / 100.0,
             "rate_cents": rate_cents,
+            "rate_source": rate_source,
             "kind": kind,
         })
 
@@ -570,10 +597,7 @@ async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
     out_emps = []
     total_timecards = 0
     for e in emps.values():
-        sq = match_square(e["employee_id"])
-        e["square_team_member_id"] = sq["id"] if sq else None
-        e["square_name"] = sq["name"] if sq else None
-        e["matched"] = bool(sq)
+        e.pop("_square", None)
         e["mileage_reimbursement"] = round(e["miles"] * rates["mileage_rate"], 2)
         e["piece_total"] = round(e["piece_total"], 2)
         e["timecard_count"] = len(e["timecards"])
@@ -581,10 +605,14 @@ async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
         out_emps.append(e)
     out_emps.sort(key=lambda x: str(x["name"]).lower())
 
+    any_square_rate = any(tc.get("rate_source") == "square"
+                          for e in out_emps for tc in e["timecards"])
     result = {
         "dry_run": body.dry_run,
         "period": f"{body.start_date} to {body.end_date}",
         "location_id": location,
+        "jobs": jobs,
+        "square_rates_used": any_square_rate,
         "matched": sum(1 for e in out_emps if e["matched"]),
         "unmatched": [e["name"] for e in out_emps if not e["matched"]],
         "timecards_total": total_timecards,

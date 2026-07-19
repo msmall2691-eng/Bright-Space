@@ -586,13 +586,19 @@ export default function IntegrationsTab({ toast, active }) {
 // page's "Send to Square" (creates Labor API timecards Square Payroll imports).
 function SquareCard({ toast, active }) {
   const [st, setSt] = useState({ loading: true })
-  const [form, setForm] = useState({ access_token: '', location_id: '', environment: 'production', open: false })
+  const [form, setForm] = useState({ access_token: '', location_id: '', environment: 'production', open: false,
+    job_residential: 'Residential', job_rental: 'Rental', job_weekend: 'Rate Pay' })
   const [busy, setBusy] = useState('')
 
   const refresh = () => {
     setSt(s => ({ ...s, loading: true }))
     return get('/api/settings/square-status')
-      .then(r => { setSt({ loading: false, ...r }); setForm(f => ({ ...f, location_id: r.location_id || '', environment: r.environment || 'production' })) })
+      .then(r => {
+        setSt({ loading: false, ...r })
+        const j = r.jobs || {}
+        setForm(f => ({ ...f, location_id: r.location_id || '', environment: r.environment || 'production',
+          job_residential: j.residential || 'Residential', job_rental: j.rental || 'Rental', job_weekend: j.weekend || 'Rate Pay' }))
+      })
       .catch(e => setSt({ loading: false, configured: false, error: e?.message || 'Could not check status' }))
   }
   useEffect(() => { if (active) refresh() }, [active])
@@ -600,7 +606,8 @@ function SquareCard({ toast, active }) {
   const save = async () => {
     setBusy('save')
     try {
-      const payload = { location_id: form.location_id.trim(), environment: form.environment }
+      const payload = { location_id: form.location_id.trim(), environment: form.environment,
+        job_residential: form.job_residential.trim(), job_rental: form.job_rental.trim(), job_weekend: form.job_weekend.trim() }
       if (form.access_token.trim()) payload.access_token = form.access_token.trim()
       const r = await post('/api/settings/square', payload)
       setSt({ loading: false, ...r })
@@ -674,6 +681,31 @@ function SquareCard({ toast, active }) {
                 <option value="sandbox">Sandbox</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Square job titles to tag timecards with</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                ['job_residential', 'Residential hours'],
+                ['job_rental', 'Rental hours'],
+                ['job_weekend', 'Weekend rate pay'],
+              ].map(([key, lbl]) => (
+                <div key={key}>
+                  <div className="text-[10.5px] text-ink-3 mb-0.5">{lbl}</div>
+                  <input type="text" list="square-job-titles" value={form[key]}
+                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                    className="w-full bg-bg border border-hairline rounded-lg px-2.5 py-1.5 text-sm text-ink focus:outline-none focus:border-blue-400" />
+                </div>
+              ))}
+            </div>
+            {Array.isArray(st.job_titles) && st.job_titles.length > 0 && (
+              <datalist id="square-job-titles">
+                {st.job_titles.map(t => <option key={t} value={t} />)}
+              </datalist>
+            )}
+            <p className="text-[10.5px] text-ink-3 mt-1">
+              Match these to the wage jobs on your Square employees so hours land in the right bucket. Hit Test connection to load your Square job titles as suggestions.
+            </p>
           </div>
           <p className="text-[11px] text-ink-3">
             Get an access token from the <b>Square Developer dashboard</b> (an app with Timecards + Team read/write). Save the token, hit <b>Test connection</b>, then pick your location.
