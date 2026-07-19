@@ -67,6 +67,9 @@ const parseISO = (s) => {
   const [y, m, d] = s.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
+// Monday that starts d's week — the unit biweekly cadence is counted in.
+const mondayOf = (d) => { const m = new Date(d); m.setDate(m.getDate() - pyWeekday(d)); m.setHours(0, 0, 0, 0); return m }
+const daysBetween = (a, b) => Math.round((a - b) / 86400000)
 
 function ruleSummary(s) {
   if (!s) return ''
@@ -135,21 +138,36 @@ function computeUpcoming(schedule, exceptions, maxCount = 8) {
     const step = Math.max(1, schedule.interval_weeks || 1)
     const chosen = (schedule.days_of_week && schedule.days_of_week.length)
       ? new Set(schedule.days_of_week) : null
+    // Phase the N-day step off the anchor, not today, so it matches the backend
+    // and doesn't shift on every render (step 1 is unaffected).
+    const anchor = parseISO(schedule.anchor_date) || parseISO(schedule.series_start_date) || new Date(today)
     let cur = new Date(today)
     while (cur <= end) {
-      if (!chosen || chosen.has(pyWeekday(cur))) raw.push(new Date(cur))
-      cur.setDate(cur.getDate() + step)
+      const onStep = ((daysBetween(cur, anchor) % step) + step) % step === 0
+      if (onStep && (!chosen || chosen.has(pyWeekday(cur)))) raw.push(new Date(cur))
+      cur.setDate(cur.getDate() + 1)
     }
   } else {
     const days = (schedule.days_of_week && schedule.days_of_week.length)
       ? schedule.days_of_week : [schedule.day_of_week ?? 0]
     const interval = Math.max(1, schedule.interval_weeks || (schedule.frequency === 'biweekly' ? 2 : 1))
+    // Count week-parity from a fixed anchor (matches backend generate_dates), so
+    // biweekly stays biweekly instead of re-seating its phase off "today".
+    let anchor = parseISO(schedule.anchor_date) || parseISO(schedule.series_start_date)
+    if (!anchor) {
+      // Brand-new series before its anchor is persisted: first upcoming occurrence.
+      anchor = new Date(Math.min(...days.map(dow => {
+        const c = new Date(today); c.setDate(c.getDate() + (((dow - pyWeekday(today)) + 7) % 7)); return c.getTime()
+      })))
+    }
+    const refMonday = mondayOf(anchor)
     for (const dow of days) {
       const ahead = ((dow - pyWeekday(today)) + 7) % 7
       let cur = new Date(today); cur.setDate(cur.getDate() + ahead)
       while (cur <= end) {
-        raw.push(new Date(cur))
-        cur.setDate(cur.getDate() + 7 * interval)
+        const weekIndex = Math.round(daysBetween(mondayOf(cur), refMonday) / 7)
+        if (((weekIndex % interval) + interval) % interval === 0) raw.push(new Date(cur))
+        cur.setDate(cur.getDate() + 7)
       }
     }
   }
