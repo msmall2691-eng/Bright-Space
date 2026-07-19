@@ -8,7 +8,7 @@ export default function Button({
   ...props
 }) {
   const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg',
+    primary: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md hover:shadow-lg',
     secondary: 'bg-bg-2 text-ink hover:bg-hairline-2',
     tertiary: 'bg-transparent text-ink-2 hover:bg-bg-2',
     danger: 'bg-red-600 text-white hover:bg-red-700',
@@ -21,7 +21,7 @@ export default function Button({
     lg: 'px-6 py-3 text-base',
   }
 
-  const baseStyles = 'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+  const baseStyles = 'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
 
   return (
     <button

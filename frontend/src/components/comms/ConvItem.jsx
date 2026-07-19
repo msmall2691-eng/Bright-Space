@@ -68,7 +68,7 @@ export function ConvItem({ conv, active, onClick }) {
 
         {/* Unread count pill */}
         {unread && (
-          <span className="bg-blue-600 text-white text-[10px] font-bold min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-sm">
+          <span className="bg-indigo-600 text-white text-[10px] font-bold min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-sm">
             {conv.unread_count > 9 ? '9+' : conv.unread_count}
           </span>
         )}

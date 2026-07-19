@@ -96,7 +96,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center sm:justify-center">
       <div className="w-full sm:max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[95vh]">
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white">
+        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white">
           <h2 className="text-xl sm:text-2xl font-bold">New recurring schedule</h2>
           <button onClick={onClose} className="p-2 hover:bg-blue-400 rounded"><X className="w-5 h-5" /></button>
         </div>
@@ -166,7 +166,7 @@ function RecurringCreateModal({ clients, properties, onClose, onCreated }) {
                   const dayNum = (i + 6) % 7
                   const sel = form.days_of_week.includes(dayNum)
                   return (
-                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline')}>
+                    <button key={i} type="button" onClick={() => toggleDay(dayNum)} className={'px-3 py-2 rounded-full border text-sm ' + (sel ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-panel text-ink-2 border-hairline')}>
                       {label}
                     </button>
                   )

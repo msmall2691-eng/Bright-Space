@@ -61,7 +61,7 @@ export function InboxTile({
           {(hiddenOverdueConvs + hiddenUnassignedConvs > 0) && (
             <button
               onClick={() => navigate('/comms')}
-              className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
+              className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-indigo-600 hover:bg-bg transition-colors"
             >
               +{hiddenOverdueConvs + hiddenUnassignedConvs} more in inbox · Open Comms →
             </button>
@@ -69,7 +69,7 @@ export function InboxTile({
           {hiddenLateVisits > 0 && (
             <button
               onClick={() => navigate('/schedule')}
-              className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
+              className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-indigo-600 hover:bg-bg transition-colors"
             >
               +{hiddenLateVisits} more late {hiddenLateVisits === 1 ? 'visit' : 'visits'} · Open Schedule →
             </button>
@@ -77,7 +77,7 @@ export function InboxTile({
           {hiddenInvoices > 0 && (
             <button
               onClick={() => navigate('/billing?view=invoices')}
-              className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-blue-600 hover:bg-bg transition-colors"
+              className="w-full text-left px-4 py-2 text-[10px] text-ink-3 hover:text-indigo-600 hover:bg-bg transition-colors"
             >
               +{hiddenInvoices} more past-due {hiddenInvoices === 1 ? 'invoice' : 'invoices'} · Open Invoicing →
             </button>

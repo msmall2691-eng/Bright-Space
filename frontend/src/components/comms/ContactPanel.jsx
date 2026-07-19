@@ -70,7 +70,7 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, 
         <div className="mt-3 space-y-1.5">
           {(client?.phone || detail.external_contact) && (
             <a href={`tel:${client?.phone || detail.external_contact}`}
-              className="flex items-center gap-2 text-[12px] text-ink-2 hover:text-blue-600 transition-colors group">
+              className="flex items-center gap-2 text-[12px] text-ink-2 hover:text-indigo-600 transition-colors group">
               <div className="w-6 h-6 rounded-lg bg-bg-2 group-hover:bg-blue-50 flex items-center justify-center transition-colors">
                 <Phone className="w-3 h-3 text-ink-3 group-hover:text-blue-500" />
               </div>
@@ -79,7 +79,7 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, 
           )}
           {client?.email && (
             <a href={`mailto:${client.email}`}
-              className="flex items-center gap-2 text-[12px] text-ink-2 hover:text-blue-600 transition-colors group">
+              className="flex items-center gap-2 text-[12px] text-ink-2 hover:text-indigo-600 transition-colors group">
               <div className="w-6 h-6 rounded-lg bg-bg-2 group-hover:bg-blue-50 flex items-center justify-center transition-colors">
                 <Mail className="w-3 h-3 text-ink-3 group-hover:text-blue-500" />
               </div>

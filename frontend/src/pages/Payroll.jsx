@@ -140,7 +140,7 @@ export default function Payroll() {
               className="bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
           </div>
           <button onClick={pull} disabled={loading}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             <Search className="w-4 h-4" />{loading ? 'Loading...' : 'Pull Data'}
           </button>
           {data && (
@@ -409,7 +409,7 @@ function RatesPanel() {
                 <RateInput label="Mileage $/mi" value={rates.mileage_rate} step="0.01"
                   onChange={v => setRates({ ...rates, mileage_rate: v })} />
                 <button onClick={saveRates} disabled={savingRates}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                   {savedRates ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                   {savedRates ? 'Saved' : savingRates ? 'Saving…' : 'Save rates'}
                 </button>
@@ -481,7 +481,7 @@ function TurnoverRow({ property }) {
           className="w-20 bg-transparent px-1 py-1.5 text-sm focus:outline-none" />
       </div>
       <button onClick={save} disabled={!dirty || saving}
-        className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-40 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3">
+        className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-40 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3">
         {saved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
         {saved ? 'Saved' : 'Save'}
       </button>

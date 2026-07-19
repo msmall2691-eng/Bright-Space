@@ -57,7 +57,7 @@ export default function OpsAlerts({ stats, unassignedToday, onFocusUnassigned })
             <span className="flex-1 leading-snug">
               <strong className="font-semibold">{a.title}</strong>
               {a.detail && (
-                <span className={`ml-1 ${a.tone === 'warn' ? 'text-amber-700' : 'text-blue-700'}`}>
+                <span className={`ml-1 ${a.tone === 'warn' ? 'text-amber-700' : 'text-indigo-700'}`}>
                   · {a.detail}
                 </span>
               )}

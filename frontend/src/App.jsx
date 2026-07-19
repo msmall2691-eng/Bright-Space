@@ -66,7 +66,7 @@ class ErrorBoundary extends Component {
           <p className="text-sm text-ink-3 max-w-md">{this.state.error?.message || 'An unexpected error occurred.'}</p>
           <button
             onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
           >Reload page</button>
         </div>
       )

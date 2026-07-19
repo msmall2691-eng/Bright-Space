@@ -134,7 +134,7 @@ export default function OpportunityDetail() {
           <div className="bg-panel border border-hairline rounded-xl p-4 space-y-4 self-start">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-lg bg-blue-600/15 text-blue-500 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-lg bg-indigo-600/15 text-blue-500 flex items-center justify-center shrink-0">
                   <TrendingUp className="w-5 h-5" />
                 </div>
                 <InlineSelect value={opp.stage} options={STAGE_OPTIONS} onSelect={setStage} />
@@ -195,7 +195,7 @@ export default function OpportunityDetail() {
               />
               <div className="flex justify-end mt-2">
                 <button onClick={addNote} disabled={savingNote || !note.trim()}
-                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors">
                   <Send className="w-3.5 h-3.5" /> {savingNote ? 'Saving…' : 'Add note'}
                 </button>
               </div>

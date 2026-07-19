@@ -39,7 +39,7 @@ export function Avatar({ name, size = 'md', className = '', online }) {
   }
   const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   const palettes = [
-    'bg-gradient-to-br from-blue-400 to-blue-600 text-white',
+    'bg-gradient-to-br from-blue-400 to-indigo-600 text-white',
     'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white',
     'bg-gradient-to-br from-violet-400 to-violet-600 text-white',
     'bg-gradient-to-br from-amber-400 to-amber-600 text-white',

@@ -129,7 +129,7 @@ function AgentBubble({ msg, agent }) {
 function UserBubble({ text }) {
   return (
     <div className="flex justify-end mt-3">
-      <div className="max-w-[85%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl rounded-br-md bg-blue-600 text-white text-[13px] leading-relaxed whitespace-pre-wrap break-words">
+      <div className="max-w-[85%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl rounded-br-md bg-indigo-600 text-white text-[13px] leading-relaxed whitespace-pre-wrap break-words">
         {text}
       </div>
     </div>
@@ -479,7 +479,7 @@ export default function Workspace() {
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || sending}
-              className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-blue-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+              className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
             >
               <Send className="w-4 h-4" />
             </button>

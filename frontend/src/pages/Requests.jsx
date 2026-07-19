@@ -279,10 +279,10 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
         || intake.custom_fields.pets_allowed
       ) && (
         <div className="text-[11px] text-ink-2 bg-blue-50 border border-blue-200 rounded p-2 space-y-0.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 mb-1">Booking essentials</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 mb-1">Booking essentials</div>
           {intake.custom_fields.listing_url && (
             <div><span className="text-ink-3">Listing:</span>{' '}
-              <a href={intake.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+              <a href={intake.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline break-all">
                 {intake.custom_fields.listing_url}
               </a>
             </div>
@@ -534,7 +534,7 @@ export default function Requests() {
               placeholder="Search by name, email, phone, or address..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-hairline rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
             />
           </div>
 
@@ -631,7 +631,7 @@ export default function Requests() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold">{selectedRequest.name}</h2>
                 <p className="text-xs sm:text-sm text-blue-100">Request #{selectedRequest.id}</p>
@@ -659,7 +659,7 @@ export default function Requests() {
                   onClick={() => setDrawerTab(tab.key)}
                   className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                     drawerTab === tab.key
-                      ? 'border-blue-600 text-blue-600'
+                      ? 'border-indigo-600 text-indigo-600'
                       : 'border-transparent text-ink-3 hover:text-ink-2'
                   }`}
                 >
@@ -739,7 +739,7 @@ export default function Requests() {
                 <label className="text-xs font-semibold text-ink-2 uppercase">Email</label>
                 <p className="text-sm text-ink">
                   {selectedRequest.email ? (
-                    <a href={`mailto:${selectedRequest.email}`} className="text-blue-600 hover:underline">
+                    <a href={`mailto:${selectedRequest.email}`} className="text-indigo-600 hover:underline">
                       {selectedRequest.email}
                     </a>
                   ) : '—'}
@@ -749,7 +749,7 @@ export default function Requests() {
                 <label className="text-xs font-semibold text-ink-2 uppercase">Phone</label>
                 <p className="text-sm text-ink">
                   {selectedRequest.phone ? (
-                    <a href={`tel:${selectedRequest.phone}`} className="text-blue-600 hover:underline">
+                    <a href={`tel:${selectedRequest.phone}`} className="text-indigo-600 hover:underline">
                       {selectedRequest.phone}
                     </a>
                   ) : '—'}
@@ -878,7 +878,7 @@ export default function Requests() {
                   <div className="text-sm text-ink space-y-0.5 mt-1">
                     {selectedRequest.custom_fields.listing_url && (
                       <div><span className="text-ink-3">Listing:</span>{' '}
-                        <a href={selectedRequest.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                        <a href={selectedRequest.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline break-all">
                           {selectedRequest.custom_fields.listing_url}
                         </a>
                       </div>
@@ -957,7 +957,7 @@ export default function Requests() {
       {showNewRequestModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:w-full max-w-lg bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 sm:p-6 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
               <h2 className="text-xl font-bold">New Request</h2>
               <button onClick={() => setShowNewRequestModal(false)} className="text-white/80 hover:text-white">
                 <X className="w-5 h-5" />

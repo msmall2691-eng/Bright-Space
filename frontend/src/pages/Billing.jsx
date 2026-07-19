@@ -43,7 +43,7 @@ export default function Billing() {
               onClick={() => setView(t.key)}
               className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${
                 active
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-indigo-600 text-indigo-600'
                   : 'border-transparent text-ink-3 hover:text-ink-2'
               }`}
             >

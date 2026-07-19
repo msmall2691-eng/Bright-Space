@@ -37,7 +37,7 @@ export default function FollowUpRow({
         {canEdit && (
           <div className="flex gap-1.5 shrink-0">
             <button onClick={() => onSendFollowUp(q)} disabled={nudging === q.id}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors">
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors">
               <Send className="w-3 h-3" /> {nudging === q.id ? 'Sending…' : 'Send follow-up'}
             </button>
             <button onClick={() => onOpenSendPanel(q)}

@@ -150,7 +150,7 @@ export default function Login({ onLoginSuccess }) {
         <div className="bg-panel/90 backdrop-blur-lg rounded-2xl border border-white/20 shadow-2xl p-8">
           {/* Logo and Header */}
           <div className="flex items-center justify-center mb-8">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg">
               <Zap className="w-6 h-6 text-white" />
             </div>
           </div>
@@ -191,7 +191,7 @@ export default function Login({ onLoginSuccess }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                 />
               </div>
             </div>
@@ -211,7 +211,7 @@ export default function Login({ onLoginSuccess }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                  className="w-full pl-10 pr-12 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                 />
                 <button
                   type="button"
@@ -233,15 +233,15 @@ export default function Login({ onLoginSuccess }) {
                     btn.textContent = 'Contact your administrator to reset'
                     btn.disabled = true
                     btn.classList.add('text-ink-3')
-                    btn.classList.remove('text-blue-600', 'hover:text-blue-700')
+                    btn.classList.remove('text-indigo-600', 'hover:text-indigo-700')
                     setTimeout(() => {
                       btn.textContent = 'Forgot password?'
                       btn.disabled = false
                       btn.classList.remove('text-ink-3')
-                      btn.classList.add('text-blue-600', 'hover:text-blue-700')
+                      btn.classList.add('text-indigo-600', 'hover:text-indigo-700')
                     }, 5000)
                   }}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-semibold"
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
                 >
                   Forgot password?
                 </button>
@@ -264,7 +264,7 @@ export default function Login({ onLoginSuccess }) {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     disabled={loading}
-                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50"
+                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-hairline/50 bg-panel/50 hover:bg-panel/70 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -274,7 +274,7 @@ export default function Login({ onLoginSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-6 px-4 py-3 bg-gradient-to-r from-blue-600 to-violet-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-violet-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full mt-6 px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-violet-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -323,7 +323,7 @@ export default function Login({ onLoginSuccess }) {
                     setMode('register')
                     setError('')
                   }}
-                  className="text-blue-600 font-semibold hover:text-blue-700"
+                  className="text-indigo-600 font-semibold hover:text-indigo-700"
                 >
                   Create one
                 </button>
@@ -336,7 +336,7 @@ export default function Login({ onLoginSuccess }) {
                     setMode('login')
                     setError('')
                   }}
-                  className="text-blue-600 font-semibold hover:text-blue-700"
+                  className="text-indigo-600 font-semibold hover:text-indigo-700"
                 >
                   Sign in
                 </button>

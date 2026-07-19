@@ -71,7 +71,7 @@ export function MergeModal({
             </button>
           )}
           <button onClick={doMerge} disabled={merging || !mergeWinner}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
+            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-4 py-2 rounded-lg text-[13px] font-medium transition-colors">
             {merging ? 'Merging...' : 'Merge'}
           </button>
         </div>

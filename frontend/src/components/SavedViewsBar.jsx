@@ -121,7 +121,7 @@ export default function SavedViewsBar({ entityType, currentConfig, onApply, defa
                 placeholder="View name…"
                 className="flex-1 bg-bg border border-hairline rounded-md px-2 py-1 text-[12px] text-ink placeholder-ink-3 focus:outline-none focus:border-blue-400" />
               <button type="button" onClick={saveNew}
-                className="px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-medium">Save</button>
+                className="px-2 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium">Save</button>
             </div>
           ) : (
             <button type="button" onClick={() => { setNaming(true); setName('') }}

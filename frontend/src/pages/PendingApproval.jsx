@@ -46,7 +46,7 @@ export default function PendingApproval({ user, onApproved }) {
       {note && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 max-w-sm">{note}</p>}
       <div className="flex items-center gap-3">
         <button onClick={checkAgain} disabled={checking}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
           <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
           {checking ? 'Checking…' : 'Check again'}
         </button>

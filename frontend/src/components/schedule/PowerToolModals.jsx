@@ -18,7 +18,7 @@ export function AutoAssignModal({ state, onCancel, onRun, empName }) {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Wand2 className="w-5 h-5 text-blue-600 shrink-0" />
+            <Wand2 className="w-5 h-5 text-indigo-600 shrink-0" />
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-ink">Auto-assign turnovers</h2>
               <p className="text-[12px] text-ink-3 mt-0.5">Available cleaners, balanced by daily load. Review before applying.</p>
@@ -89,7 +89,7 @@ export function FixTimesModal({ state, onCancel, onRun }) {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Clock className="w-5 h-5 text-blue-600 shrink-0" />
+            <Clock className="w-5 h-5 text-indigo-600 shrink-0" />
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-ink">Fix missing job times</h2>
               <p className="text-[12px] text-ink-3 mt-0.5">Jobs showing "– –" get a sensible default (turnovers → property checkout, others → 9:00). Review before applying.</p>

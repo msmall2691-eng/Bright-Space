@@ -541,7 +541,7 @@ export default function CalendarView({
           {selected && onCreateForDay && (
             <button
               onClick={() => onCreateForDay(selected)}
-              className="flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-2.5 py-1 rounded-lg transition-colors"
+              className="flex items-center gap-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 active:bg-blue-800 px-2.5 py-1 rounded-lg transition-colors"
               aria-label="New job on this day"
             >
               <Plus className="w-3.5 h-3.5" /> New job

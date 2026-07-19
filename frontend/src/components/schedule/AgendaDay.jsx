@@ -148,7 +148,7 @@ export default function AgendaDay({
                                   interactive elements inside one. */}
                               <span
                                 onClick={e => { e.stopPropagation(); window.open(mapsSearchUrl(property.address), '_blank', 'noopener,noreferrer') }}
-                                className="no-print shrink-0 text-ink-3 hover:text-blue-600 cursor-pointer"
+                                className="no-print shrink-0 text-ink-3 hover:text-indigo-600 cursor-pointer"
                                 title="Open in Google Maps"
                                 role="button"
                                 tabIndex={-1}

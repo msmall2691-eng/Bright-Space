@@ -210,7 +210,7 @@ export default function PropertyIcalsBulk() {
   if (!property) {
     return (
       <div className="p-6 text-sm text-ink-3">
-        Property not found. <button onClick={() => navigate('/properties')} className="text-blue-600 underline">Back to Properties</button>
+        Property not found. <button onClick={() => navigate('/properties')} className="text-indigo-600 underline">Back to Properties</button>
       </div>
     )
   }
@@ -254,7 +254,7 @@ export default function PropertyIcalsBulk() {
           <button onClick={rebuild}
             disabled={rebuilding || (property.icals?.length || 0) === 0}
             title="Force-rebuild every turnover from the feed (recovers cancelled/missing ones) and confirm full coverage"
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0">
             <RefreshCw className={`w-3.5 h-3.5 ${rebuilding ? 'animate-spin' : ''}`} />
             {rebuilding ? 'Rebuilding…' : 'Rebuild from feed'}
           </button>
@@ -338,7 +338,7 @@ export default function PropertyIcalsBulk() {
                       <button onClick={() => syncFeed(ical.id)}
                         disabled={syncingFeed === ical.id}
                         data-testid="existing-feed-sync"
-                        className="text-ink-3 hover:text-blue-600 p-1 disabled:opacity-50"
+                        className="text-ink-3 hover:text-indigo-600 p-1 disabled:opacity-50"
                         aria-label="Sync this feed"
                         title="Sync just this feed">
                         <RefreshCw className={`w-4 h-4 ${syncingFeed === ical.id ? 'animate-spin' : ''}`} />
@@ -424,7 +424,7 @@ export default function PropertyIcalsBulk() {
             <button onClick={addAll}
               disabled={adding || validRows.length === 0}
               data-testid="bulk-add"
-              className="flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 sm:flex-none">
+              className="flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 disabled:text-ink-3 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 sm:flex-none">
               <LinkIcon className="w-3.5 h-3.5" />
               {adding ? 'Adding…' : `Add ${validRows.length || ''} feed${validRows.length === 1 ? '' : 's'}`.trim()}
             </button>
@@ -448,7 +448,7 @@ export default function PropertyIcalsBulk() {
                 <li className="pt-1">
                   <button onClick={sync}
                     disabled={syncing}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                     {syncing ? 'Syncing…' : 'Sync now to create turnover jobs →'}
                   </button>
                 </li>
@@ -458,7 +458,7 @@ export default function PropertyIcalsBulk() {
         </section>
 
         <p className="text-[11px] text-ink-3">
-          Looking for this property? <Link to={`/properties/${propertyId}`} className="text-blue-600">Open property details</Link>
+          Looking for this property? <Link to={`/properties/${propertyId}`} className="text-indigo-600">Open property details</Link>
         </p>
       </div>
     </div>

@@ -123,7 +123,7 @@ export function RequestThreadPanel({ intake }) {
         )}
         <button
           onClick={() => navigate(`/comms?q=${encodeURIComponent(intake?.email || intake?.phone || '')}`)}
-          className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-blue-600 px-2 py-1 rounded transition-colors shrink-0"
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-3 hover:text-indigo-600 px-2 py-1 rounded transition-colors shrink-0"
         >
           Full inbox <ExternalLink className="w-3 h-3" />
         </button>

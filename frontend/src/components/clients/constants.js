@@ -18,7 +18,7 @@ export const STATUS_OPTIONS = [
  *  hashes the name into an index — same name always gets the same
  *  color across the app. */
 export const AVATAR_COLORS = [
-  'bg-blue-600/20 text-blue-400',
+  'bg-indigo-600/20 text-blue-400',
   'bg-emerald-600/20 text-emerald-400',
   'bg-violet-600/20 text-violet-400',
   'bg-amber-600/20 text-amber-400',

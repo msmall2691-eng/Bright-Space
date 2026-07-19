@@ -18,7 +18,7 @@ export function RecurringTab({ schedules }) {
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-ink-3">{schedules.length} schedule{schedules.length !== 1 ? 's' : ''}</p>
         <a href="/recurring"
-          className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+          className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
           <Plus className="w-3.5 h-3.5" /> Add Schedule
         </a>
       </div>
@@ -81,7 +81,7 @@ export function JobsListTab({ jobs, upcomingJobs, pastJobs, clientId, onLinked }
             {upcomingJobs.map(j => (
               <div key={j.id} className="bg-panel border border-blue-400/30 rounded-xl p-4 flex items-center gap-4">
                 <div className="text-center w-16 shrink-0">
-                  <div className="text-sm font-semibold text-blue-600">
+                  <div className="text-sm font-semibold text-indigo-600">
                     {new Date(j.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </div>
                   <div className="text-xs text-blue-500">{j.start_time}</div>
@@ -195,7 +195,7 @@ export function OpportunitiesTab({ opportunities, navigate }) {
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-ink-3">{opportunities.length} opportunit{opportunities.length !== 1 ? 'ies' : 'y'}</p>
         <button onClick={() => navigate('/pipeline')}
-          className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+          className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
           <Plus className="w-3.5 h-3.5" /> New Deal
         </button>
       </div>

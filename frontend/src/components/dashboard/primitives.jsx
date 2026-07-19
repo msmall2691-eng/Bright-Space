@@ -22,7 +22,7 @@ export function AttentionRow({ tone, title, sub, action, onClick }) {
         {sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{sub}</div>}
       </div>
       {action && (
-        <span className="text-[11px] font-semibold text-blue-600 shrink-0 mt-1.5">{action}</span>
+        <span className="text-[11px] font-semibold text-indigo-600 shrink-0 mt-1.5">{action}</span>
       )}
     </button>
   )
@@ -45,7 +45,7 @@ export function Tile({ icon: Icon, iconColor, title, badge, action, onAction, ch
           {badge}
         </div>
         {action && (
-          <button onClick={onAction} className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5 shrink-0">
+          <button onClick={onAction} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-0.5 shrink-0">
             {action} <ArrowRight className="w-3 h-3" />
           </button>
         )}

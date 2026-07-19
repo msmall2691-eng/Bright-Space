@@ -71,7 +71,7 @@ export function ClientsToolbar({
       </div>
 
       <button onClick={openNew}
-        className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
+        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-[12px] font-medium transition-colors">
         <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">New Client</span>
       </button>
     </div>

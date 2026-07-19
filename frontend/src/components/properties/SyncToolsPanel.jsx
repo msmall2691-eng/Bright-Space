@@ -15,7 +15,7 @@ export function SyncToolsPanel({ syncAll, syncing, runSweep, sweeping }) {
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={syncAll} disabled={syncing === 'all'}
           title="Pull the latest bookings from every property's calendar feeds now"
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3.5 py-2 rounded-lg text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3.5 py-2 rounded-lg text-sm font-medium transition-colors">
           <RefreshCw className={`w-3.5 h-3.5 ${syncing === 'all' ? 'animate-spin' : ''}`} />
           {syncing === 'all' ? 'Syncing…' : 'Sync all feeds'}
         </button>
@@ -71,7 +71,7 @@ export function SweepResultsPanel({ sweep, onDismiss, rebuildOne, rebuildingId }
             {!p.ok && (
               <button onClick={() => rebuildOne(p.property_id)} disabled={rebuildingId !== null}
                 title="Force-rebuild this property's turnovers from the feed, then re-check"
-                className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors shrink-0">
+                className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors shrink-0">
                 <RefreshCw className={`w-3 h-3 ${rebuildingId === p.property_id ? 'animate-spin' : ''}`} />
                 {rebuildingId === p.property_id ? 'Rebuilding…' : 'Rebuild'}
               </button>

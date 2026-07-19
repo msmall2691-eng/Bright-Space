@@ -66,8 +66,8 @@ export default function ClientMobileHeader({
       <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-hairline">
         {/* Upcoming */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 sm:p-3">
-          <div className="text-xs sm:text-sm text-blue-600 font-medium">Upcoming</div>
-          <div className="text-lg sm:text-base font-bold text-blue-700 mt-0.5">{visitStats?.upcoming ?? upcomingJobs.length}</div>
+          <div className="text-xs sm:text-sm text-indigo-600 font-medium">Upcoming</div>
+          <div className="text-lg sm:text-base font-bold text-indigo-700 mt-0.5">{visitStats?.upcoming ?? upcomingJobs.length}</div>
         </div>
 
         {/* Revenue */}

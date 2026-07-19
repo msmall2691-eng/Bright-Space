@@ -171,7 +171,7 @@ export default function EmailTab({ toast, active }) {
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={emailConfig.email_auto_enrich === 'true'}
               onChange={e => setEmailConfig(c => ({ ...c, email_auto_enrich: e.target.checked ? 'true' : 'false' }))}
-              className="w-4 h-4 rounded border-hairline text-blue-600 focus:ring-0" />
+              className="w-4 h-4 rounded border-hairline text-indigo-600 focus:ring-0" />
             <div>
               <div className="text-sm font-medium text-ink">Auto-create contacts from emails</div>
               <div className="text-xs text-ink-3">When enabled, unknown email senders are automatically added as leads (like Twenty CRM)</div>
@@ -182,7 +182,7 @@ export default function EmailTab({ toast, active }) {
         {/* Action buttons */}
         <div className="flex items-center gap-3">
           <button onClick={saveEmailConfig} disabled={emailSaving}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
             {emailSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
             Save Settings
           </button>

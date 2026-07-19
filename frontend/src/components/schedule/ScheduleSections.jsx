@@ -152,7 +152,7 @@ export function ScheduleBulkBar({
                 <button onClick={() => onBulkShift(Math.abs(shiftDays))} disabled={bulkShifting || !shiftDays}
                   data-testid="visits-bulk-shift-forward"
                   title="Move forward"
-                  className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                  className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-blue-300 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                   {bulkShifting ? 'Working...' : <>+ Shift</>}
                 </button>
               </div>

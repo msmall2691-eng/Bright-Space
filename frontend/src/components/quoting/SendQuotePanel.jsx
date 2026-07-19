@@ -97,7 +97,7 @@ export default function SendQuotePanel({
               { id: 'both', label: 'Both', icon: Send },
             ].map(({ id, label, icon: Icon }) => (
               <button key={id} onClick={() => setSendForm(f => ({ ...f, channel: id }))}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${sendForm.channel === id ? 'bg-blue-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${sendForm.channel === id ? 'bg-indigo-600 text-white' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'}`}>
                 <Icon className="w-3.5 h-3.5" />{label}
               </button>
             ))}
@@ -239,7 +239,7 @@ export default function SendQuotePanel({
           return (
             <button onClick={onSend} disabled={blocked}
               title={blockedTitle}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-blue-500 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <Send className="w-4 h-4" />
               {sending ? 'Sending...' : `Send via ${sendForm.channel === 'both' ? 'Email & SMS' : sendForm.channel === 'email' ? 'Email' : 'SMS'}`}
             </button>

@@ -183,7 +183,7 @@ export function PropertyRow({
 
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => addIcal(p.id)}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded text-xs font-medium">
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-xs font-medium">
                       Add Calendar
                     </button>
                     <button onClick={() => setShowIcalForm(null)}
@@ -195,7 +195,7 @@ export function PropertyRow({
               ) : (
                 <>
                   <button onClick={() => setShowIcalForm(p.id)}
-                    className="w-full text-xs text-blue-600 dark:text-blue-300 hover:text-blue-700 border border-blue-600/20 bg-blue-50/50 dark:bg-blue-500/10 hover:bg-blue-50 dark:hover:bg-blue-500/20 px-3 py-2 rounded-lg transition-colors">
+                    className="w-full text-xs text-blue-600 dark:text-blue-300 hover:text-blue-700 border border-indigo-600/20 bg-blue-50/50 dark:bg-blue-500/10 hover:bg-blue-50 dark:hover:bg-blue-500/20 px-3 py-2 rounded-lg transition-colors">
                     + Add Calendar URL
                   </button>
                   <button onClick={() => navigate(`/properties/${p.id}/icals`)}

@@ -490,7 +490,7 @@ export default function JobCreateModal({
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
                 <button type="button"
                   onClick={() => { setAddingClient(a => !a); setClientErr('') }}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                   {addingClient ? 'Cancel' : '+ New client'}
                 </button>
               </div>
@@ -499,12 +499,12 @@ export default function JobCreateModal({
                   // A client is chosen — show it as a chip with a "Change" affordance.
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2">
                     <span className="flex items-center gap-2 min-w-0 text-sm text-ink">
-                      <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                      <Check className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span className="truncate font-medium">{selectedClient.name}</span>
                       {selectedClient.email && <span className="truncate text-xs text-ink-3">· {selectedClient.email}</span>}
                     </span>
                     <button type="button" onClick={clearClient}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-medium shrink-0">Change</button>
+                      className="text-xs text-indigo-600 hover:text-indigo-700 font-medium shrink-0">Change</button>
                   </div>
                 ) : (
                   <div>
@@ -528,7 +528,7 @@ export default function JobCreateModal({
                         <div className="flex items-center justify-between gap-2 px-3 py-3 text-xs">
                           <span className="text-red-600 truncate">{clientLoadErr}</span>
                           <button type="button" onClick={() => setClientRetry(n => n + 1)}
-                            className="text-blue-600 hover:text-blue-700 font-medium shrink-0">Retry</button>
+                            className="text-indigo-600 hover:text-indigo-700 font-medium shrink-0">Retry</button>
                         </div>
                       ) : clientResults.length === 0 ? (
                         <div className="px-3 py-4 text-xs text-ink-3 text-center">
@@ -582,7 +582,7 @@ export default function JobCreateModal({
                   </div>
                   {clientErr && <div className="text-xs text-red-600">{clientErr}</div>}
                   <button type="button" onClick={createInlineClient} disabled={creatingClient || !newClient.name.trim()}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
                     {creatingClient ? 'Creating…' : 'Create & select client'}
                   </button>
                 </div>
@@ -603,7 +603,7 @@ export default function JobCreateModal({
               {JOB_TYPES.map(t => (
                 <button key={t.value} type="button" onClick={() => setJobType(t.value)}
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${
-                    form.job_type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
+                    form.job_type === t.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
                   }`}>{t.label}</button>
               ))}
             </div>
@@ -638,7 +638,7 @@ export default function JobCreateModal({
             </div>
           ) : (
             <button type="button" onClick={() => setShowNotes(true)}
-              className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add notes</button>
+              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">+ Add notes</button>
           )}
 
           {/* More options — inline expansion, NOT a mode switch. Reveals the
@@ -665,7 +665,7 @@ export default function JobCreateModal({
               <label className="block text-xs text-ink-2 font-medium">Property</label>
               <button type="button"
                 onClick={() => { setAddingProp(a => !a); setPropErr('') }}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                 {addingProp ? 'Cancel' : '+ New property'}
               </button>
             </div>
@@ -705,7 +705,7 @@ export default function JobCreateModal({
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
                 {propErr && <div className="text-xs text-red-600">{propErr}</div>}
                 <button type="button" onClick={createInlineProperty} disabled={creatingProp || !newProp.name.trim()}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
                   {creatingProp ? 'Creating…' : 'Create & select property'}
                 </button>
               </div>
@@ -742,7 +742,7 @@ export default function JobCreateModal({
               onClick={() => setRecurring(r => !r)}
               data-testid="job-create-repeat-toggle"
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                recurring ? 'bg-blue-600' : 'bg-bg-2'
+                recurring ? 'bg-indigo-600' : 'bg-bg-2'
               }`}
             >
               <span
@@ -776,7 +776,7 @@ export default function JobCreateModal({
                       }))}
                       className={`py-2 rounded-lg text-xs font-medium transition-colors border ${
                         form.frequency === opt.value
-                          ? 'bg-blue-600 text-white border-blue-600'
+                          ? 'bg-indigo-600 text-white border-indigo-600'
                           : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
                       }`}
                     >
@@ -820,7 +820,7 @@ export default function JobCreateModal({
                           })}
                           className={`py-1.5 rounded-lg text-xs font-medium transition-colors border ${
                             selected
-                              ? 'bg-blue-600 text-white border-blue-600'
+                              ? 'bg-indigo-600 text-white border-indigo-600'
                               : 'bg-panel text-ink-2 border-hairline hover:bg-bg'
                           }`}
                         >
@@ -874,7 +874,7 @@ export default function JobCreateModal({
             onClick={() => save()}
             disabled={saving || !canSave}
             data-testid="job-create-submit"
-            className={`${btn} flex-1 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
+            className={`${btn} flex-1 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed`}
           >
             {saving
               ? (recurring ? 'Creating…' : 'Creating…')

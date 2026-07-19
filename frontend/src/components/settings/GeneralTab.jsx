@@ -127,7 +127,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
                   onClick={() => setThemeChoice(applyTheme(opt.value))}
                   className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
                     themeChoice === opt.value
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
                       : 'bg-bg-2 text-ink-2 border-hairline hover:border-hairline-2'
                   }`}>
                   {opt.label}
@@ -207,7 +207,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
                 </div>
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
-                    <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${logoUploading ? 'bg-bg-2 text-ink-3 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                    <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${logoUploading ? 'bg-bg-2 text-ink-3 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}>
                       {logoUploading ? 'Uploading…' : 'Upload logo'}
                       <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="hidden"
                         disabled={logoUploading}
@@ -288,7 +288,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
               </div>
             </div>
             <button onClick={savePropertyMedia} disabled={propertyMediaSaving}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60">
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60">
               {propertyMediaSaving ? 'Saving…' : 'Save property settings'}
             </button>
           </div>
@@ -327,7 +327,7 @@ export default function GeneralTab({ toast, active, dangerZone }) {
         </div>
 
         <button onClick={saveGeneralSettings} disabled={generalSaving}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
           {generalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
           Save Changes
         </button>

@@ -38,7 +38,7 @@ export default function ActivityTimeline({
           <button
             onClick={submitNote}
             disabled={savingNote || !noteText.trim()}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50"
           >
             {savingNote ? 'Adding…' : 'Add note'}
           </button>
@@ -55,7 +55,7 @@ export default function ActivityTimeline({
               onClick={() => setActivityFilter(f.value)}
               className={`text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap transition-colors ${
                 isActive
-                  ? 'bg-blue-600 text-white border-blue-600'
+                  ? 'bg-indigo-600 text-white border-indigo-600'
                   : 'bg-panel border-hairline text-ink-3 hover:bg-bg'
               }`}
             >
@@ -72,7 +72,7 @@ export default function ActivityTimeline({
             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
               item.type === 'job'          ? 'bg-blue-500/10' :
               item.type === 'gcal_event'   ? 'bg-indigo-50' :
-              item.type === 'quote'        ? 'bg-blue-600/20' :
+              item.type === 'quote'        ? 'bg-indigo-600/20' :
               item.type === 'invoice'      ? 'bg-green-50' :
               item.type === 'opportunity'  ? 'bg-amber-50' :
               item.type === 'email'        ? 'bg-cyan-50' :

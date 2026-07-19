@@ -248,7 +248,7 @@ export default function PublicQuote() {
     </div>
   ) : requested ? (
     <div className="no-print mb-3 flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
-      <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
+      <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
       <p className="text-sm text-blue-800 font-medium">Change request sent — we'll review and send an updated quote shortly.</p>
     </div>
   ) : isDeclined ? (
@@ -425,7 +425,7 @@ export default function PublicQuote() {
                   onChange={(e) => setRequestMsg(e.target.value)}
                   placeholder="e.g. Can we add a deep clean of the kitchen? Or remove the basement?"
                   rows={6}
-                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
                   autoFocus
                 />
               </div>
@@ -434,7 +434,7 @@ export default function PublicQuote() {
                 <button
                   onClick={handleRequestChanges}
                   disabled={requesting || !requestMsg.trim()}
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 text-white rounded-lg disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 text-white rounded-lg disabled:cursor-not-allowed"
                 >
                   {requesting ? 'Sending...' : 'Send request'}
                 </button>
@@ -456,7 +456,7 @@ export default function PublicQuote() {
                   onChange={(e) => setDeclineReason(e.target.value)}
                   placeholder="Reason (optional)"
                   rows={4}
-                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-hairline rounded-lg text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
                 />
               </div>
               <div className="p-4 border-t border-hairline bg-bg flex justify-end gap-2">

@@ -120,7 +120,7 @@ export default function Invoicing() {
                 title={search ? 'No matching invoices' : 'No invoices yet'}
                 action={!search && (
                   <button onClick={openNew}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
                     Create one →
                   </button>
                 )}

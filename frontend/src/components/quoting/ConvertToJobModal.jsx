@@ -144,7 +144,7 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
                     <button key={c.id} type="button" onClick={() => toggleCleaner(c.id)}
                       className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
                         on
-                          ? 'bg-blue-600 text-white border-blue-600'
+                          ? 'bg-indigo-600 text-white border-indigo-600'
                           : 'bg-bg-2 text-ink-3 border-hairline hover:border-blue-400'
                       }`}>
                       {c.name}
@@ -167,7 +167,7 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
           </button>
           <button onClick={() => convert({ withSchedule: true })}
             disabled={busy || !dateValid || !timeValid}
-            className="flex-1 px-3 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors">
+            className="flex-1 px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors">
             {busy ? 'Converting…' : 'Convert & schedule'}
           </button>
         </div>

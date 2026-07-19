@@ -97,7 +97,7 @@ export function CustomFieldsBody({ state }) {
           <p className="text-sm text-ink-2 mt-1">Add extra fields that appear on client, job, and invoice records</p>
         </div>
         <button onClick={openNew}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0">
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0">
           <Plus className="w-3.5 h-3.5" /> Add field
         </button>
       </div>
@@ -107,7 +107,7 @@ export function CustomFieldsBody({ state }) {
         {ENTITY_TABS.map(tab => (
           <button key={tab.key} onClick={() => { setEntityTab(tab.key); setPanel(null) }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
-              ${entityTab === tab.key ? 'bg-blue-600 text-white' : 'text-ink-3 hover:text-ink hover:bg-bg-2'}`}>
+              ${entityTab === tab.key ? 'bg-indigo-600 text-white' : 'text-ink-3 hover:text-ink hover:bg-bg-2'}`}>
             {tab.label}
           </button>
         ))}
@@ -255,7 +255,7 @@ export function CustomFieldsSidePanel({ state }) {
 
       <div className="p-5 border-t border-hairline">
         <button onClick={save} disabled={saving || !form.name.trim()}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-bg-2 disabled:text-ink-3 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
           {saving ? 'Saving…' : (panel === 'new' ? 'Create field' : 'Update field')}
         </button>
       </div>

@@ -32,7 +32,7 @@ export default function MarkdownContent({ text }) {
           li: ({ children }) => <li>{children}</li>,
           strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-700">
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-700">
               {children}
             </a>
           ),

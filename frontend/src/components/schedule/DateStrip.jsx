@@ -27,7 +27,7 @@ export default function DateStrip({ weekDates, loadByDate, currentDate, onSelect
               onClick={() => onSelect(new Date(`${d}T12:00`))}
               className={`flex flex-col items-center justify-center py-2 rounded-xl border transition-colors ${
                 isSelected
-                  ? 'bg-blue-600 border-blue-600 text-white'
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
                   : isToday
                     ? 'bg-bg-2 border-hairline text-ink'
                     : 'bg-transparent border-transparent text-ink-3 hover:bg-bg-2'
