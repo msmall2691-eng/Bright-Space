@@ -284,7 +284,13 @@ def run_inbox_sync(
         # this used to be `if client_id:` — an unknown sender that failed
         # the keyword classifier was skipped here entirely and was only
         # ever a log line in Railway, even when it was a real prospect.
-        if should_thread_inbound_email(em):
+        # A KNOWN contact's email ALWAYS threads — a real customer replying
+        # from their normal address must never be filtered out of Comms, even
+        # if their mail carries bulk headers (List-Unsubscribe, etc.) that many
+        # legitimate small-business/ESP senders add. The bulk/spam gate only
+        # applies to UNKNOWN senders, to keep cold marketing blasts out of the
+        # inbox. (Fixes "customer emails aren't showing up in Comms".)
+        if em.get("is_known_contact") or should_thread_inbound_email(em):
             client_id = em["client"]["id"] if em["client"] else None
             # Savepoint per email: one bad message must not poison the whole
             # sync transaction — before this, a single IntegrityError aborted
