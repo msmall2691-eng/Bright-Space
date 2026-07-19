@@ -11,6 +11,7 @@ from datetime import datetime, date, timezone
 from database.db import get_db
 from database.models import Invoice, Client, Message
 from modules.auth.router import require_role, current_org_id, resolve_org_id
+from utils.activity_logger import log_invoice_created, log_invoice_paid
 
 
 def _invoice_public_token(invoice_id: int) -> str:
@@ -150,6 +151,13 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), org_id: i
     db.add(inv)
     db.commit()
     db.refresh(inv)
+    # Timeline: record the invoice being raised (best-effort — never block the
+    # create on a logging hiccup).
+    try:
+        log_invoice_created(db, inv)
+        db.commit()
+    except Exception:
+        db.rollback()
     return invoice_to_dict(inv)
 
 
@@ -201,6 +209,7 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
     ).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    was_paid = inv.status == "paid"
     if data.items is not None:
         items = [i.model_dump() for i in data.items]
         tax_rate = data.tax_rate if data.tax_rate is not None else inv.tax_rate
@@ -218,6 +227,14 @@ def update_invoice(invoice_id: int, data: InvoiceUpdate, db: Session = Depends(g
         inv.status = "paid"
     db.commit()
     db.refresh(inv)
+    # Timeline: log the paid transition once (whether it came via paid_at or a
+    # status="paid" edit), never on an already-paid invoice.
+    if inv.status == "paid" and not was_paid:
+        try:
+            log_invoice_paid(db, inv)
+            db.commit()
+        except Exception:
+            db.rollback()
     return invoice_to_dict(inv)
 
 
@@ -337,6 +354,7 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
+    was_paid = inv.status == "paid"
     # In production, verify payment with Stripe API before marking as paid
     # For now, accept the payment and mark invoice as paid
     inv.status = "paid"
@@ -353,6 +371,9 @@ def process_payment(invoice_id: int, data: dict, db: Session = Depends(get_db)):
         status="received",
     )
     db.add(msg)
+    # Timeline: log the paid transition (once) alongside the payment message.
+    if not was_paid:
+        log_invoice_paid(db, inv)
     db.commit()
 
     return {
