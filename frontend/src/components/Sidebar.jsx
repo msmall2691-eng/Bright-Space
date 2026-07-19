@@ -8,24 +8,27 @@ import {
 } from 'lucide-react'
 import { logout } from '../api'
 
-// Sidebar items ordered by workflow. Owner Dashboard is admin/manager-only
-// (backend 403s viewers on /api/dashboard/owner) — the `roles` gate below
-// hides the link for viewer/cleaner accounts so they don't see a route
-// that only 403s.
+// Navigation reorganized around the three pillars the business runs on:
+// Leads (win the work), Customers (talk to them), and Scheduling (get it
+// done). Home + the AI Assistant sit up top; Team and Settings anchor the
+// bottom. Owner Dashboard is admin/manager-only (backend 403s viewers on
+// /api/dashboard/owner) — the `roles` gate below hides the link for
+// viewer/cleaner accounts so they don't see a route that only 403s.
 const nav = [
-  { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/dashboard',   icon: LayoutDashboard, label: 'Home' },
   { to: '/owner',       icon: TrendingUp,      label: 'Owner',       roles: ['admin', 'manager'] },
-  { to: '/workspace',   icon: Sparkles,        label: 'Workspace' },
-  { divider: true, label: 'Sales' },
+  { to: '/workspace',   icon: Sparkles,        label: 'Assistant' },
+  { divider: true, label: 'Leads' },
   { to: '/requests',    icon: Inbox,           label: 'Requests' },
   { to: '/pipeline',    icon: LayoutGrid,      label: 'Pipeline' },
-  { to: '/billing',     icon: Receipt,         label: 'Billing' },
-  { divider: true, label: 'Operations' },
+  { to: '/billing',     icon: Receipt,         label: 'Quotes & Billing' },
+  { divider: true, label: 'Customers' },
+  { to: '/comms',       icon: MessageSquare,   label: 'Messages' },
   { to: '/clients',     icon: Users,           label: 'Clients' },
+  { to: '/properties',  icon: Home,            label: 'Properties' },
+  { divider: true, label: 'Scheduling' },
   { to: '/schedule',    icon: Calendar,        label: 'Schedule' },
   { to: '/recurring',   icon: Repeat,          label: 'Recurring' },
-  { to: '/properties',  icon: Home,            label: 'Properties' },
-  { to: '/comms',       icon: MessageSquare,   label: 'Comms' },
   { divider: true, label: 'Team' },
   { to: '/payroll',     icon: DollarSign,      label: 'Payroll' },
   { to: '/connecteam',  icon: Clock,           label: 'Connecteam' },
@@ -76,7 +79,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
         {/* Logo area */}
         <div className={`h-16 flex items-center border-b border-hairline ${collapsed ? 'lg:justify-center lg:px-2 px-4 justify-between' : 'justify-between px-4'}`}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="bb-glow-accent w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-md shrink-0">
+            <div className="bb-glow-accent w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md shrink-0">
               <Zap className="w-4 h-4 text-white" />
             </div>
             <div className={`flex-1 min-w-0 ${labelHide}`}>
@@ -127,10 +130,10 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
                 to={item.to}
                 title={collapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `group relative flex items-center gap-3 px-3 py-2.5 lg:py-2 mx-2 my-0.5 rounded-md transition-colors text-[13px] select-none ${collapsed ? 'lg:justify-center lg:px-0 lg:mx-2' : ''} ${
+                  `group relative flex items-center gap-3 px-3 py-2.5 lg:py-2 mx-2 my-0.5 rounded-lg transition-colors text-[13px] select-none ${collapsed ? 'lg:justify-center lg:px-0 lg:mx-2' : ''} ${
                     isActive
-                      ? 'bb-glow-accent bg-bg-2 text-ink font-semibold'
-                      : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/60'
+                      ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 font-semibold'
+                      : 'text-ink-2 font-medium hover:text-ink hover:bg-bg-2/70'
                   }`
                 }
               >
@@ -170,7 +173,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
               title={collapsed ? (user?.email?.split('@')[0] || 'Account') : undefined}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-bg-2 transition-all text-left group ${collapsed ? 'lg:justify-center lg:px-0' : ''}`}
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center flex-shrink-0 shadow-md">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center flex-shrink-0 shadow-md">
                 <span className="text-[12px] font-bold text-white">
                   {user?.email?.[0]?.toUpperCase() || 'A'}
                 </span>

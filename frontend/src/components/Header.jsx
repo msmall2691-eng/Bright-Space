@@ -2,19 +2,20 @@ import { useLocation } from 'react-router-dom'
 import { Menu, Search, Command, Zap, Sparkles } from 'lucide-react'
 
 const PAGE_TITLES = {
-  '/dashboard': 'Dashboard',
-  '/workspace': 'Workspace',
+  '/dashboard': 'Home',
+  '/workspace': 'Assistant',
   '/clients': 'Clients',
   '/requests': 'Requests',
   '/pipeline': 'Pipeline',
-  '/billing': 'Billing',
+  '/billing': 'Quotes & Billing',
   '/schedule': 'Schedule',
   '/scheduling': 'Schedule',
   '/dispatch': 'Dispatch',
   '/payroll': 'Payroll',
-  '/comms': 'Comms',
+  '/comms': 'Messages',
   '/properties': 'Properties',
   '/recurring': 'Recurring',
+  '/owner': 'Owner',
   '/settings': 'Settings',
 }
 
@@ -33,7 +34,7 @@ export default function Header({ onMenuToggle }) {
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex items-center gap-2.5 lg:hidden">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center shadow-md">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md">
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="text-sm font-bold text-ink tracking-tight">{title}</span>

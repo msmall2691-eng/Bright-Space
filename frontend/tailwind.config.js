@@ -36,12 +36,12 @@ export default {
         },
       },
       boxShadow: {
-        // Twenty-style: flat surfaces with hairline borders, not big drop
-        // shadows. Kept as soft 1–2px so existing shadow-glass* classes don't
-        // need touching everywhere.
-        glass: '0 1px 2px rgba(0, 0, 0, 0.04)',
-        'glass-lg': '0 2px 6px rgba(0, 0, 0, 0.06)',
-        'glass-sm': '0 1px 2px rgba(0, 0, 0, 0.03)',
+        // Clean & airy: soft, wide, low-opacity ambient shadows so surfaces
+        // gently float on the calm canvas instead of hard-edged boxes. Tuned
+        // with a slate tint to match the cool neutral palette.
+        glass: '0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -16px rgba(15,23,42,0.12)',
+        'glass-lg': '0 1px 2px rgba(15,23,42,0.04), 0 18px 40px -20px rgba(15,23,42,0.18)',
+        'glass-sm': '0 1px 2px rgba(15,23,42,0.04)',
       },
       backdropBlur: {
         xs: '4px',
@@ -51,9 +51,9 @@ export default {
         xl: '20px',
       },
       backgroundImage: {
-        'gradient-hero': 'linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 100%)',
+        'gradient-hero': 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
         'gradient-glass': 'linear-gradient(135deg, rgba(255,255,255,0.8), rgba(255,255,255,0.4))',
-        'gradient-subtle': 'linear-gradient(135deg, rgba(14,165,233,0.05) 0%, rgba(139,92,246,0.05) 100%)',
+        'gradient-subtle': 'linear-gradient(135deg, rgba(79,70,229,0.06) 0%, rgba(124,58,237,0.05) 100%)',
       },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
@@ -68,13 +68,15 @@ export default {
         '3xl': ['32px', { lineHeight: '1.2', letterSpacing: '-0.01em' }],
       },
       borderRadius: {
-        // Tightened toward Twenty's crisp, low-radius look (cards were 16–20px).
+        // Clean & airy: a touch rounder than the old crisp look so cards read
+        // as soft, modern surfaces. Small controls stay tight; cards breathe.
         xs: '4px',
         sm: '6px',
-        md: '6px',
-        lg: '8px',
-        xl: '10px',
-        '2xl': '12px',
+        md: '8px',
+        lg: '10px',
+        xl: '14px',
+        '2xl': '18px',
+        '3xl': '24px',
       },
     },
   },

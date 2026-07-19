@@ -56,36 +56,42 @@ body.theme-console {
   --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.4);
 }
 
-/* Clean mode — softer + roomier; toggled with body.mode-clean */
+/* Clean mode — the app's default skin. Refreshed to a bright, airy "light
+   SaaS" look (Linear/Notion/Jobber family): cool slate-tinted neutrals, a
+   confident indigo accent, and soft, low-contrast ambient shadows so cards
+   float on a calm canvas instead of sitting in hard-edged boxes. Toggled
+   with body.mode-clean. */
 body.mode-clean {
-  --bg: #fafafa;
-  --bg-2: #f4f4f5;
-  --bg-3: #ececef;
+  --bg: #f6f8fb;
+  --bg-2: #eef2f7;
+  --bg-3: #e3e9f1;
   --panel: #ffffff;
-  --ink: #0a0a0b;
-  --ink-2: #52525b;
-  --ink-3: #a1a1aa;
-  --hairline: #efeff1;
-  --hairline-2: #e4e4e7;
-  --accent: oklch(0.55 0.17 255);
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --ink-3: #94a3b8;
+  --hairline: #eef2f7;
+  --hairline-2: #e2e8f0;
+  --accent: oklch(0.55 0.20 264);
   --accent-ink: #ffffff;
-  --shadow-1: 0 1px 1px rgba(10,10,11,0.03);
-  --shadow-2: 0 1px 2px rgba(10,10,11,0.05), 0 2px 6px rgba(10,10,11,0.05);
+  --shadow-1: 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-2: 0 1px 2px rgba(15,23,42,0.04), 0 12px 28px -14px rgba(15,23,42,0.14);
   font-size: 13px;
 }
 
 body.mode-clean.theme-console {
-  --bg: #09090b;
-  --bg-2: #131316;
-  --bg-3: #1c1c21;
-  --panel: #111114;
-  --ink: #fafafa;
-  --ink-2: #a1a1aa;
-  --ink-3: #71717a;
-  --hairline: #1f1f23;
-  --hairline-2: #2a2a30;
-  --accent: oklch(0.72 0.16 255);
-  --accent-ink: #09090b;
+  --bg: #0a0f1a;
+  --bg-2: #111827;
+  --bg-3: #1a2234;
+  --panel: #0f172a;
+  --ink: #f1f5f9;
+  --ink-2: #a3b0c2;
+  --ink-3: #64748b;
+  --hairline: #1e293b;
+  --hairline-2: #29374a;
+  --accent: oklch(0.72 0.16 264);
+  --accent-ink: #0a0f1a;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-2: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px -18px rgba(0,0,0,0.6);
 }
 
 /* ----------------------------------------------------------------------
