@@ -49,21 +49,20 @@ export function ConvItem({ conv, active, onClick }) {
             {htmlToText(conv.preview) || 'No messages yet'}
           </p>
 
-          {/* Status chips — only render when actionable */}
-          {(overdue || unassigned) && (
-            <div className="flex items-center gap-1.5 mt-1.5">
-              {overdue && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-px rounded bg-red-50 text-red-700 border border-red-100">
-                  <Clock className="w-2.5 h-2.5" /> Overdue
-                </span>
-              )}
-              {unassigned && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-px rounded bg-amber-50 text-amber-700 border border-amber-100">
-                  Unassigned
-                </span>
-              )}
+          {/* Status line — show at most ONE signal so the list doesn't become
+              a wall of tags. "Overdue" (needs a reply) is the actionable one
+              and wins; "Unassigned" is secondary and rendered as quiet muted
+              text (it's also a filter), so an all-unassigned inbox doesn't
+              light up amber on every row. */}
+          {overdue ? (
+            <div className="mt-1.5">
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-px rounded bg-red-50 text-red-700 border border-red-100 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/25">
+                <Clock className="w-2.5 h-2.5" /> Overdue
+              </span>
             </div>
-          )}
+          ) : unassigned ? (
+            <div className="mt-1 text-[10px] font-medium text-ink-3">Unassigned</div>
+          ) : null}
         </div>
 
         {/* Unread count pill */}

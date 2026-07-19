@@ -254,7 +254,10 @@ def sync_gmail_inbox_tick() -> dict:
             return {"skipped": True, "reason": "disabled"}
         # 1) Legacy shared business inbox (IMAP App Password) — kept as a
         #    permanent fallback by decision (auth-workspaces plan §0.3).
-        result = run_inbox_sync(db, max_results=30, skip_automated=True, auto_enrich=True)
+        #    max_results=120: the fetch walks newest-first within the SINCE
+        #    cursor window, so on a busy day a low cap (was 30) silently drops
+        #    the oldest of the day's mail before it's ever threaded.
+        result = run_inbox_sync(db, max_results=120, skip_automated=True, auto_enrich=True)
         if result.get("error"):
             log.info(f"Gmail auto-sync (shared inbox) skipped: {result.get('error')}")
         summary = dict(result.get("summary") or {"total": 0, "threaded": 0})
@@ -265,7 +268,7 @@ def sync_gmail_inbox_tick() -> dict:
         try:
             from integrations.google_accounts import gmail_accounts
             for acct in gmail_accounts(db):
-                acct_summary = run_account_inbox_sync(db, acct, max_results=30).get("summary") or {}
+                acct_summary = run_account_inbox_sync(db, acct, max_results=60).get("summary") or {}
                 summary["total"] = summary.get("total", 0) + acct_summary.get("total", 0)
                 summary["threaded"] = summary.get("threaded", 0) + acct_summary.get("threaded", 0)
         except Exception as e:

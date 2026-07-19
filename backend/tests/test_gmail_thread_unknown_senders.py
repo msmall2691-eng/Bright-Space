@@ -119,6 +119,27 @@ def test_blocked_spam_domain_is_not_threaded(db):
         _cleanup(db, em["message_id"], em["from_email"])
 
 
+def test_known_contact_with_bulk_headers_still_threads(db):
+    """A REAL customer replying from their normal address must always land in
+    Comms, even if their mail carries bulk headers (List-Unsubscribe etc.)
+    that many legitimate small-business/ESP senders add. The bulk gate only
+    applies to UNKNOWN senders. (Fix for 'customer emails aren't showing up'.)"""
+    addr = f"regular-{uuid.uuid4().hex[:8]}@example.com"
+    client = Client(name="Regular Customer", first_name="Regular", last_name="Customer",
+                    email=addr.lower(), status="active", source="manual")
+    db.add(client); db.commit()
+    em = _email(from_email=addr, subject="Re: this week's clean",
+                list_unsubscribe="<mailto:unsub@example.com>")
+    try:
+        result = run_inbox_sync(db, emails=[em])
+        assert result["summary"]["threaded"] == 1
+        msg = db.query(Message).filter(Message.external_id == em["message_id"]).one()
+        assert msg.client_id == client.id
+    finally:
+        _cleanup(db, em["message_id"])
+        db.delete(db.query(Client).get(client.id)); db.commit()
+
+
 def test_reply_to_our_thread_creates_client_and_threads(db):
     em = _email(subject="Re: your quote", to_email="office@maineclean.co")
     try:
