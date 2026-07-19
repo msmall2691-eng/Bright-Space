@@ -54,6 +54,7 @@ def _assert_public_url(url: str) -> None:
 from datetime import datetime, date, timedelta, time as time_type, timezone
 from pytz import timezone as pytz_timezone
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from database.models import Property, ICalEvent, Job, Client, PropertyIcal
 import logging
 from utils.dates import business_today
@@ -715,8 +716,33 @@ def _sync_ical_url(db: Session, prop: Property, ical_url: str, ical_source_label
                 ical_event_id=event.id,
                 custom_fields=guest_metadata,
             )
-            db.add(job)
-            db.flush()
+            # Race-safe insert: two overlapping feed syncs (e.g. Airbnb + VRBO
+            # for one property, or the tick overlapping a manual sync) can both
+            # pass the dedup query above and try to insert the same turnover.
+            # The partial unique index (uq_jobs_turnover_property_date_live)
+            # rejects the loser with IntegrityError — roll back the savepoint and
+            # link this feed's event to the row that won, rather than aborting
+            # the whole sync. Mirrors the recurring-generation guard.
+            sp = db.begin_nested()
+            try:
+                db.add(job)
+                db.flush()
+                sp.commit()
+            except IntegrityError:
+                sp.rollback()
+                winner = db.query(Job).filter(
+                    Job.property_id == prop.id,
+                    Job.scheduled_date == (date.fromisoformat(checkout_date) if isinstance(checkout_date, str) else checkout_date),
+                    Job.job_type == "str_turnover",
+                    Job.status != "cancelled",
+                ).order_by(Job.id.desc()).first()
+                if winner:
+                    event.job_id = winner.id
+                    log.info(
+                        f"Dedup (race): turnover for {prop.name} on {checkout_date} was "
+                        f"inserted concurrently; linked iCal event {uid} to job {winner.id}."
+                    )
+                continue
 
             event.job_id = job.id
             created_jobs += 1

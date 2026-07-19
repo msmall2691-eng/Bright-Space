@@ -17,23 +17,21 @@ export function useScheduleTools({ toast, refresh }) {
   const [autoAssign, setAutoAssign] = useState(null)
   const [fixTimes, setFixTimes] = useState(null)
 
-  // Single "Sync now" action for the Tools menu — auto-sync (Settings ->
-  // Automation) is meant to keep Google Calendar current in the background,
-  // so a small team shouldn't need to think about "pull vs push" as two
-  // separate manual steps; this is the one-button fallback for "do it now".
+  // Single "Push now" action for the Tools menu. One-way (BrightBase is
+  // master): this pushes the schedule OUT to Google + Connecteam right now —
+  // the same push-only reconcile as "Fix sync". It deliberately does NOT hit
+  // /api/jobs/sync-gcal, which reads Google BACK (importing Google-only events
+  // and cancelling jobs deleted in Google) and would contradict one-way.
   const [syncingNow, setSyncingNow] = useState(false)
   const syncNow = async () => {
     if (syncingNow) return
     setSyncingNow(true)
     try {
-      const pullRes = await post('/api/jobs/sync-gcal', {}).catch(() => null)
-      const pushRes = await post('/api/jobs/push-to-gcal', {}).catch(() => null)
+      const r = await post('/api/jobs/sync-reconcile', {})
       const parts = []
-      const c = pullRes?.jobs_created || 0, u = pullRes?.jobs_updated || 0
-      if (c) parts.push(`${c} new`)
-      if (u) parts.push(`${u} updated`)
-      if (pushRes?.pushed) parts.push(`${pushRes.pushed} pushed`)
-      toast.success(parts.length ? `Synced with Google — ${parts.join(', ')}` : 'Synced with Google — up to date')
+      if (r?.gcal?.pushed) parts.push(`${r.gcal.pushed} to Google`)
+      if (r?.connecteam?.dispatched) parts.push(`${r.connecteam.dispatched} to Connecteam`)
+      toast.success(parts.length ? `Pushed — ${parts.join(', ')}` : 'Everything’s already pushed')
       refresh()
     } catch (e) {
       toast.error(e.message || 'Sync failed')

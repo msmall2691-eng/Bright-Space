@@ -18,7 +18,6 @@ import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
-import ScheduleAuditPanel from '../components/schedule/ScheduleAuditPanel'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
 import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
 import { AvailabilityPanel } from '../components/schedule/ScheduleTabs'
@@ -430,13 +429,6 @@ export default function Schedule() {
         onFilterNoConnecteam={() => setNoConnecteamOnly(v => !v)}
         onFilterUnassigned={() => setUnassignedOnly(v => !v)}
         weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
-      />
-
-      {/* Schedule audit — duplicate jobs + orphaned Connecteam shifts, with
-          one-tap resolve. Renders nothing on a clean schedule. */}
-      <ScheduleAuditPanel
-        refreshKey={calRefresh}
-        onResolved={() => { refresh?.(); setCalRefresh(x => x + 1) }}
       />
 
       {/* Selection / bulk-action bar — agenda view only. In month view the

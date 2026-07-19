@@ -1143,7 +1143,7 @@ def push_to_gcal(db: Session = Depends(get_db)):
         Job.gcal_event_id.is_(None),
         Job.status.in_(["scheduled", "in_progress"]),
         Job.scheduled_date >= business_today().isoformat(),
-    ).all()
+    ).order_by(Job.id).all()  # stable lock order (below) so two pushers can't deadlock
 
     if not jobs:
         return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
@@ -1154,6 +1154,21 @@ def push_to_gcal(db: Session = Depends(get_db)):
     errors = []
 
     for job in jobs:
+        # Serialize against a concurrent pusher (the sync-reconcile tick running
+        # the same query) so two paths can't both create a Google event for one
+        # job → a duplicate calendar entry. Lock the row and re-check under it;
+        # if it already got an event id since the query, skip. Postgres honors
+        # FOR UPDATE (rows locked in ascending id order — see order_by above — so
+        # two pushers can't deadlock); SQLite ignores it but is single-threaded.
+        # autoflush is off, so don't refresh a dirty job (would drop un-flushed
+        # edits) — the jobs here are always freshly-queried clean reads.
+        try:
+            if job not in db.dirty:
+                db.refresh(job, with_for_update=True)
+        except Exception:  # pragma: no cover - lock unavailable; re-check still applies
+            pass
+        if job.gcal_event_id:
+            continue
         client = job.client
         client_dict = {"id": client.id if client else None, "name": client.name if client else "", "email": getattr(client, "email", None) if client else None}
         job_dict = {
@@ -1196,9 +1211,18 @@ def sync_reconcile(db: Session = Depends(get_db)):
     try:
         from integrations.google_calendar import is_configured as _gcal_ok
         if _gcal_ok():
+            # One-way self-heal: restore events deleted in Google (clears the
+            # stale id so push re-creates them) before the normal push.
+            healed = {}
+            try:
+                from integrations.gcal_sync import reassert_deleted_gcal_events
+                healed = reassert_deleted_gcal_events(db)
+            except Exception as e:
+                logger.warning(f"sync-reconcile: Google re-assert failed: {e}")
             pushed = push_to_gcal(db)
             result["gcal"] = {"pushed": pushed.get("pushed", 0),
-                              "errors": len(pushed.get("errors") or [])}
+                              "errors": len(pushed.get("errors") or []),
+                              "restored": healed.get("restored", 0)}
         else:
             result["gcal"]["skipped"] = "not_configured"
     except HTTPException:
@@ -1317,83 +1341,6 @@ def schedule_audit(db: Session = Depends(get_db), org_id: int = Depends(current_
     """On-demand schedule audit: duplicate jobs + orphaned Connecteam shifts.
     The same scan the background tick runs, exposed for a Settings/admin view."""
     return find_schedule_issues(db, resolve_org_id(org_id, db))
-
-
-def _drift_window():
-    """The date window the two-way drift scan looks at: a little history (to
-    catch a just-past shift someone edited) through the next month."""
-    start = (business_today() - timedelta(days=7))
-    end = (business_today() + timedelta(days=45))
-    return start, end
-
-
-@router.get("/connecteam-drift", dependencies=[Depends(require_role("admin", "manager"))])
-async def connecteam_drift(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
-    """Two-way sync: read Connecteam's live shifts and report what changed
-    THERE relative to the matching BrightBase jobs (moved, reassigned, deleted).
-    Read-only — resolving is a separate, explicit action."""
-    from integrations.connecteam import is_configured as _ct_ok, ConnecteamAuthError
-    if not _ct_ok():
-        return {"changes": [], "unlinked_count": 0, "checked": 0, "reason": "not_configured"}
-    from integrations.connecteam_twoway import detect_schedule_drift
-    oid = resolve_org_id(org_id, db)
-    start, end = _drift_window()
-    jobs = db.query(Job).options(joinedload(Job.property)).filter(
-        Job.scheduled_date >= start, Job.scheduled_date <= end,
-        Job.status.notin_(["cancelled", "completed"]),
-        or_(Job.org_id == oid, Job.org_id.is_(None)),
-    ).all()
-    jobs = [j for j in jobs if j.connecteam_shift_ids]
-    try:
-        return await detect_schedule_drift(db, jobs, start.isoformat(), end.isoformat())
-    except ConnecteamAuthError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.warning(f"connecteam-drift scan failed: {e}")
-        raise HTTPException(status_code=502, detail="Connecteam scan failed — check server logs.")
-
-
-class DriftAction(BaseModel):
-    job_id: int
-    action: str  # pull | repush | cancel
-
-
-@router.post("/connecteam-drift/apply", dependencies=[Depends(require_role("admin", "manager"))])
-async def connecteam_drift_apply(body: DriftAction, db: Session = Depends(get_db),
-                                 org_id: int = Depends(current_org_id)):
-    """Resolve one drift item: pull Connecteam's version onto the job, re-push
-    BrightBase's version to Connecteam, or cancel the job. Explicit per item."""
-    from integrations.connecteam import get_scheduled_shifts, ConnecteamAuthError
-    oid = resolve_org_id(org_id, db)
-    job = db.query(Job).filter(
-        Job.id == body.job_id, or_(Job.org_id == oid, Job.org_id.is_(None)),
-    ).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if body.action not in ("pull", "repush", "cancel"):
-        raise HTTPException(status_code=422, detail="action must be pull, repush, or cancel")
-
-    # 'pull' needs the current Connecteam shift; re-fetch and match by shift id.
-    shift = None
-    if body.action == "pull":
-        start, end = _drift_window()
-        try:
-            ct = await get_scheduled_shifts(start.isoformat(), end.isoformat())
-        except ConnecteamAuthError as e:
-            raise HTTPException(status_code=503, detail=str(e))
-        by_id = {str(s["id"]): s for s in ct if s.get("id")}
-        for sid in (job.connecteam_shift_ids or []):
-            if str(sid) in by_id:
-                shift = by_id[str(sid)]
-                break
-        if shift is None:
-            raise HTTPException(status_code=409, detail="That Connecteam shift no longer exists — re-scan.")
-
-    from integrations.connecteam_twoway import apply_drift_action as _apply
-    res = _apply(db, job, shift, body.action)
-    if not res.get("ok"):
-        raise HTTPException(status_code=502, detail=res.get("error") or "Apply failed")
-    return res
 
 
 @router.post("/sync-gcal", dependencies=[Depends(require_role("admin", "manager"))])

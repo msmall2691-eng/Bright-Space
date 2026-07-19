@@ -11,8 +11,12 @@ import { toast } from '../../utils/toastBus'
  * GET/POST /api/settings/automation (partial updates), so no backend change.
  *
  * Deliberately shows ONLY the scheduling-relevant settings (Connecteam push,
- * Google live sync + who-wins, Airbnb import, recurring auto-generate) — the
- * customer-messaging toggles stay in full Settings so this stays uncluttered.
+ * Google live sync, Airbnb import, recurring auto-generate) — the customer-
+ * messaging toggles stay in full Settings so this stays uncluttered.
+ *
+ * Sync is ONE-WAY: BrightBase is the master and pushes the schedule out to
+ * Google + Connecteam live. Changes made directly in Google/Connecteam are not
+ * pulled back — so there's no "who wins" choice and no drift queue to babysit.
  */
 
 function Toggle({ on, onChange, disabled }) {
@@ -103,24 +107,10 @@ export default function ScheduleSyncSettings({ open, onClose }) {
               <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Google Calendar</div>
               <div className="flex items-center justify-between">
                 <Row icon={Calendar} tint="bg-blue-500/15 text-blue-500"
-                  title="Live sync with Google"
-                  desc="Changes flow both ways in real time — no waiting on a polling timer. (Needs Google connected.)" />
+                  title="Live push to Google"
+                  desc="BrightBase is the master: your schedule pushes to Google in real time and stays the source of truth. Edits made directly in Google aren't pulled back. (Needs Google connected.)" />
                 <div className="pr-4"><Toggle on={s.gcal_live_sync !== false} onChange={v => save({ gcal_live_sync: v })} /></div>
               </div>
-              <Row icon={Calendar} tint="bg-blue-500/15 text-blue-500"
-                title="If the same appointment differs, who wins?"
-                desc="When a job is edited in both places, this decides which one is kept. Cancellations always sync both ways.">
-                <div className="flex gap-1.5">
-                  {[['brightbase', 'BrightBase wins'], ['google', 'Google wins']].map(([v, label]) => (
-                    <button key={v} onClick={() => save({ calendar_source_of_truth: v })}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition ${
-                        (s.calendar_source_of_truth || 'brightbase') === v
-                          ? 'bg-indigo-600/15 border-indigo-500/50 text-ink' : 'border-hairline text-ink-3 hover:text-ink'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </Row>
             </div>
 
             {/* Airbnb / iCal */}

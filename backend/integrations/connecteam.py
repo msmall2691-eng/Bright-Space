@@ -140,9 +140,9 @@ def _to_epoch_seconds(value) -> int:
     timezone, NOT UTC: Connecteam stores shifts as absolute epochs and renders
     them in the scheduler's own timezone (America/New_York), so a 9:00 AM job
     tagged as 9:00 UTC would show up on the cleaner's Connecteam schedule 4-5
-    hours off. tz-aware inputs keep their offset untouched. NOTE: the reverse
-    (connecteam_twoway._ct_snapshot/_ct_times) must localize epochs back with the
-    SAME business tz so drift detection round-trips."""
+    hours off. tz-aware inputs keep their offset untouched. NOTE: anything that
+    reverses an epoch back to a wall-clock must localize with the SAME business
+    tz so the times round-trip exactly."""
     from utils.dates import business_tz
     if isinstance(value, int):
         return value if value < 10**12 else value // 1000

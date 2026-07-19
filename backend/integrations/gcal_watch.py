@@ -131,7 +131,13 @@ def handle_notification(db: Session, headers: dict) -> dict:
     if state == "sync":
         return {"ok": True, "synced": False, "reason": "handshake", "calendar": cal_id}
 
-    from integrations.gcal_sync import sync_calendar
+    from integrations.gcal_sync import sync_calendar, calendar_source_of_truth
+    # One-way (BrightBase is master) is the default: Google pushes are ack'd but
+    # NOT pulled back in — BrightBase's schedule is authoritative and re-asserts
+    # on the next push. Only explicit two-way mode reads the change back.
+    if calendar_source_of_truth(db) != "google":
+        return {"ok": True, "synced": False, "reason": "one_way", "calendar": cal_id}
+
     sync_calendar(db, calendar_ids=[cal_id])
     return {"ok": True, "synced": True, "calendar": cal_id}
 
