@@ -40,6 +40,9 @@ export default function Pipeline() {
   const [savingId, setSavingId] = useState(null)
   const [search, setSearch] = useState('')
   const [owner, setOwner] = useState('')
+  // Lost deals are the "archived" bucket for the pipeline — hidden by default so
+  // dead deals don't clutter the board; a toggle brings the column back.
+  const [showLost, setShowLost] = useState(false)
 
   // Snapshot persisted by saved views, and the reverse — apply a view's config.
   const viewConfig = { search, owner }
@@ -90,7 +93,8 @@ export default function Pipeline() {
   const matches = (o) => {
     const q = search.trim().toLowerCase()
     const okSearch = !q || (o.title || '').toLowerCase().includes(q) || (o.client_name || '').toLowerCase().includes(q)
-    return okSearch && (!owner || (o.owner || '') === owner)
+    const okLost = showLost || (o.stage || 'new') !== 'lost'
+    return okSearch && okLost && (!owner || (o.owner || '') === owner)
   }
   const visible = opps.filter(matches)
   const byStage = (s) => visible.filter(o => (o.stage || 'new') === s)
@@ -123,6 +127,10 @@ export default function Pipeline() {
               {owners.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
+          <button onClick={() => setShowLost(v => !v)}
+            className={`px-3 py-2 rounded-lg text-[12px] border transition-colors ${showLost ? 'bg-bg-2 text-ink-2 border-hairline' : 'bg-bg-2/50 text-ink-3 border-hairline hover:text-ink-2'}`}>
+            {showLost ? 'Hide lost' : 'Show lost'}
+          </button>
           <SavedViewsBar entityType="opportunity" currentConfig={viewConfig} onApply={applyView} defaultLabel="All deals" />
         </div>
       </PageHeader>
@@ -138,7 +146,7 @@ export default function Pipeline() {
         // Stack the stages vertically on mobile (a 5-column horizontal board is
         // a 1150px scroll on a phone); horizontal board on sm+.
         <div className="flex flex-col sm:flex-row gap-3 sm:overflow-x-auto pb-4">
-          {STAGES.map(stage => {
+          {STAGES.filter(s => showLost || s.key !== 'lost').map(stage => {
             const rows = byStage(stage.key)
             return (
               <div
