@@ -74,7 +74,7 @@ class IntakeUpdate(BaseModel):
     custom_fields: Optional[dict] = None
 
 
-def intake_to_dict(i: LeadIntake) -> dict:
+def intake_to_dict(i: LeadIntake, quote=None) -> dict:
     return {
         "id": i.id,
         "name": i.name,
@@ -112,6 +112,14 @@ def intake_to_dict(i: LeadIntake) -> dict:
         # The quote this lead became — lets the UI link a quoted/converted lead
         # straight to its quote instead of dead-ending on the request.
         "converted_quote_id": getattr(i, "converted_quote_id", None),
+        # Read-receipt passthrough: whether the customer has opened the quote we
+        # sent for this request, so the Requests list can show "Opened" without a
+        # second round-trip. Populated by get_intakes' batch quote load; None
+        # when the lead has no quote yet or it hasn't been opened.
+        "quote_status": getattr(quote, "status", None) if quote else None,
+        "quote_viewed_at": (
+            quote.viewed_at.isoformat() if quote and getattr(quote, "viewed_at", None) else None
+        ),
         "created_at": i.created_at.isoformat() if i.created_at else None,
     }
 
@@ -164,7 +172,15 @@ def get_intakes(
         q = q.filter(LeadIntake.service_type == service_type)
     if priority:
         q = q.filter(LeadIntake.priority == priority)
-    return [intake_to_dict(i) for i in q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()]
+    rows = q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()
+    # Batch-load the linked quotes in one query (avoids an N+1) so each row can
+    # report whether the customer has opened its quote.
+    quote_ids = {r.converted_quote_id for r in rows if getattr(r, "converted_quote_id", None)}
+    quotes_by_id = {}
+    if quote_ids:
+        for qt in db.query(Quote).filter(Quote.id.in_(quote_ids)).all():
+            quotes_by_id[qt.id] = qt
+    return [intake_to_dict(i, quotes_by_id.get(getattr(i, "converted_quote_id", None))) for i in rows]
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])

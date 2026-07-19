@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle, Inbox, ChevronRight,
+  Trash2, MessageCircle, Inbox, ChevronRight, Eye,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -120,6 +120,15 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
               <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusConfig.badge}`}>
                 {statusConfig.label}
               </span>
+              {/* Read-receipt: the customer opened the quote we sent for this
+                  request. Only meaningful pre-conversion (a converted lead is
+                  already won). */}
+              {intake.quote_viewed_at && intake.status !== 'converted' && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-indigo-100 text-indigo-700"
+                  title={`Customer opened the quote on ${new Date(intake.quote_viewed_at).toLocaleString()}`}>
+                  <Eye className="w-3 h-3 shrink-0" /> Quote opened
+                </span>
+              )}
             </div>
 
             {/* Contact + Priority */}
