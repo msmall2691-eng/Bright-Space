@@ -8,7 +8,7 @@ lock the phase to anchor_date so it stays put.
 """
 from datetime import timedelta
 from database.models import RecurringSchedule
-from modules.recurring.router import generate_dates, _nth_occurrence_date
+from modules.recurring.router import generate_dates, _nth_occurrence_date, _is_on_phase
 from utils.dates import business_today
 
 
@@ -82,3 +82,18 @@ def test_nth_occurrence_matches_generate_dates_phase():
     assert len(dates) >= 3
     # The 3rd occurrence from _nth_occurrence_date should be the 3rd generated.
     assert _nth_occurrence_date(s, 3) == dates[2]
+
+
+def test_is_on_phase_classifies_off_week_duplicates():
+    """The cleanup classifier: a biweekly-Monday series treats the anchor week
+    (and every 2nd week after) as on-phase, and the weeks between as off-phase
+    (the drift duplicates)."""
+    today = business_today()
+    anchor = today - timedelta(days=today.weekday())  # a Monday
+    s = _biweekly(anchor, dow=0)
+    assert _is_on_phase(s, anchor) is True                       # anchor week
+    assert _is_on_phase(s, anchor + timedelta(weeks=2)) is True  # on week
+    assert _is_on_phase(s, anchor + timedelta(weeks=1)) is False # off week (drift)
+    assert _is_on_phase(s, anchor + timedelta(weeks=3)) is False # off week (drift)
+    # A different weekday is never this series' occurrence.
+    assert _is_on_phase(s, anchor + timedelta(days=1)) is False

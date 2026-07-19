@@ -321,6 +321,29 @@ def _daily_anchor(sched: RecurringSchedule, today: date) -> date:
     return anchor if anchor is not None else today
 
 
+def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
+    """Would this schedule's rule produce date ``d``? Classifies a single date
+    by cadence phase directly (no date-window), so it stays correct for dates
+    beyond generate_weeks_ahead. Used by the off-cadence cleanup to tell a
+    biweekly-drift leftover from a legitimate occurrence."""
+    today = business_today()
+    if sched.frequency == "monthly":
+        dom = sched.day_of_month or 1
+        return d.day == dom
+    interval = max(1, sched.interval_weeks or 1)
+    if sched.frequency == "daily":
+        chosen = set(_effective_days(sched)) if sched.days_of_week else None
+        if (d - _daily_anchor(sched, today)).days % interval != 0:
+            return False
+        return chosen is None or d.weekday() in chosen
+    # weekly / biweekly / every-N-week
+    days = _effective_days(sched)
+    if d.weekday() not in days:
+        return False
+    ref_monday = _week_monday(_phase_anchor(sched, today, days))
+    return ((_week_monday(d) - ref_monday).days // 7) % interval == 0
+
+
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     """Return a sorted list of dates this schedule should run in the next N weeks."""
     today = business_today()
@@ -974,6 +997,125 @@ def generate_all(db: Session = Depends(get_db), org_id: int = Depends(current_or
     ).all()
     total = sum(generate_jobs(db, s) for s in schedules)
     return {"schedules_processed": len(schedules), "jobs_created": total}
+
+
+def _off_phase_future_jobs(db: Session, sched: RecurringSchedule) -> List[Job]:
+    """Future, non-terminal Jobs on this series that fell on an OFF cadence week
+    (or day) — the leftovers the pre-fix biweekly drift created. Deliberately
+    conservative:
+      * only frequencies the bug could hit (biweekly/every-N-week, every-N-day);
+        weekly and monthly have no off-weeks so are never touched;
+      * only future jobs (>= today) — never rewrites history or completed work;
+      * only jobs on a legitimately-scheduled weekday that landed on the wrong
+        cadence week — anything on an unscheduled day is likely a manual edit
+        and is left alone;
+      * intentional reschedule targets are always kept.
+    """
+    interval = max(1, sched.interval_weeks or 1)
+    freq = sched.frequency
+    if freq == "monthly":
+        return []
+    if freq != "daily" and interval <= 1:
+        return []  # plain weekly — no off-weeks to clean
+    if freq == "daily" and interval <= 1:
+        return []  # every day — no off-days
+    today = business_today()
+    resched_targets = {
+        _as_date(e.rescheduled_date)
+        for e in db.query(RecurrenceException).filter(
+            RecurrenceException.recurring_schedule_id == sched.id,
+            RecurrenceException.exception_type == "reschedule",
+            RecurrenceException.rescheduled_date.isnot(None),
+        ).all()
+    }
+    days = set(_effective_days(sched))
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.recurring_schedule_id == sched.id,
+            Job.status.notin_(("completed", "cancelled")),
+            Job.scheduled_date.isnot(None),
+            Job.scheduled_date >= today,
+        )
+        .order_by(Job.scheduled_date.asc())
+        .all()
+    )
+    out = []
+    for j in jobs:
+        d = _as_date(j.scheduled_date)
+        if d is None or d in resched_targets:
+            continue
+        # Must be on a slot the rule actually schedules (right weekday/day),
+        # just on an off cadence week — that's the drift signature.
+        if freq == "daily":
+            if sched.days_of_week and d.weekday() not in days:
+                continue
+        elif d.weekday() not in days:
+            continue
+        if not _is_on_phase(sched, d):
+            out.append(j)
+    return out
+
+
+@router.get("/cleanup/off-phase-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def preview_off_phase_cleanup(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Dry-run: list the off-cadence duplicate visits the pre-fix biweekly drift
+    left behind, WITHOUT changing anything. Review this before calling apply."""
+    oid = resolve_org_id(org_id, db)
+    schedules = db.query(RecurringSchedule).filter(
+        RecurringSchedule.active == True,
+        or_(RecurringSchedule.org_id == oid, RecurringSchedule.org_id.is_(None)),
+    ).all()
+    candidates = []
+    for s in schedules:
+        for j in _off_phase_future_jobs(db, s):
+            candidates.append({
+                "job_id": j.id,
+                "schedule_id": s.id,
+                "title": s.title,
+                "address": s.address,
+                "scheduled_date": _as_date(j.scheduled_date).isoformat(),
+                "start_time": str(j.start_time) if j.start_time else None,
+                "frequency": s.frequency,
+                "interval_weeks": s.interval_weeks,
+            })
+    candidates.sort(key=lambda c: (c["scheduled_date"], c["schedule_id"]))
+    return {"count": len(candidates), "candidates": candidates}
+
+
+class OffPhaseCleanupApply(BaseModel):
+    # Explicit allowlist of job ids to cancel; omit/null to cancel every
+    # currently-detected off-phase job. Either way the server re-derives the
+    # off-phase set and only ever cancels jobs still in it, so a stale or
+    # hand-crafted id list can never cancel a legitimate visit.
+    job_ids: Optional[List[int]] = None
+
+
+@router.post("/cleanup/off-phase-apply", dependencies=[Depends(require_role("admin", "manager"))])
+def apply_off_phase_cleanup(body: OffPhaseCleanupApply, db: Session = Depends(get_db),
+                            org_id: int = Depends(current_org_id)):
+    """Cancel the off-cadence duplicate visits. Soft-cancel (status=cancelled)
+    matching every other recurring-cancellation path here, releasing the linked
+    Google Calendar event + Connecteam shift. Keeps recurring_schedule_id so
+    generate_jobs' cancelled-date guard won't recreate them."""
+    oid = resolve_org_id(org_id, db)
+    schedules = db.query(RecurringSchedule).filter(
+        RecurringSchedule.active == True,
+        or_(RecurringSchedule.org_id == oid, RecurringSchedule.org_id.is_(None)),
+    ).all()
+    requested = set(body.job_ids) if body.job_ids is not None else None
+    cancelled = []
+    for s in schedules:
+        for j in _off_phase_future_jobs(db, s):
+            if requested is not None and j.id not in requested:
+                continue
+            j.status = "cancelled"
+            j.notes = (j.notes or "") + "\n[Removed off-cadence duplicate — biweekly drift cleanup]"
+            _release_sync_links(db, j)
+            cancelled.append(j.id)
+    if cancelled:
+        db.commit()
+    return {"cancelled_count": len(cancelled), "cancelled_job_ids": cancelled}
 
 
 @router.post("/{schedule_id}/generate", dependencies=[Depends(require_role("admin", "manager"))])

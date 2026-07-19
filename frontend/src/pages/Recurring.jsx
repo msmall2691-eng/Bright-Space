@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
   Calendar, Repeat, RefreshCw, Plus, X, ArrowLeft, Pencil,
-  SkipForward, Clock, Undo2, Pause, Play, AlertTriangle,
+  SkipForward, Clock, Undo2, Pause, Play, AlertTriangle, Sparkles,
 } from 'lucide-react'
 import { get, post, put, patch, del } from '../api'
 import Button from '../components/ui/Button'
@@ -913,6 +913,36 @@ export default function Recurring() {
 
   useEffect(() => { loadList() }, [loadList])
 
+  const [cleaning, setCleaning] = useState(false)
+  // One-time maintenance: find + remove the off-cadence duplicate visits the
+  // old biweekly-drift bug created. Always previews (dry-run) and asks before
+  // cancelling anything.
+  const cleanupDuplicates = useCallback(async () => {
+    setCleaning(true)
+    try {
+      const preview = await get('/api/recurring/cleanup/off-phase-preview')
+      const items = preview?.candidates || []
+      if (!items.length) {
+        toast.success('No off-cadence duplicate visits found — your recurring schedule is clean.')
+        return
+      }
+      const sample = items.slice(0, 6).map(c => `• ${c.scheduled_date} — ${c.title}`).join('\n')
+      const more = items.length > 6 ? `\n…and ${items.length - 6} more` : ''
+      const ok = await confirmDialog(
+        `Found ${items.length} future visit${items.length === 1 ? '' : 's'} on the wrong week (leftovers from the old biweekly bug):\n\n${sample}${more}\n\nCancel them? Their Google Calendar events and Connecteam shifts are removed too. Past and completed visits are never touched.`,
+        { confirmLabel: `Cancel ${items.length} duplicate${items.length === 1 ? '' : 's'}`, cancelLabel: 'Keep them', danger: true },
+      )
+      if (!ok) return
+      const res = await post('/api/recurring/cleanup/off-phase-apply', {})
+      toast.success(`Removed ${res?.cancelled_count ?? 0} duplicate visit${res?.cancelled_count === 1 ? '' : 's'}.`)
+      loadList()
+    } catch (e) {
+      toast.error(e.message || 'Cleanup failed')
+    } finally {
+      setCleaning(false)
+    }
+  }, [loadList])
+
   const openSeries = (id) => setParams({ series: String(id) })
   const backToList = () => setParams({})
 
@@ -955,6 +985,10 @@ export default function Recurring() {
           <>
             <Button variant="secondary" size="sm" onClick={loadList}>
               <RefreshCw className="w-4 h-4 mr-1" /> Refresh
+            </Button>
+            <Button variant="secondary" size="sm" onClick={cleanupDuplicates} disabled={cleaning}
+              title="Find and remove off-cadence duplicate visits left by the old biweekly bug">
+              <Sparkles className="w-4 h-4 mr-1" /> {cleaning ? 'Checking…' : 'Clean up duplicates'}
             </Button>
             <Link to="/schedule?tab=recurring">
               <Button variant="primary" size="sm">
