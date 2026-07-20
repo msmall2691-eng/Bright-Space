@@ -1506,6 +1506,11 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         .first()
     )
     carried_token = old_occurrence.public_token if old_occurrence else None
+    # Whether the occurrence being moved was already on a cleaner's Connecteam
+    # schedule — captured BEFORE the cancel below pulls its shift, so the moved
+    # visit re-dispatches immediately even in manual mode (mirrors update_job:
+    # an already-dispatched visit that moves must not strand a stale shift).
+    was_dispatched = bool(old_occurrence and old_occurrence.connecteam_shift_ids)
 
     if rescheduled_date != exception_date:
         if old_occurrence is not None:
@@ -1577,6 +1582,31 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     rescheduled_job.customer_confirmed_at = None
     if getattr(rescheduled_job, "sms_reminder_sent", False):
         rescheduled_job.sms_reminder_sent = False
+
+    # ── CONNECTEAM SHIFT SYNC ── reflect the move on the cleaner's app now
+    # instead of leaving the moved occurrence shiftless until the 30-minute
+    # reconcile tick. Mirrors update_job's one-off path: a visit that was
+    # already dispatched re-syncs even in manual mode (its shift follows it),
+    # while a not-yet-dispatched occurrence follows the auto-dispatch setting.
+    # Everything is staged with commit=False so it persists atomically with the
+    # caller's commit, and it's best-effort — a Connecteam hiccup must never
+    # block the reschedule itself.
+    try:
+        from integrations.connecteam_auto import (
+            auto_dispatch_job, remove_job_from_connecteam)
+        from modules.settings.router import connecteam_auto_dispatch_enabled
+        db.flush()  # assign a freshly-created job its id for the shift log
+        if rescheduled_job.connecteam_shift_ids:
+            # An existing shift on the target row whose time/crew changed →
+            # pull the stale one and push a fresh one. Use the primitives (not
+            # resync_job, which force-commits) so it stays in this transaction.
+            remove_job_from_connecteam(db, rescheduled_job, commit=False)
+            auto_dispatch_job(db, rescheduled_job, commit=False)
+        elif rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)):
+            auto_dispatch_job(db, rescheduled_job, commit=False)
+    except Exception as e:
+        logger.warning(
+            f"Connecteam sync for rescheduled occurrence (schedule {sched.id}) failed: {e}")
 
     return ex, rescheduled_job
 
