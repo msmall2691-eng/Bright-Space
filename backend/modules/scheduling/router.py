@@ -342,15 +342,22 @@ def _find_over_capacity(db: Session, *, cleaner_ids, scheduled_date,
     return [(cid, counts[cid] + 1) for cid in ids if counts[cid] + 1 > CAPACITY_PER_CLEANER_PER_DAY]
 
 
-def _cleaner_roster(db: Session) -> list:
+def _cleaner_roster(db: Session, org_id=None) -> list:
     """The pool of candidate cleaners: every distinct cleaner_id that appears on
     a non-cancelled job. Derived from real assignments so it needs no external
-    roster call (Connecteam) and reflects who actually works turnovers."""
+    roster call (Connecteam) and reflects who actually works turnovers.
+
+    When org_id is an int, the roster is scoped to that tenant so one org's
+    turnovers can't be assigned another org's cleaners (MT-2). org_id=None
+    (the background scheduler) spans all orgs, matching prior behavior."""
     seen = []
-    rows = db.query(Job).filter(
+    q = db.query(Job).filter(
         Job.status.notin_(["cancelled"]),
         Job.cleaner_ids.isnot(None),
-    ).all()
+    )
+    if isinstance(org_id, int):
+        q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
+    rows = q.all()
     for j in rows:
         for cid in (j.cleaner_ids or []):
             cid = str(cid)
@@ -359,21 +366,27 @@ def _cleaner_roster(db: Session) -> list:
     return seen
 
 
-def _day_load(db: Session, cleaner_id: str, d) -> int:
-    """How many non-cancelled jobs the cleaner already has on day d."""
+def _day_load(db: Session, cleaner_id: str, d, org_id=None) -> int:
+    """How many non-cancelled jobs the cleaner already has on day d.
+
+    Scoped to org_id when an int (MT-2) so load-balancing counts only this
+    tenant's jobs; org_id=None spans all orgs (background scheduler)."""
     n = 0
-    for j in db.query(Job).filter(
+    q = db.query(Job).filter(
         Job.scheduled_date == d,
         Job.status.notin_(["cancelled"]),
         Job.cleaner_ids.isnot(None),
-    ).all():
+    )
+    if isinstance(org_id, int):
+        q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
+    for j in q.all():
         if str(cleaner_id) in {str(c) for c in (j.cleaner_ids or [])}:
             n += 1
     return n
 
 
 def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
-                                     limit: int = 100) -> dict:
+                                     limit: int = 100, org_id=None) -> dict:
     """Assign an available cleaner to upcoming, unassigned str_turnover jobs.
 
     For each such job, a candidate is eligible when — by the same rules the
@@ -382,19 +395,22 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
     the least-loaded that day is chosen (simple load balancing). Jobs with no
     eligible candidate are left unassigned and reported.
 
-    dry_run=True computes the picks without writing them (for a preview)."""
+    dry_run=True computes the picks without writing them (for a preview).
+
+    org_id scopes every read/write to one tenant (MT-2) when it's an int: the
+    endpoint passes the caller's org so a tenant admin can't read or reassign
+    another org's jobs. org_id=None (the background scheduler) spans all orgs,
+    preserving prior behavior."""
     today = business_today()
-    roster = _cleaner_roster(db)
-    jobs = (
-        db.query(Job)
-        .filter(
-            Job.job_type == "str_turnover",
-            Job.scheduled_date >= today,
-            Job.status.notin_(["cancelled", "completed"]),
-        )
-        .order_by(Job.scheduled_date, Job.start_time)
-        .all()
+    roster = _cleaner_roster(db, org_id=org_id)
+    q = db.query(Job).filter(
+        Job.job_type == "str_turnover",
+        Job.scheduled_date >= today,
+        Job.status.notin_(["cancelled", "completed"]),
     )
+    if isinstance(org_id, int):
+        q = q.filter(or_(Job.org_id == org_id, Job.org_id.is_(None)))
+    jobs = q.order_by(Job.scheduled_date, Job.start_time).all()
     jobs = [j for j in jobs if not (j.cleaner_ids or [])][:limit]
 
     assigned, unassignable = [], []
@@ -403,16 +419,16 @@ def auto_assign_unassigned_turnovers(db: Session, *, dry_run: bool = False,
         best, best_load = None, None
         for cid in roster:
             # Reuse the create/update guard rules for eligibility.
-            if _find_unavailable_cleaners(db, cleaner_ids=[cid], scheduled_date=d):
+            if _find_unavailable_cleaners(db, cleaner_ids=[cid], scheduled_date=d, org_id=org_id):
                 continue
             if _find_cleaner_conflicts(db, cleaner_ids=[cid], scheduled_date=d,
                                        start_time=job.start_time, end_time=job.end_time,
-                                       exclude_job_id=job.id):
+                                       exclude_job_id=job.id, org_id=org_id):
                 continue
             if _find_over_capacity(db, cleaner_ids=[cid], scheduled_date=d,
-                                   exclude_job_id=job.id):
+                                   exclude_job_id=job.id, org_id=org_id):
                 continue
-            load = _day_load(db, cid, d)
+            load = _day_load(db, cid, d, org_id=org_id)
             if best is None or load < best_load:
                 best, best_load = cid, load
         if best is None:
@@ -829,6 +845,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
             Job.scheduled_date == data.scheduled_date,
             Job.job_type == "str_turnover",
             Job.status.notin_(["cancelled"]),
+            or_(Job.org_id == org_id, Job.org_id.is_(None)),  # MT-2 tenant scope
         ).first()
         if existing:
             raise HTTPException(
@@ -1131,19 +1148,32 @@ def gcal_sync_status(db: Session = Depends(get_db)):
 
 
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
-def push_to_gcal(db: Session = Depends(get_db)):
-    """Push any BrightBase jobs that don't yet have a GCal event."""
+def push_to_gcal(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Push any BrightBase jobs that don't yet have a GCal event.
+
+    Scoped to the caller's org (MT-2) when reached as an endpoint, so one
+    tenant's push can't create Google events — or email calendar invites — for
+    another tenant's jobs. In-process callers that pass no org_id (the
+    background scheduler's all-orgs reconcile) span every org, as before; the
+    per-tenant sync-reconcile endpoint passes its caller's org explicitly."""
     try:
         from integrations.google_calendar import create_event
     except ImportError as e:
         logger.warning(f"push_to_gcal import failed: {e}")
         raise HTTPException(status_code=500, detail="Google Calendar integration unavailable.")
 
-    jobs = db.query(Job).options(joinedload(Job.client)).filter(
+    # int → this tenant; the Depends sentinel (in-process, no org passed) or
+    # None → all orgs. resolve_org_id isn't used here because it coerces the
+    # sentinel to the default org, but the scheduler needs all-orgs breadth.
+    scoped_org = org_id if isinstance(org_id, int) else None
+    q = db.query(Job).options(joinedload(Job.client)).filter(
         Job.gcal_event_id.is_(None),
         Job.status.in_(["scheduled", "in_progress"]),
         Job.scheduled_date >= business_today().isoformat(),
-    ).order_by(Job.id).all()  # stable lock order (below) so two pushers can't deadlock
+    )
+    if scoped_org is not None:
+        q = q.filter(or_(Job.org_id == scoped_org, Job.org_id.is_(None)))
+    jobs = q.order_by(Job.id).all()  # stable lock order (below) so two pushers can't deadlock
 
     if not jobs:
         return {"pushed": 0, "message": "All upcoming jobs already have GCal events"}
@@ -1196,7 +1226,7 @@ def push_to_gcal(db: Session = Depends(get_db)):
 
 
 @router.post("/sync-reconcile", dependencies=[Depends(require_role("admin", "manager"))])
-def sync_reconcile(db: Session = Depends(get_db)):
+def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """One-click fix for the schedule "Needs attention" banner.
 
     Pushes every upcoming unsynced job to Google Calendar (same logic as
@@ -1204,7 +1234,12 @@ def sync_reconcile(db: Session = Depends(get_db)):
     Connecteam shifts yet. Both paths are no-ops for jobs already synced,
     so this is safe to call repeatedly. The background reconcile tick
     (scheduler.sync_reconcile_tick) runs the same repairs automatically.
+
+    Scoped to the caller's org (MT-2): both the GCal push and the Connecteam
+    dispatch/drift queries only touch this tenant's jobs, so this endpoint
+    can't be used to reach around push-to-gcal's own tenant scoping.
     """
+    oid = resolve_org_id(org_id, db)
     result = {"gcal": {"pushed": 0, "errors": 0}, "connecteam": {"dispatched": 0, "errors": 0}}
 
     # Google Calendar
@@ -1219,7 +1254,7 @@ def sync_reconcile(db: Session = Depends(get_db)):
                 healed = reassert_deleted_gcal_events(db)
             except Exception as e:
                 logger.warning(f"sync-reconcile: Google re-assert failed: {e}")
-            pushed = push_to_gcal(db)
+            pushed = push_to_gcal(db, org_id=oid)
             result["gcal"] = {"pushed": pushed.get("pushed", 0),
                               "errors": len(pushed.get("errors") or []),
                               "restored": healed.get("restored", 0)}
@@ -1242,6 +1277,7 @@ def sync_reconcile(db: Session = Depends(get_db)):
                 Job.status.in_(["scheduled", "in_progress"]),
                 Job.scheduled_date >= start,
                 Job.scheduled_date <= end,
+                or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
             ).all()
             # In MANUAL dispatch mode, don't batch-dispatch assigned jobs — that
             # would silently push cleaners the operator hasn't dispatched yet.
@@ -1271,6 +1307,7 @@ def sync_reconcile(db: Session = Depends(get_db)):
             drift_jobs = db.query(Job).filter(
                 Job.scheduled_date >= drift_start,
                 Job.scheduled_date <= end,
+                or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
             ).all()
             drift = reconcile_connecteam_drift(db, drift_jobs)
             result["connecteam"]["resynced"] = drift["resynced"]
@@ -1577,10 +1614,15 @@ def delete_time_off(time_off_id: int, db: Session = Depends(get_db), org_id: int
 
 # Registered before /{job_id} so the literal path isn't swallowed by the int route.
 @router.post("/auto-assign-turnovers", dependencies=[Depends(require_role("admin", "manager"))])
-def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db)):
+def auto_assign_turnovers(dry_run: bool = False, db: Session = Depends(get_db),
+                          org_id: int = Depends(current_org_id)):
     """Assign available cleaners to upcoming unassigned STR turnover jobs.
-    Pass ?dry_run=true to preview the picks without writing them."""
-    return auto_assign_unassigned_turnovers(db, dry_run=dry_run)
+    Pass ?dry_run=true to preview the picks without writing them.
+
+    Scoped to the caller's org (MT-2): reads and reassigns only this tenant's
+    turnovers, never another org's."""
+    return auto_assign_unassigned_turnovers(db, dry_run=dry_run,
+                                            org_id=resolve_org_id(org_id, db))
 
 
 class BulkRescheduleRequest(BaseModel):
@@ -1666,22 +1708,29 @@ def _job_source(j: Job) -> str:
 
 # Registered before /{job_id} so the literal path isn't swallowed by the int route.
 @router.get("/diagnostics/missing-times", dependencies=[Depends(require_role("admin", "manager"))])
-def diagnose_missing_times(db: Session = Depends(get_db)):
+def diagnose_missing_times(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Diagnostic: list jobs with no start_time — the records that render as
     '– –' on the schedule. Visits can't be null (DB constraint), so a blank time
     always traces to a Job with start_time IS NULL shown via the job→visit
     fallback. Each row is tagged with the likely source so we can fix the
-    actual producer rather than guess. Read-only; writes nothing."""
+    actual producer rather than guess. Read-only; writes nothing.
+
+    Scoped to the caller's org (MT-2) so it can't enumerate another tenant's
+    job titles and property names."""
+    oid = resolve_org_id(org_id, db)
     today = business_today()
     missing = (
         db.query(Job)
-        .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]))
+        .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]),
+                or_(Job.org_id == oid, Job.org_id.is_(None)))  # MT-2 tenant scope
         .order_by(Job.scheduled_date.desc())
         .limit(200)
         .all()
     )
-    prop_names = {p.id: p.name for p in db.query(Property.id, Property.name).all()} \
-        if missing else {}
+    prop_names = {
+        p.id: p.name for p in db.query(Property.id, Property.name)
+        .filter(or_(Property.org_id == oid, Property.org_id.is_(None))).all()
+    } if missing else {}
 
     by_source: dict = {}
     rows = []
@@ -1720,21 +1769,30 @@ def diagnose_missing_times(db: Session = Depends(get_db)):
 
 # Registered before /{job_id} so the literal path isn't swallowed by the int route.
 @router.post("/backfill-missing-times", dependencies=[Depends(require_role("admin", "manager"))])
-def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db)):
+def backfill_missing_times(dry_run: bool = False, db: Session = Depends(get_db),
+                           org_id: int = Depends(current_org_id)):
     """Fill a sensible time on every non-cancelled job that has no start_time
     (the records that render as '– –'). Uses the same rule iCal sync uses:
     turnovers get the property's check-out time (fallback 10:00), other jobs
     get 09:00; end = start + the property's default duration (fallback 3h).
-    Pass ?dry_run=true to preview without writing. Review-first."""
+    Pass ?dry_run=true to preview without writing. Review-first.
+
+    Scoped to the caller's org (MT-2) so a tenant admin can only rewrite times
+    on their own jobs, never another org's."""
     from integrations.ical_sync import _make_end_time
+    oid = resolve_org_id(org_id, db)
     missing = (
         db.query(Job)
-        .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]))
+        .filter(Job.start_time.is_(None), Job.status.notin_(["cancelled"]),
+                or_(Job.org_id == oid, Job.org_id.is_(None)))  # MT-2 tenant scope
         .order_by(Job.scheduled_date.desc())
         .limit(500)
         .all()
     )
-    prop_map = {p.id: p for p in db.query(Property).all()} if missing else {}
+    prop_map = {
+        p.id: p for p in db.query(Property)
+        .filter(or_(Property.org_id == oid, Property.org_id.is_(None))).all()
+    } if missing else {}
 
     changes = []
     for j in missing:
