@@ -8,7 +8,6 @@ frequency is saved and applied to the estimate, and a single visit that hits two
 endpoints merges into one lead.
 """
 import uuid
-import pytest
 from fastapi.testclient import TestClient
 
 from main import app
@@ -191,12 +190,12 @@ def test_upsert_persists_all_structured_columns():
         assert lead.frequency == "biweekly"
         assert lead.estimate_min is not None and lead.estimate_max is not None
         assert lead.message == "note only"   # message holds ONLY the free text
-        # A timeline activity was written for the client.
-        act = db.query(Activity).filter(
-            Activity.client_id == lead.client_id,
-            Activity.activity_type == "lead_created",
-        ).first()
-        assert act is not None
+        # Inbox-only (Twenty-style): a new request creates NO client — and so
+        # no client-timeline activity. client_id stays NULL until staff
+        # explicitly convert the request into a customer.
+        assert res["client_id"] is None
+        assert lead.client_id is None
+        assert db.query(Client).filter(Client.email.ilike(email)).first() is None
         db.close()
     finally:
         _cleanup_email(email)
@@ -387,143 +386,125 @@ def test_idempotency_key_collapses_two_posts_into_one_lead():
         _cleanup_email(email)
 
 
-# --- Audit July-2026 M1: matched-Client refresh ---------------------------
+# --- Inbox-only: client/property dedup happens at CONVERSION, not intake ---
 
-def test_returning_customer_booking_refreshes_stale_client_fields():
-    """A returning customer's new booking address/phone updates the Client.
+def _convert_request(db, intake_id, org_id=1):
+    """Run the staff conversion path (dedup-or-create client + property) that
+    the convert-to-client / convert-to-quote endpoints share."""
+    from modules.intake.router import (
+        _resolve_client_for_intake, _resolve_property_for_intake,
+    )
+    intake = db.query(LeadIntake).filter(LeadIntake.id == intake_id).one()
+    client, created = _resolve_client_for_intake(db, intake, org_id)
+    prop = _resolve_property_for_intake(db, client, intake)
+    db.commit()
+    return client, prop, created
 
-    Pins the July-2026 audit's M1 fix. Before this, the matched-Client branch
-    was fill-if-null, so a customer whose master record had an old address
-    stayed permanently stale even as new bookings arrived with fresh info.
-    The multi-value client_emails / client_phones tables still record history.
-    """
+
+def test_new_request_creates_no_client_property_or_opportunity():
+    """Inbox-only: an inbound request is JUST a LeadIntake row. No Client,
+    Property, or Opportunity is created until staff convert it."""
     email = _uniq_email()
     try:
-        # First lead — sets the client's initial contact info.
         db = SessionLocal()
-        data1 = build_intake(
-            name="Return Test", email=email, phone="2075550001",
-            address="OLD 1 Old St", city="Old City", state="ME", zip_code="00001",
+        res = upsert_lead(db, build_intake(
+            name="Inbox Only", email=email, phone="2075550001",
+            address="1 Old St", city="Old City", state="ME", zip_code="00001",
             service_key="residential", bedrooms=2, bathrooms=1, square_footage=1000,
-            frequency="biweekly",
-        )
-        upsert_lead(db, data1)
-        db.commit()
-        client_row = db.query(Client).filter(Client.email.ilike(email)).one()
-        assert client_row.address == "OLD 1 Old St"
-        assert client_row.phone == "+12075550001"
-        db.close()
-
-        # Second lead — same customer, new address + phone + zip. This time we
-        # need a fresh recency window so the idempotency SELECT doesn't hit.
-        # We use a new email that ALSO points to the same client via the
-        # client_emails helper. Simpler: bypass the recent-dup window by
-        # inserting the second row directly and letting client match do its
-        # thing on phone.
-        # (In production this is time-separated by hours/days; here we clear
-        # the recent-lead's created_at to simulate that gap.)
-        db = SessionLocal()
-        recent = (
-            db.query(LeadIntake)
-            .filter(LeadIntake.email.ilike(email))
-            .order_by(LeadIntake.created_at.desc())
-            .first()
-        )
-        from datetime import datetime, timedelta, timezone
-        recent.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
-        db.commit()
-        db.close()
-
-        db = SessionLocal()
-        data2 = build_intake(
-            name="Return Test", email=email, phone="2079998888",
-            address="NEW 155 Keystone Dr", city="New Town", state="ME",
-            zip_code="04061", service_key="residential", bedrooms=2,
-            bathrooms=1, square_footage=1000, frequency="biweekly",
-        )
-        upsert_lead(db, data2)
-        db.commit()
-
-        client_row = db.query(Client).filter(Client.email.ilike(email)).one()
-        # Client fields overwritten by the newer booking's values (M1 fix).
-        assert client_row.address == "NEW 155 Keystone Dr", client_row.address
-        assert client_row.phone == "+12079998888", client_row.phone
-        assert client_row.zip_code == "04061"
-        assert client_row.city == "New Town"
+        ))
+        assert res["deduped"] is False
+        assert res["client_id"] is None
+        lead = db.query(LeadIntake).filter(LeadIntake.id == res["intake_id"]).one()
+        assert lead.client_id is None
+        assert db.query(Client).filter(Client.email.ilike(email)).first() is None
+        assert db.query(Property).filter(Property.address == "1 Old St").first() is None
         db.close()
     finally:
         _cleanup_email(email)
 
 
-def test_overwriting_client_primary_preserves_old_email_in_history():
-    """A legacy client with only Client.email populated (no contact_emails row)
-    must keep its old email in the multi-value table when a new booking
-    overwrites the primary. Otherwise a later Gmail thread using the old
-    address can't match this client anymore.
+def test_returning_customer_convert_reuses_client_and_adds_property():
+    """Two separate requests from one customer (matched on phone), each
+    converted, resolve to ONE client — not a duplicate — and each service
+    address lands as its own Property under that client."""
+    email = _uniq_email()
+    email2 = _uniq_email()
+    try:
+        db = SessionLocal()
+        r1 = upsert_lead(db, build_intake(
+            name="Return Test", email=email, phone="2075550001",
+            address="1 Old St", city="Old City", state="ME", zip_code="00001",
+            service_key="residential", bedrooms=2, bathrooms=1, square_footage=1000,
+        ))
+        c1, _p1, created1 = _convert_request(db, r1["intake_id"])
+        c1_id = c1.id
+        assert created1 is True
+        # Push the first lead outside the 5-minute recency window so the second
+        # request is a genuinely separate visit, not merged into the first lead.
+        from datetime import datetime, timedelta, timezone
+        r1_lead = db.query(LeadIntake).filter(LeadIntake.id == r1["intake_id"]).one()
+        r1_lead.created_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        db.commit()
+        db.close()
 
-    Pins the July-2026 audit review's follow-up (P2 on PR #507).
-    """
+        # A later request from the same person (same phone, new email + address).
+        db = SessionLocal()
+        r2 = upsert_lead(db, build_intake(
+            name="Return Test", email=email2, phone="2075550001",
+            address="155 Keystone Dr", city="New Town", state="ME", zip_code="04061",
+            service_key="residential", bedrooms=2, bathrooms=1, square_footage=1000,
+        ))
+        c2, _p2, created2 = _convert_request(db, r2["intake_id"])
+        assert created2 is False, "returning customer must reuse the existing client"
+        assert c2.id == c1_id
+        addrs = {(p.address or "").lower() for p in
+                 db.query(Property).filter(Property.client_id == c1_id).all()}
+        assert "1 old st" in addrs and "155 keystone dr" in addrs, addrs
+        db.close()
+    finally:
+        _cleanup_email(email2)
+        _cleanup_email(email)
+
+
+def test_convert_matches_legacy_client_by_phone_no_duplicate():
+    """A request whose email is new but whose phone matches an existing
+    (legacy) client converts INTO that client — no duplicate — and records
+    the request's email on the client's contact list for future matching."""
     from database.models import Client, ContactEmail
 
     new_email = _uniq_email()
     old_email = _uniq_email()
-    # Unique phone so find_client_by_contact matches THIS legacy row and not
-    # some leftover from an earlier test on a shared SQLite CI DB.
     unique_phone_digits = "207555" + f"{uuid.uuid4().int % 10000:04d}"
     unique_phone_e164 = "+1" + unique_phone_digits
     try:
         db = SessionLocal()
-        # Simulate a legacy client: primary email on Client, but no matching
-        # contact_emails row for this address (pre-multi-value migration state).
         legacy = Client(
             name="Legacy Cust", email=old_email, phone=unique_phone_e164,
-            address="10 Old Rd", city="Old City", state="ME",
-            zip_code="00001", status="lead", source="import",
+            address="10 Old Rd", city="Old City", state="ME", zip_code="00001",
+            status="lead", source="import", org_id=1,
         )
         db.add(legacy)
         db.commit()
         legacy_id = legacy.id
-
-        # Sanity: no contact_emails row for this specific email yet.
-        assert db.query(ContactEmail).filter(
-            ContactEmail.client_id == legacy_id,
-            ContactEmail.email.ilike(old_email),
-        ).count() == 0
         db.close()
 
-        # New booking arrives with a DIFFERENT email but same phone (so
-        # find_client_by_contact matches this legacy client).
+        # New request: different email, SAME phone → converts into the legacy client.
         db = SessionLocal()
-        data = build_intake(
+        r = upsert_lead(db, build_intake(
             name="Legacy Cust", email=new_email, phone=unique_phone_digits,
             address="20 New Rd", city="New City", state="ME", zip_code="00002",
             service_key="residential", bedrooms=2, bathrooms=1,
-        )
-        upsert_lead(db, data)
-        db.commit()
-
-        c = db.query(Client).filter(Client.id == legacy_id).one()
-        # Primary now the new email.
-        assert c.email == new_email
-        # Old email preserved in contact_emails so future Gmail/manual lookups
-        # by that address still resolve to this client.
-        old_row = (
-            db.query(ContactEmail)
-            .filter(ContactEmail.client_id == legacy_id,
-                    ContactEmail.email.ilike(old_email))
-            .first()
-        )
-        assert old_row is not None, (
-            "old primary email must be copied to contact_emails BEFORE overwrite"
-        )
-        # New email also in the history (via the standing add_contact_email).
-        new_row = (
-            db.query(ContactEmail)
-            .filter(ContactEmail.client_id == legacy_id,
-                    ContactEmail.email.ilike(new_email))
-            .first()
-        )
-        assert new_row is not None
+        ))
+        client, _prop, created = _convert_request(db, r["intake_id"])
+        assert created is False and client.id == legacy_id, "matched by phone → no duplicate client"
+        # The request's new email is now on the client's contact list, so a
+        # future request from that address dedups to this same client.
+        assert db.query(ContactEmail).filter(
+            ContactEmail.client_id == legacy_id,
+            ContactEmail.email.ilike(new_email),
+        ).first() is not None
+        # No second client was spawned for the new email.
+        assert db.query(Client).filter(Client.email.ilike(new_email)).first() is None
         db.close()
     finally:
         _cleanup_email(new_email)

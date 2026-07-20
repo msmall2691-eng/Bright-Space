@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle, Inbox, ChevronRight, Eye,
+  Trash2, MessageCircle, Inbox, ChevronRight, Eye, UserPlus,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -86,7 +86,7 @@ function SourceChip({ source }) {
   )
 }
 
-const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete, selected, onToggleSelect }) => {
+const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, onArchive, onDelete, selected, onToggleSelect }) => {
   const serviceConfig = SERVICE_TYPE_CONFIG[intake.service_type] || SERVICE_TYPE_CONFIG.residential
   const statusConfig = STATUS_CONFIG[intake.status] || STATUS_CONFIG.new
   const priorityConfig = PRIORITY_CONFIG[intake.priority] || PRIORITY_CONFIG.normal
@@ -239,6 +239,16 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
               >
                 <FileText className="w-4 h-4" />
                 Create Quote
+              </button>
+              <button
+                onClick={() => {
+                  onConvertToClient(intake)
+                  setShowMenu(false)
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-ink hover:bg-bg flex items-center gap-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                Convert to client
               </button>
               {intake.status !== 'archived' && (
                 <button
@@ -447,6 +457,27 @@ export default function Requests() {
     navigate('/billing?view=quotes', { state: { openNewFromIntake: intake } })
   }
 
+  // Twenty-style "convert lead → contact": promote a request to a Client
+  // WITHOUT a quote. Inbound requests are an inbox and never auto-create a
+  // client, so this (and Create Quote) are the explicit conversion actions.
+  // The backend dedups — a returning customer links to their existing client
+  // instead of spawning a duplicate.
+  const handleConvertToClient = async (intake) => {
+    try {
+      const res = await post(`/api/intake/${intake.id}/convert-to-client`, {})
+      const patchRow = (r) => r.id === intake.id
+        ? { ...r, status: r.status === 'new' ? 'reviewed' : r.status, client_id: res.client_id }
+        : r
+      setRequests(prev => prev.map(patchRow))
+      setSelectedRequest(prev => (prev && prev.id === intake.id ? patchRow(prev) : prev))
+      toast.success(res.matched_existing ? 'Linked to existing client' : 'Client created from request')
+      if (res.client_id) navigate(`/clients/${res.client_id}`)
+    } catch (err) {
+      console.error('[Requests] Convert to client failed:', err)
+      toast.error('Convert to client failed. See console for details.')
+    }
+  }
+
   const handleArchive = async (intake) => {
     try {
       await patch(`/api/intake/${intake.id}`, { status: 'archived' })
@@ -629,6 +660,7 @@ export default function Requests() {
                   intake={data}
                   onViewDetails={handleViewDetails}
                   onCreateQuote={handleCreateQuote}
+                  onConvertToClient={handleConvertToClient}
                   onArchive={handleArchive}
                   onDelete={handleDelete}
                   selected={selectedIntakes.has(data.id)}
@@ -950,6 +982,17 @@ export default function Requests() {
               </button>
               <Button variant="secondary" onClick={() => setShowDetailsDrawer(false)} className="w-full sm:w-auto">
                 Close
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto flex items-center gap-2"
+                onClick={() => {
+                  setShowDetailsDrawer(false)
+                  handleConvertToClient(selectedRequest)
+                }}
+              >
+                <UserPlus className="w-4 h-4" />
+                Convert to client
               </Button>
               <Button
                 variant="primary"
