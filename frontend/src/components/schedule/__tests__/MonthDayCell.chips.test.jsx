@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import MonthDayCell from '../MonthDayCell'
 
 afterEach(cleanup)
@@ -10,7 +10,7 @@ const typeConfig = {
 }
 const noop = () => {}
 
-function renderCell(dayJobs) {
+function renderCell(dayJobs, extra = {}) {
   return render(
     <MonthDayCell
       date="2026-07-15" dayJobs={dayJobs}
@@ -22,9 +22,15 @@ function renderCell(dayJobs) {
       onChipDragStart={noop} onChipDragEnd={noop}
       onChipTouchStart={noop} onChipTouchMove={noop} onChipTouchEnd={noop} onChipTouchCancel={noop}
       onJobClick={noop} justDraggedRef={{ current: false }}
+      {...extra}
     />
   )
 }
+
+const jobsN = (n) => Array.from({ length: n }, (_, i) => ({
+  id: i + 1, job_type: 'residential', start_time: `0${(i % 8) + 1}:00:00`,
+  client_name: `Client ${i + 1}`, status: 'scheduled', cleaner_ids: ['e1'],
+}))
 
 describe('MonthDayCell chips — cleaner at a glance', () => {
   it('shows the assigned cleaner initials on a chip', () => {
@@ -42,5 +48,32 @@ describe('MonthDayCell chips — cleaner at a glance', () => {
   it('shows +N when more than one cleaner is assigned', () => {
     renderCell([{ id: 3, job_type: 'residential', start_time: '09:00:00', client_name: 'Casey', status: 'scheduled', cleaner_ids: ['e1', 'e2'] }])
     expect(screen.getByText('JD+1')).toBeTruthy()
+  })
+})
+
+describe('MonthDayCell — show everything (expand) + quick add', () => {
+  it('caps a packed day and offers "+N more" that asks the parent to expand', () => {
+    const onToggleMore = vi.fn()
+    renderCell(jobsN(7), { onToggleMore })  // 7 jobs, cap 4
+    expect(screen.getByText('Client 4')).toBeTruthy()
+    expect(screen.queryByText('Client 5')).toBeNull()  // hidden while collapsed
+    const more = screen.getByText('+3 more')
+    fireEvent.click(more)
+    expect(onToggleMore).toHaveBeenCalledWith('2026-07-15')
+  })
+
+  it('shows every job (no cap) when expanded, with a "Show less"', () => {
+    renderCell(jobsN(7), { isExpanded: true })
+    expect(screen.getByText('Client 5')).toBeTruthy()
+    expect(screen.getByText('Client 7')).toBeTruthy()
+    expect(screen.queryByText('+3 more')).toBeNull()
+    expect(screen.getByText('Show less')).toBeTruthy()
+  })
+
+  it('quick-adds a job on the day via the hover "+"', () => {
+    const onQuickAdd = vi.fn()
+    renderCell(jobsN(1), { onQuickAdd })
+    fireEvent.click(screen.getByLabelText('Add a job on 2026-07-15'))
+    expect(onQuickAdd).toHaveBeenCalledWith('2026-07-15')
   })
 })

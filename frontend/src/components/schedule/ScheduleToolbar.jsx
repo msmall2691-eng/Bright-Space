@@ -4,13 +4,16 @@ import {
 } from 'lucide-react'
 import Button from '../ui/Button'
 
-// One source of truth for the four views so the mobile (full-width) and desktop
-// (inline) switchers never drift apart.
+// One source of truth for the views so the mobile (full-width, short labels)
+// and desktop (inline, full labels) switchers never drift apart.
+// [value, desktopLabel, phoneLabel] — phone labels stay short so five segments
+// fit a narrow row.
 const VIEWS = [
-  ['agenda', 'Day'],
-  ['dispatch', 'Dispatch'],
-  ['week', 'Week'],
-  ['month', 'Calendar'],
+  ['agenda', 'Day', 'Day'],
+  ['dispatch', 'Dispatch', 'Board'],
+  ['week', 'Week', 'Week'],
+  ['month', 'Calendar', 'Month'],
+  ['upcoming', 'Upcoming', 'All'],
 ]
 
 /** Sticky top toolbar. Two deliberately different layouts, split at `md`
@@ -131,14 +134,15 @@ export default function ScheduleToolbar({
             </button>
           </div>
 
-          {/* Row 2 — the view switcher, full width, real tap targets. */}
+          {/* Row 2 — the view switcher, full width, real tap targets. Short
+              phone labels so five segments fit a narrow row. */}
           <div className="mt-2 flex items-center gap-0.5 bg-bg-2 rounded-xl p-1">
-            {VIEWS.map(([v, label]) => (
+            {VIEWS.map(([v, , short]) => (
               <button key={v} onClick={() => onViewChange(v)}
                 aria-pressed={viewMode === v}
-                className={`flex-1 py-2 rounded-lg text-[13px] font-semibold transition-colors ${
+                className={`flex-1 min-w-0 py-2 rounded-lg text-[13px] font-semibold transition-colors ${
                   viewMode === v ? 'bg-panel text-ink shadow-sm' : 'text-ink-3 active:bg-panel/60'}`}>
-                {label}
+                {short}
               </button>
             ))}
           </div>

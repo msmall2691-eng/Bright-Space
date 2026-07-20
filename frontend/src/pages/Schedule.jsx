@@ -9,6 +9,7 @@ import CalendarView from '../components/CalendarView'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 import AgendaDay from '../components/schedule/AgendaDay'
+import AgendaUpcoming from '../components/schedule/AgendaUpcoming'
 import AgendaHero from '../components/schedule/AgendaHero'
 import DispatchBoard from '../components/schedule/DispatchBoard'
 import StickyActionBar from '../components/schedule/StickyActionBar'
@@ -49,7 +50,7 @@ export default function Schedule() {
   // Landing default depends on viewport: agenda on phones, dispatch on
   // desktop. The old "always default to month" landed a dispatcher on a
   // grid of "10:00" pills with no context — the July audit called it out.
-  const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month']
+  const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month', 'upcoming']
   const rawView = searchParams.get('view')
   const isMobile = useIsMobile(768)
   // Remember the last view the operator chose so it sticks between visits —
@@ -525,6 +526,14 @@ export default function Schedule() {
           onLocalMove={applyLocalMove}
           onRefresh={refresh}
           toast={toast}
+        />
+      ) : viewMode === 'upcoming' ? (
+        <AgendaUpcoming
+          refreshKey={calRefresh}
+          onSelect={handleEdit}
+          onCreateForDay={(d) => { setNewJobDate(d); setShowNewJob(true) }}
+          propertyTypeFilter={selectedPropertyType}
+          statusFilter={selectedStatus}
         />
       ) : viewMode === 'month' ? (
         <div className="flex-1 overflow-hidden">
