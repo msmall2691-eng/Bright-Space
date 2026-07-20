@@ -76,6 +76,15 @@ const pricingFactors = (o) => {
   if (p) out.push(p)
   return out
 }
+// Estimate range → display text. Both bounds → "$130–$150"; only one bound
+// (partial data from an old lead or a merge) → "~$150", never the broken
+// "$?–$150" the old inline `?? '?'` template produced; both missing → null
+// so the caller can fall back to "Custom quote" (STR/commercial) or "—".
+const estimateText = (min, max) => {
+  if (min != null && max != null) return `$${Math.round(min)}–$${Math.round(max)}`
+  const only = max ?? min
+  return only != null ? `~$${Math.round(only)}` : null
+}
 function SourceChip({ source }) {
   const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
   const Ic = cfg.icon
@@ -158,18 +167,20 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
               <span className={priorityConfig.color}>{priorityConfig.label} Priority</span>
               {intake.requested_date && <span>• {formatDate(intake.requested_date)}</span>}
               {intake.frequency && <span>• {intake.frequency}</span>}
-              {(intake.estimate_min || intake.estimate_max) ? (
+              {estimateText(intake.estimate_min, intake.estimate_max) ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px]">
-                  ${intake.estimate_min ?? '?'}–${intake.estimate_max ?? '?'}
+                  {estimateText(intake.estimate_min, intake.estimate_max)}
                 </span>
-              ) : (['str', 'commercial'].includes(intake.service_type) && (
+              ) : ['str', 'commercial'].includes(intake.service_type) ? (
                 // STR / commercial are quoted by hand — the site shows no
                 // instant number, so make the blank estimate read as
                 // intentional rather than missing data.
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-semibold text-[11px]">
                   Custom quote
                 </span>
-              ))}
+              ) : (
+                <span>—</span>
+              )}
             </div>
 
             {/* Property specs — the inputs that DRIVE the estimate (sqft,
@@ -805,19 +816,24 @@ export default function Requests() {
                 || selectedRequest.bedrooms || selectedRequest.bathrooms || selectedRequest.guests
                 || selectedRequest.requested_service || selectedRequest.condition || selectedRequest.pet_hair) && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {(selectedRequest.estimate_min || selectedRequest.estimate_max) ? (
+                  {estimateText(selectedRequest.estimate_min, selectedRequest.estimate_max) ? (
                     <div>
                       <label className="text-xs font-semibold text-ink-2 uppercase">Estimate</label>
                       <p className="text-sm font-semibold text-emerald-700">
-                        ${selectedRequest.estimate_min ?? '?'}–${selectedRequest.estimate_max ?? '?'}
+                        {estimateText(selectedRequest.estimate_min, selectedRequest.estimate_max)}
                       </p>
                     </div>
-                  ) : (['str', 'commercial'].includes(selectedRequest.service_type) && (
+                  ) : ['str', 'commercial'].includes(selectedRequest.service_type) ? (
                     <div>
                       <label className="text-xs font-semibold text-ink-2 uppercase">Estimate</label>
                       <p className="text-sm font-semibold text-violet-700">Custom quote</p>
                     </div>
-                  ))}
+                  ) : (
+                    <div>
+                      <label className="text-xs font-semibold text-ink-2 uppercase">Estimate</label>
+                      <p className="text-sm text-ink-3">—</p>
+                    </div>
+                  )}
                   {requestedServiceLabel(selectedRequest.requested_service) && (
                     <div>
                       <label className="text-xs font-semibold text-ink-2 uppercase">Cleaning type</label>

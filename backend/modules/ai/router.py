@@ -760,6 +760,9 @@ def quote_from_conversation(conversation_id: int, db: Session = Depends(get_db),
     baths = facts.get("bathrooms")
     freq = (facts.get("frequency") or "one-time")
 
+    # For STR / commercial the engine returns None estimates (those services
+    # are hand-priced) — the prefill then opens with an empty price instead of
+    # the fabricated default-home range this endpoint used to leak.
     est = estimate_price(
         service_type=requested_service,
         bedrooms=beds, bathrooms=baths, square_footage=sqft,

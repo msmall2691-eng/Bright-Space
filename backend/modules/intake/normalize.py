@@ -209,9 +209,11 @@ def build_intake(
     canonical = canonical_service_type(service_key)
     is_custom_quote = canonical in _CUSTOM_QUOTE_CANONICAL
     # Auto-compute the canonical estimate ONLY for services the site prices
-    # instantly (residential). STR / commercial are quoted by hand — leave the
-    # estimate blank so the Requests page and quote composer show "custom",
-    # not a fabricated number the customer never saw.
+    # instantly (residential). STR / commercial are quoted by hand — the
+    # pricing engine itself now returns None for those (see estimate_price),
+    # and this branch also skips the call as a defensive second layer — so
+    # the Requests page and quote composer show "custom", not a fabricated
+    # number the customer never saw.
     if not is_custom_quote and (estimate_min is None or estimate_max is None):
         try:
             from modules.booking.pricing import estimate_price
