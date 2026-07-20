@@ -38,6 +38,16 @@ logger = logging.getLogger(__name__)
 # succession; merge anything from the same person within this window into one lead.
 DEDUP_WINDOW_MINUTES = 5
 
+# Same NAME + same service ADDRESS but DIFFERENT contact info (a customer who
+# filled the form on their phone with one email, then again on a laptop with
+# another) won't match the contact-based dedup above — nothing links them. We
+# still collapse those into one lead, but only inside a wider window: a repeat
+# customer legitimately booking the same address weeks later is a NEW job, not
+# a duplicate, so this must not reach back indefinitely. Matches older than
+# this are surfaced as "possible duplicates" on the Requests page for the
+# operator to merge/archive by hand instead of being auto-merged.
+NAME_ADDR_DEDUP_WINDOW_MINUTES = 24 * 60
+
 # Raw website service keys -> canonical service_type. (Consolidates the two
 # near-identical maps that lived in booking/router.py and intake/router.py.)
 SERVICE_TYPE_MAP = {
@@ -311,6 +321,44 @@ def _normalize_addr(s: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
+def _normalize_name(s: Optional[str]) -> str:
+    """Loose name key for the name+address dedup — lowercased, whitespace
+    collapsed, punctuation dropped. Deliberately NOT trying to defeat a
+    middle initial ("Lillie" vs "Lillie J"): the ADDRESS is the strong
+    signal here, so the name only has to be in the same ballpark and we
+    require an exact-ish match to avoid collapsing two real housemates."""
+    return re.sub(r"[^a-z0-9 ]", "", (s or "").strip().lower())
+
+
+def _find_recent_name_address_duplicate(db: Session, name: Optional[str], address: Optional[str]):
+    """Most recent NON-archived lead with the same normalized name AND service
+    address inside NAME_ADDR_DEDUP_WINDOW_MINUTES, when contact-based dedup
+    found nothing (different/typo'd email+phone on the same request).
+
+    Requires BOTH a name and an address — name alone is far too weak (two
+    unrelated "John Smith"s), and address alone would merge a landlord's two
+    tenants. Archived/cancelled leads are excluded so a new request never
+    resurrects a dead one. The window is compared in Python against a small
+    candidate set rather than in SQL so we don't depend on a DB-specific
+    lower()/trim() and can reuse the exact same normalizers as the frontend."""
+    norm_name = _normalize_name(name)
+    norm_addr = _normalize_addr(address)
+    if not norm_name or not norm_addr:
+        return None
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=NAME_ADDR_DEDUP_WINDOW_MINUTES)
+    candidates = (
+        db.query(LeadIntake)
+        .filter(LeadIntake.created_at >= cutoff)
+        .filter(LeadIntake.status != "archived")
+        .order_by(LeadIntake.created_at.desc())
+        .all()
+    )
+    for c in candidates:
+        if _normalize_name(c.name) == norm_name and _normalize_addr(c.address) == norm_addr:
+            return c
+    return None
+
+
 def _property_key(address, city, state, zip_code) -> tuple:
     """Normalized (address, city, state, zip) match key for property dedup.
     Comparing on the tuple — not the street line alone — is what stops a
@@ -512,7 +560,15 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     # key before either side has committed) — see _lock_contact_for_upsert.
     _lock_contact_for_upsert(db, data.email, data.phone)
 
+    # Contact-based match first (email/phone within 5 min); if that misses,
+    # fall back to same-name+same-address within a wider window (the customer
+    # who resubmitted with a different email). name_addr_merge flags the
+    # latter so we can record WHY two different-contact rows collapsed.
     recent = _find_recent_duplicate(db, data.email, data.phone)
+    name_addr_merge = False
+    if not recent:
+        recent = _find_recent_name_address_duplicate(db, data.name, data.address)
+        name_addr_merge = recent is not None
     if recent:
         changed = False
         for f in _MERGE_FIELDS:
@@ -545,6 +601,46 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             if recent_client:
                 _upsert_property_from_intake(db, recent_client, data)
                 changed = True
+
+        # Name+address merge: the two rows have DIFFERENT contact info by
+        # definition, so preserve both. Back-fill any contact field the
+        # original was missing, and when the new submission carries a
+        # genuinely different email/phone, keep the operator's record of it
+        # (an audit note + a timeline Activity) instead of dropping it on the
+        # floor. This is the only merge path where the collapse isn't obvious
+        # from the row itself, so it's the one that must leave a trail.
+        if name_addr_merge:
+            alt = []
+            if data.email:
+                if not recent.email:
+                    recent.email = data.email
+                    changed = True
+                elif recent.email.strip().lower() != data.email.strip().lower():
+                    alt.append(f"alt email: {data.email}")
+            if data.phone:
+                if not recent.phone:
+                    recent.phone = data.phone
+                    changed = True
+                elif recent.phone != data.phone:
+                    alt.append(f"alt phone: {data.phone}")
+            stamp = datetime.now(timezone.utc).strftime("%b %d")
+            trail = f"[Auto-merged {stamp}] Duplicate submission (same name + address)."
+            if alt:
+                trail += " " + "; ".join(alt) + "."
+            recent.internal_notes = ((recent.internal_notes or "").rstrip() + "\n" + trail).strip()
+            changed = True
+            try:
+                if recent.client_id:
+                    db.add(Activity(
+                        client_id=recent.client_id,
+                        activity_type="lead_deduped",
+                        actor="system",
+                        summary=f"Auto-merged a duplicate website submission into request #{recent.id} (same name + address).",
+                        extra_data={"intake_id": recent.id, "alt_contact": alt, "match": "name_address"},
+                    ))
+            except Exception as e:  # a timeline write must never block the merge
+                logger.warning("[intake] dedup activity write failed for intake %s: %s", recent.id, e)
+
         if changed:
             db.commit()
             db.refresh(recent)

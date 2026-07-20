@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle, Inbox, ChevronRight, Eye,
+  Trash2, MessageCircle, Inbox, ChevronRight, Eye, Copy,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -85,6 +85,22 @@ const estimateText = (min, max) => {
   const only = max ?? min
   return only != null ? `~$${Math.round(only)}` : null
 }
+
+// True when a stored message is only a broken estimate placeholder — the
+// "Estimate: $?–$?" / "$undefined–$undefined" strings older leads baked in
+// before custom-quote services stopped fabricating a number. Nothing for the
+// operator to read, so the card hides it.
+const isJunkMessage = (msg) => {
+  const t = (msg || '').replace(/<[^>]*>/g, '').trim().toLowerCase()
+  if (!t) return false
+  return /^(estimate:\s*)?\$?\s*(\?|undefined)\s*[-–—]\s*\$?\s*(\?|undefined)$/.test(t)
+}
+
+// Normalizers shared with the backend's name+address dedup so the page flags
+// the SAME pairs the server would auto-merge in-window (and the older ones it
+// deliberately leaves for manual review).
+const normName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+const normAddr = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 function SourceChip({ source }) {
   const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.website
   const Ic = cfg.icon
@@ -136,6 +152,15 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-indigo-100 text-indigo-700"
                   title={`Customer opened the quote on ${new Date(intake.quote_viewed_at).toLocaleString()}`}>
                   <Eye className="w-3 h-3 shrink-0" /> Quote opened
+                </span>
+              )}
+              {/* Shares a name or address with another lead — the operator
+                  can merge/archive from here. Same signal the backend uses to
+                  auto-merge in-window; older matches surface here instead. */}
+              {intake._possibleDuplicate && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-amber-100 text-amber-700"
+                  title="Shares a name or address with another lead — check for a duplicate">
+                  <Copy className="w-3 h-3 shrink-0" /> Possible duplicate
                 </span>
               )}
             </div>
@@ -278,8 +303,11 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
         </div>
       </div>
 
-      {/* Message Preview */}
-      {intake.message && (
+      {/* Message Preview — skip a message that's only a broken estimate
+          string ("Estimate: $?–$?", "$undefined–$undefined") baked into
+          older rows before the custom-quote fixes; rendering it just
+          confuses the operator. */}
+      {intake.message && !isJunkMessage(intake.message) && (
         <p className="text-xs text-ink-2 bg-bg p-2 rounded line-clamp-2">
           "{htmlToText(intake.message)}"
         </p>
@@ -344,6 +372,10 @@ export default function Requests() {
   const [selectedServiceType, setSelectedServiceType] = useState('all')
   const [selectedPriority, setSelectedPriority] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+  // "Possible duplicates" view — leads sharing a name or address with another
+  // lead (but not already collapsed by contact). Lets the operator bulk-select
+  // and archive the leftover cruft the auto-merge can't safely collapse.
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false)
   const [drawerTab, setDrawerTab] = useState('details') // 'details' | 'conversation'
@@ -433,6 +465,29 @@ export default function Requests() {
     let items = Array.from(byKey.values())
       .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
 
+    // Flag possible duplicates: after the contact-collapse above, any lead
+    // that still shares a normalized NAME or ADDRESS with another card is a
+    // likely dup the auto-merge couldn't safely collapse (different contact,
+    // or older than the merge window). Count only non-trivial keys so blank
+    // addresses / one-word names don't group half the page together.
+    const nameCounts = new Map()
+    const addrCounts = new Map()
+    for (const r of items) {
+      const n = normName(r.name)
+      const a = normAddr(r.address)
+      if (n) nameCounts.set(n, (nameCounts.get(n) || 0) + 1)
+      if (a) addrCounts.set(a, (addrCounts.get(a) || 0) + 1)
+    }
+    const dupIds = new Set()
+    for (const r of items) {
+      const n = normName(r.name)
+      const a = normAddr(r.address)
+      if ((n && nameCounts.get(n) > 1) || (a && addrCounts.get(a) > 1)) dupIds.add(r.id)
+    }
+    items.forEach(r => { r._possibleDuplicate = dupIds.has(r.id) })
+
+    if (showDuplicatesOnly) items = items.filter(r => r._possibleDuplicate)
+
     if (!searchTerm.trim()) return items
     const q = searchTerm.toLowerCase()
     return items.filter(r => (
@@ -441,7 +496,33 @@ export default function Requests() {
       r.phone?.includes(q) ||
       r.address?.toLowerCase().includes(q)
     ))
-  }, [requests, searchTerm])
+  }, [requests, searchTerm, showDuplicatesOnly])
+
+  // Count of possible-duplicate cards regardless of the current toggle, for
+  // the filter button's badge. Cheap (runs over the same collapsed list).
+  const duplicateCount = useMemo(() => {
+    const nameCounts = new Map(); const addrCounts = new Map()
+    const byKey = new Map()
+    const keyOf = (r) => {
+      const email = (r.email || '').trim().toLowerCase()
+      const phone = (r.phone || '').replace(/\D/g, '')
+      return (email || phone) ? `${email}|${phone}` : `id-${r.id}`
+    }
+    for (const r of requests) {
+      const k = keyOf(r); const ex = byKey.get(k)
+      if (!ex || (r.created_at || '') > (ex.created_at || '')) byKey.set(k, r)
+    }
+    const items = Array.from(byKey.values())
+    for (const r of items) {
+      const n = normName(r.name); const a = normAddr(r.address)
+      if (n) nameCounts.set(n, (nameCounts.get(n) || 0) + 1)
+      if (a) addrCounts.set(a, (addrCounts.get(a) || 0) + 1)
+    }
+    return items.filter(r => {
+      const n = normName(r.name); const a = normAddr(r.address)
+      return (n && nameCounts.get(n) > 1) || (a && addrCounts.get(a) > 1)
+    }).length
+  }, [requests])
 
   const handleViewDetails = (intake) => {
     setSelectedRequest(intake)
@@ -600,6 +681,24 @@ export default function Requests() {
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
             </select>
+
+            {/* Possible-duplicates filter — only appears when there's actually
+                something to triage. Toggling it narrows the list to leads that
+                share a name/address so they can be bulk-selected and archived. */}
+            {duplicateCount > 0 && (
+              <button
+                onClick={() => setShowDuplicatesOnly(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border transition-colors ${
+                  showDuplicatesOnly
+                    ? 'bg-amber-100 border-amber-300 text-amber-800'
+                    : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'
+                }`}
+                title="Show only leads that share a name or address with another lead"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {showDuplicatesOnly ? 'Showing duplicates' : `Possible duplicates (${duplicateCount})`}
+              </button>
+            )}
           </div>
         </PageHero>
       </div>
