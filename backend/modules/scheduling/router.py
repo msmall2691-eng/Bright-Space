@@ -1270,24 +1270,50 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
     try:
         from integrations.connecteam import is_configured as _ct_ok
         if _ct_ok():
-            from integrations.connecteam_auto import auto_dispatch_job, reconcile_connecteam_drift
+            from integrations.connecteam_auto import (
+                auto_dispatch_job, reconcile_connecteam_drift, read_back_reconcile,
+            )
+            from modules.settings.router import connecteam_auto_dispatch_enabled
+            auto_ok = connecteam_auto_dispatch_enabled(db)
             start = business_today().isoformat()
             end = (business_today() + timedelta(days=30)).isoformat()
-            jobs = db.query(Job).filter(
-                Job.status.in_(["scheduled", "in_progress"]),
-                Job.scheduled_date >= start,
+            # Widened window (-7 days) so a job cancelled this week is still
+            # caught. One query feeds read-back and drift; the dispatch loop
+            # takes the upcoming, active subset.
+            drift_start = (business_today() - timedelta(days=7)).isoformat()
+            window_jobs = db.query(Job).filter(
+                Job.scheduled_date >= drift_start,
                 Job.scheduled_date <= end,
                 or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
             ).all()
-            # In MANUAL dispatch mode, don't batch-dispatch assigned jobs — that
-            # would silently push cleaners the operator hasn't dispatched yet.
-            # Drift repair below still runs (it only fixes ALREADY-dispatched
-            # shifts, never creates new ones).
-            from modules.settings.router import connecteam_auto_dispatch_enabled
-            auto_ok = connecteam_auto_dispatch_enabled(db)
-            dispatched, errors = 0, 0
-            for job in jobs:
-                if job.connecteam_shift_ids or not job.cleaner_ids or not auto_ok:
+            errors = 0
+
+            # 1) READ-BACK FIRST — reconcile our record against Connecteam's
+            # ACTUAL shifts (catches shifts deleted/edited in the Connecteam app,
+            # which snapshot-only drift can't see). Running it before we create
+            # anything this pass avoids re-creating a shift we're about to touch.
+            try:
+                from integrations.connecteam import get_scheduled_shifts_sync
+                actual_shifts = get_scheduled_shifts_sync(drift_start, end)
+                rb = read_back_reconcile(db, window_jobs, actual_shifts,
+                                         auto_dispatch_on=auto_ok)
+                result["connecteam"]["readback"] = {
+                    "missing": len(rb["missing"]), "repaired": rb["repaired"],
+                    "partial": len(rb["partial"]),
+                    "unrecognized": rb["unrecognized_count"],
+                }
+                errors += len(rb["errors"])
+            except Exception as e:
+                logger.warning(f"sync-reconcile: Connecteam read-back failed: {e}")
+
+            # 2) Dispatch never-dispatched active jobs. In MANUAL mode, skip —
+            # don't push cleaners the operator hasn't dispatched yet.
+            dispatched = 0
+            for job in window_jobs:
+                jd = _to_date(job.scheduled_date)
+                if (job.status not in ("scheduled", "in_progress")
+                        or jd is None or jd < business_today()
+                        or job.connecteam_shift_ids or not job.cleaner_ids or not auto_ok):
                     continue
                 st = auto_dispatch_job(db, job, commit=False)
                 if st.get("dispatched"):
@@ -1295,24 +1321,17 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
                 if st.get("errors"):
                     errors += len(st["errors"])
             db.commit()
-            result["connecteam"] = {"dispatched": dispatched, "errors": errors,
-                                    "manual_mode": not auto_ok}
 
-            # Drift repair: jobs that already have shifts but shouldn't
-            # (cancelled/completed) or whose shift no longer matches the
-            # job's current schedule (reschedule where the old shift's
-            # delete failed). Widened window (-7 days) so a job cancelled
-            # this week is still caught even though it's now in the past.
-            drift_start = (business_today() - timedelta(days=7)).isoformat()
-            drift_jobs = db.query(Job).filter(
-                Job.scheduled_date >= drift_start,
-                Job.scheduled_date <= end,
-                or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
-            ).all()
-            drift = reconcile_connecteam_drift(db, drift_jobs)
-            result["connecteam"]["resynced"] = drift["resynced"]
-            result["connecteam"]["removed"] = drift["removed"]
-            result["connecteam"]["errors"] += len(drift["errors"])
+            # 3) Drift repair: stale shifts on cancelled/completed jobs, or shifts
+            # whose time no longer matches the job (a reschedule whose old-shift
+            # delete failed).
+            drift = reconcile_connecteam_drift(db, window_jobs)
+            errors += len(drift["errors"])
+            result["connecteam"].update({
+                "dispatched": dispatched, "errors": errors,
+                "manual_mode": not auto_ok,
+                "resynced": drift["resynced"], "removed": drift["removed"],
+            })
         else:
             result["connecteam"]["skipped"] = "not_configured"
     except Exception as e:
@@ -1328,11 +1347,60 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
         parts.append(f"{result['connecteam']['resynced']} Connecteam shift(s) retimed")
     if result["connecteam"].get("removed"):
         parts.append(f"{result['connecteam']['removed']} stale Connecteam shift(s) removed")
+    _rb = result["connecteam"].get("readback") or {}
+    if _rb.get("repaired"):
+        parts.append(f"{_rb['repaired']} vanished Connecteam shift(s) recreated")
+    if _rb.get("unrecognized"):
+        parts.append(f"{_rb['unrecognized']} unrecognized Connecteam shift(s) flagged")
     total_errors = result["gcal"].get("errors", 0) + result["connecteam"].get("errors", 0)
     if total_errors:
         parts.append(f"{total_errors} error(s)")
     result["message"] = ", ".join(parts) if parts else "Everything already in sync"
     return result
+
+
+@router.get("/connecteam/readback-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def connecteam_readback_preview(days: int = 30, db: Session = Depends(get_db),
+                                org_id: int = Depends(current_org_id)):
+    """Dry-run of the Connecteam read-back reconcile: compares our record to the
+    ACTUAL shifts in Connecteam and reports what a real sync would change,
+    mutating nothing. Shows:
+      - missing: active jobs whose draft shift(s) vanished from Connecteam
+        (would be recreated),
+      - partial: multi-shift jobs that lost some shifts (flagged for review),
+      - unrecognized: shifts in Connecteam not linked to any of your upcoming
+        jobs (manual shifts or orphans — never auto-deleted).
+
+    Note: Connecteam is a single shared account, so `unrecognized` can include
+    shifts belonging to other workspaces' jobs."""
+    from integrations.connecteam import is_configured as _ct_ok
+    if not _ct_ok():
+        return {"skipped": "not_configured"}
+    oid = resolve_org_id(org_id, db)
+    days = max(1, min(int(days or 30), 120))
+    start = (business_today() - timedelta(days=7)).isoformat()
+    end = (business_today() + timedelta(days=days)).isoformat()
+    window_jobs = db.query(Job).filter(
+        Job.scheduled_date >= start,
+        Job.scheduled_date <= end,
+        or_(Job.org_id == oid, Job.org_id.is_(None)),  # MT-2 tenant scope
+    ).all()
+    try:
+        from integrations.connecteam import get_scheduled_shifts_sync
+        from integrations.connecteam_auto import read_back_reconcile
+        actual_shifts = get_scheduled_shifts_sync(start, end)
+        rb = read_back_reconcile(db, window_jobs, actual_shifts, dry_run=True)
+    except Exception as e:
+        logger.warning(f"connecteam readback-preview failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Couldn't read Connecteam shifts: {e}")
+    return {
+        "window": {"start": start, "end": end},
+        "actual_shifts": rb["actual_shifts"],
+        "missing": rb["missing"],
+        "partial": rb["partial"],
+        "unrecognized_count": rb["unrecognized_count"],
+        "unrecognized_sample": rb["unrecognized"],
+    }
 
 
 def find_schedule_issues(db: Session, org_id: int | None = None) -> dict:

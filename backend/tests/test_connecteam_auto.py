@@ -313,3 +313,77 @@ def test_reconcile_drift_no_op_without_a_synced_baseline(monkeypatch):
 
     out = ca.reconcile_connecteam_drift(FakeDB(), [job])
     assert out == {"resynced": 0, "removed": 0, "errors": []}
+
+
+# ---------------------------------------------------------------------------
+# read_back_reconcile: reconcile our record against Connecteam's ACTUAL shifts
+# ---------------------------------------------------------------------------
+def _shift(sid, **over):
+    base = {"id": sid, "title": "T", "startTimestamp": 1, "endTimestamp": 2,
+            "isOpenShift": False, "isPublished": False}
+    base.update(over)
+    return base
+
+
+def test_readback_missing_shift_recreated_when_auto_on(monkeypatch):
+    """A recorded shift that vanished from Connecteam is re-created in auto mode."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    created = []
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **kw: (created.append(kw), {"id": "new1"})[1])
+    monkeypatch.setattr(ca, "delete_shift_sync", lambda sid: None)
+    job = _job(connecteam_shift_ids=["gone1"], cleaner_ids=["emp_a"])
+    out = ca.read_back_reconcile(FakeDB(), [job], shifts=[], auto_dispatch_on=True)
+    assert len(out["missing"]) == 1 and out["repaired"] == 1
+    assert job.connecteam_shift_ids == ["new1"]  # freshly re-dispatched
+    assert created, "a replacement shift should have been created"
+
+
+def test_readback_missing_shift_only_cleared_in_manual_mode(monkeypatch):
+    """In manual mode we fix the record (clear the dead id) but don't re-create —
+    the office may have deleted the draft on purpose."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **kw: pytest.fail("manual mode must not recreate a shift"))
+    job = _job(connecteam_shift_ids=["gone1"], cleaner_ids=["emp_a"])
+    out = ca.read_back_reconcile(FakeDB(), [job], shifts=[], auto_dispatch_on=False)
+    assert out["repaired"] == 1
+    assert job.connecteam_shift_ids == [] and job.dispatched is False
+
+
+def test_readback_partial_loss_is_flagged_not_mangled(monkeypatch):
+    """A multi-shift job that lost SOME shifts is flagged, survivors untouched."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    job = _job(connecteam_shift_ids=["s1", "gone2"])
+    out = ca.read_back_reconcile(FakeDB(), [job], shifts=[_shift("s1")], auto_dispatch_on=True)
+    assert out["partial"] and out["partial"][0]["job_id"] == job.id
+    assert job.connecteam_shift_ids == ["s1", "gone2"]  # left intact for review
+
+
+def test_readback_reports_unrecognized_shift(monkeypatch):
+    """A Connecteam shift we don't track is reported, never deleted."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    job = _job(connecteam_shift_ids=["s1"])
+    out = ca.read_back_reconcile(FakeDB(), [job],
+                                 shifts=[_shift("s1"), _shift("stranger")], auto_dispatch_on=True)
+    assert out["unrecognized_count"] == 1
+    assert out["unrecognized"][0]["id"] == "stranger"
+
+
+def test_readback_dry_run_mutates_nothing(monkeypatch):
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **kw: pytest.fail("dry run must not create a shift"))
+    job = _job(connecteam_shift_ids=["gone1"], cleaner_ids=["emp_a"])
+    db = FakeDB()
+    out = ca.read_back_reconcile(db, [job], shifts=[], auto_dispatch_on=True, dry_run=True)
+    assert len(out["missing"]) == 1 and out["repaired"] == 0
+    assert job.connecteam_shift_ids == ["gone1"] and db.commits == 0
+
+
+def test_readback_terminal_job_stale_id_dropped(monkeypatch):
+    """A cancelled job's already-gone shift id is dropped from our record."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    job = _job(status="cancelled", connecteam_shift_ids=["gone1"])
+    out = ca.read_back_reconcile(FakeDB(), [job], shifts=[], auto_dispatch_on=True)
+    assert job.connecteam_shift_ids == [] and out["repaired"] == 0
