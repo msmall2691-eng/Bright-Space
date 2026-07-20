@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate, Navigate } from 'react-router-dom'
-import { get, post, put, patch } from '../api'
+import { get, post, patch } from '../api'
 import Button from '../components/ui/Button'
 import ErrorState from '../components/ui/ErrorState'
 import JobEditModal from '../components/JobEditModal'
@@ -241,7 +241,7 @@ export default function Schedule() {
   const handleToggleReminder = async (job, skip) => {
     if (!job?.id) return
     try {
-      await put(`/api/jobs/${job.id}/reminder-settings`, { skip_reminder: skip })
+      await patch(`/api/jobs/${job.id}/reminder-settings`, { skip_reminder: skip })
       setSelectedVisit(sv => sv ? { ...sv, job: { ...sv.job, skip_sms_reminder: skip } } : sv)
       setJobs(prev => prev[job.id] ? { ...prev, [job.id]: { ...prev[job.id], skip_sms_reminder: skip } } : prev)
       toast.success(skip ? '🔕 Reminder disabled for this booking' : '🔔 Reminder enabled for this booking')

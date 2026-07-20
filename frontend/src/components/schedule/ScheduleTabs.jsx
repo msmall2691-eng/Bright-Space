@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Calendar, Plus, RefreshCw, Trash2, X } from 'lucide-react'
-import { get, post, put, del } from '../../api'
+import { get, post, patch, del } from '../../api'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import { toast } from '../../utils/toastBus'
@@ -388,7 +388,7 @@ export function RecurringPanel() {
 
   const handleToggleActive = async (s) => {
     try {
-      await put(`/api/recurring/${s.id}`, { active: !s.active })
+      await patch(`/api/recurring/${s.id}`, { active: !s.active })
       await load()
     } catch (e) {
       toast.error(`Update failed: ${e.message || e}`)
