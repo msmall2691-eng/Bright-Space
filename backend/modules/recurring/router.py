@@ -424,11 +424,20 @@ def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
     a date window. Used to translate the "ends after N occurrences" UI
     choice into series_end_date, the single column generate_dates() actually
     enforces. Returns None if the rule can't produce N occurrences within a
-    10-year safety cap (e.g. days_of_week somehow empty)."""
-    today = business_today()
-    series_start = _as_date(getattr(sched, "series_start_date", None))
-    if series_start is not None and series_start > today:
-        today = series_start
+    10-year safety cap (e.g. days_of_week somehow empty).
+
+    The count origin is the series' pinned start — anchor_date (set at first
+    materialization) or series_start_date — NOT today. "Ends after N
+    occurrences" means the Nth occurrence of the series as a whole, a stable
+    date. Counting from a moving `today` recomputed a LATER end date on every
+    save (the edit form re-sends the Ends fields each time), silently
+    extending a paid, count-limited series well past N visits. Only a
+    brand-new series with neither anchor nor start falls back to today."""
+    today = (
+        _as_date(getattr(sched, "anchor_date", None))
+        or _as_date(getattr(sched, "series_start_date", None))
+        or business_today()
+    )
     safety_cap = today + timedelta(days=365 * 10)
 
     if sched.frequency == "daily":
@@ -947,12 +956,25 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
     an inert historical record.
     """
     today = business_today()
-    exception_dates = {
-        _as_date(e.exception_date)
-        for e in db.query(RecurrenceException)
+    # A per-occurrence exception marks a date the user deliberately deviated
+    # from the rule — leave it untouched. That means protecting BOTH the
+    # original date (a skip) AND the rescheduled_date (a move): the moved job
+    # carries the user's per-visit time/crew override, which regenerating from
+    # the rule would silently reset to series defaults. Protecting only
+    # exception_date wiped every deliberately-rescheduled visit on resync.
+    protected_dates = set()
+    for e in (
+        db.query(RecurrenceException)
         .filter(RecurrenceException.recurring_schedule_id == sched.id)
         .all()
-    }
+    ):
+        ed = _as_date(e.exception_date)
+        if ed:
+            protected_dates.add(ed)
+        if e.exception_type == "reschedule" and e.rescheduled_date:
+            rd = _as_date(e.rescheduled_date)
+            if rd:
+                protected_dates.add(rd)
     stale = (
         db.query(Job)
         .filter(
@@ -965,7 +987,7 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
     )
     removed = 0
     for j in stale:
-        if _as_date(j.scheduled_date) in exception_dates:
+        if _as_date(j.scheduled_date) in protected_dates:
             continue
         j.status = "cancelled"
         j.recurring_schedule_id = None
@@ -1302,6 +1324,15 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     job.status = "cancelled"
     if reason:
         job.notes = (job.notes or "") + f"\n[Skipped via exception: {reason}]"
+    # Detach from the schedule so the cancelled row leaves BOTH generate_jobs'
+    # cancelled-dates guard and the uq_jobs_schedule_date unique index (which
+    # is partial on `recurring_schedule_id IS NOT NULL` and has no status
+    # filter). Without this: undoing a skip could never recreate the visit —
+    # the date stayed permanently blocked, contradicting delete_exception's
+    # contract — and rescheduling another occurrence onto a previously-skipped
+    # date collided with this inert row and 500'd at commit. Matches the
+    # detach convention _resync_future_jobs and split_schedule already use.
+    job.recurring_schedule_id = None
     _release_sync_links(db, job)
 
 
@@ -1324,6 +1355,15 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
         )
         .first()
     )
+    # If we're converting a prior RESCHEDULE into a skip, the moved visit was
+    # already materialized on the old rescheduled_date. Capture it before we
+    # clear the field so we can cancel that job too — otherwise the "skipped"
+    # occurrence stays live on its moved date and a cleaner is still dispatched
+    # to a visit the operator believes was skipped.
+    prior_moved_date = None
+    if existing and existing.exception_type == "reschedule" and existing.rescheduled_date:
+        prior_moved_date = _as_date(existing.rescheduled_date)
+
     if existing:
         existing.exception_type = "skip"
         existing.rescheduled_date = None
@@ -1343,6 +1383,8 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
         db.add(ex)
 
     _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
+    if prior_moved_date and prior_moved_date != _as_date(body.exception_date):
+        _cancel_existing_job(db, schedule_id, prior_moved_date, body.reason)
     db.commit()
     db.refresh(ex)
     return _ex_to_dict(ex)
@@ -1474,6 +1516,25 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         )
         .first()
     )
+    if rescheduled_job is None:
+        # A directly-cancelled occurrence (cancelled via the job path, which
+        # keeps recurring_schedule_id) may still hold this (schedule, date)
+        # slot in the status-blind uq_jobs_schedule_date unique index. Revive
+        # that row instead of inserting a second one that would collide and
+        # 500 at commit. (Skip-cancelled rows are detached, so they don't
+        # match here and a fresh insert is safe.)
+        cancelled_here = (
+            db.query(Job)
+            .filter(
+                Job.recurring_schedule_id == sched.id,
+                Job.scheduled_date == rescheduled_date,
+                Job.status == "cancelled",
+            )
+            .first()
+        )
+        if cancelled_here is not None:
+            cancelled_here.status = "scheduled"
+            rescheduled_job = cancelled_here
     if rescheduled_job is not None:
         rescheduled_job.start_time = new_start
         rescheduled_job.end_time = new_end

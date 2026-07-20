@@ -72,16 +72,28 @@ def test_anchor_falls_back_to_first_occurrence_when_unset():
         assert (b - a).days == 14
 
 
-def test_nth_occurrence_matches_generate_dates_phase():
-    """The 'ends after N occurrences' count must land on the same phased dates
-    generation produces, so the series-end date is computed correctly."""
+def test_nth_occurrence_counts_from_anchor_not_today():
+    """'Ends after N occurrences' counts from the series ANCHOR, not `today`,
+    so it credits occurrences already elapsed and stays put when the schedule
+    is re-saved. Counting from a moving `today` recomputed a later end date on
+    every save (the edit form always re-sends the Ends fields), silently
+    extending a paid, count-limited series past N visits (audit R6).
+
+    The count must also stay phase-aligned: for a biweekly-Monday series the
+    Nth occurrence is a clean 14-day multiple from the anchor, the same phase
+    generate_dates follows."""
     today = business_today()
     anchor = (today - timedelta(days=today.weekday())) - timedelta(weeks=6)
     s = _biweekly(anchor, dow=0)
-    dates = generate_dates(s, weeks_ahead=20)
-    assert len(dates) >= 3
-    # The 3rd occurrence from _nth_occurrence_date should be the 3rd generated.
-    assert _nth_occurrence_date(s, 3) == dates[2]
+    # Biweekly Mondays from the anchor: 1st = anchor, 2nd = +2wk, 3rd = +4wk —
+    # regardless of how far `today` has advanced past the anchor.
+    assert _nth_occurrence_date(s, 1) == anchor
+    assert _nth_occurrence_date(s, 3) == anchor + timedelta(weeks=4)
+    assert _is_on_phase(s, _nth_occurrence_date(s, 3)) is True
+    # Every generated (future) occurrence shares that same anchor parity, so the
+    # count and generation agree on WHICH dates are occurrences.
+    for d in generate_dates(s, weeks_ahead=20):
+        assert (d - anchor).days % 14 == 0
 
 
 def test_is_on_phase_classifies_off_week_duplicates():

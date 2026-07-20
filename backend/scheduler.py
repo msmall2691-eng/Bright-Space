@@ -163,6 +163,12 @@ def recurring_jobs_tick() -> dict:
                 total_jobs += created
                 per_schedule.append({"schedule_id": s.id, "jobs_created": created})
             except Exception as e:
+                # Roll back the shared session before moving on. Without this, a
+                # failed flush leaves the transaction aborted (Postgres:
+                # InFailedSqlTransaction) and every subsequent schedule's
+                # generate_jobs would fail on its first query — one bad schedule
+                # would starve visit generation for all the others in this tick.
+                db.rollback()
                 log.warning(f"Recurring generate failed for schedule {s.id}: {e}")
                 per_schedule.append({"schedule_id": s.id, "error": str(e)})
         log.info(f"Recurring auto-generate: {len(schedules)} schedules, {total_jobs} jobs created")

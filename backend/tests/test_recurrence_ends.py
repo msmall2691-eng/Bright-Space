@@ -204,6 +204,55 @@ def test_update_after_count_reflects_new_interval_from_same_request(seeded):
     assert body["ends_on"] == expected_3rd.isoformat()
 
 
+def test_after_count_credits_elapsed_occurrences_from_anchor(seeded):
+    """'Ends after N' computes its end from the series ANCHOR, not today, so
+    occurrences already elapsed count toward N and re-saving can't keep pushing
+    the end date out (audit R6). Before the fix, a count-limited series was
+    silently extended by the number of elapsed visits every time it was saved."""
+    db, c, p = seeded
+    today_dow = date.today().weekday()
+    sched = _make_schedule(db, c, p, days_of_week=[today_dow])
+    # Simulate an established weekly series whose 1st occurrence was 4 weeks ago.
+    sched.anchor_date = date.today() - timedelta(weeks=4)
+    sched.series_start_date = sched.anchor_date
+    db.commit()
+
+    r = api.patch(f"/api/recurring/{sched.id}",
+                  json={"ends_mode": "after_count", "ends_after_count": 6})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # 6th weekly occurrence from the anchor = anchor + 5 weeks = today + 1 week.
+    # Counting from today (the bug) would land it at today + 5 weeks, extending
+    # the paid 6-visit series by the 4 already-elapsed visits.
+    expected = date.today() + timedelta(weeks=1)
+    assert body["ends_on"] == expected.isoformat()
+
+
+def test_convert_reschedule_to_skip_cancels_moved_job(seeded):
+    """Skipping an occurrence that was previously RESCHEDULED must cancel the
+    job already materialized on its moved date — otherwise the 'skipped' visit
+    stays live and a cleaner is still dispatched to it (audit R3)."""
+    db, c, p = seeded
+    today_dow = date.today().weekday()
+    sched = _make_schedule(db, c, p, days_of_week=[today_dow])
+    d0 = date.today() + timedelta(days=7)
+    d1 = date.today() + timedelta(days=9)
+
+    # Reschedule d0 -> d1 (materializes a live job on d1).
+    r = api.post(f"/api/recurring/{sched.id}/reschedule", json={
+        "exception_date": d0.isoformat(), "rescheduled_date": d1.isoformat(),
+    })
+    assert r.status_code == 201, r.text
+    moved_job_id = r.json()["job_id"]
+    assert db.query(Job).get(moved_job_id).status == "scheduled"
+
+    # Now skip d0. The moved job on d1 must be cancelled too.
+    r = api.post(f"/api/recurring/{sched.id}/skip", json={"exception_date": d0.isoformat()})
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    assert db.query(Job).get(moved_job_id).status == "cancelled"
+
+
 def test_update_ends_after_count_rejects_negative(seeded):
     db, c, p = seeded
     sched = _make_schedule(db, c, p)
