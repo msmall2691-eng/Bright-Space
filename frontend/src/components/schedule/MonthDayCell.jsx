@@ -12,17 +12,23 @@
  * dragover/touchmove tick).
  */
 import { memo } from 'react'
-import { Ban, ArrowRight, ArrowLeft, Zap, RotateCw } from 'lucide-react'
+import { Ban, ArrowRight, ArrowLeft, Zap, RotateCw, Plus, ChevronUp } from 'lucide-react'
 
 function MonthDayCell({
   date, dayJobs, dayBookings, daySkips, dayReschedFrom, dayReschedTo,
   isToday, isSelected, isDropTarget, isCheckin, isCheckout,
   isMobile, maxPills, typeConfig, cleanerFor,
+  isExpanded, onToggleMore, onQuickAdd,
   onSelectDay, onDragOverDay, onDragLeaveDay, onDropDay,
   onChipDragStart, onChipDragEnd,
   onChipTouchStart, onChipTouchMove, onChipTouchEnd, onChipTouchCancel,
   onJobClick, justDraggedRef,
 }) {
+  // Desktop: when this day is expanded, show every job (the grid row grows to
+  // fit) so a packed day hides nothing; otherwise cap at maxPills with a
+  // "+N more" that expands inline. Mobile keeps the compact dots + tap-sheet.
+  const shownJobs = isExpanded ? dayJobs : dayJobs.slice(0, maxPills)
+  const hiddenCount = dayJobs.length - maxPills
   return (
     <div
       data-day-cell={date}
@@ -30,7 +36,7 @@ function MonthDayCell({
       onDragOver={e => onDragOverDay(e, date)}
       onDragLeave={onDragLeaveDay}
       onDrop={e => onDropDay(e, date)}
-      className={`relative p-1 sm:p-1.5 min-h-[58px] sm:min-h-[96px] cursor-pointer transition-colors ${
+      className={`group/day relative p-1 sm:p-1.5 min-h-[58px] sm:min-h-[96px] cursor-pointer transition-colors ${
         isDropTarget ? 'bg-blue-50 ring-2 ring-blue-400 ring-inset' :
         isSelected ? 'bg-blue-50/60' :
         dayBookings.length > 0 ? 'bg-orange-50/50 hover:bg-orange-50' :
@@ -49,14 +55,29 @@ function MonthDayCell({
         }`}>
           {parseInt(date.slice(8))}
         </div>
-        {dayJobs.length > maxPills && (
-          <span
-            className="hidden sm:inline text-[9px] font-semibold text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 leading-4"
-            title={`${dayJobs.length} jobs scheduled`}
-          >
-            {dayJobs.length}
-          </span>
-        )}
+        <div className="flex items-center gap-1">
+          {dayJobs.length > maxPills && (
+            <span
+              className="hidden sm:inline text-[9px] font-semibold text-ink-3 bg-bg-2 border border-hairline rounded-full px-1.5 leading-4"
+              title={`${dayJobs.length} jobs scheduled`}
+            >
+              {dayJobs.length}
+            </span>
+          )}
+          {/* Quick-add: hover a day (desktop) → a faint "+" drops a New Job
+              straight onto that date, no need to open the day panel first. */}
+          {!isMobile && onQuickAdd && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onQuickAdd(date) }}
+              className="hidden sm:grid place-items-center w-4 h-4 rounded opacity-0 group-hover/day:opacity-100 text-ink-3 hover:text-indigo-600 hover:bg-indigo-500/10 transition-opacity"
+              title="Add a job on this day"
+              aria-label={`Add a job on ${date}`}
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {dayBookings.length > 0 && !isMobile && (
@@ -115,7 +136,7 @@ function MonthDayCell({
 
       {!isMobile && (
       <div className="space-y-0.5">
-        {dayJobs.slice(0, maxPills).map(j => {
+        {shownJobs.map(j => {
           const tc = typeConfig[j.job_type] || typeConfig.residential
           const chipTime = j.start_time ? j.start_time.slice(0, 5) : ''
           const chipWho = j.client_name || (j.address ? j.address.split(',')[0] : '') || j.title
@@ -179,53 +200,26 @@ function MonthDayCell({
             </div>
           )
         })}
-        {dayJobs.length > maxPills && (
-          // Group wraps the "+N more" button + a hover popover. The popover
-          // lists the HIDDEN jobs at full width, wrapped (no truncation),
-          // so a packed day is inspectable without opening the day panel.
-          // Click still opens the day panel (works on touch, no hover).
-          // Audit §10.
-          <div className="relative group/more">
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); onSelectDay(date) }}
-              className="text-[9px] sm:text-[10px] font-medium text-indigo-600 hover:text-indigo-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
-            >
-              +{dayJobs.length - maxPills} more
-            </button>
-            <div
-              className="hidden group-hover/more:block absolute z-30 left-0 top-full mt-1 w-56 max-w-[16rem] bg-panel rounded-lg shadow-xl border border-hairline p-2"
-              onClick={e => e.stopPropagation()}
-              role="tooltip"
-            >
-              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wide mb-1.5">
-                {dayJobs.length - maxPills} more · {new Date(date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-              </div>
-              <div className="space-y-0.5 max-h-72 overflow-auto">
-                {dayJobs.slice(maxPills).map(j2 => {
-                  const tc2 = typeConfig[j2.job_type] || typeConfig.residential
-                  const chipTime2 = j2.start_time ? j2.start_time.slice(0, 5) : ''
-                  const chipWho2 = j2.client_name || (j2.address ? j2.address.split(',')[0] : '') || j2.title
-                  const isCancelled2 = j2.status === 'cancelled'
-                  return (
-                    <button
-                      key={j2.id}
-                      type="button"
-                      onClick={e => { e.stopPropagation(); onJobClick?.(j2) }}
-                      className={`w-full text-left flex items-center gap-1 text-[11px] px-1.5 py-1 rounded border leading-tight ${
-                        isCancelled2 ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
-                        `${tc2.pill} ${tc2.pillHover}`
-                      }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc2.dot}`} />
-                      {chipTime2 && <span className="font-semibold tabular-nums shrink-0">{chipTime2}</span>}
-                      <span className="whitespace-normal break-words">{chipWho2}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
+        {/* "+N more" expands the day INLINE (the row grows to fit) so nothing
+            is hidden — click it again (now "Show less") to collapse. Works on
+            touch, unlike the old hover popover. Audit §10. */}
+        {hiddenCount > 0 && !isExpanded && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onToggleMore?.(date) }}
+            className="text-[9px] sm:text-[10px] font-medium text-indigo-600 hover:text-indigo-700 hover:underline px-0.5 sm:px-1 py-0.5 w-full text-left"
+          >
+            +{hiddenCount} more
+          </button>
+        )}
+        {isExpanded && dayJobs.length > maxPills && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onToggleMore?.(date) }}
+            className="flex items-center gap-0.5 text-[9px] sm:text-[10px] font-medium text-ink-3 hover:text-ink-2 px-0.5 sm:px-1 py-0.5 w-full text-left"
+          >
+            <ChevronUp className="w-2.5 h-2.5" /> Show less
+          </button>
         )}
       </div>
       )}

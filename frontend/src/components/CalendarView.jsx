@@ -97,6 +97,10 @@ export default function CalendarView({
 
   const [draggingJob, setDraggingJob] = useState(null)
   const [dropTarget, setDropTarget]   = useState(null)
+  // Which day (if any) is expanded inline to show ALL its jobs (desktop). One
+  // at a time keeps the grid from ballooning; only the toggled + previously-
+  // expanded cells re-render (memo-stable elsewhere).
+  const [expandedDay, setExpandedDay] = useState(null)
   // Mirrors draggingJob so the drop handlers below can read its CURRENT
   // value without depending on the state itself (which would rebuild the
   // handler — and re-render every memoized day cell — on every drag start).
@@ -313,6 +317,12 @@ export default function CalendarView({
     setSelected(date)
     onDayClick?.(date)
   }, [onDayClick])
+
+  // Toggle a day's inline "show everything" expansion (functional update keeps
+  // the callback reference stable so unrelated cells don't re-render).
+  const onToggleMore = useCallback((date) => {
+    setExpandedDay(prev => (prev === date ? null : date))
+  }, [])
 
   // useCallback + functional state updates throughout this drag/touch block:
   // MonthDayCell is React.memo'd, and every cell receives the SAME handler
@@ -854,6 +864,9 @@ export default function CalendarView({
                 maxPills={isMobile ? 4 : 4}
                 typeConfig={TYPE_CONFIG}
                 cleanerFor={cleanerFor}
+                isExpanded={expandedDay === date}
+                onToggleMore={onToggleMore}
+                onQuickAdd={onCreateForDay}
                 onSelectDay={onSelectDay}
                 onDragOverDay={onDragOver}
                 onDragLeaveDay={onDragLeave}
