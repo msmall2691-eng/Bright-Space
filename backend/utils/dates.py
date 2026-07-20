@@ -7,7 +7,7 @@ string raises ``AttributeError`` and 500s the request. These helpers accept a
 single bad value can't take down the customer-facing quote page or quote sending.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Union
 
 DateLike = Union[date, datetime, str, None]
@@ -72,3 +72,74 @@ def business_now() -> datetime:
 def business_today() -> date:
     """Today's date in the business timezone (NOT the server's UTC date)."""
     return business_now().date()
+
+
+# --- Business-hours SLA math ------------------------------------------------
+#
+# Response-time SLAs count ONLY business hours, so a message that lands Friday
+# evening isn't "overdue" all weekend. Configurable via env:
+#   BUSINESS_OPEN_HOUR  (default 8)
+#   BUSINESS_CLOSE_HOUR (default 18 = 6pm)
+#   BUSINESS_DAYS       (default "0,1,2,3,4" = Mon–Fri; Python weekday(): Mon=0)
+
+def business_hours_config():
+    """(open_hour, close_hour, {weekday,…}) with safe fallbacks."""
+    try:
+        open_h = int(os.getenv("BUSINESS_OPEN_HOUR", "8"))
+        close_h = int(os.getenv("BUSINESS_CLOSE_HOUR", "18"))
+    except ValueError:
+        open_h, close_h = 8, 18
+    raw = os.getenv("BUSINESS_DAYS", "0,1,2,3,4")
+    try:
+        days = {int(x) for x in raw.split(",") if x.strip() != ""}
+    except ValueError:
+        days = {0, 1, 2, 3, 4}
+    # Never allow a config that has zero business time (would loop forever).
+    if not days or open_h >= close_h:
+        return 8, 18, {0, 1, 2, 3, 4}
+    return open_h, close_h, days
+
+
+def add_business_minutes(start: datetime, minutes: int) -> datetime:
+    """Advance ``start`` by ``minutes`` counted ONLY during business hours
+    (company timezone), returning a naive-UTC datetime to match how the app
+    stores timestamps.
+
+    A start outside business hours snaps forward to the next business open
+    before the clock starts. Hard iteration caps guarantee termination even on
+    a pathological config.
+    """
+    tz = business_tz()
+    open_h, close_h, days = business_hours_config()
+
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    cur = start.astimezone(tz)
+    remaining = max(0, int(minutes or 0))
+
+    def at(d, h):
+        return d.replace(hour=h, minute=0, second=0, microsecond=0)
+
+    def snap(d):
+        # Move to the next instant that is inside business hours.
+        for _ in range(400):
+            if d.weekday() in days and at(d, open_h) <= d < at(d, close_h):
+                return d
+            if d.weekday() in days and d < at(d, open_h):
+                return at(d, open_h)
+            d = at(d + timedelta(days=1), open_h)  # next day's open
+        return d
+
+    cur = snap(cur)
+    for _ in range(1000):
+        if remaining <= 0:
+            break
+        avail = (at(cur, close_h) - cur).total_seconds() / 60.0
+        if remaining <= avail:
+            cur = cur + timedelta(minutes=remaining)
+            remaining = 0
+        else:
+            remaining -= avail
+            cur = snap(at(cur + timedelta(days=1), open_h))
+
+    return cur.astimezone(timezone.utc).replace(tzinfo=None)
