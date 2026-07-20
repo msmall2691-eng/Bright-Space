@@ -30,7 +30,7 @@ export default function LeadRow({
               the website (sqft/beds/baths/frequency/estimate), so the
               operator reads it at a glance instead of from the message blob. */}
           {(intake.square_footage || intake.bedrooms || intake.bathrooms || intake.frequency
-            || intake.estimate_min != null) && (
+            || intake.estimate_min != null || intake.estimate_max != null) && (
             <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
               {intake.square_footage ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.square_footage.toLocaleString()} sqft</span> : null}
               {intake.bedrooms ? <span className="text-xs px-2 py-0.5 rounded-full border border-hairline bg-bg-2 text-ink-2">{intake.bedrooms} bd</span> : null}
@@ -39,6 +39,12 @@ export default function LeadRow({
               {(intake.estimate_min != null && intake.estimate_max != null) ? (
                 <span className="text-xs px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium">
                   ${Math.round(intake.estimate_min)}–${Math.round(intake.estimate_max)}
+                </span>
+              ) : (intake.estimate_min != null || intake.estimate_max != null) ? (
+                // One bound only (partial/legacy data) — show that bound
+                // approximately rather than the broken "$?–$220" shape.
+                <span className="text-xs px-2 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 font-medium">
+                  ~${Math.round(intake.estimate_max ?? intake.estimate_min)}
                 </span>
               ) : null}
             </div>

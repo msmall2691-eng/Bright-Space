@@ -72,11 +72,13 @@ FREQUENCY_FACTOR = {
 RANGE_BAND_PERCENT = 0.04
 
 # Custom-quote services — client shows no instant number for these; the
-# operator prices them by hand. Bright-Space still runs the labor-hour
-# formula for them so downstream code (opportunity amount, seed unit_price,
-# Requests page) has a residential-shaped placeholder to show the operator
-# rather than $0. The breakdown flags custom_quote=True so callers can
-# render "Custom" verbiage in place of the number if they want to.
+# operator prices them by hand. The engine mirrors that: estimate_min/max
+# come back as None for these services. The old behavior ran the labor-hour
+# formula on defaults (2000 sqft, 1 bath) as a "placeholder", and that
+# fabricated ~$230–250 range leaked out of every caller that didn't
+# explicitly suppress it (owner SMS, AI quote prefill, /instant-quote).
+# The breakdown still carries the inputs plus custom_quote=True so callers
+# can render "Custom quote" verbiage in place of a number.
 _CUSTOM_QUOTE_SERVICES = {
     "str", "vacation-rental", "airbnb", "airbnb-turnover",
     "vrbo-turnover", "str-turnover", "commercial", "commercial-cleaning",
@@ -135,6 +137,10 @@ def estimate_price(
 
     Ported from the maineclean.co InstantEstimate calculator so the range
     the customer saw and the range Bright-Space stores agree by construction.
+
+    Custom-quote services (STR / commercial) return estimate_min/max = None
+    with breakdown["custom_quote"] = True — the site shows those customers no
+    number, so the backend must never invent one. Callers must handle None.
 
     ``bedrooms`` is accepted for signature compatibility but not used — the
     client engine sizes on sqft + bathrooms + condition/pet only.
@@ -210,6 +216,20 @@ def estimate_price(
         "raw": round(raw, 2),
         "final_mid": final,
     }
+
+    if is_custom_quote:
+        # Hand-priced services (STR / commercial) get NO fabricated number —
+        # sizing inputs stay on the breakdown so the operator can still see
+        # what the customer entered, but the computed dollars are nulled too
+        # so they can't leak through a caller that renders the breakdown.
+        breakdown["raw"] = None
+        breakdown["final_mid"] = None
+        return {
+            "estimate_min": None,
+            "estimate_max": None,
+            "currency": "USD",
+            "breakdown": breakdown,
+        }
 
     return {
         "estimate_min": estimate_min,

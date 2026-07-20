@@ -36,7 +36,8 @@ export default function OriginalRequestCard({ intake, defaultOpen = false, class
     (intake.estimate_min != null || intake.estimate_max != null) && ['Website estimate',
       intake.estimate_min != null && intake.estimate_max != null
         ? `$${intake.estimate_min}–$${intake.estimate_max}`
-        : `$${intake.estimate_max ?? intake.estimate_min}`],
+        // One bound only — "~" marks it as approximate rather than a firm price.
+        : `~$${intake.estimate_max ?? intake.estimate_min}`],
     ['Source', intake.source],
   ].filter(Boolean).filter(([, v]) => v)
 

@@ -20,6 +20,24 @@ const _todayISO = () => {
   return `${d.getFullYear()}-${m}-${day}`
 }
 
+// The intake's requested_date is normally a plain "YYYY-MM-DD", but ISO
+// timestamps have leaked through from the website before
+// ("2026-07-07T22:18:23.208Z") — take the leading date part either way,
+// and return null for anything unrecognizable.
+const _parseRequestedISO = (raw) => {
+  const m = String(raw || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : null
+}
+
+// "2026-07-15" → "Wed, Jul 15, 2026". Built from parts (not new Date(iso))
+// so the date can't shift a day on timezones west of UTC.
+const _friendlyDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  })
+}
+
 // Mirrors JobEditModal's normalizer so a Connecteam roster (which returns
 // { userId, firstName, lastName, displayName }) shows up the same as a
 // manual roster ({ id, name }) — the previous version dropped every
@@ -42,6 +60,41 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
   const [loadingCleaners, setLoadingCleaners] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
   const [busy, setBusy] = useState(false)
+  // The date the CUSTOMER asked for on the original request (LeadIntake
+  // .requested_date), "YYYY-MM-DD" or null. Kept separate from `date` so the
+  // hint line survives the operator editing the field.
+  const [requestedDate, setRequestedDate] = useState(null)
+
+  // Default the schedule to the customer's requested date instead of blindly
+  // "today" — before this, converting an accepted quote silently scheduled
+  // the job for the day the operator clicked, not the day the customer asked
+  // for. The quote prop may be a list-serialization row (no `intake`), so
+  // fall back to fetching the quote detail, which embeds _intake_summary.
+  useEffect(() => {
+    let alive = true
+    const apply = (raw) => {
+      if (!alive) return
+      const iso = _parseRequestedISO(raw)
+      if (!iso) return
+      setRequestedDate(iso)
+      // Only default to it when it's today-or-future — a past request date
+      // would fail the backend's past-date guard. The hint below still shows
+      // it so the operator sees the (missed) ask.
+      if (iso >= _todayISO()) setDate(iso)
+    }
+    if (quote?.intake !== undefined) {
+      // Detail-page shape (GET /api/quotes/:id/details) already embeds the
+      // intake summary (or an explicit null when the quote has no intake).
+      apply(quote?.intake?.requested_date)
+    } else if (quote?.id) {
+      // List-row shape (_quote_dict) has no intake key — /details is the
+      // only serialization that includes _intake_summary.
+      get(`/api/quotes/${quote.id}/details`)
+        .then(full => apply(full?.intake?.requested_date))
+        .catch(() => {})  // hint-only enrichment — never block the modal
+    }
+    return () => { alive = false }
+  }, [quote?.id])
 
   useEffect(() => {
     setLoadingCleaners(true)
@@ -108,6 +161,14 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
               <label className="block text-xs text-ink-3 mb-1">Scheduled date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)}
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+              {requestedDate && (
+                // Always shown (even for a past date, or after the operator
+                // picks another day) so the customer's ask stays visible.
+                <p className="text-[11px] text-ink-3 mt-1">
+                  Customer requested: {_friendlyDate(requestedDate)}
+                  {requestedDate < _todayISO() && ' (in the past)'}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
