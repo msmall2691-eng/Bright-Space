@@ -18,7 +18,7 @@ export function QuotesLeadsTile({ loading, quoteActions, navigate }) {
     { n: quoteActions.changes,    label: 'Changes requested',            tone: TONE.amber,   go: () => navigate('/billing?view=quotes&tab=quotes') },
     { n: quoteActions.awaiting,   label: 'Awaiting customer response',   tone: TONE.blue,    go: () => navigate('/billing?view=quotes&tab=quotes') },
     { n: quoteActions.toSchedule, label: 'Accepted — ready to schedule', tone: TONE.emerald, go: () => navigate('/billing?view=quotes&tab=quotes') },
-    { n: quoteActions.newLeads,   label: 'New leads to quote',           tone: TONE.purple,  go: () => navigate('/billing?view=quotes&tab=leads') },
+    { n: quoteActions.newLeads,   label: 'New leads to quote',           tone: TONE.purple,  go: () => navigate('/requests') },
   ]
   const anyActionable = rows.some(r => r.n > 0)
   return (

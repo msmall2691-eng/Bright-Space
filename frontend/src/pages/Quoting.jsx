@@ -9,7 +9,6 @@ import ConvertToJobModal from '../components/quoting/ConvertToJobModal'
 import { get, post, patch } from "../api"
 import { formatDate, combineAddress } from '../utils/format'
 import { pushToast } from '../utils/toastBus'
-import LeadRow from '../components/quoting/LeadRow'
 import QuoteRow from '../components/quoting/QuoteRow'
 import FollowUpRow from '../components/quoting/FollowUpRow'
 import ArchivedRow from '../components/quoting/ArchivedRow'
@@ -36,9 +35,9 @@ import {
 export default function Quoting() {
   const navigate = useNavigate()
   const location = useLocation()
-  // Default to the Quotes list — the sidebar entry is "Quotes & Billing", so
-  // landing on Quotes (not the Leads sub-tab, which duplicates the Requests
-  // page) is what the operator expects. ?tab=leads / the Leads tab still work.
+  // Quotes list is the only default now — leads live solely on the Requests
+  // page, so the old Leads sub-tab (which duplicated Requests) was removed and
+  // any legacy ?tab=leads deep link redirects to /requests (see effect below).
   const [tab, setTab] = useState('quotes')
   const {
     quotes, setQuotes,
@@ -134,11 +133,14 @@ export default function Quoting() {
     }
   }
 
-  // Honor ?tab=quotes|leads|follow-ups (e.g. from the dashboard's tiles).
+  // Honor ?tab=quotes|follow-ups (e.g. from the dashboard's tiles). Leads now
+  // live only on the Requests page, so any legacy ?tab=leads deep link is sent
+  // there instead of a tab that no longer exists.
   useEffect(() => {
     const sp = new URLSearchParams(location.search)
     const t = sp.get('tab')
-    if (t === 'quotes' || t === 'leads' || t === 'follow-ups') setTab(t)
+    if (t === 'leads') { navigate('/requests', { replace: true }); return }
+    if (t === 'quotes' || t === 'follow-ups') setTab(t)
     else if (t === 'archived') { setTab('archived'); loadArchived() }
     // Bare /billing?view=quotes (e.g. GlobalSearch "New quote", direct URL nav)
     // carries no ?tab= — honor ?view= too so it doesn't fall back to Leads.
@@ -531,7 +533,6 @@ export default function Quoting() {
   }
 
 
-  const newLeads = intakes.filter(i => i.status === 'new').length
 
   // Quotes-tab filtering, persisted by saved views (entityType="quote").
   const quoteViewConfig = { search: quoteSearch, status: quoteStatusFilter }
@@ -566,10 +567,10 @@ export default function Quoting() {
           subtitle="Turn leads into booked, recurring work"
           icon={FileText}
           pods={[
-            { label: 'Leads', value: intakes.length },
             { label: 'Quotes', value: quotes.length },
+            { label: 'Sent', value: quotes.filter(q => ['sent', 'viewed', 'changes_requested'].includes(q.status)).length },
             { label: 'Follow-ups', value: followUps.length, tone: followUps.length > 0 ? 'text-amber-300' : 'text-white' },
-            { label: 'New', value: newLeads, tone: newLeads > 0 ? 'text-indigo-200' : 'text-white' },
+            { label: 'Accepted', value: quotes.filter(q => q.status === 'accepted').length, tone: 'text-emerald-300' },
           ]}
           actions={
             <>
@@ -594,11 +595,6 @@ export default function Quoting() {
           {/* Scrollable on mobile so the four tabs + badges never overflow the
               rounded container at ~375px. */}
           <div className="flex items-center gap-1 bg-bg-2 rounded-lg p-1 overflow-x-auto scrollbar-thin">
-            <button onClick={() => switchTab('leads')}
-              className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'leads' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
-              Leads
-              {newLeads > 0 && <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">{newLeads}</span>}
-            </button>
             <button onClick={() => switchTab('quotes')}
               className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'quotes' ? 'bg-bg-2 text-ink' : 'text-ink-3 hover:text-ink-3'}`}>
               Quotes
@@ -617,33 +613,6 @@ export default function Quoting() {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 sm:px-8 pb-6">
-
-        {/* Leads tab */}
-        {tab === 'leads' && (
-          <div className="space-y-2 overflow-y-auto flex-1 scrollbar-thin">
-            {intakes.length === 0 && (
-              <div className="text-center py-16 text-ink-3">
-                <p className="text-sm">No leads yet</p>
-                <p className="text-xs mt-1 text-ink-3">Submissions from maineclean.co will appear here</p>
-              </div>
-            )}
-            {intakes.length > 0 && (
-            <div className="border border-hairline rounded-lg bg-panel divide-y divide-hairline overflow-hidden">
-            {intakes.map(intake => (
-              <LeadRow
-                key={intake.id}
-                intake={intake}
-                canEdit={canEdit}
-                onUpdateStatus={updateLeadStatus}
-                onMarkReviewed={markIntakeReviewed}
-                onCreateQuote={(it) => { openQuoteForm(null, it); setTab('quotes') }}
-                onOpenClient={(id) => navigate(`/clients/${id}`)}
-              />
-            ))}
-            </div>
-            )}
-          </div>
-        )}
 
         {/* Quotes tab */}
         {tab === 'quotes' && (
