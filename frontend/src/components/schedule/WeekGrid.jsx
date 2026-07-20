@@ -211,6 +211,14 @@ export default function WeekGrid({
         ...(allowConflicts ? { allow_conflicts: true } : {}),
       })
       if (isRetry && toast) toast.success('Rescheduled with conflict override')
+      // Once the parent owns the move (onLocalMove updated the shared visits),
+      // drop the local override — otherwise it keeps forcing this visit's
+      // position and MASKS a later change (e.g. editing the visit to another
+      // day would appear to do nothing). When there's no onLocalMove, the
+      // override is our only visualization, so keep it.
+      if (onLocalMove) {
+        setOverride(o => { const { [visitId]: _done, ...rest } = o; return rest })
+      }
     } catch (err) {
       const status = err && (err.status || err.statusCode)
       const detail = (err && (err.detail || err.message)) || ''
