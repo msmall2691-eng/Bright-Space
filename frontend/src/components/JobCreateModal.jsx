@@ -5,6 +5,7 @@ import { toast } from '../utils/toastBus'
 import AddressAutocomplete from './AddressAutocomplete'
 import { toLocalYMD } from '../utils/format'
 import { useEmployees } from '../hooks/useEmployees'
+import { normalizeEmployee } from '../utils/employees'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -145,7 +146,7 @@ export default function JobCreateModal({
   // auto-dispatch on, saving with cleaners pushes their Connecteam shift
   // immediately; a double-booked cleaner surfaces the same "Book anyway"
   // conflict prompt as any other clash.
-  const { employees, empName } = useEmployees()
+  const { employees } = useEmployees()
   const [cleanerIds, setCleanerIds] = useState([])
   const toggleCleaner = (id) => setCleanerIds(prev =>
     prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id])
@@ -658,7 +659,11 @@ export default function JobCreateModal({
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {employees.map(e => {
-                  const id = String(e.id)
+                  // Normalize the mixed roster shape ({id,name} vs raw Connecteam
+                  // {userId,firstName,...}) — a bare String(e.id) would save
+                  // 'undefined' for real Connecteam users.
+                  const { id, name } = normalizeEmployee(e)
+                  if (!id) return null
                   const on = cleanerIds.includes(id)
                   return (
                     <button key={id} type="button" onClick={() => toggleCleaner(id)}
@@ -667,7 +672,7 @@ export default function JobCreateModal({
                         on ? 'bg-indigo-600 text-white border-indigo-600'
                            : 'bg-panel text-ink-2 border-hairline hover:bg-bg'}`}>
                       {on && <Check className="w-3 h-3" />}
-                      {empName(id) || e.name || `#${id}`}
+                      {name}
                     </button>
                   )
                 })}

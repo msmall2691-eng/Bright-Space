@@ -7,8 +7,12 @@ vi.mock('../../api', () => ({ get: (...a) => get(...a), post: (...a) => post(...
 vi.mock('../../utils/toastBus', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }))
 vi.mock('../../hooks/useEmployees', () => ({
   useEmployees: () => ({
-    employees: [{ id: 'e1', name: 'Alice' }, { id: 'e2', name: 'Bob' }],
-    empName: (id) => ({ e1: 'Alice', e2: 'Bob' }[id]),
+    // Mixed roster shapes: a clean {id,name} AND a raw Connecteam
+    // {userId,firstName,lastName} with no `id`, to prove normalization.
+    employees: [
+      { id: 'e1', name: 'Alice' },
+      { userId: 'u2', firstName: 'Bob', lastName: 'Ng' },
+    ],
   }),
 }))
 
@@ -27,21 +31,24 @@ const renderModal = (props = {}) =>
   render(<JobCreateModal clientId={42} clientName="Casey" onClose={() => {}} onCreated={() => {}} {...props} />)
 
 describe('JobCreateModal — assign cleaner at creation', () => {
-  it('shows the cleaner picker in the essentials', () => {
+  it('shows the cleaner picker in the essentials, with Connecteam names normalized', () => {
     renderModal()
     expect(screen.getByText('Cleaner')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Alice' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Bob' })).toBeTruthy()
+    // Raw Connecteam shape (userId + first/last, no id/name) still renders a
+    // real name — not "Cleaner undefined".
+    expect(screen.getByRole('button', { name: 'Bob Ng' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /undefined/i })).toBeNull()
   })
 
-  it('sends the selected cleaner_ids when creating the job', async () => {
+  it('sends the normalized cleaner_ids (userId when there is no id)', async () => {
     renderModal()
-    fireEvent.click(screen.getByRole('button', { name: 'Alice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bob Ng' }))
     fireEvent.click(screen.getByRole('button', { name: /^Schedule Job$|^Create/i }))
     await waitFor(() => expect(post).toHaveBeenCalled())
     const [url, body] = post.mock.calls.find(c => c[0] === '/api/jobs') || []
     expect(url).toBe('/api/jobs')
-    expect(body.cleaner_ids).toEqual(['e1'])
+    expect(body.cleaner_ids).toEqual(['u2'])  // userId, not 'undefined'
   })
 
   it('defaults to unassigned (empty cleaner_ids) when none picked', async () => {
