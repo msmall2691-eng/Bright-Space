@@ -298,6 +298,29 @@ def test_recurring_this_reschedule_dispatches_connecteam_inline(seeded, monkeypa
     assert created, "create_shift_sync should have been called for the moved visit"
 
 
+def test_recurring_generation_enqueues_outbox_when_enabled(seeded, monkeypatch):
+    """With the outbox flag on, generating recurring occurrences enqueues sync
+    intents (rollback-safe, deduplicated) instead of dispatching inline — the
+    drain performs the Connecteam call exactly once."""
+    monkeypatch.setenv("CONNECTEAM_OUTBOX_ENABLED", "1")
+    import integrations.connecteam_auto as ca
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **kw: pytest.fail("outbox mode must not dispatch inline"))
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **kw: pytest.fail("outbox mode must not dispatch inline"))
+    from database.models import ConnecteamOutbox
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(c, p))
+    assert r.status_code == 201, r.text
+    jobs = db.query(Job).filter(Job.recurring_schedule_id == r.json()["id"]).all()
+    assert jobs, "expected generated occurrences"
+    outbox = db.query(ConnecteamOutbox).filter(
+        ConnecteamOutbox.job_id.in_([j.id for j in jobs])).all()
+    assert len(outbox) == len(jobs)
+    assert all(o.op == "dispatch" and o.status == "pending" for o in outbox)
+
+
 def test_update_ends_after_count_rejects_negative(seeded):
     db, c, p = seeded
     sched = _make_schedule(db, c, p)

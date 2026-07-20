@@ -360,6 +360,30 @@ def schedule_audit_tick() -> dict:
         db.close()
 
 
+def connecteam_outbox_drain_tick() -> dict:
+    """Drain the Connecteam sync outbox frequently so enqueued shift syncs reach
+    Connecteam near-real-time instead of waiting for the 30-minute reconcile.
+
+    Cheap no-op when the outbox is off (nothing is ever enqueued) or empty —
+    one indexed `status='pending'` lookup. Best-effort; per-row failures are
+    retried with backoff inside drain_outbox."""
+    db = SessionLocal()
+    try:
+        from integrations.connecteam import is_configured
+        if not is_configured():
+            return {"skipped": "not_configured"}
+        from integrations.connecteam_outbox import drain_outbox
+        result = drain_outbox(db)
+        if result.get("processed") or result.get("failed"):
+            log.info(f"Connecteam outbox: {result['processed']} done, {result['failed']} failed")
+        return result
+    except Exception as e:
+        log.error(f"Connecteam outbox drain failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def sync_reconcile_tick() -> dict:
     """Self-healing push reconcile for Google Calendar + Connecteam.
 
@@ -438,6 +462,18 @@ def sync_reconcile_tick() -> dict:
                     Job.scheduled_date <= end,
                 ).all()
                 errors = 0
+
+                # 2-pre) DRAIN the transactional outbox first so queued sync
+                # intents are applied before we read back. No-op when the outbox
+                # is off or empty.
+                try:
+                    from integrations.connecteam_outbox import drain_outbox
+                    drained = drain_outbox(db)
+                    if drained.get("processed") or drained.get("failed"):
+                        log.info(f"Sync reconcile: outbox drained {drained['processed']} done, {drained['failed']} failed")
+                    errors += len(drained.get("errors") or [])
+                except Exception as e:
+                    log.warning(f"Sync reconcile: Connecteam outbox drain failed: {e}")
 
                 # 2a) READ-BACK FIRST — reconcile against Connecteam's real
                 # shifts so a shift deleted in the Connecteam app is repaired,
@@ -722,6 +758,21 @@ def start_scheduler():
         log.info(f"Sync reconcile enabled (interval: {reconcile_minutes} min)")
     else:
         log.info("Sync reconcile disabled via SYNC_RECONCILE_ENABLED=0")
+
+    # Connecteam outbox drain — frequent, cheap, so enqueued shift syncs reach
+    # Connecteam near-real-time (no-op when the outbox setting is off or the
+    # queue is empty). Independent of SYNC_RECONCILE_ENABLED so the durable path
+    # drains even if the heavier reconcile is turned down.
+    if env_flag("CONNECTEAM_OUTBOX_DRAIN_ENABLED", True):
+        drain_minutes = env_int("CONNECTEAM_OUTBOX_DRAIN_INTERVAL_MINUTES", 2)
+        _scheduler.add_job(
+            connecteam_outbox_drain_tick,
+            IntervalTrigger(minutes=drain_minutes),
+            id="connecteam_outbox_drain",
+            name="Connecteam outbox drain",
+            replace_existing=True,
+        )
+        log.info(f"Connecteam outbox drain enabled (interval: {drain_minutes} min)")
 
     # Frequent read-only schedule audit — flags duplicate jobs + orphaned
     # Connecteam shifts so they surface early. Cheap; runs a few times a day.

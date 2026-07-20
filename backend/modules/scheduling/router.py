@@ -1288,6 +1288,20 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
             ).all()
             errors = 0
 
+            # 0) DRAIN the transactional outbox first, so any queued sync intents
+            # (dispatch/remove enqueued atomically with a job change) are applied
+            # before we read back and reconcile. No-op when the outbox is off
+            # (nothing gets enqueued) or empty.
+            try:
+                from integrations.connecteam_outbox import drain_outbox
+                drained = drain_outbox(db)
+                if drained.get("processed") or drained.get("failed"):
+                    result["connecteam"]["outbox"] = {
+                        "processed": drained["processed"], "failed": drained["failed"]}
+                errors += len(drained.get("errors") or [])
+            except Exception as e:
+                logger.warning(f"sync-reconcile: Connecteam outbox drain failed: {e}")
+
             # 1) READ-BACK FIRST — reconcile our record against Connecteam's
             # ACTUAL shifts (catches shifts deleted/edited in the Connecteam app,
             # which snapshot-only drift can't see). Running it before we create

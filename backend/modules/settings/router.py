@@ -1178,6 +1178,10 @@ class AutomationConfig(BaseModel):
     # Whether assigning cleaners auto-pushes their Connecteam shifts. OFF =
     # manual dispatch (you press "Dispatch" when ready).
     connecteam_auto_dispatch_enabled: Optional[bool] = None
+    # Durability: route Connecteam shift sync through the transactional outbox
+    # (rollback-safe, deduplicated, retried) instead of inline API calls. OFF by
+    # default; env CONNECTEAM_OUTBOX_ENABLED overrides this DB toggle.
+    connecteam_outbox_enabled: Optional[bool] = None
     customer_self_reschedule: Optional[bool] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
@@ -1237,6 +1241,23 @@ def connecteam_auto_dispatch_enabled(db: Session) -> bool:
     Connecteam until you hit "Dispatch." A reschedule of an already-dispatched
     job re-syncs its shift regardless. Settings → Automation / Schedule."""
     return _coerce_bool(get_setting(db, "connecteam_auto_dispatch_enabled"), True)
+
+
+def connecteam_outbox_enabled(db: Session) -> bool:
+    """Whether Connecteam shift sync routes through the transactional outbox
+    (durability hardening) instead of calling the API inline.
+
+    OFF by default so the existing inline dispatch is unchanged until an
+    operator opts in. When ON, job-change paths enqueue a sync intent in the
+    same transaction as the job change (rollback-safe, deduplicated), and the
+    reconcile drain performs the Connecteam call exactly once — making a
+    duplicate shift structurally impossible for enqueued syncs.
+    Env override: CONNECTEAM_OUTBOX_ENABLED. Settings → Automation."""
+    import os
+    env = os.getenv("CONNECTEAM_OUTBOX_ENABLED")
+    if env is not None:
+        return _coerce_bool(env, False)
+    return _coerce_bool(get_setting(db, "connecteam_outbox_enabled"), False)
 
 
 def freebusy_check_enabled(db: Session) -> bool:
@@ -1404,6 +1425,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
             get_setting(db, "gcal_live_sync"),
             os.getenv("GCAL_WATCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}),
         "connecteam_auto_dispatch_enabled": connecteam_auto_dispatch_enabled(db),
+        "connecteam_outbox_enabled": connecteam_outbox_enabled(db),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),
     }

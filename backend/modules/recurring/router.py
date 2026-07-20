@@ -787,14 +787,27 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     # must never block generation.
     if new_jobs:
         try:
-            from modules.settings.router import connecteam_auto_dispatch_enabled
+            from modules.settings.router import (
+                connecteam_auto_dispatch_enabled, connecteam_outbox_enabled,
+            )
+            # New occurrences auto-dispatch only in auto mode (manual mode waits
+            # for the operator), same as before — whether via the durable outbox
+            # or the direct inline call.
             if connecteam_auto_dispatch_enabled(db):
-                from integrations.connecteam_auto import auto_dispatch_job
-                for job in new_jobs:
-                    try:
-                        auto_dispatch_job(db, job, commit=False)
-                    except Exception as e:
-                        logger.warning(f"Connecteam push failed for job {job.id} (schedule {sched.id}): {e}")
+                if connecteam_outbox_enabled(db):
+                    # Durable path: queue a sync intent per new job in this same
+                    # transaction (rollback-safe, deduplicated); the outbox drain
+                    # performs the Connecteam call exactly once.
+                    from integrations.connecteam_outbox import enqueue_sync
+                    for job in new_jobs:
+                        enqueue_sync(db, job, "dispatch", commit=False)
+                else:
+                    from integrations.connecteam_auto import auto_dispatch_job
+                    for job in new_jobs:
+                        try:
+                            auto_dispatch_job(db, job, commit=False)
+                        except Exception as e:
+                            logger.warning(f"Connecteam push failed for job {job.id} (schedule {sched.id}): {e}")
                 db.commit()
         except Exception as e:
             logger.warning(f"Connecteam dispatch pass failed for schedule {sched.id}: {e}")
@@ -1594,12 +1607,21 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     try:
         from integrations.connecteam_auto import (
             auto_dispatch_job, remove_job_from_connecteam)
-        from modules.settings.router import connecteam_auto_dispatch_enabled
-        db.flush()  # assign a freshly-created job its id for the shift log
-        if rescheduled_job.connecteam_shift_ids:
-            # An existing shift on the target row whose time/crew changed →
-            # pull the stale one and push a fresh one. Use the primitives (not
-            # resync_job, which force-commits) so it stays in this transaction.
+        from modules.settings.router import (
+            connecteam_auto_dispatch_enabled, connecteam_outbox_enabled,
+        )
+        db.flush()  # assign a freshly-created job its id for the shift log / FK
+        should_sync = bool(rescheduled_job.connecteam_shift_ids) or (
+            rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)))
+        if should_sync and connecteam_outbox_enabled(db):
+            # Durable path: queue the sync in this transaction; the drain
+            # applies it (it re-syncs an existing shift or dispatches a new one).
+            from integrations.connecteam_outbox import enqueue_sync
+            enqueue_sync(db, rescheduled_job, "dispatch", commit=False)
+        elif rescheduled_job.connecteam_shift_ids:
+            # An existing shift whose time/crew changed → pull the stale one and
+            # push fresh. Primitives (not resync_job, which force-commits) so it
+            # stays in this transaction.
             remove_job_from_connecteam(db, rescheduled_job, commit=False)
             auto_dispatch_job(db, rescheduled_job, commit=False)
         elif rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)):
