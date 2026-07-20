@@ -27,6 +27,7 @@ from database.models import Message, Conversation, Client, LeadIntake, ContactPh
 from integrations.twilio_client import send_sms
 from integrations.email import send_email as _send_email
 from utils.phone import digits_only as _digits_only, phone_tail as _phone_tail
+from utils.dates import add_business_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +37,17 @@ router = APIRouter()
 # Config
 # ---------------------------------------------------------------------------
 
-# Default First Response Time target (minutes) per priority.
-# Overridable via env: SLA_FRT_NORMAL=120 etc.
+# Default First Response Time target, in BUSINESS minutes (the clock only runs
+# during business hours — see utils.dates.add_business_minutes), per priority.
+# Defaults target "same business day" for a normal message so an inbox for a
+# 1–2 person office isn't a permanent wall of red. Overridable via env
+# (SLA_FRT_NORMAL=480 etc.) and business hours via BUSINESS_OPEN_HOUR /
+# BUSINESS_CLOSE_HOUR / BUSINESS_DAYS.
 SLA_FRT_MINUTES = {
-    "urgent": int(os.getenv("SLA_FRT_URGENT", "15")),
-    "high":   int(os.getenv("SLA_FRT_HIGH",   "60")),
-    "normal": int(os.getenv("SLA_FRT_NORMAL", "120")),   # 2 hours
-    "low":    int(os.getenv("SLA_FRT_LOW",    "480")),   # 8 hours
+    "urgent": int(os.getenv("SLA_FRT_URGENT", "30")),    # ~½ business hour
+    "high":   int(os.getenv("SLA_FRT_HIGH",   "120")),   # 2 business hours
+    "normal": int(os.getenv("SLA_FRT_NORMAL", "480")),   # ~a business day
+    "low":    int(os.getenv("SLA_FRT_LOW",    "960")),   # ~2 business days
 }
 
 DEFAULT_ASSIGNEE = os.getenv("DEFAULT_CONVERSATION_ASSIGNEE") or None
@@ -217,8 +222,20 @@ def _as_utc(dt):
 
 
 def _sla_state(conv: Conversation) -> str:
-    """Return one of: none | met | on_track | at_risk | breached."""
-    deadline = _as_utc(conv.sla_deadline)
+    """Return one of: none | met | on_track | at_risk | breached.
+
+    The deadline is recomputed on the fly from the last inbound + the current
+    BUSINESS-hours FRT policy, so tightening/loosening the SLA (or the switch to
+    business-hours counting) takes effect immediately on existing conversations
+    — not only on newly-arriving messages. Falls back to the stored deadline
+    when there's no inbound timestamp to anchor to.
+    """
+    inbound = _as_utc(conv.last_inbound_at)
+    if inbound is not None:
+        frt = SLA_FRT_MINUTES.get(conv.priority or "normal", 480)
+        deadline = _as_utc(add_business_minutes(inbound, frt))
+    else:
+        deadline = _as_utc(conv.sla_deadline)
     if not deadline:
         return "none"
     # If teammate already responded within deadline, SLA met.
@@ -398,7 +415,7 @@ def _apply_inbound(conv: Conversation, msg: Message):
     conv.first_response_at = None
     frt = SLA_FRT_MINUTES.get(conv.priority or "normal", 120)
     conv.sla_response_minutes = frt
-    conv.sla_deadline = now + timedelta(minutes=frt)
+    conv.sla_deadline = add_business_minutes(now, frt)
 
 
 def _apply_outbound(conv: Conversation, msg: Message):
@@ -673,9 +690,9 @@ def set_priority(conv_id: int, data: PriorityRequest, db: Session = Depends(get_
     conv.priority = data.priority
     # Recompute SLA deadline relative to the unresponded inbound
     if conv.last_inbound_at and not conv.first_response_at:
-        frt = SLA_FRT_MINUTES.get(data.priority, 120)
+        frt = SLA_FRT_MINUTES.get(data.priority, 480)
         conv.sla_response_minutes = frt
-        conv.sla_deadline = conv.last_inbound_at + timedelta(minutes=frt)
+        conv.sla_deadline = add_business_minutes(conv.last_inbound_at, frt)
     db.commit()
     db.refresh(conv)
     return conv_to_dict(conv)
