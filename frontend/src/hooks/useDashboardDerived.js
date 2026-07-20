@@ -60,7 +60,7 @@ export function useDashboardDerived({
     const entered = newLeads + quoted + accepted + won
     const stages = [
       { key: 'new',      label: 'New leads', n: newLeads, tone: { text: 'text-purple-600',  bar: 'bg-purple-500' },
-        sub: 'to quote',           onClick: () => navigate('/billing?view=quotes&tab=leads') },
+        sub: 'to quote',           onClick: () => navigate('/requests') },
       { key: 'quoted',   label: 'Quoted',    n: quoted,   tone: { text: 'text-blue-600',    bar: 'bg-blue-500' },
         sub: 'awaiting reply',     onClick: () => navigate('/billing?view=quotes&tab=quotes') },
       { key: 'accepted', label: 'Accepted',  n: accepted, tone: { text: 'text-amber-600',   bar: 'bg-amber-500' },
