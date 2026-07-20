@@ -2676,7 +2676,10 @@ def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
             "description": "",
         }])
         subtotal = sum(float(i.get("qty", 1)) * float(i.get("unit_price", 0)) for i in items)
-        tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate) else 5.5
+        # `is not None`, not truthiness: a quote with tax_rate=0 is explicitly
+        # tax-exempt (0 is also the column default) — treating 0 as "unset" and
+        # falling back to 5.5% billed tax to customers who owe none.
+        tax_rate = float(quote.tax_rate) if (quote and quote.tax_rate is not None) else 5.5
         tax = round(subtotal * (tax_rate / 100), 2)
         total = round(subtotal + tax, 2)
         due_date = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")

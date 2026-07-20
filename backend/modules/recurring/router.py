@@ -853,11 +853,18 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
         "ends_on": payload.pop("ends_on"),
         "ends_after_count": payload.pop("ends_after_count"),
     }
-    # Normalise: if days_of_week not set, derive from day_of_week
+    # Normalise days_of_week. For a DAILY schedule an empty set means "every
+    # day" — generate_dates treats a falsy days_of_week as no weekday filter —
+    # so leave it empty rather than collapsing it to a single day, which
+    # silently turned a "daily, every day" schedule into "Mondays only".
+    # Weekly/monthly with no set fall back to the legacy day_of_week column.
     if not payload.get("days_of_week"):
-        payload["days_of_week"] = [payload.get("day_of_week", 0)]
-    # Keep day_of_week in sync with first day for legacy compat
-    payload["day_of_week"] = payload["days_of_week"][0]
+        payload["days_of_week"] = [] if payload.get("frequency") == "daily" \
+            else [payload.get("day_of_week", 0)]
+    # Keep day_of_week in sync with the first chosen day for legacy compat;
+    # leave it as-is for an every-day daily schedule (no weekday filter).
+    if payload.get("days_of_week"):
+        payload["day_of_week"] = payload["days_of_week"][0]
     # SQLite's Time column rejects raw strings outright (Postgres casts them
     # leniently) — coerce here the same way update_schedule already does.
     payload["start_time"] = _as_time(payload["start_time"])
@@ -1017,8 +1024,11 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
         ends_fields["ends_on"] = updates.pop("ends_on", None)
         ends_fields["ends_after_count"] = updates.pop("ends_after_count", None)
     # Phase 0 fix: an empty days_of_week list would silently collapse a
-    # multi-day schedule. Reject it explicitly rather than dropping days.
-    if "days_of_week" in updates and not updates["days_of_week"]:
+    # multi-day WEEKLY schedule. Reject it explicitly rather than dropping
+    # days — but for a DAILY schedule an empty set legitimately means "every
+    # day", so allow it there (matches create_schedule's normalization).
+    eff_frequency = updates.get("frequency", sched.frequency)
+    if "days_of_week" in updates and not updates["days_of_week"] and eff_frequency != "daily":
         raise HTTPException(
             status_code=400,
             detail="days_of_week cannot be empty; pass null to leave unchanged or supply at least one day",

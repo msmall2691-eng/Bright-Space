@@ -228,6 +228,25 @@ def test_after_count_credits_elapsed_occurrences_from_anchor(seeded):
     assert body["ends_on"] == expected.isoformat()
 
 
+def test_create_daily_empty_days_means_every_day(seeded):
+    """A daily schedule created with no weekday filter means EVERY day — it must
+    not be collapsed to a single weekday (audit C6: "daily" became Mondays
+    only). sched_to_dict masks the empty set as [day_of_week] for display, so
+    assert on the stored column and what generate_dates actually produces."""
+    from modules.recurring.router import generate_dates
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(
+        c, p, frequency="daily", days_of_week=[],
+    ))
+    assert r.status_code == 201, r.text
+    row = db.query(RecurringSchedule).get(r.json()["id"])
+    # Stored as an every-day schedule, NOT collapsed to [0].
+    assert row.days_of_week == []
+    # generate_dates therefore yields every day of the week, not just Mondays.
+    weekdays = {d.weekday() for d in generate_dates(row, weeks_ahead=2)}
+    assert weekdays == {0, 1, 2, 3, 4, 5, 6}
+
+
 def test_convert_reschedule_to_skip_cancels_moved_job(seeded):
     """Skipping an occurrence that was previously RESCHEDULED must cancel the
     job already materialized on its moved date — otherwise the 'skipped' visit
