@@ -270,6 +270,22 @@ def sync_gmail_inbox_tick() -> dict:
             log.info(f"Gmail auto-sync (shared inbox) skipped: {result.get('error')}")
         summary = dict(result.get("summary") or {"total": 0, "threaded": 0})
 
+        # Persist shared-inbox sync health so Settings → Email can show whether
+        # auto-sync is actually working. An expired App Password otherwise fails
+        # SILENTLY (only a Railway log line), which is the whole reason "is email
+        # even syncing?" is unanswerable today. Best-effort; never breaks the tick.
+        try:
+            from datetime import datetime, timezone
+            from modules.settings.router import set_setting
+            status = result.get("error") or "ok"
+            set_setting(db, "gmail_inbox_last_sync_at", datetime.now(timezone.utc).isoformat())
+            set_setting(db, "gmail_inbox_last_sync_status", status)
+            set_setting(db, "gmail_inbox_last_sync_error", result.get("message") or "")
+            set_setting(db, "gmail_inbox_last_sync_threaded", str(summary.get("threaded", 0)))
+            db.commit()
+        except Exception as e:
+            log.warning(f"Could not persist gmail sync status: {e}")
+
         # 2) Per-user connected Google accounts (Gmail API, phase C). Each
         #    account is isolated: an expired grant marks itself for reconnect
         #    and the rest keep syncing.
