@@ -6,16 +6,7 @@ import { useEmployees } from '../hooks/useEmployees'
 import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
 import { isoDateToBackendDow } from '../utils/recurringReschedule'
 import { confirmDialog } from '../utils/confirmBus'
-
-/** Resolve a Connecteam employee to an id+name pair, defensively.
- *  Connecteam returns shapes like { userId, firstName, lastName, displayName }
- *  or sometimes { id, name } — handle both. Mirrors CalendarView's logic. */
-function normalizeEmployee(e) {
-  const id = String(e?.id ?? e?.userId ?? '')
-  const composed = [e?.firstName, e?.lastName].filter(Boolean).join(' ').trim()
-  const name = e?.name || e?.displayName || composed || `Cleaner ${id}`
-  return { id, name }
-}
+import { normalizeEmployee } from '../utils/employees'
 
 export default function JobEditModal({ job, properties = [], clients = [], onClose, onSave, notify }) {
   const isNew = !job?.id

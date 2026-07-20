@@ -7,6 +7,8 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { useEmployees } from '../hooks/useEmployees'
 import { monthGridRange, rangeContains } from '../utils/dateRange'
 import MonthDayCell from './schedule/MonthDayCell'
+import RecurrenceScopeDialog from './schedule/RecurrenceScopeDialog'
+import { rescheduleRecurringVisit } from '../utils/recurringReschedule'
 
 
 // Job-type styling comes from the shared PROPERTY_TYPE_CONFIG so a job is
@@ -59,6 +61,11 @@ export default function CalendarView({
   // parentJobs. anchorDate tells us which month to open on (defaults to
   // "now" so this component still works standalone with no parent state).
   parentJobs, parentRange, anchorDate, onMonthChange,
+  // Optimistic-move hook + data refresh from the parent. onLocalMove keeps a
+  // dragged chip from snapping back before the next refetch (updates the
+  // shared source of truth); onRefresh reconciles after a recurring reschedule
+  // moved many occurrences at once.
+  onLocalMove, onRefresh,
   // Airbnb/VRBO iCal guest-stay overlay — off by default (Schedule.jsx
   // persists the operator's choice). When off, skip the fetch entirely
   // rather than fetching-then-hiding.
@@ -106,6 +113,58 @@ export default function CalendarView({
   // handler — and re-render every memoized day cell — on every drag start).
   const draggingJobRef = useRef(null)
   useEffect(() => { draggingJobRef.current = draggingJob }, [draggingJob])
+  // Read onLocalMove through a ref so the drag/commit callbacks (which must stay
+  // reference-stable for MonthDayCell's memo) don't rebuild when the parent
+  // passes a fresh onLocalMove each render.
+  const onLocalMoveRef = useRef(onLocalMove)
+  useEffect(() => { onLocalMoveRef.current = onLocalMove }, [onLocalMove])
+
+  // A recurring job's move is ambiguous — this occurrence, this-and-future, or
+  // the whole series? Interrupt the drag with the scope dialog and route through
+  // the series-consistent endpoints (rescheduleRecurringVisit), instead of a
+  // bare PATCH that would corrupt the series (duplicate on the old date + the
+  // moved job flagged off-cadence). Mirrors WeekGrid.
+  const [recurringDrop, setRecurringDrop] = useState(null)
+  const [scopeSaving, setScopeSaving] = useState(false)
+  // Runs the chosen-scope reschedule. On a 409 (cleaner double-booked / off /
+  // over capacity) it surfaces the same "Reschedule anyway" override the
+  // one-time drag path offers, retrying with allowConflicts. "this" moves one
+  // Job → patch it locally so it doesn't wait on a refetch; "future"/"all"
+  // touch many occurrences → refetch. Either way refresh to reconcile the
+  // skip/reschedule exception overlays.
+  const runRecurringReschedule = useCallback(async (scope, drop, allowConflicts = false) => {
+    try {
+      const { message } = await rescheduleRecurringVisit(scope, { ...drop, allowConflicts })
+      toast?.success?.(message)
+      if (scope === 'this') {
+        onLocalMoveRef.current?.(drop.jobId, {
+          scheduled_date: drop.newDate, start_time: drop.newStart, end_time: drop.newEnd,
+        })
+      }
+      onRefresh?.()
+    } catch (err) {
+      const status = err && (err.status || err.statusCode)
+      const detail = (err && (err.detail || err.message)) || ''
+      if (status === 409 && !allowConflicts && toast) {
+        toast.error(`Can't move: ${detail.slice(0, 160) || 'scheduling conflict'}`, {
+          action: { label: 'Reschedule anyway', onClick: () => runRecurringReschedule(scope, drop, true) },
+        })
+      } else {
+        toast?.error?.(`Reschedule failed${detail ? ': ' + detail.slice(0, 160) : ''}`)
+      }
+    }
+  }, [toast, onRefresh])
+  const handleRecurringScopeChoice = useCallback(async (scope) => {
+    if (!recurringDrop) return
+    const drop = recurringDrop
+    setScopeSaving(true)
+    try {
+      await runRecurringReschedule(scope, drop)
+    } finally {
+      setScopeSaving(false)
+      setRecurringDrop(null)
+    }
+  }, [recurringDrop, runRecurringReschedule])
 
   const isMobile = useIsMobile()
   // Real "today" for the isToday highlight + "checkout today" badge — NOT
@@ -380,6 +439,7 @@ export default function CalendarView({
             label: 'Undo',
             onClick: () => {
               setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: originalDate } : j))
+              onLocalMoveRef.current?.(jobId, { scheduled_date: originalDate })
               commitRescheduleRef.current(jobId, targetDate, originalDate, { isUndo: true })
             },
           },
@@ -390,6 +450,7 @@ export default function CalendarView({
       const detail = err && (err.detail || err.message) || ''
       // Snap the local state back to the original date so the UI matches the DB.
       setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: originalDate } : j))
+      onLocalMoveRef.current?.(jobId, { scheduled_date: originalDate })
       if (status === 409 && toast) {
         toast.error(
           `Can't move: ${detail.slice(0, 160) || 'scheduling conflict'}`,
@@ -399,6 +460,7 @@ export default function CalendarView({
               onClick: () => {
                 // Optimistically push again so the chip visually jumps on retry.
                 setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
+                onLocalMoveRef.current?.(jobId, { scheduled_date: targetDate })
                 commitRescheduleRef.current(jobId, originalDate, targetDate, { allowConflicts: true, isRetry: true })
               },
             },
@@ -432,8 +494,19 @@ export default function CalendarView({
     if (job.scheduled_date === targetDate) { setDraggingJob(null); return }
     const jobId = job.id
     const originalDate = job.scheduled_date
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
     setDraggingJob(null)
+    // Recurring: don't PATCH this one Job — ask scope first (series-safe).
+    if (job.recurring_schedule_id) {
+      setRecurringDrop({
+        jobId, schedId: job.recurring_schedule_id,
+        originalDate, newDate: targetDate,
+        newStart: job.start_time, newEnd: job.end_time,
+        cleanerIds: job.cleaner_ids || [],
+      })
+      return
+    }
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, scheduled_date: targetDate } : j))
+    onLocalMoveRef.current?.(jobId, { scheduled_date: targetDate })
     await commitRescheduleRef.current(jobId, originalDate, targetDate)
   }, [isMobile])
 
@@ -455,6 +528,10 @@ export default function CalendarView({
 
   const onChipTouchStart = useCallback((e, job) => {
     if (e.touches.length !== 1) return
+    // Clear any stale drag-suppression left by a previous drag that ended over
+    // a non-chip element (no synthetic click fired to reset it). Without this,
+    // that leaked `true` would swallow the NEXT genuine tap on any chip.
+    justDraggedRef.current = false
     const t = e.touches[0]
     const startX = t.clientX
     const startY = t.clientY
@@ -514,11 +591,22 @@ export default function CalendarView({
     setDropTarget(null)
     setDraggingJob(null)
     if (!targetDate || job.scheduled_date === targetDate) return
+    const originalDate = job.scheduled_date
+    // Recurring: ask scope first (series-safe) instead of PATCHing one Job.
+    if (job.recurring_schedule_id) {
+      setRecurringDrop({
+        jobId: job.id, schedId: job.recurring_schedule_id,
+        originalDate, newDate: targetDate,
+        newStart: job.start_time, newEnd: job.end_time,
+        cleanerIds: job.cleaner_ids || [],
+      })
+      return
+    }
     // Optimistic update + persist (same shape as desktop drop). Reuses the
     // shared commitReschedule so touch drags also get the 409 "Reschedule
     // anyway" toast instead of a silent revert.
-    const originalDate = job.scheduled_date
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: targetDate } : j))
+    onLocalMoveRef.current?.(job.id, { scheduled_date: targetDate })
     await commitRescheduleRef.current(job.id, originalDate, targetDate)
   }, [])
 
@@ -921,6 +1009,17 @@ export default function CalendarView({
         >
           {draggingJob.title}
         </div>
+      )}
+
+      {/* Recurring drag → choose scope (this / this-and-future / whole series)
+          before committing, so a series never silently drifts. */}
+      {recurringDrop && (
+        <RecurrenceScopeDialog
+          mode="edit"
+          onChoose={handleRecurringScopeChoice}
+          onCancel={() => setRecurringDrop(null)}
+          busy={scopeSaving}
+        />
       )}
     </div>
   )

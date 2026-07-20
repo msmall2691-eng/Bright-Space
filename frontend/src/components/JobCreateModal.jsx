@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check } from 'lucide-react'
+import { X, Calendar, Clock, MapPin, AlertCircle, Repeat as RepeatIcon, Search, Loader, Check, Users } from 'lucide-react'
 import { get, post } from '../api'
 import { toast } from '../utils/toastBus'
 import AddressAutocomplete from './AddressAutocomplete'
 import { toLocalYMD } from '../utils/format'
+import { useEmployees } from '../hooks/useEmployees'
+import { normalizeEmployee } from '../utils/employees'
 
 // Where an in-progress booking is parked if the session expires mid-submit, so
 // it can be restored after re-login instead of being silently lost.
@@ -139,6 +141,16 @@ export default function JobCreateModal({
   // Once the user edits End by hand, stop auto-deriving it from Start + duration.
   const [endTouched, setEndTouched] = useState(false)
 
+  // Assign the cleaner(s) right here at creation — no more "create, then open
+  // the job to assign". Roster comes from the shared cached hook. With
+  // auto-dispatch on, saving with cleaners pushes their Connecteam shift
+  // immediately; a double-booked cleaner surfaces the same "Book anyway"
+  // conflict prompt as any other clash.
+  const { employees } = useEmployees()
+  const [cleanerIds, setCleanerIds] = useState([])
+  const toggleCleaner = (id) => setCleanerIds(prev =>
+    prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id])
+
   const setStartTime = (v) => setForm(f => ({
     ...f, start_time: v,
     end_time: endTouched ? f.end_time : addMinutes(v, JOB_DURATIONS[f.job_type] || 180),
@@ -221,6 +233,7 @@ export default function JobCreateModal({
     if (!draft) return
     try { localStorage.removeItem(JOB_DRAFT_KEY) } catch { /* ignore */ }
     if (draft.form) setForm(draft.form)
+    if (Array.isArray(draft.cleanerIds)) setCleanerIds(draft.cleanerIds)
     if (typeof draft.recurring === 'boolean') setRecurring(draft.recurring)
     if (typeof draft.showMore === 'boolean') setShowMore(draft.showMore)
     else if (draft.quick === false) setShowMore(true)  // legacy drafts
@@ -376,7 +389,7 @@ export default function JobCreateModal({
     // what gets restored after re-auth. Cleared on a confirmed success below.
     try {
       localStorage.setItem(JOB_DRAFT_KEY, JSON.stringify({
-        form, recurring, showMore,
+        form, recurring, showMore, cleanerIds,
         client: selectedClient
           ? { id: selectedClient.id, name: selectedClient.name, email: selectedClient.email }
           : null,
@@ -400,6 +413,7 @@ export default function JobCreateModal({
           start_time: form.start_time,
           end_time: form.end_time,
           generate_weeks_ahead: parseInt(form.generate_weeks_ahead),
+          cleaner_ids: cleanerIds,
           notes: form.notes || null,
           // Link back to the source quote so it's converted (see one-time path).
           quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
@@ -421,6 +435,7 @@ export default function JobCreateModal({
         address: form.address || null,
         notes: form.notes || null,
         property_id: form.property_id ? parseInt(form.property_id) : null,
+        cleaner_ids: cleanerIds,
         // When scheduling from an accepted quote, link the job back so the
         // backend converts the quote and revenue→job traceability is kept.
         quote_id: initialQuoteId ? parseInt(initialQuoteId) : null,
@@ -629,6 +644,42 @@ export default function JobCreateModal({
                 className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
             </div>
           </div>
+
+          {/* Cleaner — assign right at booking (optional). STR turnovers can be
+              left open for someone to claim, so this never blocks Save. */}
+          <div>
+            <label className="block text-xs text-ink-2 font-medium mb-1">
+              <Users className="w-3 h-3 inline mr-1" /> Cleaner
+              <span className="text-ink-3 font-normal ml-1">
+                · {cleanerIds.length ? `${cleanerIds.length} assigned` : 'optional'}
+              </span>
+            </label>
+            {employees.length === 0 ? (
+              <p className="text-xs text-ink-3">No cleaners on the roster yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {employees.map(e => {
+                  // Normalize the mixed roster shape ({id,name} vs raw Connecteam
+                  // {userId,firstName,...}) — a bare String(e.id) would save
+                  // 'undefined' for real Connecteam users.
+                  const { id, name } = normalizeEmployee(e)
+                  if (!id) return null
+                  const on = cleanerIds.includes(id)
+                  return (
+                    <button key={id} type="button" onClick={() => toggleCleaner(id)}
+                      aria-pressed={on}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        on ? 'bg-indigo-600 text-white border-indigo-600'
+                           : 'bg-panel text-ink-2 border-hairline hover:bg-bg'}`}>
+                      {on && <Check className="w-3 h-3" />}
+                      {name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           {showNotes ? (
             <div>
               <label className="block text-xs text-ink-2 font-medium mb-1">Notes</label>

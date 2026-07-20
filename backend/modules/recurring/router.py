@@ -108,6 +108,12 @@ class ExceptionCreate(BaseModel):
     # rather than stored on the exception row.
     cleaner_ids: Optional[List[str]] = None
     reason: Optional[str] = None
+    # Override the double-booking / time-off conflict guard when rescheduling a
+    # single occurrence onto a slot the cleaner is already on (the "Reschedule
+    # anyway" escape hatch, mirroring the one-time job PATCH). Defaults to the
+    # SAFE value — the interactive reschedule is conflict-checked unless the
+    # operator explicitly overrides.
+    allow_conflicts: Optional[bool] = False
 
 
 class RecurrenceExceptionRead(BaseModel):
@@ -1344,7 +1350,7 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
 
 def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date, rescheduled_date,
                            rescheduled_start_time=None, rescheduled_end_time=None,
-                           cleaner_ids=None, reason=None):
+                           cleaner_ids=None, reason=None, allow_conflicts=True):
     """Core "move this one occurrence" logic — writes/updates the
     RecurrenceException and materializes the Job for the new date, exactly
     as the /{schedule_id}/reschedule endpoint does. Factored out so bulk
@@ -1358,6 +1364,44 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     body_start = _as_time(rescheduled_start_time)
     body_end = _as_time(rescheduled_end_time)
     _validate_timing(body_start or sched.start_time, body_end or sched.end_time)
+
+    # Conflict guard (Codex P1): dragging a recurring occurrence used to route
+    # through here with NO double-booking / time-off check, unlike the one-time
+    # job PATCH. Run the SAME check the scheduling router applies, on the new
+    # date/time with the occurrence's effective crew — unless the caller
+    # explicitly overrides (the "Reschedule anyway" path). Bulk callers keep the
+    # permissive default; only the interactive endpoint opts in. Runs BEFORE any
+    # mutation so a 409 leaves nothing partially written.
+    if not allow_conflicts:
+        eff_cleaners = cleaner_ids if cleaner_ids is not None else (sched.cleaner_ids or [])
+        if eff_cleaners:
+            from modules.scheduling.router import (
+                _find_cleaner_conflicts, _conflict_detail,
+                _find_unavailable_cleaners, _unavailable_detail,
+            )
+            chk_start = body_start or sched.start_time
+            chk_end = body_end or sched.end_time
+            # Exclude this occurrence's own materialized Job (a same-day retime
+            # would otherwise conflict with itself).
+            self_job = (
+                db.query(Job)
+                .filter(Job.recurring_schedule_id == sched.id,
+                        Job.scheduled_date == rescheduled_date,
+                        Job.status != "cancelled")
+                .first()
+            )
+            conflicts = _find_cleaner_conflicts(
+                db, cleaner_ids=eff_cleaners, scheduled_date=rescheduled_date,
+                start_time=chk_start, end_time=chk_end,
+                exclude_job_id=(self_job.id if self_job else None), org_id=sched.org_id,
+            )
+            if conflicts:
+                raise HTTPException(status_code=409, detail=_conflict_detail(conflicts))
+            unavailable = _find_unavailable_cleaners(
+                db, cleaner_ids=eff_cleaners, scheduled_date=rescheduled_date, org_id=sched.org_id,
+            )
+            if unavailable:
+                raise HTTPException(status_code=409, detail=_unavailable_detail(unavailable))
 
     existing = (
         db.query(RecurrenceException)
@@ -1491,6 +1535,7 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         rescheduled_end_time=body.rescheduled_end_time,
         cleaner_ids=body.cleaner_ids,
         reason=body.reason,
+        allow_conflicts=bool(body.allow_conflicts),
     )
 
     db.commit()

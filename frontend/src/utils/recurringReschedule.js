@@ -22,7 +22,7 @@ export function isoDateToBackendDow(isoDate) {
  * on top of the same three endpoints for its richer edit case.
  */
 export async function rescheduleRecurringVisit(scope, {
-  schedId, originalDate, newDate, newStart, newEnd, cleanerIds,
+  schedId, originalDate, newDate, newStart, newEnd, cleanerIds, allowConflicts = false,
 }) {
   const dateChanged = newDate !== originalDate
 
@@ -33,6 +33,8 @@ export async function rescheduleRecurringVisit(scope, {
       rescheduled_start_time: newStart,
       rescheduled_end_time: newEnd,
       cleaner_ids: cleanerIds,
+      // Override the double-booking / time-off guard on an explicit retry.
+      allow_conflicts: !!allowConflicts,
       reason: 'Rescheduled by drag on the calendar',
     })
     return { message: 'Moved this visit only — the rest of the series is unchanged', jobId: res?.job_id }

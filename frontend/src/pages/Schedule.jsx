@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate, Navigate } from 'react-router-dom'
 import { get, post, put, patch } from '../api'
 import Button from '../components/ui/Button'
@@ -100,6 +100,13 @@ export default function Schedule() {
     range: dataRange,
   } = useScheduleData(currentDate, viewMode, { enabled: !tab })
 
+  // Stable array of jobs for CalendarView. Deriving it inline
+  // (Object.values(jobs)) produced a fresh array every render, so CalendarView's
+  // "re-seed from parentJobs" effect fired constantly and reverted an in-flight
+  // optimistic drag. Memoize on the jobs map so it only changes on real data
+  // changes (a refetch or an applyLocalMove patch).
+  const parentJobs = useMemo(() => Object.values(jobs || {}), [jobs])
+
   // Analytics for the dispatch surfaces (mobile hero + desktop board).
   // Purely derived — a filter chip toggle doesn't re-fire this because it
   // reads visits/jobs, not the filtered subset.
@@ -196,6 +203,10 @@ export default function Schedule() {
     setVisits(prev => prev.map(v =>
       v.job_id === jobId || v.id === jobId ? { ...v, ...next } : v
     ))
+    // Also patch the jobs MAP so CalendarView's parentJobs reflects the move —
+    // otherwise its re-seed effect (which reads the jobs map) snaps a dragged
+    // chip back to the old day on the next render/poll.
+    setJobs(prev => (prev && prev[jobId]) ? { ...prev, [jobId]: { ...prev[jobId], ...next } } : prev)
   }
 
   // When the detail drawer opens for a job, pull its Google Calendar audit rows
@@ -553,6 +564,8 @@ export default function Schedule() {
               properties[j.property_id]
             )}
             onCreateForDay={(d) => { setNewJobDate(d); setShowNewJob(true) }}
+            onLocalMove={applyLocalMove}
+            onRefresh={refresh}
             filters={{
               ...(selectedPropertyType !== 'all' ? { job_type: selectedPropertyType === 'str' ? 'str_turnover' : selectedPropertyType } : {}),
               ...(selectedStatus !== 'all' ? { status: selectedStatus } : {}),
@@ -564,7 +577,7 @@ export default function Schedule() {
                month buttons call onMonthChange(date) so useScheduleData
                refetches at the new range instead of CalendarView keeping a
                parallel dataset. */
-            parentJobs={Object.values(jobs || {})}
+            parentJobs={parentJobs}
             parentRange={dataRange}
             onMonthChange={(d) => setCurrentDate(d)}
             anchorDate={currentDate}
