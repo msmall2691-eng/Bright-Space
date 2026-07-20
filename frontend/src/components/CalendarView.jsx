@@ -126,31 +126,45 @@ export default function CalendarView({
   // moved job flagged off-cadence). Mirrors WeekGrid.
   const [recurringDrop, setRecurringDrop] = useState(null)
   const [scopeSaving, setScopeSaving] = useState(false)
-  const handleRecurringScopeChoice = useCallback(async (scope) => {
-    if (!recurringDrop) return
-    setScopeSaving(true)
+  // Runs the chosen-scope reschedule. On a 409 (cleaner double-booked / off /
+  // over capacity) it surfaces the same "Reschedule anyway" override the
+  // one-time drag path offers, retrying with allowConflicts. "this" moves one
+  // Job → patch it locally so it doesn't wait on a refetch; "future"/"all"
+  // touch many occurrences → refetch. Either way refresh to reconcile the
+  // skip/reschedule exception overlays.
+  const runRecurringReschedule = useCallback(async (scope, drop, allowConflicts = false) => {
     try {
-      const { message } = await rescheduleRecurringVisit(scope, recurringDrop)
+      const { message } = await rescheduleRecurringVisit(scope, { ...drop, allowConflicts })
       toast?.success?.(message)
-      // "this" moves exactly one Job — patch it locally so it doesn't wait on a
-      // refetch. "future"/"all" touch many occurrences, which a single-chip
-      // optimistic move can't represent, so we refetch. Either way, refresh to
-      // reconcile the skip/reschedule exception overlays.
       if (scope === 'this') {
-        onLocalMoveRef.current?.(recurringDrop.jobId, {
-          scheduled_date: recurringDrop.newDate,
-          start_time: recurringDrop.newStart,
-          end_time: recurringDrop.newEnd,
+        onLocalMoveRef.current?.(drop.jobId, {
+          scheduled_date: drop.newDate, start_time: drop.newStart, end_time: drop.newEnd,
         })
       }
       onRefresh?.()
     } catch (err) {
-      toast?.error?.(err?.message || 'Failed to reschedule this recurring visit')
+      const status = err && (err.status || err.statusCode)
+      const detail = (err && (err.detail || err.message)) || ''
+      if (status === 409 && !allowConflicts && toast) {
+        toast.error(`Can't move: ${detail.slice(0, 160) || 'scheduling conflict'}`, {
+          action: { label: 'Reschedule anyway', onClick: () => runRecurringReschedule(scope, drop, true) },
+        })
+      } else {
+        toast?.error?.(`Reschedule failed${detail ? ': ' + detail.slice(0, 160) : ''}`)
+      }
+    }
+  }, [toast, onRefresh])
+  const handleRecurringScopeChoice = useCallback(async (scope) => {
+    if (!recurringDrop) return
+    const drop = recurringDrop
+    setScopeSaving(true)
+    try {
+      await runRecurringReschedule(scope, drop)
     } finally {
       setScopeSaving(false)
       setRecurringDrop(null)
     }
-  }, [recurringDrop, toast, onRefresh])
+  }, [recurringDrop, runRecurringReschedule])
 
   const isMobile = useIsMobile()
   // Real "today" for the isToday highlight + "checkout today" badge — NOT

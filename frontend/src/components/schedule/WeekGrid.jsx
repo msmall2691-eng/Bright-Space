@@ -164,32 +164,47 @@ export default function WeekGrid({
   const [recurringDrop, setRecurringDrop] = useState(null)
   const [scopeSaving, setScopeSaving] = useState(false)
 
-  const handleRecurringScopeChoice = useCallback(async (scope) => {
-    if (!recurringDrop) return
-    setScopeSaving(true)
+  // Runs the chosen-scope reschedule; on a 409 (cleaner double-booked / off /
+  // over capacity) it offers the same "Reschedule anyway" override the one-time
+  // drag path has, retrying with allowConflicts.
+  const runRecurringReschedule = useCallback(async (scope, drop, allowConflicts = false) => {
     try {
-      const { message } = await rescheduleRecurringVisit(scope, recurringDrop)
+      const { message } = await rescheduleRecurringVisit(scope, { ...drop, allowConflicts })
       toast?.success(message)
       // "this" only ever moves one Job — onLocalMove keeps the block from
       // snapping back before the parent's next refetch. "future"/"all" can
       // move many jobs at once, which a single-block optimistic update can't
       // represent, so those refetch instead.
       if (scope === 'this' && onLocalMove) {
-        onLocalMove(recurringDrop.jobId, {
-          scheduled_date: recurringDrop.newDate,
-          start_time: recurringDrop.newStart,
-          end_time: recurringDrop.newEnd,
+        onLocalMove(drop.jobId, {
+          scheduled_date: drop.newDate, start_time: drop.newStart, end_time: drop.newEnd,
         })
       } else {
         onRefresh?.()
       }
     } catch (err) {
-      toast?.error(err.message || 'Failed to reschedule this recurring visit')
+      const status = err && (err.status || err.statusCode)
+      const detail = (err && (err.detail || err.message)) || ''
+      if (status === 409 && !allowConflicts && toast) {
+        toast.error(`Can't move: ${detail.slice(0, 160) || 'scheduling conflict'}`, {
+          action: { label: 'Reschedule anyway', onClick: () => runRecurringReschedule(scope, drop, true) },
+        })
+      } else {
+        toast?.error(`Reschedule failed${detail ? ': ' + detail.slice(0, 160) : ''}`)
+      }
+    }
+  }, [onLocalMove, onRefresh, toast])
+  const handleRecurringScopeChoice = useCallback(async (scope) => {
+    if (!recurringDrop) return
+    const drop = recurringDrop
+    setScopeSaving(true)
+    try {
+      await runRecurringReschedule(scope, drop)
     } finally {
       setScopeSaving(false)
       setRecurringDrop(null)
     }
-  }, [recurringDrop, onLocalMove, onRefresh, toast])
+  }, [recurringDrop, runRecurringReschedule])
 
   /**
    * Optimistic reschedule commit. Mirrors CalendarView.commitReschedule from
