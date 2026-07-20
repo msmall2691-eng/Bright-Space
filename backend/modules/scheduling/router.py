@@ -1960,6 +1960,24 @@ class _GcalSyncSkipped(Exception):
     should skip recording a success timeline entry. Failure is already logged."""
 
 
+def _shift_series_weekday(existing_days, from_date, to_date) -> list:
+    """The series' days_of_week with the dragged occurrence's weekday replaced
+    by the target weekday, preserving the OTHER days. Moving one occurrence of
+    a Mon/Wed/Fri series to Thursday shifts that leg (→ Mon/Thu/Fri), it does
+    NOT collapse the rule to a single [Thu] — which silently deleted every
+    other weekday's future visits. A single-day series naturally yields
+    [target]; an every-day series (no day filter) is left to the target day
+    since split can't express 'every day'."""
+    to_wd = to_date.weekday()
+    days = set(existing_days or [])
+    if not days:
+        return [to_wd]
+    if from_date is not None:
+        days.discard(from_date.weekday())
+    days.add(to_wd)
+    return sorted(days)
+
+
 def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope: str) -> Job:
     """Actually move the visit. Returns the resulting Job.
 
@@ -1980,23 +1998,38 @@ def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope
             # it onto the new visit, or their confirm/manage link would resolve
             # to the cancelled original ("this visit was cancelled").
             token = job.public_token
-            job.public_token = None
             split_date = min(job.scheduled_date, d) if job.scheduled_date else d
-            wd = d.weekday()  # 0=Mon.. matches backend days_of_week
-            split_schedule(job.recurring_schedule_id, ScheduleSplit(
-                split_date=split_date, days_of_week=[wd], day_of_week=wd,
+            # Shift ONLY this occurrence's weekday; keep the series' other days.
+            new_days = _shift_series_weekday(sched.days_of_week, job.scheduled_date, d)
+            split_result = split_schedule(job.recurring_schedule_id, ScheduleSplit(
+                split_date=split_date, days_of_week=new_days, day_of_week=d.weekday(),
                 day_of_month=d.day, start_time=start, end_time=end,
                 cleaner_ids=[str(c) for c in (job.cleaner_ids or [])],
             ), db=db, org_id=org_id)
             db.flush()
-            moved = (db.query(Job)
-                     .filter(Job.scheduled_date == d, Job.property_id == job.property_id,
-                             Job.status != "cancelled")
-                     .order_by(Job.id.desc()).first())
-            if moved is not None and token and not moved.public_token:
-                moved.public_token = token
-                moved.customer_confirmed_at = None
-            return moved or job
+            # Find the moved occurrence by the NEW schedule's id + target date,
+            # not a property+date+max(id) guess that could grab an unrelated
+            # job on the same property/date and hand it the customer's token.
+            new_sched_id = split_result.get("id")
+            moved = (
+                db.query(Job)
+                .filter(Job.recurring_schedule_id == new_sched_id,
+                        Job.scheduled_date == d,
+                        Job.status != "cancelled")
+                .first()
+                if new_sched_id else None
+            )
+            if moved is not None:
+                job.public_token = None
+                if token and not moved.public_token:
+                    moved.public_token = token
+                    moved.customer_confirmed_at = None
+                return moved
+            # The new series didn't materialize the target date (e.g. it's
+            # beyond the schedule's generation horizon). Leave the customer's
+            # link on the original rather than orphaning it or, worse,
+            # attaching it to a stranger's job.
+            return job
         # scope 'this' — move just this occurrence (swaps the Job row).
         token = job.public_token
         _, newjob = _reschedule_occurrence(
