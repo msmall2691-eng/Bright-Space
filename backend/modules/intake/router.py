@@ -148,7 +148,16 @@ def _resolve_client_for_intake(db: Session, intake: LeadIntake, org_id: int):
     if intake.client_id:
         client = db.query(Client).filter(Client.id == intake.client_id).first()
     if client is None:
-        client = find_client_by_contact(db, email=intake.email, phone=intake.phone)
+        match = find_client_by_contact(db, email=intake.email, phone=intake.phone)
+        # Only reuse a match in the SAME workspace (or a legacy NULL-org client).
+        # find_client_by_contact scans clients globally; without this guard a
+        # customer who shares an email/phone with another tenant's client would
+        # attach this request to — and then mutate — that foreign workspace's
+        # record (and redirect the user to a client their scoped routes can't
+        # read). A cross-org match falls through and creates a client in the
+        # caller's own workspace instead.
+        if match is not None and getattr(match, "org_id", None) in (None, resolved_org):
+            client = match
     created = False
     if client is None:
         client = Client(
@@ -168,24 +177,45 @@ def _resolve_client_for_intake(db: Session, intake: LeadIntake, org_id: int):
     return client, created
 
 
-def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake):
+_NO_ADDRESS = "(no address on file)"
+
+
+def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake,
+                                 create_if_no_address: bool = True):
     """Attach the request's address to the client as a Property, reusing an
     existing one at the same normalized address (street+city+state+zip) instead
-    of creating a duplicate. Back-fills size onto a reused property. Returns the
-    Property, or None when the request has no usable address."""
-    from database.models import Property
-    from utils.address import combine_address
+    of creating a duplicate. Back-fills size onto a reused property.
 
-    address = intake.address or combine_address(
-        intake.address, intake.city, intake.state, intake.zip_code
-    )
-    target = _property_key(intake.address, intake.city, intake.state, intake.zip_code)
-    prop = None
-    if intake.address:
-        for p in db.query(Property).filter(Property.client_id == client.id).all():
-            if _property_key(p.address, p.city, p.state, p.zip_code) == target:
-                prop = p
-                break
+    When the request has no usable address:
+      * with ``create_if_no_address=False`` (convert-to-client) → return None,
+        so a contact-only lead doesn't get a fake-address property; and
+      * with ``create_if_no_address=True`` (convert-to-quote, which needs a
+        property for the quote/job) → reuse the client's existing placeholder
+        property if one exists, else create a single "(no address on file)"
+        one — so repeated no-address conversions don't each mint a new fake.
+    """
+    from database.models import Property
+
+    has_address = bool((intake.address or "").strip())
+    existing = db.query(Property).filter(Property.client_id == client.id).all()
+
+    if has_address:
+        target = _property_key(intake.address, intake.city, intake.state, intake.zip_code)
+        prop = next(
+            (p for p in existing
+             if _property_key(p.address, p.city, p.state, p.zip_code) == target),
+            None,
+        )
+    else:
+        if not create_if_no_address:
+            return None
+        # Reuse the client's existing placeholder property rather than adding
+        # another synthetic-address row on every contact-only conversion.
+        prop = next(
+            (p for p in existing if not (p.address or "").strip() or p.address == _NO_ADDRESS),
+            None,
+        )
+
     if prop:
         if intake.bedrooms and not prop.bedrooms:
             prop.bedrooms = intake.bedrooms
@@ -194,11 +224,12 @@ def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake
         if intake.square_footage and not prop.square_footage:
             prop.square_footage = intake.square_footage
         return prop
+
     prop = Property(
         client_id=client.id,
         org_id=getattr(client, "org_id", None),
         name=intake.property_name or intake.address or f"{intake.name}'s property",
-        address=intake.address or address or "(no address on file)",
+        address=intake.address if has_address else _NO_ADDRESS,
         city=intake.city, state=intake.state, zip_code=intake.zip_code,
         property_type=intake.service_type or "residential",
         bedrooms=intake.bedrooms, bathrooms=intake.bathrooms,
@@ -375,7 +406,9 @@ def convert_intake_to_client(intake_id: int, db: Session = Depends(get_db), org_
         raise HTTPException(status_code=404, detail="Intake not found")
 
     client, created = _resolve_client_for_intake(db, intake, org_id)
-    prop = _resolve_property_for_intake(db, client, intake)
+    # A contact-only request (no address) becomes a Client with no property —
+    # property_id comes back null instead of a synthetic "(no address)" row.
+    prop = _resolve_property_for_intake(db, client, intake, create_if_no_address=False)
     if intake.status in (None, "new"):
         intake.status = "reviewed"
 

@@ -83,6 +83,63 @@ def test_convert_to_client_creates_then_reuses(db):
         _cleanup(db, cid, intake_ids=[i1.id] + ([i2_id] if i2_id else []))
 
 
+def test_convert_to_client_no_address_creates_no_property(db):
+    """A contact-only request (no address) becomes a Client with property_id
+    null — no synthetic "(no address on file)" property — and a second
+    no-address request for the same person doesn't mint a fake one either."""
+    email = f"noaddr-{_uniq()}@example.com"
+    i1 = LeadIntake(
+        name="No Addr", email=email, phone="+12075557222",
+        service_type="residential", status="new", source="website",
+    )
+    db.add(i1); db.commit(); db.refresh(i1)
+    out1 = convert_intake_to_client(i1.id, db=db, org_id=1)
+    cid = out1["client_id"]
+    i2_id = None
+    try:
+        assert out1["property_id"] is None
+        assert db.query(Property).filter(Property.client_id == cid).count() == 0
+
+        i2 = LeadIntake(
+            name="No Addr", email=f"alt-{_uniq()}@example.com", phone="+12075557222",
+            service_type="residential", status="new", source="website",
+        )
+        db.add(i2); db.commit(); db.refresh(i2)
+        i2_id = i2.id
+        out2 = convert_intake_to_client(i2.id, db=db, org_id=1)
+        assert out2["client_id"] == cid and out2["property_id"] is None
+        assert db.query(Property).filter(Property.client_id == cid).count() == 0
+    finally:
+        _cleanup(db, cid, intake_ids=[i1.id] + ([i2_id] if i2_id else []))
+
+
+def test_convert_does_not_reuse_client_from_another_org(db):
+    """Conversion dedup is workspace-scoped: a request in org 1 must NOT attach
+    to an identically-contacted client that lives in a different workspace —
+    it creates its own org-1 client instead."""
+    phone = "+12075557333"
+    other = Client(name="Other Tenant", phone=phone, status="lead", source="import", org_id=2)
+    db.add(other); db.commit(); db.refresh(other)
+    other_id = other.id
+    i = LeadIntake(
+        name="Same Phone", email=f"org1-{_uniq()}@example.com", phone=phone,
+        address="1 Org1 St", state="ME", service_type="residential",
+        status="new", source="website", org_id=1,
+    )
+    db.add(i); db.commit(); db.refresh(i)
+    out = convert_intake_to_client(i.id, db=db, org_id=1)
+    cid = out["client_id"]
+    try:
+        assert cid != other_id, "must not attach to another workspace's client"
+        assert out["created_client"] is True
+        resolved = db.query(Client).filter(Client.id == cid).one()
+        assert resolved.org_id == 1
+    finally:
+        _cleanup(db, cid, intake_ids=[i.id])
+        db.query(Client).filter(Client.id == other_id).delete(synchronize_session=False)
+        db.commit()
+
+
 def test_convert_to_client_is_idempotent(db):
     """Converting the same request twice returns the same client and never
     duplicates the client or its property."""
