@@ -3,6 +3,16 @@ import { Mail, Plug, Shield, ChevronDown, CheckCircle, AlertTriangle, Loader2 } 
 import { get, post } from '../../api'
 import { inp, lbl } from './constants'
 
+/** "3m ago" / "2h ago" / "yesterday" from an ISO timestamp. */
+function relAgo(iso) {
+  if (!iso) return 'never'
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (secs < 90) return 'just now'
+  if (secs < 3600) return `${Math.round(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.round(secs / 3600)}h ago`
+  return `${Math.round(secs / 86400)}d ago`
+}
+
 /** Gmail / SMTP connection tab. Owns its own state, loads once when the
  *  section becomes active, and exposes save / test-connection actions.
  *  Renders the credentials block (with an advanced host/port disclosure),
@@ -19,6 +29,7 @@ export default function EmailTab({ toast, active }) {
   const [testing, setTesting] = useState(false)
   const [hasCredentials, setHasCredentials] = useState(false)
   const [credentialsSource, setCredentialsSource] = useState('none')
+  const [lastSync, setLastSync] = useState(null)
 
   const loadEmailSettings = useCallback(async () => {
     try {
@@ -42,6 +53,7 @@ export default function EmailTab({ toast, active }) {
         email_auto_enrich: data.email_auto_enrich || 'true',
       }))
       setCredentialsSource(data.credentials_source || 'none')
+      setLastSync(data.last_sync || null)
     } catch {}
   }, [])
 
@@ -85,6 +97,39 @@ export default function EmailTab({ toast, active }) {
             : <><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" /><div><div className="text-sm font-medium text-amber-800 dark:text-amber-300">Not Connected</div><div className="text-xs text-amber-600">Enter your Gmail address and App Password, or set SMTP_USER and SMTP_PASS env vars on Railway</div></div></>
           }
         </div>
+
+        {/* Auto-sync health — DISTINCT from "credentials found": the creds can
+            exist but still fail auth (an expired App Password). This shows what
+            actually happened on the last background sync, so a silent failure
+            becomes visible. */}
+        {lastSync && (lastSync.at || lastSync.status) && (() => {
+          const ok = lastSync.status === 'ok'
+          const authFail = lastSync.status === 'auth_failed'
+          const noCreds = lastSync.status === 'no_credentials'
+          const cls = ok
+            ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/25 text-emerald-800 dark:text-emerald-300'
+            : authFail
+              ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/25 text-red-800 dark:text-red-300'
+              : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25 text-amber-800 dark:text-amber-300'
+          const when = relAgo(lastSync.at)
+          const title = ok ? 'Auto-sync is working'
+            : authFail ? 'Authentication failed — check your App Password'
+            : noCreds ? 'No credentials — add your App Password below'
+            : 'Last sync ran into a problem'
+          const sub = ok
+            ? `Ran ${when} · ${lastSync.threaded} new email${lastSync.threaded === 1 ? '' : 's'} pulled that run`
+            : authFail ? `Your Gmail App Password looks expired or wrong. Generate a new one and save it below. (Last checked ${when}.)`
+            : (lastSync.error || `Last checked ${when}.`)
+          return (
+            <div className={`flex items-start gap-3 p-4 rounded-xl border mb-5 ${cls}`}>
+              {ok ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />}
+              <div>
+                <div className="text-sm font-semibold">{title}</div>
+                <div className="text-xs opacity-90 mt-0.5">{sub}</div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Credentials form */}
         <div className="bg-panel border border-hairline rounded-xl p-5 space-y-4 mb-5">

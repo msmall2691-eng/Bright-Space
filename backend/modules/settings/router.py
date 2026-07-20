@@ -85,6 +85,16 @@ def get_email_settings(db: Session = Depends(get_db)):
     env_pass = os.getenv("SMTP_PASS", "")
     result["has_credentials"] = bool((db_user or env_user) and (db_pass or env_pass))
     result["credentials_source"] = "database" if (db_user and db_pass) else ("env" if (env_user and env_pass) else "none")
+
+    # Auto-sync health for the shared inbox (written each tick by the
+    # scheduler). Lets the UI show "last synced Xm ago / ✓ ok / ⚠ auth_failed"
+    # so an expired App Password isn't invisible.
+    result["last_sync"] = {
+        "at": get_setting(db, "gmail_inbox_last_sync_at") or "",
+        "status": get_setting(db, "gmail_inbox_last_sync_status") or "",
+        "error": get_setting(db, "gmail_inbox_last_sync_error") or "",
+        "threaded": int(get_setting(db, "gmail_inbox_last_sync_threaded") or 0),
+    }
     return result
 
 
