@@ -276,6 +276,18 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id:
     d = data.model_dump()
     if not d.get("address"):
         d["address"] = ""
+    # Dedup guard: a property is uniquely a (client, normalized address) pair.
+    # If this client already has a property at the same street+city+state+zip,
+    # return it instead of creating a second row — so a double-submit or a
+    # re-add of an address the client already has can't spawn a duplicate.
+    if d.get("address"):
+        from modules.intake.normalize import _property_key
+        target = _property_key(d.get("address"), d.get("city"), d.get("state"), d.get("zip_code"))
+        for p in db.query(Property).filter(Property.client_id == d["client_id"]).all():
+            if _property_key(p.address, p.city, p.state, p.zip_code) == target:
+                return prop_to_dict(
+                    p, turnovers_next_30d=(0 if p.property_type == "str" else None)
+                )
     prop = Property(**d)
     prop.org_id = org_id  # MT-2: stamp the caller's workspace
     db.add(prop)

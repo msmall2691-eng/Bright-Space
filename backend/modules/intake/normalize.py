@@ -12,8 +12,14 @@ Every entry point now:
   1. builds an :class:`IntakeData` via :func:`build_intake` (service-type mapping,
      phone normalization, and ALWAYS computing the canonical estimate), then
   2. persists via :func:`upsert_lead` (cross-entrypoint dedup keyed on
-     email/phone, client match/create, all structured columns saved, and a
-     ``lead_received`` timeline Activity).
+     email/phone, all structured columns saved).
+
+Requests are an INBOX (Twenty-style): :func:`upsert_lead` creates ONLY a
+LeadIntake row. It does not create or mutate a Client, Property, or
+Opportunity — staff convert a request into a customer explicitly, and that
+conversion is the single place client/property dedup happens. This is what
+keeps a returning customer, a typo'd email, or a second phone number from
+each spawning a duplicate client + property.
 """
 
 from dataclasses import dataclass
@@ -27,10 +33,8 @@ from sqlalchemy import or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from database.models import LeadIntake, Client, Activity, Property
-from utils.contacts import (
-    find_client_by_contact, normalize_phone, add_contact_email, add_contact_phone,
-)
+from database.models import LeadIntake
+from utils.contacts import normalize_phone
 
 logger = logging.getLogger(__name__)
 
@@ -324,75 +328,6 @@ def _property_key(address, city, state, zip_code) -> tuple:
     )
 
 
-def _upsert_property_from_intake(db: Session, client: Client, data: IntakeData) -> None:
-    """Attach the booking's address to the client as a Property so the client's
-    Properties list reflects where they actually want service, not just their
-    stale lead-phase primary. No-op when the booking has no address or the same
-    address/city/state/zip is already on file. Best-effort — never raises.
-
-    July-2026 audit M1: a returning customer booking a new address had that
-    address show correctly on the fresh Request card, but the master Client
-    record (and its Properties list) kept showing wherever they'd booked
-    from months ago. upsert_lead's existing fix overwrites the CLIENT's
-    contact fields (email/phone/address) with the latest submission, but a
-    client can legitimately have several service addresses over time — this
-    adds the new one as a Property instead of overwriting/losing the old one.
-    """
-    if not data.address:
-        return
-    try:
-        target = _property_key(data.address, data.city, data.state or "ME", data.zip_code)
-        existing = db.query(Property).filter(Property.client_id == client.id).all()
-        for p in existing:
-            if _property_key(p.address, p.city, p.state, p.zip_code) == target:
-                return  # already tracked
-        prop = Property(
-            client_id=client.id,
-            org_id=getattr(client, "org_id", None),
-            name=data.property_name or data.address,
-            address=data.address,
-            city=data.city,
-            state=data.state or "ME",
-            zip_code=data.zip_code,
-            property_type=data.service_type or "residential",
-            bedrooms=data.bedrooms,
-            bathrooms=data.bathrooms,
-            square_footage=data.square_footage,
-        )
-        db.add(prop)
-    except Exception as e:  # a property write must never block the lead
-        logger.warning("intake property upsert failed for client %s: %s", client.id, e)
-
-
-def _recent_lead_activity_exists(db: Session, client_id: int) -> bool:
-    """True when this client already has a lead_created Activity inside the
-    dedup window. Callers must hold a row lock on the client (via
-    ``_lock_client_for_activity_write``) so the check-then-insert pair is
-    atomic — otherwise two concurrent transactions both see 'no recent'
-    and each write their own entry."""
-    if not client_id:
-        return False
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=DEDUP_WINDOW_MINUTES)
-    return db.query(Activity.id).filter(
-        Activity.client_id == client_id,
-        Activity.activity_type == "lead_created",
-        Activity.created_at >= cutoff,
-    ).first() is not None
-
-
-def _lock_client_for_activity_write(db: Session, client_id: int) -> None:
-    """Take a row lock on the client so the ``lead_created`` check-then-insert
-    is serialized across concurrent transactions. On Postgres this is a real
-    SELECT ... FOR UPDATE; on SQLite (tests) with_for_update is a no-op, which
-    is fine because SQLite already serializes writers."""
-    if not client_id:
-        return
-    try:
-        db.query(Client).filter(Client.id == client_id).with_for_update().first()
-    except Exception as e:  # never block the lead on a locking hiccup
-        logger.warning("client %s row lock failed: %s", client_id, e)
-
-
 def _stable_lock_key(s: str) -> int:
     """Stable signed 64-bit int hash of ``s``, for use as a Postgres
     advisory-lock key (pg_advisory_xact_lock takes an int8)."""
@@ -463,27 +398,32 @@ def _lock_contact_for_upsert(db: Session, email: Optional[str], phone: Optional[
         logger.warning("contact upsert lock failed: %s", e)
 
 
-def _lead_summary(data: IntakeData) -> str:
-    """Compact one-line summary for the timeline, e.g.
-    'New residential lead · 2000 sqft · 2 bath · biweekly · $120–$135'."""
-    bits = [f"New {data.service_type} lead"]
-    if data.square_footage:
-        bits.append(f"{data.square_footage} sqft")
-    if data.bathrooms:
-        bits.append(f"{data.bathrooms} bath")
-    if data.frequency:
-        bits.append(data.frequency)
-    if data.estimate_min is not None and data.estimate_max is not None:
-        bits.append(f"${data.estimate_min:.0f}–${data.estimate_max:.0f}")
-    return " · ".join(bits)
-
-
 def upsert_lead(db: Session, data: IntakeData) -> dict:
-    """The single write path for public leads.
+    """The single write path for public leads — INBOX-ONLY (Twenty-style).
 
-    Cross-entrypoint dedup (so one visit hitting two endpoints = one lead),
-    client match/create with placeholder-name and contact back-fill, persistence
-    of EVERY structured column, and a ``lead_received`` timeline Activity.
+    A new inbound request lands as a ``LeadIntake`` row and NOTHING else. It
+    does NOT create a Client, a Property, or an Opportunity, and it never
+    mutates an existing client. Requests are a triage inbox: staff convert a
+    request into a customer explicitly (see the intake router's
+    ``convert-to-client`` / ``convert-to-quote`` endpoints), and that
+    conversion is the single place where we match/create a Client and dedup
+    against the existing book of business.
+
+    Auto-creating a Client + Property + Opportunity on every website
+    submission was the primary source of duplicate clients and properties —
+    a returning customer, a typo'd email, or a second phone number each
+    spawned a fresh record. Keeping requests inbox-only removes that source
+    at the root while leaving the operator in control of what becomes a client.
+
+    LEAD-level dedup still runs, so one website visit that hits two public
+    endpoints collapses into a single request:
+      * idempotency-key short-circuit (deterministic, cross-endpoint),
+      * a per-contact advisory lock (the concurrent-race backstop), and
+      * a 5-minute recency merge that back-fills missing fields.
+
+    ``client_id`` in the return value is whatever the matched request already
+    had (normally ``None`` for a brand-new inbound request) — it is only set
+    once staff link/convert the request.
     Returns ``{success, intake_id, client_id, deduped}``.
     """
     # Idempotency-key short-circuit — if the caller sent one and we've seen
@@ -535,90 +475,18 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             if merged != (recent.custom_fields or {}):
                 recent.custom_fields = merged
                 changed = True
-        # A lightweight first hit (e.g. the contact form, no address) that
-        # merges with a follow-up booking submit carrying the service
-        # address must still attach that address as a Property on the
-        # matched client — otherwise the property upsert below (which only
-        # runs on the non-dedup path) never fires for this visit.
-        if data.address and recent.client_id:
-            recent_client = db.query(Client).filter(Client.id == recent.client_id).first()
-            if recent_client:
-                _upsert_property_from_intake(db, recent_client, data)
-                changed = True
         if changed:
             db.commit()
             db.refresh(recent)
         return {"success": True, "intake_id": recent.id, "client_id": recent.client_id, "deduped": True}
 
-    client = find_client_by_contact(db, email=data.email, phone=data.phone)
-    if not client:
-        # Every entry point here (booking/intake/webhook submit) is public and
-        # unauthenticated, so there's no caller org to stamp — leaving org_id
-        # NULL meant this client matched every tenant's `org_id == X OR
-        # org_id IS NULL` scope filter and leaked into every workspace's
-        # Clients list. Stamp the default (v1) workspace instead, matching
-        # the fallback every other unauthenticated write path already uses
-        # (see modules.auth.router._default_org_id).
-        from modules.auth.router import _default_org_id
-        client = Client(
-            name=data.name, email=data.email, phone=data.phone,
-            address=data.address, city=data.city, state=data.state or "ME",
-            zip_code=data.zip_code, status="lead", source=data.source,
-            org_id=_default_org_id(db),
-        )
-        db.add(client)
-        db.flush()  # assign client.id without committing
-    else:
-        # Overwrite a placeholder name with the real lead's.
-        if data.name and data.name != "Unknown" and looks_placeholder_name(client.name):
-            client.name = data.name
-        # The customer just typed their current contact info on a booking
-        # form — treat it as authoritative, not "back-fill only if empty".
-        # This is the M1 fix from the July-2026 audit: a returning customer
-        # who books from a new address/phone was leaving their master client
-        # record permanently stale (Requests page shows the fresh info; the
-        # Client card kept the old). Before overwriting the primary email/
-        # phone, copy the OLD value into the multi-value contact tables so a
-        # legacy/manual client that only had the primary populated (no
-        # matching contact_emails/contact_phones row) still stays matchable
-        # via its old contact.
-        if data.email and data.email != client.email:
-            if client.email:
-                add_contact_email(db, client, client.email, source="preserved_primary")
-            client.email = data.email
-        if data.phone and data.phone != client.phone:
-            if client.phone:
-                add_contact_phone(db, client, client.phone, source="preserved_primary")
-            client.phone = data.phone
-        if data.address and data.address != client.address:
-            client.address = data.address
-        if data.city and data.city != client.city:
-            client.city = data.city
-        # Only update state if it moved out of the "ME" default AND the new
-        # value is non-empty — don't ever downgrade a real state to blank.
-        if data.state and data.state != (client.state or ""):
-            client.state = data.state
-        if data.zip_code and data.zip_code != (client.zip_code or ""):
-            client.zip_code = data.zip_code
-
-    # Record the NEW lead's email/phone in the canonical multi-value tables
-    # so a returning customer (or a Gmail thread) matches this client
-    # instead of spawning a duplicate — even if it isn't the client's
-    # primary contact. (The old primary was copied above before we
-    # overwrote it, so history is preserved either way.)
-    add_contact_email(db, client, data.email, source=data.source)
-    add_contact_phone(db, client, data.phone, source=data.source)
-
-    # July-2026 audit M1: attach the booking's address to the client as a
-    # Property, so a returning customer's new service address is on file —
-    # not just overwritten into the client's single primary address field
-    # (which the block above already keeps current for the LATEST address).
-    # A client can have several real service addresses over time; this
-    # preserves all of them instead of losing the old one on every new booking.
-    _upsert_property_from_intake(db, client, data)
-
+    # Brand-new request: persist EVERY structured column the customer gave us,
+    # but leave client_id NULL — no Client/Property/Opportunity is created.
+    # Stamp the default workspace so the row shows in that workspace's inbox
+    # rather than leaking into every tenant via the `org_id IS NULL` scope.
+    from modules.auth.router import _default_org_id
     intake = LeadIntake(
-        name=data.name or client.name, email=data.email, phone=data.phone,
+        name=data.name, email=data.email, phone=data.phone,
         address=data.address, city=data.city, state=data.state or "ME",
         zip_code=data.zip_code, service_type=data.service_type,
         requested_service=data.requested_service,
@@ -629,10 +497,10 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
         check_in=data.check_in, check_out=data.check_out,
         estimate_min=data.estimate_min, estimate_max=data.estimate_max,
         property_name=data.property_name, message=data.message,
-        preferred_date=data.preferred_date, source=data.source, client_id=client.id,
+        preferred_date=data.preferred_date, source=data.source, client_id=None,
         custom_fields=data.custom_fields or {},
         idempotency_key=data.idempotency_key,
-        org_id=getattr(client, "org_id", None),
+        org_id=_default_org_id(db),
     )
     # Race backstop: if two concurrent requests both pass the idempotency
     # SELECT above and both try to insert with the same key, the unique index
@@ -660,35 +528,7 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
                     "deduped": True,
                 }
         raise
-    try:
-        # SELECT ... FOR UPDATE on the client row serializes the
-        # check-then-insert so two concurrent submissions that both matched
-        # this client (e.g. one has email-only, the other phone-only contact
-        # info, so the advisory lock above hashed to different keys) can't
-        # both pass _recent_lead_activity_exists and each add a timeline
-        # entry for the same visit.
-        _lock_client_for_activity_write(db, client.id)
-        if not _recent_lead_activity_exists(db, client.id):
-            db.add(Activity(
-                client_id=client.id,
-                activity_type="lead_created",
-                actor="website",
-                summary=_lead_summary(data),
-                extra_data={"intake_id": intake.id, "source": data.source},
-            ))
-    except Exception as e:  # a timeline write must never block the lead
-        logger.warning("lead_received activity write failed: %s", e)
-
-    # Pipeline: every lead becomes a deal in the "new" column.
-    from utils.opportunity_helper import ensure_opportunity
-    opp = ensure_opportunity(
-        db, client_id=client.id, org_id=getattr(client, "org_id", None), stage="new",
-        title=client.name, service_type=data.service_type,
-        amount=data.estimate_max or data.estimate_min,
-    )
-    if opp:
-        intake.opportunity_id = opp.id
 
     db.commit()
     db.refresh(intake)
-    return {"success": True, "intake_id": intake.id, "client_id": client.id, "deduped": False}
+    return {"success": True, "intake_id": intake.id, "client_id": intake.client_id, "deduped": False}
