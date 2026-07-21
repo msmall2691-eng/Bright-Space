@@ -320,17 +320,23 @@ def _daily_anchor(sched: RecurringSchedule, today: date) -> date:
     return anchor if anchor is not None else today
 
 
-def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
-    """Would this schedule's rule produce date ``d``? Classifies a single date
-    by cadence phase directly (no date-window), so it stays correct for dates
-    beyond generate_weeks_ahead. Used by the off-cadence cleanup to tell a
-    biweekly-drift leftover from a legitimate occurrence."""
-    today = business_today()
+def _occurs_on(sched: RecurringSchedule, d: date, today: date) -> bool:
+    """THE single source of truth for "does this schedule's rule fall on date d?"
+
+    ``today`` is the reference used ONLY for the phase-anchor fallback — i.e. a
+    brand-new series with no persisted anchor_date/series_start_date; when either
+    is set it's ignored. Every expansion below (generate_dates,
+    _nth_occurrence_date, _is_on_phase) is built on this one predicate, so the
+    three can no longer drift — a cadence fix lands once, here. (They were three
+    hand-copied branch ladders before; the biweekly-anchor bug had to be patched
+    in each.)"""
     if sched.frequency == "monthly":
-        dom = sched.day_of_month or 1
-        return d.day == dom
+        # No clamping: a month without day `dom` (e.g. Feb 30) simply has no
+        # occurrence, matching the old generator's date()-ValueError skip.
+        return d.day == (sched.day_of_month or 1)
     interval = max(1, sched.interval_weeks or 1)
     if sched.frequency == "daily":
+        # interval_weeks is reused as the day step; empty days_of_week = every day.
         chosen = set(_effective_days(sched)) if sched.days_of_week else None
         if (d - _daily_anchor(sched, today)).days % interval != 0:
             return False
@@ -341,6 +347,30 @@ def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
         return False
     ref_monday = _week_monday(_phase_anchor(sched, today, days))
     return ((_week_monday(d) - ref_monday).days // 7) % interval == 0
+
+
+def _iter_occurrences(sched: RecurringSchedule, start: date, until: date, today: date):
+    """Yield each rule occurrence date d with start <= d <= until, ascending.
+
+    A day-by-day walk over the single _occurs_on predicate. The ranges here are
+    tiny — a few months for generation, and the Nth-occurrence walk is bounded
+    by a count — so the simplicity of one predicate is worth more than a
+    per-frequency stride. Ascending + inherently unique (one yield per date)."""
+    d = start
+    one = timedelta(days=1)
+    while d <= until:
+        if _occurs_on(sched, d, today):
+            yield d
+        d += one
+
+
+def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
+    """Would this schedule's rule produce date ``d``? Classifies a single date
+    by cadence phase directly (no date-window), so it stays correct for dates
+    beyond generate_weeks_ahead. Used by the off-cadence cleanup to tell a
+    biweekly-drift leftover from a legitimate occurrence. Thin wrapper over the
+    shared _occurs_on predicate."""
+    return _occurs_on(sched, d, business_today())
 
 
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
@@ -360,54 +390,10 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     series_end = _as_date(getattr(sched, "series_end_date", None))
     if series_end is not None and series_end <= end:
         end = series_end - timedelta(days=1)
-    result = []
-
-    if sched.frequency == "daily":
-        # Every N days (interval_weeks reused as the day step for daily; default
-        # 1 = every day). If specific weekdays are chosen, keep only those.
-        # Phase the N-day step off a fixed anchor, not today, so it doesn't
-        # re-seat on each daily tick (step 1 is unaffected — every day matches).
-        step = max(1, sched.interval_weeks or 1)
-        chosen = set(_effective_days(sched)) if sched.days_of_week else None
-        anchor = _daily_anchor(sched, today)
-        current = today
-        while current <= end:
-            on_step = (current - anchor).days % step == 0
-            if on_step and (chosen is None or current.weekday() in chosen):
-                result.append(current)
-            current += timedelta(days=1)
-    elif sched.frequency == "monthly":
-        dom = sched.day_of_month or 1
-        current = date(today.year, today.month, 1)
-        while current <= end:
-            try:
-                target = date(current.year, current.month, dom)
-                if target >= today:
-                    result.append(target)
-            except ValueError:
-                pass  # invalid day for this month (e.g., Feb 30)
-            if current.month == 12:
-                current = date(current.year + 1, 1, 1)
-            else:
-                current = date(current.year, current.month + 1, 1)
-    else:
-        # weekly / biweekly / every-N-week. Walk one week at a time and keep
-        # only the weeks whose parity matches the anchor — this is what makes
-        # biweekly STAY biweekly regardless of which day the tick runs on. For
-        # weekly (interval 1) every week matches, so behaviour is unchanged.
-        weeks_interval = max(1, sched.interval_weeks or 1)
-        days = _effective_days(sched)
-        ref_monday = _week_monday(_phase_anchor(sched, today, days))
-        for dow in days:
-            days_ahead = (dow - today.weekday()) % 7
-            current = today + timedelta(days=days_ahead)
-            while current <= end:
-                week_index = (_week_monday(current) - ref_monday).days // 7
-                if week_index % weeks_interval == 0:
-                    result.append(current)
-                current += timedelta(weeks=1)
-
-    return sorted(set(result))
+    # One walk over the shared occurrence predicate (see _occurs_on) instead of
+    # three hand-copied per-frequency branches. `today` (possibly floored to
+    # series_start above) is both the range start and the anchor-fallback ref.
+    return list(_iter_occurrences(sched, today, end, today))
 
 
 def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
@@ -426,66 +412,22 @@ def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
     save (the edit form re-sends the Ends fields each time), silently
     extending a paid, count-limited series well past N visits. Only a
     brand-new series with neither anchor nor start falls back to today."""
-    today = (
+    origin = (
         _as_date(getattr(sched, "anchor_date", None))
         or _as_date(getattr(sched, "series_start_date", None))
         or business_today()
     )
-    safety_cap = today + timedelta(days=365 * 10)
-
-    if sched.frequency == "daily":
-        step = max(1, sched.interval_weeks or 1)
-        chosen = set(_effective_days(sched)) if sched.days_of_week else None
-        anchor = _daily_anchor(sched, today)
-        current = today
-        count = 0
-        while current <= safety_cap:
-            on_step = (current - anchor).days % step == 0
-            if on_step and (chosen is None or current.weekday() in chosen):
-                count += 1
-                if count == n:
-                    return current
-            current += timedelta(days=1)
-        return None
-
-    if sched.frequency == "monthly":
-        dom = sched.day_of_month or 1
-        current = date(today.year, today.month, 1)
-        count = 0
-        while current <= safety_cap:
-            try:
-                target = date(current.year, current.month, dom)
-                if target >= today:
-                    count += 1
-                    if count == n:
-                        return target
-            except ValueError:
-                pass  # invalid day for this month (e.g., Feb 30)
-            if current.month == 12:
-                current = date(current.year + 1, 1, 1)
-            else:
-                current = date(current.year, current.month + 1, 1)
-        return None
-
-    # weekly/biweekly/custom-interval: keep only weeks whose parity matches the
-    # anchor, exactly like generate_dates, so the "ends after N" count lines up
-    # with the dates actually materialized.
-    weeks_interval = max(1, sched.interval_weeks or 1)
-    days = _effective_days(sched)
-    if not days:
-        return None
-    ref_monday = _week_monday(_phase_anchor(sched, today, days))
-    candidates = []
-    for dow in days:
-        days_ahead = (dow - today.weekday()) % 7
-        current = today + timedelta(days=days_ahead)
-        while current <= safety_cap:
-            week_index = (_week_monday(current) - ref_monday).days // 7
-            if week_index % weeks_interval == 0:
-                candidates.append(current)
-            current += timedelta(weeks=1)
-    candidates = sorted(set(candidates))
-    return candidates[n - 1] if len(candidates) >= n else None
+    until = origin + timedelta(days=365 * 10)  # safety cap → guarantees termination
+    # The SAME shared predicate generate_dates walks, counted from the pinned
+    # origin instead of bounded by a date window — so "ends after N" lands on
+    # exactly the dates generation will materialize. (origin doubles as the
+    # anchor-fallback ref, matching the pre-refactor behavior.)
+    count = 0
+    for d in _iter_occurrences(sched, origin, until, origin):
+        count += 1
+        if count == n:
+            return d
+    return None
 
 
 def _apply_ends_fields(sched: RecurringSchedule, updates: dict) -> None:
