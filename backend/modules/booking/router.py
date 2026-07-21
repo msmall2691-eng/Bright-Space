@@ -223,6 +223,16 @@ class BookingSubmit(BaseModel):
     listingUrl: Optional[str] = None         # Airbnb / VRBO listing link
     turnoverDay: Optional[str] = None        # e.g. "Saturday", "Flexible", "Same-day"
     petsAllowed: Optional[str] = None        # does the rental allow pets (affects hair/effort)
+    # Preferred arrival window the site's /book flow now collects — one of
+    # morning/afternoon/evening/flexible. Stored on custom_fields (same
+    # catch-all) so the operator sees the customer's time preference, and the
+    # convert-to-job modal can pre-fill the crew's start/end from it.
+    arrivalWindow: Optional[str] = None      # "morning" | "afternoon" | "evening" | "flexible"
+    # Up to 3 customer-attached photos of the space, as base64 data-URI
+    # strings ("data:image/jpeg;base64,…"). Inlined on custom_fields so the
+    # Requests card can show thumbnails without a media-storage dependency.
+    # Filtered to valid data:image/ URIs and capped at 3 in submit_booking.
+    photos: Optional[list] = None
     # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
     # (retry / dual-forward from the maineclean.co Express middle layer /
     # user tapped Submit twice) collapses to one Lead. Accept both camel and
@@ -384,6 +394,15 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
         "listing_url":          data.listingUrl,
         "turnover_day":         data.turnoverDay,
         "pets_allowed":         data.petsAllowed,
+        # Arrival window — dropped inside build_intake if empty.
+        "arrival_window":       data.arrivalWindow,
+        # Inline photo data-URIs. Keep only well-formed image data URIs and
+        # cap at 3 so a tampered/oversized payload can't bloat the JSON row —
+        # NEVER log the contents (they can be large + are customer property).
+        "photos": [
+            p for p in (data.photos or [])
+            if isinstance(p, str) and p.startswith("data:image/")
+        ][:3] or None,
     }
 
     payload = build_intake(
@@ -580,6 +599,7 @@ class BookingUpdate(BaseModel):
     # maineclean.co update forwarder does the same, but its own DB stores a
     # comma-joined string — accept both shapes so neither side can 422.
     focusAreas: Optional[Union[str, list]] = None
+    arrivalWindow: Optional[str] = None       # morning/afternoon/evening/flexible
     bedrooms: Optional[int] = None
     cancel: Optional[bool] = None
 
@@ -596,6 +616,7 @@ _UPDATE_CUSTOM_FIELDS = (
     ("parkingNotes",        "parking_notes",        "parking notes"),
     ("petsDetail",          "pets_detail",          "pets"),
     ("focusAreas",          "focus_areas",          "focus areas"),
+    ("arrivalWindow",       "arrival_window",       "arrival window"),
 )
 
 

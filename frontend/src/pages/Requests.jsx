@@ -31,6 +31,16 @@ const STATUS_CONFIG = {
   archived: { label: 'Archived', badge: 'bg-bg-2 text-ink-2', dot: 'bg-ink-3' },
 }
 
+// Friendly labels for the customer's preferred arrival window
+// (custom_fields.arrival_window, forwarded from maineclean.co /book). Falls
+// back to the raw value so an unknown window still renders something.
+const ARRIVAL_WINDOW_LABELS = {
+  morning: 'Morning (8am–12pm)',
+  afternoon: 'Afternoon (12–4pm)',
+  evening: 'Evening (4–7pm)',
+  flexible: 'Flexible',
+}
+
 const PRIORITY_CONFIG = {
   low: { label: 'Low', color: 'text-ink-3' },
   normal: { label: 'Normal', color: 'text-ink-2' },
@@ -325,9 +335,14 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
         || intake.custom_fields.listing_url
         || intake.custom_fields.turnover_day
         || intake.custom_fields.pets_allowed
+        || intake.custom_fields.arrival_window
+        || (Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length)
       ) && (
         <div className="text-[11px] text-ink-2 bg-blue-50 border border-blue-200 rounded p-2 space-y-0.5">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 mb-1">Booking essentials</div>
+          {intake.custom_fields.arrival_window && (
+            <div><span className="text-ink-3">Arrival:</span> {ARRIVAL_WINDOW_LABELS[intake.custom_fields.arrival_window] || intake.custom_fields.arrival_window}</div>
+          )}
           {intake.custom_fields.listing_url && (
             <div><span className="text-ink-3">Listing:</span>{' '}
               <a href={intake.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline break-all">
@@ -355,6 +370,21 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onArchive, onDelete
           )}
           {intake.custom_fields.special_instructions && (
             <div className="line-clamp-2"><span className="text-ink-3">Notes:</span> {intake.custom_fields.special_instructions}</div>
+          )}
+          {/* Customer-attached photos (custom_fields.photos, inline data URIs).
+              Up to 3 thumbnails; click opens the full image in a new tab. */}
+          {Array.isArray(intake.custom_fields.photos) && intake.custom_fields.photos.length > 0 && (
+            <div>
+              <span className="text-ink-3">Photos ({intake.custom_fields.photos.length}):</span>
+              <div className="flex gap-1.5 mt-1">
+                {intake.custom_fields.photos.slice(0, 3).map((src, i) => (
+                  <a key={i} href={src} target="_blank" rel="noopener noreferrer">
+                    <img src={src} alt={`Attachment ${i + 1}`}
+                      className="w-16 h-16 object-cover rounded border border-blue-200" />
+                  </a>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -1001,10 +1031,15 @@ export default function Requests() {
                 || selectedRequest.custom_fields.listing_url
                 || selectedRequest.custom_fields.turnover_day
                 || selectedRequest.custom_fields.pets_allowed
+                || selectedRequest.custom_fields.arrival_window
+                || (Array.isArray(selectedRequest.custom_fields.photos) && selectedRequest.custom_fields.photos.length)
               ) && (
                 <div>
                   <label className="text-xs font-semibold text-ink-2 uppercase">Booking essentials</label>
                   <div className="text-sm text-ink space-y-0.5 mt-1">
+                    {selectedRequest.custom_fields.arrival_window && (
+                      <div><span className="text-ink-3">Arrival:</span> {ARRIVAL_WINDOW_LABELS[selectedRequest.custom_fields.arrival_window] || selectedRequest.custom_fields.arrival_window}</div>
+                    )}
                     {selectedRequest.custom_fields.listing_url && (
                       <div><span className="text-ink-3">Listing:</span>{' '}
                         <a href={selectedRequest.custom_fields.listing_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline break-all">
@@ -1032,6 +1067,21 @@ export default function Requests() {
                     )}
                     {selectedRequest.custom_fields.special_instructions && (
                       <div><span className="text-ink-3">Notes:</span> {selectedRequest.custom_fields.special_instructions}</div>
+                    )}
+                    {/* Customer-attached photos (inline data URIs) — click to
+                        open the full image in a new tab. */}
+                    {Array.isArray(selectedRequest.custom_fields.photos) && selectedRequest.custom_fields.photos.length > 0 && (
+                      <div>
+                        <span className="text-ink-3">Photos ({selectedRequest.custom_fields.photos.length}):</span>
+                        <div className="flex gap-2 mt-1">
+                          {selectedRequest.custom_fields.photos.slice(0, 3).map((src, i) => (
+                            <a key={i} href={src} target="_blank" rel="noopener noreferrer">
+                              <img src={src} alt={`Attachment ${i + 1}`}
+                                className="w-16 h-16 object-cover rounded border border-hairline" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
