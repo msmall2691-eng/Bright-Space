@@ -13,7 +13,7 @@ from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import RecurringSchedule, Job, RecurrenceException
 from utils.activity_logger import log_job_created, log_calendar_event
-from utils.dates import business_today
+from utils.dates import business_today, coerce_date
 
 router = APIRouter()
 
@@ -245,15 +245,14 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
 
 
 def _as_date(value):
-    """Coerce a value (ISO string, date, or None) to a date | None. Used so the
+    """Coerce a value (ISO string, date, or None) to a date | None, so the
     recurrence date math works in pure date objects regardless of whether a
-    column came back as a date (Postgres) or a string."""
-    if value is None or isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except (ValueError, TypeError):
-        return None
+    column came back as a date (Postgres) or a string.
+
+    Delegates to the shared utils.dates.coerce_date (which also normalizes a
+    datetime to a date — a datetime never compares equal to a date, which would
+    silently break the rule-date membership checks)."""
+    return coerce_date(value)
 
 
 def _as_time(value):

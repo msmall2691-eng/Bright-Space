@@ -18,7 +18,7 @@ from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
 from utils.integration_log import log_integration_event as _log_integration
-from utils.dates import business_today, coerce_time
+from utils.dates import business_today, coerce_time, coerce_date
 from ratelimit import rate_limit
 
 logger = logging.getLogger(__name__)
@@ -155,13 +155,12 @@ def _booking_dict(event: Optional[ICalEvent]) -> Optional[dict]:
 
 
 def _to_date(value):
-    """Parse a 'YYYY-MM-DD' string (or pass through a date) → date | None."""
-    if value is None or isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except (ValueError, TypeError):
-        return None
+    """Parse a 'YYYY-MM-DD' string (or pass through a date) → date | None.
+
+    Thin wrapper over the shared utils.dates.coerce_date so every router coerces
+    dates identically (coerce_date also normalizes a datetime to a date, which a
+    bare isinstance check missed — a datetime never compares equal to a date)."""
+    return coerce_date(value)
 
 
 def _to_time(value):
