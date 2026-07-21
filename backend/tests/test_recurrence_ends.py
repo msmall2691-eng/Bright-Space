@@ -321,6 +321,20 @@ def test_recurring_generation_enqueues_outbox_when_enabled(seeded, monkeypatch):
     assert all(o.op == "dispatch" and o.status == "pending" for o in outbox)
 
 
+def test_create_accepts_non_zero_padded_time(seeded):
+    """A non-zero-padded '9:30' stores a real time, not NULL — the recurring
+    router's parser used to reject it (time.fromisoformat) while the scheduling
+    router accepted it, so the same payload diverged (audit Ru3)."""
+    from datetime import time as _time
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(
+        c, p, start_time="9:30", end_time="11:5"))
+    assert r.status_code == 201, r.text
+    row = db.query(RecurringSchedule).get(r.json()["id"])
+    assert row.start_time == _time(9, 30)
+    assert row.end_time == _time(11, 5)
+
+
 def test_update_ends_after_count_rejects_negative(seeded):
     db, c, p = seeded
     sched = _make_schedule(db, c, p)

@@ -7,7 +7,7 @@ string raises ``AttributeError`` and 500s the request. These helpers accept a
 single bad value can't take down the customer-facing quote page or quote sending.
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional, Union
 
 DateLike = Union[date, datetime, str, None]
@@ -26,6 +26,28 @@ def coerce_date(v: DateLike) -> Optional[date]:
     try:
         return date.fromisoformat(str(v)[:10])
     except (ValueError, TypeError):
+        return None
+
+
+def coerce_time(v) -> Optional[time]:
+    """Return a ``time`` from a time/'HH:MM[:SS]' string, else ``None``.
+
+    Tolerant of a missing leading zero ('9:30') and an optional seconds field,
+    and never raises. This is the single canonical time parser: the scheduling
+    and recurring routers each had their own, and they had DRIFTED — recurring
+    used ``time.fromisoformat`` which rejects '9:30', so the same non-zero-padded
+    payload wrote a valid time on the scheduling router but silently NULL on the
+    recurring one. A Time column needs a real ``time`` object (psycopg2 casts a
+    bare string leniently; SQLite's Time type raises), so writes go through this."""
+    if v is None or isinstance(v, time):
+        return v
+    try:
+        parts = str(v).strip().split(":")
+        hh = int(parts[0])
+        mm = int(parts[1]) if len(parts) > 1 and parts[1] != "" else 0
+        ss = int(float(parts[2])) if len(parts) > 2 and parts[2] != "" else 0
+        return time(hh, mm, ss)
+    except (ValueError, TypeError, IndexError):
         return None
 
 

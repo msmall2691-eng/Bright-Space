@@ -295,7 +295,11 @@ def _find_recent_duplicate(db: Session, email: Optional[str], phone: Optional[st
     if email:
         filters.append(LeadIntake.email.ilike(email))
     if phone:
-        filters.append(LeadIntake.phone == phone)
+        # Match on the normalized phone. Stored phones are normalized at
+        # build_intake time, but normalizing the lookup too makes the recency
+        # dedup robust to any caller that passes a raw/differently-formatted
+        # number (defense in depth against a second lead for the same person).
+        filters.append(LeadIntake.phone == (normalize_phone(phone) or phone))
     return (
         db.query(LeadIntake)
         .filter(LeadIntake.created_at >= cutoff)

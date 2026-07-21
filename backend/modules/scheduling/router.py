@@ -18,7 +18,7 @@ from utils.activity_logger import (
     log_job_created, log_job_status_change, log_calendar_event, log_activity
 )
 from utils.integration_log import log_integration_event as _log_integration
-from utils.dates import business_today
+from utils.dates import business_today, coerce_time
 from ratelimit import rate_limit
 
 logger = logging.getLogger(__name__)
@@ -165,14 +165,12 @@ def _to_date(value):
 
 
 def _to_time(value):
-    """Parse a 'HH:MM[:SS]' string (or pass through a time) → time | None."""
-    if value is None or isinstance(value, time):
-        return value
-    try:
-        parts = str(value).split(":")
-        return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
-    except (ValueError, TypeError, IndexError):
-        return None
+    """Parse a 'HH:MM[:SS]' string (or pass through a time) → time | None.
+
+    Thin wrapper over the shared utils.dates.coerce_time so the scheduling and
+    recurring routers coerce times identically (they had drifted — see
+    coerce_time)."""
+    return coerce_time(value)
 
 
 def _validate_job_timing(scheduled_date, start_time, end_time, *, is_new: bool):

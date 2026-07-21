@@ -259,18 +259,12 @@ def _as_date(value):
 def _as_time(value):
     """Coerce a value (ISO/HH:MM string, time, or None) to a time | None.
 
-    ScheduleCreate/ScheduleUpdate/ScheduleSplit accept start_time/end_time as
-    plain "HH:MM" strings (matching the rest of this module's API), but a
-    Time column needs a real time object — Postgres's psycopg2 leniently
-    casts a bare string, SQLite's Time type does not (raises TypeError), so
-    anything that writes one of these fields must go through this first."""
-    from datetime import time as _time
-    if value is None or isinstance(value, _time):
-        return value
-    try:
-        return _time.fromisoformat(str(value))
-    except (ValueError, TypeError):
-        return None
+    Delegates to the shared utils.dates.coerce_time so this router parses times
+    exactly like the scheduling router — previously this used
+    time.fromisoformat, which rejects a non-zero-padded '9:30', so the same
+    payload wrote a valid time on the scheduling router but NULL here."""
+    from utils.dates import coerce_time
+    return coerce_time(value)
 
 
 def _validate_timing(start, end) -> None:
