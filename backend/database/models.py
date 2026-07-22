@@ -1196,6 +1196,52 @@ class ConnecteamPushRun(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class ConnecteamOutbox(Base):
+    """Transactional outbox for Connecteam shift sync (durability hardening).
+
+    Dispatching/removing a shift by calling Connecteam's API inline has two
+    failure modes: (1) the API call succeeds but the enclosing request then
+    rolls back → an orphan shift with no local record; (2) a double-submit or
+    two concurrent paths both read connecteam_shift_ids as empty and each
+    create a shift → a DUPLICATE. Instead, job-change paths can ENQUEUE a sync
+    intent here in the SAME transaction as the job change (so a rollback
+    discards the intent — no orphan), and a background drain performs the
+    Connecteam call.
+
+    Idempotency: dedupe_key is UNIQUE, so enqueuing the same intent twice
+    (double-submit, retry, two racing callers) collapses to one row. The drain
+    claims a row (pending → terminal) with SELECT ... FOR UPDATE SKIP LOCKED so
+    two workers can't process it at once. Together these make duplicate shifts
+    structurally impossible for enqueued-and-drained syncs; the narrow
+    crash-after-create-before-record window is swept by the read-back reconcile.
+
+    Gated by the connecteam_outbox_enabled setting — off leaves the existing
+    inline dispatch untouched. Scaffolded in migration 061.
+    """
+    __tablename__ = "connecteam_outbox"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    op = Column(String(16), nullable=False)  # 'dispatch' | 'remove'
+    # Unique intent fingerprint: op + job + desired-state hash. A repeat enqueue
+    # of the SAME desired state is a no-op; a new state (after a reschedule) gets
+    # a new key, so it's re-synced.
+    dedupe_key = Column(String(200), nullable=False, unique=True)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    # pending | done | failed
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_connecteam_outbox_status", "status", "created_at"),
+    )
+
+
 class SavedView(Base):
     """A user's saved list-view preset (Twenty's "views"): a named bundle of a
     list page's filters / sort / visible-columns / layout for one entity type.

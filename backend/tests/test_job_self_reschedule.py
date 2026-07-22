@@ -286,3 +286,25 @@ def test_recent_confirmations_feed():
         db.query(Property).filter(Property.id.in_(pids)).delete(synchronize_session=False)
         db.query(Client).filter(Client.id.in_(cids)).delete(synchronize_session=False)
         db.commit(); db.close()
+
+
+def test_shift_series_weekday_preserves_other_days():
+    """_apply_reschedule_move's 'future' split must shift only the dragged
+    occurrence's weekday and keep the rest — collapsing days_of_week to a
+    single day silently deleted a multi-day series' other visits (audit B5)."""
+    from datetime import date as _date
+    from modules.scheduling.router import _shift_series_weekday
+
+    wed = _date(2026, 1, 7)   # Wednesday → weekday() == 2
+    thu = _date(2026, 1, 8)   # Thursday  → weekday() == 3
+    mon = _date(2026, 1, 5)   # Monday    → weekday() == 0
+
+    # Mon/Wed/Fri: move the Wed leg to Thu → Mon/Thu/Fri (others kept).
+    assert _shift_series_weekday([0, 2, 4], wed, thu) == [0, 3, 4]
+    # Single-day series collapses to the target, as before.
+    assert _shift_series_weekday([2], wed, thu) == [3]
+    # Every-day / no filter falls back to the target day.
+    assert _shift_series_weekday([], wed, thu) == [3]
+    assert _shift_series_weekday(None, wed, thu) == [3]
+    # Dragging onto a day the series already has just drops the old one.
+    assert _shift_series_weekday([0, 2], wed, mon) == [0]

@@ -13,7 +13,7 @@ from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import RecurringSchedule, Job, RecurrenceException
 from utils.activity_logger import log_job_created, log_calendar_event
-from utils.dates import business_today
+from utils.dates import business_today, coerce_date
 
 router = APIRouter()
 
@@ -245,32 +245,25 @@ def sched_to_dict(s: RecurringSchedule) -> dict:
 
 
 def _as_date(value):
-    """Coerce a value (ISO string, date, or None) to a date | None. Used so the
+    """Coerce a value (ISO string, date, or None) to a date | None, so the
     recurrence date math works in pure date objects regardless of whether a
-    column came back as a date (Postgres) or a string."""
-    if value is None or isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except (ValueError, TypeError):
-        return None
+    column came back as a date (Postgres) or a string.
+
+    Delegates to the shared utils.dates.coerce_date (which also normalizes a
+    datetime to a date — a datetime never compares equal to a date, which would
+    silently break the rule-date membership checks)."""
+    return coerce_date(value)
 
 
 def _as_time(value):
     """Coerce a value (ISO/HH:MM string, time, or None) to a time | None.
 
-    ScheduleCreate/ScheduleUpdate/ScheduleSplit accept start_time/end_time as
-    plain "HH:MM" strings (matching the rest of this module's API), but a
-    Time column needs a real time object — Postgres's psycopg2 leniently
-    casts a bare string, SQLite's Time type does not (raises TypeError), so
-    anything that writes one of these fields must go through this first."""
-    from datetime import time as _time
-    if value is None or isinstance(value, _time):
-        return value
-    try:
-        return _time.fromisoformat(str(value))
-    except (ValueError, TypeError):
-        return None
+    Delegates to the shared utils.dates.coerce_time so this router parses times
+    exactly like the scheduling router — previously this used
+    time.fromisoformat, which rejects a non-zero-padded '9:30', so the same
+    payload wrote a valid time on the scheduling router but NULL here."""
+    from utils.dates import coerce_time
+    return coerce_time(value)
 
 
 def _validate_timing(start, end) -> None:
@@ -327,17 +320,23 @@ def _daily_anchor(sched: RecurringSchedule, today: date) -> date:
     return anchor if anchor is not None else today
 
 
-def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
-    """Would this schedule's rule produce date ``d``? Classifies a single date
-    by cadence phase directly (no date-window), so it stays correct for dates
-    beyond generate_weeks_ahead. Used by the off-cadence cleanup to tell a
-    biweekly-drift leftover from a legitimate occurrence."""
-    today = business_today()
+def _occurs_on(sched: RecurringSchedule, d: date, today: date) -> bool:
+    """THE single source of truth for "does this schedule's rule fall on date d?"
+
+    ``today`` is the reference used ONLY for the phase-anchor fallback — i.e. a
+    brand-new series with no persisted anchor_date/series_start_date; when either
+    is set it's ignored. Every expansion below (generate_dates,
+    _nth_occurrence_date, _is_on_phase) is built on this one predicate, so the
+    three can no longer drift — a cadence fix lands once, here. (They were three
+    hand-copied branch ladders before; the biweekly-anchor bug had to be patched
+    in each.)"""
     if sched.frequency == "monthly":
-        dom = sched.day_of_month or 1
-        return d.day == dom
+        # No clamping: a month without day `dom` (e.g. Feb 30) simply has no
+        # occurrence, matching the old generator's date()-ValueError skip.
+        return d.day == (sched.day_of_month or 1)
     interval = max(1, sched.interval_weeks or 1)
     if sched.frequency == "daily":
+        # interval_weeks is reused as the day step; empty days_of_week = every day.
         chosen = set(_effective_days(sched)) if sched.days_of_week else None
         if (d - _daily_anchor(sched, today)).days % interval != 0:
             return False
@@ -348,6 +347,30 @@ def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
         return False
     ref_monday = _week_monday(_phase_anchor(sched, today, days))
     return ((_week_monday(d) - ref_monday).days // 7) % interval == 0
+
+
+def _iter_occurrences(sched: RecurringSchedule, start: date, until: date, today: date):
+    """Yield each rule occurrence date d with start <= d <= until, ascending.
+
+    A day-by-day walk over the single _occurs_on predicate. The ranges here are
+    tiny — a few months for generation, and the Nth-occurrence walk is bounded
+    by a count — so the simplicity of one predicate is worth more than a
+    per-frequency stride. Ascending + inherently unique (one yield per date)."""
+    d = start
+    one = timedelta(days=1)
+    while d <= until:
+        if _occurs_on(sched, d, today):
+            yield d
+        d += one
+
+
+def _is_on_phase(sched: RecurringSchedule, d: date) -> bool:
+    """Would this schedule's rule produce date ``d``? Classifies a single date
+    by cadence phase directly (no date-window), so it stays correct for dates
+    beyond generate_weeks_ahead. Used by the off-cadence cleanup to tell a
+    biweekly-drift leftover from a legitimate occurrence. Thin wrapper over the
+    shared _occurs_on predicate."""
+    return _occurs_on(sched, d, business_today())
 
 
 def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
@@ -367,54 +390,10 @@ def generate_dates(sched: RecurringSchedule, weeks_ahead: int) -> List[date]:
     series_end = _as_date(getattr(sched, "series_end_date", None))
     if series_end is not None and series_end <= end:
         end = series_end - timedelta(days=1)
-    result = []
-
-    if sched.frequency == "daily":
-        # Every N days (interval_weeks reused as the day step for daily; default
-        # 1 = every day). If specific weekdays are chosen, keep only those.
-        # Phase the N-day step off a fixed anchor, not today, so it doesn't
-        # re-seat on each daily tick (step 1 is unaffected — every day matches).
-        step = max(1, sched.interval_weeks or 1)
-        chosen = set(_effective_days(sched)) if sched.days_of_week else None
-        anchor = _daily_anchor(sched, today)
-        current = today
-        while current <= end:
-            on_step = (current - anchor).days % step == 0
-            if on_step and (chosen is None or current.weekday() in chosen):
-                result.append(current)
-            current += timedelta(days=1)
-    elif sched.frequency == "monthly":
-        dom = sched.day_of_month or 1
-        current = date(today.year, today.month, 1)
-        while current <= end:
-            try:
-                target = date(current.year, current.month, dom)
-                if target >= today:
-                    result.append(target)
-            except ValueError:
-                pass  # invalid day for this month (e.g., Feb 30)
-            if current.month == 12:
-                current = date(current.year + 1, 1, 1)
-            else:
-                current = date(current.year, current.month + 1, 1)
-    else:
-        # weekly / biweekly / every-N-week. Walk one week at a time and keep
-        # only the weeks whose parity matches the anchor — this is what makes
-        # biweekly STAY biweekly regardless of which day the tick runs on. For
-        # weekly (interval 1) every week matches, so behaviour is unchanged.
-        weeks_interval = max(1, sched.interval_weeks or 1)
-        days = _effective_days(sched)
-        ref_monday = _week_monday(_phase_anchor(sched, today, days))
-        for dow in days:
-            days_ahead = (dow - today.weekday()) % 7
-            current = today + timedelta(days=days_ahead)
-            while current <= end:
-                week_index = (_week_monday(current) - ref_monday).days // 7
-                if week_index % weeks_interval == 0:
-                    result.append(current)
-                current += timedelta(weeks=1)
-
-    return sorted(set(result))
+    # One walk over the shared occurrence predicate (see _occurs_on) instead of
+    # three hand-copied per-frequency branches. `today` (possibly floored to
+    # series_start above) is both the range start and the anchor-fallback ref.
+    return list(_iter_occurrences(sched, today, end, today))
 
 
 def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
@@ -424,66 +403,31 @@ def _nth_occurrence_date(sched: RecurringSchedule, n: int) -> Optional[date]:
     a date window. Used to translate the "ends after N occurrences" UI
     choice into series_end_date, the single column generate_dates() actually
     enforces. Returns None if the rule can't produce N occurrences within a
-    10-year safety cap (e.g. days_of_week somehow empty)."""
-    today = business_today()
-    series_start = _as_date(getattr(sched, "series_start_date", None))
-    if series_start is not None and series_start > today:
-        today = series_start
-    safety_cap = today + timedelta(days=365 * 10)
+    10-year safety cap (e.g. days_of_week somehow empty).
 
-    if sched.frequency == "daily":
-        step = max(1, sched.interval_weeks or 1)
-        chosen = set(_effective_days(sched)) if sched.days_of_week else None
-        anchor = _daily_anchor(sched, today)
-        current = today
-        count = 0
-        while current <= safety_cap:
-            on_step = (current - anchor).days % step == 0
-            if on_step and (chosen is None or current.weekday() in chosen):
-                count += 1
-                if count == n:
-                    return current
-            current += timedelta(days=1)
-        return None
-
-    if sched.frequency == "monthly":
-        dom = sched.day_of_month or 1
-        current = date(today.year, today.month, 1)
-        count = 0
-        while current <= safety_cap:
-            try:
-                target = date(current.year, current.month, dom)
-                if target >= today:
-                    count += 1
-                    if count == n:
-                        return target
-            except ValueError:
-                pass  # invalid day for this month (e.g., Feb 30)
-            if current.month == 12:
-                current = date(current.year + 1, 1, 1)
-            else:
-                current = date(current.year, current.month + 1, 1)
-        return None
-
-    # weekly/biweekly/custom-interval: keep only weeks whose parity matches the
-    # anchor, exactly like generate_dates, so the "ends after N" count lines up
-    # with the dates actually materialized.
-    weeks_interval = max(1, sched.interval_weeks or 1)
-    days = _effective_days(sched)
-    if not days:
-        return None
-    ref_monday = _week_monday(_phase_anchor(sched, today, days))
-    candidates = []
-    for dow in days:
-        days_ahead = (dow - today.weekday()) % 7
-        current = today + timedelta(days=days_ahead)
-        while current <= safety_cap:
-            week_index = (_week_monday(current) - ref_monday).days // 7
-            if week_index % weeks_interval == 0:
-                candidates.append(current)
-            current += timedelta(weeks=1)
-    candidates = sorted(set(candidates))
-    return candidates[n - 1] if len(candidates) >= n else None
+    The count origin is the series' pinned start — anchor_date (set at first
+    materialization) or series_start_date — NOT today. "Ends after N
+    occurrences" means the Nth occurrence of the series as a whole, a stable
+    date. Counting from a moving `today` recomputed a LATER end date on every
+    save (the edit form re-sends the Ends fields each time), silently
+    extending a paid, count-limited series well past N visits. Only a
+    brand-new series with neither anchor nor start falls back to today."""
+    origin = (
+        _as_date(getattr(sched, "anchor_date", None))
+        or _as_date(getattr(sched, "series_start_date", None))
+        or business_today()
+    )
+    until = origin + timedelta(days=365 * 10)  # safety cap → guarantees termination
+    # The SAME shared predicate generate_dates walks, counted from the pinned
+    # origin instead of bounded by a date window — so "ends after N" lands on
+    # exactly the dates generation will materialize. (origin doubles as the
+    # anchor-fallback ref, matching the pre-refactor behavior.)
+    count = 0
+    for d in _iter_occurrences(sched, origin, until, origin):
+        count += 1
+        if count == n:
+            return d
+    return None
 
 
 def _apply_ends_fields(sched: RecurringSchedule, updates: dict) -> None:
@@ -778,14 +722,27 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     # must never block generation.
     if new_jobs:
         try:
-            from modules.settings.router import connecteam_auto_dispatch_enabled
+            from modules.settings.router import (
+                connecteam_auto_dispatch_enabled, connecteam_outbox_enabled,
+            )
+            # New occurrences auto-dispatch only in auto mode (manual mode waits
+            # for the operator), same as before — whether via the durable outbox
+            # or the direct inline call.
             if connecteam_auto_dispatch_enabled(db):
-                from integrations.connecteam_auto import auto_dispatch_job
-                for job in new_jobs:
-                    try:
-                        auto_dispatch_job(db, job, commit=False)
-                    except Exception as e:
-                        logger.warning(f"Connecteam push failed for job {job.id} (schedule {sched.id}): {e}")
+                if connecteam_outbox_enabled(db):
+                    # Durable path: queue a sync intent per new job in this same
+                    # transaction (rollback-safe, deduplicated); the outbox drain
+                    # performs the Connecteam call exactly once.
+                    from integrations.connecteam_outbox import enqueue_sync
+                    for job in new_jobs:
+                        enqueue_sync(db, job, "dispatch", commit=False)
+                else:
+                    from integrations.connecteam_auto import auto_dispatch_job
+                    for job in new_jobs:
+                        try:
+                            auto_dispatch_job(db, job, commit=False)
+                        except Exception as e:
+                            logger.warning(f"Connecteam push failed for job {job.id} (schedule {sched.id}): {e}")
                 db.commit()
         except Exception as e:
             logger.warning(f"Connecteam dispatch pass failed for schedule {sched.id}: {e}")
@@ -844,11 +801,18 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
         "ends_on": payload.pop("ends_on"),
         "ends_after_count": payload.pop("ends_after_count"),
     }
-    # Normalise: if days_of_week not set, derive from day_of_week
+    # Normalise days_of_week. For a DAILY schedule an empty set means "every
+    # day" — generate_dates treats a falsy days_of_week as no weekday filter —
+    # so leave it empty rather than collapsing it to a single day, which
+    # silently turned a "daily, every day" schedule into "Mondays only".
+    # Weekly/monthly with no set fall back to the legacy day_of_week column.
     if not payload.get("days_of_week"):
-        payload["days_of_week"] = [payload.get("day_of_week", 0)]
-    # Keep day_of_week in sync with first day for legacy compat
-    payload["day_of_week"] = payload["days_of_week"][0]
+        payload["days_of_week"] = [] if payload.get("frequency") == "daily" \
+            else [payload.get("day_of_week", 0)]
+    # Keep day_of_week in sync with the first chosen day for legacy compat;
+    # leave it as-is for an every-day daily schedule (no weekday filter).
+    if payload.get("days_of_week"):
+        payload["day_of_week"] = payload["days_of_week"][0]
     # SQLite's Time column rejects raw strings outright (Postgres casts them
     # leniently) — coerce here the same way update_schedule already does.
     payload["start_time"] = _as_time(payload["start_time"])
@@ -947,12 +911,25 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
     an inert historical record.
     """
     today = business_today()
-    exception_dates = {
-        _as_date(e.exception_date)
-        for e in db.query(RecurrenceException)
+    # A per-occurrence exception marks a date the user deliberately deviated
+    # from the rule — leave it untouched. That means protecting BOTH the
+    # original date (a skip) AND the rescheduled_date (a move): the moved job
+    # carries the user's per-visit time/crew override, which regenerating from
+    # the rule would silently reset to series defaults. Protecting only
+    # exception_date wiped every deliberately-rescheduled visit on resync.
+    protected_dates = set()
+    for e in (
+        db.query(RecurrenceException)
         .filter(RecurrenceException.recurring_schedule_id == sched.id)
         .all()
-    }
+    ):
+        ed = _as_date(e.exception_date)
+        if ed:
+            protected_dates.add(ed)
+        if e.exception_type == "reschedule" and e.rescheduled_date:
+            rd = _as_date(e.rescheduled_date)
+            if rd:
+                protected_dates.add(rd)
     stale = (
         db.query(Job)
         .filter(
@@ -965,7 +942,7 @@ def _resync_future_jobs(db: Session, sched: RecurringSchedule) -> int:
     )
     removed = 0
     for j in stale:
-        if _as_date(j.scheduled_date) in exception_dates:
+        if _as_date(j.scheduled_date) in protected_dates:
             continue
         j.status = "cancelled"
         j.recurring_schedule_id = None
@@ -995,8 +972,11 @@ def update_schedule(schedule_id: int, data: ScheduleUpdate, db: Session = Depend
         ends_fields["ends_on"] = updates.pop("ends_on", None)
         ends_fields["ends_after_count"] = updates.pop("ends_after_count", None)
     # Phase 0 fix: an empty days_of_week list would silently collapse a
-    # multi-day schedule. Reject it explicitly rather than dropping days.
-    if "days_of_week" in updates and not updates["days_of_week"]:
+    # multi-day WEEKLY schedule. Reject it explicitly rather than dropping
+    # days — but for a DAILY schedule an empty set legitimately means "every
+    # day", so allow it there (matches create_schedule's normalization).
+    eff_frequency = updates.get("frequency", sched.frequency)
+    if "days_of_week" in updates and not updates["days_of_week"] and eff_frequency != "daily":
         raise HTTPException(
             status_code=400,
             detail="days_of_week cannot be empty; pass null to leave unchanged or supply at least one day",
@@ -1302,6 +1282,15 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     job.status = "cancelled"
     if reason:
         job.notes = (job.notes or "") + f"\n[Skipped via exception: {reason}]"
+    # Detach from the schedule so the cancelled row leaves BOTH generate_jobs'
+    # cancelled-dates guard and the uq_jobs_schedule_date unique index (which
+    # is partial on `recurring_schedule_id IS NOT NULL` and has no status
+    # filter). Without this: undoing a skip could never recreate the visit —
+    # the date stayed permanently blocked, contradicting delete_exception's
+    # contract — and rescheduling another occurrence onto a previously-skipped
+    # date collided with this inert row and 500'd at commit. Matches the
+    # detach convention _resync_future_jobs and split_schedule already use.
+    job.recurring_schedule_id = None
     _release_sync_links(db, job)
 
 
@@ -1324,6 +1313,15 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
         )
         .first()
     )
+    # If we're converting a prior RESCHEDULE into a skip, the moved visit was
+    # already materialized on the old rescheduled_date. Capture it before we
+    # clear the field so we can cancel that job too — otherwise the "skipped"
+    # occurrence stays live on its moved date and a cleaner is still dispatched
+    # to a visit the operator believes was skipped.
+    prior_moved_date = None
+    if existing and existing.exception_type == "reschedule" and existing.rescheduled_date:
+        prior_moved_date = _as_date(existing.rescheduled_date)
+
     if existing:
         existing.exception_type = "skip"
         existing.rescheduled_date = None
@@ -1343,6 +1341,8 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
         db.add(ex)
 
     _cancel_existing_job(db, schedule_id, body.exception_date, body.reason)
+    if prior_moved_date and prior_moved_date != _as_date(body.exception_date):
+        _cancel_existing_job(db, schedule_id, prior_moved_date, body.reason)
     db.commit()
     db.refresh(ex)
     return _ex_to_dict(ex)
@@ -1454,6 +1454,11 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         .first()
     )
     carried_token = old_occurrence.public_token if old_occurrence else None
+    # Whether the occurrence being moved was already on a cleaner's Connecteam
+    # schedule — captured BEFORE the cancel below pulls its shift, so the moved
+    # visit re-dispatches immediately even in manual mode (mirrors update_job:
+    # an already-dispatched visit that moves must not strand a stale shift).
+    was_dispatched = bool(old_occurrence and old_occurrence.connecteam_shift_ids)
 
     if rescheduled_date != exception_date:
         if old_occurrence is not None:
@@ -1474,6 +1479,25 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         )
         .first()
     )
+    if rescheduled_job is None:
+        # A directly-cancelled occurrence (cancelled via the job path, which
+        # keeps recurring_schedule_id) may still hold this (schedule, date)
+        # slot in the status-blind uq_jobs_schedule_date unique index. Revive
+        # that row instead of inserting a second one that would collide and
+        # 500 at commit. (Skip-cancelled rows are detached, so they don't
+        # match here and a fresh insert is safe.)
+        cancelled_here = (
+            db.query(Job)
+            .filter(
+                Job.recurring_schedule_id == sched.id,
+                Job.scheduled_date == rescheduled_date,
+                Job.status == "cancelled",
+            )
+            .first()
+        )
+        if cancelled_here is not None:
+            cancelled_here.status = "scheduled"
+            rescheduled_job = cancelled_here
     if rescheduled_job is not None:
         rescheduled_job.start_time = new_start
         rescheduled_job.end_time = new_end
@@ -1506,6 +1530,40 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     rescheduled_job.customer_confirmed_at = None
     if getattr(rescheduled_job, "sms_reminder_sent", False):
         rescheduled_job.sms_reminder_sent = False
+
+    # ── CONNECTEAM SHIFT SYNC ── reflect the move on the cleaner's app now
+    # instead of leaving the moved occurrence shiftless until the 30-minute
+    # reconcile tick. Mirrors update_job's one-off path: a visit that was
+    # already dispatched re-syncs even in manual mode (its shift follows it),
+    # while a not-yet-dispatched occurrence follows the auto-dispatch setting.
+    # Everything is staged with commit=False so it persists atomically with the
+    # caller's commit, and it's best-effort — a Connecteam hiccup must never
+    # block the reschedule itself.
+    try:
+        from integrations.connecteam_auto import (
+            auto_dispatch_job, remove_job_from_connecteam)
+        from modules.settings.router import (
+            connecteam_auto_dispatch_enabled, connecteam_outbox_enabled,
+        )
+        db.flush()  # assign a freshly-created job its id for the shift log / FK
+        should_sync = bool(rescheduled_job.connecteam_shift_ids) or (
+            rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)))
+        if should_sync and connecteam_outbox_enabled(db):
+            # Durable path: queue the sync in this transaction; the drain
+            # applies it (it re-syncs an existing shift or dispatches a new one).
+            from integrations.connecteam_outbox import enqueue_sync
+            enqueue_sync(db, rescheduled_job, "dispatch", commit=False)
+        elif rescheduled_job.connecteam_shift_ids:
+            # An existing shift whose time/crew changed → pull the stale one and
+            # push fresh. Primitives (not resync_job, which force-commits) so it
+            # stays in this transaction.
+            remove_job_from_connecteam(db, rescheduled_job, commit=False)
+            auto_dispatch_job(db, rescheduled_job, commit=False)
+        elif rescheduled_job.cleaner_ids and (was_dispatched or connecteam_auto_dispatch_enabled(db)):
+            auto_dispatch_job(db, rescheduled_job, commit=False)
+    except Exception as e:
+        logger.warning(
+            f"Connecteam sync for rescheduled occurrence (schedule {sched.id}) failed: {e}")
 
     return ex, rescheduled_job
 

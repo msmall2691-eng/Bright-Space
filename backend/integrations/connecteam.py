@@ -288,6 +288,13 @@ def create_shifts_sync(shifts: list) -> list:
     return _run_sync(create_shifts(shifts))
 
 
+def get_scheduled_shifts_sync(start_date: str, end_date: str,
+                              scheduler_id: Optional[str] = None) -> list:
+    """Synchronous wrapper around get_scheduled_shifts for the read-back
+    reconcile (which runs in the request threadpool / scheduler thread)."""
+    return _run_sync(get_scheduled_shifts(start_date, end_date, scheduler_id))
+
+
 # Public alias — callers that build payloads themselves (bulk push) reach for
 # this instead of duplicating the wire-format logic.
 build_shift_payload = _shift_payload

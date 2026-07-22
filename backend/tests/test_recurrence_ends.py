@@ -204,6 +204,137 @@ def test_update_after_count_reflects_new_interval_from_same_request(seeded):
     assert body["ends_on"] == expected_3rd.isoformat()
 
 
+def test_after_count_credits_elapsed_occurrences_from_anchor(seeded):
+    """'Ends after N' computes its end from the series ANCHOR, not today, so
+    occurrences already elapsed count toward N and re-saving can't keep pushing
+    the end date out (audit R6). Before the fix, a count-limited series was
+    silently extended by the number of elapsed visits every time it was saved."""
+    db, c, p = seeded
+    today_dow = date.today().weekday()
+    sched = _make_schedule(db, c, p, days_of_week=[today_dow])
+    # Simulate an established weekly series whose 1st occurrence was 4 weeks ago.
+    sched.anchor_date = date.today() - timedelta(weeks=4)
+    sched.series_start_date = sched.anchor_date
+    db.commit()
+
+    r = api.patch(f"/api/recurring/{sched.id}",
+                  json={"ends_mode": "after_count", "ends_after_count": 6})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # 6th weekly occurrence from the anchor = anchor + 5 weeks = today + 1 week.
+    # Counting from today (the bug) would land it at today + 5 weeks, extending
+    # the paid 6-visit series by the 4 already-elapsed visits.
+    expected = date.today() + timedelta(weeks=1)
+    assert body["ends_on"] == expected.isoformat()
+
+
+def test_create_daily_empty_days_means_every_day(seeded):
+    """A daily schedule created with no weekday filter means EVERY day — it must
+    not be collapsed to a single weekday (audit C6: "daily" became Mondays
+    only). sched_to_dict masks the empty set as [day_of_week] for display, so
+    assert on the stored column and what generate_dates actually produces."""
+    from modules.recurring.router import generate_dates
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(
+        c, p, frequency="daily", days_of_week=[],
+    ))
+    assert r.status_code == 201, r.text
+    row = db.query(RecurringSchedule).get(r.json()["id"])
+    # Stored as an every-day schedule, NOT collapsed to [0].
+    assert row.days_of_week == []
+    # generate_dates therefore yields every day of the week, not just Mondays.
+    weekdays = {d.weekday() for d in generate_dates(row, weeks_ahead=2)}
+    assert weekdays == {0, 1, 2, 3, 4, 5, 6}
+
+
+def test_convert_reschedule_to_skip_cancels_moved_job(seeded):
+    """Skipping an occurrence that was previously RESCHEDULED must cancel the
+    job already materialized on its moved date — otherwise the 'skipped' visit
+    stays live and a cleaner is still dispatched to it (audit R3)."""
+    db, c, p = seeded
+    today_dow = date.today().weekday()
+    sched = _make_schedule(db, c, p, days_of_week=[today_dow])
+    d0 = date.today() + timedelta(days=7)
+    d1 = date.today() + timedelta(days=9)
+
+    # Reschedule d0 -> d1 (materializes a live job on d1).
+    r = api.post(f"/api/recurring/{sched.id}/reschedule", json={
+        "exception_date": d0.isoformat(), "rescheduled_date": d1.isoformat(),
+    })
+    assert r.status_code == 201, r.text
+    moved_job_id = r.json()["job_id"]
+    assert db.query(Job).get(moved_job_id).status == "scheduled"
+
+    # Now skip d0. The moved job on d1 must be cancelled too.
+    r = api.post(f"/api/recurring/{sched.id}/skip", json={"exception_date": d0.isoformat()})
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    assert db.query(Job).get(moved_job_id).status == "cancelled"
+
+
+def test_recurring_this_reschedule_dispatches_connecteam_inline(seeded, monkeypatch):
+    """Rescheduling a single recurring occurrence pushes the moved visit to
+    Connecteam inline instead of leaving it shiftless until the 30-min reconcile
+    tick (the sync gap). The cleaner's shift follows the move immediately."""
+    import integrations.connecteam_auto as ca
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    created = []
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **kw: (created.append(kw), {"id": f"shift_{len(created)}"})[1])
+    monkeypatch.setattr(ca, "create_open_shift_sync", lambda **kw: {"id": "open_1"})
+    monkeypatch.setattr(ca, "delete_shift_sync", lambda sid: None)
+
+    db, c, p = seeded
+    sched = _make_schedule(db, c, p)  # weekly, cleaner_ids=["c1"]
+    d0 = date.today() + timedelta(days=7)
+    d1 = date.today() + timedelta(days=9)
+    r = api.post(f"/api/recurring/{sched.id}/reschedule", json={
+        "exception_date": d0.isoformat(), "rescheduled_date": d1.isoformat(),
+    })
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    moved = db.query(Job).get(r.json()["job_id"])
+    assert moved.connecteam_shift_ids, "moved occurrence should be dispatched inline"
+    assert created, "create_shift_sync should have been called for the moved visit"
+
+
+def test_recurring_generation_enqueues_outbox_when_enabled(seeded, monkeypatch):
+    """With the outbox flag on, generating recurring occurrences enqueues sync
+    intents (rollback-safe, deduplicated) instead of dispatching inline — the
+    drain performs the Connecteam call exactly once."""
+    monkeypatch.setenv("CONNECTEAM_OUTBOX_ENABLED", "1")
+    import integrations.connecteam_auto as ca
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "create_shift_sync",
+                        lambda **kw: pytest.fail("outbox mode must not dispatch inline"))
+    monkeypatch.setattr(ca, "create_open_shift_sync",
+                        lambda **kw: pytest.fail("outbox mode must not dispatch inline"))
+    from database.models import ConnecteamOutbox
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(c, p))
+    assert r.status_code == 201, r.text
+    jobs = db.query(Job).filter(Job.recurring_schedule_id == r.json()["id"]).all()
+    assert jobs, "expected generated occurrences"
+    outbox = db.query(ConnecteamOutbox).filter(
+        ConnecteamOutbox.job_id.in_([j.id for j in jobs])).all()
+    assert len(outbox) == len(jobs)
+    assert all(o.op == "dispatch" and o.status == "pending" for o in outbox)
+
+
+def test_create_accepts_non_zero_padded_time(seeded):
+    """A non-zero-padded '9:30' stores a real time, not NULL — the recurring
+    router's parser used to reject it (time.fromisoformat) while the scheduling
+    router accepted it, so the same payload diverged (audit Ru3)."""
+    from datetime import time as _time
+    db, c, p = seeded
+    r = api.post("/api/recurring", json=_base_create_payload(
+        c, p, start_time="9:30", end_time="11:5"))
+    assert r.status_code == 201, r.text
+    row = db.query(RecurringSchedule).get(r.json()["id"])
+    assert row.start_time == _time(9, 30)
+    assert row.end_time == _time(11, 5)
+
+
 def test_update_ends_after_count_rejects_negative(seeded):
     db, c, p = seeded
     sched = _make_schedule(db, c, p)

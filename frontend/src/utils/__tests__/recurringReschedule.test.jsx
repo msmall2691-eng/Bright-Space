@@ -18,15 +18,18 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('../../api', () => ({ post: vi.fn(), patch: vi.fn() }))
+vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }))
 
-import { post, patch } from '../../api'
-import { rescheduleRecurringVisit, isoDateToBackendDow } from '../recurringReschedule'
+import { get, post, patch } from '../../api'
+import { rescheduleRecurringVisit, isoDateToBackendDow, shiftSeriesWeekday } from '../recurringReschedule'
 
 beforeEach(() => {
   vi.clearAllMocks()
   post.mockResolvedValue({})
   patch.mockResolvedValue({})
+  // Default: series with no recorded day set → single-day fallback, matching
+  // the pre-existing assertions. Multi-day tests override this per case.
+  get.mockResolvedValue({})
 })
 
 describe('isoDateToBackendDow', () => {
@@ -89,6 +92,50 @@ describe('rescheduleRecurringVisit — "future" split_date anchoring', () => {
     const payload = post.mock.calls[0][1]
     expect(payload.day_of_month).toBeUndefined()
     expect(payload.days_of_week).toBeUndefined()
+  })
+})
+
+describe('shiftSeriesWeekday — keep the other days of a multi-day series', () => {
+  it('replaces only the dragged weekday, preserving the rest', () => {
+    // Mon/Wed/Fri (0,2,4): move the Wed (2) leg to Thu (3) → Mon/Thu/Fri.
+    expect(shiftSeriesWeekday([0, 2, 4], 2, 3)).toEqual([0, 3, 4])
+  })
+  it('collapses to the target for a single-day series', () => {
+    expect(shiftSeriesWeekday([2], 2, 3)).toEqual([3])
+  })
+  it('falls back to the target when the series has no day filter', () => {
+    expect(shiftSeriesWeekday([], 2, 3)).toEqual([3])
+    expect(shiftSeriesWeekday(null, 2, 3)).toEqual([3])
+  })
+  it('merges when dragged onto a day the series already has', () => {
+    // Mon/Wed (0,2): move Wed (2) onto Mon (0) → just Mon.
+    expect(shiftSeriesWeekday([0, 2], 2, 0)).toEqual([0])
+  })
+})
+
+describe('rescheduleRecurringVisit — multi-day series is not collapsed', () => {
+  it('shifts only the dragged weekday and keeps the others on a "future" split', async () => {
+    get.mockResolvedValue({ days_of_week: [0, 2, 4] }) // Mon/Wed/Fri
+    // Drag the Wednesday (2026-01-07) leg to Thursday (2026-01-08).
+    await rescheduleRecurringVisit('future', {
+      schedId: 42, originalDate: '2026-01-07', newDate: '2026-01-08',
+      newStart: '09:00', newEnd: '11:00', cleanerIds: ['a'],
+    })
+    expect(get).toHaveBeenCalledWith('/api/recurring/42')
+    expect(post).toHaveBeenCalledWith('/api/recurring/42/split', expect.objectContaining({
+      days_of_week: [0, 3, 4], // Mon/Thu/Fri — Wed replaced by Thu, others kept
+    }))
+  })
+
+  it('shifts only the dragged weekday on an "all" resync', async () => {
+    get.mockResolvedValue({ days_of_week: [0, 2, 4] })
+    await rescheduleRecurringVisit('all', {
+      schedId: 42, originalDate: '2026-01-07', newDate: '2026-01-08',
+      newStart: '09:00', newEnd: '11:00', cleanerIds: ['a'],
+    })
+    expect(patch).toHaveBeenCalledWith('/api/recurring/42', expect.objectContaining({
+      days_of_week: [0, 3, 4], resync: true,
+    }))
   })
 })
 

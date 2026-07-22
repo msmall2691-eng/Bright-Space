@@ -163,6 +163,12 @@ def recurring_jobs_tick() -> dict:
                 total_jobs += created
                 per_schedule.append({"schedule_id": s.id, "jobs_created": created})
             except Exception as e:
+                # Roll back the shared session before moving on. Without this, a
+                # failed flush leaves the transaction aborted (Postgres:
+                # InFailedSqlTransaction) and every subsequent schedule's
+                # generate_jobs would fail on its first query — one bad schedule
+                # would starve visit generation for all the others in this tick.
+                db.rollback()
                 log.warning(f"Recurring generate failed for schedule {s.id}: {e}")
                 per_schedule.append({"schedule_id": s.id, "error": str(e)})
         log.info(f"Recurring auto-generate: {len(schedules)} schedules, {total_jobs} jobs created")
@@ -354,6 +360,30 @@ def schedule_audit_tick() -> dict:
         db.close()
 
 
+def connecteam_outbox_drain_tick() -> dict:
+    """Drain the Connecteam sync outbox frequently so enqueued shift syncs reach
+    Connecteam near-real-time instead of waiting for the 30-minute reconcile.
+
+    Cheap no-op when the outbox is off (nothing is ever enqueued) or empty —
+    one indexed `status='pending'` lookup. Best-effort; per-row failures are
+    retried with backoff inside drain_outbox."""
+    db = SessionLocal()
+    try:
+        from integrations.connecteam import is_configured
+        if not is_configured():
+            return {"skipped": "not_configured"}
+        from integrations.connecteam_outbox import drain_outbox
+        result = drain_outbox(db)
+        if result.get("processed") or result.get("failed"):
+            log.info(f"Connecteam outbox: {result['processed']} done, {result['failed']} failed")
+        return result
+    except Exception as e:
+        log.error(f"Connecteam outbox drain failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def sync_reconcile_tick() -> dict:
     """Self-healing push reconcile for Google Calendar + Connecteam.
 
@@ -369,6 +399,7 @@ def sync_reconcile_tick() -> dict:
     already synced, cancelled/completed, or in the past.
     """
     from datetime import timedelta
+    from utils.dates import coerce_date
 
     db = SessionLocal()
     try:
@@ -408,28 +439,66 @@ def sync_reconcile_tick() -> dict:
             log.warning(f"Sync reconcile: GCal push failed: {e}")
             result["gcal"] = {"error": str(e)}
 
-        # 2) Connecteam: dispatch upcoming assigned jobs that have no shifts yet.
+        # 2) Connecteam: read-back reconcile, dispatch, then drift repair.
         #    auto_dispatch_job() no-ops safely on anything that shouldn't sync.
         try:
             from integrations.connecteam import is_configured as _ct_ok
             if _ct_ok():
-                from integrations.connecteam_auto import auto_dispatch_job, reconcile_connecteam_drift
+                from integrations.connecteam_auto import (
+                    auto_dispatch_job, reconcile_connecteam_drift, read_back_reconcile,
+                )
                 from database.models import Job
-                start = business_today().isoformat()
-                end = (business_today() + timedelta(days=30)).isoformat()
-                jobs = db.query(Job).filter(
-                    Job.status.in_(["scheduled", "in_progress"]),
-                    Job.scheduled_date >= start,
-                    Job.scheduled_date <= end,
-                ).all()
-                # Manual dispatch mode: never auto-push assigned jobs from the
-                # background tick. Drift repair (already-dispatched shifts) below
-                # still runs.
                 from modules.settings.router import connecteam_auto_dispatch_enabled
                 _auto_ok = connecteam_auto_dispatch_enabled(db)
-                dispatched, errors = 0, 0
-                for job in jobs:
-                    if job.connecteam_shift_ids or not job.cleaner_ids or not _auto_ok:
+                # One window (-7 .. +30 days) feeds read-back and drift; the
+                # dispatch loop takes the upcoming active subset. This tick runs
+                # across ALL orgs (no user context), so the read-back's
+                # unrecognized list is a true account-wide orphan report.
+                drift_start = (business_today() - timedelta(days=7)).isoformat()
+                end = (business_today() + timedelta(days=30)).isoformat()
+                today = business_today()
+                window_jobs = db.query(Job).filter(
+                    Job.scheduled_date >= drift_start,
+                    Job.scheduled_date <= end,
+                ).all()
+                errors = 0
+
+                # 2-pre) DRAIN the transactional outbox first so queued sync
+                # intents are applied before we read back. No-op when the outbox
+                # is off or empty.
+                try:
+                    from integrations.connecteam_outbox import drain_outbox
+                    drained = drain_outbox(db)
+                    if drained.get("processed") or drained.get("failed"):
+                        log.info(f"Sync reconcile: outbox drained {drained['processed']} done, {drained['failed']} failed")
+                    errors += len(drained.get("errors") or [])
+                except Exception as e:
+                    log.warning(f"Sync reconcile: Connecteam outbox drain failed: {e}")
+
+                # 2a) READ-BACK FIRST — reconcile against Connecteam's real
+                # shifts so a shift deleted in the Connecteam app is repaired,
+                # before we create anything (which would otherwise risk a dup).
+                try:
+                    from integrations.connecteam import get_scheduled_shifts_sync
+                    actual_shifts = get_scheduled_shifts_sync(drift_start, end)
+                    rb = read_back_reconcile(db, window_jobs, actual_shifts,
+                                             auto_dispatch_on=_auto_ok)
+                    errors += len(rb["errors"])
+                    if rb["repaired"]:
+                        log.info(f"Sync reconcile: recreated {rb['repaired']} vanished Connecteam shift(s)")
+                    if rb["unrecognized_count"]:
+                        log.info(f"Sync reconcile: {rb['unrecognized_count']} unrecognized Connecteam shift(s) (report-only)")
+                except Exception as e:
+                    log.warning(f"Sync reconcile: Connecteam read-back failed: {e}")
+
+                # 2b) Dispatch upcoming assigned jobs with no shifts. Manual
+                # mode: never auto-push from the background tick.
+                dispatched = 0
+                for job in window_jobs:
+                    jd = coerce_date(job.scheduled_date)
+                    if (job.status not in ("scheduled", "in_progress")
+                            or jd is None or jd < today
+                            or job.connecteam_shift_ids or not job.cleaner_ids or not _auto_ok):
                         continue
                     st = auto_dispatch_job(db, job, commit=False)
                     if st.get("dispatched"):
@@ -439,29 +508,18 @@ def sync_reconcile_tick() -> dict:
                 db.commit()
                 if dispatched:
                     log.info(f"Sync reconcile: dispatched {dispatched} job(s) to Connecteam")
-                if errors:
-                    log.warning(f"Sync reconcile: {errors} Connecteam dispatch error(s)")
 
-                # 2b) Drift repair — jobs cancelled/completed but still
-                # carrying shift ids, or whose schedule moved since the
-                # shift was pushed (audit #2 + #4). Widened window (-7 days)
-                # so a job cancelled this week is still caught once it's
-                # now in the past.
-                drift_start = (business_today() - timedelta(days=7)).isoformat()
-                drift_jobs = db.query(Job).filter(
-                    Job.scheduled_date >= drift_start,
-                    Job.scheduled_date <= end,
-                ).all()
-                drift = reconcile_connecteam_drift(db, drift_jobs)
+                # 2c) Drift repair — jobs cancelled/completed but still carrying
+                # shift ids, or whose schedule moved since the shift was pushed.
+                drift = reconcile_connecteam_drift(db, window_jobs)
                 if drift["resynced"]:
                     log.info(f"Sync reconcile: retimed {drift['resynced']} drifted Connecteam shift(s)")
                 if drift["removed"]:
                     log.info(f"Sync reconcile: removed {drift['removed']} stale Connecteam shift(s)")
-                if drift["errors"]:
-                    log.warning(f"Sync reconcile: {len(drift['errors'])} Connecteam drift-repair error(s)")
+                errors += len(drift["errors"])
 
                 result["connecteam"] = {
-                    "dispatched": dispatched, "errors": errors + len(drift["errors"]),
+                    "dispatched": dispatched, "errors": errors,
                     "resynced": drift["resynced"], "removed": drift["removed"],
                 }
             else:
@@ -700,6 +758,21 @@ def start_scheduler():
         log.info(f"Sync reconcile enabled (interval: {reconcile_minutes} min)")
     else:
         log.info("Sync reconcile disabled via SYNC_RECONCILE_ENABLED=0")
+
+    # Connecteam outbox drain — frequent, cheap, so enqueued shift syncs reach
+    # Connecteam near-real-time (no-op when the outbox setting is off or the
+    # queue is empty). Independent of SYNC_RECONCILE_ENABLED so the durable path
+    # drains even if the heavier reconcile is turned down.
+    if env_flag("CONNECTEAM_OUTBOX_DRAIN_ENABLED", True):
+        drain_minutes = env_int("CONNECTEAM_OUTBOX_DRAIN_INTERVAL_MINUTES", 2)
+        _scheduler.add_job(
+            connecteam_outbox_drain_tick,
+            IntervalTrigger(minutes=drain_minutes),
+            id="connecteam_outbox_drain",
+            name="Connecteam outbox drain",
+            replace_existing=True,
+        )
+        log.info(f"Connecteam outbox drain enabled (interval: {drain_minutes} min)")
 
     # Frequent read-only schedule audit — flags duplicate jobs + orphaned
     # Connecteam shifts so they surface early. Cheap; runs a few times a day.

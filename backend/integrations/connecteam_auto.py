@@ -289,3 +289,91 @@ def reconcile_connecteam_drift(db, jobs) -> dict:
         logger.warning("Connecteam drift-reconcile commit failed: %s", e)
         db.rollback()
     return {"resynced": resynced, "removed": removed, "errors": errors}
+
+
+def read_back_reconcile(db, jobs, shifts, *, auto_dispatch_on=True, dry_run=False) -> dict:
+    """Reconcile our record against Connecteam's ACTUAL shifts (audit follow-up).
+
+    Drift detection only ever compares a job to our OWN snapshot, so it can't
+    see a shift edited or deleted directly in the Connecteam app — the schedule
+    then shows "In Connecteam" for a shift that's gone. This pass reads the real
+    shifts (``shifts``, pre-fetched via get_scheduled_shifts_sync so this stays
+    hermetically testable) and reconciles:
+
+    - **Missing**: an active job's recorded shift id(s) are absent from
+      Connecteam → the draft was deleted out-of-band. Our record is lying, so
+      clear it; and in auto-dispatch mode re-create a fresh draft (in manual
+      mode leave it for the office, who may have deleted it deliberately).
+    - **Partial**: a multi-shift job lost SOME but not all of its shifts —
+      ambiguous, so flag for review rather than mangling the survivors.
+    - **Unrecognized**: a Connecteam shift whose id we don't track. Could be a
+      manually-created shift or an orphan we lost track of — always REPORTED,
+      never auto-deleted (we can't safely tell them apart; our shifts carry no
+      job-id tag). Note: shifts aren't org-partitioned in Connecteam's single
+      account, so when ``jobs`` is org-scoped this list also includes other
+      tenants' shifts — callers should label it accordingly.
+
+    ``dry_run`` computes the diff and mutates nothing, for a preview.
+    """
+    actual_ids = {str(s.get("id")) for s in shifts if s.get("id")}
+    # Snapshot the ids we track BEFORE any mutation, for the unrecognized report.
+    tracked_ids = {str(sid) for j in jobs for sid in (j.connecteam_shift_ids or [])}
+
+    missing, partial, errors = [], [], []
+    repaired = 0
+    for job in jobs:
+        ids = [str(sid) for sid in (job.connecteam_shift_ids or [])]
+        if not ids:
+            continue
+        gone = [sid for sid in ids if sid not in actual_ids]
+        if not gone:
+            continue
+        if job.status in ("cancelled", "completed"):
+            # A terminal job's shift is already gone from Connecteam — just drop
+            # our stale record (drift reconcile pulls any that still exist).
+            if not dry_run:
+                job.connecteam_shift_ids = [sid for sid in ids if sid in actual_ids]
+                job.dispatched = bool(job.connecteam_shift_ids)
+            continue
+        if len(gone) == len(ids):
+            missing.append({"job_id": job.id, "title": job.title,
+                            "date": str(job.scheduled_date) if job.scheduled_date else None,
+                            "missing_shift_ids": gone})
+            if dry_run:
+                continue
+            job.connecteam_shift_ids = []
+            job.connecteam_synced_schedule = None
+            job.dispatched = False
+            if auto_dispatch_on:
+                st = auto_dispatch_job(db, job, commit=False)
+                errors.extend(st.get("errors") or [])
+            repaired += 1
+        else:
+            partial.append({"job_id": job.id, "title": job.title,
+                            "present_shift_ids": [s for s in ids if s in actual_ids],
+                            "missing_shift_ids": gone})
+
+    unrecognized = [
+        {"id": str(s.get("id")), "title": s.get("title"),
+         "start": s.get("startTimestamp"), "is_open": s.get("isOpenShift"),
+         "is_published": s.get("isPublished")}
+        for s in shifts if str(s.get("id")) not in tracked_ids
+    ]
+
+    if not dry_run:
+        try:
+            db.commit()
+        except Exception as e:  # pragma: no cover
+            logger.warning("Connecteam read-back commit failed: %s", e)
+            db.rollback()
+
+    return {
+        "dry_run": dry_run,
+        "actual_shifts": len(shifts),
+        "missing": missing,           # jobs whose every recorded shift vanished
+        "repaired": repaired,         # of those, how many were cleared/re-dispatched
+        "partial": partial,           # some-but-not-all lost — flagged for review
+        "unrecognized": unrecognized[:100],  # capped sample; report-only
+        "unrecognized_count": len(unrecognized),
+        "errors": errors,
+    }
