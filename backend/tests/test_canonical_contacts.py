@@ -78,18 +78,29 @@ def test_add_contact_helpers_are_idempotent_and_first_is_primary(db):
         _cleanup(db, c.id)
 
 
-def test_intake_populates_canonical_contacts_and_dedupes_returning_customer(db):
+def test_convert_populates_canonical_contacts_and_dedupes_returning_customer(db):
+    """Inbox-only: intake creates no client, so the canonical contact rows and
+    returning-customer dedup are established at CONVERSION. Converting a request
+    populates contact_emails/contact_phones; a later request from the same
+    person then resolves to the SAME client instead of spawning a duplicate."""
+    from modules.intake.router import _resolve_client_for_intake
+
     email = f"return-{uuid.uuid4().hex[:8]}@example.com"
-    # First visit creates the client + canonical contact rows.
     r1 = upsert_lead(db, build_intake(name="Return Cust", email=email, phone="2075553333",
                                       service_key="residential"))
-    cid = r1["client_id"]
+    # Inbox-only: no client yet.
+    assert r1["client_id"] is None
+    intake1 = db.query(LeadIntake).filter(LeadIntake.id == r1["intake_id"]).one()
+    client, created = _resolve_client_for_intake(db, intake1, org_id=1)
+    db.commit()
+    cid = client.id
     try:
+        assert created is True
         assert db.query(ContactEmail).filter(ContactEmail.client_id == cid,
                                              ContactEmail.email.ilike(email)).first()
         assert db.query(ContactPhone).filter(ContactPhone.client_id == cid).first()
-        # A later, separate lead (outside the dedup window) by the same email must
-        # land on the SAME client — not a new one.
+        # A later, separate request by the same email resolves to the SAME
+        # client — find_client_by_contact sees the canonical contact rows.
         found = find_client_by_contact(db, email=email)
         assert found.id == cid
     finally:

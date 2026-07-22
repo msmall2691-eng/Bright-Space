@@ -68,17 +68,13 @@ def test_same_name_address_different_contact_merges():
         assert r2["deduped"] is True, "second submission should have merged, not created a new lead"
         assert r2["intake_id"] == r1["intake_id"], "both submissions should resolve to one lead row"
 
-        # The alternate contact is preserved on the audit note, not dropped.
+        # The alternate contact is preserved on the request's own audit note,
+        # not dropped. Requests are inbox-only (no Client is created on
+        # submit), so the trail lives on the LeadIntake — exactly where the
+        # triaging operator reads it — rather than on a client timeline.
         lead = db.query(LeadIntake).filter(LeadIntake.id == r1["intake_id"]).first()
         assert "Auto-merged" in (lead.internal_notes or "")
         assert email_b in (lead.internal_notes or "") or "2078889999" in (lead.internal_notes or "")
-
-        # And a timeline Activity records the system merge.
-        acts = db.query(Activity).filter(
-            Activity.client_id == lead.client_id,
-            Activity.activity_type == "lead_deduped",
-        ).all()
-        assert len(acts) >= 1
     finally:
         _cleanup(email_a, email_b)
 
@@ -98,6 +94,28 @@ def test_different_address_does_not_merge():
             service_key="str", address="3949 Charleston Street", city="Portland", state="ME",
         ))
         assert r2["intake_id"] != r1["intake_id"], "different addresses must not auto-merge"
+    finally:
+        _cleanup(email_a, email_b)
+
+
+def test_same_street_different_city_does_not_merge():
+    """Same name + same STREET line but DIFFERENT city are two genuinely
+    different properties (123 Main St, Portland vs 123 Main St, Bath) and must
+    NOT collapse — the finder keys on the full address, not the street alone."""
+    email_a, email_b = _uniq_email(), _uniq_email()
+    try:
+        db = SessionLocal()
+        r1 = upsert_lead(db, build_intake(
+            name="Two Towns", email=email_a, phone="2075557001",
+            service_key="residential", address="123 Main St", city="Portland",
+            state="ME", zip_code="04101",
+        ))
+        r2 = upsert_lead(db, build_intake(
+            name="Two Towns", email=email_b, phone="2075557002",
+            service_key="residential", address="123 Main St", city="Bath",
+            state="ME", zip_code="04530",
+        ))
+        assert r2["intake_id"] != r1["intake_id"], "same street in two cities must not auto-merge"
     finally:
         _cleanup(email_a, email_b)
 

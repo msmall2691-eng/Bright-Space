@@ -9,7 +9,8 @@ import logging
 from database.db import get_db
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import LeadIntake, Client, Quote
-from modules.intake.normalize import build_intake, upsert_lead
+from modules.intake.normalize import build_intake, upsert_lead, _property_key
+from utils.contacts import find_client_by_contact, add_contact_email, add_contact_phone
 from ratelimit import limiter
 
 router = APIRouter()
@@ -129,6 +130,121 @@ def intake_to_dict(i: LeadIntake, quote=None) -> dict:
     }
 
 
+def _resolve_client_for_intake(db: Session, intake: LeadIntake, org_id: int):
+    """Return ``(client, created)`` for the Client this request should belong
+    to, deduping against the existing book of business — this is the ONE place
+    a request turns into a customer, now that inbound requests are inbox-only
+    and never auto-create a client (see modules.intake.normalize.upsert_lead).
+
+    Resolution order:
+      1. An already-linked client (intake.client_id) — staff set it, trust it.
+      2. An existing client matched on email/phone (find_client_by_contact,
+         which also searches the multi-value contact tables) — reuse it instead
+         of minting a duplicate for a returning customer.
+      3. Otherwise create a fresh 'lead' client stamped with the caller's
+         workspace.
+    The request is linked to the resolved client, and the request's email/phone
+    are recorded in the client's multi-value contact tables so a future request
+    from the same person matches this client instead of spawning a duplicate.
+    ``created`` is True only in case 3.
+    """
+    resolved_org = intake.org_id or resolve_org_id(org_id, db)
+    client = None
+    if intake.client_id:
+        client = db.query(Client).filter(Client.id == intake.client_id).first()
+    if client is None:
+        match = find_client_by_contact(db, email=intake.email, phone=intake.phone)
+        # Only reuse a match in the SAME workspace (or a legacy NULL-org client).
+        # find_client_by_contact scans clients globally; without this guard a
+        # customer who shares an email/phone with another tenant's client would
+        # attach this request to — and then mutate — that foreign workspace's
+        # record (and redirect the user to a client their scoped routes can't
+        # read). A cross-org match falls through and creates a client in the
+        # caller's own workspace instead.
+        if match is not None and getattr(match, "org_id", None) in (None, resolved_org):
+            client = match
+    created = False
+    if client is None:
+        client = Client(
+            name=intake.name, email=intake.email, phone=intake.phone,
+            address=intake.address, city=intake.city, state=intake.state,
+            zip_code=intake.zip_code, status="lead", source=intake.source,
+            org_id=resolved_org,
+        )
+        db.add(client)
+        db.flush()
+        created = True
+    # Record this request's contact points on the (possibly pre-existing)
+    # client so the next request from the same person dedups to it.
+    add_contact_email(db, client, intake.email, source=intake.source)
+    add_contact_phone(db, client, intake.phone, source=intake.source)
+    intake.client_id = client.id
+    return client, created
+
+
+_NO_ADDRESS = "(no address on file)"
+
+
+def _resolve_property_for_intake(db: Session, client: Client, intake: LeadIntake,
+                                 create_if_no_address: bool = True):
+    """Attach the request's address to the client as a Property, reusing an
+    existing one at the same normalized address (street+city+state+zip) instead
+    of creating a duplicate. Back-fills size onto a reused property.
+
+    When the request has no usable address:
+      * with ``create_if_no_address=False`` (convert-to-client) → return None,
+        so a contact-only lead doesn't get a fake-address property; and
+      * with ``create_if_no_address=True`` (convert-to-quote, which needs a
+        property for the quote/job) → reuse the client's existing placeholder
+        property if one exists, else create a single "(no address on file)"
+        one — so repeated no-address conversions don't each mint a new fake.
+    """
+    from database.models import Property
+
+    has_address = bool((intake.address or "").strip())
+    existing = db.query(Property).filter(Property.client_id == client.id).all()
+
+    if has_address:
+        target = _property_key(intake.address, intake.city, intake.state, intake.zip_code)
+        prop = next(
+            (p for p in existing
+             if _property_key(p.address, p.city, p.state, p.zip_code) == target),
+            None,
+        )
+    else:
+        if not create_if_no_address:
+            return None
+        # Reuse the client's existing placeholder property rather than adding
+        # another synthetic-address row on every contact-only conversion.
+        prop = next(
+            (p for p in existing if not (p.address or "").strip() or p.address == _NO_ADDRESS),
+            None,
+        )
+
+    if prop:
+        if intake.bedrooms and not prop.bedrooms:
+            prop.bedrooms = intake.bedrooms
+        if intake.bathrooms and not prop.bathrooms:
+            prop.bathrooms = intake.bathrooms
+        if intake.square_footage and not prop.square_footage:
+            prop.square_footage = intake.square_footage
+        return prop
+
+    prop = Property(
+        client_id=client.id,
+        org_id=getattr(client, "org_id", None),
+        name=intake.property_name or intake.address or f"{intake.name}'s property",
+        address=intake.address if has_address else _NO_ADDRESS,
+        city=intake.city, state=intake.state, zip_code=intake.zip_code,
+        property_type=intake.service_type or "residential",
+        bedrooms=intake.bedrooms, bathrooms=intake.bathrooms,
+        square_footage=intake.square_footage,
+    )
+    db.add(prop)
+    db.flush()
+    return prop
+
+
 @router.post("/submit", status_code=201)  # PUBLIC: leads from maineclean.co contact form
 @limiter.limit("30/hour")
 def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(get_db)):
@@ -210,9 +326,10 @@ def create_intake(data: ManualIntakeCreate, db: Session = Depends(get_db), org_i
     """Staff manually adds a lead (the Requests page's "+ New Request" button).
 
     Goes through the same canonical intake path as the public form
-    (build_intake + upsert_lead) so it gets the same dedup, estimate
-    computation, and Opportunity creation — just authenticated, unlimited,
-    and tagged source="manual" instead of "website".
+    (build_intake + upsert_lead) so it gets the same dedup and estimate
+    computation — just authenticated, unlimited, and tagged source="manual"
+    instead of "website". Like a website request it lands as an inbox row and
+    does NOT auto-create a client/property; staff convert it explicitly.
     """
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
@@ -221,7 +338,10 @@ def create_intake(data: ManualIntakeCreate, db: Session = Depends(get_db), org_i
     )
     result = upsert_lead(db, payload)
     intake = db.query(LeadIntake).filter(LeadIntake.id == result["intake_id"]).first()
-    if intake and not intake.org_id:
+    # A manual entry has a known author — stamp it to the caller's workspace
+    # (upsert_lead defaults public rows to the default org; override that here
+    # so a manager in another workspace sees their own manual request).
+    if intake and not result.get("deduped"):
         intake.org_id = resolve_org_id(org_id, db)
         db.commit()
         db.refresh(intake)
@@ -282,6 +402,51 @@ def delete_intake(intake_id: int, db: Session = Depends(get_db), org_id: int = D
 
 
 
+@router.post("/{intake_id}/convert-to-client", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
+def convert_intake_to_client(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Triage a request into a Client without creating a quote (Twenty-style
+    "convert lead → contact"). Reuses an existing client/property when one
+    matches (dedup) instead of minting duplicates, links the request, opens a
+    pipeline deal, and marks the request reviewed.
+
+    Idempotent: converting an already-linked request just returns its client.
+    """
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not intake:
+        raise HTTPException(status_code=404, detail="Intake not found")
+
+    client, created = _resolve_client_for_intake(db, intake, org_id)
+    # A contact-only request (no address) becomes a Client with no property —
+    # property_id comes back null instead of a synthetic "(no address)" row.
+    prop = _resolve_property_for_intake(db, client, intake, create_if_no_address=False)
+    if intake.status in (None, "new"):
+        intake.status = "reviewed"
+
+    # Open (or reuse) the client's active pipeline deal now that staff have
+    # promoted this request to a customer.
+    from utils.opportunity_helper import ensure_opportunity
+    opp = ensure_opportunity(
+        db, client_id=client.id, org_id=client.org_id, stage="new",
+        title=client.name, service_type=intake.service_type,
+        amount=intake.estimate_max or intake.estimate_min,
+    )
+    if opp:
+        intake.opportunity_id = opp.id
+
+    db.commit()
+    return {
+        "success": True,
+        "client_id": client.id,
+        "property_id": prop.id if prop else None,
+        "created_client": created,
+        "matched_existing": not created,
+        "intake_id": intake.id,
+    }
+
+
 @router.post("/{intake_id}/convert-to-quote", status_code=201, dependencies=[Depends(require_role("admin", "manager"))])
 def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Convert an intake to a quote with sensible defaults."""
@@ -306,22 +471,11 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
         if existing_quote:
             return _quote_dict(existing_quote)
 
-    client_id = intake.client_id
-    if not client_id:
-        client = Client(
-            name=intake.name,
-            email=intake.email,
-            phone=intake.phone,
-            address=intake.address,
-            city=intake.city,
-            state=intake.state,
-            zip_code=intake.zip_code,
-            status="lead",
-            source=intake.source,
-        )
-        db.add(client)
-        db.flush()
-        client_id = client.id
+    # Resolve (dedup-or-create) the client — inbound requests are inbox-only,
+    # so this is where a request first becomes a customer. Reuses an existing
+    # client matched on email/phone instead of minting a duplicate.
+    client, _ = _resolve_client_for_intake(db, intake, org_id)
+    client_id = client.id
 
     # Skip re-appending components already baked into intake.address (the
     # maineclean.co /book flow POSTs the whole "street, city, ME, zip" string
@@ -332,38 +486,9 @@ def convert_intake_to_quote(intake_id: int, db: Session = Depends(get_db), org_i
     address = combine_address(intake.address, intake.city, intake.state, intake.zip_code)
 
     # Carry the customer's structured request onto a Property so the quote (and
-    # later the job) start from real data instead of re-typing. Reuse an existing
-    # property at the same address; otherwise create one and back-fill size.
-    from database.models import Property
-    prop = None
-    if intake.address:
-        prop = (
-            db.query(Property)
-            .filter(Property.client_id == client_id, Property.address == intake.address)
-            .first()
-        )
-    if prop:
-        if intake.bedrooms and not prop.bedrooms:
-            prop.bedrooms = intake.bedrooms
-        if intake.bathrooms and not prop.bathrooms:
-            prop.bathrooms = intake.bathrooms
-        if intake.square_footage and not prop.square_footage:
-            prop.square_footage = intake.square_footage
-    else:
-        prop = Property(
-            client_id=client_id,
-            name=intake.property_name or intake.address or f"{intake.name}'s property",
-            address=intake.address or address or "(no address on file)",
-            city=intake.city,
-            state=intake.state,
-            zip_code=intake.zip_code,
-            property_type=intake.service_type or "residential",
-            bedrooms=intake.bedrooms,
-            bathrooms=intake.bathrooms,
-            square_footage=intake.square_footage,
-        )
-        db.add(prop)
-        db.flush()
+    # later the job) start from real data instead of re-typing. Reuses an
+    # existing property at the same normalized address; otherwise creates one.
+    prop = _resolve_property_for_intake(db, client, intake)
 
     # Seed the first line item's price from the website "instant quote" estimate
     # (midpoint of the range) so the operator starts from the customer's number
