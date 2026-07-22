@@ -61,6 +61,61 @@ def _send_booking_customer_confirmation(
         logger.warning("[booking] customer confirmation email failed for intake %s: %s", intake_id, e)
 
 
+def _send_booking_customer_sms(data: "BookingSubmit", intake_id: int) -> None:
+    """Text the customer a confirmation as soon as their website booking lands.
+
+    This is a transactional confirmation of the customer's OWN request (not
+    marketing), so it's fine to send without a separate opt-in. Twilio lives
+    only in Bright-Space (maineclean.co has no SMS), so this is the right home
+    for it — same TWILIO_* config the owner SMS path already uses.
+
+    Best-effort and self-contained: a missing phone, unconfigured Twilio, or a
+    Twilio send failure all log and return without raising, so submit_booking's
+    201 never depends on this path (same contract as the customer email above).
+    """
+    to_number = (data.phone or "").strip()
+    if not to_number:
+        logger.info("[booking] customer SMS skipped — no phone on intake=%s", intake_id)
+        return
+    try:
+        from integrations import twilio_client
+        # Mirror the owner-SMS "not configured" detection: without the TWILIO_*
+        # creds send_sms would raise, so short-circuit quietly (info, not
+        # warning) — an unconfigured deploy shouldn't log noise on every booking.
+        if not all([
+            twilio_client._TWILIO_ACCOUNT_SID,
+            twilio_client._TWILIO_AUTH_TOKEN,
+            twilio_client._TWILIO_PHONE_NUMBER,
+        ]):
+            logger.info("[booking] customer SMS skipped — Twilio not configured (intake=%s)", intake_id)
+            return
+        from services.booking_email_service import format_requested_date, service_label
+        first = (data.name or "").strip().split(" ")[0] or "there"
+        svc = service_label(data.serviceType)
+        # STR/commercial and dateless contact-form inquiries legitimately carry
+        # no date — say "your request" instead of pasting a fabricated/empty one.
+        if data.requestedDate:
+            body = (
+                f"Hi {first}, thanks! We got your {svc} request for "
+                f"{format_requested_date(data.requestedDate)}. "
+                f"We'll confirm within 1 business day. — The Maine Cleaning Co."
+            )
+        else:
+            body = (
+                f"Hi {first}, thanks! We got your {svc} request. "
+                f"We'll confirm within 1 business day. — The Maine Cleaning Co."
+            )
+        # Self-service edit/cancel link only when present. Appended after the
+        # one-segment base so a no-manageUrl booking stays a single SMS segment.
+        if data.manageUrl:
+            body += f" Manage/cancel: {data.manageUrl}"
+        # NEVER log `body` — it can carry the capability-token manage URL.
+        twilio_client.send_sms(to=to_number, body=body)
+        logger.info("[booking] customer confirmation SMS sent for intake=%s", intake_id)
+    except Exception as e:
+        logger.warning("[booking] customer confirmation SMS failed for intake %s: %s", intake_id, e)
+
+
 def _owner_notify_setting(db: Session, key: str, env_var: str) -> Optional[str]:
     """Owner-notification destination: the Settings row first (operator can
     edit it in BrightBase without a redeploy), then the env var as the
@@ -223,12 +278,28 @@ class BookingSubmit(BaseModel):
     listingUrl: Optional[str] = None         # Airbnb / VRBO listing link
     turnoverDay: Optional[str] = None        # e.g. "Saturday", "Flexible", "Same-day"
     petsAllowed: Optional[str] = None        # does the rental allow pets (affects hair/effort)
+    # Preferred arrival window the site's /book flow now collects — one of
+    # morning/afternoon/evening/flexible. Stored on custom_fields (same
+    # catch-all) so the operator sees the customer's time preference, and the
+    # convert-to-job modal can pre-fill the crew's start/end from it.
+    arrivalWindow: Optional[str] = None      # "morning" | "afternoon" | "evening" | "flexible"
+    # Up to 3 customer-attached photos of the space, as base64 data-URI
+    # strings ("data:image/jpeg;base64,…"). Inlined on custom_fields so the
+    # Requests card can show thumbnails without a media-storage dependency.
+    # Filtered to valid data:image/ URIs and capped at 3 in submit_booking.
+    photos: Optional[list] = None
     # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
     # (retry / dual-forward from the maineclean.co Express middle layer /
     # user tapped Submit twice) collapses to one Lead. Accept both camel and
     # snake so callers in either style work.
     idempotencyKey: Optional[str] = None
     idempotency_key: Optional[str] = None
+    # Customer self-service edit/cancel link the maineclean.co Express layer
+    # mints and forwards ("https://maineclean.co/booking/manage/<token>"). The
+    # <token> is a capability credential — anyone holding the URL can edit or
+    # cancel the booking — so we thread it into the customer confirmation SMS
+    # but NEVER log the full URL (only the intake id).
+    manageUrl: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -384,6 +455,15 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
         "listing_url":          data.listingUrl,
         "turnover_day":         data.turnoverDay,
         "pets_allowed":         data.petsAllowed,
+        # Arrival window — dropped inside build_intake if empty.
+        "arrival_window":       data.arrivalWindow,
+        # Inline photo data-URIs. Keep only well-formed image data URIs and
+        # cap at 3 so a tampered/oversized payload can't bloat the JSON row —
+        # NEVER log the contents (they can be large + are customer property).
+        "photos": [
+            p for p in (data.photos or [])
+            if isinstance(p, str) and p.startswith("data:image/")
+        ][:3] or None,
     }
 
     payload = build_intake(
@@ -489,6 +569,15 @@ def submit_booking(request: Request, data: BookingSubmit, background_tasks: Back
     except Exception as e:
         logger.warning("booking customer email failed: %s", e)
 
+    # Also text the customer a confirmation with their self-service manage link.
+    # Twilio-only (maineclean.co has no SMS); same best-effort contract — the
+    # helper swallows its own errors, and this guard is a belt-and-suspenders so
+    # the 201 can never depend on the SMS path.
+    try:
+        _send_booking_customer_sms(data, result["intake_id"])
+    except Exception as e:
+        logger.warning("booking customer SMS failed: %s", e)
+
     return BookingResponse(
         success=True,
         bookingId=result["intake_id"],
@@ -580,6 +669,7 @@ class BookingUpdate(BaseModel):
     # maineclean.co update forwarder does the same, but its own DB stores a
     # comma-joined string — accept both shapes so neither side can 422.
     focusAreas: Optional[Union[str, list]] = None
+    arrivalWindow: Optional[str] = None       # morning/afternoon/evening/flexible
     bedrooms: Optional[int] = None
     cancel: Optional[bool] = None
 
@@ -596,6 +686,7 @@ _UPDATE_CUSTOM_FIELDS = (
     ("parkingNotes",        "parking_notes",        "parking notes"),
     ("petsDetail",          "pets_detail",          "pets"),
     ("focusAreas",          "focus_areas",          "focus areas"),
+    ("arrivalWindow",       "arrival_window",       "arrival window"),
 )
 
 

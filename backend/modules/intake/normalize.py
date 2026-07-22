@@ -42,6 +42,16 @@ logger = logging.getLogger(__name__)
 # succession; merge anything from the same person within this window into one lead.
 DEDUP_WINDOW_MINUTES = 5
 
+# Same NAME + same service ADDRESS but DIFFERENT contact info (a customer who
+# filled the form on their phone with one email, then again on a laptop with
+# another) won't match the contact-based dedup above — nothing links them. We
+# still collapse those into one lead, but only inside a wider window: a repeat
+# customer legitimately booking the same address weeks later is a NEW job, not
+# a duplicate, so this must not reach back indefinitely. Matches older than
+# this are surfaced as "possible duplicates" on the Requests page for the
+# operator to merge/archive by hand instead of being auto-merged.
+NAME_ADDR_DEDUP_WINDOW_MINUTES = 24 * 60
+
 # Raw website service keys -> canonical service_type. (Consolidates the two
 # near-identical maps that lived in booking/router.py and intake/router.py.)
 SERVICE_TYPE_MAP = {
@@ -319,6 +329,48 @@ def _normalize_addr(s: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
+def _normalize_name(s: Optional[str]) -> str:
+    """Loose name key for the name+address dedup — lowercased, whitespace
+    collapsed, punctuation dropped. Deliberately NOT trying to defeat a
+    middle initial ("Lillie" vs "Lillie J"): the ADDRESS is the strong
+    signal here, so the name only has to be in the same ballpark and we
+    require an exact-ish match to avoid collapsing two real housemates."""
+    return re.sub(r"[^a-z0-9 ]", "", (s or "").strip().lower())
+
+
+def _find_recent_name_address_duplicate(db: Session, data: "IntakeData"):
+    """Most recent NON-archived lead with the same normalized name AND full
+    service-address key inside NAME_ADDR_DEDUP_WINDOW_MINUTES, when contact-
+    based dedup found nothing (different/typo'd email+phone on the same
+    request).
+
+    Requires BOTH a name and a street address — name alone is far too weak
+    (two unrelated "John Smith"s), and address alone would merge a landlord's
+    two tenants. Matching uses the FULL _property_key (street+city+state+zip),
+    NOT the street line alone, so "123 Main St, Portland" and "123 Main St,
+    Bath" — two genuinely different properties — are never collapsed.
+    Archived/cancelled leads are excluded so a new request never resurrects a
+    dead one. The window is compared in Python against a small candidate set
+    so we don't depend on DB-specific lower()/trim()."""
+    norm_name = _normalize_name(data.name)
+    if not norm_name or not _normalize_addr(data.address):
+        return None
+    target_key = _property_key(data.address, data.city, data.state, data.zip_code)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=NAME_ADDR_DEDUP_WINDOW_MINUTES)
+    candidates = (
+        db.query(LeadIntake)
+        .filter(LeadIntake.created_at >= cutoff)
+        .filter(LeadIntake.status != "archived")
+        .order_by(LeadIntake.created_at.desc())
+        .all()
+    )
+    for c in candidates:
+        if (_normalize_name(c.name) == norm_name
+                and _property_key(c.address, c.city, c.state, c.zip_code) == target_key):
+            return c
+    return None
+
+
 def _property_key(address, city, state, zip_code) -> tuple:
     """Normalized (address, city, state, zip) match key for property dedup.
     Comparing on the tuple — not the street line alone — is what stops a
@@ -456,7 +508,15 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
     # key before either side has committed) — see _lock_contact_for_upsert.
     _lock_contact_for_upsert(db, data.email, data.phone)
 
+    # Contact-based match first (email/phone within 5 min); if that misses,
+    # fall back to same-name+same-address within a wider window (the customer
+    # who resubmitted with a different email). name_addr_merge flags the
+    # latter so we can record WHY two different-contact rows collapsed.
     recent = _find_recent_duplicate(db, data.email, data.phone)
+    name_addr_merge = False
+    if not recent:
+        recent = _find_recent_name_address_duplicate(db, data)
+        name_addr_merge = recent is not None
     if recent:
         changed = False
         for f in _MERGE_FIELDS:
@@ -479,6 +539,35 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
             if merged != (recent.custom_fields or {}):
                 recent.custom_fields = merged
                 changed = True
+        # Name+address merge: the two rows have DIFFERENT contact info by
+        # definition, so preserve both. Back-fill any contact field the
+        # original was missing, and when the new submission carries a
+        # genuinely different email/phone, keep the operator's record of it in
+        # an audit note on the request itself (internal_notes) instead of
+        # dropping it. Requests are inbox-only (see this module's header — no
+        # Client is created on submit), so the trail lives on the LeadIntake,
+        # which is exactly where a triaging operator reads it.
+        if name_addr_merge:
+            alt = []
+            if data.email:
+                if not recent.email:
+                    recent.email = data.email
+                    changed = True
+                elif recent.email.strip().lower() != data.email.strip().lower():
+                    alt.append(f"alt email: {data.email}")
+            if data.phone:
+                if not recent.phone:
+                    recent.phone = data.phone
+                    changed = True
+                elif recent.phone != data.phone:
+                    alt.append(f"alt phone: {data.phone}")
+            stamp = datetime.now(timezone.utc).strftime("%b %d")
+            trail = f"[Auto-merged {stamp}] Duplicate submission (same name + address)."
+            if alt:
+                trail += " " + "; ".join(alt) + "."
+            recent.internal_notes = ((recent.internal_notes or "").rstrip() + "\n" + trail).strip()
+            changed = True
+
         if changed:
             db.commit()
             db.refresh(recent)

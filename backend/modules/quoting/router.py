@@ -185,6 +185,9 @@ def _intake_summary(intake) -> Optional[dict]:
         "estimate_max": intake.estimate_max,
         "message": intake.message,
         "source": intake.source,
+        # Customer's preferred arrival window (custom_fields.arrival_window) so
+        # the convert-to-job modal can pre-fill the crew's start/end from it.
+        "arrival_window": (getattr(intake, "custom_fields", None) or {}).get("arrival_window"),
         "created_at": _iso(intake.created_at),
     }
 

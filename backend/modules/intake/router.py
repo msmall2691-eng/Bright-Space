@@ -42,6 +42,11 @@ class IntakeSubmit(BaseModel):
     message: Optional[str] = None
     preferred_date: Optional[str] = None
     source: Optional[str] = "website"
+    # Up to 3 customer-attached photos of the space, as base64 data-URI
+    # strings ("data:image/jpeg;base64,…"). Stored inline on custom_fields
+    # (filtered + capped in submit_intake) so the Requests card can show
+    # thumbnails without a media-storage dependency. Matches booking/submit.
+    photos: Optional[list] = None
     # Client-supplied UUID for cross-endpoint dedup. Same key on two POSTs
     # (retry / dual-forward / user tapped Submit twice) = one Lead row.
     # Accept both camel and snake so callers in either style work — the
@@ -250,6 +255,13 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
     that also hits /booking/submit or /webhook within 5 minutes merges into one
     lead instead of creating duplicates.
     """
+    # Inline photo data-URIs → custom_fields.photos. Keep only well-formed
+    # image data URIs and cap at 3 so a tampered/oversized payload can't bloat
+    # the row — and NEVER log the contents (large + customer property).
+    photos = [
+        p for p in (data.photos or [])
+        if isinstance(p, str) and p.startswith("data:image/")
+    ][:3] or None
     payload = build_intake(
         name=data.name, email=data.email, phone=data.phone, address=data.address,
         city=data.city, state=data.state, zip_code=data.zip_code,
@@ -260,6 +272,7 @@ def submit_intake(request: Request, data: IntakeSubmit, db: Session = Depends(ge
         check_out=data.check_out, estimate_min=data.estimate_min,
         estimate_max=data.estimate_max, property_name=data.property_name,
         message=data.message, preferred_date=data.preferred_date, source=data.source,
+        custom_fields={"photos": photos} if photos else None,
         idempotency_key=data.idempotency_key or data.idempotencyKey,
     )
     return upsert_lead(db, payload)

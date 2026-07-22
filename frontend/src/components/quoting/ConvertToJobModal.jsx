@@ -38,6 +38,23 @@ const _friendlyDate = (iso) => {
   })
 }
 
+// The customer's preferred arrival window (LeadIntake.custom_fields
+// .arrival_window, forwarded from maineclean.co /book) maps to a default
+// crew start/end so the operator doesn't hand-type one that contradicts what
+// the customer asked for. "flexible" (and anything unrecognized) keeps the
+// existing 09:00–12:00 default, so `times` is null for it.
+const ARRIVAL_WINDOW_TIMES = {
+  morning: { start: '09:00', end: '12:00' },
+  afternoon: { start: '12:00', end: '16:00' },
+  evening: { start: '16:00', end: '19:00' },
+}
+const ARRIVAL_WINDOW_LABELS = {
+  morning: 'Morning (8am–12pm)',
+  afternoon: 'Afternoon (12–4pm)',
+  evening: 'Evening (4–7pm)',
+  flexible: 'Flexible',
+}
+
 // Mirrors JobEditModal's normalizer so a Connecteam roster (which returns
 // { userId, firstName, lastName, displayName }) shows up the same as a
 // manual roster ({ id, name }) — the previous version dropped every
@@ -64,6 +81,9 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
   // .requested_date), "YYYY-MM-DD" or null. Kept separate from `date` so the
   // hint line survives the operator editing the field.
   const [requestedDate, setRequestedDate] = useState(null)
+  // The arrival window the customer picked on the original request, kept for
+  // the hint line below (and used to seed start/end above).
+  const [arrivalWindow, setArrivalWindow] = useState(null)
 
   // Default the schedule to the customer's requested date instead of blindly
   // "today" — before this, converting an accepted quote silently scheduled
@@ -72,25 +92,38 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
   // fall back to fetching the quote detail, which embeds _intake_summary.
   useEffect(() => {
     let alive = true
-    const apply = (raw) => {
-      if (!alive) return
-      const iso = _parseRequestedISO(raw)
-      if (!iso) return
-      setRequestedDate(iso)
-      // Only default to it when it's today-or-future — a past request date
-      // would fail the backend's past-date guard. The hint below still shows
-      // it so the operator sees the (missed) ask.
-      if (iso >= _todayISO()) setDate(iso)
+    const apply = (intake) => {
+      if (!alive || !intake) return
+      const iso = _parseRequestedISO(intake.requested_date)
+      if (iso) {
+        setRequestedDate(iso)
+        // Only default to it when it's today-or-future — a past request date
+        // would fail the backend's past-date guard. The hint below still shows
+        // it so the operator sees the (missed) ask.
+        if (iso >= _todayISO()) setDate(iso)
+      }
+      // Pre-fill the crew window from the customer's arrival preference. The
+      // summary exposes it as `arrival_window`; tolerate a raw custom_fields
+      // shape too. "flexible"/unknown keeps the 09:00–12:00 default.
+      const win = intake.arrival_window || intake.custom_fields?.arrival_window || null
+      if (win) {
+        setArrivalWindow(win)
+        const times = ARRIVAL_WINDOW_TIMES[win]
+        if (times) {
+          setStartTime(times.start)
+          setEndTime(times.end)
+        }
+      }
     }
     if (quote?.intake !== undefined) {
       // Detail-page shape (GET /api/quotes/:id/details) already embeds the
       // intake summary (or an explicit null when the quote has no intake).
-      apply(quote?.intake?.requested_date)
+      apply(quote?.intake)
     } else if (quote?.id) {
       // List-row shape (_quote_dict) has no intake key — /details is the
       // only serialization that includes _intake_summary.
       get(`/api/quotes/${quote.id}/details`)
-        .then(full => apply(full?.intake?.requested_date))
+        .then(full => apply(full?.intake))
         .catch(() => {})  // hint-only enrichment — never block the modal
     }
     return () => { alive = false }
@@ -182,6 +215,14 @@ export default function ConvertToJobModal({ quote, onClose, onConverted, onError
                   className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
               </div>
             </div>
+            {arrivalWindow && (
+              // Mirror the "Customer requested:" date hint — surface the
+              // arrival window the customer picked so the operator sees why
+              // the crew times are pre-filled (and can still override).
+              <p className="text-[11px] text-ink-3">
+                Customer prefers: {ARRIVAL_WINDOW_LABELS[arrivalWindow] || arrivalWindow}
+              </p>
+            )}
             {!timeValid && (
               <p className="text-[11px] text-red-500">End time must be after start time.</p>
             )}
