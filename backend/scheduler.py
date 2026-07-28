@@ -496,9 +496,17 @@ def sync_reconcile_tick() -> dict:
                 dispatched = 0
                 for job in window_jobs:
                     jd = coerce_date(job.scheduled_date)
+                    # STR/Airbnb turnovers are always unassigned by design (they
+                    # go out as OPEN draft shifts), so `not cleaner_ids` must NOT
+                    # exclude them — otherwise the self-heal tick never catches a
+                    # turnover whose inline dispatch failed. Regular jobs still
+                    # need an assigned cleaner before we push them.
+                    is_turnover = getattr(job, "job_type", None) == "str_turnover"
                     if (job.status not in ("scheduled", "in_progress")
                             or jd is None or jd < today
-                            or job.connecteam_shift_ids or not job.cleaner_ids or not _auto_ok):
+                            or job.connecteam_shift_ids
+                            or (not job.cleaner_ids and not is_turnover)
+                            or not _auto_ok):
                         continue
                     st = auto_dispatch_job(db, job, commit=False)
                     if st.get("dispatched"):

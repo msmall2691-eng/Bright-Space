@@ -1322,9 +1322,15 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
             dispatched = 0
             for job in window_jobs:
                 jd = _to_date(job.scheduled_date)
+                # Turnovers dispatch as OPEN shifts and never carry a cleaner, so
+                # `not cleaner_ids` must not filter them out here (see the
+                # background sync_reconcile_tick for the same guard).
+                is_turnover = getattr(job, "job_type", None) == "str_turnover"
                 if (job.status not in ("scheduled", "in_progress")
                         or jd is None or jd < business_today()
-                        or job.connecteam_shift_ids or not job.cleaner_ids or not auto_ok):
+                        or job.connecteam_shift_ids
+                        or (not job.cleaner_ids and not is_turnover)
+                        or not auto_ok):
                     continue
                 st = auto_dispatch_job(db, job, commit=False)
                 if st.get("dispatched"):

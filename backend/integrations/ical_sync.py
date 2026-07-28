@@ -874,6 +874,75 @@ def _backfill_turnover_gcal(db: Session, prop: Property) -> int:
     return healed
 
 
+def _dispatch_turnovers_to_connecteam(db: Session, prop: Property) -> int:
+    """Push this property's upcoming turnover Jobs to Connecteam as draft shifts.
+
+    A new Airbnb/VRBO booking creates a turnover Job (above) and lands on Google
+    Calendar via _push_new_turnover_to_gcal — but nothing put it on the
+    Connecteam schedule. The only backstop, the every-30-min sync-reconcile
+    tick, skipped turnovers entirely: its dispatch loop only handled jobs with an
+    assigned cleaner, and a str_turnover is always unassigned. So bookings
+    reached Google but never Connecteam.
+
+    Dispatch them here, the moment the booking syncs, the same way we push to
+    Google. auto_dispatch_job routes a str_turnover to a single OPEN draft shift
+    that carries the job's full context — title ("Turnover — <property>"),
+    address, checkout time, and notes (stay window, reservation code, house
+    code, instructions). That's a real, detailed scheduled shift the office
+    reviews and publishes, not a blank unlinked placeholder.
+
+    Idempotent (auto_dispatch_job no-ops on a job that already has shift ids) and
+    strictly best-effort: a Connecteam outage or a "manual dispatch" setting must
+    never break the iCal sync. Honors the same is_configured() +
+    connecteam_auto_dispatch_enabled gates as every other auto-dispatch path.
+    """
+    try:
+        from integrations.connecteam import is_configured
+        if not is_configured():
+            return 0
+        from modules.settings.router import connecteam_auto_dispatch_enabled
+        if not connecteam_auto_dispatch_enabled(db):
+            return 0
+        from integrations.connecteam_auto import auto_dispatch_job
+    except Exception as e:
+        log.warning(f"[turnover dispatch] Connecteam unavailable for {prop.name}: {e}")
+        return 0
+
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.property_id == prop.id,
+            Job.job_type == "str_turnover",
+            Job.status.in_(("scheduled", "in_progress")),
+            Job.scheduled_date.isnot(None),
+            Job.scheduled_date >= business_today().isoformat(),
+        )
+        .all()
+    )
+    dispatched = 0
+    for job in jobs:
+        # Filter "already dispatched" in Python, not SQL: connecteam_shift_ids is
+        # a JSON column, so an un-dispatched job may hold SQL NULL, JSON null, or
+        # an empty list, and `.is_(None)` matches only the first — a truthiness
+        # check catches all three. auto_dispatch_job is idempotent regardless.
+        if job.connecteam_shift_ids:
+            continue
+        try:
+            st = auto_dispatch_job(db, job, commit=False)
+            if st.get("dispatched"):
+                dispatched += 1
+        except Exception as e:  # pragma: no cover - never break the sync
+            log.warning(f"[turnover dispatch] failed for job {job.id} ({prop.name}): {e}")
+    if dispatched:
+        try:
+            db.commit()
+            log.info(f"[turnover dispatch] pushed {dispatched} turnover(s) to Connecteam for {prop.name}")
+        except Exception as e:  # pragma: no cover
+            log.warning(f"[turnover dispatch] commit failed for {prop.name}: {e}")
+            db.rollback()
+    return dispatched
+
+
 def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict:
     """
     Sync a property's iCal feeds. Returns a summary dict. Designed to be called
@@ -1049,6 +1118,12 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
     # (catches ones created while Google was disconnected).
     gcal_backfilled = _backfill_turnover_gcal(db, prop)
 
+    # Push new/undispatched turnovers straight to Connecteam as draft shifts, so
+    # a fresh Airbnb booking hits the Connecteam schedule as soon as it syncs —
+    # not just Google. No-op unless Connecteam is configured and auto-dispatch is
+    # on. Best-effort; never blocks the sync.
+    connecteam_dispatched = _dispatch_turnovers_to_connecteam(db, prop)
+
     # Coverage is computed ONCE here, after ALL feeds have run — not per feed.
     # Per-feed coverage was wrong for multi-feed properties: cancellation
     # detection compares every stored ICalEvent against only the current feed's
@@ -1094,6 +1169,7 @@ def sync_property(db: Session, prop: Property, only_ical_id: int = None) -> dict
         "skipped_host_blocks": total_skipped_host_blocks,
         "skipped_not_reserved": total_skipped_not_reserved,
         "gcal_backfilled": gcal_backfilled,
+        "connecteam_dispatched": connecteam_dispatched,
         "sources_synced": sources_synced,
         "sync_errors": sync_errors,
         # Coverage (computed once, after all feeds): every future guest checkout
