@@ -189,9 +189,9 @@ export function RecurringCreateModal({ clients, properties, onClose, onCreated }
             onChange={(next) => setForm(f => ({ ...f, ...next }))}
           />
           <div>
-            <label className="block text-sm font-semibold mb-1">Generate weeks ahead</label>
+            <label className="block text-sm font-semibold mb-1">Keep visits scheduled ahead</label>
             <input type="number" min="1" max="52" value={form.generate_weeks_ahead} onChange={e => setForm(f => ({...f, generate_weeks_ahead: e.target.value}))} className="w-32 px-3 py-2 border border-hairline rounded-lg" />
-            <p className="text-xs text-ink-3 mt-1">How many weeks of future jobs to materialize.</p>
+            <p className="text-xs text-ink-3 mt-1 max-w-md">Weeks of visits created at a time. Recurring auto-generate (Settings → Automation) rolls this window forward daily so you never run out — it’s separate from the repeat interval.</p>
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1">Notes</label>
