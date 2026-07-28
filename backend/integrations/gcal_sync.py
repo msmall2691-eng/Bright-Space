@@ -421,6 +421,13 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
     }
     source_of_truth = calendar_source_of_truth(db)
 
+    # Jobs whose date/time Google changed this run (source-of-truth == "google"
+    # only). We re-sync their Connecteam shifts AFTER the writeback commit below,
+    # so a reschedule made directly in Google reaches Connecteam within this sync
+    # tick instead of waiting for the 30-min drift reconcile. Collected as ids to
+    # avoid holding detached ORM objects across the commit.
+    ct_dirty_job_ids: set[int] = set()
+
     incremental = env_flag("GCAL_INCREMENTAL_SYNC", True)
 
     for cal_id in calendar_ids:
@@ -533,6 +540,10 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
 
                 if changed:
                     results["jobs_updated"] += 1
+                    # Google moved/renamed this job and we applied it (source of
+                    # truth is Google). Queue it to re-sync its Connecteam shift
+                    # after the commit so the change lands on the schedule now.
+                    ct_dirty_job_ids.add(existing_job.id)
                 continue
 
             # Skip cancelled events that we don't have a job for
@@ -597,6 +608,61 @@ def sync_calendar(db: Session, calendar_ids: list[str] | None = None) -> dict:
             results["jobs_created"] += 1
 
     db.commit()
+
+    # Propagate Google-originated reschedules to Connecteam immediately (only
+    # when Google is the source of truth — under the "brightbase" default a
+    # Google edit is drift and never reaches here). Runs AFTER the writeback
+    # commit, per-job with its own commit, so a Connecteam hiccup can't roll back
+    # the schedule sync and a mid-flight failure can't orphan a batch.
+    if ct_dirty_job_ids:
+        try:
+            from integrations.connecteam import is_configured as _ct_ok
+            from modules.settings.router import connecteam_auto_dispatch_enabled
+            if _ct_ok():
+                from integrations.connecteam_auto import auto_dispatch_job, resync_job
+                # Initial dispatch honors the auto-dispatch toggle; re-timing an
+                # EXISTING shift does not — a moved job must never strand a stale
+                # shift on the schedule regardless of the setting (mirrors
+                # update_job's Connecteam sync).
+                auto_on = connecteam_auto_dispatch_enabled(db)
+                resynced = 0
+                ct_errors: list = []
+                for jid in ct_dirty_job_ids:
+                    job = db.query(Job).filter(Job.id == jid).first()
+                    if not job or job.status in ("cancelled", "completed"):
+                        continue
+                    try:
+                        if job.connecteam_shift_ids:
+                            # Existing shift → re-time it (delete + recreate),
+                            # even in manual mode.
+                            st = resync_job(db, job)
+                        elif auto_on:
+                            # First time reaching Connecteam → gated on the toggle.
+                            st = auto_dispatch_job(db, job, commit=True)
+                        else:
+                            continue
+                    except Exception as e:  # pragma: no cover - never break gcal sync
+                        log.warning("[gcal-sync] Connecteam resync failed for job %s: %s", jid, e)
+                        ct_errors.append({"job_id": jid, "error": str(e)})
+                        continue
+                    # Count only a durably-persisted success; surface anything
+                    # else (API error, non-dispatchable, failed commit) so the
+                    # result never claims a shift landed when it didn't.
+                    if st.get("dispatched") and st.get("committed", True):
+                        resynced += 1
+                    else:
+                        ct_errors.extend(
+                            st.get("errors")
+                            or [{"job_id": jid, "reason": st.get("reason")}]
+                        )
+                if resynced:
+                    results["connecteam_resynced"] = resynced
+                    log.info("[gcal-sync] resynced %d Google-edited job(s) to Connecteam", resynced)
+                if ct_errors:
+                    results.setdefault("connecteam_errors", []).extend(ct_errors)
+                    log.warning("[gcal-sync] %d Connecteam propagation error(s)", len(ct_errors))
+        except Exception as e:  # pragma: no cover
+            log.warning("[gcal-sync] Connecteam propagation skipped: %s", e)
 
     total = results["jobs_created"] + results["jobs_updated"] + results["jobs_cancelled"]
     results["message"] = (

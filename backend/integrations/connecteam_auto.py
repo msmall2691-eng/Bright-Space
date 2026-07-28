@@ -176,17 +176,30 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
         # there's no Connecteam read API to ask the shift itself.
         job.connecteam_synced_schedule = _job_schedule_snapshot(job)
 
+    # Whether the shift ids we just recorded are durably persisted. A shift
+    # created in Connecteam whose id fails to commit is the classic duplicate
+    # trap: the remote shift exists but the DB doesn't know it, so the next sync
+    # dispatches the job again. Surface commit failure (committed=False) so
+    # callers can stop and retry instead of treating the push as done.
+    committed = True
     if commit:
         try:
             db.commit()
             db.refresh(job)
-        except Exception as e:  # pragma: no cover - bookkeeping never breaks the caller
+        except Exception as e:
             logger.warning("Connecteam dispatch commit failed for job %s: %s", job.id, e)
+            try:
+                db.rollback()
+            except Exception:  # pragma: no cover - rollback best-effort
+                pass
+            committed = False
+            errors.append({"target": "commit", "error": str(e)})
 
     status.update(
         dispatched=bool(shift_ids),
         count=len(shift_ids),
         errors=errors,
+        committed=committed,
         reason=("error" if (errors and not shift_ids) else None),
     )
     return status

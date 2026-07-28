@@ -496,9 +496,17 @@ def sync_reconcile_tick() -> dict:
                 dispatched = 0
                 for job in window_jobs:
                     jd = coerce_date(job.scheduled_date)
+                    # Self-heal ANY active upcoming job not yet on Connecteam —
+                    # assigned or not, turnover or regular. Cleaner assignment is
+                    # deliberately NOT required: unassigned jobs go out as OPEN
+                    # draft shifts (auto_dispatch_job routes them there) and teams
+                    # are assigned in Connecteam, so an operator never has to
+                    # assign anyone in Brightbase for the work to reach the
+                    # schedule. Gated only on auto-dispatch being enabled.
                     if (job.status not in ("scheduled", "in_progress")
                             or jd is None or jd < today
-                            or job.connecteam_shift_ids or not job.cleaner_ids or not _auto_ok):
+                            or job.connecteam_shift_ids
+                            or not _auto_ok):
                         continue
                     st = auto_dispatch_job(db, job, commit=False)
                     if st.get("dispatched"):
