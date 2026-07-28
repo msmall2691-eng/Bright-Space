@@ -1322,14 +1322,15 @@ def sync_reconcile(db: Session = Depends(get_db), org_id: int = Depends(current_
             dispatched = 0
             for job in window_jobs:
                 jd = _to_date(job.scheduled_date)
-                # Turnovers dispatch as OPEN shifts and never carry a cleaner, so
-                # `not cleaner_ids` must not filter them out here (see the
-                # background sync_reconcile_tick for the same guard).
-                is_turnover = getattr(job, "job_type", None) == "str_turnover"
+                # Dispatch EVERY active upcoming job that isn't on Connecteam yet
+                # — assigned or not, turnover or regular. Cleaner assignment is
+                # deliberately NOT required: unassigned jobs go out as OPEN
+                # shifts (auto_dispatch_job routes them there) and teams are
+                # assigned in Connecteam, so nothing has to be assigned in
+                # Brightbase to reach the schedule.
                 if (job.status not in ("scheduled", "in_progress")
                         or jd is None or jd < business_today()
                         or job.connecteam_shift_ids
-                        or (not job.cleaner_ids and not is_turnover)
                         or not auto_ok):
                     continue
                 st = auto_dispatch_job(db, job, commit=False)
@@ -3116,9 +3117,12 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
                 # moved job never strands a stale shift on a cleaner's phone.
                 if new_ct_sig != prev_ct_sig:
                     resync_job(db, job)
-            elif job.cleaner_ids:
+            else:
                 # INITIAL dispatch — held in manual mode until the operator
-                # presses Dispatch.
+                # presses Dispatch. NOTE: no cleaner assignment required — an
+                # unassigned job goes out as an OPEN shift (auto_dispatch_job
+                # routes it there), so editing an unassigned job in Brightbase
+                # still pushes it to Connecteam. Teams are assigned in Connecteam.
                 from modules.settings.router import connecteam_auto_dispatch_enabled
                 if connecteam_auto_dispatch_enabled(db):
                     auto_dispatch_job(db, job)
