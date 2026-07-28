@@ -171,8 +171,6 @@ export default function Schedule() {
   const [syncSettingsOpen, setSyncSettingsOpen] = useState(false)
 
   const {
-    syncingNow, syncNow,
-    fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
   } = useScheduleTools({ toast, refresh })
@@ -412,15 +410,10 @@ export default function Schedule() {
         toolsOpen={toolsOpen}
         onToggleTools={() => setToolsOpen(o => !o)}
         onCloseTools={() => setToolsOpen(false)}
-        syncingNow={syncingNow}
-        onSyncNow={syncNow}
         onPreviewAutoAssign={previewAutoAssign}
         onPreviewFixTimes={previewFixTimes}
         onOpenSyncSettings={() => setSyncSettingsOpen(true)}
         onNewJob={() => { setNewJobDate(dateStr); setShowNewJob(true) }}
-        syncAlertCount={(scheduleStats?.notGcal || 0) + (scheduleStats?.notConnecteam || 0)}
-        onFixSync={fixSync}
-        fixingSync={fixingSync}
         healthRefreshKey={calRefresh}
         onSyncForced={refresh}
         unassignedOnly={unassignedOnly}
@@ -438,11 +431,6 @@ export default function Schedule() {
 
       <ScheduleHealthStrip
         stats={scheduleStats}
-        onFixSync={fixSync}
-        fixingSync={fixingSync}
-        onFilterNoGcal={() => setNoGcalOnly(v => !v)}
-        onFilterNoConnecteam={() => setNoConnecteamOnly(v => !v)}
-        onFilterUnassigned={() => setUnassignedOnly(v => !v)}
         weekLabel={viewMode === 'month' ? 'This month' : 'This week'}
       />
 
