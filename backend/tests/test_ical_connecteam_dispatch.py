@@ -71,6 +71,8 @@ def test_new_turnover_is_dispatched_to_connecteam(monkeypatch, client_property):
         j.connecteam_shift_ids = ["open_shift_1"]
         j.dispatched = True
         dispatched.append(j.id)
+        if commit:
+            _db.commit()
         return {"dispatched": True, "count": 1, "errors": []}
 
     import integrations.connecteam_auto as ca

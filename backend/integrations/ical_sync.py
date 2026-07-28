@@ -928,18 +928,19 @@ def _dispatch_turnovers_to_connecteam(db: Session, prop: Property) -> int:
         if job.connecteam_shift_ids:
             continue
         try:
-            st = auto_dispatch_job(db, job, commit=False)
+            # commit=True: persist each job's shift ids immediately after its
+            # Connecteam API call, matching every other dispatch path (job
+            # create/edit, recurring generation). Connecteam has no idempotency
+            # key, so a batched end-of-loop commit would, if it failed, orphan
+            # every shift created this pass AND leave them unrecorded — the next
+            # tick would then create duplicates. Per-job commit narrows that
+            # at-least-once window to the single in-flight job.
+            st = auto_dispatch_job(db, job, commit=True)
             if st.get("dispatched"):
                 dispatched += 1
+                log.info(f"[turnover dispatch] pushed turnover job {job.id} to Connecteam for {prop.name}")
         except Exception as e:  # pragma: no cover - never break the sync
             log.warning(f"[turnover dispatch] failed for job {job.id} ({prop.name}): {e}")
-    if dispatched:
-        try:
-            db.commit()
-            log.info(f"[turnover dispatch] pushed {dispatched} turnover(s) to Connecteam for {prop.name}")
-        except Exception as e:  # pragma: no cover
-            log.warning(f"[turnover dispatch] commit failed for {prop.name}: {e}")
-            db.rollback()
     return dispatched
 
 
