@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from database.db import get_db
 from database.models import (
-    Job, Client, ICalEvent, CleanerTimeOff, Property, RecurrenceException,
+    Job, Client, ICalEvent, CleanerTimeOff, Property, RecurrenceException, AppSetting,
 )
 from modules.auth.router import get_current_user, require_role, current_org_id, resolve_org_id
 from utils.activity_logger import (
@@ -1142,6 +1142,130 @@ def gcal_sync_status(db: Session = Depends(get_db)):
         Job.scheduled_date >= today,
     ).count()
     return {"unsynced_count": unsynced, "configured": configured}
+
+
+def _app_flag(db: Session, key: str, env_name: str, default: bool = True) -> bool:
+    """Read a boolean automation flag the same way the background scheduler does
+    (app_settings row overrides the env default), so the Schedule 'auto-flow'
+    indicator can't disagree with what the ticks actually honor."""
+    from config import env_flag
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if row is None or row.value is None:
+        return env_flag(env_name, default)
+    return str(row.value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sync_overall(*, duplicates: int, orphans: int, backlog: int,
+                  auto_flow_on: bool, any_disconnected: bool) -> str:
+    """Decide the Schedule health pill. Pure so it's deterministically testable.
+
+    'attention' is reserved for what a human should actually look at: a
+    data-integrity issue (duplicate jobs / orphaned shifts), or — when auto-flow
+    is OFF — a real backlog or a disconnected integration the ticks won't fix on
+    their own. A backlog while auto-flow is ON is just 'syncing' (the next tick
+    clears it), so the badge stays calm instead of crying wolf.
+    """
+    if duplicates or orphans:
+        return "attention"
+    if not auto_flow_on and (backlog or any_disconnected):
+        return "attention"
+    if backlog:
+        return "syncing"
+    return "ok"
+
+
+@router.get("/sync-health", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """One consolidated read powering the Schedule 'sync health' badge + panel.
+
+    The point: let the operator TRUST the schedule at a glance instead of
+    clicking a pile of redundant 'push now' buttons. Rolls up, read-only:
+      - whether Google + Connecteam are connected and auto-flow is actually on
+        (all the background ticks that keep the schedule current);
+      - how many upcoming jobs aren't on Google / Connecteam yet (a backlog the
+        ticks will clear on their own — not something to push manually);
+      - the data-integrity issues the background audit already computes
+        (duplicate jobs, orphaned shifts) — the only things a human should act on.
+    Never mutates.
+    """
+    try:
+        from integrations.google_calendar import is_configured as _g_ok
+        gcal_configured = bool(_g_ok())
+    except Exception:
+        gcal_configured = False
+    try:
+        from integrations.connecteam import is_configured as _c_ok
+        ct_configured = bool(_c_ok())
+    except Exception:
+        ct_configured = False
+
+    from modules.settings.router import connecteam_auto_dispatch_enabled
+    from integrations.gcal_sync import calendar_source_of_truth
+
+    today = business_today().isoformat()
+    active = ["scheduled", "in_progress"]
+
+    unsynced_gcal = (
+        db.query(Job).filter(
+            Job.gcal_event_id.is_(None),
+            Job.status.in_(active),
+            Job.scheduled_date >= today,
+        ).count()
+        if gcal_configured else 0
+    )
+
+    # Connecteam shift ids live in a JSON column (SQL NULL / JSON null / [] are
+    # all "not dispatched"), which `.is_(None)` can't fully express — count in
+    # Python via truthiness, mirroring the dispatch guard.
+    unsynced_ct = 0
+    if ct_configured:
+        for j in db.query(Job).filter(
+            Job.status.in_(active), Job.scheduled_date >= today,
+        ).all():
+            if not j.connecteam_shift_ids:
+                unsynced_ct += 1
+
+    ct_auto = bool(connecteam_auto_dispatch_enabled(db))
+    automation = {
+        "ical_auto_sync": _app_flag(db, "ical_auto_sync_enabled", "ICAL_AUTO_SYNC_ENABLED"),
+        "gcal_auto_sync": _app_flag(db, "gcal_auto_sync_enabled", "GCAL_AUTO_SYNC_ENABLED"),
+        "recurring_auto_generate": _app_flag(db, "recurring_auto_generate_enabled", "RECURRING_AUTO_GENERATE_ENABLED"),
+        "sync_reconcile": _app_flag(db, "sync_reconcile_enabled", "SYNC_RECONCILE_ENABLED"),
+        "connecteam_auto_dispatch": ct_auto,
+        "calendar_source_of_truth": calendar_source_of_truth(db),
+    }
+    # "Auto-flow on" = the schedule maintains itself with zero manual pushes:
+    # feeds pull, jobs generate, and both calendars stay reconciled on their own.
+    # Connecteam auto-dispatch only counts against it when Connecteam is actually
+    # connected (otherwise it's irrelevant to the flow).
+    auto_flow_on = bool(
+        automation["ical_auto_sync"]
+        and automation["gcal_auto_sync"]
+        and automation["recurring_auto_generate"]
+        and automation["sync_reconcile"]
+        and (ct_auto or not ct_configured)
+    )
+
+    issues = find_schedule_issues(db, resolve_org_id(org_id, db))
+    dup = issues["counts"]["duplicate_groups"]
+    orph = issues["counts"]["orphaned_shifts"]
+
+    backlog = unsynced_gcal + (unsynced_ct if ct_auto else 0)
+    any_disconnected = (not gcal_configured) or (not ct_configured)
+    overall = _sync_overall(
+        duplicates=dup, orphans=orph, backlog=backlog,
+        auto_flow_on=auto_flow_on, any_disconnected=any_disconnected,
+    )
+
+    return {
+        "overall": overall,
+        "auto_flow_on": auto_flow_on,
+        "google": {"configured": gcal_configured, "unsynced_count": unsynced_gcal},
+        "connecteam": {"configured": ct_configured, "auto_dispatch": ct_auto,
+                       "unsynced_count": unsynced_ct},
+        "issues": {"duplicate_jobs": dup, "orphaned_shifts": orph},
+        "automation": automation,
+    }
 
 
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
