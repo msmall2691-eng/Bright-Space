@@ -50,6 +50,15 @@ def test_resolve_job_id_exact_and_containment(monkeypatch):
     assert ct.resolve_job_id([]) is None
 
 
+def test_resolve_job_id_is_property_first_across_match_types(monkeypatch):
+    """A property CONTAINMENT match must beat a client EXACT match — the
+    property candidate (passed first) is fully resolved before the client."""
+    monkeypatch.setattr(ct, "_jobs_index",
+                        lambda force=False: {"pier house": "J1", "smith residence": "J2"})
+    # property 'Pier House Cottage' (containment→J1) vs client 'Smith Residence' (exact→J2)
+    assert ct.resolve_job_id(["Pier House Cottage", "Smith Residence"]) == "J1"
+
+
 # ---- dispatch wiring ------------------------------------------------------
 
 class FakeDB:
@@ -86,13 +95,24 @@ def test_turnover_shift_is_pushed_linked_to_the_matched_job(monkeypatch):
     assert calls[0]["is_published"] is False    # draft
 
 
-def test_bad_job_link_falls_back_to_unlinked_shift(monkeypatch):
+class _Resp:
+    def __init__(self, code): self.status_code = code
+
+
+class _HttpErr(Exception):
+    """Stand-in for httpx.HTTPStatusError — carries a .response.status_code."""
+    def __init__(self, code): self.response = _Resp(code)
+
+
+def test_rejected_job_link_falls_back_to_unlinked_shift(monkeypatch):
+    """A DEFINITIVE rejection (HTTP 400) of the jobId → retry unlinked so the
+    shift still lands."""
     monkeypatch.setattr(ca, "is_configured", lambda: True)
     monkeypatch.setattr(ca, "_ct_job_id_for", lambda db, job: "JOB_BAD")
 
     def flaky(**kw):
         if kw.get("job_id"):
-            raise RuntimeError("invalid jobId")
+            raise _HttpErr(400)     # Connecteam refused the jobId — created nothing
         return {"id": "s2"}
     monkeypatch.setattr(ca, "create_open_shift_sync", flaky)
 
@@ -100,3 +120,22 @@ def test_bad_job_link_falls_back_to_unlinked_shift(monkeypatch):
     out = ca.auto_dispatch_job(FakeDB(), job)
     assert out["dispatched"] is True               # shift still landed
     assert job.connecteam_shift_ids == ["s2"]      # via the unlinked fallback
+
+
+def test_ambiguous_failure_does_not_retry(monkeypatch):
+    """A timeout / 5xx (no definitive rejection) must NOT trigger a second
+    create — the linked shift may have been made, and a retry would duplicate it."""
+    monkeypatch.setattr(ca, "is_configured", lambda: True)
+    monkeypatch.setattr(ca, "_ct_job_id_for", lambda db, job: "JOB_X")
+
+    calls = []
+    def flaky(**kw):
+        calls.append(kw)
+        raise TimeoutError("read timeout")   # ambiguous — no .response
+    monkeypatch.setattr(ca, "create_open_shift_sync", flaky)
+
+    job = _job()
+    out = ca.auto_dispatch_job(FakeDB(), job)
+    assert out["dispatched"] is False              # nothing recorded
+    assert len(calls) == 1                          # only the linked attempt; no retry
+    assert job.connecteam_shift_ids in ([], None)

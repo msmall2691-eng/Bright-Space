@@ -125,6 +125,17 @@ def _raise_for_status(r: httpx.Response) -> None:
     r.raise_for_status()
 
 
+def is_bad_request(exc) -> bool:
+    """True only for a DEFINITIVE client-side rejection — HTTP 400/404/422,
+    i.e. Connecteam refused the request body (e.g. an invalid jobId) and created
+    nothing. A read timeout, connection error, or 5xx is NOT definitive: the
+    shift may in fact have been created, so callers must not treat those as a
+    safe cue to retry (that would create a duplicate). Used to gate the
+    linked→unlinked shift fallback."""
+    resp = getattr(exc, "response", None)
+    return getattr(resp, "status_code", None) in (400, 404, 422)
+
+
 def _headers() -> dict:
     return {
         "X-API-KEY": _get_api_key(),
@@ -521,22 +532,24 @@ def _jobs_index(force: bool = False) -> dict:
 
 def resolve_job_id(candidates) -> Optional[str]:
     """Best-effort: the Connecteam jobId whose name matches one of the given
-    BrightBase names (e.g. property name, then client name), or None. Exact
-    normalized match wins; otherwise a containment match either direction
-    ('Pier House' ↔ 'Pier House Cottage'). Never raises."""
+    BrightBase names, or None. Candidates are tried in PRIORITY ORDER (caller
+    passes property name first, then client), and each is FULLY resolved —
+    exact normalized match, then containment either direction ('Pier House' ↔
+    'Pier House Cottage') — before moving to the next. So a property containment
+    match wins over a client exact match, preserving property-first intent.
+    Never raises."""
     try:
         idx = _jobs_index()
         if not idx:
             return None
-        norms = [_norm_name(c) for c in (candidates or []) if c]
-        for c in norms:              # exact first
-            if c and c in idx:
-                return idx[c]
-        for c in norms:              # then containment (longest job name wins)
-            if not c:
+        for c in (candidates or []):
+            n = _norm_name(c)
+            if not n:
                 continue
-            hits = [(name, jid) for name, jid in idx.items() if c in name or name in c]
-            if hits:
+            if n in idx:              # exact for THIS candidate
+                return idx[n]
+            hits = [(name, jid) for name, jid in idx.items() if n in name or name in n]
+            if hits:                  # then containment (longest job name wins)
                 return max(hits, key=lambda kv: len(kv[0]))[1]
     except Exception as e:  # pragma: no cover - matching must never break a push
         log.warning("[connecteam] job-id resolve failed: %s", e)

@@ -17,6 +17,7 @@ from integrations.connecteam import (
     create_shift_sync,
     create_open_shift_sync,
     delete_shift_sync,
+    is_bad_request,
     is_configured,
 )
 from utils.integration_log import log_integration_event as _log
@@ -173,12 +174,18 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
             _record(res, label)
             return
         except (ConnecteamAuthError, Exception) as e:  # noqa: B014
-            if ct_job_id:
+            # Retry UNLINKED only when Connecteam definitively REJECTED the
+            # request (400/404/422 — e.g. a bad jobId) and so created nothing.
+            # On an ambiguous failure (timeout, connection error, 5xx) the linked
+            # shift may actually have been created; a second create would
+            # duplicate it, so we don't retry — the job stays un-recorded and the
+            # next reconcile tick / read-back handles it safely.
+            if ct_job_id and is_bad_request(e):
                 try:
                     res = create_fn(**kwargs)  # unlinked free-text fallback
                     _record(res, label)
                     logger.warning(
-                        "Connecteam job-link failed for job %s (%s); pushed unlinked: %s",
+                        "Connecteam rejected job-link for job %s (%s); pushed unlinked: %s",
                         job.id, label, e)
                     return
                 except (ConnecteamAuthError, Exception) as e2:  # noqa: B014
