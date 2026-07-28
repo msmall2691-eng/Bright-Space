@@ -17,43 +17,10 @@ export function useScheduleTools({ toast, refresh }) {
   const [autoAssign, setAutoAssign] = useState(null)
   const [fixTimes, setFixTimes] = useState(null)
 
-  // Single "Push now" action for the Tools menu. One-way (BrightBase is
-  // master): this pushes the schedule OUT to Google + Connecteam right now —
-  // the same push-only reconcile as "Fix sync". It deliberately does NOT hit
-  // /api/jobs/sync-gcal, which reads Google BACK (importing Google-only events
-  // and cancelling jobs deleted in Google) and would contradict one-way.
-  const [syncingNow, setSyncingNow] = useState(false)
-  const syncNow = async () => {
-    if (syncingNow) return
-    setSyncingNow(true)
-    try {
-      const r = await post('/api/jobs/sync-reconcile', {})
-      const parts = []
-      if (r?.gcal?.pushed) parts.push(`${r.gcal.pushed} to Google`)
-      if (r?.connecteam?.dispatched) parts.push(`${r.connecteam.dispatched} to Connecteam`)
-      toast.success(parts.length ? `Pushed — ${parts.join(', ')}` : 'Everything’s already pushed')
-      refresh()
-    } catch (e) {
-      toast.error(e.message || 'Sync failed')
-    }
-    setSyncingNow(false)
-  }
-
-  // One-click repair for the "Needs attention" strip: pushes unsynced jobs to
-  // Google AND dispatches missing Connecteam shifts in a single call.
-  const [fixingSync, setFixingSync] = useState(false)
-  const fixSync = async () => {
-    if (fixingSync) return
-    setFixingSync(true)
-    try {
-      const r = await post('/api/jobs/sync-reconcile', {})
-      toast.success(r?.message || 'Sync reconcile complete')
-      refresh()
-    } catch (e) {
-      toast.error(e?.message || 'Sync fix failed')
-    }
-    setFixingSync(false)
-  }
+  // NOTE: the old "Push now" / "Fix sync" actions were removed — the
+  // SyncHealthPill in the toolbar now owns the (rarely-needed) manual
+  // /api/jobs/sync-reconcile override, and the background reconcile does it
+  // automatically. This hook is just the preview-then-apply maintenance tools.
 
   const previewAutoAssign = async () => {
     setAutoAssign({ loading: true })
@@ -117,8 +84,6 @@ export function useScheduleTools({ toast, refresh }) {
   }
 
   return {
-    syncingNow, syncNow,
-    fixingSync, fixSync,
     autoAssign, setAutoAssign, previewAutoAssign, runAutoAssign,
     fixTimes, setFixTimes, previewFixTimes, runFixTimes,
   }

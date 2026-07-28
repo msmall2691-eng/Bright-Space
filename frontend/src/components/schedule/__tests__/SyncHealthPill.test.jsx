@@ -72,6 +72,15 @@ describe('SyncHealthPill', () => {
     expect(screen.queryByText('Sync now')).toBeNull()
   })
 
+  it('surfaces an error when the manual sync fails', async () => {
+    get.mockResolvedValue(health())
+    post.mockRejectedValue(new Error('network down'))
+    render(<SyncHealthPill />)
+    fireEvent.click(await screen.findByTestId('sync-health-pill'))
+    fireEvent.click(await screen.findByText('Sync now'))
+    expect(await screen.findByText(/network down/i)).toBeTruthy()
+  })
+
   it('stays quiet (renders nothing) if the health fetch fails', async () => {
     get.mockRejectedValue(new Error('boom'))
     const { container } = render(<SyncHealthPill />)

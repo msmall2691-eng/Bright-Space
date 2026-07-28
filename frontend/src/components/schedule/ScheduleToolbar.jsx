@@ -49,13 +49,6 @@ export default function ScheduleToolbar({
   onPreviewFixTimes,
   onOpenSyncSettings,
   onNewJob,
-  // Compact sync-alert button. `syncAlertCount` = total items not yet pushed
-  // out (notGcal + notConnecteam). When > 0, an amber pill shows on phones;
-  // desktop keeps the full "Needs attention" banner underneath. `onFixSync`
-  // runs the same one-way push reconcile as the banner button.
-  syncAlertCount = 0,
-  onFixSync,
-  fixingSync,
   // Passive sync-health pill: reads /api/jobs/sync-health and shows a calm
   // "Auto-sync on / Syncing / Needs attention" status so the schedule reads as
   // self-maintaining. `healthRefreshKey` forces a re-fetch after edits;

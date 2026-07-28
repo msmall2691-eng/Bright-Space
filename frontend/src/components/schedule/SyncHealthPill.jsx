@@ -34,14 +34,20 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
   // to admin/manager. Hide it from viewers so they don't hit a silent 403.
   const mayForce = canEdit()
 
+  // The pill is the ONLY manual sync path now, so a failed "Sync now" must be
+  // visible (not a silent spinner-stop the operator mistakes for success).
+  const [forceError, setForceError] = useState(null)
   const forceSync = async () => {
     if (forcing) return
     setForcing(true)
+    setForceError(null)
     try {
       await post('/api/jobs/sync-reconcile', {})
       await refresh()
       onForced?.()
-    } catch { /* surfaced by the parent's toast elsewhere; keep the pill quiet */ }
+    } catch (e) {
+      setForceError(e?.message || 'Sync failed — please try again.')
+    }
     setForcing(false)
   }
 
@@ -131,6 +137,11 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
                 </button>
               )}
             </div>
+            {forceError && (
+              <p className="mt-2 px-2 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-[12px] text-red-700 dark:text-red-300" role="alert">
+                {forceError}
+              </p>
+            )}
             {mayForce && (
               <p className="text-[10px] text-ink-3/70 mt-1.5 text-center">Sync runs automatically — this is just a shortcut.</p>
             )}
