@@ -19,12 +19,12 @@ def _service_returning(events):
     return svc
 
 
-def _run_sync(db, events, source, resync_spy, dispatch_spy):
+def _run_sync(db, events, source, resync_spy, dispatch_spy, auto_on=True):
     from integrations import gcal_sync
     with patch("integrations.google_calendar._get_service", return_value=_service_returning(events)), \
          patch("integrations.gcal_sync.calendar_source_of_truth", return_value=source), \
          patch("integrations.connecteam.is_configured", return_value=True), \
-         patch("modules.settings.router.connecteam_auto_dispatch_enabled", return_value=True), \
+         patch("modules.settings.router.connecteam_auto_dispatch_enabled", return_value=auto_on), \
          patch("integrations.connecteam_auto.resync_job", resync_spy), \
          patch("integrations.connecteam_auto.auto_dispatch_job", dispatch_spy):
         return gcal_sync.sync_calendar(db, calendar_ids=["primary"])
@@ -89,6 +89,39 @@ def test_google_reschedule_dispatches_when_not_yet_on_connecteam():
         assert r.get("connecteam_resynced") == 1
         dispatch_spy.assert_called_once()        # first time reaching Connecteam
         resync_spy.assert_not_called()
+    finally:
+        db.rollback(); _cleanup(db, client); db.close()
+
+
+def test_manual_mode_still_resyncs_existing_shift():
+    """Auto-dispatch OFF must not strand an existing shift at the old time: a
+    Google reschedule still re-times a previously-dispatched shift. Only the
+    INITIAL dispatch is gated on the toggle."""
+    db = SessionLocal()
+    resync_spy = MagicMock(return_value={"dispatched": True, "committed": True, "errors": []})
+    dispatch_spy = MagicMock(return_value={"dispatched": True, "committed": True, "errors": []})
+    try:
+        client, prop, job = _setup(db, connecteam_shift_ids=["shift_a"])
+        r = _run_sync(db, [_moved_event()], "google", resync_spy, dispatch_spy, auto_on=False)
+        assert r.get("connecteam_resynced") == 1
+        resync_spy.assert_called_once()      # existing shift re-timed despite manual mode
+        dispatch_spy.assert_not_called()     # no NEW dispatch in manual mode
+    finally:
+        db.rollback(); _cleanup(db, client); db.close()
+
+
+def test_unpersisted_resync_is_not_counted_as_success():
+    """A resync whose shift-id commit failed (committed=False) is surfaced as an
+    error, not counted as a successful propagation."""
+    db = SessionLocal()
+    resync_spy = MagicMock(return_value={"dispatched": True, "committed": False,
+                                         "errors": [{"target": "commit", "error": "boom"}]})
+    dispatch_spy = MagicMock()
+    try:
+        client, prop, job = _setup(db, connecteam_shift_ids=["shift_a"])
+        r = _run_sync(db, [_moved_event()], "google", resync_spy, dispatch_spy)
+        assert "connecteam_resynced" not in r
+        assert r.get("connecteam_errors")
     finally:
         db.rollback(); _cleanup(db, client); db.close()
 

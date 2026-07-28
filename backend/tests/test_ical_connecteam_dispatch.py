@@ -85,6 +85,36 @@ def test_new_turnover_is_dispatched_to_connecteam(monkeypatch, client_property):
     assert job.connecteam_shift_ids == ["open_shift_1"]
 
 
+def test_commit_failure_halts_and_is_not_counted(monkeypatch, client_property):
+    """A shift created in Connecteam whose id fails to commit must NOT be counted
+    as dispatched, and the loop must stop so it retries cleanly next tick rather
+    than compounding orphaned/duplicate shifts."""
+    db, client, prop = client_property
+    job_a = _turnover(db, prop, scheduled_date=date.today() + timedelta(days=3))
+    job_b = _turnover(db, prop, scheduled_date=date.today() + timedelta(days=5))
+
+    monkeypatch.setattr(ical_sync, "business_today", lambda: date.today())
+    import integrations.connecteam as ct
+    monkeypatch.setattr(ct, "is_configured", lambda: True)
+    import modules.settings.router as settings_router
+    monkeypatch.setattr(settings_router, "connecteam_auto_dispatch_enabled", lambda _db: True)
+
+    calls = []
+
+    def _fake_dispatch(_db, j, commit=False):
+        calls.append(j.id)
+        # Simulate: shift created remotely, but the DB commit failed.
+        return {"dispatched": True, "committed": False, "count": 1,
+                "errors": [{"target": "commit", "error": "boom"}]}
+
+    import integrations.connecteam_auto as ca
+    monkeypatch.setattr(ca, "auto_dispatch_job", _fake_dispatch)
+
+    n = ical_sync._dispatch_turnovers_to_connecteam(db, prop)
+    assert n == 0                       # nothing counted as dispatched
+    assert len(calls) == 1              # halted after the first (didn't touch job_b)
+
+
 def test_already_dispatched_turnover_is_skipped(monkeypatch, client_property):
     db, client, prop = client_property
     _turnover(db, prop, connecteam_shift_ids=["existing"])

@@ -936,11 +936,27 @@ def _dispatch_turnovers_to_connecteam(db: Session, prop: Property) -> int:
             # tick would then create duplicates. Per-job commit narrows that
             # at-least-once window to the single in-flight job.
             st = auto_dispatch_job(db, job, commit=True)
-            if st.get("dispatched"):
-                dispatched += 1
-                log.info(f"[turnover dispatch] pushed turnover job {job.id} to Connecteam for {prop.name}")
         except Exception as e:  # pragma: no cover - never break the sync
             log.warning(f"[turnover dispatch] failed for job {job.id} ({prop.name}): {e}")
+            continue
+        if st.get("dispatched") and st.get("committed", True):
+            dispatched += 1
+            log.info(f"[turnover dispatch] pushed turnover job {job.id} to Connecteam for {prop.name}")
+        elif st.get("dispatched") and not st.get("committed", True):
+            # The shift was created in Connecteam but its id didn't persist.
+            # Continuing would leave that shift orphaned AND risk a duplicate on
+            # the next run. Stop this pass so it retries cleanly next tick, and
+            # don't report it as dispatched.
+            log.error(
+                f"[turnover dispatch] job {job.id} ({prop.name}): shift created in "
+                f"Connecteam but DB commit failed — halting this run to avoid "
+                f"duplicate shifts; will retry next sync."
+            )
+            break
+        elif st.get("errors"):
+            log.warning(
+                f"[turnover dispatch] job {job.id} ({prop.name}) not dispatched: {st.get('errors')}"
+            )
     return dispatched
 
 
