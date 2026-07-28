@@ -15,6 +15,7 @@ const VIEWS = [
   ['week', 'Week', 'Week'],
   ['month', 'Calendar', 'Month'],
   ['upcoming', 'Upcoming', 'All'],
+  ['google', 'Google', 'GCal'],
 ]
 
 /** Sticky top toolbar. Two deliberately different layouts, split at `md`
@@ -142,7 +143,7 @@ export default function ScheduleToolbar({
           {/* Row 3 — date nav (non-month only; month has CalendarView's own
               header, and these arrows step by a WEEK which is the wrong axis
               for a month grid). */}
-          {viewMode !== 'month' && (
+          {viewMode !== 'month' && viewMode !== 'google' && (
             <div className="mt-2 flex items-center gap-2">
               <button onClick={onPrevWeek} aria-label="Previous"
                 className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
@@ -177,7 +178,7 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {viewMode !== 'month' && (
+          {viewMode !== 'month' && viewMode !== 'google' && (
             <div className="flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
