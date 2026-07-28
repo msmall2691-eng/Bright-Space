@@ -17,6 +17,7 @@ from integrations.connecteam import (
     create_shift_sync,
     create_open_shift_sync,
     delete_shift_sync,
+    is_bad_request,
     is_configured,
 )
 from utils.integration_log import log_integration_event as _log
@@ -48,6 +49,30 @@ def _shift_times(job):
     may be a "HH:MM" string or a datetime.time — normalize either to HH:MM:SS."""
     return (f"{job.scheduled_date}T{_hhmmss(job.start_time)}",
             f"{job.scheduled_date}T{_hhmmss(job.end_time)}")
+
+
+def _ct_job_id_for(db, job):
+    """The Connecteam Job id to LINK this job's shift(s) to — matched by the
+    property name, then the client name (the account runs one Connecteam Job per
+    client/property). Returns None when nothing matches, in which case the shift
+    falls back to a free-text address. Best-effort; never raises."""
+    try:
+        from integrations.connecteam import resolve_job_id
+        from database.models import Property, Client
+        candidates = []
+        if getattr(job, "property_id", None):
+            prop = db.query(Property).filter(Property.id == job.property_id).first()
+            if prop and getattr(prop, "name", None):
+                candidates.append(prop.name)
+        if getattr(job, "client_id", None):
+            client = db.query(Client).filter(Client.id == job.client_id).first()
+            if client and getattr(client, "name", None):
+                candidates.append(client.name)
+        return resolve_job_id(candidates)
+    except Exception as e:  # pragma: no cover - lookup must never break dispatch
+        logger.warning("Connecteam job-id lookup failed for job %s: %s",
+                       getattr(job, "id", "?"), e)
+        return None
 
 
 def _job_schedule_snapshot(job) -> dict:
@@ -135,38 +160,60 @@ def auto_dispatch_job(db, job, *, commit: bool = True) -> dict:
                  action="create", status="failed",
                  detail="create_shift returned no id", commit=False)
 
+    # Link the shift to the Connecteam Job for this customer/property (shows the
+    # job, not a free-text address). Resolved once per dispatch.
+    ct_job_id = _ct_job_id_for(db, job)
+
+    def _push_linked(create_fn, label, err_id, **kwargs):
+        """Create a shift LINKED to the Connecteam Job; if that fails (e.g. the
+        matched job id is stale/invalid), retry once UNLINKED so the shift still
+        lands rather than being dropped. Records the id, or an error carrying
+        ``err_id`` (the caller's identity fields, e.g. {"employee_id": ...})."""
+        try:
+            res = create_fn(job_id=ct_job_id, **kwargs) if ct_job_id else create_fn(**kwargs)
+            _record(res, label)
+            return
+        except (ConnecteamAuthError, Exception) as e:  # noqa: B014
+            # Retry UNLINKED only when Connecteam definitively REJECTED the
+            # request (400/404/422 — e.g. a bad jobId) and so created nothing.
+            # On an ambiguous failure (timeout, connection error, 5xx) the linked
+            # shift may actually have been created; a second create would
+            # duplicate it, so we don't retry — the job stays un-recorded and the
+            # next reconcile tick / read-back handles it safely.
+            if ct_job_id and is_bad_request(e):
+                try:
+                    res = create_fn(**kwargs)  # unlinked free-text fallback
+                    _record(res, label)
+                    logger.warning(
+                        "Connecteam rejected job-link for job %s (%s); pushed unlinked: %s",
+                        job.id, label, e)
+                    return
+                except (ConnecteamAuthError, Exception) as e2:  # noqa: B014
+                    e = e2
+            errors.append({**err_id, "error": str(e)})
+            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
+                 action="create", status="failed", detail=str(e), commit=False)
+
     is_turnover = (getattr(job, "job_type", None) == "str_turnover")
     if is_turnover or not job.cleaner_ids:
-        # OPEN draft: Airbnb turnover, or a not-yet-assigned regular job.
-        try:
-            res = create_open_shift_sync(
+        # OPEN draft (linked to the Job, still unassigned): Airbnb turnover, or a
+        # not-yet-assigned regular job. A person is assigned in Connecteam.
+        _push_linked(
+            create_open_shift_sync, "open", {"target": "open"},
+            start_datetime=start_dt, end_datetime=end_dt,
+            title=job.title, address=job.address, notes=job.notes,
+            is_published=False,
+        )
+    else:
+        # ASSIGNED draft: one shift per cleaner on a regular job.
+        for emp in job.cleaner_ids:
+            _push_linked(
+                create_shift_sync, f"emp:{emp}", {"employee_id": str(emp)},
+                employee_id=str(emp),
                 start_datetime=start_dt, end_datetime=end_dt,
                 title=job.title, address=job.address, notes=job.notes,
                 is_published=False,
             )
-            _record(res, "open")
-        except (ConnecteamAuthError, Exception) as e:  # noqa: B014
-            errors.append({"target": "open", "error": str(e)})
-            _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                 action="create", status="failed", detail=str(e), commit=False)
-    else:
-        # ASSIGNED draft: one shift per cleaner on a regular job.
-        for emp in job.cleaner_ids:
-            try:
-                res = create_shift_sync(
-                    employee_id=str(emp),
-                    start_datetime=start_dt,
-                    end_datetime=end_dt,
-                    title=job.title,
-                    address=job.address,
-                    notes=job.notes,
-                    is_published=False,
-                )
-                _record(res, f"emp:{emp}")
-            except (ConnecteamAuthError, Exception) as e:  # noqa: B014 - log both the same way
-                errors.append({"employee_id": str(emp), "error": str(e)})
-                _log(db, entity_type="job", entity_id=job.id, provider="connecteam",
-                     action="create", status="failed", detail=str(e), commit=False)
 
     if shift_ids:
         job.dispatched = True
