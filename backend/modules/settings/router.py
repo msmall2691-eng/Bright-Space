@@ -1045,6 +1045,76 @@ def get_push_open_shifts_status(run_id: str, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/connecteam/job-match-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def connecteam_job_match_preview(db: Session = Depends(get_db)):
+    """Dry-run: how BrightBase properties will LINK to Connecteam Jobs.
+
+    Pushed shifts link to the Connecteam Job (from the account's Jobs list) whose
+    name matches the property (then its client) — see connecteam.resolve_job_id.
+    This fetches the live Jobs list and shows, per active property, which Job it
+    resolves to, so the operator can confirm the names line up and spot any that
+    WON'T match (those fall back to a free-text shift). Read-only — creates and
+    changes nothing in Connecteam.
+    """
+    from integrations.connecteam import is_configured, get_jobs_sync, resolve_job_id, _norm_name
+    from integrations import connecteam as _ct
+    from database.models import Property, Client
+
+    if not is_configured():
+        return {"configured": False, "jobs": [], "properties": [], "matched": 0, "unmatched": 0}
+    try:
+        jobs = get_jobs_sync() or {}  # {jobId: {"name","code"}}
+    except Exception as e:
+        return {"configured": True, "error": str(e)[:200],
+                "jobs": [], "properties": [], "matched": 0, "unmatched": 0}
+
+    # Seed the resolver's cache from THIS fetch so matching is consistent with
+    # what we display and we don't make a second API call per lookup.
+    idx = {}
+    for jid, meta in jobs.items():
+        n = _norm_name((meta or {}).get("name"))
+        if n and n not in idx:
+            idx[n] = str(jid)
+    _ct._JOBS_CACHE["by_norm"] = idx
+    _ct._JOBS_CACHE["ts"] = _ct._time.time()
+
+    ct_jobs = sorted(
+        ({"id": str(jid), "name": (meta or {}).get("name", ""), "code": (meta or {}).get("code", "")}
+         for jid, meta in jobs.items()),
+        key=lambda j: (j["name"] or "").lower(),
+    )
+
+    client_names = {c.id: c.name for c in db.query(Client).all()}
+    rows, matched = [], 0
+    props = (
+        db.query(Property)
+        .filter(Property.active == True)  # noqa: E712
+        .order_by(Property.name)
+        .all()
+    )
+    for p in props:
+        cn = client_names.get(p.client_id)
+        candidates = [p.name] + ([cn] if cn else [])
+        jid = resolve_job_id(candidates)
+        if jid:
+            matched += 1
+        rows.append({
+            "property": p.name,
+            "client": cn,
+            "matched_job_id": jid,
+            "matched_job_name": (jobs.get(jid, {}) or {}).get("name") if jid else None,
+        })
+
+    return {
+        "configured": True,
+        "job_count": len(ct_jobs),
+        "jobs": ct_jobs[:500],
+        "properties": rows,
+        "matched": matched,
+        "unmatched": len(rows) - matched,
+    }
+
+
 # ── Self-serve Google OAuth ── connect an admin's work Google account in-app.
 @router.get("/google/connect", dependencies=[Depends(require_role("admin"))])
 def google_connect(request: Request, db: Session = Depends(get_db)):

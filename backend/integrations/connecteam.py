@@ -402,6 +402,12 @@ def create_open_shift_sync(**kwargs) -> dict:
     return _run_sync(create_open_shift(**kwargs))
 
 
+def get_jobs_sync(instance_id: Optional[str] = None) -> dict:
+    """Synchronous wrapper around get_jobs (the account's Jobs list) for the
+    settings/diagnostic endpoints, which run in Starlette's threadpool."""
+    return _run_sync(get_jobs(instance_id))
+
+
 def delete_shift_sync(shift_id: str) -> None:
     """Synchronous wrapper around delete_shift for the sync job endpoints."""
     return _run_sync(delete_shift(shift_id))

@@ -23,6 +23,17 @@ export default function IntegrationsTab({ toast, active }) {
   const [ctSaving, setCtSaving] = useState(false)
   const [ctTesting, setCtTesting] = useState(false)
   const [ctPushing, setCtPushing] = useState(false)
+  // Dry-run: how BrightBase properties link to Connecteam Jobs. null | {loading}
+  // | {error} | full result.
+  const [jobMatch, setJobMatch] = useState(null)
+  const previewJobMatches = async () => {
+    setJobMatch({ loading: true })
+    try {
+      setJobMatch(await get('/api/settings/connecteam/job-match-preview'))
+    } catch (e) {
+      setJobMatch({ error: e?.message || 'Could not load job matches' })
+    }
+  }
 
   const refreshGcalStatus = () => {
     setGcalConn({ loading: true })
@@ -537,6 +548,11 @@ export default function IntegrationsTab({ toast, active }) {
                     className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50">
                     {ctTesting ? 'Testing…' : 'Test connection'}
                   </button>
+                  <button onClick={previewJobMatches} disabled={jobMatch?.loading}
+                    className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors disabled:opacity-50"
+                    title="Check which Connecteam Job each property will link its shifts to">
+                    {jobMatch?.loading ? 'Checking…' : 'Preview job matches'}
+                  </button>
                   <button onClick={() => setCtForm(f => ({ ...f, open: true, api_key: '' }))}
                     className="px-3 py-2 rounded-lg text-xs font-medium bg-bg-2 hover:bg-hairline text-ink-2 transition-colors">
                     Update key
@@ -545,6 +561,40 @@ export default function IntegrationsTab({ toast, active }) {
                     className="ml-auto px-3 py-2 rounded-lg text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-50 transition-colors disabled:opacity-50">
                     Disconnect
                   </button>
+                </div>
+              )}
+
+              {/* Job-match dry-run results — which Connecteam Job each property
+                  links to. Surfaces unmatched properties (they'd push as a
+                  free-text shift) so their names can be lined up. */}
+              {jobMatch && !jobMatch.loading && (
+                <div className="mt-3 p-3 rounded-lg bg-bg-2 border border-hairline text-xs">
+                  {jobMatch.error ? (
+                    <p className="text-red-700 dark:text-red-300">{jobMatch.error}</p>
+                  ) : jobMatch.configured === false ? (
+                    <p className="text-ink-3">Connect Connecteam first to preview job matches.</p>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-ink mb-1.5">
+                        {jobMatch.matched} of {jobMatch.matched + jobMatch.unmatched} properties link to a Connecteam Job
+                        <span className="font-normal text-ink-3"> · {jobMatch.job_count} jobs in Connecteam</span>
+                      </p>
+                      {jobMatch.unmatched > 0 ? (
+                        <div>
+                          <p className="text-amber-700 dark:text-amber-300 mb-1">
+                            These won’t link (they’ll push as a free-text shift) — rename the Connecteam Job to match, or the property:
+                          </p>
+                          <ul className="list-disc pl-4 space-y-0.5 text-ink-2">
+                            {jobMatch.properties.filter(p => !p.matched_job_id).slice(0, 20).map((p, i) => (
+                              <li key={i}>{p.property}{p.client ? <span className="text-ink-3"> · {p.client}</span> : null}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <p className="text-emerald-700 dark:text-emerald-300">Every property links to a Connecteam Job. ✓</p>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </div>
