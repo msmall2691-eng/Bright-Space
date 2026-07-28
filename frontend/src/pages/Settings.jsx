@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Settings2, Mail, Plug, RefreshCw, Users, Settings as SettingsIcon } from 'lucide-react'
 import UsersAdmin from '../components/UsersAdmin'
 import PageHeader from '../components/ui/PageHeader'
@@ -11,10 +11,22 @@ import GeneralTab from '../components/settings/GeneralTab'
 import IntegrationsTab from '../components/settings/IntegrationsTab'
 
 export default function Settings() {
-  // Land on General — that's where company identity, brand color, terms, and
-  // the danger zone live, which is the natural first stop. Previously landed
-  // on Custom Fields, which is a niche power-user screen.
-  const [section, setSection] = useState('general') // 'fields' | 'email' | 'general' | 'integrations' | 'automation' | 'users'
+  // Honor a `#section` hash so deep links land on the right tab (e.g. the
+  // Recurring page's "auto-generate is off" banner → /settings#automation, and
+  // the Google-view empty state → /settings#integrations). Falls back to
+  // General — where company identity, brand color, terms, and the danger zone
+  // live — which is the natural first stop otherwise.
+  const sectionFromHash = () => {
+    const h = (window.location.hash || '').replace(/^#/, '').split('?')[0]
+    return ['general', 'integrations', 'automation', 'email', 'fields', 'users'].includes(h) ? h : 'general'
+  }
+  const [section, setSection] = useState(sectionFromHash) // 'fields' | 'email' | 'general' | 'integrations' | 'automation' | 'users'
+  // Keep the tab in step if the hash changes while Settings is already open.
+  useEffect(() => {
+    const onHash = () => setSection(sectionFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
   // Users management is admin-only (the backend enforces it; this hides the tab).
   const isAdmin = (() => {
     try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
