@@ -402,6 +402,12 @@ def create_open_shift_sync(**kwargs) -> dict:
     return _run_sync(create_open_shift(**kwargs))
 
 
+def get_jobs_sync(instance_id: Optional[str] = None) -> dict:
+    """Synchronous wrapper around get_jobs (the account's Jobs list) for the
+    settings/diagnostic endpoints, which run in Starlette's threadpool."""
+    return _run_sync(get_jobs(instance_id))
+
+
 def delete_shift_sync(shift_id: str) -> None:
     """Synchronous wrapper around delete_shift for the sync job endpoints."""
     return _run_sync(delete_shift(shift_id))
@@ -509,9 +515,40 @@ def _norm_name(s: Optional[str]) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def build_jobs_index(jobs) -> dict:
+    """Turn a {jobId: {"name",...}} map into a normalized name → jobId index
+    (first name wins on collision). Shared by the cached dispatch resolver and
+    the diagnostic preview so both match identically."""
+    idx: dict = {}
+    for jid, meta in (jobs or {}).items():
+        n = _norm_name((meta or {}).get("name"))
+        if n and n not in idx:
+            idx[n] = str(jid)
+    return idx
+
+
+def match_job_id(idx: dict, candidates) -> Optional[str]:
+    """Best match in a normalized name→jobId index for the candidate names.
+    Candidates are tried in PRIORITY ORDER (caller passes property name first,
+    then client), and each is FULLY resolved — exact normalized match, then
+    containment either direction ('Pier House' ↔ 'Pier House Cottage') — before
+    moving on. So a property containment match beats a client exact match."""
+    for c in (candidates or []):
+        n = _norm_name(c)
+        if not n:
+            continue
+        if n in idx:                  # exact for THIS candidate
+            return idx[n]
+        hits = [(name, jid) for name, jid in idx.items() if n in name or name in n]
+        if hits:                      # then containment (longest job name wins)
+            return max(hits, key=lambda kv: len(kv[0]))[1]
+    return None
+
+
 def _jobs_index(force: bool = False) -> dict:
-    """Normalized Connecteam-job-name → jobId, cached. Returns the last good
-    index (possibly stale/empty) on any failure — never raises into a shift push."""
+    """Normalized Connecteam-job-name → jobId for the SCHEDULER instance (the
+    one shifts are pushed into), cached. Returns the last good index (possibly
+    stale/empty) on any failure — never raises into a shift push."""
     now = _time.time()
     if not force and _JOBS_CACHE["by_norm"] and (now - _JOBS_CACHE["ts"] < _JOBS_CACHE_TTL):
         return _JOBS_CACHE["by_norm"]
@@ -520,37 +557,19 @@ def _jobs_index(force: bool = False) -> dict:
     except Exception as e:  # pragma: no cover - network/auth; keep stale index
         log.warning("[connecteam] could not refresh Jobs list for linking: %s", e)
         return _JOBS_CACHE["by_norm"]
-    idx: dict = {}
-    for jid, meta in (jobs or {}).items():
-        n = _norm_name(meta.get("name"))
-        if n and n not in idx:
-            idx[n] = str(jid)
-    _JOBS_CACHE["by_norm"] = idx
+    _JOBS_CACHE["by_norm"] = build_jobs_index(jobs)
     _JOBS_CACHE["ts"] = now
-    return idx
+    return _JOBS_CACHE["by_norm"]
 
 
 def resolve_job_id(candidates) -> Optional[str]:
-    """Best-effort: the Connecteam jobId whose name matches one of the given
-    BrightBase names, or None. Candidates are tried in PRIORITY ORDER (caller
-    passes property name first, then client), and each is FULLY resolved —
-    exact normalized match, then containment either direction ('Pier House' ↔
-    'Pier House Cottage') — before moving to the next. So a property containment
-    match wins over a client exact match, preserving property-first intent.
-    Never raises."""
+    """Best-effort: the SCHEDULER Job id whose name matches one of the given
+    BrightBase names (property first, then client), or None. Never raises."""
     try:
         idx = _jobs_index()
         if not idx:
             return None
-        for c in (candidates or []):
-            n = _norm_name(c)
-            if not n:
-                continue
-            if n in idx:              # exact for THIS candidate
-                return idx[n]
-            hits = [(name, jid) for name, jid in idx.items() if n in name or name in n]
-            if hits:                  # then containment (longest job name wins)
-                return max(hits, key=lambda kv: len(kv[0]))[1]
+        return match_job_id(idx, candidates)
     except Exception as e:  # pragma: no cover - matching must never break a push
         log.warning("[connecteam] job-id resolve failed: %s", e)
     return None

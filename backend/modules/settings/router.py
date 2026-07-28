@@ -3,12 +3,13 @@ App Settings Router - email/IMAP credentials, integrations, etc.
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from database.db import get_db
 from database.models import AppSetting
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 from config import app_base_url
 import base64
 import hashlib
@@ -1042,6 +1043,80 @@ def get_push_open_shifts_status(run_id: str, db: Session = Depends(get_db)):
             "start_date": str(run.range_start) if run.range_start else None,
             "end_date": str(run.range_end) if run.range_end else None,
         },
+    }
+
+
+@router.get("/connecteam/job-match-preview", dependencies=[Depends(require_role("admin", "manager"))])
+def connecteam_job_match_preview(db: Session = Depends(get_db),
+                                 org_id: int = Depends(current_org_id)):
+    """Dry-run: how this workspace's properties will LINK to Connecteam Jobs.
+
+    Pushed shifts link to the Connecteam Job (from the account's Jobs list) whose
+    name matches the property (then its client) — see connecteam.match_job_id.
+    Fetches the SCHEDULER's live Jobs list (the same instance dispatch uses) and
+    shows, per active property, which Job it resolves to, so the operator can
+    confirm names line up and spot any that WON'T match (those fall back to a
+    free-text shift). Read-only — creates/changes nothing, and deliberately does
+    NOT seed the shared dispatch cache (this diagnostic must not perturb live
+    pushes).
+    """
+    from integrations.connecteam import (
+        is_configured, get_jobs_sync, build_jobs_index, match_job_id, _get_scheduler_id,
+    )
+    from database.models import Property, Client
+
+    if not is_configured():
+        return {"configured": False, "jobs": [], "properties": [], "matched": 0, "unmatched": 0}
+    try:
+        # Scheduler-scoped, matching the dispatch resolver — a separate Time
+        # Clock instance can have a different Jobs set.
+        jobs = get_jobs_sync(_get_scheduler_id()) or {}  # {jobId: {"name","code"}}
+    except Exception as e:
+        return {"configured": True, "error": str(e)[:200],
+                "jobs": [], "properties": [], "matched": 0, "unmatched": 0}
+
+    # Match against a LOCAL index (no global-cache mutation).
+    idx = build_jobs_index(jobs)
+    ct_jobs = sorted(
+        ({"id": str(jid), "name": (meta or {}).get("name", ""), "code": (meta or {}).get("code", "")}
+         for jid, meta in jobs.items()),
+        key=lambda j: (j["name"] or "").lower(),
+    )
+
+    # Scope to the caller's workspace (+ legacy null-org rows), like the
+    # properties API — RLS doesn't compensate when the session tenant is unset.
+    oid = resolve_org_id(org_id, db)
+    def _scoped(q, model):
+        return q.filter(or_(model.org_id == oid, model.org_id.is_(None)))
+
+    client_names = {c.id: c.name for c in _scoped(db.query(Client), Client).all()}
+    rows, matched = [], 0
+    props = (
+        _scoped(db.query(Property), Property)
+        .filter(Property.active == True)  # noqa: E712
+        .order_by(Property.name)
+        .all()
+    )
+    for p in props:
+        cn = client_names.get(p.client_id)
+        candidates = [p.name] + ([cn] if cn else [])
+        jid = match_job_id(idx, candidates)
+        if jid:
+            matched += 1
+        rows.append({
+            "property": p.name,
+            "client": cn,
+            "matched_job_id": jid,
+            "matched_job_name": (jobs.get(jid, {}) or {}).get("name") if jid else None,
+        })
+
+    return {
+        "configured": True,
+        "job_count": len(ct_jobs),
+        "jobs": ct_jobs[:500],
+        "properties": rows,
+        "matched": matched,
+        "unmatched": len(rows) - matched,
     }
 
 
