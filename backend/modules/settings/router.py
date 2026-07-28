@@ -3,12 +3,13 @@ App Settings Router - email/IMAP credentials, integrations, etc.
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from database.db import get_db
 from database.models import AppSetting
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 from config import app_base_url
 import base64
 import hashlib
@@ -1046,48 +1047,52 @@ def get_push_open_shifts_status(run_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/connecteam/job-match-preview", dependencies=[Depends(require_role("admin", "manager"))])
-def connecteam_job_match_preview(db: Session = Depends(get_db)):
-    """Dry-run: how BrightBase properties will LINK to Connecteam Jobs.
+def connecteam_job_match_preview(db: Session = Depends(get_db),
+                                 org_id: int = Depends(current_org_id)):
+    """Dry-run: how this workspace's properties will LINK to Connecteam Jobs.
 
     Pushed shifts link to the Connecteam Job (from the account's Jobs list) whose
-    name matches the property (then its client) — see connecteam.resolve_job_id.
-    This fetches the live Jobs list and shows, per active property, which Job it
-    resolves to, so the operator can confirm the names line up and spot any that
-    WON'T match (those fall back to a free-text shift). Read-only — creates and
-    changes nothing in Connecteam.
+    name matches the property (then its client) — see connecteam.match_job_id.
+    Fetches the SCHEDULER's live Jobs list (the same instance dispatch uses) and
+    shows, per active property, which Job it resolves to, so the operator can
+    confirm names line up and spot any that WON'T match (those fall back to a
+    free-text shift). Read-only — creates/changes nothing, and deliberately does
+    NOT seed the shared dispatch cache (this diagnostic must not perturb live
+    pushes).
     """
-    from integrations.connecteam import is_configured, get_jobs_sync, resolve_job_id, _norm_name
-    from integrations import connecteam as _ct
+    from integrations.connecteam import (
+        is_configured, get_jobs_sync, build_jobs_index, match_job_id, _get_scheduler_id,
+    )
     from database.models import Property, Client
 
     if not is_configured():
         return {"configured": False, "jobs": [], "properties": [], "matched": 0, "unmatched": 0}
     try:
-        jobs = get_jobs_sync() or {}  # {jobId: {"name","code"}}
+        # Scheduler-scoped, matching the dispatch resolver — a separate Time
+        # Clock instance can have a different Jobs set.
+        jobs = get_jobs_sync(_get_scheduler_id()) or {}  # {jobId: {"name","code"}}
     except Exception as e:
         return {"configured": True, "error": str(e)[:200],
                 "jobs": [], "properties": [], "matched": 0, "unmatched": 0}
 
-    # Seed the resolver's cache from THIS fetch so matching is consistent with
-    # what we display and we don't make a second API call per lookup.
-    idx = {}
-    for jid, meta in jobs.items():
-        n = _norm_name((meta or {}).get("name"))
-        if n and n not in idx:
-            idx[n] = str(jid)
-    _ct._JOBS_CACHE["by_norm"] = idx
-    _ct._JOBS_CACHE["ts"] = _ct._time.time()
-
+    # Match against a LOCAL index (no global-cache mutation).
+    idx = build_jobs_index(jobs)
     ct_jobs = sorted(
         ({"id": str(jid), "name": (meta or {}).get("name", ""), "code": (meta or {}).get("code", "")}
          for jid, meta in jobs.items()),
         key=lambda j: (j["name"] or "").lower(),
     )
 
-    client_names = {c.id: c.name for c in db.query(Client).all()}
+    # Scope to the caller's workspace (+ legacy null-org rows), like the
+    # properties API — RLS doesn't compensate when the session tenant is unset.
+    oid = resolve_org_id(org_id, db)
+    def _scoped(q, model):
+        return q.filter(or_(model.org_id == oid, model.org_id.is_(None)))
+
+    client_names = {c.id: c.name for c in _scoped(db.query(Client), Client).all()}
     rows, matched = [], 0
     props = (
-        db.query(Property)
+        _scoped(db.query(Property), Property)
         .filter(Property.active == True)  # noqa: E712
         .order_by(Property.name)
         .all()
@@ -1095,7 +1100,7 @@ def connecteam_job_match_preview(db: Session = Depends(get_db)):
     for p in props:
         cn = client_names.get(p.client_id)
         candidates = [p.name] + ([cn] if cn else [])
-        jid = resolve_job_id(candidates)
+        jid = match_job_id(idx, candidates)
         if jid:
             matched += 1
         rows.append({

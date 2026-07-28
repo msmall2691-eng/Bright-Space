@@ -47,8 +47,9 @@ def test_preview_reports_matched_and_unmatched():
         client, matched, unmatched = _setup(db)
         jobs = {"J1": {"name": "Pier House", "code": "PH"}}
         with patch("integrations.connecteam.is_configured", return_value=True), \
+             patch("integrations.connecteam._get_scheduler_id", return_value="sched1"), \
              patch("integrations.connecteam.get_jobs_sync", return_value=jobs):
-            out = settings_router.connecteam_job_match_preview(db)
+            out = settings_router.connecteam_job_match_preview(db, 1)
 
         assert out["configured"] is True
         assert out["job_count"] == 1
