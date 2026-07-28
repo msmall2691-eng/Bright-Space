@@ -18,6 +18,7 @@ import ScheduleSkeleton from '../components/schedule/ScheduleSkeleton'
 import CompleteVisitModal from '../components/schedule/CompleteVisitModal'
 import VisitDetailsDrawer from '../components/schedule/VisitDetailsDrawer'
 import ScheduleToolbar from '../components/schedule/ScheduleToolbar'
+import GoogleCalendarView from '../components/schedule/GoogleCalendarView'
 import ScheduleSyncSettings from '../components/schedule/ScheduleSyncSettings'
 import { AutoAssignModal, FixTimesModal } from '../components/schedule/PowerToolModals'
 import { ScheduleHealthStrip, ScheduleBulkBar } from '../components/schedule/ScheduleSections'
@@ -50,7 +51,7 @@ export default function Schedule() {
   // Landing default depends on viewport: agenda on phones, dispatch on
   // desktop. The old "always default to month" landed a dispatcher on a
   // grid of "10:00" pills with no context — the July audit called it out.
-  const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month', 'upcoming']
+  const VALID_VIEWS = ['agenda', 'dispatch', 'week', 'month', 'upcoming', 'google']
   const rawView = searchParams.get('view')
   const isMobile = useIsMobile(768)
   // Remember the last view the operator chose so it sticks between visits —
@@ -420,6 +421,8 @@ export default function Schedule() {
         syncAlertCount={(scheduleStats?.notGcal || 0) + (scheduleStats?.notConnecteam || 0)}
         onFixSync={fixSync}
         fixingSync={fixingSync}
+        healthRefreshKey={calRefresh}
+        onSyncForced={refresh}
         unassignedOnly={unassignedOnly}
         onToggleUnassigned={() => setUnassignedOnly(v => !v)}
         unassignedCount={unassignedCount}
@@ -584,6 +587,11 @@ export default function Schedule() {
             showGuestStays={showGuestStays}
           />
         </div>
+      ) : viewMode === 'google' ? (
+        /* Google Calendar embedded in-app — use it as the schedule surface
+           directly. Self-contained (its own month/nav), so the BrightBase
+           date-nav is hidden for this view. */
+        <GoogleCalendarView reloadKey={calRefresh} />
       ) : null /* VALID_VIEWS is fully covered above; no fallback branch needed */}
 
       {/* Visit Details Drawer */}

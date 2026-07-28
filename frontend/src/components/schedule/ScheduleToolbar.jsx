@@ -1,8 +1,9 @@
 import {
-  ChevronLeft, ChevronRight, Plus, RefreshCw, Filter, Clock,
-  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, AlertCircle, SlidersHorizontal,
+  ChevronLeft, ChevronRight, Plus, Filter, Clock,
+  Calendar as CalendarIcon, Wand2, Wrench, ChevronDown, SlidersHorizontal,
 } from 'lucide-react'
 import Button from '../ui/Button'
+import SyncHealthPill from './SyncHealthPill'
 
 // One source of truth for the views so the mobile (full-width, short labels)
 // and desktop (inline, full labels) switchers never drift apart.
@@ -14,6 +15,7 @@ const VIEWS = [
   ['week', 'Week', 'Week'],
   ['month', 'Calendar', 'Month'],
   ['upcoming', 'Upcoming', 'All'],
+  ['google', 'Google', 'GCal'],
 ]
 
 /** Sticky top toolbar. Two deliberately different layouts, split at `md`
@@ -43,8 +45,6 @@ export default function ScheduleToolbar({
   toolsOpen,
   onToggleTools,
   onCloseTools,
-  syncingNow,
-  onSyncNow,
   onPreviewAutoAssign,
   onPreviewFixTimes,
   onOpenSyncSettings,
@@ -56,6 +56,12 @@ export default function ScheduleToolbar({
   syncAlertCount = 0,
   onFixSync,
   fixingSync,
+  // Passive sync-health pill: reads /api/jobs/sync-health and shows a calm
+  // "Auto-sync on / Syncing / Needs attention" status so the schedule reads as
+  // self-maintaining. `healthRefreshKey` forces a re-fetch after edits;
+  // `onSyncForced` refreshes the grid after the pill's manual override.
+  healthRefreshKey = 0,
+  onSyncForced,
   // Quick-filter toggles + their live counts (in the filter-chip row).
   unassignedOnly = false,
   onToggleUnassigned,
@@ -76,8 +82,6 @@ export default function ScheduleToolbar({
     <ToolsMenu
       open={toolsOpen}
       onClose={onCloseTools}
-      syncingNow={syncingNow}
-      onSyncNow={onSyncNow}
       onPreviewAutoAssign={onPreviewAutoAssign}
       onPreviewFixTimes={onPreviewFixTimes}
       onOpenSyncSettings={onOpenSyncSettings}
@@ -102,19 +106,8 @@ export default function ScheduleToolbar({
             <h1 className="text-base font-bold text-ink">Schedule</h1>
             <div className="flex-1" />
 
-            {syncAlertCount > 0 && onFixSync && (
-              <button
-                onClick={onFixSync}
-                disabled={fixingSync}
-                className="shrink-0 flex items-center gap-1 h-9 px-2.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-800 text-xs font-bold disabled:opacity-60 active:scale-95 transition-transform"
-                title={fixingSync ? 'Pushing…' : `${syncAlertCount} not yet pushed — tap to sync`}
-                aria-label={fixingSync ? 'Syncing' : `${syncAlertCount} items not synced, tap to push`}
-                data-testid="mobile-sync-alert"
-              >
-                <AlertCircle className={`w-4 h-4 ${fixingSync ? 'animate-pulse' : ''}`} />
-                <span>{syncAlertCount}</span>
-              </button>
-            )}
+            <SyncHealthPill refreshKey={healthRefreshKey} onForced={onSyncForced}
+              onOpenSettings={onOpenSyncSettings} />
 
             <IconButton onClick={onToggleFilters} label="Filters" active={filterActive}>
               <Filter className="w-[18px] h-[18px]" />
@@ -150,7 +143,7 @@ export default function ScheduleToolbar({
           {/* Row 3 — date nav (non-month only; month has CalendarView's own
               header, and these arrows step by a WEEK which is the wrong axis
               for a month grid). */}
-          {viewMode !== 'month' && (
+          {viewMode !== 'month' && viewMode !== 'google' && (
             <div className="mt-2 flex items-center gap-2">
               <button onClick={onPrevWeek} aria-label="Previous"
                 className="grid place-items-center w-9 h-9 rounded-lg bg-bg-2 text-ink-3 active:scale-95 transition-transform">
@@ -185,7 +178,7 @@ export default function ScheduleToolbar({
             ))}
           </div>
 
-          {viewMode !== 'month' && (
+          {viewMode !== 'month' && viewMode !== 'google' && (
             <div className="flex items-center gap-1 ml-1">
               <button onClick={onPrevWeek} className="p-1 hover:bg-bg-2 rounded text-ink-3" aria-label="Previous week">
                 <ChevronLeft className="w-4 h-4" />
@@ -200,6 +193,9 @@ export default function ScheduleToolbar({
           )}
 
           <div className="flex-1" />
+
+          <SyncHealthPill refreshKey={healthRefreshKey} onForced={onSyncForced}
+            onOpenSettings={onOpenSyncSettings} />
 
           <Button onClick={onToggleFilters} variant="secondary" size="sm" className="whitespace-nowrap relative"
             title="Filter by property type or status">
@@ -331,20 +327,16 @@ function IconButton({ onClick, label, active, children }) {
 /** The "Tools" dropdown, shared by the phone and desktop triggers so its
  *  contents never diverge. Rendered inside a `relative` trigger wrapper; the
  *  backdrop closes it on outside tap. */
-function ToolsMenu({ open, onClose, syncingNow, onSyncNow, onPreviewAutoAssign, onPreviewFixTimes, onOpenSyncSettings }) {
+function ToolsMenu({ open, onClose, onPreviewAutoAssign, onPreviewFixTimes, onOpenSyncSettings }) {
   if (!open) return null
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div className="absolute right-0 mt-1 w-60 bg-panel border border-hairline rounded-xl shadow-lg z-50 py-1">
-        {/* One-way is the model now: "Sync now" pushes BrightBase's schedule
-            OUT to Google + Connecteam right away (the background reconcile does
-            this automatically; this is the manual "do it now" button). */}
-        <button onClick={() => { onClose(); onSyncNow() }} disabled={syncingNow}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg disabled:opacity-50 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} /> {syncingNow ? 'Pushing…' : 'Push to Google & Connecteam now'}
-        </button>
-        <div className="my-1 border-t border-hairline" />
+        {/* The old "Push to Google & Connecteam now" item lived here. It was
+            removed: pushing is automatic (background reconcile), and the passive
+            Sync-health pill now carries a "Sync now" override for the rare
+            do-it-this-second case — so the menu is just maintenance actions. */}
         <button onClick={() => { onClose(); onPreviewAutoAssign() }}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-ink-2 hover:bg-bg transition-colors">
           <Wand2 className="w-4 h-4" /> Auto-assign turnovers

@@ -7,8 +7,11 @@ afterEach(cleanup)
 // jsdom doesn't apply Tailwind, so BOTH the phone (md:hidden) and desktop
 // (hidden md:flex) layouts are in the DOM at once. These assertions use
 // selectors that are UNIQUE to the phone layout — the icon-only "New job"
-// (aria-label) and the amber sync-alert pill (data-testid) — so they pin the
-// mobile redesign specifically.
+// (aria-label) — so they pin the mobile redesign specifically.
+//
+// The old amber "mobile-sync-alert" pill was replaced by <SyncHealthPill>,
+// which fetches its own data; with no API in jsdom it renders null, so it's
+// invisible here and covered by SyncHealthPill.test.jsx instead.
 
 const baseProps = {
   viewMode: 'month',
@@ -37,19 +40,6 @@ describe('ScheduleToolbar — phone layout', () => {
     render(<ScheduleToolbar {...baseProps} onNewJob={onNewJob} />)
     fireEvent.click(screen.getByLabelText('New job'))
     expect(onNewJob).toHaveBeenCalled()
-  })
-
-  it('shows the amber sync-alert pill only when items are out of sync', () => {
-    const onFixSync = vi.fn()
-    const { rerender } = render(
-      <ScheduleToolbar {...baseProps} syncAlertCount={0} onFixSync={onFixSync} />)
-    expect(screen.queryByTestId('mobile-sync-alert')).toBeNull()
-
-    rerender(<ScheduleToolbar {...baseProps} syncAlertCount={16} onFixSync={onFixSync} />)
-    const pill = screen.getByTestId('mobile-sync-alert')
-    expect(pill.textContent).toContain('16')
-    fireEvent.click(pill)
-    expect(onFixSync).toHaveBeenCalled()
   })
 
   it('hides the week date-nav in month view (wrong axis for a month grid)', () => {
