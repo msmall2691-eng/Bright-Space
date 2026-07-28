@@ -902,7 +902,7 @@ export default function JobCreateModal({
 
           {recurring && (
             <div>
-              <label className="block text-xs text-ink-2 font-medium mb-1">Generate ahead</label>
+              <label className="block text-xs text-ink-2 font-medium mb-1">Keep visits scheduled ahead</label>
               <select
                 value={form.generate_weeks_ahead}
                 onChange={e => setForm(f => ({ ...f, generate_weeks_ahead: parseInt(e.target.value) }))}
@@ -910,7 +910,7 @@ export default function JobCreateModal({
               >
                 {[4, 6, 8, 12, 16, 26].map(w => <option key={w} value={w}>{w} weeks</option>)}
               </select>
-              <p className="text-[10px] text-ink-3 mt-1">How many weeks of Jobs to materialize from this schedule.</p>
+              <p className="text-[10px] text-ink-3 mt-1">Weeks of visits created at a time — rolled forward daily by Recurring auto-generate. Not the repeat interval.</p>
             </div>
           )}
           </>)}

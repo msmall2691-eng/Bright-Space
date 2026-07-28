@@ -500,10 +500,15 @@ function EditSeriesModal({ schedule, onClose, onDone }) {
         onChange={(next) => setForm(f => ({ ...f, ...next }))}
       />
       <div>
-        <label className="block text-xs font-semibold text-ink-3 mb-1">Generate weeks ahead</label>
+        <label className="block text-xs font-semibold text-ink-3 mb-1">Keep visits scheduled ahead</label>
         <input type="number" min="1" max="52" value={form.generate_weeks_ahead}
           onChange={e => setForm(f => ({ ...f, generate_weeks_ahead: e.target.value }))}
           className="w-32 px-3 py-2 border border-hairline rounded-lg text-sm" />
+        <p className="text-xs text-ink-3 mt-1 max-w-md">
+          How many weeks of visits are created at a time. With <b>Recurring auto-generate</b> on
+          (Settings → Automation) this window rolls forward every day, so you never run out. It’s
+          separate from how often the visit repeats above.
+        </p>
       </div>
       <div>
         <label className="block text-xs font-semibold text-ink-3 mb-1">Notes</label>
@@ -914,6 +919,16 @@ export default function Recurring() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [showCreate, setShowCreate] = useState(false)
 
+  // Surface the one setting that makes recurring "run dry": if auto-generate is
+  // OFF, the schedules do a one-time fill and never roll forward. Warn loudly so
+  // the operator isn't left wondering why upcoming visits stop appearing.
+  const [autoGenOff, setAutoGenOff] = useState(false)
+  useEffect(() => {
+    get('/api/settings/automation')
+      .then(s => setAutoGenOff(s?.recurring_auto_generate_enabled === false))
+      .catch(() => setAutoGenOff(false)) // stay quiet if we can't tell
+  }, [])
+
   const loadList = useCallback(async () => {
     setLoading(true); setError('')
     try {
@@ -1050,6 +1065,23 @@ export default function Recurring() {
       />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8">
+        {autoGenOff && (
+          <div className="mt-4 mb-4 flex items-start gap-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 px-3.5 py-3 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold">Recurring auto-generate is off</p>
+              <p className="text-[13px] mt-0.5 opacity-90">
+                Schedules were filled once and won’t roll forward, so upcoming visits will stop
+                appearing over time. Turn on <b>Recurring auto-generate</b> in Settings → Automation
+                to keep the window topped up automatically.
+              </p>
+              <a href="/settings#automation"
+                className="inline-block mt-1.5 text-[13px] font-semibold underline underline-offset-2 hover:opacity-80">
+                Open Settings → Automation
+              </a>
+            </div>
+          </div>
+        )}
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <select
