@@ -5,9 +5,10 @@ import { get } from '../../api'
 /**
  * The main Schedule page's "Google" view — Google Calendar embedded INSIDE
  * BrightBase, so you can use it as the schedule surface directly instead of
- * bouncing to calendar.google.com. Reads /api/settings/gcal-embed?overlay=all
- * (every configured business calendar stacked), the same embed the client
- * profile already uses.
+ * bouncing to calendar.google.com. Reads /api/settings/gcal-embed — the same
+ * embed the client profile uses, which HONORS the calendar URL an operator
+ * pasted in Settings (overlay=all deliberately ignores that override and falls
+ * back to a hardcoded primary, so it would show the wrong calendar here).
  *
  * `reloadKey` bumps the iframe src so a schedule edit shows through Google's
  * aggressive embed cache.
@@ -16,7 +17,7 @@ export default function GoogleCalendarView({ reloadKey = 0 }) {
   const [embed, setEmbed] = useState({ loading: true })
 
   useEffect(() => {
-    get('/api/settings/gcal-embed?overlay=all')
+    get('/api/settings/gcal-embed')
       .then(r => setEmbed({ loading: false, url: r?.embed_url, configured: !!r?.configured }))
       .catch(() => setEmbed({ loading: false, configured: false }))
   }, [])

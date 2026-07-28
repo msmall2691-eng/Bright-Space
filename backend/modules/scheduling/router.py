@@ -1156,18 +1156,22 @@ def _app_flag(db: Session, key: str, env_name: str, default: bool = True) -> boo
 
 
 def _sync_overall(*, duplicates: int, orphans: int, backlog: int,
-                  auto_flow_on: bool, any_disconnected: bool) -> str:
+                  auto_flow_on: bool, google_connected: bool) -> str:
     """Decide the Schedule health pill. Pure so it's deterministically testable.
 
-    'attention' is reserved for what a human should actually look at: a
-    data-integrity issue (duplicate jobs / orphaned shifts), or — when auto-flow
-    is OFF — a real backlog or a disconnected integration the ticks won't fix on
-    their own. A backlog while auto-flow is ON is just 'syncing' (the next tick
-    clears it), so the badge stays calm instead of crying wolf.
+    'attention' is reserved for what a human should actually look at:
+      - a data-integrity issue (duplicate jobs / orphaned shifts);
+      - Google disconnected — the scheduling backbone is down, so no job can
+        reach the calendar (never show a calm green 'ok' in that state);
+      - auto-flow OFF with a real backlog the ticks won't clear on their own.
+    A backlog while auto-flow is ON is just 'syncing' (the next tick clears it),
+    so the badge stays calm instead of crying wolf.
     """
     if duplicates or orphans:
         return "attention"
-    if not auto_flow_on and (backlog or any_disconnected):
+    if not google_connected:
+        return "attention"
+    if not auto_flow_on and backlog:
         return "attention"
     if backlog:
         return "syncing"
@@ -1205,12 +1209,19 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
     today = business_today().isoformat()
     active = ["scheduled", "in_progress"]
 
+    # Scope every count to the caller's tenant (+ legacy null-org rows), like
+    # find_schedule_issues / push_to_gcal — otherwise tenant A's pill counts
+    # tenant B's unsynced jobs (cross-tenant leak, and a backlog A can't clear).
+    oid = resolve_org_id(org_id, db)
+    def _org_scoped(q):
+        return q.filter(or_(Job.org_id == oid, Job.org_id.is_(None)))
+
     unsynced_gcal = (
-        db.query(Job).filter(
+        _org_scoped(db.query(Job).filter(
             Job.gcal_event_id.is_(None),
             Job.status.in_(active),
             Job.scheduled_date >= today,
-        ).count()
+        )).count()
         if gcal_configured else 0
     )
 
@@ -1219,9 +1230,9 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
     # Python via truthiness, mirroring the dispatch guard.
     unsynced_ct = 0
     if ct_configured:
-        for j in db.query(Job).filter(
+        for j in _org_scoped(db.query(Job).filter(
             Job.status.in_(active), Job.scheduled_date >= today,
-        ).all():
+        )).all():
             if not j.connecteam_shift_ids:
                 unsynced_ct += 1
 
@@ -1236,25 +1247,26 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
     }
     # "Auto-flow on" = the schedule maintains itself with zero manual pushes:
     # feeds pull, jobs generate, and both calendars stay reconciled on their own.
-    # Connecteam auto-dispatch only counts against it when Connecteam is actually
-    # connected (otherwise it's irrelevant to the flow).
+    # Google is the scheduling backbone, so a disconnected Google account breaks
+    # the flow (jobs can't reach the calendar) even with every toggle on.
+    # Connecteam auto-dispatch only counts when Connecteam is actually connected.
     auto_flow_on = bool(
-        automation["ical_auto_sync"]
+        gcal_configured
+        and automation["ical_auto_sync"]
         and automation["gcal_auto_sync"]
         and automation["recurring_auto_generate"]
         and automation["sync_reconcile"]
         and (ct_auto or not ct_configured)
     )
 
-    issues = find_schedule_issues(db, resolve_org_id(org_id, db))
+    issues = find_schedule_issues(db, oid)
     dup = issues["counts"]["duplicate_groups"]
     orph = issues["counts"]["orphaned_shifts"]
 
     backlog = unsynced_gcal + (unsynced_ct if ct_auto else 0)
-    any_disconnected = (not gcal_configured) or (not ct_configured)
     overall = _sync_overall(
         duplicates=dup, orphans=orph, backlog=backlog,
-        auto_flow_on=auto_flow_on, any_disconnected=any_disconnected,
+        auto_flow_on=auto_flow_on, google_connected=gcal_configured,
     )
 
     return {

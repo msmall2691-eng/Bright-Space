@@ -25,10 +25,10 @@ describe('GoogleCalendarView', () => {
     expect(screen.queryByTitle('Google Calendar')).toBeNull()
   })
 
-  it('requests every calendar stacked (overlay=all)', async () => {
+  it('honors the configured embed URL (no overlay=all override)', async () => {
     get.mockResolvedValue({ configured: true, embed_url: 'https://x' })
     render(<GoogleCalendarView />)
     await screen.findByTitle('Google Calendar')
-    expect(get).toHaveBeenCalledWith('/api/settings/gcal-embed?overlay=all')
+    expect(get).toHaveBeenCalledWith('/api/settings/gcal-embed')
   })
 })

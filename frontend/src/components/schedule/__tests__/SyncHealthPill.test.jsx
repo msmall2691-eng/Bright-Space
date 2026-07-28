@@ -1,16 +1,23 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 
-// Mock the api layer the pill reads from. Path resolves to src/api.js — the
-// same module the component imports as '../../api'.
+// Mock the api layer both the pill and its shared poller hook read from. Path
+// resolves to src/api.js — the same module they import as '../../api' / '../api'.
 const get = vi.fn()
 const post = vi.fn()
 vi.mock('../../../api', () => ({ get: (...a) => get(...a), post: (...a) => post(...a) }))
 
 import SyncHealthPill from '../SyncHealthPill'
+import { __resetSyncHealth } from '../../../hooks/useSyncHealth'
 
 afterEach(cleanup)
-beforeEach(() => { get.mockReset(); post.mockReset() })
+beforeEach(() => {
+  get.mockReset(); post.mockReset()
+  __resetSyncHealth() // clear the module-level singleton between cases
+  // Default to an editor so the "Sync now" override is present; the viewer
+  // case overrides this.
+  localStorage.setItem('brightbase_user', JSON.stringify({ role: 'admin' }))
+})
 
 const health = (over = {}) => ({
   overall: 'ok', auto_flow_on: true,
@@ -53,6 +60,16 @@ describe('SyncHealthPill', () => {
     fireEvent.click(await screen.findByText('Sync now'))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/jobs/sync-reconcile', {}))
     await waitFor(() => expect(onForced).toHaveBeenCalled())
+  })
+
+  it('hides the "Sync now" override from viewer accounts', async () => {
+    localStorage.setItem('brightbase_user', JSON.stringify({ role: 'viewer' }))
+    get.mockResolvedValue(health())
+    render(<SyncHealthPill />)
+    fireEvent.click(await screen.findByTestId('sync-health-pill'))
+    // Panel opens (they can still SEE status) but the write action is absent.
+    expect(await screen.findByText(/in sync/i)).toBeTruthy()
+    expect(screen.queryByText('Sync now')).toBeNull()
   })
 
   it('stays quiet (renders nothing) if the health fetch fails', async () => {

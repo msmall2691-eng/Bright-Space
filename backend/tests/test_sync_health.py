@@ -26,29 +26,30 @@ from modules.scheduling import router as sched
 
 def test_overall_clean_is_ok():
     assert sched._sync_overall(duplicates=0, orphans=0, backlog=0,
-                               auto_flow_on=True, any_disconnected=False) == "ok"
+                               auto_flow_on=True, google_connected=True) == "ok"
 
 
 def test_overall_backlog_with_auto_flow_on_is_syncing():
     assert sched._sync_overall(duplicates=0, orphans=0, backlog=5,
-                               auto_flow_on=True, any_disconnected=False) == "syncing"
+                               auto_flow_on=True, google_connected=True) == "syncing"
 
 
 def test_overall_backlog_with_auto_flow_off_is_attention():
     assert sched._sync_overall(duplicates=0, orphans=0, backlog=5,
-                               auto_flow_on=False, any_disconnected=False) == "attention"
+                               auto_flow_on=False, google_connected=True) == "attention"
 
 
 @pytest.mark.parametrize("dups,orphs", [(1, 0), (0, 1), (2, 3)])
 def test_overall_integrity_issues_always_attention(dups, orphs):
     # Even with auto-flow on and no backlog, integrity issues need a human.
     assert sched._sync_overall(duplicates=dups, orphans=orphs, backlog=0,
-                               auto_flow_on=True, any_disconnected=False) == "attention"
+                               auto_flow_on=True, google_connected=True) == "attention"
 
 
-def test_overall_disconnected_with_auto_flow_off_is_attention():
+def test_overall_google_disconnected_is_attention_even_when_calm():
+    # Google down = jobs can't reach the calendar; never a green 'ok'.
     assert sched._sync_overall(duplicates=0, orphans=0, backlog=0,
-                               auto_flow_on=False, any_disconnected=True) == "attention"
+                               auto_flow_on=False, google_connected=False) == "attention"
 
 
 # ---- endpoint (deterministic fields + deltas) -----------------------------

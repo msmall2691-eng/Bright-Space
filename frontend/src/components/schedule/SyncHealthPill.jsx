@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState } from 'react'
 import { CheckCircle2, RefreshCw, AlertTriangle, ChevronDown, Cloud, Users } from 'lucide-react'
-import { get, post } from '../../api'
+import { post } from '../../api'
+import { useSyncHealth } from '../../hooks/useSyncHealth'
+import { canEdit } from '../../utils/perms'
 
 /**
  * Passive schedule health indicator — the antidote to the "pile of manual push
@@ -23,35 +25,21 @@ import { get, post } from '../../api'
  *   onOpenSettings — optional; opens the Sync & automation drawer.
  */
 export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSettings }) {
-  const [health, setHealth] = useState(null)
+  // One shared poller across every mounted pill (phone + desktop layouts) so the
+  // page doesn't run two health requests / two intervals.
+  const { health, refresh } = useSyncHealth(refreshKey)
   const [open, setOpen] = useState(false)
   const [forcing, setForcing] = useState(false)
-  const timer = useRef(null)
-
-  const load = useCallback(async () => {
-    try {
-      const r = await get('/api/jobs/sync-health')
-      setHealth(r)
-    } catch {
-      setHealth(null) // stay quiet on a transient failure rather than flip to alarm
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load, refreshKey])
-
-  // Light background poll so the pill reflects the ticks without a page reload.
-  // 60s is well below the fastest tick (10 min) — cheap and always current.
-  useEffect(() => {
-    timer.current = setInterval(load, 60_000)
-    return () => clearInterval(timer.current)
-  }, [load])
+  // The manual override calls POST /sync-reconcile, which the backend restricts
+  // to admin/manager. Hide it from viewers so they don't hit a silent 403.
+  const mayForce = canEdit()
 
   const forceSync = async () => {
     if (forcing) return
     setForcing(true)
     try {
       await post('/api/jobs/sync-reconcile', {})
-      await load()
+      await refresh()
       onForced?.()
     } catch { /* surfaced by the parent's toast elsewhere; keep the pill quiet */ }
     setForcing(false)
@@ -123,25 +111,29 @@ export default function SyncHealthPill({ refreshKey = 0, onForced, onOpenSetting
             )}
 
             <div className="mt-3 flex items-center gap-2">
-              <button
-                onClick={forceSync}
-                disabled={forcing}
-                className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg bg-bg-2 text-ink-2 text-xs font-semibold hover:bg-bg disabled:opacity-50 transition-colors"
-                title="Runs the same reconcile the background already does — for when you don’t want to wait."
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${forcing ? 'animate-spin' : ''}`} />
-                {forcing ? 'Syncing…' : 'Sync now'}
-              </button>
+              {mayForce && (
+                <button
+                  onClick={forceSync}
+                  disabled={forcing}
+                  className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg bg-bg-2 text-ink-2 text-xs font-semibold hover:bg-bg disabled:opacity-50 transition-colors"
+                  title="Runs the same reconcile the background already does — for when you don’t want to wait."
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${forcing ? 'animate-spin' : ''}`} />
+                  {forcing ? 'Syncing…' : 'Sync now'}
+                </button>
+              )}
               {onOpenSettings && (
                 <button
                   onClick={() => { setOpen(false); onOpenSettings() }}
-                  className="h-8 px-2.5 rounded-lg bg-bg-2 text-ink-3 text-xs font-semibold hover:bg-bg transition-colors"
+                  className={`h-8 px-2.5 rounded-lg bg-bg-2 text-ink-3 text-xs font-semibold hover:bg-bg transition-colors ${mayForce ? '' : 'flex-1'}`}
                 >
                   Settings
                 </button>
               )}
             </div>
-            <p className="text-[10px] text-ink-3/70 mt-1.5 text-center">Sync runs automatically — this is just a shortcut.</p>
+            {mayForce && (
+              <p className="text-[10px] text-ink-3/70 mt-1.5 text-center">Sync runs automatically — this is just a shortcut.</p>
+            )}
           </div>
         </>
       )}
