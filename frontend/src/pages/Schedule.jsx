@@ -420,6 +420,8 @@ export default function Schedule() {
         syncAlertCount={(scheduleStats?.notGcal || 0) + (scheduleStats?.notConnecteam || 0)}
         onFixSync={fixSync}
         fixingSync={fixingSync}
+        healthRefreshKey={calRefresh}
+        onSyncForced={refresh}
         unassignedOnly={unassignedOnly}
         onToggleUnassigned={() => setUnassignedOnly(v => !v)}
         unassignedCount={unassignedCount}
