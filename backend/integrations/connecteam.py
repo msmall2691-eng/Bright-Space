@@ -29,10 +29,15 @@ key is kept as `connecteam_company_id` for backward compatibility (env vars
 import os
 import asyncio
 import concurrent.futures
+import logging
+import re
+import time as _time
 from datetime import datetime, timezone
 
 import httpx
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 CONNECTEAM_BASE = "https://api.connecteam.com"
 
@@ -225,9 +230,17 @@ async def get_employees() -> list:
 
 def _shift_payload(*, start_datetime, end_datetime, title,
                    address=None, notes=None, user_id=None,
-                   open_shift=False, is_published=True) -> dict:
+                   open_shift=False, is_published=True, job_id=None) -> dict:
     """Shape a single shift the way Connecteam expects. Bulk-create takes an
-    ARRAY of these — call sites wrap accordingly."""
+    ARRAY of these — call sites wrap accordingly.
+
+    When ``job_id`` is given, the shift is LINKED to that Connecteam Job entity
+    (from the account's Jobs list): jobId is a top-level field, and
+    locationData.isReferencedToJob=true makes the shift inherit the job's
+    location — so the shift shows the customer/property, not a free-text address.
+    When it's absent we fall back to a free-text address shift (isReferencedToJob
+    stays false, the historical behavior).
+    """
     payload = {
         "startTime": _to_epoch_seconds(start_datetime),
         "endTime": _to_epoch_seconds(end_datetime),
@@ -239,15 +252,19 @@ def _shift_payload(*, start_datetime, end_datetime, title,
         payload["assignedUserIds"] = []  # required to stay empty for open shifts
     elif user_id is not None:
         payload["assignedUserIds"] = [int(user_id)] if str(user_id).isdigit() else [user_id]
-    if address:
+    if job_id:
+        # Linked to a Connecteam Job. jobId is top-level; isReferencedToJob=true
+        # (inside the REQUIRED locationData object) inherits the job's saved
+        # location so we don't fight it with a free-text address.
+        payload["jobId"] = str(job_id)
+        payload["locationData"] = {"isReferencedToJob": True}
+    elif address:
         # locationData is a structured object. `isReferencedToJob` is REQUIRED
         # by Connecteam's validator whenever locationData is present — their
         # public docs (developer.connecteam.com/docs/scheduler-create-shifts)
         # don't mention it, but the API returns error_code 1002 without it:
         #   "body.0.locationData.isReferencedToJob": {"message":"Field..."}
-        # false = free-text address, not tied to a Connecteam Job entity. Once
-        # we wire up Job lookup by customer name (follow-up), a matched Job
-        # will flip this to true and add a jobId to the shift.
+        # false = free-text address, not tied to a Connecteam Job entity.
         payload["locationData"] = {
             "address": address,
             "isReferencedToJob": False,
@@ -308,15 +325,17 @@ async def create_shift(
     address: Optional[str] = None,
     notes: Optional[str] = None,
     is_published: bool = True,
+    job_id: Optional[str] = None,
 ) -> dict:
     """Create a single ASSIGNED shift for one cleaner. Returns {"id": "..."}
     so callers that read `res["id"]` (like connecteam_auto.auto_dispatch_job)
     keep working. is_published=False pushes it as an unpublished DRAFT the
-    office can review/publish in Connecteam."""
+    office can review/publish in Connecteam. ``job_id`` links it to a Connecteam
+    Job entity."""
     payload = _shift_payload(
         start_datetime=start_datetime, end_datetime=end_datetime,
         title=title, address=address, notes=notes, user_id=employee_id,
-        is_published=is_published,
+        is_published=is_published, job_id=job_id,
     )
     ids = await create_shifts([payload])
     return {"id": ids[0]} if ids else {}
@@ -329,13 +348,16 @@ async def create_open_shift(
     address: Optional[str] = None,
     notes: Optional[str] = None,
     is_published: bool = True,
+    job_id: Optional[str] = None,
 ) -> dict:
     """Create a single OPEN shift (unassigned, cleaners can self-claim).
-    is_published=False pushes it as an unpublished DRAFT."""
+    is_published=False pushes it as an unpublished DRAFT. ``job_id`` links it to
+    a Connecteam Job entity (still unassigned — a person is assigned in
+    Connecteam)."""
     payload = _shift_payload(
         start_datetime=start_datetime, end_datetime=end_datetime,
         title=title, address=address, notes=notes, open_shift=True,
-        is_published=is_published,
+        is_published=is_published, job_id=job_id,
     )
     ids = await create_shifts([payload])
     return {"id": ids[0]} if ids else {}
@@ -456,6 +478,69 @@ async def get_jobs(instance_id: Optional[str] = None) -> dict:
                 break
             params["offset"] += params["limit"]
     return out
+
+
+# --- Connecteam Job matching -------------------------------------------------
+# Link each pushed shift to the Connecteam Job (from the account's Jobs list)
+# for its customer/property, so shifts show the job — not a free-text address —
+# and land under the right job in Connecteam. Match is by normalized name
+# (the account runs one Job per client/property). The Jobs list changes rarely,
+# so it's cached briefly to avoid an API round-trip on every shift push.
+_JOBS_CACHE: dict = {"ts": 0.0, "by_norm": {}}
+_JOBS_CACHE_TTL = 600  # seconds
+
+
+def _norm_name(s: Optional[str]) -> str:
+    """Lowercase, strip punctuation, collapse whitespace — so 'Pier House #2'
+    and 'pier house 2' match."""
+    s = (s or "").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _jobs_index(force: bool = False) -> dict:
+    """Normalized Connecteam-job-name → jobId, cached. Returns the last good
+    index (possibly stale/empty) on any failure — never raises into a shift push."""
+    now = _time.time()
+    if not force and _JOBS_CACHE["by_norm"] and (now - _JOBS_CACHE["ts"] < _JOBS_CACHE_TTL):
+        return _JOBS_CACHE["by_norm"]
+    try:
+        jobs = _run_sync(get_jobs(_get_scheduler_id()))
+    except Exception as e:  # pragma: no cover - network/auth; keep stale index
+        log.warning("[connecteam] could not refresh Jobs list for linking: %s", e)
+        return _JOBS_CACHE["by_norm"]
+    idx: dict = {}
+    for jid, meta in (jobs or {}).items():
+        n = _norm_name(meta.get("name"))
+        if n and n not in idx:
+            idx[n] = str(jid)
+    _JOBS_CACHE["by_norm"] = idx
+    _JOBS_CACHE["ts"] = now
+    return idx
+
+
+def resolve_job_id(candidates) -> Optional[str]:
+    """Best-effort: the Connecteam jobId whose name matches one of the given
+    BrightBase names (e.g. property name, then client name), or None. Exact
+    normalized match wins; otherwise a containment match either direction
+    ('Pier House' ↔ 'Pier House Cottage'). Never raises."""
+    try:
+        idx = _jobs_index()
+        if not idx:
+            return None
+        norms = [_norm_name(c) for c in (candidates or []) if c]
+        for c in norms:              # exact first
+            if c and c in idx:
+                return idx[c]
+        for c in norms:              # then containment (longest job name wins)
+            if not c:
+                continue
+            hits = [(name, jid) for name, jid in idx.items() if c in name or name in c]
+            if hits:
+                return max(hits, key=lambda kv: len(kv[0]))[1]
+    except Exception as e:  # pragma: no cover - matching must never break a push
+        log.warning("[connecteam] job-id resolve failed: %s", e)
+    return None
 
 
 def _shift_net_minutes(shift: dict, user_breaks: list) -> float:
