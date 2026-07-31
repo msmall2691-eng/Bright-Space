@@ -1257,6 +1257,10 @@ class AutomationConfig(BaseModel):
     # (rollback-safe, deduplicated, retried) instead of inline API calls. OFF by
     # default; env CONNECTEAM_OUTBOX_ENABLED overrides this DB toggle.
     connecteam_outbox_enabled: Optional[bool] = None
+    # Whether an unmatched job auto-CREATES its Connecteam Job (so a new
+    # client/property lands under its own Job in Connecteam's Jobs list, rather
+    # than a blank free-text open shift). ON by default.
+    connecteam_auto_create_jobs_enabled: Optional[bool] = None
     customer_self_reschedule: Optional[bool] = None
     # STR turnover lead-time guardrail (Tier 3 roadmap): warn when a turnover
     # ends less than this many hours before the next guest's check-in.
@@ -1316,6 +1320,16 @@ def connecteam_auto_dispatch_enabled(db: Session) -> bool:
     Connecteam until you hit "Dispatch." A reschedule of an already-dispatched
     job re-syncs its shift regardless. Settings → Automation / Schedule."""
     return _coerce_bool(get_setting(db, "connecteam_auto_dispatch_enabled"), True)
+
+
+def connecteam_auto_create_jobs_enabled(db: Session) -> bool:
+    """Whether dispatching a job whose customer/property has NO matching Job in
+    Connecteam's Jobs list should CREATE that Job (named after the property, else
+    the client) and link the shift to it — instead of falling back to a blank
+    free-text open shift. ON by default so booking a brand-new client/property
+    lands a proper Job in Connecteam. Turn OFF to keep the match-only behavior
+    (never write to the Jobs list). Settings → Automation."""
+    return _coerce_bool(get_setting(db, "connecteam_auto_create_jobs_enabled"), True)
 
 
 def connecteam_outbox_enabled(db: Session) -> bool:
@@ -1500,6 +1514,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
             get_setting(db, "gcal_live_sync"),
             os.getenv("GCAL_WATCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}),
         "connecteam_auto_dispatch_enabled": connecteam_auto_dispatch_enabled(db),
+        "connecteam_auto_create_jobs_enabled": connecteam_auto_create_jobs_enabled(db),
         "connecteam_outbox_enabled": connecteam_outbox_enabled(db),
         "customer_self_reschedule": customer_self_reschedule_enabled(db),
         "turnover_lead_buffer_hours": turnover_lead_buffer_hours(db),

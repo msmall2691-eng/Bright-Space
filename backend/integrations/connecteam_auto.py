@@ -51,27 +51,77 @@ def _shift_times(job):
             f"{job.scheduled_date}T{_hhmmss(job.end_time)}")
 
 
+def _auto_create_jobs_enabled(db) -> bool:
+    """Whether an unmatched job should auto-CREATE its Connecteam Job (vs. fall
+    back to a free-text shift). Reads the Settings → Automation toggle; defaults
+    ON. Best-effort — any failure reading the setting means we skip creation
+    (the safe, non-mutating side)."""
+    try:
+        from modules.settings.router import connecteam_auto_create_jobs_enabled
+        return connecteam_auto_create_jobs_enabled(db)
+    except Exception:  # pragma: no cover - settings unavailable → don't create
+        return False
+
+
 def _ct_job_id_for(db, job):
     """The Connecteam Job id to LINK this job's shift(s) to — matched by the
     property name, then the client name (the account runs one Connecteam Job per
-    client/property). Returns None when nothing matches, in which case the shift
-    falls back to a free-text address. Best-effort; never raises."""
+    client/property). When nothing matches and auto-create is enabled, CREATE the
+    Connecteam Job (named after the property, else the client) so a brand-new
+    client/property lands under its own Job instead of a blank free-text shift.
+    Returns None only when there's no match, no name to create from, or creation
+    is off/failed — in which case the shift falls back to a free-text address.
+    Best-effort; never raises."""
     try:
         from integrations.connecteam import resolve_job_id
         from database.models import Property, Client
         candidates = []
+        prop_name = None
         if getattr(job, "property_id", None):
             prop = db.query(Property).filter(Property.id == job.property_id).first()
             if prop and getattr(prop, "name", None):
+                prop_name = prop.name
                 candidates.append(prop.name)
+        client_name = None
         if getattr(job, "client_id", None):
             client = db.query(Client).filter(Client.id == job.client_id).first()
             if client and getattr(client, "name", None):
+                client_name = client.name
                 candidates.append(client.name)
-        return resolve_job_id(candidates)
+        matched = resolve_job_id(candidates)
+        if matched:
+            return matched
+        # No existing Job matched — create one (property name preferred so the
+        # Job is per-property, matching how the account is organized). Skipped
+        # when disabled or when there's no name to create from.
+        if not _auto_create_jobs_enabled(db):
+            return None
+        new_name = prop_name or client_name
+        if not new_name:
+            return None
+        return _create_ct_job(job, new_name)
     except Exception as e:  # pragma: no cover - lookup must never break dispatch
         logger.warning("Connecteam job-id lookup failed for job %s: %s",
                        getattr(job, "id", "?"), e)
+        return None
+
+
+def _create_ct_job(job, name):
+    """Create the Connecteam Job for ``name`` (with the job's address), record it
+    in the name→id cache so sibling/subsequent shifts reuse it, and return the
+    new id. Returns None on any failure so dispatch falls back to a free-text
+    shift rather than dropping the work. Never raises."""
+    try:
+        from integrations.connecteam import create_job_sync, _index_job
+        new_id = create_job_sync(name, address=getattr(job, "address", None))
+        if new_id:
+            _index_job(name, new_id)
+            logger.info("Connecteam: created Job '%s' (id %s) for job %s",
+                        name, new_id, getattr(job, "id", "?"))
+        return new_id
+    except Exception as e:  # pragma: no cover - creation must never break dispatch
+        logger.warning("Connecteam Job auto-create failed for '%s' (job %s): %s",
+                       name, getattr(job, "id", "?"), e)
         return None
 
 
