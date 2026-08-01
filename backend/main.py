@@ -503,4 +503,23 @@ if _dist.exists():
     async def serve_spa(full_path: str):
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             raise HTTPException(status_code=404, detail="Not found")
+        # Serve real build files that live at the dist ROOT — the PWA manifest,
+        # apple-touch-icon.png, favicons, /icons/*, sw.js. Only /assets is mounted
+        # as StaticFiles above, so without this every root-level asset falls through
+        # to the index.html fallback below: a request for /apple-touch-icon.png
+        # returns HTML (200, text/html), iOS can't use it, and the home-screen icon
+        # silently stays on whatever it cached at install time. Guard against path
+        # traversal by requiring the resolved path to stay inside _dist.
+        if full_path:
+            candidate = (_dist / full_path).resolve()
+            try:
+                candidate.relative_to(_dist.resolve())
+            except ValueError:
+                candidate = None  # escaped _dist — ignore and fall back to the SPA
+            # Serve any real dist file EXCEPT index.html, which must always go
+            # out through the no-cache path below — otherwise an explicit
+            # /index.html request would be cached and pin the browser to a stale
+            # bundle after a deploy (the very thing _SPA_NO_CACHE prevents).
+            if candidate and candidate.is_file() and candidate != (_dist / "index.html").resolve():
+                return FileResponse(candidate)
         return FileResponse(_dist / "index.html", headers=_SPA_NO_CACHE)
