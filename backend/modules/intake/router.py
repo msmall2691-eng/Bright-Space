@@ -372,6 +372,49 @@ def get_intake_stats(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
+def get_intake(intake_id: int, db: Session = Depends(get_db),
+               org_id: int = Depends(current_org_id)):
+    """One request, enriched with the LABELS of its linked records so the detail
+    page can render clickable related-record cards (client / opportunity / quote)
+    without a second round-trip. The base fields come from the shared
+    intake_to_dict; ``linked`` carries just enough to render + navigate.
+
+    Declared AFTER /stats so the static path wins; intake_id is int-typed so it
+    never captures /stats regardless."""
+    intake = db.query(LeadIntake).filter(
+        LeadIntake.id == intake_id,
+        or_(LeadIntake.org_id == resolve_org_id(org_id, db), LeadIntake.org_id.is_(None)),  # MT-2 tenant scope
+    ).first()
+    if not intake:
+        raise HTTPException(status_code=404, detail="Intake not found")
+
+    quote = None
+    if getattr(intake, "converted_quote_id", None):
+        quote = db.query(Quote).filter(Quote.id == intake.converted_quote_id).first()
+
+    linked = {"client": None, "opportunity": None, "quote": None}
+    if intake.client_id:
+        c = db.query(Client).filter(Client.id == intake.client_id).first()
+        if c:
+            linked["client"] = {"id": c.id, "name": c.name, "status": c.status}
+    if getattr(intake, "opportunity_id", None):
+        from database.models import Opportunity
+        o = db.query(Opportunity).filter(Opportunity.id == intake.opportunity_id).first()
+        if o:
+            linked["opportunity"] = {
+                "id": o.id, "title": getattr(o, "title", None),
+                "stage": getattr(o, "stage", None), "amount": getattr(o, "amount", None),
+            }
+    if quote:
+        linked["quote"] = {
+            "id": quote.id, "number": getattr(quote, "quote_number", None) or quote.id,
+            "status": quote.status, "total": getattr(quote, "total", None),
+        }
+
+    return {**intake_to_dict(intake, quote), "linked": linked}
+
+
 @router.patch("/{intake_id}", dependencies=[Depends(require_role("admin", "manager"))])
 def update_intake(intake_id: int, data: IntakeUpdate, db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     intake = db.query(LeadIntake).filter(

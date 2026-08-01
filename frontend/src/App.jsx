@@ -105,6 +105,7 @@ function SidebarWithUnread(props) {
 const Workspace = lazy(() => import('./pages/Workspace'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
+const RequestDetail = lazy(() => import('./pages/RequestDetail'))
 const OpportunityDetail = lazy(() => import('./pages/OpportunityDetail'))
 const JobDetail = lazy(() => import('./pages/JobDetail'))
 const QuoteDetail = lazy(() => import('./pages/QuoteDetail'))
@@ -220,6 +221,7 @@ export default function App() {
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientProfile />} />
               <Route path="/requests" element={<Requests />} />
+              <Route path="/requests/:id" element={<RequestDetail />} />
               <Route path="/pipeline" element={<Pipeline />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
