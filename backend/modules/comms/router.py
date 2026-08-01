@@ -90,6 +90,13 @@ class AssignRequest(BaseModel):
     assignee: Optional[str] = None   # null to unassign
 
 
+class LinkClientRequest(BaseModel):
+    """Link an unknown-sender conversation to a client (Twenty-style "merge into
+    contact"). null client_id UNLINKS — detaches the thread from its client
+    without deleting it."""
+    client_id: Optional[int] = None
+
+
 class MessageRead(BaseModel):
     """Mirrors the dict returned by ``msg_to_dict``."""
     id: int
@@ -655,6 +662,37 @@ def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends
     if not conv:
         raise HTTPException(404, "Conversation not found")
     conv.assignee = data.assignee or None
+    db.commit()
+    db.refresh(conv)
+    return conv_to_dict(conv)
+
+
+@router.post("/conversations/{conv_id}/link-client", dependencies=[Depends(require_role("admin", "manager"))])
+def link_conversation_client(conv_id: int, data: LinkClientRequest, db: Session = Depends(get_db)):
+    """Attach (or detach) a conversation to a client — the Twenty-style
+    "link to contact" merge the inbox was missing. Unknown-sender threads come in
+    with client_id NULL (kept, not dropped, by design) and stay unlinked until
+    someone identifies who it is; this is that action.
+
+    Cascades to the conversation's messages so the client's unified comms view
+    (`GET /client/{id}`, which unions by client_id) picks the whole thread up —
+    otherwise linking the header alone would leave the messages orphaned.
+    Passing client_id=null unlinks. Returns the updated conversation."""
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if data.client_id is not None:
+        client = db.query(Client).filter(Client.id == data.client_id).first()
+        if not client:
+            raise HTTPException(404, "Client not found")
+    prev_client_id = conv.client_id
+    conv.client_id = data.client_id
+    # Cascade to messages so the whole thread moves with the header. Only touch
+    # messages that were unlinked or tied to the conversation's PREVIOUS client —
+    # a message explicitly linked to some other client keeps its own link.
+    for m in (conv.messages or []):
+        if m.client_id in (None, prev_client_id):
+            m.client_id = data.client_id
     db.commit()
     db.refresh(conv)
     return conv_to_dict(conv)
