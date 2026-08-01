@@ -64,9 +64,36 @@ def test_create_job_posts_array_with_name_and_scheduler_instance(monkeypatch):
     assert sent["url"].endswith("/jobs/v1/jobs")
     assert isinstance(sent["body"], list)                       # array body
     job = sent["body"][0]
-    assert job["name"] == "Lake House"
-    assert job["assignedInstanceIds"] == [9454799]              # scheduler, as int
+    # Field names verified against developer.connecteam.com/docs/create-jobs.
+    assert job["title"] == "Lake House"                         # NOT "name"
+    assert job["instanceIds"] == [9454799]                      # scheduler, as int
+    assert job["assign"] == {"type": "both", "userIds": [], "groupIds": []}  # required
     assert job["gps"]["address"] == "9 Lakeview Rd"
+
+
+def test_create_job_truncates_overlong_title(monkeypatch):
+    """Connecteam caps the title at 128 chars — an over-long property name must
+    be truncated to a valid create, not sent as-is (which 400s)."""
+    monkeypatch.setattr(ct, "_get_scheduler_id", lambda: "1")
+    monkeypatch.setattr(ct, "_get_api_key", lambda: "k")
+    sent = {}
+
+    class _Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"data": {"jobs": [{"jobId": "J"}]}}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, headers=None, json=None):
+            sent["body"] = json
+            return _Resp()
+
+    monkeypatch.setattr(ct.httpx, "AsyncClient", _Client)
+    ct._run_sync(ct.create_job("X" * 200))
+    assert len(sent["body"][0]["title"]) == 128
 
 
 # ---- dispatch wiring ------------------------------------------------------
@@ -114,6 +141,24 @@ def test_unmatched_job_creates_connecteam_job_when_enabled(monkeypatch):
     assert ca._ct_job_id_for(db, _job()) == "J_CREATED"
     assert created["name"] == "Lake House"          # property name preferred
     assert created["address"] == "9 Lakeview Rd"    # job address carried over
+
+
+def test_auto_create_emits_audit_event(monkeypatch):
+    """Auto-creating a Job writes a durable IntegrationEvent (action=create_job)
+    so the office sees it, not just a log line."""
+    monkeypatch.setattr(ct, "resolve_job_id", lambda cands: None)
+    monkeypatch.setattr(ca, "_auto_create_jobs_enabled", lambda db: True)
+    monkeypatch.setattr(ct, "create_job_sync", lambda name, address=None: "J_NEW")
+    monkeypatch.setattr(ct, "_index_job", lambda name, jid: None)
+    events = []
+    monkeypatch.setattr(ca, "_log", lambda db, **kw: events.append(kw))
+
+    db = FakeDB(prop=SimpleNamespace(name="Lake House"), client=None)
+    assert ca._ct_job_id_for(db, _job()) == "J_NEW"
+    assert len(events) == 1
+    assert events[0]["provider"] == "connecteam"
+    assert events[0]["action"] == "create_job"
+    assert events[0]["external_id"] == "J_NEW"
 
 
 def test_unmatched_job_does_not_create_when_disabled(monkeypatch):

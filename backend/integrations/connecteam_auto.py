@@ -99,18 +99,20 @@ def _ct_job_id_for(db, job):
         new_name = prop_name or client_name
         if not new_name:
             return None
-        return _create_ct_job(job, new_name)
+        return _create_ct_job(db, job, new_name)
     except Exception as e:  # pragma: no cover - lookup must never break dispatch
         logger.warning("Connecteam job-id lookup failed for job %s: %s",
                        getattr(job, "id", "?"), e)
         return None
 
 
-def _create_ct_job(job, name):
+def _create_ct_job(db, job, name):
     """Create the Connecteam Job for ``name`` (with the job's address), record it
-    in the name→id cache so sibling/subsequent shifts reuse it, and return the
-    new id. Returns None on any failure so dispatch falls back to a free-text
-    shift rather than dropping the work. Never raises."""
+    in the name→id cache so sibling/subsequent shifts reuse it, write a durable
+    IntegrationEvent so the office can see a Job was auto-created (not just a
+    silent log line), and return the new id. Returns None on any failure so
+    dispatch falls back to a free-text shift rather than dropping the work.
+    Never raises."""
     try:
         from integrations.connecteam import create_job_sync, _index_job
         new_id = create_job_sync(name, address=getattr(job, "address", None))
@@ -118,6 +120,13 @@ def _create_ct_job(job, name):
             _index_job(name, new_id)
             logger.info("Connecteam: created Job '%s' (id %s) for job %s",
                         name, new_id, getattr(job, "id", "?"))
+            # Audit trail: surfaces in the integration/timeline views so the
+            # office knows a new Connecteam Job entity was created for this
+            # customer (vs. an existing one being reused).
+            _log(db, entity_type="job", entity_id=getattr(job, "id", None),
+                 provider="connecteam", action="create_job", status="ok",
+                 external_id=str(new_id), detail=f"Auto-created Connecteam Job '{name}'",
+                 commit=False)
         return new_id
     except Exception as e:  # pragma: no cover - creation must never break dispatch
         logger.warning("Connecteam Job auto-create failed for '%s' (job %s): %s",
