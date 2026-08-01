@@ -143,6 +143,24 @@ def test_unmatched_job_creates_connecteam_job_when_enabled(monkeypatch):
     assert created["address"] == "9 Lakeview Rd"    # job address carried over
 
 
+def test_auto_create_emits_audit_event(monkeypatch):
+    """Auto-creating a Job writes a durable IntegrationEvent (action=create_job)
+    so the office sees it, not just a log line."""
+    monkeypatch.setattr(ct, "resolve_job_id", lambda cands: None)
+    monkeypatch.setattr(ca, "_auto_create_jobs_enabled", lambda db: True)
+    monkeypatch.setattr(ct, "create_job_sync", lambda name, address=None: "J_NEW")
+    monkeypatch.setattr(ct, "_index_job", lambda name, jid: None)
+    events = []
+    monkeypatch.setattr(ca, "_log", lambda db, **kw: events.append(kw))
+
+    db = FakeDB(prop=SimpleNamespace(name="Lake House"), client=None)
+    assert ca._ct_job_id_for(db, _job()) == "J_NEW"
+    assert len(events) == 1
+    assert events[0]["provider"] == "connecteam"
+    assert events[0]["action"] == "create_job"
+    assert events[0]["external_id"] == "J_NEW"
+
+
 def test_unmatched_job_does_not_create_when_disabled(monkeypatch):
     monkeypatch.setattr(ct, "resolve_job_id", lambda cands: None)
     monkeypatch.setattr(ca, "_auto_create_jobs_enabled", lambda db: False)
