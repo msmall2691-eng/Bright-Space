@@ -531,21 +531,36 @@ async def create_job(name: str, *, address: Optional[str] = None,
     blank free-text open shift. The new Job is assigned to the SCHEDULER instance
     (the one shifts are pushed into) so the linked shift lands under it.
 
-    Body shape per developer.connecteam.com/docs/jobs-create-jobs: the endpoint
-    takes an ARRAY of jobs; ``name`` is required, ``assignedInstanceIds`` scopes
-    the Job to the instances it should appear in, and a GPS/address is optional.
+    Body shape per developer.connecteam.com/docs/create-jobs — verified against
+    the live contract:
+      * The endpoint takes an ARRAY of job objects.
+      * REQUIRED per job: ``title`` (max 128 chars), ``instanceIds`` (array), and
+        an ``assign`` object — ``{"type": "both", "userIds": [], "groupIds": []}``
+        (type MUST be "both"; empty user/group arrays = unassigned, which is what
+        we want since assignment happens on the shift).
+      * Optional: ``code``, ``description``, ``color``, ``gps``
+        ({address, longitude, latitude}).
+    The new jobId comes back at ``data.jobs[0].jobId``.
     """
     inst = instance_id or _get_scheduler_id()
-    job: dict = {"name": name}
+    job: dict = {
+        # Connecteam caps the title at 128 chars — truncate so an over-long
+        # property/client name is a valid create rather than a 400.
+        "title": (name or "")[:128],
+        # Required. Empty user/group arrays create an UNASSIGNED job; the cleaner
+        # is assigned on the shift, not the Job.
+        "assign": {"type": "both", "userIds": [], "groupIds": []},
+    }
     if code:
-        job["jobCode"] = code
+        job["code"] = code
     if inst:
-        # Assign the Job to the scheduler so a shift pushed into that scheduler
-        # can reference it. Kept as ints when numeric (the ids Connecteam emits).
-        job["assignedInstanceIds"] = [int(inst)] if str(inst).isdigit() else [inst]
+        # Required. Scope the Job to the scheduler instance so a shift pushed into
+        # that scheduler can reference it. Ints when numeric (the id shape
+        # Connecteam emits); left as-is otherwise.
+        job["instanceIds"] = [int(inst)] if str(inst).isdigit() else [inst]
     if address:
-        # Free-text address on the Job so the shift inherits a location. The GPS
-        # object is optional; the plain address string is the widely-accepted form.
+        # Optional GPS block; the plain address string is enough for the shift to
+        # inherit a location (lat/long omitted — Connecteam geocodes the address).
         job["gps"] = {"address": address}
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(f"{CONNECTEAM_BASE}/jobs/v1/jobs",

@@ -64,9 +64,36 @@ def test_create_job_posts_array_with_name_and_scheduler_instance(monkeypatch):
     assert sent["url"].endswith("/jobs/v1/jobs")
     assert isinstance(sent["body"], list)                       # array body
     job = sent["body"][0]
-    assert job["name"] == "Lake House"
-    assert job["assignedInstanceIds"] == [9454799]              # scheduler, as int
+    # Field names verified against developer.connecteam.com/docs/create-jobs.
+    assert job["title"] == "Lake House"                         # NOT "name"
+    assert job["instanceIds"] == [9454799]                      # scheduler, as int
+    assert job["assign"] == {"type": "both", "userIds": [], "groupIds": []}  # required
     assert job["gps"]["address"] == "9 Lakeview Rd"
+
+
+def test_create_job_truncates_overlong_title(monkeypatch):
+    """Connecteam caps the title at 128 chars — an over-long property name must
+    be truncated to a valid create, not sent as-is (which 400s)."""
+    monkeypatch.setattr(ct, "_get_scheduler_id", lambda: "1")
+    monkeypatch.setattr(ct, "_get_api_key", lambda: "k")
+    sent = {}
+
+    class _Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"data": {"jobs": [{"jobId": "J"}]}}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, headers=None, json=None):
+            sent["body"] = json
+            return _Resp()
+
+    monkeypatch.setattr(ct.httpx, "AsyncClient", _Client)
+    ct._run_sync(ct.create_job("X" * 200))
+    assert len(sent["body"][0]["title"]) == 128
 
 
 # ---- dispatch wiring ------------------------------------------------------
