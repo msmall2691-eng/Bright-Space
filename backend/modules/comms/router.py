@@ -1017,6 +1017,26 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
     _apply_inbound(conv, msg)
     db.commit()
 
+    # Web-push the staff about the new inbound message (best-effort, no-op
+    # unless VAPID is configured). Deep-links to the Messages inbox; tagged per
+    # conversation so a burst from one sender collapses to a single alert.
+    try:
+        from services.push_service import notify_staff
+        who = (client.name if client else None) or from_number_normalized or "New message"
+        snippet = (body or "").strip()
+        if len(snippet) > 140:
+            snippet = snippet[:140] + "…"
+        notify_staff(
+            db,
+            f"💬 {who}",
+            snippet or "New message",
+            url="/messages",
+            tag=f"conv-{conv.id}",
+            org_id=getattr(conv, "org_id", None),
+        )
+    except Exception:
+        pass
+
     # Phase 4 — operator forward. After persisting, fan out a copy to the
     # configured personal number so on-call staff get the message even when
     # BrightBase isn't open. Failures here MUST NOT break the webhook reply

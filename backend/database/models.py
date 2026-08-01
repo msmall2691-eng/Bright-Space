@@ -1263,3 +1263,24 @@ class SavedView(Base):
     is_default = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class PushSubscription(Base):
+    """A single browser/device Web Push subscription for a staff user.
+
+    One user can have several (phone PWA, laptop Chrome, …), so the natural key
+    is the push `endpoint` (unique). We store the endpoint + the p256dh/auth
+    keys the VAPID send needs, scoped to (org, user). Rows are pruned when a
+    send returns 404/410 Gone (the browser dropped the subscription)."""
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(String(255), nullable=False)
+    auth = Column(String(255), nullable=False)
+    user_agent = Column(String(255), nullable=True)  # for a readable device list
+    created_at = Column(DateTime, default=_utcnow)
+    last_used_at = Column(DateTime, nullable=True)

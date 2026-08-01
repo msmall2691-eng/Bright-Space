@@ -624,4 +624,25 @@ def upsert_lead(db: Session, data: IntakeData) -> dict:
 
     db.commit()
     db.refresh(intake)
+
+    # Web-push the staff about the brand-new request (best-effort, no-op unless
+    # VAPID is configured). Only fires on a genuinely new lead — the deduped/
+    # merged returns above skip it, so a customer double-submitting the form
+    # doesn't buzz twice.
+    try:
+        from services.push_service import notify_staff
+        who = (data.name or "").strip() or "New request"
+        svc = (data.requested_service or data.service_type or "").strip()
+        body = f"{svc} · {data.city or data.address}".strip(" ·") if (svc or data.city or data.address) else "New quote request"
+        notify_staff(
+            db,
+            f"📥 New request — {who}",
+            body,
+            url="/requests",
+            tag=f"intake-{intake.id}",
+            org_id=intake.org_id,
+        )
+    except Exception:
+        pass
+
     return {"success": True, "intake_id": intake.id, "client_id": intake.client_id, "deduped": False}

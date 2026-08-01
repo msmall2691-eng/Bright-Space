@@ -19,17 +19,19 @@ export function ConvItem({ conv, active, onClick }) {
     <button onClick={onClick}
       className={`group w-full text-left px-4 py-3 transition-colors border-b border-hairline ${
         active
-          ? 'bg-blue-50/60'
+          ? 'bg-indigo-50/60'
           : unread
             ? 'bg-panel hover:bg-bg'
             : 'bg-panel hover:bg-bg/70'
       }`}>
       <div className="flex items-center gap-3">
-        {/* Avatar with channel chip in bottom-right corner */}
+        {/* Avatar with a neutral channel chip in the bottom-right corner. The
+            chip is intentionally monochrome (icon carries the channel, not
+            color) so a full list doesn't dot every row a different hue. */}
         <div className="relative shrink-0">
           <Avatar name={conv.client?.name || conv.external_contact} size="md" />
-          <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${channel.bg} ring-2 ring-panel flex items-center justify-center`}>
-            <ChannelIcon className={`w-2.5 h-2.5 ${channel.text}`} />
+          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-bg-2 ring-2 ring-panel flex items-center justify-center">
+            <ChannelIcon className="w-2.5 h-2.5 text-ink-3" />
           </div>
         </div>
 
