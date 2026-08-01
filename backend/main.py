@@ -516,6 +516,10 @@ if _dist.exists():
                 candidate.relative_to(_dist.resolve())
             except ValueError:
                 candidate = None  # escaped _dist — ignore and fall back to the SPA
-            if candidate and candidate.is_file():
+            # Serve any real dist file EXCEPT index.html, which must always go
+            # out through the no-cache path below — otherwise an explicit
+            # /index.html request would be cached and pin the browser to a stale
+            # bundle after a deploy (the very thing _SPA_NO_CACHE prevents).
+            if candidate and candidate.is_file() and candidate != (_dist / "index.html").resolve():
                 return FileResponse(candidate)
         return FileResponse(_dist / "index.html", headers=_SPA_NO_CACHE)
