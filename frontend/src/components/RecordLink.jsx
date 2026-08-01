@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Building2, FileText, Receipt, Calendar, TrendingUp, MapPin } from 'lucide-react'
+import { Building2, FileText, Receipt, Calendar, TrendingUp, MapPin, Inbox } from 'lucide-react'
 
 /**
  * One canonical way to link to any record, so references look and behave
@@ -21,6 +21,7 @@ const ROUTES = {
   invoice: (id) => `/invoices/${id}`,
   opportunity: (id) => `/opportunities/${id}`,
   property: (id) => `/properties/${id}`,
+  request: (id) => `/requests/${id}`,
 }
 
 const ICONS = {
@@ -30,6 +31,7 @@ const ICONS = {
   invoice: Receipt,
   opportunity: TrendingUp,
   property: MapPin,
+  request: Inbox,
 }
 
 export default function RecordLink({ type, id, label, icon = false, className = '', onClick }) {

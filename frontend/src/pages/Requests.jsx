@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   MoreVertical, Plus, Search, FileText, Archive, AlertCircle,
   Home, Building2, Wind, Zap, Mail, Phone, MapPin, X, MessageSquare, Globe,
-  Trash2, MessageCircle, Inbox, ChevronRight, Eye, Copy, UserPlus,
+  Trash2, MessageCircle, Inbox, ChevronRight, Eye, Copy, UserPlus, ArrowUpRight,
 } from 'lucide-react'
 import { get, post, patch, del } from '../api'
 import { displayContactName } from '../utils/display'
@@ -825,12 +825,21 @@ export default function Requests() {
                 <h2 className="text-xl sm:text-2xl font-bold">{selectedRequest.name}</h2>
                 <p className="text-xs sm:text-sm text-ink-3">Request #{selectedRequest.id}</p>
               </div>
-              <button
-                onClick={() => setShowDetailsDrawer(false)}
-                className="p-2 hover:bg-bg-2 text-ink-3 rounded transition-colors -mr-2 sm:mr-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => navigate(`/requests/${selectedRequest.id}`)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-bg-2 rounded-lg transition-colors"
+                  title="Open the full request page"
+                >
+                  <ArrowUpRight className="w-4 h-4" /> Open full view
+                </button>
+                <button
+                  onClick={() => setShowDetailsDrawer(false)}
+                  className="p-2 hover:bg-bg-2 text-ink-3 rounded transition-colors -mr-2 sm:mr-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Tab strip: Details (existing read-only fields) vs. Conversation
