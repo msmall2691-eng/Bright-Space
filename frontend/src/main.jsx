@@ -49,3 +49,17 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>
 )
+
+// ── PWA service worker ──
+// Registers the app for "Add to Home Screen" installability and wires up the
+// push-notification handlers (see public/sw.js). Registered after load so it
+// never competes with first paint. Dev (vite) is skipped — the SW is only
+// meaningful against the built app.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      // Non-fatal: the app works fine without the SW, it just isn't installable.
+      console.warn('[pwa] service worker registration failed:', err)
+    })
+  })
+}

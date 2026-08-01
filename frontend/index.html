@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>BrightBase</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✨</text></svg>" />
+    <!-- App icon + PWA manifest. Real PNGs (not an emoji data-URI) so the
+         home-screen icon renders crisply on iOS/Android when installed. -->
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <!-- Mobile browser chrome — matches the paper/console theme roots in index.css so
          the iOS status bar and Android URL bar tint with the app instead of white. -->
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f5ef" />
@@ -19,7 +24,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="BrightBase" />
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='36' fill='%23f7f5ef'/><text x='50%25' y='55%25' font-size='120' text-anchor='middle' dominant-baseline='middle'>✨</text></svg>" />
+    <!-- iOS ignores SVG apple-touch-icons — must be a real PNG. iOS applies its
+         own squircle mask, so the source is a full-bleed square. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
