@@ -198,6 +198,24 @@ export default function Comms() {
     }
   }, [loadList, loadSummary, showToast])
 
+  // Link an unknown-sender thread to a client (Twenty-style merge). Posts to the
+  // link-client endpoint, then refreshes the open thread + list + counts so the
+  // contact panel flips from "Link to a client" to the full profile immediately.
+  const [linkingClient, setLinkingClient] = useState(false)
+  const linkClient = useCallback(async (client) => {
+    if (!detail?.id || !client?.id) return
+    setLinkingClient(true)
+    try {
+      await post(`/api/comms/conversations/${detail.id}/link-client`, { client_id: client.id })
+      await Promise.all([loadDetail(detail.id), loadList(), loadSummary()])
+      showToast(`Linked to ${client.name}`)
+    } catch (e) {
+      showToast(String(e?.message || 'Could not link client'), false)
+    } finally {
+      setLinkingClient(false)
+    }
+  }, [detail?.id, loadDetail, loadList, loadSummary, showToast])
+
   const resolveConv = useCallback((id) => rowAction(id, 'status', { status: 'resolved' }, 'Marked done'), [rowAction])
   const reopenConv = useCallback((id) => rowAction(id, 'status', { status: 'open' }, 'Reopened'), [rowAction])
   const assignMine = useCallback((id) => {
@@ -365,6 +383,8 @@ export default function Comms() {
           onClose={() => setShowContactPanel(false)}
           onDraftQuote={draftQuote}
           draftingQuote={draftingQuote}
+          onLinkClient={linkClient}
+          linkingClient={linkingClient}
         />
       )}
 

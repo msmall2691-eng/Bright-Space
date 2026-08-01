@@ -5,13 +5,14 @@ import { contactDisplay, relTime } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
 import RecordLink from '../RecordLink'
 import AiInsight from '../AiInsight'
+import { LinkClientControl } from './LinkClientControl'
 import { useClientQuickLinks } from '../../hooks/useClientQuickLinks'
 
 /** Right-side contact detail panel: summary header (avatar, status,
  *  channel badge, click-to-call/email links, address, "View Full Profile"),
  *  tags row, and a 15-item activity timeline synthesized from the thread's
  *  messages. The Assignee/Priority/Status block was retired in Phase 8. */
-export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, onDraftQuote, draftingQuote, mobileActive, desktopOpen, onBack }) {
+export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, onDraftQuote, draftingQuote, onLinkClient, linkingClient, mobileActive, desktopOpen, onBack }) {
   if (!detail) return null
   const name = contactDisplay(detail)
   const client = detail.client
@@ -109,12 +110,16 @@ export function ContactPanel({ detail, onAssign, onPriority, onStatus, onClose, 
           </button>
         )}
 
-        {client && (
+        {client ? (
           <a href={`/clients/${client.id}`}
             className="mt-2 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 py-2 rounded-xl transition-all">
             <User className="w-3.5 h-3.5" /> View Full Profile
           </a>
-        )}
+        ) : onLinkClient ? (
+          // Unknown-sender thread: no client yet. Offer the "link to a client"
+          // merge so the whole conversation attaches to the right record.
+          <LinkClientControl onLink={onLinkClient} linking={linkingClient} />
+        ) : null}
       </div>
 
       {/* Phase 8 (cleanup): removed the Assignee / Priority / Status block.
