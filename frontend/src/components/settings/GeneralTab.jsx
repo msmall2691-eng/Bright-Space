@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, Loader2 } from 'lucide-react'
 import { del, get, post, upload } from '../../api'
 import { applyTheme, getTheme, applyAccent, getAccent, ACCENTS } from '../../theme'
+import NotificationsCard from './NotificationsCard'
 import { inp, lbl } from './constants'
 
 // Swatch color per accent (a representative 500/600) for the picker dots.
@@ -182,6 +183,8 @@ export default function GeneralTab({ toast, active, dangerZone }) {
             </div>
           </div>
         </div>
+
+        <NotificationsCard toast={toast} />
 
         <div>
           <h2 className="text-lg font-bold text-ink mb-4">Company Information</h2>

@@ -1441,6 +1441,21 @@ def public_view_quote(token: str, db: Session = Depends(get_db)):
         _notify_staff_quote_event(db, quote, f"Client viewed quote {quote.quote_number}", "quote_viewed")
         db.commit()
         db.refresh(quote)
+        # Web-push the staff: "someone's looking at your quote right now" is a
+        # high-signal moment to follow up. Best-effort, no-op unless configured.
+        try:
+            from services.push_service import notify_staff
+            who = (quote.client.name if quote.client else "A customer")
+            notify_staff(
+                db,
+                "Quote viewed 👀",
+                f"{who} just opened quote {quote.quote_number}",
+                url="/billing?view=quotes",
+                tag=f"quote-viewed-{quote.id}",
+                org_id=getattr(quote, "org_id", None),
+            )
+        except Exception:
+            pass
     return _public_quote_dict(quote, db)
 
 

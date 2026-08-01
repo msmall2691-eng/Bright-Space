@@ -1,62 +1,78 @@
-# Push notifications — where we are & what's left
+# Push notifications
 
-BrightBase is now an installable PWA. When you "Add to Home Screen" you get a
-real app icon, a standalone (no browser chrome) window, and the *client* half
-of web-push is already in place. This doc explains the last mile so we can turn
-notifications on.
+BrightBase can send Web Push notifications to installed PWAs and desktop
+browsers. Staff get a buzz for:
 
-## What already works (this change)
+- **📥 New request** — a lead form / InstantEstimate submission (fires once, on
+  genuinely new leads; deduped submissions don't re-buzz).
+- **💬 New message** — an inbound SMS lands in the unified inbox.
+- **👀 Quote viewed** — a customer opens their quote link (a great follow-up cue).
 
-- **Service worker** (`frontend/public/sw.js`) with `push` and
-  `notificationclick` handlers. It can already receive a push and show a
-  notification that deep-links into the app when tapped.
-- **Installability** — Chrome/Android show "Install app"; iOS 16.4+ can add to
-  Home Screen and receive pushes *once the user grants permission from an
-  installed PWA* (iOS only allows push for installed PWAs, not Safari tabs).
+Everything is **best-effort and off by default** — the app runs exactly as
+before until you (1) set VAPID keys on the backend and (2) flip the toggle in
+Settings on each device.
 
-## What's left (backend + one small frontend hook)
+## One-time server setup
 
-Web-push is a 4-step handshake. Steps 1–2 are done; 3–4 remain:
+1. Generate a VAPID keypair:
 
-1. ✅ Service worker registered.
-2. ✅ `push` handler renders `{ title, body, url, tag }` payloads.
-3. ⬜ **Subscribe the device.** After the user opts in, call
-   `Notification.requestPermission()` then
-   `registration.pushManager.subscribe({ userVisibleOnly: true,
-   applicationServerKey: <VAPID public key> })` and POST the resulting
-   subscription JSON to a new backend endpoint (`POST /push/subscriptions`).
-   Best placed behind an explicit "Enable notifications" toggle in **Settings**
-   (never prompt on load — browsers penalize that and it feels spammy).
-4. ⬜ **Send from the backend.** Store subscriptions per-user, generate a VAPID
-   keypair once (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` env vars), and send
-   with the `pywebpush` library from the events that matter — e.g. a new job
-   dispatched, a visit starting soon, or the `sync_reconcile_tick` surfacing a
-   sync failure.
+   ```bash
+   cd backend
+   pip install -r requirements.txt      # adds pywebpush
+   python scripts/gen_vapid_keys.py
+   ```
 
-### Rough backend sketch (FastAPI + pywebpush)
+2. Copy the three lines it prints into the Railway backend service's env vars:
+
+   ```
+   VAPID_PUBLIC_KEY=…
+   VAPID_PRIVATE_KEY=…            # secret — backend only
+   VAPID_SUBJECT=mailto:you@yourdomain.com
+   ```
+
+3. Redeploy. The migration `062_push_subscriptions` creates the table
+   (`alembic upgrade head` runs as part of the normal deploy).
+
+That's it — `GET /api/push/vapid-public-key` now reports `enabled: true` and the
+Settings toggle goes live.
+
+## Turning it on (per device)
+
+Settings → General → **Notifications** → flip **Push notifications** on, accept
+the browser prompt, then tap **Send a test notification** to confirm.
+
+- **iOS:** notifications only work for a PWA **installed to the Home Screen**
+  (iOS 16.4+), never a plain Safari tab — install first (Share → Add to Home
+  Screen), open the installed app, then enable.
+- Each device/browser subscribes independently; turning it off only affects
+  that device.
+
+## How it fits together
+
+| Piece | Location |
+|-------|----------|
+| Service worker (receives + shows the push, deep-links on tap) | `frontend/public/sw.js` |
+| Browser subscribe / unsubscribe / test | `frontend/src/utils/push.js` |
+| Settings toggle | `frontend/src/components/settings/NotificationsCard.jsx` |
+| Subscription API (`/api/push/*`) | `backend/modules/push/router.py` |
+| Send helper (`notify_staff`) + VAPID | `backend/services/push_service.py` |
+| Subscriptions table | `backend/database/models.py` (`PushSubscription`) + migration `062` |
+| Event hooks | quoting router (viewed), comms router (inbound SMS), intake `upsert_lead` (new request) |
+
+`notify_staff(db, title, body, url=…, tag=…, org_id=…)` opens its own short-lived
+DB session, so calling it from a request handler never touches that request's
+transaction. It prunes any subscription that returns `404/410 Gone` so the
+table self-heals.
+
+## Adding a new trigger
+
+Call `notify_staff` from wherever the event happens, e.g.:
 
 ```python
-# pip install pywebpush
-from pywebpush import webpush, WebPushException
-
-def send_push(subscription: dict, title: str, body: str, url: str = "/"):
-    webpush(
-        subscription_info=subscription,
-        data=json.dumps({"title": title, "body": body, "url": url}),
-        vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
-        vapid_claims={"sub": "mailto:ops@brightbase.app"},
-    )
+from services.push_service import notify_staff
+notify_staff(db, "🧹 Job assigned", f"{cleaner} — {job.title}",
+             url="/schedule", tag=f"job-{job.id}", org_id=job.org_id)
 ```
 
-Store subscriptions in a `push_subscriptions` table
-(`user_id`, `endpoint`, `p256dh`, `auth`, `created_at`) and drop any that
-return `410 Gone` on send.
-
-## Good first notification triggers
-
-- New job assigned / dispatched to a cleaner.
-- Visit starting within N minutes (from the schedule).
-- A sync reconcile tick that failed to push to Google Calendar / Connecteam.
-
-When you're ready to wire step 3–4, say the word and I'll add the Settings
-toggle, the subscribe endpoint, the table migration, and the send helper.
+Good candidates not yet wired: job dispatched to a cleaner, a visit starting
+soon, a `sync_reconcile_tick` that failed to push to Google/Connecteam.
