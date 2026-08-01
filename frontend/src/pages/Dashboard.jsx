@@ -63,10 +63,11 @@ function HeroCockpit({ greeting, longDate, todayCount, weekCount, loading, navig
   ]
   return (
     <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 px-5 py-6 sm:px-8 sm:py-7">
-      {/* Decorative glows */}
+      {/* Decorative glows — single accent hue (was indigo + fuchsia + violet,
+          which read as rainbow); one color keeps the hero calm and on-brand. */}
       <span className="pointer-events-none absolute -top-24 -left-16 w-80 h-80 rounded-full bg-indigo-500/25 blur-3xl" />
-      <span className="pointer-events-none absolute -bottom-28 right-10 w-96 h-96 rounded-full bg-fuchsia-500/15 blur-3xl" />
-      <span className="pointer-events-none absolute top-10 right-1/3 w-72 h-72 rounded-full bg-violet-500/15 blur-3xl" />
+      <span className="pointer-events-none absolute -bottom-28 right-10 w-96 h-96 rounded-full bg-indigo-500/15 blur-3xl" />
+      <span className="pointer-events-none absolute top-10 right-1/3 w-72 h-72 rounded-full bg-indigo-500/10 blur-3xl" />
 
       <div className="relative flex flex-col xl:flex-row xl:items-end xl:justify-between gap-6">
         <div className="min-w-0">
@@ -107,10 +108,13 @@ function HeroCockpit({ greeting, longDate, todayCount, weekCount, loading, navig
 
 /* ── Bento pillar pods ────────────────────────────────────────────────── */
 
+// The big pillar numbers all read in calm ink (Twenty-style) rather than three
+// competing hues; the small icon chip keeps a subtle per-pillar tint so the
+// tiles are still distinguishable at a glance.
 const PILLAR = {
-  indigo:  { chip: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300',   glow: 'bg-indigo-400/25',  n: 'text-indigo-600 dark:text-indigo-300' },
-  blue:    { chip: 'bg-blue-500/15 text-blue-600 dark:text-blue-300',         glow: 'bg-blue-400/25',    n: 'text-blue-600 dark:text-blue-300' },
-  emerald: { chip: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300', glow: 'bg-emerald-400/25', n: 'text-emerald-600 dark:text-emerald-300' },
+  indigo:  { chip: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300',   glow: 'bg-indigo-400/25',  n: 'text-ink' },
+  blue:    { chip: 'bg-blue-500/15 text-blue-600 dark:text-blue-300',         glow: 'bg-blue-400/25',    n: 'text-ink' },
+  emerald: { chip: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300', glow: 'bg-emerald-400/25', n: 'text-ink' },
 }
 
 function Pillar({ icon: Icon, accent, value, headline, label, urgent, stats, onClick, loading }) {

@@ -17,17 +17,20 @@ import AiInsight from '../components/AiInsight'
 import { toast } from '../utils/toastBus'
 import { confirmDialog } from '../utils/confirmBus'
 
+// Twenty-style: neutral pills carry the label, the icon (type) or a small
+// colored dot (status) carries the signal — so a list of leads isn't a wall of
+// tinted rectangles. Only the pipeline STATUS keeps a dot of color.
 const SERVICE_TYPE_CONFIG = {
-  residential: { label: 'Residential', badge: 'bg-blue-100 text-blue-700', icon: Home },
-  commercial: { label: 'Commercial', badge: 'bg-purple-100 text-purple-700', icon: Building2 },
-  str: { label: 'STR', badge: 'bg-amber-100 text-amber-700', icon: Wind },
+  residential: { label: 'Residential', badge: 'bg-bg-2 text-ink-2', icon: Home },
+  commercial: { label: 'Commercial', badge: 'bg-bg-2 text-ink-2', icon: Building2 },
+  str: { label: 'STR', badge: 'bg-bg-2 text-ink-2', icon: Wind },
 }
 
 const STATUS_CONFIG = {
-  new: { label: 'New', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  new: { label: 'New', badge: 'bg-bg-2 text-ink-2', dot: 'bg-indigo-500' },
   reviewed: { label: 'Reviewed', badge: 'bg-bg-2 text-ink-2', dot: 'bg-ink-3' },
-  quoted: { label: 'Quoted', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-  converted: { label: 'Converted', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  quoted: { label: 'Quoted', badge: 'bg-bg-2 text-ink-2', dot: 'bg-amber-500' },
+  converted: { label: 'Converted', badge: 'bg-bg-2 text-ink-2', dot: 'bg-emerald-500' },
   archived: { label: 'Archived', badge: 'bg-bg-2 text-ink-2', dot: 'bg-ink-3' },
 }
 
@@ -51,10 +54,10 @@ const PRIORITY_CONFIG = {
 // Source chip on every Lead row — makes it obvious whether a lead came
 // in via the website form, an SMS, or an email reply.
 const SOURCE_CONFIG = {
-  website: { label: 'Website', icon: Globe,         badge: 'bg-blue-50 text-blue-700' },
-  sms:     { label: 'SMS',     icon: Phone,         badge: 'bg-emerald-50 text-emerald-700' },
-  email:   { label: 'Email',   icon: Mail,          badge: 'bg-violet-50 text-violet-700' },
-  chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-amber-50 text-amber-700' },
+  website: { label: 'Website', icon: Globe,         badge: 'bg-bg-2 text-ink-3' },
+  sms:     { label: 'SMS',     icon: Phone,         badge: 'bg-bg-2 text-ink-3' },
+  email:   { label: 'Email',   icon: Mail,          badge: 'bg-bg-2 text-ink-3' },
+  chat:    { label: 'Chat',    icon: MessageSquare, badge: 'bg-bg-2 text-ink-3' },
 }
 
 // The customer's ACTUAL service pick + the two pricing inputs (condition, pet
@@ -130,7 +133,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
   const [showMenu, setShowMenu] = useState(false)
 
   return (
-    <div className={`bg-panel rounded-lg border p-4 hover:shadow-md transition-all ${selected ? 'border-blue-400 bg-blue-50/30' : 'border-hairline'}`}>
+    <div className={`bg-panel rounded-lg border p-4 hover:shadow-md transition-all ${selected ? 'border-indigo-400 bg-indigo-50/30' : 'border-hairline'}`}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {/* Bulk-select checkbox */}
@@ -817,14 +820,14 @@ export default function Requests() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:w-full max-w-2xl bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
+            <div className="bg-panel border-b border-hairline p-4 sm:p-6 text-ink flex items-center justify-between">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold">{selectedRequest.name}</h2>
-                <p className="text-xs sm:text-sm text-blue-100">Request #{selectedRequest.id}</p>
+                <p className="text-xs sm:text-sm text-ink-3">Request #{selectedRequest.id}</p>
               </div>
               <button
                 onClick={() => setShowDetailsDrawer(false)}
-                className="p-2 hover:bg-blue-400 rounded transition-colors -mr-2 sm:mr-0"
+                className="p-2 hover:bg-bg-2 text-ink-3 rounded transition-colors -mr-2 sm:mr-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1179,9 +1182,9 @@ export default function Requests() {
       {showNewRequestModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:w-full max-w-lg bg-panel rounded-t-2xl sm:rounded-lg shadow-xl overflow-hidden sm:max-h-[90vh] flex flex-col max-h-[95vh]">
-            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 text-white flex items-center justify-between">
+            <div className="bg-panel border-b border-hairline p-4 sm:p-6 text-ink flex items-center justify-between">
               <h2 className="text-xl font-bold">New Request</h2>
-              <button onClick={() => setShowNewRequestModal(false)} className="text-white/80 hover:text-white">
+              <button onClick={() => setShowNewRequestModal(false)} className="text-ink-3 hover:text-ink">
                 <X className="w-5 h-5" />
               </button>
             </div>
