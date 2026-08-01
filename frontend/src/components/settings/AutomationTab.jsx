@@ -21,6 +21,7 @@ export function useAutomationSettings({ toast, active }) {
     calendar_source_of_truth: 'brightbase',
     gcal_live_sync: true,
     connecteam_auto_dispatch_enabled: true,
+    connecteam_auto_create_jobs_enabled: true,
     customer_self_reschedule: true,
     turnover_lead_buffer_hours: 3,
   })
@@ -203,6 +204,19 @@ export default function AutomationTab({ state, toast, active }) {
             </div>
             {!s.connecteam_auto_dispatch_enabled && (
               <p className="text-xs text-amber-600 mt-1">Manual mode — nothing reaches Connecteam until you dispatch each job yourself.</p>
+            )}
+            {s.connecteam_auto_dispatch_enabled && (
+              <div className="mt-3 pl-3 border-l-2 border-hairline">
+                <label className="flex items-center justify-between gap-2 cursor-pointer">
+                  <div>
+                    <span className="text-sm font-medium text-ink">Create the Connecteam Job if it doesn’t exist</span>
+                    <p className="text-xs text-ink-3 mt-1">When a job’s client/property has no matching Job in Connecteam’s Jobs list, create one (named after the property, else the client) and link the shift to it — so a brand-new client lands under its own Job instead of a blank address. Turn OFF to only match existing Jobs and never write to the Jobs list.</p>
+                  </div>
+                  <input type="checkbox" checked={s.connecteam_auto_create_jobs_enabled}
+                    onChange={e => setAutomationSettings(x => ({ ...x, connecteam_auto_create_jobs_enabled: e.target.checked }))}
+                    className="w-4 h-4 rounded shrink-0" />
+                </label>
+              </div>
             )}
           </div>
 

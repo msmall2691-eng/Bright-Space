@@ -497,6 +497,69 @@ async def get_jobs(instance_id: Optional[str] = None) -> dict:
     return out
 
 
+def _extract_created_job_id(data: dict) -> Optional[str]:
+    """Pull the new jobId out of a create-Job response, defensively. Connecteam
+    wraps the created entity a couple of ways depending on the module version
+    ({"data": {"job": {...}}} or {"data": {"jobs": [{...}]}} or a bare object),
+    so probe each and read jobId/id. Returns None if nothing job-shaped is found
+    — the caller then falls back to an unlinked free-text shift."""
+    d = data.get("data") if isinstance(data.get("data"), dict) else data
+    node = None
+    if isinstance(d, dict):
+        node = d.get("job")
+        if node is None:
+            jobs = d.get("jobs")
+            if isinstance(jobs, list) and jobs:
+                node = jobs[0]
+    if node is None and isinstance(d, dict) and (d.get("jobId") or d.get("id")):
+        node = d
+    if not isinstance(node, dict):
+        return None
+    jid = node.get("jobId") if node.get("jobId") is not None else node.get("id")
+    return str(jid) if jid is not None else None
+
+
+async def create_job(name: str, *, address: Optional[str] = None,
+                     code: Optional[str] = None,
+                     instance_id: Optional[str] = None) -> Optional[str]:
+    """Create a Job entity in the account's Jobs list and return its new jobId
+    (or None if the response carries no id).
+
+    A shift can only LINK to a Connecteam Job that already exists; this is how
+    BrightBase makes that Job when there's no match yet — so booking a fresh
+    client/property auto-creates its Connecteam Job instead of falling back to a
+    blank free-text open shift. The new Job is assigned to the SCHEDULER instance
+    (the one shifts are pushed into) so the linked shift lands under it.
+
+    Body shape per developer.connecteam.com/docs/jobs-create-jobs: the endpoint
+    takes an ARRAY of jobs; ``name`` is required, ``assignedInstanceIds`` scopes
+    the Job to the instances it should appear in, and a GPS/address is optional.
+    """
+    inst = instance_id or _get_scheduler_id()
+    job: dict = {"name": name}
+    if code:
+        job["jobCode"] = code
+    if inst:
+        # Assign the Job to the scheduler so a shift pushed into that scheduler
+        # can reference it. Kept as ints when numeric (the ids Connecteam emits).
+        job["assignedInstanceIds"] = [int(inst)] if str(inst).isdigit() else [inst]
+    if address:
+        # Free-text address on the Job so the shift inherits a location. The GPS
+        # object is optional; the plain address string is the widely-accepted form.
+        job["gps"] = {"address": address}
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(f"{CONNECTEAM_BASE}/jobs/v1/jobs",
+                              headers=_headers(), json=[job])
+        _raise_for_status(r)
+        data = r.json()
+    return _extract_created_job_id(data)
+
+
+def create_job_sync(name: str, **kwargs) -> Optional[str]:
+    """Synchronous wrapper around create_job for the sync dispatch path."""
+    return _run_sync(create_job(name, **kwargs))
+
+
 # --- Connecteam Job matching -------------------------------------------------
 # Link each pushed shift to the Connecteam Job (from the account's Jobs list)
 # for its customer/property, so shifts show the job — not a free-text address —
@@ -560,6 +623,18 @@ def _jobs_index(force: bool = False) -> dict:
     _JOBS_CACHE["by_norm"] = build_jobs_index(jobs)
     _JOBS_CACHE["ts"] = now
     return _JOBS_CACHE["by_norm"]
+
+
+def _index_job(name: Optional[str], job_id: str) -> None:
+    """Add a just-created Job to the cached name→id index so the next shift for
+    the same customer/property (this dispatch, or any within the cache TTL)
+    reuses it instead of creating a duplicate. No-op on a blank name."""
+    n = _norm_name(name)
+    if n and job_id:
+        _JOBS_CACHE.setdefault("by_norm", {})
+        # Only fill a gap — never clobber an existing mapping (an operator-made
+        # Job of the same name should win over one we just created).
+        _JOBS_CACHE["by_norm"].setdefault(n, str(job_id))
 
 
 def resolve_job_id(candidates) -> Optional[str]:
