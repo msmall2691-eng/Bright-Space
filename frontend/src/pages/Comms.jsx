@@ -182,6 +182,29 @@ export default function Comms() {
     setMobileView('thread')
   }
 
+  // ──────── List-row (swipe) actions ────────
+  // These act on any conversation by id — not just the open thread — so a
+  // swipe on a row in the list can resolve / reopen / assign without first
+  // opening it. Each hits the same endpoints the thread controls use, then
+  // refreshes the list + folder counts. Best-effort with a toast on failure.
+  const rowAction = useCallback(async (id, path, body, okMsg) => {
+    try {
+      await post(`/api/comms/conversations/${id}/${path}`, body)
+      await loadList()
+      await loadSummary()
+      if (okMsg) showToast(okMsg)
+    } catch (e) {
+      showToast(String(e?.message || 'Action failed'), false)
+    }
+  }, [loadList, loadSummary, showToast])
+
+  const resolveConv = useCallback((id) => rowAction(id, 'status', { status: 'resolved' }, 'Marked done'), [rowAction])
+  const reopenConv = useCallback((id) => rowAction(id, 'status', { status: 'open' }, 'Reopened'), [rowAction])
+  const assignMine = useCallback((id) => {
+    const me = JSON.parse(localStorage.getItem('brightbase_user') || '{}')?.email?.split('@')[0] || 'Me'
+    return rowAction(id, 'assign', { assignee: me }, `Assigned to ${me}`)
+  }, [rowAction])
+
   // ──────── Message grouping with day separators ────────
 
   const groupedMessages = useMemo(() => {
@@ -250,6 +273,9 @@ export default function Comms() {
         chipFilters={chipFilters} toggleChip={toggleChip}
         onSelect={selectConversation}
         onCompose={() => setShowCompose(true)}
+        onResolve={resolveConv}
+        onReopen={reopenConv}
+        onAssignMine={assignMine}
       />
 
 

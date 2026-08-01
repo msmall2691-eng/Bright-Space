@@ -27,8 +27,10 @@ export function NotifPermissionButton() {
   )
 }
 
-/** Round initials avatar with a deterministic gradient palette per name.
- *  `online` renders a green presence dot bottom-right. */
+/** Round initials avatar. Twenty-CRM style: flat, low-saturation tint per
+ *  name (soft background + same-hue ink, no gradient, no shadow) so a full
+ *  inbox reads as one calm surface instead of a bag of skittles. `online`
+ *  renders a green presence dot bottom-right. */
 export function Avatar({ name, size = 'md', className = '', online }) {
   const sizes = {
     xs: 'w-5 h-5 text-[9px]',
@@ -38,20 +40,22 @@ export function Avatar({ name, size = 'md', className = '', online }) {
     xl: 'w-14 h-14 text-base',
   }
   const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  // Muted, desaturated tints — deliberately quiet. Dark mode uses a low-alpha
+  // wash of the same hue so avatars don't glow against the dark panel.
   const palettes = [
-    'bg-gradient-to-br from-blue-400 to-indigo-600 text-white',
-    'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white',
-    'bg-gradient-to-br from-violet-400 to-violet-600 text-white',
-    'bg-gradient-to-br from-amber-400 to-amber-600 text-white',
-    'bg-gradient-to-br from-rose-400 to-rose-600 text-white',
-    'bg-gradient-to-br from-cyan-400 to-cyan-600 text-white',
-    'bg-gradient-to-br from-indigo-400 to-indigo-600 text-white',
-    'bg-gradient-to-br from-orange-400 to-orange-600 text-white',
+    'bg-slate-100 text-slate-600 dark:bg-slate-400/15 dark:text-slate-300',
+    'bg-stone-100 text-stone-600 dark:bg-stone-400/15 dark:text-stone-300',
+    'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300',
+    'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
+    'bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
+    'bg-rose-100 text-rose-700 dark:bg-rose-400/15 dark:text-rose-300',
+    'bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-300',
+    'bg-teal-100 text-teal-700 dark:bg-teal-400/15 dark:text-teal-300',
   ]
   const hash = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   return (
     <div className={`relative shrink-0 ${className}`}>
-      <div className={`${sizes[size]} rounded-full flex items-center justify-center font-semibold shadow-sm ${palettes[hash % palettes.length]}`}>
+      <div className={`${sizes[size]} rounded-full flex items-center justify-center font-semibold ${palettes[hash % palettes.length]}`}>
         {initials}
       </div>
       {online && (

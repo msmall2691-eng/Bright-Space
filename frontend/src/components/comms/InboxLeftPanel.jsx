@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Plus, Search, Phone, Mail, Inbox, SlidersHorizontal, X } from 'lucide-react'
+import { Plus, Search, Phone, Mail, Inbox, SlidersHorizontal, X, Check, RotateCcw, UserPlus } from 'lucide-react'
 import { NotifPermissionButton } from './primitives'
 import { ConvItem } from './ConvItem'
+import { SwipeRow } from './SwipeRow'
 
 const CHANNEL_TABS = [
   { key: '', label: 'All' },
@@ -32,7 +33,28 @@ export function InboxLeftPanel({
   chipFilters, toggleChip,
   onSelect,
   onCompose,
+  onResolve,
+  onReopen,
+  onAssignMine,
 }) {
+  // Swipe-left actions per row. In the Done folder the primary action flips to
+  // "Reopen"; elsewhere it's "Done" (resolve) plus a quick "Mine" assign.
+  const rowActions = (conv) => {
+    if (folder === 'done') {
+      return [{ key: 'reopen', label: 'Reopen', icon: RotateCcw,
+                tone: 'bg-bg-3 text-ink-2', onClick: () => onReopen?.(conv.id) }]
+    }
+    const acts = []
+    if (onAssignMine && !conv.assignee) {
+      acts.push({ key: 'mine', label: 'Mine', icon: UserPlus,
+                  tone: 'bg-indigo-600 text-white', onClick: () => onAssignMine(conv.id) })
+    }
+    if (onResolve) {
+      acts.push({ key: 'done', label: 'Done', icon: Check,
+                  tone: 'bg-emerald-600 text-white', onClick: () => onResolve(conv.id) })
+    }
+    return acts
+  }
   const [filtersOpen, setFiltersOpen] = useState(false)
   const visibleChips = CHIPS.filter(c =>
     c.hideOn !== folder && ((c.count ?? 0) > 0 || chipFilters.has(c.key)),
@@ -186,7 +208,9 @@ export function InboxLeftPanel({
           </div>
         ) : (
           convs.map(c => (
-            <ConvItem key={c.id} conv={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
+            <SwipeRow key={c.id} actions={rowActions(c)}>
+              <ConvItem conv={c} active={c.id === selectedId} onClick={() => onSelect(c.id)} />
+            </SwipeRow>
           ))
         )}
       </div>
