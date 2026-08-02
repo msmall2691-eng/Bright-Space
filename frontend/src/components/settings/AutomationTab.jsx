@@ -20,6 +20,8 @@ export function useAutomationSettings({ toast, active }) {
     gcal_reminders_mode: 'google_default',
     calendar_source_of_truth: 'brightbase',
     gcal_live_sync: true,
+    gmail_live_sync: false,
+    gmail_live_sync_available: false,
     connecteam_auto_dispatch_enabled: true,
     connecteam_auto_create_jobs_enabled: true,
     customer_self_reschedule: true,
@@ -186,6 +188,28 @@ export default function AutomationTab({ state, toast, active }) {
                 <input type="checkbox" checked={s.gcal_live_sync}
                   onChange={e => setAutomationSettings(x => ({ ...x, gcal_live_sync: e.target.checked }))}
                   className="w-4 h-4 rounded" />
+              </label>
+            </div>
+          </div>
+
+          <div className="border-t border-hairline pt-5">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="font-semibold text-ink">
+                  Real-time email (Gmail → BrightBase)
+                  {!s.gmail_live_sync_available && (
+                    <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-bg-2 text-ink-3 align-middle">Needs setup</span>
+                  )}
+                </h3>
+                <p className="text-xs text-ink-3 mt-1">
+                  When ON, new emails push into the inbox the moment they arrive (Gmail → Pub/Sub) instead of waiting for the poll. Requires a Google Cloud Pub/Sub topic — see <code>docs/gmail-realtime-push.md</code>. Until that's set up, the incremental poll keeps the inbox current.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!s.gmail_live_sync}
+                  disabled={!s.gmail_live_sync_available}
+                  onChange={e => setAutomationSettings(x => ({ ...x, gmail_live_sync: e.target.checked }))}
+                  className="w-4 h-4 rounded disabled:opacity-40" />
               </label>
             </div>
           </div>

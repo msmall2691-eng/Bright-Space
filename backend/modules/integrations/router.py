@@ -27,3 +27,22 @@ async def gcal_notification(request: Request, db: Session = Depends(get_db)):
         logger.warning("[gcal-watch] notification handling failed: %s", e)
         result = {"ok": False, "error": "internal"}
     return result
+
+
+@router.post("/gmail/push")
+async def gmail_push(request: Request, token: str = "", db: Session = Depends(get_db)):
+    """Gmail real-time push via Cloud Pub/Sub. The push subscription POSTs the
+    Gmail notification here; ``?token=`` authenticates it (Pub/Sub can't send an
+    API key). Always 200s so Pub/Sub doesn't retry-storm — auth + work happen in
+    handle_push, which no-ops safely when the feature isn't configured."""
+    from integrations.gmail_watch import handle_push
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        result = handle_push(db, token, body)
+    except Exception as e:  # never 500 at Pub/Sub — it would retry-storm
+        logger.warning("[gmail-watch] push handling failed: %s", e)
+        result = {"ok": False, "error": "internal"}
+    return result

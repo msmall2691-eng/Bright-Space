@@ -1250,6 +1250,9 @@ class AutomationConfig(BaseModel):
     # external edits reflect in seconds instead of on the ~poll interval. Needs
     # a public https base URL.
     gcal_live_sync: Optional[bool] = None
+    # Real-time Gmail push (users.watch → Pub/Sub → webhook) instead of polling.
+    # OFF by default and inert unless GMAIL_PUBSUB_TOPIC is configured.
+    gmail_live_sync: Optional[bool] = None
     # Whether assigning cleaners auto-pushes their Connecteam shifts. OFF =
     # manual dispatch (you press "Dispatch" when ready).
     connecteam_auto_dispatch_enabled: Optional[bool] = None
@@ -1513,6 +1516,10 @@ def get_automation_settings(db: Session = Depends(get_db)):
         "gcal_live_sync": _coerce_bool(
             get_setting(db, "gcal_live_sync"),
             os.getenv("GCAL_WATCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}),
+        # Real-time Gmail push — reflects the toggle AND whether a Pub/Sub topic
+        # is configured, so the UI can show it as available vs. needs-setup.
+        "gmail_live_sync": _coerce_bool(get_setting(db, "gmail_live_sync"), False),
+        "gmail_live_sync_available": bool((os.getenv("GMAIL_PUBSUB_TOPIC") or "").strip()),
         "connecteam_auto_dispatch_enabled": connecteam_auto_dispatch_enabled(db),
         "connecteam_auto_create_jobs_enabled": connecteam_auto_create_jobs_enabled(db),
         "connecteam_outbox_enabled": connecteam_outbox_enabled(db),
@@ -1544,9 +1551,23 @@ def save_automation_settings(config: AutomationConfig, db: Session = Depends(get
             logger.warning("gcal live-sync registration failed: %s", e)
             live_sync_result = {"ok": False, "error": str(e)}
 
+    # Same for Gmail real-time push: turning it ON registers a watch per
+    # connected account now. No-ops (with a reason) when Pub/Sub isn't
+    # configured, so it's safe even before the GCP side exists.
+    gmail_live_result = None
+    if data.get("gmail_live_sync") is True:
+        try:
+            from integrations.gmail_watch import register_all
+            gmail_live_result = register_all(db)
+        except Exception as e:
+            logger.warning("gmail live-sync registration failed: %s", e)
+            gmail_live_result = {"ok": False, "error": str(e)}
+
     out = {"status": "saved", **data}
     if live_sync_result is not None:
         out["live_sync"] = live_sync_result
+    if gmail_live_result is not None:
+        out["gmail_live_sync_result"] = gmail_live_result
     return out
 
 
