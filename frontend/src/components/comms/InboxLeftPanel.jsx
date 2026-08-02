@@ -91,7 +91,7 @@ export function InboxLeftPanel({
             className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full border transition-all ${
               active
                 ? (isOverdue ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/25'
-                             : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/25')
+                             : 'bg-indigo-500/10 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/25')
                 : 'bg-panel text-ink-3 border-hairline hover:bg-bg'
             }`}>
             <Ic className="w-3 h-3" />
@@ -135,7 +135,7 @@ export function InboxLeftPanel({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 focus:bg-panel transition-all" />
+            className="w-full bg-bg border border-hairline rounded-xl pl-9 pr-3 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-panel transition-all" />
         </div>
       </div>
 
@@ -222,7 +222,7 @@ export function InboxLeftPanel({
           <div className="relative bg-panel rounded-t-2xl border-t border-hairline p-4 pb-8 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-ink">Filters</h2>
-              <button onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3">
+              <button onClick={() => setFiltersOpen(false)} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3">
                 <X className="w-4 h-4" />
               </button>
             </div>

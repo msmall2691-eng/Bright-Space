@@ -30,10 +30,10 @@ const SERVICE_LABELS = {
 }
 
 const AGING_ORDER = [
-  { key: '0_30',    label: '0–30 days',  tone: 'text-amber-600' },
-  { key: '31_60',   label: '31–60 days', tone: 'text-orange-600' },
-  { key: '61_90',   label: '61–90 days', tone: 'text-red-600' },
-  { key: '90_plus', label: '90+ days',   tone: 'text-red-700 font-bold' },
+  { key: '0_30',    label: '0–30 days',  tone: 'text-amber-600 dark:text-amber-300' },
+  { key: '31_60',   label: '31–60 days', tone: 'text-orange-600 dark:text-orange-300' },
+  { key: '61_90',   label: '61–90 days', tone: 'text-red-600 dark:text-red-300' },
+  { key: '90_plus', label: '90+ days',   tone: 'text-red-700 dark:text-red-300 font-bold' },
 ]
 
 function serviceLabel(key) {
@@ -94,7 +94,7 @@ export default function OwnerDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
           icon={TrendingUp}
-          chip="bg-blue-50 text-blue-600"
+          chip="bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-300"
           label="Close rate (90d)"
           value={loading ? '—' : closeRate?.rate_pct != null ? `${closeRate.rate_pct}%` : 'n/a'}
           sub={loading ? 'Loading…' : closeRate
@@ -103,7 +103,7 @@ export default function OwnerDashboard() {
         />
         <KpiCard
           icon={Repeat}
-          chip="bg-emerald-50 text-emerald-600"
+          chip="bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
           label="MRR estimate"
           value={loading ? '—' : fmtMoney((mrr?.estimate_cents || 0) / 100)}
           sub={loading ? 'Loading…' : mrr
@@ -112,7 +112,7 @@ export default function OwnerDashboard() {
         />
         <KpiCard
           icon={DollarSign}
-          chip="bg-violet-50 text-violet-600"
+          chip="bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300"
           label="Revenue paid (90d)"
           value={loading ? '—' : fmtMoney(revenueTotal)}
           sub={loading ? 'Loading…' : `${revenueByService.reduce((n, r) => n + (r.invoice_count || 0), 0)} invoices`}

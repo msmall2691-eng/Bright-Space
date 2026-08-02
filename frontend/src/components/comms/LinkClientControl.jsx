@@ -31,7 +31,7 @@ export function LinkClientControl({ onLink, linking }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} disabled={linking}
-        className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 py-2 rounded-xl transition-all">
+        className="mt-3 w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/15 disabled:opacity-60 py-2 rounded-xl transition-colors">
         {linking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
         Link to a client
       </button>
@@ -39,13 +39,13 @@ export function LinkClientControl({ onLink, linking }) {
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/40 p-2 space-y-2">
+    <div className="mt-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-500/5 p-2 space-y-2">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-3 pointer-events-none" />
         <input
           autoFocus value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search clients…"
-          className="w-full bg-panel border border-hairline rounded-lg pl-8 pr-2 py-1.5 text-[12px] focus:outline-none focus:border-blue-400"
+          className="w-full bg-panel border border-hairline rounded-lg pl-8 pr-2 py-1.5 text-[12px] focus:outline-none focus:border-indigo-400"
         />
       </div>
       <div className="max-h-44 overflow-y-auto rounded-lg border border-hairline divide-y divide-hairline bg-panel">

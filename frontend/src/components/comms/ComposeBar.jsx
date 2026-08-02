@@ -35,9 +35,9 @@ export function ComposeBar({
   draftingAI = false,
 }) {
   return (
-    <div className="border-t border-hairline bg-panel p-4">
-      {/* Mode toggle */}
-      <div className="flex items-center gap-1.5 mb-3">
+    <div className="border-t border-hairline bg-panel px-4 pt-4 pb-safe">
+      {/* Mode toggle — wraps on narrow phones so the AI button + flash never clip */}
+      <div className="flex flex-wrap items-center gap-1.5 gap-y-2 mb-3">
         <button onClick={() => setNoteMode(false)}
           className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all ${
             !noteMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-bg-2 text-ink-3 hover:bg-bg-2'
@@ -75,7 +75,7 @@ export function ComposeBar({
       {detail.channel === 'email' && !noteMode && (
         <input value={replySubject} onChange={e => setReplySubject(e.target.value)}
           placeholder={detail.subject ? `Re: ${detail.subject}` : 'Subject'}
-          className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 transition-all" />
+          className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
       )}
 
       {/* Canned responses — one-tap fills the reply box */}
@@ -83,7 +83,7 @@ export function ComposeBar({
         <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
           {CANNED_REPLIES.map(t => (
             <button key={t} onClick={() => setReply(prev => prev ? prev + ' ' + t : t)}
-              className="shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-full border border-hairline bg-panel text-ink-2 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-colors whitespace-nowrap">
+              className="shrink-0 text-[11px] font-medium px-2.5 py-1.5 rounded-full border border-hairline bg-panel text-ink-2 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-300 hover:border-indigo-200 dark:hover:border-indigo-500/30 transition-colors whitespace-nowrap">
               {t}
             </button>
           ))}
@@ -116,7 +116,8 @@ export function ComposeBar({
         </button>
       </div>
 
-      <div className="flex items-center mt-2">
+      {/* Keyboard-shortcut hint is desktop-only — hidden where there's no keyboard */}
+      <div className="hidden sm:flex items-center mt-2">
         <div className="text-[10px] text-ink-3 flex items-center gap-1">
           <Kbd>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</Kbd>
           <span>+</span>
