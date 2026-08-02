@@ -923,30 +923,78 @@ def send_sms_message(data: SMSRequest, db: Session = Depends(get_db)):
         }
 
 
-@router.post("/email", response_model=MessageRead, dependencies=[Depends(require_role("admin", "manager"))])
-def send_email_message(data: EmailRequest, db: Session = Depends(get_db)):
-    """Send an email via SMTP — attaches to a conversation automatically."""
-    try:
-        _send_email(to=data.to, subject=data.subject, html_body=data.body, text_body=data.body)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Email error: {e}")
+def _last_inbound_message_id(db: Session, conv_id: int) -> Optional[str]:
+    """The RFC Message-ID of the most recent inbound email in a conversation
+    (stored on Message.external_id by the Gmail/IMAP ingest). Used as In-Reply-To
+    so a send-through-Gmail reply threads into the existing Gmail conversation."""
+    m = (db.query(Message)
+         .filter(Message.conversation_id == conv_id, Message.channel == "email",
+                 Message.direction == "inbound", Message.external_id.isnot(None))
+         .order_by(Message.id.desc()).first())
+    return m.external_id if m else None
 
+
+def _send_email_via_gmail_or_smtp(db: Session, user, *, to, subject, body, conv):
+    """Prefer sending THROUGH the sender's connected Gmail (so it lands in their
+    Sent and threads back into the Gmail conversation via In-Reply-To); fall back
+    to SMTP when they have no send-capable Google account or the API call fails.
+
+    Returns (from_addr, external_id): the address it went out as and the RFC
+    Message-ID to record (None for SMTP). Raises only when BOTH paths fail."""
+    account = None
+    if user is not None:
+        from database.models import UserGoogleAccount
+        account = (db.query(UserGoogleAccount)
+                   .filter(UserGoogleAccount.user_id == user.id,
+                           UserGoogleAccount.status == "connected")
+                   .first())
+    if account is not None and "gmail.send" in " ".join(account.scopes or []):
+        try:
+            from integrations.google_accounts import account_credentials
+            from integrations import gmail_api
+            in_reply_to = _last_inbound_message_id(db, conv.id) if conv else None
+            res = gmail_api.send_message(
+                account_credentials(db, account),
+                to=to, subject=subject, html_body=body,
+                from_addr=account.email, in_reply_to=in_reply_to,
+            )
+            return account.email, res.get("message_id")
+        except Exception as e:
+            logger.warning("[comms] Gmail send failed for %s, falling back to SMTP: %s",
+                           getattr(account, "email", "?"), e)
+    # SMTP fallback (also the path when no Google account is connected).
+    _send_email(to=to, subject=subject, html_body=body, text_body=body)
+    return os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "")), None
+
+
+@router.post("/email", response_model=MessageRead)
+def send_email_message(data: EmailRequest, db: Session = Depends(get_db),
+                       current_user=Depends(require_role("admin", "manager"))):
+    """Send an email — through the sender's connected Gmail when available (real
+    Sent + threads back), else SMTP. Attaches to a conversation automatically."""
     conv = find_or_create_conversation(
         db, channel="email",
         client_id=data.client_id,
         external_contact=data.to,
         subject=data.subject,
     )
+    try:
+        from_addr, external_id = _send_email_via_gmail_or_smtp(
+            db, current_user, to=data.to, subject=data.subject, body=data.body, conv=conv)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Email error: {e}")
+
     msg = Message(
         client_id=data.client_id,
         conversation_id=conv.id,
         channel="email",
         direction="outbound",
-        from_addr=os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "")),
+        from_addr=from_addr,
         to_addr=data.to,
         subject=data.subject,
         body=data.body,
         status="sent",
+        external_id=external_id,
     )
     db.add(msg)
     db.flush()

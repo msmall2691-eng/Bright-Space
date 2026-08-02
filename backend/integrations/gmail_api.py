@@ -113,6 +113,41 @@ def current_history_id(creds) -> str:
     return str(profile.get("historyId") or "")
 
 
+def send_message(creds, *, to: str, subject: str, html_body: str,
+                 from_addr: str = None, in_reply_to: str = None,
+                 references: str = None, thread_id: str = None) -> dict:
+    """Send an email THROUGH the user's Gmail (users.messages.send) so it lands
+    in their Gmail Sent and — with In-Reply-To/References set to the message
+    being answered — threads into the existing Gmail conversation, instead of
+    going out via SMTP as a disconnected message.
+
+    Returns {"id", "threadId", "message_id"} where message_id is the RFC
+    Message-ID header we generated (stored on our outbound Message so a future
+    reply threads back and dedup works). Requires the gmail.send scope, which
+    the Connect flow already requests."""
+    import base64 as _b64
+    from email.mime.text import MIMEText
+    from email.utils import make_msgid
+
+    mime = MIMEText(html_body or "", "html", "utf-8")
+    mime["To"] = to
+    mime["Subject"] = subject or ""
+    if from_addr:
+        mime["From"] = from_addr
+    msg_id = make_msgid()
+    mime["Message-ID"] = msg_id
+    if in_reply_to:
+        mime["In-Reply-To"] = in_reply_to
+        # References chains the whole thread; fall back to just the parent.
+        mime["References"] = references or in_reply_to
+    raw = _b64.urlsafe_b64encode(mime.as_bytes()).decode()
+    body = {"raw": raw}
+    if thread_id:
+        body["threadId"] = thread_id
+    sent = _service(creds).users().messages().send(userId="me", body=body).execute()
+    return {"id": sent.get("id"), "threadId": sent.get("threadId"), "message_id": msg_id}
+
+
 def start_watch(creds, topic_name: str, label_ids=None) -> dict:
     """Register a Gmail push watch on the account's INBOX. Google will publish a
     notification to ``topic_name`` (a Cloud Pub/Sub topic,
