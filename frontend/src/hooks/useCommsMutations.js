@@ -24,6 +24,16 @@ export function useCommsMutations({ detail, loadDetail, loadList, loadSummary })
     await refreshDetailAndList()
   }, [detail, refreshDetailAndList])
 
+  // Phase F: assign to a real user (or null to unassign). Sends assignee_user_id
+  // so ownership is a proper reference, not a free-text name.
+  const assignUser = useCallback(async (user) => {
+    if (!detail) return
+    await post(`/api/comms/conversations/${detail.id}/assign`, {
+      assignee_user_id: user?.id ?? null,
+    })
+    await refreshDetailAndList()
+  }, [detail, refreshDetailAndList])
+
   const setStatus = useCallback(async (s) => {
     if (!detail) return
     await post(`/api/comms/conversations/${detail.id}/status`, { status: s })
@@ -55,5 +65,5 @@ export function useCommsMutations({ detail, loadDetail, loadList, loadSummary })
     await refreshDetailAndList()
   }, [detail, refreshDetailAndList])
 
-  return { setAssignee, setStatus, setPriority, sendReplyOrNote }
+  return { setAssignee, assignUser, setStatus, setPriority, sendReplyOrNote }
 }

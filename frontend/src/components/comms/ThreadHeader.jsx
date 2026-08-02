@@ -3,6 +3,7 @@ import { formatPhone } from '../../utils/display'
 import { CHANNEL_CONFIG } from './constants'
 import { contactDisplay, relTime } from './utils'
 import { Avatar, SlaBadge } from './primitives'
+import { AssigneePicker } from './AssigneePicker'
 
 /** Top of the center pane when a conversation is open:
  *   • Optional red Overdue banner (SLA breached).
@@ -14,6 +15,7 @@ export function ThreadHeader({
   showContactPanel, setShowContactPanel,
   setMobileView,
   onToggleStatus,
+  onAssign,
 }) {
   const ch = CHANNEL_CONFIG[detail.channel] || CHANNEL_CONFIG.sms
   const ChannelIcon = ch.icon
@@ -58,6 +60,13 @@ export function ThreadHeader({
 
         {/* Actions */}
         <div className="flex items-center gap-1.5">
+          {onAssign && (
+            <AssigneePicker
+              currentName={detail.assignee}
+              currentId={detail.assignee_user_id}
+              onAssign={onAssign}
+            />
+          )}
           <button onClick={onToggleStatus}
             className={`text-[12px] font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
               detail.status === 'resolved'

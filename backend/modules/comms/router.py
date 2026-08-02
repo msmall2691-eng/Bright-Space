@@ -87,7 +87,11 @@ class InternalNoteRequest(BaseModel):
 
 
 class AssignRequest(BaseModel):
-    assignee: Optional[str] = None   # null to unassign
+    # Phase F: prefer a real user id. `assignee` (string) is still accepted for
+    # back-compat / display; passing assignee_user_id sets both (the display
+    # label is derived from the user). All-null unassigns.
+    assignee: Optional[str] = None
+    assignee_user_id: Optional[int] = None
 
 
 class LinkClientRequest(BaseModel):
@@ -296,6 +300,7 @@ def conv_to_dict(c: Conversation, *, include_client: bool = True, preview=_UNSET
         "status": c.status,
         "priority": c.priority,
         "assignee": c.assignee,
+        "assignee_user_id": c.assignee_user_id,
         "tags": c.tags or [],
         "unread_count": c.unread_count,
         "last_message_at": _iso_utc(c.last_message_at),
@@ -661,10 +666,41 @@ def assign_conversation(conv_id: int, data: AssignRequest, db: Session = Depends
     conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
     if not conv:
         raise HTTPException(404, "Conversation not found")
-    conv.assignee = data.assignee or None
+    if data.assignee_user_id is not None:
+        # Real user assignment (preferred). Resolve the user, set the FK, and
+        # derive the display label from their name so `assignee` stays populated
+        # for old readers and list rendering.
+        from database.models import User
+        user = db.query(User).filter(User.id == data.assignee_user_id).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        conv.assignee_user_id = user.id
+        conv.assignee = user.full_name or user.email
+    elif data.assignee:
+        # Legacy string-only assignment (no id known) — kept for back-compat.
+        conv.assignee = data.assignee
+        conv.assignee_user_id = None
+    else:
+        # Unassign.
+        conv.assignee = None
+        conv.assignee_user_id = None
     db.commit()
     db.refresh(conv)
     return conv_to_dict(conv)
+
+
+@router.get("/assignees", dependencies=[Depends(require_role("admin", "manager"))])
+def list_assignees(db: Session = Depends(get_db)):
+    """Staff who can own a conversation — powers the inbox assignee picker.
+    Returns [{id, name, email}] of active, non-client users. Manager-accessible
+    (the admin-only /auth/users list is for the Users admin screen)."""
+    from database.models import User
+    rows = (db.query(User)
+            .filter(User.role != "client", User.status != "disabled")
+            .all())
+    out = [{"id": u.id, "name": u.full_name or u.email, "email": u.email} for u in rows]
+    out.sort(key=lambda r: (r["name"] or "").lower())
+    return out
 
 
 @router.post("/conversations/{conv_id}/link-client", dependencies=[Depends(require_role("admin", "manager"))])
