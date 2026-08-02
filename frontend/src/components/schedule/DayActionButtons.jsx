@@ -20,7 +20,7 @@ export default function DayActionButtons({ visits, jobs, properties, className =
           href={directionsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 transition-colors"
+          className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 transition-colors"
           title="Open today's stops as a driving route in Google Maps"
         >
           <MapPin className="w-3.5 h-3.5" />
@@ -29,7 +29,7 @@ export default function DayActionButtons({ visits, jobs, properties, className =
       )}
       <button
         onClick={() => window.print()}
-        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 transition-colors"
+        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg bg-bg-2 hover:bg-hairline text-ink-2 transition-colors"
         title="Print this day's schedule"
       >
         <Printer className="w-3.5 h-3.5" />

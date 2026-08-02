@@ -64,9 +64,9 @@ export default function Invoicing() {
     setPanel('send')
   }
 
-  const openNew = () => {
+  const openNew = (clientId = '') => {
     setSelected(null)
-    setForm({ client_id: '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
+    setForm({ client_id: clientId || '', items: [{ ...EMPTY_ITEM }], tax_rate: 0, due_date: '', notes: '', custom_fields: {} })
     setShowInvAdvanced(false)
     setPanel('edit')
   }
@@ -79,9 +79,11 @@ export default function Invoicing() {
   const [invParams, setInvParams] = useSearchParams()
   useEffect(() => {
     if (invParams.get('new')) {
-      openNew()
+      // ?client=<id> pre-scopes the new invoice to that client (parity with the
+      // "New Quote" quick action on the client profile).
+      openNew(invParams.get('client') || '')
       const next = new URLSearchParams(invParams)
-      next.delete('new')
+      next.delete('new'); next.delete('client')
       setInvParams(next, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
