@@ -358,12 +358,37 @@ def run_inbox_sync(
 def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> dict:
     """Sync ONE member's connected Gmail (Gmail API, their own OAuth grant)
     into the unified inbox. Messages stamp the account for provenance;
-    Message-ID dedupe means overlap with the shared IMAP inbox is harmless."""
+    Message-ID dedupe means overlap with the shared IMAP inbox is harmless.
+
+    INCREMENTAL when the account has a stored Gmail historyId cursor: only
+    messages added to INBOX since the last sync are fetched (cheap, and with no
+    fixed message cap so bursts between polls aren't missed). The first sync —
+    or one whose cursor has aged out of Gmail's ~1-week history window — falls
+    back to a full scan and (re-)seeds the cursor. Uses the existing
+    gmail.readonly scope; no new consent."""
     from integrations.google_accounts import AccountCredentialsError, account_credentials, mark_sync
-    from integrations.gmail_api import fetch_inbox_for_account
+    from integrations.gmail_api import (
+        fetch_inbox_for_account, fetch_inbox_incremental, current_history_id, HistoryExpired,
+    )
     try:
         creds = account_credentials(db, account)
-        emails = fetch_inbox_for_account(creds, max_results=max_results)
+        cursor = getattr(account, "gmail_history_id", None)
+        new_history_id = None
+        if cursor:
+            try:
+                inc = fetch_inbox_incremental(creds, cursor)
+                emails = inc["messages"]
+                new_history_id = inc["new_history_id"]
+            except HistoryExpired:
+                # Cursor too old — full re-scan and re-seed from the current id.
+                logger.info(f"[gmail] history cursor expired for {account.email}; full re-sync")
+                emails = fetch_inbox_for_account(creds, max_results=max_results)
+                new_history_id = current_history_id(creds)
+        else:
+            # First sync: full scan, then seed the cursor from the current id so
+            # subsequent syncs go incremental.
+            emails = fetch_inbox_for_account(creds, max_results=max_results)
+            new_history_id = current_history_id(creds)
     except AccountCredentialsError as e:
         # account_credentials already marked the row expired with the reason.
         logger.info(f"[gmail] account sync skipped: {e}")
@@ -373,6 +398,10 @@ def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> di
         mark_sync(db, account, error=str(e))
         return {"error": str(e), "summary": {"total": 0, "threaded": 0}}
     result = run_inbox_sync(db, emails=emails, source_account_id=account.id)
+    # Advance the cursor only after a successful threading pass, so a failure
+    # mid-sync re-reads the same window next time rather than skipping messages.
+    if new_history_id:
+        account.gmail_history_id = new_history_id
     mark_sync(db, account, error=None)
     return result
 

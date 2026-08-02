@@ -63,51 +63,123 @@ def _body_text(payload: dict) -> str:
     return re.sub(r"<[^>]+>", " ", html)
 
 
+def _service(creds):
+    """Build a timeout-bounded Gmail API service from live OAuth creds."""
+    authed_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=_HTTP_TIMEOUT_SECONDS))
+    return build("gmail", "v1", http=authed_http)
+
+
+def _message_dict(service, msg_id: str, skip_automated: bool = True):
+    """Fetch one message by id and shape it like the IMAP path's dict. Returns
+    None when the message can't be fetched or is filtered out (no sender /
+    automated)."""
+    try:
+        msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+    except Exception as e:
+        logger.warning(f"[gmail-api] could not fetch message {msg_id}: {e}")
+        return None
+    headers = (msg.get("payload") or {}).get("headers") or []
+    from_name, from_email = parseaddr(_header(headers, "From"))
+    if not from_email:
+        return None
+    if skip_automated and _is_automated(from_email):
+        return None
+    date_raw = _header(headers, "Date")
+    try:
+        date_iso = parsedate_to_datetime(date_raw).isoformat() if date_raw else ""
+    except Exception:
+        date_iso = ""
+    return {
+        "id": msg.get("id"),
+        "message_id": _header(headers, "Message-ID"),
+        "from_name": from_name or from_email.split("@")[0],
+        "from_email": from_email.lower(),
+        "to": _header(headers, "To"),
+        "subject": _header(headers, "Subject"),
+        "snippet": msg.get("snippet") or "",
+        "body": _body_text(msg.get("payload") or {}),
+        "date": date_iso,
+        "is_read": "UNREAD" not in (msg.get("labelIds") or []),
+        "has_attachments": any(
+            (p.get("filename") or "").strip() for p in _walk_parts(msg.get("payload") or {})
+        ),
+    }
+
+
+def current_history_id(creds) -> str:
+    """The mailbox's current historyId — the cursor a later incremental sync
+    reads changes *from*. Called after a full sync to seed the cursor."""
+    profile = _service(creds).users().getProfile(userId="me").execute()
+    return str(profile.get("historyId") or "")
+
+
 def fetch_inbox_for_account(creds, max_results: int = 30, skip_automated: bool = True) -> list:
-    """Fetch the most recent inbox messages for a connected account.
+    """Fetch the most recent inbox messages for a connected account (full scan).
 
     `creds` is a live google.oauth2 Credentials (from
     integrations.google_accounts.account_credentials). Dedup against already
     threaded messages happens downstream on the Message-ID header, same as
-    the IMAP path.
+    the IMAP path. Used for the first sync (no cursor yet) and as the fallback
+    when an incremental cursor has expired.
     """
-    authed_http = AuthorizedHttp(creds, http=httplib2.Http(timeout=_HTTP_TIMEOUT_SECONDS))
-    service = build("gmail", "v1", http=authed_http)
+    service = _service(creds)
     listing = service.users().messages().list(
         userId="me", labelIds=["INBOX"], maxResults=max_results,
     ).execute()
     out = []
     for ref in listing.get("messages", []) or []:
-        try:
-            msg = service.users().messages().get(userId="me", id=ref["id"], format="full").execute()
-        except Exception as e:
-            logger.warning(f"[gmail-api] could not fetch message {ref.get('id')}: {e}")
-            continue
-        headers = (msg.get("payload") or {}).get("headers") or []
-        from_name, from_email = parseaddr(_header(headers, "From"))
-        if not from_email:
-            continue
-        if skip_automated and _is_automated(from_email):
-            continue
-        date_raw = _header(headers, "Date")
-        try:
-            date_iso = parsedate_to_datetime(date_raw).isoformat() if date_raw else ""
-        except Exception:
-            date_iso = ""
-        body = _body_text(msg.get("payload") or {})
-        out.append({
-            "id": msg.get("id"),
-            "message_id": _header(headers, "Message-ID"),
-            "from_name": from_name or from_email.split("@")[0],
-            "from_email": from_email.lower(),
-            "to": _header(headers, "To"),
-            "subject": _header(headers, "Subject"),
-            "snippet": msg.get("snippet") or "",
-            "body": body,
-            "date": date_iso,
-            "is_read": "UNREAD" not in (msg.get("labelIds") or []),
-            "has_attachments": any(
-                (p.get("filename") or "").strip() for p in _walk_parts(msg.get("payload") or {})
-            ),
-        })
+        d = _message_dict(service, ref["id"], skip_automated=skip_automated)
+        if d:
+            out.append(d)
     return out
+
+
+class HistoryExpired(Exception):
+    """Gmail returned 404 for the stored startHistoryId — it's older than
+    Gmail's history retention window (≈ 1 week), so an incremental sync isn't
+    possible and the caller must fall back to a full scan + re-seed."""
+
+
+def fetch_inbox_incremental(creds, start_history_id: str, skip_automated: bool = True) -> dict:
+    """Incremental inbox sync via the Gmail History API — only messages ADDED
+    to INBOX since ``start_history_id`` are fetched, instead of re-scanning the
+    newest N every poll. Cheap and complete (no fixed message cap).
+
+    Returns {"messages": [...], "new_history_id": str}. Raises HistoryExpired
+    when the cursor is too old (HTTP 404) so the caller does a full re-sync.
+    Uses the existing gmail.readonly scope — no new consent required.
+    """
+    from googleapiclient.errors import HttpError
+    service = _service(creds)
+    seen_ids, messages = set(), []
+    latest_history_id = str(start_history_id or "")
+    page_token = None
+    try:
+        while True:
+            resp = service.users().history().list(
+                userId="me", startHistoryId=start_history_id,
+                historyTypes=["messageAdded"], labelId="INBOX",
+                pageToken=page_token,
+            ).execute()
+            if resp.get("historyId"):
+                latest_history_id = str(resp["historyId"])
+            for h in resp.get("history", []) or []:
+                for added in h.get("messagesAdded", []) or []:
+                    mid = (added.get("message") or {}).get("id")
+                    # INBOX label check: history can include messages already
+                    # archived by the time we read them — only take current-INBOX.
+                    labels = (added.get("message") or {}).get("labelIds") or []
+                    if not mid or mid in seen_ids or "INBOX" not in labels:
+                        continue
+                    seen_ids.add(mid)
+                    d = _message_dict(service, mid, skip_automated=skip_automated)
+                    if d:
+                        messages.append(d)
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+    except HttpError as e:
+        if getattr(e, "resp", None) is not None and e.resp.status == 404:
+            raise HistoryExpired(str(e))
+        raise
+    return {"messages": messages, "new_history_id": latest_history_id}
