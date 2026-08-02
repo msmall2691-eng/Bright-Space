@@ -771,7 +771,12 @@ class Conversation(Base):
     priority = Column(String, default="normal", nullable=False)
     # low | normal | high | urgent
 
-    assignee = Column(String, nullable=True, index=True)   # email or name of teammate
+    assignee = Column(String, nullable=True, index=True)   # display label / legacy free-text
+    # Real teammate reference (Phase F). Nullable — an unassigned or a legacy
+    # string-only assignment has no id. `assignee` above stays the display label
+    # and back-compat; new assignments set both. FK declared here only (the
+    # migration adds a plain indexed column, per this repo's convention).
+    assignee_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     tags = Column(JSON, default=list)
 
     # Activity timestamps — used to sort the inbox and measure SLAs

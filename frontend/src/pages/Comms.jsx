@@ -124,7 +124,7 @@ export default function Comms() {
 
   // ──────── Actions ────────
 
-  const { setAssignee, setStatus, setPriority, sendReplyOrNote } = useCommsMutations({
+  const { setAssignee, assignUser, setStatus, setPriority, sendReplyOrNote } = useCommsMutations({
     detail, loadDetail, loadList, loadSummary,
   })
 
@@ -326,6 +326,7 @@ export default function Comms() {
               setShowContactPanel={setShowContactPanel}
               setMobileView={setMobileView}
               onToggleStatus={() => setStatus(detail.status === 'resolved' ? 'open' : 'resolved')}
+              onAssign={assignUser}
             />
 
             {/* Messages thread */}
