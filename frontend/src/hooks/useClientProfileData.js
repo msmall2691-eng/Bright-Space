@@ -27,6 +27,7 @@ export function useClientProfileData(id) {
   const [properties, setProperties] = useState([])
   const [schedules, setSchedules] = useState([])
   const [opportunities, setOpportunities] = useState([])
+  const [intakes, setIntakes] = useState([])
   const [activities, setActivities] = useState([])
   const [visitStats, setVisitStats] = useState(null)
   const [profileVisits, setProfileVisits] = useState({ upcoming: [], past: [] })
@@ -69,6 +70,9 @@ export function useClientProfileData(id) {
         get(`/api/properties?client_id=${id}`).then(props => { if (!isStale()) setProperties(Array.isArray(props) ? props : []) }).catch(() => {}),
         get(`/api/recurring?client_id=${id}`).then(scheds => { if (!isStale()) setSchedules(Array.isArray(scheds) ? scheds : []) }).catch(() => {}),
         get(`/api/opportunities?client_id=${id}`).then(opps => { if (!isStale()) setOpportunities(Array.isArray(opps) ? opps : []) }).catch(() => {}),
+        // Origin request(s) this client came in as — the "everything links to
+        // the client" tie-back from a converted lead to its intake.
+        get(`/api/intake?client_id=${id}`).then(rows => { if (!isStale()) setIntakes(Array.isArray(rows) ? rows : []) }).catch(() => {}),
         get(`/api/activities?client_id=${id}&limit=50`).then(acts => { if (!isStale()) setActivities(Array.isArray(acts) ? acts : []) }).catch(() => {}),
         // Linked Google Calendar events — interleaved into the unified timeline.
         get(`/api/jobs/client/${id}/gcal-events`).then(r => { if (!isStale()) setTimelineEvents(Array.isArray(r?.events) ? r.events : []) }).catch(() => {}),
@@ -150,7 +154,7 @@ export function useClientProfileData(id) {
     // Domain state
     client, setClient,
     jobs, quotes, invoices, messages, emails,
-    properties, schedules, opportunities,
+    properties, schedules, opportunities, intakes,
     visitStats, profileVisits, timelineEvents,
 
     // Data-loading callbacks

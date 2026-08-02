@@ -985,6 +985,11 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), org_id: int = Dep
 
     # Log to unified activity timeline
     log_job_created(db, job)
+    # Booking a job is a definitive "this lead is now a real customer" signal —
+    # promote them off the "lead" stage so they don't linger as both a lead and
+    # an active customer (lifecycle overlap cleanup). No-op if already active.
+    from utils.activity_logger import promote_client_from_lead
+    promote_client_from_lead(db, job.client_id, reason="job_booked")
     db.commit()
 
     # (The old Visit dual-write was removed by migration 039; occurrences are

@@ -99,7 +99,7 @@ export default function ClientProfile() {
   const {
     client, setClient,
     jobs, quotes, invoices, messages, emails,
-    properties, schedules, opportunities,
+    properties, schedules, opportunities, intakes,
     visitStats, timelineEvents,
     load, reloadActivities, reloadProperties,
     totalRevenue, outstanding, upcomingJobs, pastJobs, allActivity,
@@ -423,6 +423,7 @@ export default function ClientProfile() {
             upcomingJobs={upcomingJobs} pastJobs={pastJobs}
             schedules={schedules} properties={properties}
             visitStats={visitStats} allActivity={allActivity}
+            intakes={intakes}
           />
         )}
 
