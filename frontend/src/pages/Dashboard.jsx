@@ -1,18 +1,29 @@
 /**
- * Home — a command-cockpit, not a wall of cards.
+ * Home — a calm, record-forward command center in the Twenty-CRM style.
  *
- * A dramatic dark hero band carries the greeting + the money that matters as
- * glowing metric pods, then an asymmetric BENTO GRID lays out the live work:
- * three bold pillar pods (leads / messages / schedule), the "Needs you now"
- * action stream, today's route, a money read-out, crew load, the quote
- * funnel, and recent customer confirmations. Everything is wired to the same
- * dashboard data hooks; deeper analytics still live on the Owner page.
+ * Gone is the dark glowing hero: the page now opens on a light greeting bar
+ * and a flat strip of stat tiles (hairline borders, whisper shadows, one
+ * accent hue — never a wall of competing colors). Below that, three pillar
+ * cards frame the work the business runs on, then a two-column working area
+ * lays out the live lists: the "Needs you now" action feed, crew load, the
+ * quote/lead funnel, today's route, a money read-out, and recent customer
+ * confirmations. Everything is wired to the same dashboard data hooks;
+ * deeper analytics still live on the Owner page.
+ *
+ * Design notes (Twenty CRM + dataviz skill):
+ *   • Flat surfaces — `SOFT` is a plain panel + hairline + `shadow-glass-sm`,
+ *     matching the shared `SOFT_CARD` token used by the imported tiles.
+ *   • Stat tiles carry the number as the hero in calm ink; the label sits
+ *     above, a single contextual line below. Color is reserved for status
+ *     (overdue = amber), never decoration.
+ *   • Magnitude bars are a single indigo hue with rounded ends, not a
+ *     rainbow gradient.
  */
 import { useNavigate } from 'react-router-dom'
 import { ErrorState, Skeleton } from '../components/ui'
 import {
   DollarSign, TrendingUp, Inbox, MessageSquare, CalendarDays,
-  ArrowUpRight, Users, Sparkles, AlertTriangle, ArrowRight, MapPin,
+  ArrowUpRight, Users, AlertTriangle, ArrowRight, MapPin,
 } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
 import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
@@ -21,9 +32,11 @@ import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useDashboardDerived } from '../hooks/useDashboardDerived'
 
-const SOFT = 'bb-surface rounded-3xl border border-hairline bg-panel'
+/** The flat Twenty-style card surface, kept in sync with the shared
+ *  `SOFT_CARD` token (constants.js) the imported tiles use. */
+const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
-/** Compact money for the tight hero pods — keeps big totals from clipping:
+/** Compact money for the tight stat tiles — keeps big totals from clipping:
  *  $24K · $840K · $1.9M. Full precision still shows in the Money tile. */
 const fmtCompact = (n) => {
   const v = Math.round(n || 0)
@@ -33,116 +46,119 @@ const fmtCompact = (n) => {
   return `$${v.toLocaleString()}`
 }
 
-/* ── Hero cockpit ─────────────────────────────────────────────────────── */
+/* ── Header ───────────────────────────────────────────────────────────── */
 
-/** One glowing metric inside the dark hero band. */
-function Pod({ label, value, delta, deltaTone, onClick, loading }) {
-  return (
-    <button onClick={onClick}
-      className="group text-left rounded-2xl bg-white/[0.06] hover:bg-white/[0.10] backdrop-blur border border-white/10 px-4 py-3 transition-colors">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-200/70">{label}</div>
-      {loading
-        ? <div className="mt-1.5 h-7 w-20 rounded bg-white/10 animate-pulse" />
-        : <div className="mt-1 text-xl sm:text-2xl font-bold text-white tabular-nums leading-none truncate">{value}</div>}
-      {delta && (
-        <div className={`mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium ${deltaTone || 'text-indigo-200/70'}`}>
-          {delta}
-        </div>
-      )}
-    </button>
-  )
-}
-
-function HeroCockpit({ greeting, longDate, todayCount, weekCount, loading, navigate,
-  todayRevenue, mtdRevenue, outstanding, pipeline, overdueInvoiceCount }) {
-  const dash = (v) => loading ? '—' : v
+/** Light greeting bar with the day's status and quick-create actions.
+ *  Ghost-bordered buttons in the Twenty idiom — calm, not shouting. */
+function DashHeader({ greeting, longDate, todayCount, weekCount, loading, navigate }) {
   const quick = [
     { label: 'New lead', to: '/requests?new=1', icon: Inbox },
     { label: 'New message', to: '/comms?compose=1', icon: MessageSquare },
     { label: 'New job', to: '/schedule?new=1', icon: CalendarDays },
   ]
+  const status = loading
+    ? 'Loading your day…'
+    : `${todayCount === 0 ? 'No jobs' : `${todayCount} ${todayCount === 1 ? 'job' : 'jobs'}`} today · ${weekCount} this week`
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 px-5 py-6 sm:px-8 sm:py-7">
-      {/* Decorative glows — single accent hue (was indigo + fuchsia + violet,
-          which read as rainbow); one color keeps the hero calm and on-brand. */}
-      <span className="pointer-events-none absolute -top-24 -left-16 w-80 h-80 rounded-full bg-indigo-500/25 blur-3xl" />
-      <span className="pointer-events-none absolute -bottom-28 right-10 w-96 h-96 rounded-full bg-indigo-500/15 blur-3xl" />
-      <span className="pointer-events-none absolute top-10 right-1/3 w-72 h-72 rounded-full bg-indigo-500/10 blur-3xl" />
-
-      <div className="relative flex flex-col xl:flex-row xl:items-end xl:justify-between gap-6">
-        <div className="min-w-0">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/10 px-2.5 py-1 text-[11px] font-medium text-indigo-100/90">
-            <Sparkles className="w-3 h-3" /> {loading ? 'Loading your day…' : `${todayCount === 0 ? 'No jobs' : `${todayCount} ${todayCount === 1 ? 'job' : 'jobs'}`} today · ${weekCount} this week`}
-          </div>
-          <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-white">
-            {greeting}
-          </h1>
-          <p className="mt-1 text-sm text-indigo-200/70">{longDate}</p>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {quick.map(q => (
-              <button key={q.to} onClick={() => navigate(q.to)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors">
-                <q.icon className="w-3.5 h-3.5" /> {q.label}
-              </button>
-            ))}
-          </div>
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="text-[12px] font-medium text-ink-3">{status}</span>
         </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 xl:w-[540px] shrink-0">
-          <Pod label="Today" value={dash(fmtCompact(todayRevenue))} loading={loading}
-            onClick={() => navigate('/billing?view=invoices')} />
-          <Pod label="This month" value={dash(fmtCompact(mtdRevenue))} loading={loading}
-            delta={<><TrendingUp className="w-3 h-3" /> revenue</>} onClick={() => navigate('/owner')} />
-          <Pod label="Outstanding" value={dash(fmtCompact(outstanding))} loading={loading}
-            delta={!loading && overdueInvoiceCount > 0 ? <><AlertTriangle className="w-3 h-3" /> {overdueInvoiceCount} overdue</> : null}
-            deltaTone="text-amber-300"
-            onClick={() => navigate('/billing?view=invoices&status=overdue')} />
-          <Pod label="Pipeline" value={dash(fmtCompact(pipeline))} loading={loading}
-            onClick={() => navigate('/billing?view=quotes')} />
-        </div>
+        <h1 className="mt-1.5 text-2xl sm:text-3xl font-bold tracking-tight text-ink">{greeting}</h1>
+        <p className="mt-0.5 text-[13px] text-ink-3">{longDate}</p>
       </div>
-    </section>
+      <div className="flex flex-wrap gap-2">
+        {quick.map(q => (
+          <button key={q.to} onClick={() => navigate(q.to)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-3 py-2 text-[12px] font-semibold text-ink-2 hover:bg-bg hover:text-ink transition-colors">
+            <q.icon className="w-3.5 h-3.5 text-ink-3" /> {q.label}
+          </button>
+        ))}
+      </div>
+    </header>
   )
 }
 
-/* ── Bento pillar pods ────────────────────────────────────────────────── */
+/* ── Stat tiles (KPI strip) ───────────────────────────────────────────── */
 
-// The big pillar numbers all read in calm ink (Twenty-style) rather than three
-// competing hues; the small icon chip keeps a subtle per-pillar tint so the
-// tiles are still distinguishable at a glance.
+/** One flat stat tile. The number is the hero in calm ink; label above,
+ *  a single contextual line below. `tone` recolors only the sub-line so
+ *  color stays reserved for status (e.g. overdue), never decoration. */
+function StatTile({ label, value, sub, subTone, icon: Icon, onClick, loading }) {
+  return (
+    <button onClick={onClick}
+      className={`${SOFT} group text-left px-4 py-3.5 hover:border-hairline-2 transition-colors`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 truncate">{label}</span>
+        <Icon className="w-4 h-4 text-ink-3/70 group-hover:text-indigo-500 transition-colors" />
+      </div>
+      {loading
+        ? <div className="mt-2 h-7 w-20 rounded bg-bg-2 animate-pulse" />
+        : <div className="mt-1.5 text-2xl font-bold text-ink tabular-nums leading-none truncate">{value}</div>}
+      <div className={`mt-1.5 h-4 text-[11px] font-medium ${subTone || 'text-ink-3'} truncate`}>
+        {loading ? '' : (sub || '')}
+      </div>
+    </button>
+  )
+}
+
+function KpiStrip({ loading, navigate, todayRevenue, mtdRevenue, outstanding, pipeline, overdueInvoiceCount }) {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <StatTile label="Today" icon={DollarSign} loading={loading}
+        value={fmtCompact(todayRevenue)} sub="collected today"
+        onClick={() => navigate('/billing?view=invoices')} />
+      <StatTile label="This month" icon={TrendingUp} loading={loading}
+        value={fmtCompact(mtdRevenue)} sub="revenue"
+        onClick={() => navigate('/owner')} />
+      <StatTile label="Outstanding" icon={AlertTriangle} loading={loading}
+        value={fmtCompact(outstanding)}
+        sub={overdueInvoiceCount > 0 ? `${overdueInvoiceCount} overdue` : 'nothing overdue'}
+        subTone={overdueInvoiceCount > 0 ? 'text-amber-600 dark:text-amber-300' : undefined}
+        onClick={() => navigate('/billing?view=invoices&status=overdue')} />
+      <StatTile label="Pipeline" icon={Inbox} loading={loading}
+        value={fmtCompact(pipeline)} sub="open quotes"
+        onClick={() => navigate('/billing?view=quotes')} />
+    </div>
+  )
+}
+
+/* ── Pillar cards ─────────────────────────────────────────────────────── */
+
+// Calm ink numbers (Twenty-style) with a single small tinted icon chip per
+// pillar so the tiles stay distinguishable without three competing hues.
 const PILLAR = {
-  indigo:  { chip: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300',   glow: 'bg-indigo-400/25',  n: 'text-ink' },
-  blue:    { chip: 'bg-blue-500/15 text-blue-600 dark:text-blue-300',         glow: 'bg-blue-400/25',    n: 'text-ink' },
-  emerald: { chip: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300', glow: 'bg-emerald-400/25', n: 'text-ink' },
+  indigo:  'bg-indigo-500/10 text-indigo-600 dark:text-indigo-300',
+  blue:    'bg-blue-500/10 text-blue-600 dark:text-blue-300',
+  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
 }
 
 function Pillar({ icon: Icon, accent, value, headline, label, urgent, stats, onClick, loading }) {
-  const A = PILLAR[accent]
   return (
     <button onClick={onClick}
-      className={`group relative overflow-hidden text-left ${SOFT} p-5 transition-all hover:-translate-y-0.5`}>
-      <span className={`pointer-events-none absolute -top-10 -right-10 w-32 h-32 rounded-full blur-2xl opacity-70 ${A.glow}`} />
-      <div className="relative flex items-start justify-between">
-        <span className={`grid place-items-center w-11 h-11 rounded-2xl ${A.chip}`}>
+      className={`${SOFT} group text-left p-5 hover:border-hairline-2 transition-colors`}>
+      <div className="flex items-start justify-between">
+        <span className={`grid place-items-center w-10 h-10 rounded-xl ${PILLAR[accent]}`}>
           <Icon className="w-5 h-5" />
         </span>
         <span className="flex items-center gap-2">
           {urgent > 0 && (
-            <span className="inline-flex items-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">{urgent} urgent</span>
+            <span className="inline-flex items-center rounded-full bg-red-500/10 text-red-600 dark:text-red-300 px-2 py-0.5 text-[11px] font-semibold">{urgent} urgent</span>
           )}
-          <ArrowUpRight className="w-5 h-5 text-ink-3 group-hover:text-ink transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          <ArrowUpRight className="w-4 h-4 text-ink-3 group-hover:text-indigo-500 transition-colors" />
         </span>
       </div>
-      <div className="relative mt-4 flex items-end gap-2">
+      <div className="mt-4 flex items-end gap-2">
         {loading
-          ? <Skeleton className="h-12 w-20" />
-          : <span className={`text-5xl font-bold tabular-nums leading-none ${A.n}`}>{value}</span>}
+          ? <Skeleton className="h-11 w-16" />
+          : <span className="text-4xl font-bold tabular-nums leading-none text-ink">{value}</span>}
       </div>
-      <div className="relative mt-2 text-sm font-semibold text-ink">{headline}</div>
-      <div className="relative text-xs text-ink-3">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-ink">{headline}</div>
+      <div className="text-xs text-ink-3">{label}</div>
       {stats?.length > 0 && (
-        <div className="relative mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-hairline pt-3">
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-hairline pt-3">
           {stats.map((s, i) => (
             <span key={i} className="text-[11px] text-ink-3">
               <span className={`font-bold tabular-nums ${s.tone || 'text-ink-2'}`}>{loading ? '—' : s.n}</span> {s.label}
@@ -154,13 +170,13 @@ function Pillar({ icon: Icon, accent, value, headline, label, urgent, stats, onC
   )
 }
 
-/* ── Bento tiles ──────────────────────────────────────────────────────── */
+/* ── Local tiles ──────────────────────────────────────────────────────── */
 
 function TileHead({ icon: Icon, tint, title, action, onAction }) {
   return (
     <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-hairline">
       <div className="flex items-center gap-2.5 min-w-0">
-        <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${tint}`}><Icon className="w-4 h-4" /></span>
+        <span className={`grid place-items-center w-8 h-8 rounded-lg shrink-0 ${tint}`}><Icon className="w-4 h-4" /></span>
         <h2 className="text-sm font-semibold text-ink truncate">{title}</h2>
       </div>
       {action && (
@@ -175,7 +191,7 @@ function TileHead({ icon: Icon, tint, title, action, onAction }) {
 function TodayRoute({ loading, todayJobs, todayCount, navigate }) {
   return (
     <section className={`${SOFT} overflow-hidden`}>
-      <TileHead icon={CalendarDays} tint="bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+      <TileHead icon={CalendarDays} tint="bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
         title={`Today's route${todayCount ? ` · ${todayCount}` : ''}`} action="Schedule" onAction={() => navigate('/schedule')} />
       {loading ? (
         <div className="p-4 space-y-2">{[0, 1, 2].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -196,7 +212,7 @@ function TodayRoute({ loading, todayJobs, todayCount, navigate }) {
                   <div className="text-[11px] text-ink-3 truncate inline-flex items-center gap-1"><MapPin className="w-3 h-3" />{j.property_name}</div>
                 )}
               </div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${(j.cleaner_ids && j.cleaner_ids.length) ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' : 'bg-amber-500/15 text-amber-600 dark:text-amber-300'}`}>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${(j.cleaner_ids && j.cleaner_ids.length) ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-600 dark:text-amber-300'}`}>
                 {(j.cleaner_ids && j.cleaner_ids.length) ? 'Assigned' : 'No crew'}
               </span>
             </button>
@@ -221,7 +237,7 @@ function MoneyRead({ loading, outstanding, pipeline, mtdRevenue, overdueInvoiceC
   ]
   return (
     <section className={`${SOFT} overflow-hidden`}>
-      <TileHead icon={DollarSign} tint="bg-indigo-500/15 text-indigo-600 dark:text-indigo-300" title="Money" action="Details" onAction={() => navigate('/billing?view=invoices')} />
+      <TileHead icon={DollarSign} tint="bg-indigo-500/10 text-indigo-600 dark:text-indigo-300" title="Money" action="Details" onAction={() => navigate('/billing?view=invoices')} />
       <div className="divide-y divide-hairline">
         {rows.map((r, i) => (
           <button key={i} onClick={r.go} className="w-full flex items-center justify-between gap-3 px-5 py-3 hover:bg-bg transition-colors text-left">
@@ -238,7 +254,7 @@ function CrewLoad({ loading, crew, navigate }) {
   const max = Math.max(1, ...crew.rows.map(r => r.n))
   return (
     <section className={`${SOFT} overflow-hidden`}>
-      <TileHead icon={Users} tint="bg-violet-500/15 text-violet-600 dark:text-violet-300"
+      <TileHead icon={Users} tint="bg-violet-500/10 text-violet-600 dark:text-violet-300"
         title="Crew load · 7 days" action="Dispatch" onAction={() => navigate('/schedule?view=dispatch')} />
       {loading ? (
         <div className="p-4 space-y-2">{[0, 1, 2].map(i => <Skeleton key={i} className="h-6 w-full" />)}</div>
@@ -250,14 +266,15 @@ function CrewLoad({ loading, crew, navigate }) {
             <div key={r.id} className="flex items-center gap-3">
               <span className="text-[12px] text-ink-2 w-20 truncate shrink-0">{r.name}</span>
               <div className="flex-1 h-2 rounded-full bg-bg-2 overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style={{ width: `${(r.n / max) * 100}%` }} />
+                {/* Single-hue magnitude bar with rounded end (dataviz): no rainbow gradient. */}
+                <div className="h-full rounded-full bg-indigo-500" style={{ width: `${(r.n / max) * 100}%` }} />
               </div>
               <span className="text-[12px] font-bold tabular-nums text-ink w-6 text-right shrink-0">{r.n}</span>
             </div>
           ))}
           {crew.unassigned > 0 && (
             <button onClick={() => navigate('/schedule?view=dispatch')}
-              className="w-full mt-1 flex items-center justify-between gap-2 rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300 hover:opacity-90">
+              className="w-full mt-1 flex items-center justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300 hover:opacity-90">
               <span>{crew.unassigned} job{crew.unassigned === 1 ? '' : 's'} with no crew</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
@@ -304,18 +321,19 @@ export default function Dashboard() {
 
   return (
     <div className="relative min-h-full">
-      {/* Soft canvas glow so the page reads as a designed surface, not a form. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-indigo-500/[0.06] to-transparent" />
-      <div className="relative px-4 sm:px-6 pt-4 pb-8 max-w-[1440px] mx-auto space-y-4">
+      <div className="relative px-4 sm:px-6 pt-5 pb-8 max-w-[1440px] mx-auto space-y-5">
 
-        <HeroCockpit
+        <DashHeader
           greeting={greeting} longDate={longDate} todayCount={todayCount} weekCount={weekCount}
+          loading={loading} navigate={navigate} />
+
+        <KpiStrip
           loading={loading} navigate={navigate}
           todayRevenue={todayRevenue} mtdRevenue={mtdRevenue} outstanding={outstanding}
           pipeline={pipeline} overdueInvoiceCount={overdueInvoiceCount} />
 
         {/* Three pillars — the work the business runs on */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Pillar icon={Inbox} accent="indigo" loading={loading}
             value={quoteActions.newLeads}
             headline={quoteActions.newLeads === 1 ? 'new lead to quote' : 'new leads to quote'}
@@ -345,9 +363,8 @@ export default function Dashboard() {
             onClick={() => navigate('/schedule')} />
         </div>
 
-        {/* Bento: a wide left column (the action stream + crew/funnel) and a
-            narrower right rail (today's route, money, confirmations). Balanced
-            so neither side leaves a big empty gap. */}
+        {/* Working area: a wide left column (the action feed + crew/funnel) and
+            a narrower right rail (today's route, money, confirmations). */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div className="xl:col-span-2 space-y-4">
             <NeedsYouNow attention={attention} loading={loading} navigate={navigate} />
