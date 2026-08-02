@@ -24,7 +24,7 @@ export const SLA_CONFIG = {
 
 export const CHANNEL_CONFIG = {
   sms:      { icon: Phone,          label: 'SMS',      bg: 'bg-emerald-50 dark:bg-emerald-500/15',  text: 'text-emerald-700 dark:text-emerald-300', ring: 'ring-emerald-200 dark:ring-emerald-500/30' },
-  email:    { icon: Mail,           label: 'Email',    bg: 'bg-blue-50 dark:bg-blue-500/15',     text: 'text-blue-700 dark:text-blue-300',    ring: 'ring-blue-200 dark:ring-indigo-500/30' },
+  email:    { icon: Mail,           label: 'Email',    bg: 'bg-blue-50 dark:bg-blue-500/15',     text: 'text-blue-700 dark:text-blue-300',    ring: 'ring-blue-200 dark:ring-blue-500/30' },
   chat:     { icon: MessageSquare,  label: 'Chat',     bg: 'bg-violet-50 dark:bg-violet-500/15',   text: 'text-violet-700 dark:text-violet-300',  ring: 'ring-violet-200 dark:ring-violet-500/30' },
   whatsapp: { icon: MessageSquare,  label: 'WhatsApp', bg: 'bg-green-50 dark:bg-green-500/15',    text: 'text-green-700 dark:text-green-300',   ring: 'ring-green-200 dark:ring-green-500/30' },
 }

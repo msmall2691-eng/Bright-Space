@@ -269,7 +269,7 @@ export default function Comms() {
         actions={
           <div className="flex items-center gap-2">
             <HeaderStat n={summary.open || 0} label="active" />
-            <HeaderStat n={summary.unread || 0} label="unread" tone={summary.unread > 0 ? 'text-blue-600 dark:text-blue-300' : undefined} />
+            <HeaderStat n={summary.unread || 0} label="unread" tone={summary.unread > 0 ? 'text-indigo-600 dark:text-indigo-300' : undefined} />
             <HeaderStat n={summary.breached || 0} label="past SLA" tone={summary.breached > 0 ? 'text-red-600 dark:text-red-300' : undefined} />
           </div>
         }
@@ -313,7 +313,7 @@ export default function Comms() {
                 Choose from the list to read and reply, or start a new conversation.
               </p>
               <button onClick={() => setShowCompose(true)}
-                className="text-[13px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-5 py-2.5 rounded-xl transition-all inline-flex items-center gap-1.5">
+                className="text-[13px] font-semibold text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/15 px-5 py-2.5 rounded-xl transition-colors inline-flex items-center gap-1.5">
                 <PenLine className="w-4 h-4" /> Compose
               </button>
             </div>
@@ -333,7 +333,7 @@ export default function Comms() {
             <div ref={threadRef} className="flex-1 overflow-y-auto px-5 py-4 bg-bg/50">
               {loadingDetail && (
                 <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-2 border-hairline border-t-blue-600 rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-hairline border-t-indigo-600 rounded-full animate-spin" />
                 </div>
               )}
               {groupedMessages.map(item => {

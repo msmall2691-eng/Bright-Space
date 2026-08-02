@@ -39,7 +39,7 @@ export function AssigneePicker({ currentName, currentId, onAssign }) {
       <button onClick={() => setOpen(o => !o)}
         title="Assign this conversation"
         className={`text-[12px] font-medium px-2.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-          currentName ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'bg-bg-2 text-ink-3 hover:bg-hairline'
+          currentName ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-200 dark:ring-indigo-500/30' : 'bg-bg-2 text-ink-3 hover:bg-hairline'
         }`}>
         <UserCircle2 className="w-3.5 h-3.5" />
         <span className="max-w-[90px] truncate">{currentName || 'Assign'}</span>
@@ -51,7 +51,7 @@ export function AssigneePicker({ currentName, currentId, onAssign }) {
             className="w-full text-left px-3 py-2 text-[12px] text-ink-2 hover:bg-bg-2 flex items-center gap-2">
             <span className="w-3.5 h-3.5 shrink-0" />
             Unassigned
-            {!currentId && <Check className="w-3.5 h-3.5 text-blue-500 ml-auto" />}
+            {!currentId && <Check className="w-3.5 h-3.5 text-indigo-600 ml-auto" />}
           </button>
           {people.length === 0 ? (
             <div className="px-3 py-2 text-[11px] text-ink-3">No staff found</div>
@@ -61,7 +61,7 @@ export function AssigneePicker({ currentName, currentId, onAssign }) {
                 className="w-full text-left px-3 py-2 text-[12px] text-ink hover:bg-bg-2 flex items-center gap-2">
                 <UserCircle2 className="w-3.5 h-3.5 text-ink-3 shrink-0" />
                 <span className="truncate">{p.name}</span>
-                {currentId === p.id && <Check className="w-3.5 h-3.5 text-blue-500 ml-auto" />}
+                {currentId === p.id && <Check className="w-3.5 h-3.5 text-indigo-600 ml-auto" />}
               </button>
             ))
           )}

@@ -24,17 +24,17 @@ export function ThreadHeader({
     <>
       {/* Phase 8: Overdue banner (renamed from "SLA breached"). */}
       {detail.sla_state === 'breached' && (
-        <div className="bg-red-50 border-b border-red-200 px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-red-700">
+        <div className="bg-red-50 dark:bg-red-500/10 border-b border-red-200 dark:border-red-500/25 px-5 py-2.5 flex items-center gap-2 text-[12px] font-medium text-red-700 dark:text-red-300">
           <Clock className="w-4 h-4" />
           Overdue — last reply {relTime(detail.last_inbound_at)} ago
         </div>
       )}
 
       {/* Thread header */}
-      <div className="border-b border-hairline px-5 py-3.5 flex items-center gap-3 bg-panel shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+      <div className="border-b border-hairline px-5 py-3.5 flex items-center gap-3 bg-panel">
         {/* Mobile back button */}
         <button onClick={() => setMobileView('list')}
-          className="w-8 h-8 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 lg:hidden">
+          className="w-9 h-9 -ml-1 rounded-lg hover:bg-bg-2 flex items-center justify-center text-ink-3 lg:hidden">
           <ArrowLeft className="w-4 h-4" />
         </button>
 
@@ -70,8 +70,8 @@ export function ThreadHeader({
           <button onClick={onToggleStatus}
             className={`text-[12px] font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
               detail.status === 'resolved'
-                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 ring-1 ring-emerald-200'
-                : 'bg-bg-2 text-ink-2 hover:bg-emerald-50 hover:text-emerald-700'
+                ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 ring-1 ring-emerald-200 dark:ring-emerald-500/30'
+                : 'bg-bg-2 text-ink-2 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300'
             }`}>
             <CheckCircle2 className="w-3.5 h-3.5" />
             {detail.status === 'resolved' ? 'Done' : 'Mark done'}

@@ -57,16 +57,16 @@ export function ComposeModal({ onClose, onSent, clients }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-panel rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-panel rounded-2xl border border-hairline shadow-glass-lg w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-hairline">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center">
               <PenLine className="w-4 h-4 text-indigo-600" />
             </div>
             <span className="font-semibold text-ink">New Message</span>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-bg-2 flex items-center justify-center transition-colors">
+          <button onClick={onClose} className="w-9 h-9 rounded-lg hover:bg-bg-2 flex items-center justify-center transition-colors">
             <X className="w-4 h-4 text-ink-3" />
           </button>
         </div>
@@ -104,7 +104,7 @@ export function ComposeModal({ onClose, onSent, clients }) {
               onFocus={() => clientSuggestions.length > 0 && setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               placeholder={channel === 'email' ? 'email@example.com' : '+1 (207) 555-1234'}
-              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 transition-all" />
+              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
             {showSuggestions && (
               <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-panel border border-hairline rounded-xl shadow-lg overflow-hidden">
                 {clientSuggestions.map(c => (
@@ -128,7 +128,7 @@ export function ComposeModal({ onClose, onSent, clients }) {
               <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">Subject</label>
               <input value={subject} onChange={e => setSubject(e.target.value)}
                 placeholder="Subject line"
-                className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 transition-all" />
+                className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
             </div>
           )}
 
@@ -136,7 +136,7 @@ export function ComposeModal({ onClose, onSent, clients }) {
             <label className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block mb-1">Message</label>
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
               placeholder={channel === 'email' ? 'Write your email...' : 'Type your SMS message...'}
-              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-blue-400 transition-all leading-relaxed"
+              className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2.5 text-[13px] placeholder-ink-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all leading-relaxed"
               onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend() }} />
             {channel === 'sms' && (
               <div className="text-[10px] text-ink-3 mt-1 text-right">{body.length}/160 chars</div>

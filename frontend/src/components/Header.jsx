@@ -94,11 +94,11 @@ export default function Header({ onMenuToggle }) {
   const title = PAGE_TITLES[path] || 'BrightBase'
 
   return (
-    <header className="no-print relative z-20 h-14 flex items-center justify-between px-4 sm:px-6 border-b border-hairline bg-panel/60 backdrop-blur-2xl shrink-0 shadow-sm">
+    <header className="no-print relative z-20 h-14 flex items-center justify-between px-4 sm:px-6 border-b border-hairline bg-panel shrink-0">
       <div className="flex items-center gap-3 flex-1">
         <button
           onClick={onMenuToggle}
-          className="lg:hidden p-2 -ml-2 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 active:bg-bg-2 transition-colors"
+          className="lg:hidden -ml-1 w-10 h-10 rounded-lg text-ink-3 hover:text-ink-2 hover:bg-bg-2 active:bg-bg-2 transition-colors flex items-center justify-center"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -120,7 +120,7 @@ export default function Header({ onMenuToggle }) {
             const event = new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true })
             window.dispatchEvent(event)
           }}
-          className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-hairline bg-panel/50 hover:bg-panel/70 transition-all text-ink-3 hover:text-ink-2 shadow-sm"
+          className="flex items-center gap-2.5 px-2.5 sm:px-3 h-9 rounded-lg border border-hairline bg-bg hover:bg-bg-2 transition-colors text-ink-3 hover:text-ink-2"
           title="Search everything"
         >
           <Search className="w-4 h-4" />
@@ -136,11 +136,12 @@ export default function Header({ onMenuToggle }) {
             const event = new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })
             window.dispatchEvent(event)
           }}
-          className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-hairline bg-panel/50 hover:bg-panel/70 transition-all text-ink-3 hover:text-ink-2 shadow-sm"
+          className="flex items-center gap-2.5 px-2.5 sm:px-3 h-9 rounded-lg border border-hairline bg-bg hover:bg-bg-2 transition-colors text-ink-3 hover:text-ink-2"
+          title="Ask AI"
         >
           <Sparkles className="w-4 h-4" />
-          <span className="text-xs font-medium">Ask AI</span>
-          <div className="flex items-center gap-1 text-xs text-ink-3">
+          <span className="hidden sm:inline text-xs font-medium">Ask AI</span>
+          <div className="hidden sm:flex items-center gap-1 text-xs text-ink-3">
             <Command className="w-3 h-3" />
             <span>K</span>
           </div>
