@@ -78,6 +78,35 @@ def log_job_created(db: Session, job, actor: str = "system") -> Optional[Activit
     )
 
 
+def promote_client_from_lead(db, client_id, *, reason: str, actor: str = "system") -> bool:
+    """Promote a Client out of the "lead" stage to "active" when they take a
+    real customer action (a booked job, a won opportunity), so the same person
+    isn't both a "lead" and a paying customer — the lead/customer lifecycle
+    overlap the CRM cleanup targets.
+
+    No-op (returns False) when the client isn't found or isn't currently a lead,
+    so it's safe to call unconditionally from any funnel. Logs a
+    ``client_promoted`` activity on success. Best-effort; never raises — a
+    logging/status tidy must not break the booking that triggered it.
+    """
+    if not client_id:
+        return False
+    try:
+        from database.models import Client
+        client = db.query(Client).filter(Client.id == client_id).first()
+        if not client or client.status != "lead":
+            return False
+        client.status = "active"
+        log_activity(
+            db, "client_promoted", client_id=client_id, actor=actor,
+            summary="Lead promoted to active customer",
+            extra_data={"reason": reason},
+        )
+        return True
+    except Exception:  # pragma: no cover - status tidy must never break the caller
+        return False
+
+
 def log_job_status_change(db: Session, job, prev_status: str, actor: str = "system") -> Optional[Activity]:
     """Map a job status change to the appropriate ActivityType."""
     status = (job.status or "").lower()

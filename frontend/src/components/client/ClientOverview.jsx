@@ -2,10 +2,11 @@ import { useMemo } from 'react'
 import {
   DollarSign, AlertCircle, CalendarCheck, Repeat, CheckCircle2, Clock,
   FileText, Receipt, Home, Briefcase, MessageSquare, TrendingUp, Mail,
-  CalendarDays, Eye, ChevronRight, Pencil,
+  CalendarDays, Eye, ChevronRight, Pencil, Inbox,
 } from 'lucide-react'
 import Card from '../ui/Card'
 import StatCard from '../ui/StatCard'
+import RecordLink from '../RecordLink'
 import { formatDateShort } from '../../utils/format'
 
 /**
@@ -57,6 +58,7 @@ export default function ClientOverview({
   totalRevenue, outstanding,
   invoices = [], quotes = [], upcomingJobs = [], pastJobs = [],
   schedules = [], properties = [], visitStats, allActivity = [],
+  intakes = [],
 }) {
   const openQuotes = useMemo(
     () => quotes.filter(q => ['sent', 'viewed', 'changes_requested'].includes(q.status)),
@@ -75,6 +77,23 @@ export default function ClientOverview({
 
   return (
     <div className="space-y-4 max-w-6xl">
+      {/* Origin request tie-back — how this client came in (converted lead →
+          its intake). The "everything links to the client" pairing to the
+          RequestDetail page's linked-client card. */}
+      {intakes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-ink-3 px-1">
+          <Inbox className="w-3.5 h-3.5 shrink-0" />
+          <span>Came in as</span>
+          {intakes.slice(0, 3).map((r, i) => (
+            <span key={r.id} className="inline-flex items-center gap-2">
+              {i > 0 && <span className="text-ink-3/50">·</span>}
+              <RecordLink type="request" id={r.id}
+                label={`Request #${r.id}${r.source ? ` (${r.source})` : ''}`} />
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* KPI strip */}
       <Card padded={false}>
         <div className="grid grid-cols-2 md:grid-cols-5 divide-x divide-y md:divide-y-0 divide-hairline">

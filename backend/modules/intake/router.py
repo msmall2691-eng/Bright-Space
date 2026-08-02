@@ -284,6 +284,7 @@ def get_intakes(
     source: Optional[str] = None,
     service_type: Optional[str] = None,
     priority: Optional[str] = None,
+    client_id: Optional[int] = None,
     include_archived: bool = False,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -310,6 +311,10 @@ def get_intakes(
         q = q.filter(LeadIntake.service_type == service_type)
     if priority:
         q = q.filter(LeadIntake.priority == priority)
+    if client_id is not None:
+        # A client's origin request(s) — powers the "Requests" related-records
+        # link on the client profile (converted leads point back at their Client).
+        q = q.filter(LeadIntake.client_id == client_id)
     rows = q.order_by(LeadIntake.created_at.desc()).offset(offset).limit(limit).all()
     # Batch-load the linked quotes in one query (avoids an N+1) so each row can
     # report whether the customer has opened its quote.
