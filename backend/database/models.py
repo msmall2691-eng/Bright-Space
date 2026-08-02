@@ -171,6 +171,10 @@ class UserGoogleAccount(Base):
     gcal_sync_enabled = Column(Boolean, default=False, nullable=False)
     last_sync_at = Column(DateTime, nullable=True)
     last_sync_error = Column(Text, nullable=True)
+    # Gmail History API cursor: the mailbox historyId the last sync reached.
+    # Incremental syncs read changes *from* here instead of re-scanning the
+    # inbox each poll. NULL until the first (full) sync seeds it.
+    gmail_history_id = Column(String, nullable=True)
     connected_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
