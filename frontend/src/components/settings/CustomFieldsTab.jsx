@@ -103,7 +103,7 @@ export function CustomFieldsBody({ state }) {
       </div>
 
       {/* Entity tabs */}
-      <div className="flex items-center gap-1 px-4 sm:px-8 mb-6">
+      <div className="flex items-center gap-1 px-4 sm:px-8 mb-6 overflow-x-auto scrollbar-thin">
         {ENTITY_TABS.map(tab => (
           <button key={tab.key} onClick={() => { setEntityTab(tab.key); setPanel(null) }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors

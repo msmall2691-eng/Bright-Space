@@ -57,7 +57,7 @@ export function IcalFeedRow({ ical, onRemove }) {
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={onRemove}
-            className="text-red-400 hover:text-red-600 p-1"
+            className="text-red-400 hover:text-red-600 p-2 -m-1 rounded-lg"
             title="Remove feed"
           >
             <Trash2 className="w-3.5 h-3.5" />

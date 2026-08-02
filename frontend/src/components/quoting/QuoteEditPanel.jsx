@@ -116,7 +116,7 @@ export default function QuoteEditPanel({
             }`}>
             <Eye className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Preview</span>
           </button>
-          <button onClick={onClose} className="text-ink-3 hover:text-ink p-1"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-ink-3 hover:text-ink p-2 -m-1 rounded-lg hover:bg-bg-2"><X className="w-5 h-5" /></button>
         </div>
       </div>
 
