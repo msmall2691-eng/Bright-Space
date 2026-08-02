@@ -660,6 +660,22 @@ def quote_expiry_tick() -> dict:
         db.close()
 
 
+def gmail_watch_renew_tick() -> dict:
+    """Renew Gmail push watches before they expire (~weekly cap) so real-time
+    email notifications don't silently lapse. Self-gates on gmail_live_sync +
+    GMAIL_PUBSUB_TOPIC and no-ops when unconfigured — so merging the scaffold
+    changes nothing until Pub/Sub is provisioned."""
+    db = SessionLocal()
+    try:
+        from integrations.gmail_watch import renew_expiring
+        return renew_expiring(db)
+    except Exception as e:
+        log.error(f"[gmail-watch] renew failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 def gcal_watch_renew_tick() -> dict:
     """Renew Google Calendar push channels before they expire (~weekly cap), so
     real-time notifications don't silently lapse. Enabled by the Settings toggle
@@ -939,6 +955,15 @@ def start_scheduler():
         IntervalTrigger(hours=env_int("GCAL_WATCH_RENEW_INTERVAL_HOURS", 12)),
         id="gcal_watch_renew",
         name="Google Calendar watch renewal",
+        replace_existing=True,
+    )
+    # Gmail push-watch renewal — same cadence. Self-gates on gmail_live_sync +
+    # GMAIL_PUBSUB_TOPIC, so it's inert until Pub/Sub is provisioned.
+    _scheduler.add_job(
+        gmail_watch_renew_tick,
+        IntervalTrigger(hours=env_int("GMAIL_WATCH_RENEW_INTERVAL_HOURS", 12)),
+        id="gmail_watch_renew",
+        name="Gmail watch renewal",
         replace_existing=True,
     )
     # Register push channels ONCE at startup (best-effort) so real-time sync is

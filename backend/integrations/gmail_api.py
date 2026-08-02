@@ -113,6 +113,29 @@ def current_history_id(creds) -> str:
     return str(profile.get("historyId") or "")
 
 
+def start_watch(creds, topic_name: str, label_ids=None) -> dict:
+    """Register a Gmail push watch on the account's INBOX. Google will publish a
+    notification to ``topic_name`` (a Cloud Pub/Sub topic,
+    ``projects/<proj>/topics/<name>``) whenever the mailbox changes; a Pub/Sub
+    push subscription then POSTs it to our webhook. Returns
+    {"history_id": str, "expiration_ms": int}. Watches expire in ≤7 days and
+    must be renewed. Requires the topic's publisher role granted to
+    gmail-api-push@system.gserviceaccount.com (a one-time GCP setup)."""
+    body = {"topicName": topic_name, "labelIds": label_ids or ["INBOX"],
+            "labelFilterBehavior": "INCLUDE"}
+    resp = _service(creds).users().watch(userId="me", body=body).execute()
+    return {
+        "history_id": str(resp.get("historyId") or ""),
+        "expiration_ms": int(resp["expiration"]) if resp.get("expiration") else None,
+    }
+
+
+def stop_watch(creds) -> None:
+    """Cancel the account's Gmail push watch (idempotent — Gmail 204s even when
+    there's no active watch)."""
+    _service(creds).users().stop(userId="me").execute()
+
+
 def fetch_inbox_for_account(creds, max_results: int = 30, skip_automated: bool = True) -> list:
     """Fetch the most recent inbox messages for a connected account (full scan).
 
