@@ -227,11 +227,11 @@ export default function ClientCalendarTab({ jobs, upcomingJobs, pastJobs, naviga
       <div className="bg-panel border border-hairline rounded-xl p-5">
         {/* Month nav */}
         <div className="flex items-center justify-between mb-3">
-          <button onClick={prevMonth} className="p-1 hover:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-3">
+          <button onClick={prevMonth} className="p-2 hover:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-2">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="text-sm font-semibold text-ink-2">{MONTH_NAMES[month]} {year}</span>
-          <button onClick={nextMonth} className="p-1 hover:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-3">
+          <button onClick={nextMonth} className="p-2 hover:bg-bg-2 rounded-lg text-ink-3 hover:text-ink-2">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
