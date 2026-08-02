@@ -138,19 +138,13 @@ export default function Login({ onLoginSuccess }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50 flex items-center justify-center px-4">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200/30 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-violet-200/30 rounded-full blur-3xl"></div>
-      </div>
-
+    <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       {/* Card */}
       <div className="relative w-full max-w-md">
-        <div className="bg-panel/90 backdrop-blur-lg rounded-2xl border border-white/20 shadow-2xl p-8">
+        <div className="bg-panel rounded-2xl border border-hairline shadow-glass p-8">
           {/* Logo and Header */}
           <div className="flex items-center justify-center mb-8">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 rounded-lg bg-indigo-600 flex items-center justify-center">
               <Zap className="w-6 h-6 text-white" />
             </div>
           </div>
@@ -274,7 +268,7 @@ export default function Login({ onLoginSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-6 px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-violet-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full mt-6 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>

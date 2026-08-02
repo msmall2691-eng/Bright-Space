@@ -93,7 +93,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
         {/* Logo area */}
         <div className={`h-16 flex items-center border-b border-hairline ${expanded ? 'justify-between px-4' : 'lg:justify-center lg:px-2 px-4 justify-between'}`}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="bb-glow-accent w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
               <Zap className="w-[18px] h-[18px] text-white" />
             </div>
             <div className={`flex-1 min-w-0 ${labelHide}`}>
@@ -177,7 +177,7 @@ export default function Sidebar({ open, onClose, user, badges = {} }) {
               title={expanded ? undefined : (user?.email?.split('@')[0] || 'Account')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-bg-2 transition-all text-left group ${expanded ? '' : 'lg:justify-center lg:px-0'}`}
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center flex-shrink-0 shadow-md">
+              <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
                 <span className="text-[12px] font-bold text-white">
                   {user?.email?.[0]?.toUpperCase() || 'A'}
                 </span>

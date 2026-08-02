@@ -53,7 +53,7 @@ function NewMenu() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 pl-2.5 pr-2 sm:pr-2.5 py-1.5 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 text-white font-semibold shadow-sm hover:shadow-md hover:opacity-95 transition-all"
+        className="flex items-center gap-1.5 pl-2.5 pr-2 sm:pr-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm transition-colors"
         title="Create something new"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -103,7 +103,7 @@ export default function Header({ onMenuToggle }) {
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex items-center gap-2.5 lg:hidden">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md">
+          <div className="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="text-sm font-bold text-ink tracking-tight">{title}</span>
