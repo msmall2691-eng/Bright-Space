@@ -1,7 +1,9 @@
-/** Soft, airy card surface shared by the facelifted dashboard (white +
- *  blue, rounded, gentle shadow — the look from the reference dashboard). */
+/** Flat card surface — Twenty-CRM style. A near-white panel on a hairline
+ *  border with only a whisper of shadow, no indigo glow or luminous top
+ *  edge. Calm and record-forward: the content is the focus, not the chrome.
+ *  (Was the glowing `bb-surface` treatment; flattened for the Twenty look.) */
 export const SOFT_CARD =
-  'bb-surface bg-panel rounded-2xl border border-hairline'
+  'bg-panel rounded-xl border border-hairline shadow-glass-sm'
 
 /** Map the existing iconColor tokens (passed by tile call sites) to a
  *  tinted chip so the icons read as colored badges without touching any
