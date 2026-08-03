@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
+import { useMemo, useEffect, useRef, useState, useCallback, memo } from 'react'
 import { Link } from 'react-router-dom'
 import { Calendar as CalendarIcon, Plus, AlertCircle, Users } from 'lucide-react'
 import Button from '../ui/Button'
@@ -157,6 +157,14 @@ export default function WeekGrid({
   // subtle highlight of the target slot.
   const [draggingVisit, setDraggingVisit] = useState(null)
   const [dropPreview, setDropPreview] = useState(null)  // { date, startHour } | null
+
+  // Stable end-of-drag handler so the memoized VisitBlock/DayColumn don't see a
+  // fresh function identity on every dropPreview change (which would defeat the
+  // memo and re-render every block on each dragover tick).
+  const handleDragEndBlock = useCallback(() => {
+    setDraggingVisit(null)
+    setDropPreview(null)
+  }, [])
 
   // Pending scope choice for a drag that landed on a recurring visit — set
   // instead of committing the drop directly; cleared on choice or cancel.
@@ -380,8 +388,8 @@ export default function WeekGrid({
               draggingVisit={draggingVisit}
               dropPreview={dropPreview}
               onDragStartBlock={setDraggingVisit}
-              onDragEndBlock={() => { setDraggingVisit(null); setDropPreview(null) }}
-              onColumnDragOver={(nextPreview) => setDropPreview(nextPreview)}
+              onDragEndBlock={handleDragEndBlock}
+              onColumnDragOver={setDropPreview}
               onColumnDrop={(targetDate, targetHour) => {
                 if (!draggingVisit) return
                 const jobId = draggingVisit.job_id ?? draggingVisit.id
@@ -621,7 +629,12 @@ function DayColumn({
   )
 }
 
-function VisitBlock({
+// memo: during a drag, only `dropPreview` changes on the parent, which
+// re-renders all 7 DayColumns. Without memo every VisitBlock in the week
+// re-rendered on every hour-boundary dragover tick (the "choppy drag"). With
+// the leaf memoized and its callbacks stabilized, non-dragged blocks skip the
+// render — only the block whose `isDragging` flipped actually re-renders.
+const VisitBlock = memo(function VisitBlock({
   visit, jobs, properties, clients, empName, onOpen,
   topPct, heightPct, leftPct, widthPct, gridHeightPx,
   isDragging, onDragStart, onDragEnd,
@@ -698,9 +711,9 @@ function VisitBlock({
       </div>
     </button>
   )
-}
+})
 
-function VisitChip({ visit, jobs, properties, clients, empName, onOpen, compact }) {
+const VisitChip = memo(function VisitChip({ visit, jobs, properties, clients, empName, onOpen, compact }) {
   const job = jobs[visit.job_id] || visit
   const property = properties[job.property_id]
   const client = clients[job.client_id]
@@ -719,7 +732,7 @@ function VisitChip({ visit, jobs, properties, clients, empName, onOpen, compact 
       {label}
     </button>
   )
-}
+})
 
 function hoursInBand(band) {
   const out = []

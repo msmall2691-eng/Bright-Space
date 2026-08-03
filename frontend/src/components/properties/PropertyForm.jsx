@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { X, Sparkles, Loader2 } from 'lucide-react'
 import { get } from '../../api'
 import { CustomFieldsForm } from '../CustomFields'
@@ -37,9 +37,18 @@ export function PropertyForm({
   const [looking, setLooking] = useState(false)
   const [lookupMsg, setLookupMsg] = useState(null)  // { tone: 'ok'|'info'|'err', text }
 
+  // Identity of the property/address currently in the form. Captured when a
+  // lookup starts and re-checked when it returns, so a slow RentCast response
+  // never applies specs for an address the operator has since edited — or for a
+  // different property they've since opened in this same drawer (Codex review
+  // on #657).
+  const lookupIdRef = useRef('')
+  lookupIdRef.current = `${selected?.id ?? 'new'}|${(form.address || '').trim().toLowerCase()}`
+
   const runLookup = async () => {
     const addr = (form.address || '').trim()
     if (!addr) return
+    const token = lookupIdRef.current
     setLooking(true); setLookupMsg(null)
     try {
       const params = new URLSearchParams({ address: addr })
@@ -47,6 +56,13 @@ export function PropertyForm({
       if ((form.state || '').trim()) params.set('state', form.state.trim())
       if ((form.zip_code || '').trim()) params.set('zip_code', form.zip_code.trim())
       const { enabled, specs } = await get(`/api/properties/lookup-specs?${params.toString()}`)
+      // The form moved on while we were waiting (address edited, or a different
+      // property opened) — discard this now-stale result rather than writing it
+      // onto whatever is in the form now.
+      if (lookupIdRef.current !== token) {
+        setLookupMsg({ tone: 'info', text: 'Address changed — discarded that lookup. Tap “Look up specs” again to refresh.' })
+        return
+      }
       if (!enabled) {
         setLookupMsg({ tone: 'info', text: 'Turn on property data lookup in Settings → Property Photos & Data to use this.' })
         return

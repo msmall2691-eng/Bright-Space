@@ -414,7 +414,13 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    for field, value in data.model_dump(exclude_none=True).items():
+    # exclude_UNSET (not exclude_none): apply every field the client actually
+    # sent, honoring an explicit null. exclude_none silently dropped nulls, so
+    # clearing a populated field (e.g. blanking out bedrooms/sqft/year_built)
+    # never persisted — the save looked successful and the old value came back
+    # on reload. Fields the client omits stay untouched, so partial PATCHes still
+    # work. (Codex review on #657.)
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(prop, field, value)
     db.commit()
     db.refresh(prop)

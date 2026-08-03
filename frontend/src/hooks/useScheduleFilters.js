@@ -112,9 +112,13 @@ export function useScheduleFilters({ visits, jobs, properties, viewMode, dateStr
         if (!aHasDate && !bHasDate) return 0
         if (!aHasDate) return 1
         if (!bHasDate) return -1
-        const aDate = new Date(`${a.scheduled_date}T${a.start_time || '09:00'}`)
-        const bDate = new Date(`${b.scheduled_date}T${b.start_time || '09:00'}`)
-        return aDate - bDate
+        // scheduled_date is ISO (YYYY-MM-DD) and start_time is HH:MM — both
+        // sort lexicographically in chronological order, so compare the strings
+        // directly instead of allocating two Date objects per comparison
+        // (O(n log n) Dates on every filter/visits change was pure GC churn).
+        const aKey = `${a.scheduled_date}T${(a.start_time || '09:00').padStart(5, '0')}`
+        const bKey = `${b.scheduled_date}T${(b.start_time || '09:00').padStart(5, '0')}`
+        return aKey < bKey ? -1 : aKey > bKey ? 1 : 0
       })
   }, [visits, selectedPropertyType, selectedStatus, unassignedOnly, noGcalOnly, noConnecteamOnly, jobs, properties])
 

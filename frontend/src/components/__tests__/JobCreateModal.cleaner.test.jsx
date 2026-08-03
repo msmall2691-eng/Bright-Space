@@ -59,3 +59,19 @@ describe('JobCreateModal — assign cleaner at creation', () => {
     expect(body.cleaner_ids).toEqual([])
   })
 })
+
+describe('JobCreateModal — inline create client (Twenty-style)', () => {
+  // Standalone mode (no clientId) shows the client picker.
+  it('offers "Create X" on no-match and opens the form pre-filled with the typed name', async () => {
+    render(<JobCreateModal onClose={() => {}} onCreated={() => {}} />)
+    const search = await screen.findByTestId('job-create-client-search')
+    fireEvent.change(search, { target: { value: 'Jane Doe' } })
+    // No matching clients (get resolves []) → the typed name becomes one-tap create.
+    const createInline = await screen.findByTestId('job-create-client-create-inline')
+    expect(createInline.textContent).toContain('Jane Doe')
+    fireEvent.click(createInline)
+    // The inline create form opens with the name already filled in — no retype.
+    const nameInput = await screen.findByPlaceholderText('Client name *')
+    expect(nameInput.value).toBe('Jane Doe')
+  })
+})

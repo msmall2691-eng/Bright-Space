@@ -88,6 +88,24 @@ def test_update_sets_specs(client_row):
     assert updated["bedrooms"] == 4
 
 
+def test_update_clears_a_spec_with_explicit_null(client_row):
+    """Blanking out a populated spec must persist as NULL (Codex review on #657):
+    the update path uses exclude_unset, so an explicit null clears the field
+    instead of being silently dropped, while omitted fields stay untouched."""
+    c, db = client_row
+    out = create_property(PropertyCreate(
+        client_id=c.id, name="Clearable", address="9 Clear Rd",
+        bedrooms=3, square_footage=1500,
+    ), db=db, org_id=1)
+    # Explicit null clears the populated field...
+    cleared = update_property(out["id"], PropertyUpdate(bedrooms=None), db=db, org_id=1)
+    assert cleared["bedrooms"] is None
+    # ...and an omitted field is left untouched (partial PATCH still works).
+    assert cleared["square_footage"] == 1500
+    fresh = db.query(Property).filter(Property.id == out["id"]).first()
+    assert fresh.bedrooms is None and fresh.square_footage == 1500
+
+
 # ── Lookup endpoint ──────────────────────────────────────────────────────────
 
 def test_lookup_disabled_returns_no_specs(settings_db):

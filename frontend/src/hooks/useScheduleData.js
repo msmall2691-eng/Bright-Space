@@ -61,6 +61,17 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
   // load/retry is supposed to show on failure.
   const isBackgroundPollRef = useRef(false)
 
+  // Signature of the last-applied payload. A background poll every 45s used to
+  // call setVisits/setJobs/setProperties/setClients unconditionally — even when
+  // the server returned byte-identical data — handing every consumer brand-new
+  // array/object identities and re-laying-out the whole schedule (and every
+  // memo downstream) for nothing. We now diff the fetched payload against this
+  // and skip the state churn when nothing changed. Only gates BACKGROUND polls,
+  // so a range change / manual refresh / re-enable still applies immediately,
+  // and it never fights an optimistic local edit: an unchanged server payload
+  // means "leave local state alone," which preserves the optimistic move.
+  const lastSigRef = useRef(null)
+
   useEffect(() => {
     if (!enabled) return
     const backgroundPoll = isBackgroundPollRef.current
@@ -104,6 +115,16 @@ export function useScheduleData(currentDate, viewMode = 'week', { pollMs = 45000
           return
         }
         if (cancelled) return
+
+        // Cheap change-detection: a background poll that returns the same data
+        // as last time is a no-op — bail before touching state so we don't
+        // trigger the full re-render/re-layout cascade every 45s. JSON.stringify
+        // of the four lists runs once per poll (45s cadence), which is trivial
+        // next to the render work it saves.
+        const sig = JSON.stringify([week?.visits, week?.jobs, week?.properties, week?.clients])
+        if (backgroundPoll && sig === lastSigRef.current) return
+        lastSigRef.current = sig
+
         const jobsMap = {}
         const propsMap = {}
         const clientsMap = {}
