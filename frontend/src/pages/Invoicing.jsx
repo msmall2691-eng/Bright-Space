@@ -4,7 +4,7 @@ import { FileText } from 'lucide-react'
 import { EmptyState } from '../components/ui'
 import { useInvoicing } from '../hooks/useInvoicing'
 import { useInvoicingMutations } from '../hooks/useInvoicingMutations'
-import { EMPTY_ITEM } from '../components/invoicing/constants'
+import { EMPTY_ITEM, STATUS_FILTERS } from '../components/invoicing/constants'
 import { pushToast } from '../utils/toastBus'
 import { InvoiceRow } from '../components/invoicing/InvoiceRow'
 import { SendPanel } from '../components/invoicing/SendPanel'
@@ -78,12 +78,21 @@ export default function Invoicing() {
   // reopen it.
   const [invParams, setInvParams] = useSearchParams()
   useEffect(() => {
-    if (invParams.get('new')) {
+    // ?status=<draft|sent|paid|overdue> pre-filters the list so dashboard
+    // money links (the AR-aging tile, the KPI strip) land on the exact set
+    // they promised — e.g. `?status=overdue`. Unknown values are ignored so
+    // a stale link can't wedge the filter into an empty state. Consumed once,
+    // then stripped from the URL so manual tab clicks stay authoritative.
+    const wanted = invParams.get('status')
+    if (wanted && STATUS_FILTERS.includes(wanted)) {
+      setStatusFilter(wanted)
+    }
+    if (invParams.get('new') || wanted) {
       // ?client=<id> pre-scopes the new invoice to that client (parity with the
       // "New Quote" quick action on the client profile).
-      openNew(invParams.get('client') || '')
+      if (invParams.get('new')) openNew(invParams.get('client') || '')
       const next = new URLSearchParams(invParams)
-      next.delete('new'); next.delete('client')
+      next.delete('new'); next.delete('client'); next.delete('status')
       setInvParams(next, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

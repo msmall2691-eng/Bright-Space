@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { fmtMoney } from '../components/dashboard/utils'
 import { NeedsYouNow } from '../components/dashboard/NeedsYouNow'
+import { ArAgingTile } from '../components/dashboard/ArAgingTile'
 import { CustomerActivity } from '../components/dashboard/CustomerActivity'
 import { QuotesLeadsTile } from '../components/dashboard/QuotesLeadsTile'
 import { useDashboardData } from '../hooks/useDashboardData'
@@ -299,7 +300,7 @@ export default function Dashboard() {
 
   const {
     todayRevenue, mtdRevenue, outstanding, pipeline, overdueInvoiceCount,
-    quoteActions, attention, turnover, slaBreached, crew,
+    quoteActions, attention, turnover, slaBreached, crew, arAging,
     todayJobs, todayCount, weekCount,
   } = useDashboardDerived({
     invoices, followUps, todayVisits, overdueConvs, unassignedConvs,
@@ -377,6 +378,7 @@ export default function Dashboard() {
             <TodayRoute loading={loading} todayJobs={todayJobs} todayCount={todayCount} navigate={navigate} />
             <MoneyRead loading={loading} outstanding={outstanding} pipeline={pipeline}
               mtdRevenue={mtdRevenue} overdueInvoiceCount={overdueInvoiceCount} navigate={navigate} />
+            <ArAgingTile loading={loading} arAging={arAging} navigate={navigate} />
             <CustomerActivity navigate={navigate} />
           </div>
         </div>
