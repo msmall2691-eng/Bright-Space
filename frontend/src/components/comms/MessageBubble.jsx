@@ -1,6 +1,7 @@
-import { Mail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Mail, CheckCircle2, Check, Clock, AlertTriangle, StickyNote, ChevronDown } from 'lucide-react'
 import { fullTime } from './utils'
-import { htmlToText } from '../../utils/format'
+import { htmlToText, splitQuotedEmail } from '../../utils/format'
 
 /** Outbound delivery indicator. Covers the whole lifecycle so a message
  *  that's accepted-but-not-yet-delivered isn't a blank space:
@@ -39,6 +40,17 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
   }
 
   const outbound = m.direction === 'outbound'
+  const [showQuoted, setShowQuoted] = useState(false)
+
+  // Clean the body once per message (not per render): HTML → text, then split
+  // off the quoted reply chain / signature. Only email carries quoted history
+  // worth collapsing; SMS stays as-is. Memoized so scrolling a long thread
+  // doesn't re-run DOMParser + regexes on every bubble.
+  const { body, quoted } = useMemo(() => {
+    const text = htmlToText(m.body)
+    if (m.channel !== 'email') return { body: text, quoted: '' }
+    return splitQuotedEmail(text)
+  }, [m.body, m.channel])
 
   return (
     <div className={`flex ${outbound ? 'justify-end' : 'justify-start'} ${isFirst ? 'mt-3' : 'mt-1'}`}>
@@ -62,7 +74,27 @@ export function MessageBubble({ m, isFirst, showTime, contactName }) {
               {m.subject}
             </div>
           )}
-          <div className="whitespace-pre-wrap break-words">{htmlToText(m.body)}</div>
+          <div className="whitespace-pre-wrap break-words">{body}</div>
+          {/* Quoted reply history / signature — collapsed by default so each
+              email shows just the new content. One tap reveals the full chain. */}
+          {quoted && (
+            <div className="mt-1.5">
+              <button onClick={() => setShowQuoted(v => !v)}
+                className={`inline-flex items-center gap-1 text-[11px] font-semibold rounded-md px-1.5 py-0.5 transition-colors ${
+                  outbound ? 'text-indigo-100/90 hover:bg-white/10' : 'text-ink-3 hover:bg-bg-2'
+                }`}>
+                <ChevronDown className={`w-3 h-3 transition-transform ${showQuoted ? 'rotate-180' : ''}`} />
+                {showQuoted ? 'Hide quoted text' : 'Show quoted text'}
+              </button>
+              {showQuoted && (
+                <div className={`mt-1 pl-2 border-l-2 whitespace-pre-wrap break-words text-[12px] ${
+                  outbound ? 'border-white/25 text-indigo-100/80' : 'border-hairline text-ink-3'
+                }`}>
+                  {quoted}
+                </div>
+              )}
+            </div>
+          )}
           <div className={`text-[11px] mt-1.5 flex items-center gap-1 font-medium ${outbound ? 'text-indigo-100 justify-end' : 'text-ink-2'}`}>
             {fullTime(m.created_at)}
             {outbound && <DeliveryIcon status={m.status} />}

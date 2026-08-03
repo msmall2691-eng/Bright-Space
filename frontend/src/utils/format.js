@@ -26,6 +26,58 @@ export function htmlToText(input) {
   }
 }
 
+/**
+ * Split an email body into the new content vs. the trailing quoted reply
+ * history / signature, so the inbox can show just what the customer actually
+ * wrote and tuck the repeated chain behind a "show quoted text" toggle.
+ *
+ * Runs on already-plain text (feed it htmlToText output). Conservative by
+ * design: only splits on well-known reply markers, and NEVER hides everything
+ * — if the "new" part would be empty, the whole message stays visible.
+ *
+ * Returns { body, quoted } where `quoted` is '' when there's nothing to trim.
+ */
+const _QUOTE_MARKERS = [
+  // Gmail / Apple Mail: "On Tue, Jun 16, 2026 at 9:00 AM Jane <j@x.com> wrote:"
+  /^\s*On\s.+\swrote:\s*$/m,
+  // Outlook / generic: "-----Original Message-----"
+  /^\s*-{2,}\s*Original Message\s*-{2,}/im,
+  // Outlook header block: "From: …" immediately followed by Sent:/To:/Date:
+  /^\s*From:\s.+(?:\r?\n\s*(?:Sent|To|Date|Subject):.*)+/im,
+  // Outlook divider line of underscores
+  /^\s*_{10,}\s*$/m,
+]
+
+export function splitQuotedEmail(input) {
+  const text = String(input || '')
+  if (!text.trim()) return { body: text, quoted: '' }
+
+  let cut = -1
+  for (const re of _QUOTE_MARKERS) {
+    const m = text.match(re)
+    if (m && m.index != null && (cut === -1 || m.index < cut)) cut = m.index
+  }
+
+  // A run of ">"-quoted lines (only counts if it's a real block, not one
+  // stray line) is also a reply chain — take its start if it's earlier.
+  const qBlock = text.match(/(?:^\s*>.*(?:\r?\n|$)){2,}/m)
+  if (qBlock && qBlock.index != null && (cut === -1 || qBlock.index < cut)) cut = qBlock.index
+
+  // RFC-2646 signature delimiter ("-- "), but only when it sits in the last
+  // third of the message — otherwise it's likely body punctuation, not a sig.
+  const sig = text.match(/^-- \s*$/m)
+  if (sig && sig.index != null && sig.index > text.length * 0.6 && (cut === -1 || sig.index < cut)) {
+    cut = sig.index
+  }
+
+  if (cut <= 0) return { body: text.trim(), quoted: '' }
+  const body = text.slice(0, cut).trim()
+  const quoted = text.slice(cut).trim()
+  // Guard: never blank the message — if trimming leaves nothing, don't split.
+  if (!body) return { body: text.trim(), quoted: '' }
+  return { body, quoted }
+}
+
 export function formatDateTime(value, opts) {
   if (!value) return ''
   const d = value instanceof Date ? value : new Date(value)
