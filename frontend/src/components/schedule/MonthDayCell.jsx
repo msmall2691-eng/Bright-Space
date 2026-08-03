@@ -64,17 +64,18 @@ function MonthDayCell({
               {dayJobs.length}
             </span>
           )}
-          {/* Quick-add: hover a day (desktop) → a faint "+" drops a New Job
-              straight onto that date, no need to open the day panel first. */}
-          {!isMobile && onQuickAdd && (
+          {/* Quick-add: drops a New Job straight onto this date. Always visible
+              on mobile (no hover there); hover-reveal on desktop to keep the
+              grid clean until you reach for it. */}
+          {onQuickAdd && (
             <button
               type="button"
               onClick={e => { e.stopPropagation(); onQuickAdd(date) }}
-              className="hidden sm:grid place-items-center w-4 h-4 rounded opacity-0 group-hover/day:opacity-100 text-ink-3 hover:text-indigo-600 hover:bg-indigo-500/10 transition-opacity"
+              className="grid place-items-center w-5 h-5 rounded text-ink-3 hover:text-indigo-600 hover:bg-indigo-500/10 transition-opacity sm:opacity-0 sm:group-hover/day:opacity-100 focus:opacity-100"
               title="Add a job on this day"
               aria-label={`Add a job on ${date}`}
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -135,7 +136,7 @@ function MonthDayCell({
       )}
 
       {!isMobile && (
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         {shownJobs.map(j => {
           const tc = typeConfig[j.job_type] || typeConfig.residential
           const chipTime = j.start_time ? j.start_time.slice(0, 5) : ''
@@ -166,14 +167,15 @@ function MonthDayCell({
                 e.stopPropagation()
                 onJobClick?.(j)
               }}
-              className={`flex items-center gap-1 text-[10px] sm:text-[11px] px-1 sm:px-1.5 py-0.5 rounded border leading-tight cursor-grab active:cursor-grabbing ${
-                isCancelled ? 'bg-bg-2 text-ink-3 border-hairline line-through' :
-                isDuplicate ? 'bg-red-50 text-red-700 border-red-300 ring-1 ring-red-200' :
-                needsCleaner ? `${tc.pill} ring-1 ring-amber-300/60 dark:ring-amber-500/40` :
+              className={`group/chip flex items-center gap-1.5 text-[10px] sm:text-[11px] pl-1.5 pr-1 py-1 rounded-md leading-tight cursor-grab active:cursor-grabbing transition-colors ${
+                isCancelled ? 'bg-bg-2 text-ink-3 line-through' :
+                isDuplicate ? 'bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-500/10' :
                 `${tc.pill} ${tc.pillHover}`
               }`}
               title={`${chipTime ? chipTime + ' · ' : ''}${j.title}${j.client_name ? ' · ' + j.client_name : ''}${crew ? ' · assigned' : ' · needs a cleaner'}${j.recurring_schedule_id ? ' (recurring)' : ''} — press-and-hold to reschedule`}
             >
+              {/* Type accent — a single small dot. Keeps colorblind-safe type
+                  identity without a second full-color fill fighting the pill. */}
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tc.dot}`} />
               {isDuplicate && <span className="shrink-0 text-red-500" title="Duplicate turnover detected">⚠</span>}
               {j.is_immediate_turnover && (
@@ -183,18 +185,21 @@ function MonthDayCell({
                 <Zap className="w-2.5 h-2.5 shrink-0 text-amber-600"
                      title={`Tight turnaround — only ~${Math.max(0, Math.round(j.turnover_lead_hours))}h before the next guest checks in`} />
               )}
-              {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-60" />}
-              {chipTime && <span className="font-semibold tabular-nums shrink-0">{chipTime}</span>}
-              <span className="truncate">{chipWho}</span>
+              {j.recurring_schedule_id && <RotateCw className="w-2.5 h-2.5 shrink-0 opacity-50" title="Recurring" />}
+              {chipTime && <span className="font-semibold tabular-nums shrink-0 text-ink-2">{chipTime}</span>}
+              <span className="truncate text-ink font-medium">{chipWho}</span>
               {!isCancelled && (
                 crew ? (
-                  <span className="ml-auto shrink-0 inline-flex items-center justify-center h-[15px] min-w-[15px] px-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[8px] font-bold leading-none"
+                  <span className="ml-auto shrink-0 inline-flex items-center justify-center h-[16px] min-w-[16px] px-1 rounded-full bg-ink/5 dark:bg-white/10 text-[8px] font-semibold text-ink-2 leading-none"
                     title={`Assigned${crew.count > 1 ? ` · ${crew.count} cleaners` : ''}`}>
                     {crew.initials}{crew.count > 1 ? `+${crew.count - 1}` : ''}
                   </span>
                 ) : (
-                  <span className="ml-auto shrink-0 inline-flex items-center justify-center w-[15px] h-[15px] rounded-full border border-dashed border-amber-400 text-amber-500 text-[9px] font-bold leading-none"
-                    title="Needs a cleaner">?</span>
+                  // Calm "needs a cleaner" cue — a soft amber dot instead of a
+                  // loud circled "?" on every unassigned job (the screenful of
+                  // question marks the operator was drowning in).
+                  <span className="ml-auto shrink-0 w-[7px] h-[7px] rounded-full bg-amber-400 ring-2 ring-amber-200/70 dark:ring-amber-500/25"
+                    title="Needs a cleaner" />
                 )
               )}
             </div>
