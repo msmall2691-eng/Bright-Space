@@ -832,10 +832,19 @@ def create_schedule(data: ScheduleCreate, db: Session = Depends(get_db),
         from database.models import Quote
         from datetime import datetime
         q = db.query(Quote).filter(Quote.id == sched.quote_id).first()
-        if q and q.status != "converted":
-            q.status = "converted"
-            q.converted_at = datetime.now()
-            q.updated_at = datetime.now()
+        if q:
+            # Carry the deal link onto the schedule so a won, recurring deal
+            # shows its cadence on the board (P4). Advance the opp to "won" to
+            # match quoting.convert_quote_to_job — setting up recurring from an
+            # accepted quote is a won deal just like converting it to a one-off.
+            if q.opportunity_id and not sched.opportunity_id:
+                sched.opportunity_id = q.opportunity_id
+                from utils.opportunity_helper import advance_for_quote
+                advance_for_quote(db, q, "won")
+            if q.status != "converted":
+                q.status = "converted"
+                q.converted_at = datetime.now()
+                q.updated_at = datetime.now()
             db.commit()
     result = sched_to_dict(sched)
     result["jobs_created"] = jobs_created
