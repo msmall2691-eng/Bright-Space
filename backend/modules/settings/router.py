@@ -1236,6 +1236,12 @@ class AutomationConfig(BaseModel):
     # invite_customers: you can put the cleaning on their calendar without
     # emailing them on every change. Turn off to cut notification noise.
     notify_customers: Optional[bool] = None
+    # Whether Google emails the customer specifically when their cleaning is
+    # MOVED (rescheduled to a new date/time). Separate from notify_customers so
+    # the operator can keep booking + cancellation emails on while nudging jobs
+    # around the calendar silently. Defaults OFF — moving a job is an internal
+    # operations action the customer rarely needs an email about every time.
+    notify_customers_on_move: Optional[bool] = None
     # How reminders are set on the Google Calendar event: "google_default"
     # (use the reminders you've configured in Google Calendar), "off" (no
     # event reminders), or "email_popup" (email 24h + popup 1h before).
@@ -1285,6 +1291,17 @@ def customer_notify_enabled(db: Session) -> bool:
     the cleaning on the customer's calendar while dialing DOWN how many change
     emails Google sends them (Settings → Automation)."""
     return _coerce_bool(get_setting(db, "notify_customers"), True)
+
+
+def customer_notify_on_move_enabled(db: Session) -> bool:
+    """Whether Google EMAILS the customer when their cleaning is MOVED to a new
+    date/time (the reschedule-specific `sendUpdates="all"` vs "none"). Gated by
+    `notify_customers` as well — if the master notify switch is off, moves are
+    silent regardless. Defaults **off**: an operator dragging a job around the
+    schedule is an internal action; the customer's calendar copy still updates
+    silently, they just don't get a change email every time. (Booking invites
+    and cancellations still email per `notify_customers`.)"""
+    return _coerce_bool(get_setting(db, "notify_customers_on_move"), False)
 
 
 # Valid reminder modes for the Google Calendar event.
@@ -1508,6 +1525,7 @@ def get_automation_settings(db: Session = Depends(get_db)):
         ),
         "invite_customers": customer_invites_enabled(db),
         "notify_customers": customer_notify_enabled(db),
+        "notify_customers_on_move": customer_notify_on_move_enabled(db),
         "gcal_reminders_mode": (get_setting(db, "gcal_reminders_mode") or "google_default"),
         "calendar_source_of_truth": (get_setting(db, "calendar_source_of_truth")
                                      or os.getenv("CALENDAR_SOURCE_OF_TRUTH", "brightbase")).strip().lower(),

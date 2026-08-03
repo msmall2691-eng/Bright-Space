@@ -17,6 +17,7 @@ export function useAutomationSettings({ toast, active }) {
     recurring_auto_generate_enabled: true,
     invite_customers: true,
     notify_customers: true,
+    notify_customers_on_move: false,
     gcal_reminders_mode: 'google_default',
     calendar_source_of_truth: 'brightbase',
     gcal_live_sync: true,
@@ -368,6 +369,25 @@ export default function AutomationTab({ state, toast, active }) {
                   className="w-4 h-4 rounded" />
               </label>
             </div>
+
+            {/* Dependent sub-toggle: only meaningful while the master notify
+                switch is on. Lets the operator keep booking + cancellation
+                emails but move jobs around the calendar silently. */}
+            {s.notify_customers && (
+              <div className="mt-4 ml-4 pl-4 border-l-2 border-hairline">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-ink">…including when a cleaning is <span className="italic">moved</span></h4>
+                    <p className="text-xs text-ink-3 mt-1">Off by default: rescheduling or editing an existing cleaning updates the customer's calendar copy <span className="font-medium">silently</span> — no “event changed” email. Booking and cancellation emails still send. Turn ON only if you want customers emailed every time a job's date or time moves.</p>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer shrink-0 ml-3">
+                    <input type="checkbox" checked={s.notify_customers_on_move}
+                      onChange={e => setAutomationSettings(x => ({ ...x, notify_customers_on_move: e.target.checked }))}
+                      className="w-4 h-4 rounded" />
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-hairline pt-5">
