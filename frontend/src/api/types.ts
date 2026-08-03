@@ -5903,6 +5903,8 @@ export interface components {
              * @default false
              */
             allow_conflicts: boolean | null;
+            /** Notify Customer */
+            notify_customer?: boolean | null;
         };
         /** FieldCreate */
         FieldCreate: {
@@ -6292,6 +6294,8 @@ export interface components {
              * @default false
              */
             allow_conflicts: boolean | null;
+            /** Notify Customer */
+            notify_customer?: boolean | null;
         };
         /**
          * LinkClientRequest

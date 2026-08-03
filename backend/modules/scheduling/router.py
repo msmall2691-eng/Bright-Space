@@ -59,6 +59,12 @@ class JobUpdate(BaseModel):
     job_type: Optional[str] = None
     property_id: Optional[int] = None
     allow_conflicts: Optional[bool] = False
+    # Per-move notification override for THIS edit (see update_job). None = fall
+    # back to the Settings → Automation "email on move" toggle; True/False is an
+    # explicit "do / don't email the customer about this reschedule" for one call.
+    # Lets an operator nudge a job around the calendar silently (the default) but
+    # still opt into telling the customer when a move actually matters to them.
+    notify_customer: Optional[bool] = None
 
 JOB_TYPES = {"residential", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
@@ -2951,6 +2957,10 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
 
     updates = data.model_dump(exclude_none=True)
     allow_conflicts = updates.pop("allow_conflicts", False)
+    # Per-move notify override — pull it out before the setattr loop (it's not a
+    # Job column). None → use the Settings toggle; True/False → force this move's
+    # customer email on/off. Folded into _upd_su below.
+    notify_override = updates.pop("notify_customer", None)
 
     # The edit modal sends EVERY field, so a job whose stored status/type
     # predates the current vocabulary must not become uneditable: the job's
@@ -3192,7 +3202,12 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             # has explicitly opted into move emails. send_invite stays `_inv`, so
             # the customer remains an attendee and their calendar copy updates —
             # only the *email* is suppressed (sendUpdates="none").
-            _upd_su = "all" if (_inv and _gcal_notify and _notify_on_move) else "none"
+            #
+            # Precedence: an explicit per-move `notify_customer` (from the edit
+            # form / drag toggle) wins for THIS call; otherwise fall back to the
+            # Settings default (master notify AND the "email on move" toggle).
+            _move_emails = bool(notify_override) if notify_override is not None else (_gcal_notify and _notify_on_move)
+            _upd_su = "all" if (_inv and _move_emails) else "none"
             new_type = job.job_type or "residential"
             if _calendar_id(prev_job_type) != _calendar_id(new_type):
                 # The event lives on the OLD type's calendar — updating in
