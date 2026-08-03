@@ -1,16 +1,14 @@
 import { useMemo } from 'react'
 import {
   X, Phone, Mail, MapPin, User, Hash, StickyNote, ArrowLeft, Send, FileText, Loader2,
-  MessageSquare, Calendar, CheckCircle2, RefreshCw, DollarSign,
+  MessageSquare, Calendar, CheckCircle2, RefreshCw, DollarSign, BellRing,
 } from 'lucide-react'
-import { formatPhone } from '../../utils/display'
 import { formatDate, combineAddress, formatAddress } from '../../utils/format'
 import { contactDisplay, relTime } from './utils'
 import { Avatar, ChannelBadge } from './primitives'
 import RecordLink from '../RecordLink'
 import AiInsight from '../AiInsight'
 import { LinkClientControl } from './LinkClientControl'
-import { useCustomerContext } from '../../hooks/useCustomerContext'
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
@@ -27,7 +25,7 @@ function SectionLabel({ children, right }) {
 
 /** One appointment row — the thing the operator most wants in view while
  *  they're texting. Date + time on the left, status/recurring badge right. */
-function AppointmentRow({ job, tone = 'upcoming' }) {
+function AppointmentRow({ job, tone = 'upcoming', onRemind }) {
   const dateLabel = formatDate(job.scheduled_date, { weekday: 'short', month: 'short', day: 'numeric' })
   const time = (job.start_time || '').slice(0, 5)
   return (
@@ -45,9 +43,18 @@ function AppointmentRow({ job, tone = 'upcoming' }) {
           </div>
         </div>
       </div>
-      {job.is_recurring && (
-        <RefreshCw className="w-3 h-3 text-ink-3 shrink-0" title="Recurring" />
-      )}
+      <div className="flex items-center gap-1 shrink-0">
+        {job.is_recurring && <RefreshCw className="w-3 h-3 text-ink-3" title="Recurring" />}
+        {/* Manual "remind them of this appointment" — one tap loads a
+            ready-to-send reminder SMS (with the real date/time) into the
+            composer so the operator can glance, tweak, and send. */}
+        {onRemind && (
+          <button onClick={() => onRemind(job)} title="Text an appointment reminder"
+            className="w-6 h-6 rounded-lg flex items-center justify-center text-ink-3 hover:text-indigo-600 hover:bg-indigo-500/10 transition-colors">
+            <BellRing className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -61,11 +68,14 @@ function AppointmentRow({ job, tone = 'upcoming' }) {
  * thread. All action props (onDraftQuote, onLinkClient, status/priority) are
  * unchanged from the previous panel.
  */
-export function ContactPanel({ detail, onClose, onDraftQuote, draftingQuote, onLinkClient, linkingClient, mobileActive, desktopOpen, onBack }) {
+export function ContactPanel({ detail, context, onRemind, onClose, onDraftQuote, draftingQuote, onLinkClient, linkingClient, mobileActive, desktopOpen, onBack }) {
   if (!detail) return null
   const name = contactDisplay(detail)
   const client = detail.client
-  const { upcomingJobs, pastJobs, openQuotes, unpaidInvoices, stats } = useCustomerContext(client?.id)
+  // Customer-360 aggregate is owned by the Comms page (shared with the
+  // composer for appointment-aware quick-replies); default to empty so this
+  // panel still renders if a caller doesn't pass it.
+  const { upcomingJobs = [], pastJobs = [], openQuotes = [], unpaidInvoices = [], stats = {} } = context || {}
 
   const phone = client?.phone || detail.external_contact
   const address = client && formatAddress(combineAddress(client.address, client.city, client.state, client.zip_code))
@@ -185,7 +195,7 @@ export function ContactPanel({ detail, onClose, onDraftQuote, draftingQuote, onL
         {client && (
           <div className="grid grid-cols-3 divide-x divide-hairline border-b border-hairline">
             <div className="px-2 py-3 text-center">
-              <div className="text-[15px] font-bold text-ink tabular-nums">{stats.visitCount}</div>
+              <div className="text-[15px] font-bold text-ink tabular-nums">{stats.visitCount || 0}</div>
               <div className="text-[10px] text-ink-3">visits</div>
             </div>
             <div className="px-2 py-3 text-center">
@@ -212,7 +222,7 @@ export function ContactPanel({ detail, onClose, onDraftQuote, draftingQuote, onL
                 Upcoming appointments
               </SectionLabel>
               <div className="space-y-1.5">
-                {upcomingJobs.slice(0, 4).map(j => <AppointmentRow key={`up-${j.id}`} job={j} tone="upcoming" />)}
+                {upcomingJobs.slice(0, 4).map(j => <AppointmentRow key={`up-${j.id}`} job={j} tone="upcoming" onRemind={detail.channel === 'sms' ? onRemind : undefined} />)}
               </div>
             </div>
           )}

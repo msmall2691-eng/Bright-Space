@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { post } from '../api'
-import { dayLabel, contactDisplay } from '../components/comms/utils'
+import { dayLabel, contactDisplay, firstNameOf, apptReminderText } from '../components/comms/utils'
 import { DaySeparator } from '../components/comms/primitives'
 import { MessageBubble } from '../components/comms/MessageBubble'
 import { ComposeModal } from '../components/comms/ComposeModal'
@@ -38,6 +38,8 @@ import { InboxLeftPanel } from '../components/comms/InboxLeftPanel'
 import { useCommsData } from '../hooks/useCommsData'
 import { useCommsMutations } from '../hooks/useCommsMutations'
 import { useCommsFilters } from '../hooks/useCommsFilters'
+import { useCustomerContext } from '../hooks/useCustomerContext'
+import { useCompanyName } from '../hooks/useCompanyName'
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -95,6 +97,13 @@ export default function Comms() {
   const { channelCount, FOLDERS, CHIPS, toggleChip } = useCommsFilters({
     summary, channelFilter, setChipFilters,
   })
+
+  // Customer-360 aggregate, owned here so BOTH the contact panel and the
+  // composer can use it — the panel renders appointments, the composer offers
+  // appointment-aware quick-replies (reminders/confirmations) from the same
+  // data. Keyed on the open thread's client.
+  const customerCtx = useCustomerContext(detail?.client?.id)
+  const companyName = useCompanyName()
 
   const [reply, setReply] = useState('')
   const [replySubject, setReplySubject] = useState('')
@@ -181,6 +190,22 @@ export default function Comms() {
     setSelectedId(id)
     setMobileView('thread')
   }
+
+  // Load a ready-to-send message into the composer (replacing any draft) and
+  // make sure it's visible: reply mode on, thread pane up on mobile. Powers
+  // the appointment-aware quick-replies and the per-appointment "remind" bell.
+  const fillReply = useCallback((text) => {
+    if (!text) return
+    setNoteMode(false)
+    setReply(text)
+    setMobileView('thread')
+  }, [])
+
+  // Manually remind the customer of a specific upcoming appointment — one tap
+  // drafts an SMS with the real date/time and their first name.
+  const remindAppt = useCallback((job) => {
+    fillReply(apptReminderText({ job, firstName: firstNameOf(detail), company: companyName }))
+  }, [fillReply, detail, companyName])
 
   // ──────── List-row (swipe) actions ────────
   // These act on any conversation by id — not just the open thread — so a
@@ -362,6 +387,10 @@ export default function Comms() {
               onSend={sendReply}
               onDraftAI={draftWithAI}
               draftingAI={draftingAI}
+              nextAppt={customerCtx.upcomingJobs?.[0]}
+              firstName={firstNameOf(detail)}
+              companyName={companyName}
+              onFillReply={fillReply}
             />
           </>
         )}
@@ -375,6 +404,8 @@ export default function Comms() {
       {detail && (showContactPanel || mobileView === 'contact') && (
         <ContactPanel
           detail={detail}
+          context={customerCtx}
+          onRemind={remindAppt}
           mobileActive={mobileView === 'contact'}
           desktopOpen={showContactPanel}
           onBack={() => setMobileView('thread')}
