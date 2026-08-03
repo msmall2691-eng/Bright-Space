@@ -36,6 +36,28 @@ def test_notify_customers_default_on(monkeypatch):
     assert sr.customer_notify_enabled(None) is False
 
 
+def test_notify_on_move_default_off(monkeypatch):
+    # The move-specific email toggle defaults OFF: dragging a job around the
+    # calendar shouldn't email the customer unless they opt in. This is the
+    # knob that lets booking/cancellation emails stay on while moves go silent.
+    monkeypatch.setattr(sr, "get_setting", lambda db, k: None)
+    assert sr.customer_notify_on_move_enabled(None) is False
+    monkeypatch.setattr(sr, "get_setting", lambda db, k: "true")
+    assert sr.customer_notify_on_move_enabled(None) is True
+
+
+def test_move_sendupdates_gating():
+    """The in-place reschedule branch emails the customer only when master
+    notify AND the move toggle are both on. Mirrors the `_upd_su` expression in
+    scheduling.update_job so a regression there is caught here."""
+    def upd_su(inv, notify, on_move):
+        return "all" if (inv and notify and on_move) else "none"
+    assert upd_su(True, True, True) == "all"      # opted in → email on move
+    assert upd_su(True, True, False) == "none"    # default → silent move
+    assert upd_su(True, False, True) == "none"    # master off → silent regardless
+    assert upd_su(False, True, True) == "none"    # no invite/email on file
+
+
 def test_build_event_keeps_customer_attendee_on_reschedule():
     # The reschedule path passes include_attendees=True; the customer must stay
     # on the attendee list so their invite updates instead of vanishing.

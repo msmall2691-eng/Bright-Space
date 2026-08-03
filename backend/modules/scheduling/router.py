@@ -3092,9 +3092,17 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     from modules.settings.router import (
         customer_invites_enabled as _inv_enabled,
         customer_notify_enabled as _notify_enabled,
+        customer_notify_on_move_enabled as _notify_on_move_enabled,
         gcal_reminder_overrides as _reminder_overrides,
     )
     _gcal_notify = _notify_enabled(db)
+    # Moving/editing an existing event only emails the customer when BOTH the
+    # master notify switch AND the move-specific toggle are on. Default: master
+    # on, move off → booking invites + cancellations still email, but nudging a
+    # job around the calendar updates their copy silently (the wished-for
+    # "don't ping them every time we move it"). Create + cancel keep using
+    # `_gcal_notify` directly below, so this only affects in-place updates.
+    _notify_on_move = _notify_on_move_enabled(db)
     _gcal_reminders = _reminder_overrides(db)
     _cancel_su = "all" if _gcal_notify else "none"
 
@@ -3180,7 +3188,11 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             # invite + notify/reminder prefs so a reschedule updates their copy
             # and (per Settings) emails them the change.
             _inv = _inv_enabled(db) and bool(client and client.email)
-            _upd_su = "all" if (_inv and _gcal_notify) else "none"
+            # A move/edit of an already-synced event: silent unless the operator
+            # has explicitly opted into move emails. send_invite stays `_inv`, so
+            # the customer remains an attendee and their calendar copy updates —
+            # only the *email* is suppressed (sendUpdates="none").
+            _upd_su = "all" if (_inv and _gcal_notify and _notify_on_move) else "none"
             new_type = job.job_type or "residential"
             if _calendar_id(prev_job_type) != _calendar_id(new_type):
                 # The event lives on the OLD type's calendar — updating in
