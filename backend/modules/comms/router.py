@@ -322,6 +322,14 @@ def conv_to_dict(c: Conversation, *, include_client: bool = True, preview=_UNSET
             "email": c.client.email,
             "phone": c.client.phone,
             "status": c.client.status,
+            # Customer-360 context panel reads these to show the mailing
+            # address (with a map link) and a "customer since" line while the
+            # operator is mid-conversation. Cheap to include — no extra query.
+            "address": c.client.address,
+            "city": c.client.city,
+            "state": c.client.state,
+            "zip_code": c.client.zip_code,
+            "created_at": _iso_utc(c.client.created_at),
         }
     return out
 
