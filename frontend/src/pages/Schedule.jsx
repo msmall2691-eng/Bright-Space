@@ -249,6 +249,33 @@ export default function Schedule() {
     }
   }
 
+  // Push (or re-sync) the assigned crew to Connecteam — the explicit
+  // hand-off. POST /jobs/{id}/dispatch creates a shift per cleaner (or
+  // re-syncs if already dispatched). We optimistically flip the drawer's
+  // hand-off chip to "sent" by seeding connecteam_shift_ids with one
+  // placeholder per assigned cleaner, then refresh() reconciles with the
+  // real shift ids from the backend.
+  const [dispatchingJobId, setDispatchingJobId] = useState(null)
+  const handleDispatch = async (job) => {
+    if (!job?.id || dispatchingJobId != null) return
+    const cleanerCount = (job.cleaner_ids || []).length
+    setDispatchingJobId(job.id)
+    try {
+      await post(`/api/jobs/${job.id}/dispatch`, {})
+      const optimisticShifts = Array.from({ length: Math.max(cleanerCount, 1) }, (_, i) => `pending-${i}`)
+      setSelectedVisit(sv => sv && sv.job?.id === job.id
+        ? { ...sv, job: { ...sv.job, connecteam_shift_ids: optimisticShifts } } : sv)
+      setJobs(prev => prev[job.id]
+        ? { ...prev, [job.id]: { ...prev[job.id], connecteam_shift_ids: optimisticShifts } } : prev)
+      toast.success('Sent to crew')
+      refresh()
+    } catch (err) {
+      toast.error('Couldn’t notify the crew: ' + (err?.detail || err?.message || 'try again'))
+    } finally {
+      setDispatchingJobId(null)
+    }
+  }
+
   // Persist a job completion (checklist + photo URLs + status=completed) via
   // POST /api/jobs/{id}/complete — one call stamps every field, and Job.status
   // moves with completion (the audit gap the Job/Visit unification closes).
@@ -595,6 +622,8 @@ export default function Schedule() {
         onEditJob={handleEditJob}
         onDelete={handleDelete}
         onToggleReminder={handleToggleReminder}
+        onDispatch={handleDispatch}
+        dispatchingJobId={dispatchingJobId}
       />
 
       {/* Job Edit Modal */}
