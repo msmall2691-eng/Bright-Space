@@ -12,12 +12,9 @@ from sqlalchemy.orm import Session
 
 from database.models import Opportunity
 from utils.activity_logger import log_activity
+from utils.deal_stage import STAGE_RANK as _RANK, QUOTE_STATUS_STAGE as _QUOTE_STATUS_STAGE
 
 logger = logging.getLogger(__name__)
-
-# Forward order of the pipeline; won/lost are terminal (rank highest so we never
-# regress out of them).
-_RANK = {"new": 0, "qualified": 1, "quoted": 2, "won": 3, "lost": 3}
 
 
 def _active_opp(db: Session, client_id: int):
@@ -90,14 +87,6 @@ def advance_for_quote(db: Session, quote, stage, **kwargs):
         return None
     opp = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
     return advance_opportunity(db, opp, stage, **kwargs)
-
-
-# Quote status → pipeline stage, for the one-time backfill of existing rows.
-_QUOTE_STATUS_STAGE = {
-    "draft": "quoted", "sent": "quoted", "viewed": "quoted", "changes_requested": "quoted",
-    "accepted": "quoted", "converted": "won", "declined": "lost", "expired": "lost",
-    "archived": "lost",
-}
 
 
 def backfill_opportunities(db: Session) -> dict:
