@@ -18,7 +18,7 @@ from utils.dates import business_today, coerce_date
 router = APIRouter()
 
 
-def _release_sync_links(db: Session, job: Job) -> None:
+def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
     """Delete a job's linked Google Calendar event + Connecteam shift when
     cancelling/detaching it (audit finding #2, July 2026): every recurring
     cancellation path below used to just set status='cancelled' and clear
@@ -33,9 +33,15 @@ def _release_sync_links(db: Session, job: Job) -> None:
         try:
             from integrations.google_calendar import delete_event
             from modules.settings.router import customer_notify_enabled
+            # `notify=False` (an operator MOVE, per the move toggle) deletes the
+            # old event SILENTLY so the customer doesn't get a jarring
+            # "cancelled" email for a visit that's merely being shifted. Skips
+            # and structural schedule edits keep notify=True → cancellation email
+            # as before.
+            _del_su = "all" if (notify and customer_notify_enabled(db)) else "none"
             if delete_event(job.gcal_event_id, job.job_type or "residential",
                             owner_account_id=getattr(job, "gcal_account_id", None),
-                            send_updates=("all" if customer_notify_enabled(db) else "none")):
+                            send_updates=_del_su):
                 job.gcal_event_id = None
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
@@ -1257,7 +1263,8 @@ def _ex_to_dict(ex: RecurrenceException) -> dict:
     }
 
 
-def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: Optional[str]) -> None:
+def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: Optional[str],
+                         *, notify: bool = True) -> None:
     """Mark any Job on (schedule_id, target_date) as cancelled so a
     skip/reschedule exception takes effect immediately without waiting for
     the next /generate-all run.
@@ -1291,7 +1298,7 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     # date collided with this inert row and 500'd at commit. Matches the
     # detach convention _resync_future_jobs and split_schedule already use.
     job.recurring_schedule_id = None
-    _release_sync_links(db, job)
+    _release_sync_links(db, job, notify=notify)
 
 
 @router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
@@ -1350,7 +1357,8 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
 
 def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date, rescheduled_date,
                            rescheduled_start_time=None, rescheduled_end_time=None,
-                           cleaner_ids=None, reason=None, allow_conflicts=True):
+                           cleaner_ids=None, reason=None, allow_conflicts=True,
+                           notify_customer: bool = True):
     """Core "move this one occurrence" logic — writes/updates the
     RecurrenceException and materializes the Job for the new date, exactly
     as the /{schedule_id}/reschedule endpoint does. Factored out so bulk
@@ -1463,7 +1471,10 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     if rescheduled_date != exception_date:
         if old_occurrence is not None:
             old_occurrence.public_token = None  # freed for the new row below
-        _cancel_existing_job(db, sched.id, exception_date, reason)
+        # notify_customer=False (operator move + move-toggle off) suppresses the
+        # old occurrence's cancellation email; the customer's calendar copy is
+        # cleaned up silently while the visit reappears on the new date.
+        _cancel_existing_job(db, sched.id, exception_date, reason, notify=notify_customer)
 
     # Materialize (or update) the Job for the rescheduled date with the
     # exception times. generate_jobs uses series times only, so without this
@@ -1587,6 +1598,13 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         )
 
     sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
+    # Operator move: email the customer only if BOTH the master notify switch
+    # and the move-specific toggle are on (default: silent move). Same rule the
+    # single-job update_job path uses, so every operator move is consistent.
+    from modules.settings.router import (
+        customer_notify_enabled as _ne, customer_notify_on_move_enabled as _nom,
+    )
+    _notify_move = _ne(db) and _nom(db)
     ex, rescheduled_job = _reschedule_occurrence(
         db, sched, body.exception_date, body.rescheduled_date,
         rescheduled_start_time=body.rescheduled_start_time,
@@ -1594,6 +1612,7 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         cleaner_ids=body.cleaner_ids,
         reason=body.reason,
         allow_conflicts=bool(body.allow_conflicts),
+        notify_customer=_notify_move,
     )
 
     db.commit()

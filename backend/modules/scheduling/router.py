@@ -1885,6 +1885,13 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
     found_ids = {j.id for j in jobs}
 
     from modules.recurring.router import _reschedule_occurrence, _get_schedule_or_404
+    # Operator bulk move: recurring occurrences email the customer only when both
+    # the master notify + the move toggle are on (default silent). One-off jobs in
+    # the else-branch route through update_job, which applies the same rule.
+    from modules.settings.router import (
+        customer_notify_enabled as _bulk_ne, customer_notify_on_move_enabled as _bulk_nom,
+    )
+    _bulk_notify_move = _bulk_ne(db) and _bulk_nom(db)
 
     shifted, skipped = [], []
     for job_id in body.job_ids:
@@ -1906,6 +1913,7 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
                     db, sched, job.scheduled_date, new_date,
                     rescheduled_start_time=job.start_time, rescheduled_end_time=job.end_time,
                     cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
+                    notify_customer=_bulk_notify_move,
                 )
             else:
                 # Route one-off moves through update_job so the Google Calendar
@@ -2259,10 +2267,14 @@ def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope
             return job
         # scope 'this' — move just this occurrence (swaps the Job row).
         token = job.public_token
+        # Customer-initiated move: keep notifying (notify_customer default True).
+        # The move-toggle governs OPERATOR moves only — a customer who just moved
+        # their own visit should still get the confirming calendar update.
         _, newjob = _reschedule_occurrence(
             db, sched, exception_date=job.scheduled_date, rescheduled_date=d,
             rescheduled_start_time=start, rescheduled_end_time=end,
-            cleaner_ids=job.cleaner_ids, reason="Customer self-reschedule")
+            cleaner_ids=job.cleaner_ids, reason="Customer self-reschedule",
+            notify_customer=True)
         db.flush()
         if newjob is not None and newjob.id != job.id:
             newjob.public_token = token
