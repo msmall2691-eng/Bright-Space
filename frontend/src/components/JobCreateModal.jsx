@@ -304,6 +304,17 @@ export default function JobCreateModal({
     setProperties([])
   }
 
+  // Open the inline create-client form pre-filled with whatever the operator
+  // already typed in the search box — the Twenty/Google "type a name that
+  // doesn't exist → Create it" pattern, so an unknown customer is one tap, not
+  // a retype. Split a "First Last" query into the name field as-is (backend
+  // derives first/last); phone/email stay optional.
+  const beginCreateClient = (prefillName = '') => {
+    setNewClient(n => ({ ...n, name: prefillName || n.name || '' }))
+    setClientErr('')
+    setAddingClient(true)
+  }
+
   const createInlineClient = async () => {
     if (!newClient.name.trim()) { setClientErr('Name is required'); return }
     setCreatingClient(true); setClientErr('')
@@ -504,7 +515,7 @@ export default function JobCreateModal({
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs text-ink-2 font-medium">Client *</label>
                 <button type="button"
-                  onClick={() => { setAddingClient(a => !a); setClientErr('') }}
+                  onClick={() => { addingClient ? setAddingClient(false) : beginCreateClient(clientQuery.trim()); setClientErr('') }}
                   className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
                   {addingClient ? 'Cancel' : '+ New client'}
                 </button>
@@ -546,10 +557,24 @@ export default function JobCreateModal({
                             className="text-indigo-600 hover:text-indigo-700 font-medium shrink-0">Retry</button>
                         </div>
                       ) : clientResults.length === 0 ? (
-                        <div className="px-3 py-4 text-xs text-ink-3 text-center">
-                          {clientQuery.trim() ? 'No matching clients' : 'No active clients yet'}
-                          <span className="block mt-0.5">Use “+ New client” to add one.</span>
-                        </div>
+                        clientQuery.trim() ? (
+                          // Inline create-on-no-match: the typed name becomes a
+                          // one-tap "Create it" instead of a dead end + retype.
+                          <button type="button" onClick={() => beginCreateClient(clientQuery.trim())}
+                            data-testid="job-create-client-create-inline"
+                            className="w-full flex items-center gap-2 px-3 py-3 text-sm text-left hover:bg-bg transition-colors">
+                            <span className="w-6 h-6 rounded-full bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0 text-base leading-none">+</span>
+                            <span className="min-w-0">
+                              <span className="font-semibold text-indigo-700 dark:text-indigo-300">Create “{clientQuery.trim()}”</span>
+                              <span className="block text-[11px] text-ink-3">Add as a new client and select</span>
+                            </span>
+                          </button>
+                        ) : (
+                          <div className="px-3 py-4 text-xs text-ink-3 text-center">
+                            No active clients yet
+                            <span className="block mt-0.5">Type a name above to create one.</span>
+                          </div>
+                        )
                       ) : (
                         clientResults.map(c => {
                           // Warn when this client's name matches a Connecteam
