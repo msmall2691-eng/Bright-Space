@@ -33,7 +33,8 @@ export default function GlobalSearch() {
   const ACTIONS = [
     { id: 'new-quote',   label: 'New quote',       icon: FileText,         keywords: 'create quote estimate billing', run: () => go('/billing?view=quotes') },
     { id: 'new-invoice', label: 'New invoice',     icon: Receipt,          keywords: 'create invoice bill billing',    run: () => go('/billing?view=invoices') },
-    { id: 'schedule',    label: 'Schedule a job',  icon: Calendar,         keywords: 'create job visit book',  run: () => go('/schedule?new=1') },
+    { id: 'schedule',    label: 'Schedule a job',  icon: Calendar,         keywords: 'create job visit book appointment',  run: () => go('/schedule?new=1') },
+    { id: 'new-client',  label: 'New client',      icon: User,             keywords: 'create customer contact add person', run: () => go('/clients?new=1') },
     { id: 'go-pipeline', label: 'Go to Pipeline',  icon: LayoutGrid,       keywords: 'deals opportunities',    run: () => go('/pipeline') },
     { id: 'go-clients',  label: 'Go to Clients',   icon: Users,            keywords: 'customers contacts',     run: () => go('/clients') },
     { id: 'go-inbox',    label: 'Go to Inbox',     icon: MessageSquare,    keywords: 'comms messages sms email', run: () => go('/comms') },
