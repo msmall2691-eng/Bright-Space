@@ -14,7 +14,7 @@ import logging
 import os
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import or_, func
@@ -1013,7 +1013,7 @@ def send_email_message(data: EmailRequest, db: Session = Depends(get_db),
 
 
 @router.post("/twilio/webhook")  # PUBLIC: Twilio posts here; signature is validated inside the handler (BB-SEC-06)
-async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
+async def twilio_inbound(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Receive inbound SMS from Twilio webhook. Groups into a conversation."""
     form = await request.form()
 
@@ -1178,6 +1178,11 @@ async def twilio_inbound(request: Request, db: Session = Depends(get_db)):
         body=body,
     )
 
+    # Mirror a copy into the Twenty CRM inbox. Queued rather than awaited so a
+    # slow or unreachable CRM can neither delay this webhook's reply nor make
+    # Twilio retry (a retry would arrive as a duplicate inbound).
+    background_tasks.add_task(_mirror_inbound_sms_to_twenty, dict(params))
+
     return Response(
         content="<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
         media_type="text/xml",
@@ -1209,3 +1214,50 @@ def _forward_inbound_sms_if_configured(*, from_number: str, client_name: Optiona
     except Exception as e:
         # Don't surface to caller — failed forward shouldn't make Twilio retry.
         logger.warning(f"[twilio] Forward to {target_normalized} failed: {e}")
+
+
+def _mirror_inbound_sms_to_twenty(params: dict) -> None:
+    """Push a copy of an inbound SMS to the Twenty CRM.
+
+    Twilio posts an inbound message to exactly one URL, and that URL is this
+    handler. So rather than repointing Twilio - which would take inbound SMS
+    away from BrightBase entirely - we forward a copy onward.
+
+    The forwarded request cannot carry a usable X-Twilio-Signature: Twilio
+    signed the URL it actually called, which is ours, not Twenty's. It is
+    authenticated with a shared secret instead, which is sound because the real
+    signature was already verified above before anything was persisted.
+
+    The original Twilio parameters are passed through untouched so the CRM
+    dedupes on the same MessageSid we do.
+
+    Inert unless both TWENTY_SMS_WEBHOOK_URL and TWENTY_SMS_WEBHOOK_SECRET are
+    set. Never raises - it runs after the response has gone out.
+    """
+    url = os.getenv("TWENTY_SMS_WEBHOOK_URL", "").strip()
+    secret = os.getenv("TWENTY_SMS_WEBHOOK_SECRET", "").strip()
+
+    if not url or not secret:
+        return
+
+    try:
+        import httpx
+
+        resp = httpx.post(
+            url,
+            json=params,
+            headers={"x-webhook-secret": secret},
+            timeout=10.0,
+        )
+        if resp.status_code >= 400:
+            logger.warning(
+                f"[twenty] mirror rejected inbound SMS "
+                f"({resp.status_code}): {resp.text[:200]}"
+            )
+        else:
+            logger.info(
+                f"[twenty] mirrored inbound SMS {params.get('MessageSid') or '?'}"
+            )
+    except Exception as e:
+        # A failed mirror must never surface to Twilio.
+        logger.warning(f"[twenty] mirror of inbound SMS failed: {e}")
