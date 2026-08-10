@@ -96,6 +96,25 @@ export default function QuoteDocument({ quote, actions = null, toolbar = null, b
             </div>
           )}
 
+          {/* Service summary — structured detail from the original request
+              (home size, cadence, focus areas…), so the customer can confirm
+              the quote matches what they asked for before accepting. Collapses
+              when absent. The internal fields (entry codes, special
+              instructions) are intentionally excluded server-side. */}
+          {Array.isArray(quote.service_details) && quote.service_details.length > 0 && (
+            <div className="mb-6">
+              <p className="text-[10px] text-ink-3 uppercase font-semibold tracking-wide mb-1.5">Service Summary</p>
+              <dl className="rounded-xl border border-hairline divide-y divide-hairline/60 overflow-hidden">
+                {quote.service_details.map((d, i) => (
+                  <div key={i} className="flex gap-3 px-4 py-2.5">
+                    <dt className="text-sm text-ink-3 w-2/5 shrink-0">{d.label}</dt>
+                    <dd className="text-sm text-ink font-medium">{d.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
           {/* Customer-facing scope notes (internal notes NEVER reach this page) */}
           {quote.notes && (
             <div className="mb-6">
