@@ -1285,6 +1285,19 @@ def sync_health(db: Session = Depends(get_db), org_id: int = Depends(current_org
     }
 
 
+@router.get("/sync-overview", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def sync_overview(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """The full Sync Control Center payload (frontend `/sync`): every schedule
+    BrightBase syncs with, rolled into one read-only picture — channels with
+    flow direction + who-wins + last-sync + backlog, the ~14 background ticks
+    finally made visible, and an attention list of only what a human should act
+    on. Richer sibling of `/sync-health` (which still powers the compact pill);
+    never mutates. Shape lives in
+    `modules/scheduling/sync_overview.build_sync_overview`."""
+    from modules.scheduling.sync_overview import build_sync_overview
+    return build_sync_overview(db, org_id)
+
+
 @router.post("/push-to-gcal", dependencies=[Depends(require_role("admin", "manager"))])
 def push_to_gcal(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
     """Push any BrightBase jobs that don't yet have a GCal event.
