@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
   DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox, Clock,
-  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin,
+  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Filter,
 } from 'lucide-react'
 import { logout } from '../api'
 
@@ -20,6 +20,7 @@ const nav = [
   { divider: true, label: 'Leads' },
   { to: '/requests',    icon: Inbox,           label: 'Requests' },
   { to: '/pipeline',    icon: LayoutGrid,      label: 'Pipeline' },
+  { to: '/funnel',      icon: Filter,          label: 'Quote funnel', roles: ['admin', 'manager'] },
   { to: '/billing',     icon: Receipt,         label: 'Quotes & Billing' },
   { divider: true, label: 'Customers' },
   { to: '/comms',       icon: MessageSquare,   label: 'Messages' },

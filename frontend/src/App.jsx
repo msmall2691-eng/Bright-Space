@@ -120,6 +120,7 @@ const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
+const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
 const Settings = lazy(() => import('./pages/Settings'))
 const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
@@ -253,6 +254,7 @@ export default function App() {
                   /schedule?tab=recurring summary tab now redirects here. */}
               <Route path="/recurring" element={<Recurring />} />
               <Route path="/owner" element={<OwnerDashboard />} />
+              <Route path="/funnel" element={<QuoteFunnel />} />
               <Route path="/settings" element={<Settings />} />
               {/* Living style guide — every design token + components/ui/
                   primitive in its documented states. Internal reference,
