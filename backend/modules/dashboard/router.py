@@ -59,11 +59,14 @@ def dashboard_summary(db: Session = Depends(get_db), org_id: int = Depends(curre
     def amt(*statuses):
         return sum(by_status.get(s, (0, 0.0))[1] for s in statuses)
 
+    # Pending = leads not yet triaged. "received" was queried here but no code
+    # ever writes it to a lead (dead vocabulary, P4 audit) — dropped so this
+    # counts the states that actually exist: "new" and NULL (public submits).
     new_leads = (
         db.query(func.count(LeadIntake.id))
         .filter(
             org_scope(LeadIntake),
-            or_(LeadIntake.status.in_(("new", "received")), LeadIntake.status.is_(None)),
+            or_(LeadIntake.status == "new", LeadIntake.status.is_(None)),
         )
         .scalar()
     ) or 0

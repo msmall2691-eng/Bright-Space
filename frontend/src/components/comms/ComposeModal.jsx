@@ -5,10 +5,16 @@ import { formatPhone } from '../../utils/display'
 import { Avatar, Kbd } from './primitives'
 
 /** New-message modal — pick SMS or Email, type-ahead client suggestions,
- *  Cmd/Ctrl+Enter to send. Calls onSent(response) then onClose(). */
-export function ComposeModal({ onClose, onSent, clients }) {
-  const [channel, setChannel] = useState('sms')
-  const [to, setTo] = useState('')
+ *  Cmd/Ctrl+Enter to send. Calls onSent(response) then onClose().
+ *
+ *  Optional prefill (used when opened from a specific customer, e.g. the
+ *  schedule's visit drawer): `initialTo`/`initialChannel` seed the recipient
+ *  and channel, and `clientId` links the outbound message to that client's
+ *  conversation thread even if `to` is later edited. Omit them for the generic
+ *  Comms "New Message" entry point — behavior is unchanged. */
+export function ComposeModal({ onClose, onSent, clients, initialTo = '', initialChannel = 'sms', clientId = null }) {
+  const [channel, setChannel] = useState(initialChannel || 'sms')
+  const [to, setTo] = useState(initialTo || '')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -41,11 +47,15 @@ export function ComposeModal({ onClose, onSent, clients }) {
     if (!to.trim() || !body.trim()) return
     setSending(true); setError(null)
     try {
+      // Pass client_id when we opened for a known customer so the outbound
+      // message attaches to their existing conversation thread (the backend
+      // otherwise best-effort matches by phone/email).
+      const link = clientId ? { client_id: clientId } : {}
       let response
       if (channel === 'sms') {
-        response = await post('/api/comms/sms', { to, body })
+        response = await post('/api/comms/sms', { to, body, ...link })
       } else {
-        response = await post('/api/comms/email', { to, subject: subject || '(no subject)', body })
+        response = await post('/api/comms/email', { to, subject: subject || '(no subject)', body, ...link })
       }
       onSent?.(response)
       onClose()

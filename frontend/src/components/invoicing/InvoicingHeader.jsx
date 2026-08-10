@@ -1,7 +1,7 @@
 import { Receipt, Plus, Search, Sparkles } from 'lucide-react'
 import { PageHero } from '../ui'
+import { STATUS_FILTERS } from './constants'
 
-const STATUS_FILTERS = ['', 'draft', 'sent', 'paid', 'overdue']
 
 /** Compact money for the hero pods — $24K / $1.9M — so big totals never clip. */
 const fmtUsd = (n) => {

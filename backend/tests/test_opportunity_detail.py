@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from database.db import SessionLocal
-from database.models import Client, Opportunity, Quote, Activity
+from database.models import Client, Opportunity, Quote, Activity, Job, Property
 from modules.auth.router import get_current_user, current_org_id
 
 
@@ -61,6 +61,35 @@ def test_details_aggregates_linked_quotes(client):
     assert body["quotes_count"] == 1
     assert [q["id"] for q in body["quotes"]] == [qid]   # linked via opportunity_id, no 500
     assert "timeline" in body and "jobs" in body and "invoices" in body
+
+
+def test_details_jobs_carry_crew_and_dispatch_state(client):
+    """A deal's jobs expose cleaner_ids + connecteam_shift_ids so the Launch
+    flow can tell whether a job is crewed / already dispatched without a second
+    per-job fetch (Codex review on #662: the Dispatch guard read an undefined
+    cleaner_ids and locked forever)."""
+    api, created = client
+    cid, oid, _ = _seed(created)
+    db = SessionLocal()
+    prop = Property(client_id=cid, org_id=1, name="Site", address="1 Deal St")
+    db.add(prop); db.commit()
+    pid = prop.id
+    job = Job(client_id=cid, opportunity_id=oid, org_id=1, title="J", property_id=pid,
+              status="scheduled", cleaner_ids=[7], connecteam_shift_ids=["s1"])
+    db.add(job); db.commit()
+    jid = job.id
+    db.close()
+    try:
+        body = api.get(f"/api/opportunities/{oid}/details").json()
+        j = next(x for x in body["jobs"] if x["id"] == jid)
+        assert j["cleaner_ids"] == [7]
+        assert j["connecteam_shift_ids"] == ["s1"]
+        assert "start_time" in j and "end_time" in j
+    finally:
+        db = SessionLocal()
+        db.query(Job).filter(Job.id == jid).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id == pid).delete(synchronize_session=False)
+        db.commit(); db.close()
 
 
 def test_details_404_for_missing(client):

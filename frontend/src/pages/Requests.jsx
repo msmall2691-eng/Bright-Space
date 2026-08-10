@@ -126,7 +126,11 @@ function SourceChip({ source }) {
 
 const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, onArchive, onDelete, selected, onToggleSelect }) => {
   const serviceConfig = SERVICE_TYPE_CONFIG[intake.service_type] || SERVICE_TYPE_CONFIG.residential
-  const statusConfig = STATUS_CONFIG[intake.status] || STATUS_CONFIG.new
+  // Prefer the backend-derived display_status (surfaces "converted", which the
+  // stored status never reaches) and fall back to the raw status for older
+  // payloads. Actions/filters still key off the stored status.
+  const displayStatus = intake.display_status || intake.status
+  const statusConfig = STATUS_CONFIG[displayStatus] || STATUS_CONFIG.new
   const priorityConfig = PRIORITY_CONFIG[intake.priority] || PRIORITY_CONFIG.normal
   const ServiceIcon = serviceConfig.icon
 
@@ -161,7 +165,7 @@ const RequestCard = ({ intake, onViewDetails, onCreateQuote, onConvertToClient, 
               {/* Read-receipt: the customer opened the quote we sent for this
                   request. Only meaningful pre-conversion (a converted lead is
                   already won). */}
-              {intake.quote_viewed_at && intake.status !== 'converted' && (
+              {intake.quote_viewed_at && displayStatus !== 'converted' && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium whitespace-nowrap bg-indigo-100 text-indigo-700"
                   title={`Customer opened the quote on ${new Date(intake.quote_viewed_at).toLocaleString()}`}>
                   <Eye className="w-3 h-3 shrink-0" /> Quote opened
@@ -685,9 +689,9 @@ export default function Requests() {
           icon={Inbox}
           pods={[
             { label: 'All', value: requests.length },
-            { label: 'New', value: requests.filter(r => r.status === 'new').length, tone: 'text-amber-300' },
-            { label: 'Reviewed', value: requests.filter(r => r.status === 'reviewed').length },
-            { label: 'Quoted', value: requests.filter(r => r.status === 'quoted').length, tone: 'text-indigo-200' },
+            { label: 'New', value: requests.filter(r => (r.display_status || r.status) === 'new').length, tone: 'text-amber-300' },
+            { label: 'Reviewed', value: requests.filter(r => (r.display_status || r.status) === 'reviewed').length },
+            { label: 'Quoted', value: requests.filter(r => (r.display_status || r.status) === 'quoted').length, tone: 'text-indigo-200' },
           ]}
           actions={
             <button onClick={() => setShowNewRequestModal(true)}
@@ -968,7 +972,7 @@ export default function Requests() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-ink-2 uppercase">Status</label>
-                  <p className="text-sm text-ink">{STATUS_CONFIG[selectedRequest.status]?.label}</p>
+                  <p className="text-sm text-ink">{STATUS_CONFIG[selectedRequest.display_status || selectedRequest.status]?.label}</p>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-ink-2 uppercase">Priority</label>

@@ -15,6 +15,7 @@
  * (re)assign that visit (see DispatchBoard's commitAssign).
  */
 import { PROPERTY_TYPE_CONFIG } from './constants'
+import { computeDispatchState } from './dispatchState'
 
 const AXIS_START_HOUR = 6
 const AXIS_END_HOUR = 20
@@ -117,6 +118,11 @@ export default function DispatchTimeline({
               .filter(Boolean)
               .slice(0, 2)
               .join(' + ')
+            // Assigned but not yet pushed to the crew → a small "not sent"
+            // flag so an un-notified crew is catchable at board density,
+            // without opening the drawer. Sent/na blocks stay clean.
+            const handoff = computeDispatchState(job, v)
+            const notSent = !unassigned && (handoff.state === 'unsent' || handoff.state === 'partial')
             return (
               <button
                 key={v.id}
@@ -148,8 +154,17 @@ export default function DispatchTimeline({
                   {client?.name || job?.title || `Visit ${v.id}`}
                 </div>
                 {(crewLabel || unassigned) && (
-                  <div className={`text-[10.5px] mt-0.5 truncate ${unassigned ? 'font-semibold' : 'opacity-90'}`}>
-                    {unassigned ? 'Needs crew' : crewLabel}
+                  <div className={`text-[10.5px] mt-0.5 truncate flex items-center gap-1 ${unassigned ? 'font-semibold' : 'opacity-90'}`}>
+                    {notSent && (
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 ring-1 ring-white/70 shrink-0"
+                        title={handoff.state === 'partial'
+                          ? `Only ${handoff.shifts} of ${handoff.expected} crew notified`
+                          : 'Crew not notified yet'}
+                        aria-label="Crew not notified"
+                      />
+                    )}
+                    <span className="truncate">{unassigned ? 'Needs crew' : crewLabel}</span>
                   </div>
                 )}
               </button>

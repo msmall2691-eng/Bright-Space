@@ -11,6 +11,7 @@ import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
 import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
+import Deals from './pages/Deals'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
 import PublicJobConfirm from './pages/PublicJobConfirm'
@@ -224,6 +225,7 @@ export default function App() {
               <Route path="/requests" element={<Requests />} />
               <Route path="/requests/:id" element={<RequestDetail />} />
               <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/deals" element={<Deals />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/quotes/:id" element={<QuoteDetail />} />
