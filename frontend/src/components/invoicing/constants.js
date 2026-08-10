@@ -8,6 +8,11 @@ export const STATUS = {
   overdue: { dot: 'bg-red-400',      text: 'text-red-400',      label: 'Overdue' },
 }
 
+/** Invoice status filter options for the list toolbar. `''` = All.
+ *  Shared so the Invoicing page can validate an inbound `?status=` deep
+ *  link against the same vocabulary the toolbar renders. */
+export const STATUS_FILTERS = ['', 'draft', 'sent', 'paid', 'overdue']
+
 /** Deterministic tinted palette for the client avatar chip that
  *  leads each row. `avatar(name)` hashes the first char into an
  *  index so the same client always renders the same color. */

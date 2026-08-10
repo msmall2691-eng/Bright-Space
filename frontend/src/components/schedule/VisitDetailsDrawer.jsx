@@ -1,8 +1,9 @@
-import { X, Zap, ChevronDown, CheckCircle, AlertCircle, Clock, Edit2, Trash2, MessageSquare } from 'lucide-react'
+import { X, Zap, ChevronDown, CheckCircle, AlertCircle, Clock, Edit2, Trash2, Send, MessageSquare } from 'lucide-react'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import StatusBadge from '../ui/StatusBadge'
 import { VISIT_STATUS_CONFIG, shortDate, cleanerInitials, computeDisplayStatus } from './constants'
+import { computeDispatchState, DISPATCH_STATE_UI } from './dispatchState'
 
 /** Right-side (bottom-sheet on mobile) drawer for a single visit. Pure
  *  props-in: the parent owns the selection + all mutation callbacks so
@@ -28,11 +29,15 @@ export default function VisitDetailsDrawer({
   onEditJob,
   onDelete,
   onToggleReminder,
+  onDispatch,
+  dispatchingJobId,
   onMessageClient,
 }) {
   if (!selectedVisit) return null
   const { visit, job, property } = selectedVisit
   const canComplete = visit.status !== 'completed' && visit.status !== 'cancelled'
+  const handoff = computeDispatchState(job, visit)
+  const dispatching = dispatchingJobId != null && dispatchingJobId === job?.id
   return (
     // Tap the dimmed backdrop to close — standard bottom-sheet behavior on
     // mobile. stopPropagation on the sheet itself keeps in-sheet clicks safe.
@@ -216,6 +221,43 @@ export default function VisitDetailsDrawer({
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Crew hand-off — the operationally critical "does the crew
+                know about this?" state, kept out in the open (not folded
+                into More details) with a one-tap Send-to-crew action. Only
+                shown when there's actually a crew to notify or a shift on
+                record; `na` means nothing to hand off. */}
+            {onDispatch && handoff.state !== 'na' && (
+              <div className="border-t border-hairline pt-3">
+                <p className="text-xs font-semibold text-ink-2 uppercase mb-1.5">Crew hand-off</p>
+                <div className="flex items-center justify-between gap-3">
+                  <span className={`inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full border ${DISPATCH_STATE_UI[handoff.state].cls}`}>
+                    {DISPATCH_STATE_UI[handoff.state].mark}{' '}
+                    {handoff.state === 'partial'
+                      ? `Partly sent · ${handoff.shifts} of ${handoff.expected}`
+                      : DISPATCH_STATE_UI[handoff.state].label}
+                  </span>
+                  {(handoff.canNotify || handoff.canResend) && (
+                    <button
+                      type="button"
+                      disabled={dispatching}
+                      onClick={() => onDispatch(job)}
+                      className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg border whitespace-nowrap transition-colors disabled:opacity-50 ${
+                        handoff.canNotify
+                          ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                          : 'bg-panel border-hairline text-ink-2 hover:bg-bg-2'
+                      }`}
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      {dispatching ? 'Sending…' : handoff.canNotify ? 'Send to crew' : 'Re-send'}
+                    </button>
+                  )}
+                </div>
+                {handoff.state === 'unsent' && (
+                  <p className="text-[11px] text-ink-3 mt-1.5">The assigned crew hasn’t been notified in Connecteam yet.</p>
+                )}
               </div>
             )}
 

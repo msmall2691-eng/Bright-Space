@@ -11,6 +11,7 @@ from modules.auth.router import require_role, current_org_id, resolve_org_id
 from database.models import LeadIntake, Client, Quote
 from modules.intake.normalize import build_intake, upsert_lead, _property_key
 from utils.contacts import find_client_by_contact, add_contact_email, add_contact_phone
+from utils.deal_stage import lead_display_status
 from ratelimit import limiter
 
 router = APIRouter()
@@ -109,6 +110,12 @@ def intake_to_dict(i: LeadIntake, quote=None) -> dict:
         "preferred_date": i.preferred_date,
         "source": i.source,
         "status": i.status,
+        # Derived inbox status — the truth about where this lead sits, computed
+        # from its quote/opportunity rather than the stored `status` (which no
+        # code ever advances to "converted", so a won lead used to read as
+        # still "quoted"). `status` stays as the raw stored value for the
+        # archived filter + back-compat; the UI shows `display_status`.
+        "display_status": lead_display_status(i, quote),
         "priority": getattr(i, "priority", "normal"),
         "assigned_to": getattr(i, "assigned_to", None),
         "internal_notes": getattr(i, "internal_notes", None),

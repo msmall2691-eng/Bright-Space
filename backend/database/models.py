@@ -427,6 +427,12 @@ class RecurringSchedule(Base):
 
     cleaner_ids = Column(JSON, default=list)
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
+    # The deal this recurring engagement belongs to. A won, recurring deal is
+    # the shape of an ongoing customer — carrying opportunity_id lets the deal
+    # board show a won deal's cadence directly instead of inferring it through
+    # the shared client (migration 065). Nullable: set when the schedule is
+    # created from an accepted quote; NULL for ad-hoc schedules.
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
@@ -458,6 +464,7 @@ class RecurringSchedule(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="recurring_schedules")
+    opportunity = relationship("Opportunity")
     jobs = relationship("Job", back_populates="recurring_schedule")
     exceptions = relationship(
         "RecurrenceException",

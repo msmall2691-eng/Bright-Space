@@ -12,6 +12,18 @@ export default function OpsSummary({ stats, isToday }) {
   const chips = [
     { key: 'jobs', value: stats.jobs, label: 'jobs' },
     { key: 'unassigned', value: stats.unassigned, label: 'need a crew', warn: stats.unassigned > 0 },
+    // Crew hand-off coverage — "N/M sent to crew". Warns amber while any
+    // assigned job still hasn't been pushed to Connecteam. Hidden entirely
+    // when nothing is assigned yet (denominator 0), so the strip stays quiet
+    // before the day is crewed up.
+    ...(stats.assignedForHandoff > 0
+      ? [{
+          key: 'handoff',
+          value: `${stats.sentToCrew}/${stats.assignedForHandoff}`,
+          label: 'sent to crew',
+          warn: stats.sentToCrew < stats.assignedForHandoff,
+        }]
+      : []),
     { key: 'capacity', value: `${stats.capacityPct}%`, label: 'capacity' },
     { key: 'crews', value: stats.crewsOut, label: stats.crewsOut === 1 ? 'crew out' : 'crews out' },
   ]

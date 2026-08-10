@@ -3913,6 +3913,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Deals
+         * @description The whole deal board in one call: inbox leads + opportunities as cards.
+         *
+         *     `stage` narrows to one column — `inbox` returns only un-triaged leads, an
+         *     opportunity stage returns only those deals; omitted returns both. Results
+         *     are merged newest-first and capped at `limit` (board views load the whole
+         *     pipeline, like the Pipeline kanban's limit=200).
+         */
+        get: operations["list_deals_api_deals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activities": {
         parameters: {
             query?: never;
@@ -13766,6 +13791,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deals_api_deals_get: {
+        parameters: {
+            query?: {
+                stage?: string | null;
+                owner?: string | null;
+                service_type?: string | null;
+                search?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

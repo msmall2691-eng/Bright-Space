@@ -1,8 +1,15 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Zap, Check, X, ChevronRight, Sparkles, ChevronDown } from 'lucide-react'
+import { Zap, Check, X, ChevronRight, Sparkles, ChevronDown, Send } from 'lucide-react'
 import { get, post } from '../../api'
 import { toast } from '../../utils/toastBus'
 import { SOFT_CARD } from './constants'
+
+/** The note prepended to the invoice email when the owner taps "Remind"
+ *  from the dashboard — a plain, friendly nudge. The invoice body (amount,
+ *  due date, pay link) is appended by the backend's build_invoice_email. */
+const REMINDER_NOTE =
+  'Just a friendly reminder that the invoice below is now past due. ' +
+  'You can pay online using the link — thank you!'
 
 /**
  * NeedsYouNow — the dashboard's single action list. Merges everything that
@@ -21,6 +28,29 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
   const [reqs, setReqs] = useState(null)
   const [busyId, setBusyId] = useState(null)
   const [expanded, setExpanded] = useState(false)
+  // Inline "Remind" is a two-tap action: the first tap arms a confirm
+  // (`confirmInvId`) because sending fires a real customer email; the second
+  // tap sends. `remindBusyId` disables the row mid-request; `dismissed`
+  // hides rows we've acted on (attention comes from props, so we can't
+  // splice it — we filter locally instead).
+  const [confirmInvId, setConfirmInvId] = useState(null)
+  const [remindBusyId, setRemindBusyId] = useState(null)
+  const [dismissed, setDismissed] = useState(() => new Set())
+
+  const sendReminder = async (invoiceId) => {
+    setRemindBusyId(invoiceId)
+    try {
+      await post(`/api/invoices/${invoiceId}/send`, {
+        channel: 'email',
+        custom_message: REMINDER_NOTE,
+      })
+      toast.success('Reminder sent')
+      setDismissed(s => new Set(s).add(`inv-${invoiceId}`))
+      setConfirmInvId(null)
+    } catch (e) {
+      toast.error(e?.message || 'Could not send reminder')
+    } finally { setRemindBusyId(null) }
+  }
 
   const loadReqs = useCallback(() => {
     get('/api/jobs/reschedule-requests').then(d => setReqs(d?.requests || [])).catch(() => setReqs([]))
@@ -54,7 +84,10 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
     { weekday: 'short', month: 'short', day: 'numeric' }) : ''
 
   const reschedules = reqs || []
-  const total = reschedules.length + attention.length
+  // Rows the owner has already acted on inline (e.g. reminder sent) drop out
+  // until the next dashboard reload refreshes the attention feed.
+  const visibleAttention = attention.filter(p => !dismissed.has(p.key))
+  const total = reschedules.length + visibleAttention.length
   const isLoading = loading && reqs === null
 
   return (
@@ -114,17 +147,52 @@ export function NeedsYouNow({ attention = [], loading, navigate }) {
               )}
             </div>
           )),
-          ...attention.map(p => (
-            <button key={p.key} onClick={p.onClick}
-              className="w-full text-left flex items-start gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors">
-              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotFor(p.tone)}`} />
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-ink truncate">{p.title}</div>
-                {p.sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{p.sub}</div>}
-              </div>
-              {p.action && <span className="text-[11px] font-semibold text-indigo-600 shrink-0 mt-1.5">{p.action}</span>}
-            </button>
-          )),
+          ...visibleAttention.map(p => {
+            // Past-due invoice rows carry an inline "Remind" action. Rendered
+            // as a non-button wrapper (a button can't nest buttons) with the
+            // title as the click-through and the action alongside.
+            if (p.invoiceId) {
+              const arming = confirmInvId === p.invoiceId
+              const busy = remindBusyId === p.invoiceId
+              return (
+                <div key={p.key} className="flex items-start gap-3 px-5 py-3">
+                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotFor(p.tone)}`} />
+                  <button onClick={p.onClick} className="flex-1 min-w-0 text-left group">
+                    <div className="text-[13px] font-medium text-ink truncate group-hover:text-indigo-600">{p.title}</div>
+                    {p.sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{p.sub}</div>}
+                  </button>
+                  {arming ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button disabled={busy} onClick={() => sendReminder(p.invoiceId)}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white">
+                        <Send className="w-3 h-3" /> {busy ? 'Sending…' : 'Send email'}
+                      </button>
+                      <button disabled={busy} onClick={() => setConfirmInvId(null)}
+                        className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-bg-2 border border-hairline hover:bg-hairline text-ink-3" title="Cancel">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmInvId(p.invoiceId)}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0 mt-1.5">
+                      Remind
+                    </button>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <button key={p.key} onClick={p.onClick}
+                className="w-full text-left flex items-start gap-3 px-5 py-3 hover:bg-bg active:bg-bg-2 transition-colors">
+                <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotFor(p.tone)}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium text-ink truncate">{p.title}</div>
+                  {p.sub && <div className="text-[11px] text-ink-3 mt-0.5 truncate">{p.sub}</div>}
+                </div>
+                {p.action && <span className="text-[11px] font-semibold text-indigo-600 shrink-0 mt-1.5">{p.action}</span>}
+              </button>
+            )
+          }),
         ]
         const shown = expanded ? nodes : nodes.slice(0, CAP)
         const hidden = nodes.length - shown.length

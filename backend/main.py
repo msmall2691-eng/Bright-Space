@@ -46,6 +46,7 @@ from modules.intake.router import router as intake_router
 from modules.booking.router import router as booking_router
 from modules.fields.router import router as fields_router
 from modules.opportunities.router import router as opportunities_router
+from modules.deals.router import router as deals_router
 from modules.activities.router import router as activities_router
 from modules.integration_events.router import router as integration_events_router
 from modules.search import router as search_router
@@ -168,6 +169,7 @@ from modules.integrations.router import router as integrations_router
 app.include_router(integrations_router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
+app.include_router(deals_router, prefix="/api/deals", tags=["deals"])
 app.include_router(activities_router, prefix="/api/activities", tags=["activities"])
 app.include_router(integration_events_router, prefix="/api/integration-events", tags=["integration-events"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
