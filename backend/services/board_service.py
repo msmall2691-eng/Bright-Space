@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session, joinedload
 
 import config
 from database.models import (
-    Job, Invoice, Quote, LeadIntake, RecurringSchedule,
+    Client, Job, Invoice, Quote, LeadIntake, RecurringSchedule,
     Conversation, Message, IntegrationEvent, AppSetting, UserGoogleAccount,
 )
 from utils.dates import (
@@ -478,6 +478,29 @@ def build_board(db: Session, oid: int) -> dict:
 
     # ── 🧰 Systems & Subscriptions (integration health) ─────────────────────
     integrations, systems = _integration_health(db, org, today)
+
+    # Cheap "Tidy Up" nudge — clients sharing a phone (indexed phone_tail) are
+    # likely duplicates. The full scan (clients/properties/quality) lives at
+    # /api/cleanup/scan; this just surfaces the count without the heavy pass.
+    dup_groups = (
+        db.query(func.count())
+        .select_from(
+            db.query(Client.phone_tail)
+            .filter(org(Client), Client.phone_tail.isnot(None), Client.phone_tail != "")
+            .group_by(Client.phone_tail)
+            .having(func.count(Client.id) > 1)
+            .subquery()
+        )
+        .scalar()
+    ) or 0
+    if dup_groups:
+        systems.append(_item(
+            "sys:duplicates", "watch",
+            f"{dup_groups} possible duplicate client{'s' if dup_groups != 1 else ''}",
+            "Same phone on more than one record — review and merge.", "",
+            tags=[{"label": "CLEANUP", "tone": "violet"}],
+            action={"label": "Tidy Up", "href": "/cleanup"},
+        ))
 
     # ── 🗑️ Safe to Ignore (Phase 2: Gmail triage) ──────────────────────────
     safe = []
