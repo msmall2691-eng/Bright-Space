@@ -9,6 +9,7 @@ import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
+import OpsBoard from './pages/OpsBoard'
 import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
 import PublicQuote from './pages/PublicQuote'
@@ -214,7 +215,10 @@ export default function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={<OpsBoard />} />
+              {/* The previous Twenty-style command center, preserved and still
+                  reachable (nothing deleted — the Ops Board just took /dashboard). */}
+              <Route path="/dashboard/classic" element={<Dashboard />} />
               {/* Today merged into the Dashboard's "Today's schedule" section. */}
               <Route path="/today" element={<Navigate to="/dashboard" replace />} />
               <Route path="/workspace" element={<Workspace />} />

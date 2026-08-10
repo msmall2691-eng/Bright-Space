@@ -25,8 +25,18 @@ from database.models import (
 )
 from modules.auth.router import require_role, current_org_id, resolve_org_id
 from utils.dates import business_today
+from services.board_service import build_board
 
 router = APIRouter()
+
+
+@router.get("/board", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def dashboard_board(db: Session = Depends(get_db), org_id: int = Depends(current_org_id)):
+    """Unified Ops Board payload — stat tiles, integration chips, per-severity
+    filter counts, and the six triage sections — in one org-scoped round trip.
+    Backs the iOS-style board at /dashboard (see services/board_service.py)."""
+    oid = resolve_org_id(org_id, db)
+    return build_board(db, oid)
 
 
 @router.get("/summary", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
