@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { get, post } from '../api'
+import { get, post, patch } from '../api'
 import { toast } from '../utils/toastBus'
 
 /** The Launch flow drives ONE deal through the operational pipeline —
@@ -71,7 +71,10 @@ export function useLaunch(opportunityId) {
       send: !!qs && qs !== 'draft',
       accept: qs === 'accepted' || qs === 'converted',
       schedule: !!(primaryJob && primaryJob.scheduled_date && primaryJob.status !== 'unscheduled'),
-      dispatch: dispatchedLocally || jobs.some(j => j.status === 'completed'),
+      // Prefer the durable signal (a job with Connecteam shifts) over the
+      // local flag so a reload — or a deal dispatched elsewhere — reflects truth.
+      dispatch: dispatchedLocally
+        || jobs.some(j => (j.connecteam_shift_ids?.length || 0) > 0 || j.status === 'completed'),
     }
     return LAUNCH_STEPS.map(key => ({ key, done: !!done[key] }))
   }, [primaryQuote, primaryJob, jobs, dispatchedLocally])
@@ -94,17 +97,42 @@ export function useLaunch(opportunityId) {
   }
 
   const sendQuote = () =>
-    run(() => post(`/api/quotes/${primaryQuote.id}/send`, { channel: 'email' }), 'Quote sent')
+    run(async () => {
+      // send_quote returns 200 with delivered:false (no contact / delivery
+      // failure) rather than throwing — so a bare await would toast "sent"
+      // for a quote the customer never received. Surface the real outcome.
+      const res = await post(`/api/quotes/${primaryQuote.id}/send`, { channel: 'email' })
+      if (res && res.delivered === false) {
+        throw new Error((res.errors && res.errors.join('; ')) || 'Couldn’t deliver — check the customer’s email or phone.')
+      }
+    }, 'Quote sent')
 
   const acceptQuote = () =>
     run(() => post(`/api/quotes/${primaryQuote.id}/accept`, { notify_customer: true }), 'Quote accepted')
 
   const scheduleJob = (body) =>
-    run(() => post(`/api/quotes/${primaryQuote.id}/convert-to-job`, body || {}), 'Job scheduled')
+    run(() => {
+      // Accepting a property-linked quote already created an (unscheduled) job,
+      // and convert-to-job is idempotent — it returns that job WITHOUT applying
+      // the date/time. So when a job already exists, schedule it directly via
+      // the job update endpoint; only fall back to convert-to-job when no job
+      // exists yet.
+      if (primaryJob) return patch(`/api/jobs/${primaryJob.id}`, body || {})
+      return post(`/api/quotes/${primaryQuote.id}/convert-to-job`, body || {})
+    }, 'Job scheduled')
 
   const dispatchJob = () =>
     run(async () => {
-      await post(`/api/jobs/${primaryJob.id}/dispatch`, {})
+      // dispatch_job returns 200 with connecteam.dispatched:false + a reason on
+      // a no-op (no crew, Connecteam not configured, inactive job). Only mark
+      // the step done when the push actually happened. A resync (already
+      // dispatched) returns a different shape with no `dispatched` key — treat
+      // that as success (the crew already has it); only an explicit false fails.
+      const res = await post(`/api/jobs/${primaryJob.id}/dispatch`, {})
+      const ct = res?.connecteam
+      if (ct && ct.dispatched === false) {
+        throw new Error(ct.reason ? `Crew not notified (${ct.reason.replace(/_/g, ' ')})` : 'Crew dispatch didn’t complete.')
+      }
       setDispatchedLocally(true)
     }, 'Sent to crew')
 
