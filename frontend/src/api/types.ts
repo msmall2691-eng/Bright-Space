@@ -2875,6 +2875,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/lookup-specs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup Specs
+         * @description Look up structured specs (sqft / beds / baths / year built) for an address
+         *     via the configured provider (RentCast), to pre-fill the Add/Edit Property
+         *     form. Returns {"enabled": bool, "specs": {...}|None}.
+         *
+         *     Best-effort and non-blocking, mirroring the quote composer's
+         *     /api/quotes/property-lookup: when the owner hasn't enabled enrichment, no key
+         *     is set, or there's simply no match, `specs` is None and this never raises.
+         *     Owner-gated by Settings → Property Photos & Data (property_enrichment_enabled
+         *     + rentcast_api_key).
+         *
+         *     Route order: defined before GET /{property_id} so this static path wins over
+         *     the int-coerced parameterized route.
+         *
+         *     NOTE: the provider's own `property_type` (e.g. "Single Family") is returned
+         *     untouched for display only — callers must NOT use it to override BrightBase's
+         *     residential | commercial | str classification, which is a human decision.
+         */
+        get: operations["lookup_specs_api_properties_lookup_specs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/all-ical-events": {
         parameters: {
             query?: never;
@@ -5450,6 +5485,8 @@ export interface components {
             invite_customers?: boolean | null;
             /** Notify Customers */
             notify_customers?: boolean | null;
+            /** Notify Customers On Move */
+            notify_customers_on_move?: boolean | null;
             /** Gcal Reminders Mode */
             gcal_reminders_mode?: string | null;
             /** Calendar Source Of Truth */
@@ -5891,6 +5928,8 @@ export interface components {
              * @default false
              */
             allow_conflicts: boolean | null;
+            /** Notify Customer */
+            notify_customer?: boolean | null;
         };
         /** FieldCreate */
         FieldCreate: {
@@ -6280,6 +6319,8 @@ export interface components {
              * @default false
              */
             allow_conflicts: boolean | null;
+            /** Notify Customer */
+            notify_customer?: boolean | null;
         };
         /**
          * LinkClientRequest
@@ -6531,6 +6572,14 @@ export interface components {
             notes?: string | null;
             /** Turnover Rate */
             turnover_rate?: number | null;
+            /** Bedrooms */
+            bedrooms?: number | null;
+            /** Bathrooms */
+            bathrooms?: number | null;
+            /** Square Footage */
+            square_footage?: number | null;
+            /** Year Built */
+            year_built?: number | null;
             /**
              * Custom Fields
              * @default {}
@@ -6614,6 +6663,14 @@ export interface components {
             notes?: string | null;
             /** Turnover Rate */
             turnover_rate?: number | null;
+            /** Bedrooms */
+            bedrooms?: number | null;
+            /** Bathrooms */
+            bathrooms?: number | null;
+            /** Square Footage */
+            square_footage?: number | null;
+            /** Year Built */
+            year_built?: number | null;
             /** Active */
             active?: boolean | null;
             /** Checklist Template */
@@ -11924,6 +11981,40 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_specs_api_properties_lookup_specs_get: {
+        parameters: {
+            query: {
+                address: string;
+                city?: string | null;
+                state?: string | null;
+                zip_code?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

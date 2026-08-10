@@ -322,6 +322,10 @@ class Property(Base):
     # with the quote the customer was shown.
     bathrooms = Column(Float, nullable=True)
     square_footage = Column(Integer, nullable=True)
+    # Year the home was built — pulled from public property records (RentCast)
+    # via the Add/Edit Property "look up specs" action, or entered by hand.
+    # NULL = unknown. Same lineage as bedrooms/bathrooms/square_footage above.
+    year_built = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

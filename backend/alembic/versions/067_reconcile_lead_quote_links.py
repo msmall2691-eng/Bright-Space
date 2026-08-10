@@ -8,13 +8,13 @@ one-time backfill fills each gap from the other, making
 (P4 decision 4). Idempotent: only fills NULLs, safe to re-run. The forward
 convert paths (convert-to-quote, create_quote) already set both.
 
-Revision ID: 066_reconcile_lead_quote_links
+Revision ID: 067_reconcile_lead_quote_links
 """
 from alembic import op
 from sqlalchemy.orm import Session
 
-revision = "066_reconcile_lead_quote_links"
-down_revision = "065_recurring_opportunity_link"
+revision = "067_reconcile_lead_quote_links"
+down_revision = "066_recurring_opportunity_link"
 branch_labels = None
 depends_on = None
 

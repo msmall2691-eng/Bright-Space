@@ -11,15 +11,15 @@ Additive, nullable. Set when a schedule is created from an accepted quote
 repo's convention (see 063 / 049), the column is a plain Integer here and the
 FK is declared at the ORM layer.
 
-Alembic version: 065
+Alembic version: 066
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "065_recurring_opportunity_link"
-down_revision = "064_gmail_history_cursor"
+revision = "066_recurring_opportunity_link"
+down_revision = "065_property_year_built"
 branch_labels = None
 depends_on = None
 

@@ -33,6 +33,10 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
   // and notes hide behind this toggle. Auto-open when a job already has notes so
   // nothing the operator wrote is hidden on edit.
   const [showAdvanced, setShowAdvanced] = useState(Boolean(job?.notes))
+  // Whether to email the customer a Google Calendar update for THIS edit. Off by
+  // default so nudging a visit around the calendar stays silent (the "don't
+  // bombard them every time I move it" default); check it to tell the customer.
+  const [notifyCustomer, setNotifyCustomer] = useState(false)
 
   // Cleaner roster comes from the shared useEmployees hook so this modal
   // reuses the same cached /api/dispatch/employees response CalendarView +
@@ -299,6 +303,9 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
         end_time: formData.end_time || null,
         allow_conflicts: allowConflicts,
       }
+      // Existing-job edits carry the per-move notify choice; a new job's invite
+      // follows the normal booking settings, so don't send it on create.
+      if (!isNew) payload.notify_customer = notifyCustomer
       let updated
       if (isNew) {
         if (prop?.client_id) payload.client_id = prop.client_id
@@ -347,6 +354,7 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
             rescheduled_end_time: formData.end_time || null,
             cleaner_ids: formData.cleaner_ids,
             reason: 'Edited from the calendar (this visit only)',
+            notify_customer: notifyCustomer,
           })
           // The exception model has no title/notes/address/job_type/status
           // columns \u2014 those land on the materialized Job via a follow-up PATCH.
@@ -540,6 +548,26 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
               />
             </div>
           </div>
+
+          {/* Notify-customer toggle — off by default so shuffling a visit's
+              date/time doesn't fire a Google Calendar update email every time.
+              Check it when the move is one the customer should hear about.
+              Existing jobs only: a brand-new job's invite follows the normal
+              booking settings. */}
+          {!isNew && (
+            <label className="flex items-start gap-2 -mt-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={notifyCustomer}
+                onChange={e => setNotifyCustomer(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-hairline text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-xs text-ink-2">
+                Notify customer of this change
+                <span className="block text-ink-3">Off by default — checking it sends a Google Calendar update email.</span>
+              </span>
+            </label>
+          )}
 
           {/* Property Picker */}
           <div>

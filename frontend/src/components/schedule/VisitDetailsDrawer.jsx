@@ -1,4 +1,4 @@
-import { X, Zap, ChevronDown, CheckCircle, AlertCircle, Clock, Edit2, Trash2, Send } from 'lucide-react'
+import { X, Zap, ChevronDown, CheckCircle, AlertCircle, Clock, Edit2, Trash2, Send, MessageSquare } from 'lucide-react'
 import Button from '../ui/Button'
 import GlassCard from '../ui/GlassCard'
 import StatusBadge from '../ui/StatusBadge'
@@ -31,6 +31,7 @@ export default function VisitDetailsDrawer({
   onToggleReminder,
   onDispatch,
   dispatchingJobId,
+  onMessageClient,
 }) {
   if (!selectedVisit) return null
   const { visit, job, property } = selectedVisit
@@ -146,7 +147,21 @@ export default function VisitDetailsDrawer({
 
             <div>
               <p className="text-xs font-semibold text-ink-2 uppercase mb-1">Client</p>
-              <p className="text-sm sm:text-base text-ink">{job?.client_name}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm sm:text-base text-ink">{job?.client_name}</p>
+                {/* Message the customer without leaving the schedule — handy for
+                    confirming or (silently) moving a visit. The parent owns the
+                    contact lookup + composer so this stays closure-free. */}
+                {onMessageClient && job?.client_id && (
+                  <button
+                    type="button"
+                    onClick={() => onMessageClient(job)}
+                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0 px-2 py-1 rounded-lg hover:bg-indigo-50"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" /> Message
+                  </button>
+                )}
+              </div>
             </div>
 
             <div>
