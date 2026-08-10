@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { toLocalYMD, todayYMD } from '../utils/format'
+import { computeDispatchState } from '../components/schedule/dispatchState'
 
 /**
  * Derived analytics over the loaded week — everything the redesigned
@@ -88,9 +89,20 @@ export function useScheduleAnalytics({ visits, jobs, currentDate, employees }) {
     const unassigned = todayVisits.filter(isUnassigned).length
     const crewIds = new Set()
     let hours = 0
+    // Crew hand-off coverage: of today's assigned, still-open visits, how
+    // many have actually been pushed to the crew (Connecteam). `assignedForHandoff`
+    // is the denominator the dispatcher cares about — unassigned jobs have
+    // their own "need a crew" chip and aren't hand-off-able yet.
+    let assignedForHandoff = 0
+    let sentToCrew = 0
     todayVisits.forEach(v => {
       hours += hoursBetween(v.start_time, v.end_time)
       ;(v.cleaner_ids || []).forEach(id => crewIds.add(id))
+      const ds = computeDispatchState(jobs?.[v.job_id], v)
+      if (ds.expected > 0 && !ds.terminal) {
+        assignedForHandoff += 1
+        if (ds.state === 'sent') sentToCrew += 1
+      }
     })
     const crewCount = Math.max(3, employees?.length || 0)
     const capacity = crewCount * HOURS_PER_CREW_DAY
@@ -101,8 +113,10 @@ export function useScheduleAnalytics({ visits, jobs, currentDate, employees }) {
       capacityPct,
       crewsOut: crewIds.size,
       hours: Math.round(hours * 10) / 10,
+      assignedForHandoff,
+      sentToCrew,
     }
-  }, [todayVisits, employees])
+  }, [todayVisits, employees, jobs])
 
   // Per-crew workload for today — powers the desktop dispatch board's
   // right-side utilization panel. Keyed by cleaner_id; each entry has

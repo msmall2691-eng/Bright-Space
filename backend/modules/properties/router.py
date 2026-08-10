@@ -12,6 +12,7 @@ from database.models import Property, ICalEvent, PropertyIcal, Client, Job
 from integrations.ical_sync import sync_property
 from modules.auth.router import require_role, current_org_id
 from utils.dates import business_today
+from utils.address import combine_address
 
 # A feed that hasn't synced cleanly in this long is loudly "stale" rather than
 # quietly missing — auto-sync runs every 15 min by default (scheduler.py), so
@@ -45,6 +46,12 @@ class PropertyCreate(BaseModel):
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
     turnover_rate: Optional[float] = None  # weekend piece rate per rental turnover ($)
+    # Structured specs — pre-fillable from public property records via the
+    # "look up specs" action, or entered by hand. NULL = unknown.
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None  # Float: half-baths (2½) must survive
+    square_footage: Optional[int] = None
+    year_built: Optional[int] = None
     custom_fields: Optional[dict] = {}
 
 
@@ -67,6 +74,10 @@ class PropertyUpdate(BaseModel):
     hours_of_operation: Optional[str] = None
     notes: Optional[str] = None
     turnover_rate: Optional[float] = None  # weekend piece rate per rental turnover ($)
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
+    square_footage: Optional[int] = None
+    year_built: Optional[int] = None
     active: Optional[bool] = None
     checklist_template: Optional[list] = None
     custom_fields: Optional[dict] = None
@@ -211,6 +222,13 @@ def prop_to_dict(p: Property, include_icals: bool = True, turnovers_next_30d: Op
         "hours_of_operation": getattr(p, 'hours_of_operation', None),
         "turnover_rate": getattr(p, 'turnover_rate', None),
         "notes": p.notes,
+        # Structured specs (enrichment Phase 1). Previously stored but never
+        # surfaced — the columns existed since migration 025/056 yet the API
+        # was blind to them, so a quote lookup's beds/baths/sqft were discarded.
+        "bedrooms": getattr(p, 'bedrooms', None),
+        "bathrooms": getattr(p, 'bathrooms', None),
+        "square_footage": getattr(p, 'square_footage', None),
+        "year_built": getattr(p, 'year_built', None),
         "checklist_template": getattr(p, 'checklist_template', None),
         "custom_fields": getattr(p, 'custom_fields', None) or {},
         "active": p.active,
@@ -296,6 +314,42 @@ def create_property(data: PropertyCreate, db: Session = Depends(get_db), org_id:
     return prop_to_dict(prop, turnovers_next_30d=(0 if prop.property_type == "str" else None))
 
 
+@router.get("/lookup-specs", dependencies=[Depends(require_role("admin", "manager"))])
+def lookup_specs(
+    address: str = Query(..., min_length=3, max_length=300),
+    city: Optional[str] = Query(None, max_length=120),
+    state: Optional[str] = Query(None, max_length=60),
+    zip_code: Optional[str] = Query(None, max_length=20),
+    db: Session = Depends(get_db),
+):
+    """Look up structured specs (sqft / beds / baths / year built) for an address
+    via the configured provider (RentCast), to pre-fill the Add/Edit Property
+    form. Returns {"enabled": bool, "specs": {...}|None}.
+
+    Best-effort and non-blocking, mirroring the quote composer's
+    /api/quotes/property-lookup: when the owner hasn't enabled enrichment, no key
+    is set, or there's simply no match, `specs` is None and this never raises.
+    Owner-gated by Settings → Property Photos & Data (property_enrichment_enabled
+    + rentcast_api_key).
+
+    Route order: defined before GET /{property_id} so this static path wins over
+    the int-coerced parameterized route.
+
+    NOTE: the provider's own `property_type` (e.g. "Single Family") is returned
+    untouched for display only — callers must NOT use it to override BrightBase's
+    residential | commercial | str classification, which is a human decision.
+    """
+    from services.property_media import enrichment_enabled, property_specs
+    from modules.settings.router import get_setting
+    if not enrichment_enabled(db):
+        return {"enabled": False, "specs": None}
+    # Compose the fullest address we can — RentCast matches far better with
+    # city/state/zip than a bare street line. combine_address skips any component
+    # already present in the street string (no doubled ", ME").
+    full = combine_address(address, city, state, zip_code) or address.strip()
+    return {"enabled": True, "specs": property_specs(full, get_setting(db, "rentcast_api_key"))}
+
+
 @router.get("/all-ical-events", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
 def get_all_ical_events(
     start: Optional[str] = None,
@@ -360,7 +414,13 @@ def update_property(property_id: int, data: PropertyUpdate, db: Session = Depend
     ).first()
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    for field, value in data.model_dump(exclude_none=True).items():
+    # exclude_UNSET (not exclude_none): apply every field the client actually
+    # sent, honoring an explicit null. exclude_none silently dropped nulls, so
+    # clearing a populated field (e.g. blanking out bedrooms/sqft/year_built)
+    # never persisted — the save looked successful and the old value came back
+    # on reload. Fields the client omits stay untouched, so partial PATCHes still
+    # work. (Codex review on #657.)
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(prop, field, value)
     db.commit()
     db.refresh(prop)
