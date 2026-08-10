@@ -120,6 +120,11 @@ class ExceptionCreate(BaseModel):
     # SAFE value — the interactive reschedule is conflict-checked unless the
     # operator explicitly overrides.
     allow_conflicts: Optional[bool] = False
+    # Per-move notification override from the JobEditModal "Notify customer of
+    # this change" checkbox (parity with the one-time JobUpdate.notify_customer).
+    # None → fall back to the Settings "email on move" default; True/False forces
+    # this move's customer email on/off. Ignored by /skip.
+    notify_customer: Optional[bool] = None
 
 
 class RecurrenceExceptionRead(BaseModel):
@@ -1668,7 +1673,9 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
     from modules.settings.router import (
         customer_notify_enabled as _ne, customer_notify_on_move_enabled as _nom,
     )
-    _notify_move = _ne(db) and _nom(db)
+    # A per-move override from the request (the JobEditModal "Notify customer"
+    # checkbox) wins for THIS move; otherwise fall back to the settings default.
+    _notify_move = body.notify_customer if body.notify_customer is not None else (_ne(db) and _nom(db))
     ex, rescheduled_job = _reschedule_occurrence(
         db, sched, body.exception_date, body.rescheduled_date,
         rescheduled_start_time=body.rescheduled_start_time,
