@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, RotateCcw, Eye, EyeOff, Check, ArrowRight, RefreshCw, Loader2,
 } from 'lucide-react'
-import { get } from '../api'
+import { get, post } from '../api'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
 
@@ -98,7 +98,7 @@ function FilterChip({ sev, count, active, onClick }) {
   )
 }
 
-function BoardRow({ item, cleared, onToggle, navigate }) {
+function BoardRow({ item, cleared, onToggle, onAction, actioningKey, confirmingKey }) {
   return (
     <div className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-opacity ${cleared ? 'opacity-40' : ''}`}>
       <button
@@ -119,15 +119,36 @@ function BoardRow({ item, cleared, onToggle, navigate }) {
           {item.meta && <span className="shrink-0 pt-px text-[10px] font-medium tabular-nums text-ink-3">{item.meta}</span>}
         </div>
         {item.body && <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-ink-2">{item.body}</p>}
-        {(item.tags?.length > 0 || item.action) && (
+        {(item.tags?.length > 0 || item.actions?.length > 0) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {item.tags?.map((t, i) => <Tag key={i} tag={t} />)}
-            {item.action && (
-              <button
-                onClick={() => navigate(item.action.href)}
-                className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
-                {item.action.label}<ArrowRight className="h-3 w-3" />
-              </button>
+            {item.actions?.length > 0 && (
+              <div className="ml-auto flex items-center gap-1.5">
+                {item.actions.map((a, i) => {
+                  const key = `${item.id}:${a.label}`
+                  if (a.kind !== 'api') {
+                    return (
+                      <button key={i} onClick={() => onAction(item, a)}
+                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-indigo-600 transition-all hover:gap-1 dark:text-indigo-400">
+                        {a.label}<ArrowRight className="h-3 w-3" />
+                      </button>
+                    )
+                  }
+                  const busy = actioningKey === key
+                  const confirming = confirmingKey === key
+                  return (
+                    <button key={i} onClick={() => onAction(item, a)} disabled={busy}
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
+                        confirming
+                          ? 'border-rose-400 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+                          : 'border-hairline bg-bg-2 text-ink-2 hover:border-hairline-2 hover:text-ink'
+                      }`}>
+                      {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {confirming ? 'Confirm?' : a.label}
+                    </button>
+                  )
+                })}
+              </div>
             )}
           </div>
         )}
@@ -136,7 +157,7 @@ function BoardRow({ item, cleared, onToggle, navigate }) {
   )
 }
 
-function Section({ section, items, clearedSet, onToggle, navigate }) {
+function Section({ section, items, clearedSet, onToggle, onAction, actioningKey, confirmingKey }) {
   if (!items.length) return null
   return (
     <section className="mb-4 break-inside-avoid overflow-hidden rounded-2xl border border-hairline bg-panel">
@@ -149,7 +170,8 @@ function Section({ section, items, clearedSet, onToggle, navigate }) {
       </header>
       <div className="divide-y divide-hairline">
         {items.map(it => (
-          <BoardRow key={it.id} item={it} cleared={clearedSet.has(it.id)} onToggle={onToggle} navigate={navigate} />
+          <BoardRow key={it.id} item={it} cleared={clearedSet.has(it.id)} onToggle={onToggle}
+            onAction={onAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
         ))}
       </div>
     </section>
@@ -169,6 +191,9 @@ export default function OpsBoard() {
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const [hideCleared, setHideCleared] = useState(false)
+  const [note, setNote] = useState('')
+  const [actioningKey, setActioningKey] = useState(null)
+  const [confirmingKey, setConfirmingKey] = useState(null)
   const searchRef = useRef(null)
 
   const load = useCallback(async (isRefresh) => {
@@ -215,6 +240,36 @@ export default function OpsBoard() {
     persistCleared(empty)
     setCleared(empty)
   }, [])
+
+  const markCleared = useCallback((id) => {
+    setCleared(prev => {
+      if (prev.has(id)) return prev
+      const next = new Set(prev); next.add(id); persistCleared(next); return next
+    })
+  }, [])
+
+  // Run a card action. `link` navigates; `api` POSTs to an existing endpoint
+  // right from the board — with a confirm step, a spinner, and an optimistic
+  // clear on success. auto-assign can report it had no crew history to use.
+  const runAction = useCallback(async (item, action) => {
+    if (action.kind !== 'api') { navigate(action.href); return }
+    const key = `${item.id}:${action.label}`
+    if (action.confirm && confirmingKey !== key) { setConfirmingKey(key); return }
+    setConfirmingKey(null); setActioningKey(key)
+    try {
+      const res = await post(action.endpoint, action.body || {})
+      if (res && res.status && ['no_history', 'no_property'].includes(res.status)) {
+        setNote(res.message || 'Could not complete automatically — open it to finish.')
+      } else {
+        if (action.clears) markCleared(item.id)
+        setNote(`${action.done || 'Done'} — ${item.title}`)
+      }
+    } catch {
+      setNote('That action failed — nothing was changed.')
+    } finally {
+      setActioningKey(null)
+    }
+  }, [confirmingKey, navigate, markCleared])
 
   const sections = data?.sections || []
   const allItems = useMemo(() => sections.flatMap(s => s.items), [sections])
@@ -287,6 +342,13 @@ export default function OpsBoard() {
             </button>
           </div>
         </header>
+
+        {note && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
+            <Check className="h-4 w-4 shrink-0" /> <span className="min-w-0 flex-1 truncate">{note}</span>
+            <button onClick={() => setNote('')} className="text-ink-3 hover:text-ink" aria-label="Dismiss">✕</button>
+          </div>
+        )}
 
         {/* Cleared progress */}
         <div className="mt-4 flex items-center gap-3">
@@ -362,7 +424,8 @@ export default function OpsBoard() {
           <div className="mt-5 columns-1 gap-4 lg:columns-2 xl:columns-3">
             {visibleBySection.map(({ section, items }) => (
               <Section key={section.key} section={section} items={items}
-                clearedSet={cleared} onToggle={toggleCleared} navigate={navigate} />
+                clearedSet={cleared} onToggle={toggleCleared}
+                onAction={runAction} actioningKey={actioningKey} confirmingKey={confirmingKey} />
             ))}
           </div>
         ) : (

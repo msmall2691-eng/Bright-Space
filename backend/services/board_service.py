@@ -8,6 +8,10 @@ status chips, and per-severity filter counts. This module does all of that in
 one pass so `GET /api/dashboard/board` is a single round trip and the frontend
 stays a pure view (every string here is render-ready).
 
+Each card carries an `actions` list. A `link` action just navigates; an `api`
+action calls an existing endpoint (mark paid, auto-assign, resolve) straight
+from the board — see the `_api` helper and the frontend BoardRow handler.
+
 Phase 1 (this file): live BrightBase data + integration health. The "Safe to
 Ignore" section and the SaaS-notice rows in "Systems" are filled by the Gmail
 triage layer in a later phase; they degrade to empty here.
@@ -80,6 +84,24 @@ def _sla_state(conv: Conversation) -> str:
     if (deadline - now).total_seconds() < 30 * 60:
         return "at_risk"
     return "on_track"
+
+
+# ── Actions ─────────────────────────────────────────────────────────────────
+
+def _link(label: str, href: str) -> dict:
+    return {"label": label, "kind": "link", "href": href}
+
+
+def _api(label: str, endpoint: str, *, body=None, confirm=None, done=None, clears=True) -> dict:
+    """A one-click action that POSTs to an existing endpoint from the board."""
+    a = {"label": label, "kind": "api", "method": "POST", "endpoint": endpoint, "clears": clears}
+    if body is not None:
+        a["body"] = body
+    if confirm:
+        a["confirm"] = confirm
+    if done:
+        a["done"] = done
+    return a
 
 
 # ── Formatting helpers (render-ready output) ────────────────────────────────
@@ -200,7 +222,7 @@ def _today_start_utc(today: date) -> datetime:
     return local.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _item(id, severity, title, body="", meta="", tags=None, action=None, source="brightbase"):
+def _item(id, severity, title, body="", meta="", tags=None, actions=None, source="brightbase"):
     return {
         "id": id,
         "severity": severity,
@@ -208,7 +230,7 @@ def _item(id, severity, title, body="", meta="", tags=None, action=None, source=
         "body": body,
         "meta": meta,
         "tags": tags or [],
-        "action": action,
+        "actions": actions or [],
         "source": source,
     }
 
@@ -251,7 +273,6 @@ def build_board(db: Session, oid: int) -> dict:
     week_jobs = [j for j in jobs if (coerce_date(j.scheduled_date) or horizon) <= week_end]
     weekend_jobs = [j for j in week_jobs if _is_weekend(j.scheduled_date)]
     unassigned_week = [j for j in week_jobs if _is_unassigned(j)]
-    # Most-urgent unassigned first: today, then this weekend, then the rest.
     unassigned_urgent = [
         j for j in unassigned_week
         if coerce_date(j.scheduled_date) == today or _is_weekend(j.scheduled_date)
@@ -272,16 +293,12 @@ def build_board(db: Session, oid: int) -> dict:
     breached = [c for c in waiting if c._sla == "breached"]
     still_waiting = [c for c in waiting if c._sla != "breached"]
 
-    # Snippets for the conversations we'll actually show (bounded fetch).
     show_conv_ids = [c.id for c in (breached[:_CAP] + still_waiting[:_CAP])]
     snippets: dict[int, str] = {}
     if show_conv_ids:
         msgs = (
             db.query(Message)
-            .filter(
-                Message.conversation_id.in_(show_conv_ids),
-                Message.direction == "inbound",
-            )
+            .filter(Message.conversation_id.in_(show_conv_ids), Message.direction == "inbound")
             .order_by(Message.created_at.desc())
             .all()
         )
@@ -358,75 +375,71 @@ def build_board(db: Session, oid: int) -> dict:
     needs = []
     for j in unassigned_urgent[:_CAP]:
         needs.append(_item(
-            f"job:{j.id}", "urgent",
-            "No cleaner assigned",
+            f"job:{j.id}", "urgent", "No cleaner assigned",
             f"{_job_place(j)}" + (f" · {_client_name(j)}" if _client_name(j) else ""),
             _job_meta(j, today),
             tags=[_job_type_tag(j), {"label": "UNASSIGNED", "tone": "amber"}],
-            action={"label": "Assign", "href": "/schedule?view=dispatch"},
+            actions=[
+                _api("Auto-assign", f"/api/jobs/{j.id}/auto-assign", done="Assigned"),
+                _link("Dispatch", "/schedule?view=dispatch"),
+            ],
         ))
     for c in breached[:_CAP]:
         needs.append(_item(
-            f"conv:{c.id}", "urgent",
-            f"Reply overdue — {_conv_contact(c)}",
+            f"conv:{c.id}", "urgent", f"Reply overdue — {_conv_contact(c)}",
             snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} awaiting reply"),
             _ago(c.last_inbound_at),
             tags=[{"label": (c.channel or "msg").upper(), "tone": "rose"}, {"label": "SLA", "tone": "rose"}],
-            action={"label": "Reply", "href": "/comms"},
+            actions=[
+                _api("Resolve", f"/api/comms/conversations/{c.id}/status", body={"status": "resolved"}, done="Resolved"),
+                _link("Reply", "/comms"),
+            ],
         ))
     for q in follow_ups:
-        waited = _ago(q.viewed_at or q.sent_at)
         stage = "viewed, not accepted" if q.viewed_at else "sent, not opened"
         needs.append(_item(
-            f"quote:{q.id}", "info",
-            f"Quote nudge — {_client_name(q) or (q.title or 'Quote')}",
-            f"{_fmt_money(q.total)} · {stage}",
-            waited,
+            f"quote:{q.id}", "info", f"Quote nudge — {_client_name(q) or (q.title or 'Quote')}",
+            f"{_fmt_money(q.total)} · {stage}", _ago(q.viewed_at or q.sent_at),
             tags=[{"label": "QUOTE", "tone": "indigo"}],
-            action={"label": "Open", "href": "/billing?view=quotes"},
+            actions=[_link("Open", "/billing?view=quotes")],
         ))
 
     # ── 🧹 Jobs on Deck ─────────────────────────────────────────────────────
     deck = []
     for j in week_jobs[:_CAP]:
         assigned = not _is_unassigned(j)
+        acts = [_link("View", f"/jobs/{j.id}")]
+        if not assigned:
+            acts.insert(0, _api("Auto-assign", f"/api/jobs/{j.id}/auto-assign", done="Assigned", clears=False))
         deck.append(_item(
             f"deck-job:{j.id}", "good" if assigned else "watch",
-            _job_place(j) or (j.title or f"Job #{j.id}"),
-            _client_name(j),
-            _job_meta(j, today),
+            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), _job_meta(j, today),
             tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "UNASSIGNED", "tone": "amber"}]),
-            action={"label": "View", "href": f"/jobs/{j.id}"},
+            actions=acts,
         ))
     for s in recurring:
         deck.append(_item(
-            f"recurring:{s.id}", "recurring",
-            s.title or "Recurring clean",
-            (_client_name(s) or s.address or "") + f" · {_cadence_label(s)}",
-            "",
+            f"recurring:{s.id}", "recurring", s.title or "Recurring clean",
+            (_client_name(s) or s.address or "") + f" · {_cadence_label(s)}", "",
             tags=[{"label": "RECURRING", "tone": "emerald"}],
-            action={"label": "Series", "href": "/recurring"},
+            actions=[_link("Series", "/recurring")],
         ))
 
     # ── 💵 Money ─────────────────────────────────────────────────────────────
     money = []
     if collected_today > 0:
         money.append(_item(
-            "money:collected", "good", "Collected today",
-            _fmt_money(collected_today), "",
+            "money:collected", "good", "Collected today", _fmt_money(collected_today), "",
             tags=[{"label": "PAID", "tone": "emerald"}],
-            action={"label": "Billing", "href": "/billing?view=invoices"},
+            actions=[_link("Billing", "/billing?view=invoices")],
         ))
     if outstanding_total > 0:
         n = len(outstanding_rows)
         money.append(_item(
-            "money:outstanding", "watch",
-            f"{_fmt_money(outstanding_total)} outstanding",
-            f"across {n} invoice{'s' if n != 1 else ''}"
-            + (f" · {len(overdue_rows)} overdue" if overdue_rows else ""),
-            "",
-            tags=[{"label": "AR", "tone": "amber"}],
-            action={"label": "Chase", "href": "/billing?view=invoices&status=overdue"},
+            "money:outstanding", "watch", f"{_fmt_money(outstanding_total)} outstanding",
+            f"across {n} invoice{'s' if n != 1 else ''}" + (f" · {len(overdue_rows)} overdue" if overdue_rows else ""),
+            "", tags=[{"label": "AR", "tone": "amber"}],
+            actions=[_link("Chase", "/billing?view=invoices&status=overdue")],
         ))
     for inv in overdue_rows[:4]:
         days_over = ""
@@ -435,21 +448,20 @@ def build_board(db: Session, oid: int) -> dict:
             od = (today - due).days
             days_over = f"{od}d overdue" if od > 0 else "due today"
         money.append(_item(
-            f"invoice:{inv.id}", "watch",
-            f"{inv.invoice_number or 'Invoice'} — {_client_name(inv) or 'client'}",
-            f"{_fmt_money(inv.total)}" + (f" · {days_over}" if days_over else ""),
-            "",
+            f"invoice:{inv.id}", "watch", f"{inv.invoice_number or 'Invoice'} — {_client_name(inv) or 'client'}",
+            f"{_fmt_money(inv.total)}" + (f" · {days_over}" if days_over else ""), "",
             tags=[{"label": "OVERDUE", "tone": "rose"}],
-            action={"label": "Open", "href": "/billing?view=invoices&status=overdue"},
+            actions=[
+                _api("Mark paid", f"/api/invoices/{inv.id}/pay", body={}, confirm="Mark this invoice paid?", done="Paid"),
+                _link("Open", "/billing?view=invoices&status=overdue"),
+            ],
         ))
     if last_paid:
         money.append(_item(
-            f"paid:{last_paid.id}", "good",
-            f"Last payment — {_fmt_money(last_paid.total)}",
-            _client_name(last_paid) or (last_paid.invoice_number or ""),
-            _ago(last_paid.paid_at),
+            f"paid:{last_paid.id}", "good", f"Last payment — {_fmt_money(last_paid.total)}",
+            _client_name(last_paid) or (last_paid.invoice_number or ""), _ago(last_paid.paid_at),
             tags=[{"label": "PAID", "tone": "emerald"}],
-            action={"label": "Billing", "href": "/billing?view=invoices"},
+            actions=[_link("Billing", "/billing?view=invoices")],
         ))
 
     # ── ✉️ Real People Waiting ──────────────────────────────────────────────
@@ -457,23 +469,20 @@ def build_board(db: Session, oid: int) -> dict:
     for c in still_waiting[:_CAP]:
         sev = "watch" if c._sla == "at_risk" else "info"
         people.append(_item(
-            f"wait-conv:{c.id}", sev,
-            _conv_contact(c),
+            f"wait-conv:{c.id}", sev, _conv_contact(c),
             snippets.get(c.id, "") or (c.subject or f"{(c.channel or 'message').upper()} — awaiting your reply"),
             _ago(c.last_inbound_at),
             tags=[{"label": (c.channel or "msg").upper(), "tone": "blue"}],
-            action={"label": "Reply", "href": "/comms"},
+            actions=[_link("Reply", "/comms")],
         ))
     for ld in leads[:_CAP]:
         hot = (ld.priority or "normal") in ("high", "urgent")
         svc = (ld.service_type or "").upper() or "LEAD"
         people.append(_item(
-            f"lead:{ld.id}", "watch" if hot else "info",
-            f"New lead — {ld.name or 'inquiry'}",
-            (ld.message or ld.requested_service or ld.address or "Wants a quote").strip()[:120],
-            _ago(ld.created_at),
+            f"lead:{ld.id}", "watch" if hot else "info", f"New lead — {ld.name or 'inquiry'}",
+            (ld.message or ld.requested_service or ld.address or "Wants a quote").strip()[:120], _ago(ld.created_at),
             tags=[{"label": svc, "tone": "indigo"}] + ([{"label": "HOT", "tone": "rose"}] if hot else []),
-            action={"label": "Quote", "href": "/requests"},
+            actions=[_link("Quote", "/requests")],
         ))
 
     # ── 🧰 Systems & Subscriptions (integration health) ─────────────────────
@@ -499,7 +508,7 @@ def build_board(db: Session, oid: int) -> dict:
             f"{dup_groups} possible duplicate client{'s' if dup_groups != 1 else ''}",
             "Same phone on more than one record — review and merge.", "",
             tags=[{"label": "CLEANUP", "tone": "violet"}],
-            action={"label": "Tidy Up", "href": "/cleanup"},
+            actions=[_link("Tidy Up", "/cleanup")],
         ))
 
     # ── 🗑️ Safe to Ignore (Phase 2: Gmail triage) ──────────────────────────
@@ -526,21 +535,16 @@ def build_board(db: Session, oid: int) -> dict:
     new_leads_count = sum(1 for ld in leads if (ld.status or "new") == "new")
     stats = [
         {"key": "unassigned", "label": "Unassigned jobs", "value": str(len(unassigned_week)),
-         "sub": "next 7 days", "tone": "red" if unassigned_week else "neutral",
-         "href": "/schedule?view=dispatch"},
+         "sub": "next 7 days", "tone": "red" if unassigned_week else "neutral", "href": "/schedule?view=dispatch"},
         {"key": "weekend", "label": "This weekend", "value": str(len(weekend_jobs)),
-         "sub": "jobs booked", "tone": "amber" if weekend_jobs else "neutral",
-         "href": "/schedule"},
+         "sub": "jobs booked", "tone": "amber" if weekend_jobs else "neutral", "href": "/schedule"},
         {"key": "overdue", "label": "Overdue", "value": str(len(overdue_rows)),
-         "sub": "invoices past due", "tone": "red" if overdue_rows else "neutral",
-         "href": "/billing?view=invoices&status=overdue"},
+         "sub": "invoices past due", "tone": "red" if overdue_rows else "neutral", "href": "/billing?view=invoices&status=overdue"},
         {"key": "waiting", "label": "People waiting", "value": str(waiting_count),
          "sub": f"{len(breached)} past SLA" if breached else "awaiting reply",
-         "tone": "red" if breached else ("amber" if waiting_count else "neutral"),
-         "href": "/comms"},
+         "tone": "red" if breached else ("amber" if waiting_count else "neutral"), "href": "/comms"},
         {"key": "leads", "label": "New leads", "value": str(new_leads_count),
-         "sub": "to quote", "tone": "amber" if new_leads_count else "neutral",
-         "href": "/requests"},
+         "sub": "to quote", "tone": "amber" if new_leads_count else "neutral", "href": "/requests"},
         {"key": "collected", "label": "Collected today", "value": _fmt_money_compact(collected_today),
          "sub": "payments in", "tone": "money", "href": "/billing?view=invoices"},
     ]
@@ -568,20 +572,15 @@ def _integration_health(db: Session, org, today: date):
     chips = []
     systems = []
 
-    # Gmail — connected accounts vs. expired/revoked grants.
     connected = gmail_accounts(db)
     expired = (
         db.query(func.count(UserGoogleAccount.id))
-        .filter(
-            UserGoogleAccount.gmail_sync_enabled.is_(True),
-            UserGoogleAccount.status != "connected",
-        )
+        .filter(UserGoogleAccount.gmail_sync_enabled.is_(True), UserGoogleAccount.status != "connected")
         .scalar()
     ) or 0
     if connected:
         chips.append({"key": "gmail", "label": "Gmail", "status": "connected",
-                      "detail": f"{len(connected)} account{'s' if len(connected) != 1 else ''}",
-                      "tone": "green"})
+                      "detail": f"{len(connected)} account{'s' if len(connected) != 1 else ''}", "tone": "green"})
     elif expired:
         chips.append({"key": "gmail", "label": "Gmail", "status": "warn", "detail": "reconnect", "tone": "amber"})
     else:
@@ -591,48 +590,37 @@ def _integration_health(db: Session, org, today: date):
             "sys:gmail", "watch", "Gmail needs reconnecting",
             f"{expired} connected account{'s' if expired != 1 else ''} expired or revoked — inbound email won't sync.",
             "", tags=[{"label": "AUTH", "tone": "amber"}],
-            action={"label": "Reconnect", "href": "/settings"}, source="integration",
+            actions=[_link("Reconnect", "/settings")], source="integration",
         ))
 
-    # Google Calendar.
     cal = calendar_account(db) or _setting(db, "google_token")
-    chips.append({"key": "calendar", "label": "Calendar",
-                  "status": "connected" if cal else "off",
-                  "detail": "synced" if cal else "not connected",
-                  "tone": "green" if cal else "gray"})
+    chips.append({"key": "calendar", "label": "Calendar", "status": "connected" if cal else "off",
+                  "detail": "synced" if cal else "not connected", "tone": "green" if cal else "gray"})
 
-    # Connecteam / Square (config presence only — cheap, no network).
     for key, label, setting in (
         ("connecteam", "Connecteam", "connecteam_api_key"),
         ("square", "Square", "square_access_token"),
     ):
         on = bool(_setting(db, setting))
-        chips.append({"key": key, "label": label,
-                      "status": "connected" if on else "off",
-                      "detail": "configured" if on else "not set",
-                      "tone": "green" if on else "gray"})
+        chips.append({"key": key, "label": label, "status": "connected" if on else "off",
+                      "detail": "configured" if on else "not set", "tone": "green" if on else "gray"})
 
-    # Twilio (env-only; no balance/trial surface yet — see Phase 2 note).
     twilio_on = bool(os.getenv("TWILIO_ACCOUNT_SID"))
-    chips.append({"key": "twilio", "label": "Twilio",
-                  "status": "connected" if twilio_on else "off",
-                  "detail": "configured" if twilio_on else "not set",
-                  "tone": "green" if twilio_on else "gray"})
+    chips.append({"key": "twilio", "label": "Twilio", "status": "connected" if twilio_on else "off",
+                  "detail": "configured" if twilio_on else "not set", "tone": "green" if twilio_on else "gray"})
 
-    # Recent delivery failures (email / SMS / calendar pushes that didn't land).
     since = datetime.now(timezone.utc) - timedelta(days=7)
     failed = (
         db.query(func.count(IntegrationEvent.id))
-        .filter(org(IntegrationEvent), IntegrationEvent.status == "failed",
-                IntegrationEvent.created_at >= since)
+        .filter(org(IntegrationEvent), IntegrationEvent.status == "failed", IntegrationEvent.created_at >= since)
         .scalar()
     ) or 0
     if failed:
         systems.append(_item(
             "sys:failed-sends", "watch", f"{failed} delivery failure{'s' if failed != 1 else ''}",
-            "Emails, texts or calendar pushes failed to send in the last 7 days.",
-            "", tags=[{"label": "DELIVERY", "tone": "rose"}],
-            action={"label": "Review", "href": "/settings"}, source="integration",
+            "Emails, texts or calendar pushes failed to send in the last 7 days.", "",
+            tags=[{"label": "DELIVERY", "tone": "rose"}],
+            actions=[_link("Review", "/settings")], source="integration",
         ))
 
     return chips, systems
