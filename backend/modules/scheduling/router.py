@@ -1885,6 +1885,13 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
     found_ids = {j.id for j in jobs}
 
     from modules.recurring.router import _reschedule_occurrence, _get_schedule_or_404
+    # Operator bulk move: recurring occurrences email the customer only when both
+    # the master notify + the move toggle are on (default silent). One-off jobs in
+    # the else-branch route through update_job, which applies the same rule.
+    from modules.settings.router import (
+        customer_notify_enabled as _bulk_ne, customer_notify_on_move_enabled as _bulk_nom,
+    )
+    _bulk_notify_move = _bulk_ne(db) and _bulk_nom(db)
 
     shifted, skipped = [], []
     for job_id in body.job_ids:
@@ -1906,6 +1913,7 @@ def bulk_reschedule(body: BulkRescheduleRequest, db: Session = Depends(get_db),
                     db, sched, job.scheduled_date, new_date,
                     rescheduled_start_time=job.start_time, rescheduled_end_time=job.end_time,
                     cleaner_ids=job.cleaner_ids, reason="Bulk reschedule",
+                    notify_customer=_bulk_notify_move,
                 )
             else:
                 # Route one-off moves through update_job so the Google Calendar
@@ -2259,10 +2267,14 @@ def _apply_reschedule_move(db: Session, job: Job, d, start: str, end: str, scope
             return job
         # scope 'this' — move just this occurrence (swaps the Job row).
         token = job.public_token
+        # Customer-initiated move: keep notifying (notify_customer default True).
+        # The move-toggle governs OPERATOR moves only — a customer who just moved
+        # their own visit should still get the confirming calendar update.
         _, newjob = _reschedule_occurrence(
             db, sched, exception_date=job.scheduled_date, rescheduled_date=d,
             rescheduled_start_time=start, rescheduled_end_time=end,
-            cleaner_ids=job.cleaner_ids, reason="Customer self-reschedule")
+            cleaner_ids=job.cleaner_ids, reason="Customer self-reschedule",
+            notify_customer=True)
         db.flush()
         if newjob is not None and newjob.id != job.id:
             newjob.public_token = token
@@ -3092,9 +3104,17 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     from modules.settings.router import (
         customer_invites_enabled as _inv_enabled,
         customer_notify_enabled as _notify_enabled,
+        customer_notify_on_move_enabled as _notify_on_move_enabled,
         gcal_reminder_overrides as _reminder_overrides,
     )
     _gcal_notify = _notify_enabled(db)
+    # Moving/editing an existing event only emails the customer when BOTH the
+    # master notify switch AND the move-specific toggle are on. Default: master
+    # on, move off → booking invites + cancellations still email, but nudging a
+    # job around the calendar updates their copy silently (the wished-for
+    # "don't ping them every time we move it"). Create + cancel keep using
+    # `_gcal_notify` directly below, so this only affects in-place updates.
+    _notify_on_move = _notify_on_move_enabled(db)
     _gcal_reminders = _reminder_overrides(db)
     _cancel_su = "all" if _gcal_notify else "none"
 
@@ -3180,7 +3200,11 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
             # invite + notify/reminder prefs so a reschedule updates their copy
             # and (per Settings) emails them the change.
             _inv = _inv_enabled(db) and bool(client and client.email)
-            _upd_su = "all" if (_inv and _gcal_notify) else "none"
+            # A move/edit of an already-synced event: silent unless the operator
+            # has explicitly opted into move emails. send_invite stays `_inv`, so
+            # the customer remains an attendee and their calendar copy updates —
+            # only the *email* is suppressed (sendUpdates="none").
+            _upd_su = "all" if (_inv and _gcal_notify and _notify_on_move) else "none"
             new_type = job.job_type or "residential"
             if _calendar_id(prev_job_type) != _calendar_id(new_type):
                 # The event lives on the OLD type's calendar — updating in

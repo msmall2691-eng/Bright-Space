@@ -15,7 +15,14 @@ export function useIsMobile(breakpoint = 768) {
     typeof window !== 'undefined' && window.innerWidth < breakpoint
   )
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < breakpoint)
+    // Only setState when the boolean actually FLIPS across the breakpoint —
+    // not on every resize event. This hook is mounted in Schedule, WeekGrid,
+    // and CalendarView at once, so an undebounced setState on every resize
+    // (and every drag-driven layout tick) stormed three components at 60fps.
+    const onResize = () => {
+      const next = window.innerWidth < breakpoint
+      setIsMobile(prev => (prev === next ? prev : next))
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [breakpoint])

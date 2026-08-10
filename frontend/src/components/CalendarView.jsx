@@ -295,6 +295,20 @@ export default function CalendarView({
     return map
   }, [icalEvents])
 
+  // Check-in / check-out day lookups. The month grid previously ran
+  // `icalEvents.some(...)` twice PER CELL (O(cells × events)) on every render —
+  // and CalendarView re-renders on every drag tick. Precompute two Sets once
+  // per feed change so each cell is an O(1) membership test.
+  const { checkinDays, checkoutDays } = useMemo(() => {
+    const checkinDays = new Set()
+    const checkoutDays = new Set()
+    icalEvents.forEach(e => {
+      if (e.checkin_date) checkinDays.add(e.checkin_date)
+      if (e.checkout_date) checkoutDays.add(e.checkout_date)
+    })
+    return { checkinDays, checkoutDays }
+  }, [icalEvents])
+
   const { skipsByDay, reschedulesFromByDay, reschedulesToByDay } = useMemo(() => {
     const skipsByDay = {}
     const reschedulesFromByDay = {}
@@ -931,8 +945,8 @@ export default function CalendarView({
           {cells.map((date, i) => {
             if (!date) return <div key={i} className="bg-bg" />
 
-            const isCheckout = icalEvents.some(e => e.checkout_date === date)
-            const isCheckin  = icalEvents.some(e => e.checkin_date  === date)
+            const isCheckout = checkoutDays.has(date)
+            const isCheckin  = checkinDays.has(date)
 
             return (
               <MonthDayCell

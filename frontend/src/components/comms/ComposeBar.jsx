@@ -1,5 +1,6 @@
-import { Send, StickyNote, Sparkles, Loader2 } from 'lucide-react'
+import { Send, StickyNote, Sparkles, Loader2, BellRing, CalendarCheck } from 'lucide-react'
 import { Kbd } from './primitives'
+import { apptDatePhrase, apptReminderText, apptConfirmText } from './utils'
 
 const CANNED_REPLIES = [
   'On our way!',
@@ -33,7 +34,17 @@ export function ComposeBar({
   // with no args; the caller knows the context (intake / conversation).
   onDraftAI,
   draftingAI = false,
+  // Appointment-aware quick-replies: the customer's soonest upcoming job (or
+  // undefined), their first name, and the company name feed pre-composed
+  // reminder/confirmation SMS. onFillReply(text) REPLACES the draft (vs. the
+  // canned chips below, which append) so a one-tap reminder lands ready to send.
+  nextAppt,
+  firstName,
+  companyName,
+  onFillReply,
 }) {
+  // Only offer appointment shortcuts on SMS threads with a real upcoming visit.
+  const showApptChips = !noteMode && detail.channel === 'sms' && nextAppt && onFillReply
   return (
     <div className="border-t border-hairline bg-panel px-4 pt-4 pb-safe">
       {/* Mode toggle — wraps on narrow phones so the AI button + flash never clip */}
@@ -76,6 +87,27 @@ export function ComposeBar({
         <input value={replySubject} onChange={e => setReplySubject(e.target.value)}
           placeholder={detail.subject ? `Re: ${detail.subject}` : 'Subject'}
           className="w-full bg-bg border border-hairline rounded-xl px-3.5 py-2 text-[13px] mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
+      )}
+
+      {/* Appointment-aware quick-replies — pull the customer's real next visit
+          into a ready-to-send reminder / confirmation. Distinct (filled) style
+          from the plain canned chips since these drop in a whole message. */}
+      {showApptChips && (
+        <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-thin">
+          <span className="shrink-0 text-[10px] font-semibold text-ink-3 uppercase tracking-wide pr-0.5">
+            {apptDatePhrase(nextAppt)}
+          </span>
+          <button
+            onClick={() => onFillReply(apptReminderText({ job: nextAppt, firstName, company: companyName }))}
+            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors whitespace-nowrap">
+            <BellRing className="w-3 h-3" /> Remind
+          </button>
+          <button
+            onClick={() => onFillReply(apptConfirmText({ job: nextAppt, firstName }))}
+            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition-colors whitespace-nowrap">
+            <CalendarCheck className="w-3 h-3" /> Confirm
+          </button>
+        </div>
       )}
 
       {/* Canned responses — one-tap fills the reply box */}

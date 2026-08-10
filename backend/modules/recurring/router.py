@@ -18,7 +18,7 @@ from utils.dates import business_today, coerce_date
 router = APIRouter()
 
 
-def _release_sync_links(db: Session, job: Job) -> None:
+def _release_sync_links(db: Session, job: Job, *, notify: bool = True) -> None:
     """Delete a job's linked Google Calendar event + Connecteam shift when
     cancelling/detaching it (audit finding #2, July 2026): every recurring
     cancellation path below used to just set status='cancelled' and clear
@@ -33,9 +33,15 @@ def _release_sync_links(db: Session, job: Job) -> None:
         try:
             from integrations.google_calendar import delete_event
             from modules.settings.router import customer_notify_enabled
+            # `notify=False` (an operator MOVE, per the move toggle) deletes the
+            # old event SILENTLY so the customer doesn't get a jarring
+            # "cancelled" email for a visit that's merely being shifted. Skips
+            # and structural schedule edits keep notify=True → cancellation email
+            # as before.
+            _del_su = "all" if (notify and customer_notify_enabled(db)) else "none"
             if delete_event(job.gcal_event_id, job.job_type or "residential",
                             owner_account_id=getattr(job, "gcal_account_id", None),
-                            send_updates=("all" if customer_notify_enabled(db) else "none")):
+                            send_updates=_del_su):
                 job.gcal_event_id = None
         except Exception as e:
             logger.warning(f"GCal delete failed for job {job.id}: {e}")
@@ -1266,7 +1272,8 @@ def _ex_to_dict(ex: RecurrenceException) -> dict:
     }
 
 
-def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: Optional[str]) -> None:
+def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: Optional[str],
+                         *, notify: bool = True) -> None:
     """Mark any Job on (schedule_id, target_date) as cancelled so a
     skip/reschedule exception takes effect immediately without waiting for
     the next /generate-all run.
@@ -1300,7 +1307,7 @@ def _cancel_existing_job(db: Session, sched_id: int, target_date: date, reason: 
     # date collided with this inert row and 500'd at commit. Matches the
     # detach convention _resync_future_jobs and split_schedule already use.
     job.recurring_schedule_id = None
-    _release_sync_links(db, job)
+    _release_sync_links(db, job, notify=notify)
 
 
 @router.post("/{schedule_id}/skip", status_code=201, response_model=RecurrenceExceptionRead, dependencies=[Depends(require_role("admin", "manager"))])
@@ -1359,7 +1366,8 @@ def add_skip_exception(schedule_id: int, body: ExceptionCreate, db: Session = De
 
 def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date, rescheduled_date,
                            rescheduled_start_time=None, rescheduled_end_time=None,
-                           cleaner_ids=None, reason=None, allow_conflicts=True):
+                           cleaner_ids=None, reason=None, allow_conflicts=True,
+                           notify_customer: bool = True):
     """Core "move this one occurrence" logic — writes/updates the
     RecurrenceException and materializes the Job for the new date, exactly
     as the /{schedule_id}/reschedule endpoint does. Factored out so bulk
@@ -1463,6 +1471,14 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
         .first()
     )
     carried_token = old_occurrence.public_token if old_occurrence else None
+    # Carry the Google Calendar event to the moved occurrence instead of
+    # deleting + re-creating it. Reusing the same event id means ONE silent
+    # in-place update on the customer's calendar (no "cancelled" email, no
+    # re-invite, no orphan window, no reconcile round-trip) — the 100%-silent
+    # recurring move. Captured BEFORE the cancel below, which would otherwise
+    # delete it.
+    carried_event_id = old_occurrence.gcal_event_id if old_occurrence else None
+    carried_acct = getattr(old_occurrence, "gcal_account_id", None) if old_occurrence else None
     # Whether the occurrence being moved was already on a cleaner's Connecteam
     # schedule — captured BEFORE the cancel below pulls its shift, so the moved
     # visit re-dispatches immediately even in manual mode (mirrors update_job:
@@ -1472,7 +1488,14 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     if rescheduled_date != exception_date:
         if old_occurrence is not None:
             old_occurrence.public_token = None  # freed for the new row below
-        _cancel_existing_job(db, sched.id, exception_date, reason)
+            # Detach the calendar event from the old row BEFORE the cancel so
+            # _release_sync_links doesn't delete it — we re-point it at the moved
+            # occurrence and update it in place below (one silent event move,
+            # not a delete + re-create). If there's no carried event, this is a
+            # no-op and the cancel behaves exactly as before.
+            if carried_event_id:
+                old_occurrence.gcal_event_id = None
+        _cancel_existing_job(db, sched.id, exception_date, reason, notify=notify_customer)
 
     # Materialize (or update) the Job for the rescheduled date with the
     # exception times. generate_jobs uses series times only, so without this
@@ -1540,6 +1563,58 @@ def _reschedule_occurrence(db: Session, sched: RecurringSchedule, exception_date
     if getattr(rescheduled_job, "sms_reminder_sent", False):
         rescheduled_job.sms_reminder_sent = False
 
+    # ── SILENT IN-PLACE CALENDAR MOVE ──
+    # Re-point the carried event at the moved occurrence and update it in place,
+    # so the visit slides to its new date/time on the customer's calendar with
+    # a single API call. send_updates follows notify_customer: an operator move
+    # (toggle off) is 100% silent; a customer self-move still confirms. On a
+    # same-date time change the row already owns the event, so this also keeps
+    # the calendar time accurate without a delete/recreate. Best-effort: any
+    # failure drops the (now-stale) link so the reconcile sweep re-creates the
+    # event on the new date — DB and calendar never silently diverge.
+    if carried_event_id and not rescheduled_job.gcal_event_id:
+        rescheduled_job.gcal_event_id = carried_event_id
+        rescheduled_job.gcal_account_id = carried_acct
+    if rescheduled_job.gcal_event_id:
+        try:
+            from integrations.google_calendar import update_event, delete_event, is_configured
+            from modules.settings.router import customer_invites_enabled, gcal_reminder_overrides
+            from database.models import Client
+            if is_configured():
+                db.flush()  # ensure a freshly-created Job has its id for the event link
+                client = db.query(Client).filter(Client.id == sched.client_id).first()
+                invite = customer_invites_enabled(db) and bool(client and client.email)
+                client_dict = {"id": client.id if client else None,
+                               "name": client.name if client else "",
+                               "email": getattr(client, "email", None)}
+                job_dict = {
+                    "id": rescheduled_job.id, "title": rescheduled_job.title,
+                    "job_type": rescheduled_job.job_type or "residential",
+                    "scheduled_date": rescheduled_date, "start_time": new_start,
+                    "end_time": new_end, "address": rescheduled_job.address,
+                    "notes": rescheduled_job.notes, "property_id": rescheduled_job.property_id,
+                }
+                event_id = rescheduled_job.gcal_event_id
+                moved_ok = update_event(
+                    event_id, job_dict, client_dict, send_invite=invite,
+                    reminders=gcal_reminder_overrides(db),
+                    send_updates=("all" if notify_customer else "none"),
+                    owner_account_id=rescheduled_job.gcal_account_id)
+                if not moved_ok:
+                    # Update didn't apply (Google down / rejected). Drop the stale
+                    # link so reconcile re-creates on the new date, and best-effort
+                    # delete the orphan at the old date (silently — no email).
+                    try:
+                        delete_event(event_id, rescheduled_job.job_type or "residential",
+                                     owner_account_id=rescheduled_job.gcal_account_id,
+                                     send_updates="none")
+                    except Exception:
+                        pass
+                    rescheduled_job.gcal_event_id = None
+        except Exception as e:
+            logger.warning(f"GCal in-place move failed for schedule {sched.id}: {e}")
+            rescheduled_job.gcal_event_id = None  # reconcile re-creates on the new date
+
     # ── CONNECTEAM SHIFT SYNC ── reflect the move on the cleaner's app now
     # instead of leaving the moved occurrence shiftless until the 30-minute
     # reconcile tick. Mirrors update_job's one-off path: a visit that was
@@ -1596,6 +1671,13 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         )
 
     sched = _get_schedule_or_404(db, schedule_id, resolve_org_id(org_id, db))
+    # Operator move: email the customer only if BOTH the master notify switch
+    # and the move-specific toggle are on (default: silent move). Same rule the
+    # single-job update_job path uses, so every operator move is consistent.
+    from modules.settings.router import (
+        customer_notify_enabled as _ne, customer_notify_on_move_enabled as _nom,
+    )
+    _notify_move = _ne(db) and _nom(db)
     ex, rescheduled_job = _reschedule_occurrence(
         db, sched, body.exception_date, body.rescheduled_date,
         rescheduled_start_time=body.rescheduled_start_time,
@@ -1603,6 +1685,7 @@ def add_reschedule_exception(schedule_id: int, body: ExceptionCreate, db: Sessio
         cleaner_ids=body.cleaner_ids,
         reason=body.reason,
         allow_conflicts=bool(body.allow_conflicts),
+        notify_customer=_notify_move,
     )
 
     db.commit()
