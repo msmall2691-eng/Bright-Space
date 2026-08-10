@@ -14,9 +14,10 @@
  */
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react'
+import { LayoutGrid, RefreshCw, Search, ArrowUp, ArrowDown, ArrowRight, Rocket } from 'lucide-react'
 import PageHero from '../components/ui/PageHero'
 import { useDeals } from '../hooks/useDeals'
+import LaunchStepper from '../components/launch/LaunchStepper'
 
 // The continuum, inbox-first. `inbox` is the derived lead phase; the rest are
 // real Opportunity stages a deal can be moved between.
@@ -75,6 +76,8 @@ export default function Deals() {
   const [stageFilter, setStageFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState({ key: 'stage', dir: 'asc' })
+  // The deal card currently open in the Launch stepper (null = closed).
+  const [launching, setLaunching] = useState(null)
 
   const onSort = (key) =>
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
@@ -206,13 +209,21 @@ export default function Deals() {
                             Qualify <ArrowRight className="w-3 h-3" />
                           </button>
                         ) : (
-                          <select value={d.stage} onChange={e => moveStage(d, e.target.value)} disabled={busyId === d.id}
-                            aria-label="Move deal to stage"
-                            className="text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-1 text-ink-2 focus:outline-none focus:border-indigo-400">
-                            {MOVE_STAGES.map(s => (
-                              <option key={s.key} value={s.key}>{s.key === d.stage ? `● ${s.label}` : `Move to ${s.label}`}</option>
-                            ))}
-                          </select>
+                          <div className="inline-flex items-center gap-1.5">
+                            <select value={d.stage} onChange={e => moveStage(d, e.target.value)} disabled={busyId === d.id}
+                              aria-label="Move deal to stage"
+                              className="text-[12px] bg-bg-2 border border-hairline rounded-md px-2 py-1 text-ink-2 focus:outline-none focus:border-indigo-400">
+                              {MOVE_STAGES.map(s => (
+                                <option key={s.key} value={s.key}>{s.key === d.stage ? `● ${s.label}` : `Move to ${s.label}`}</option>
+                              ))}
+                            </select>
+                            {d.stage !== 'lost' && (
+                              <button onClick={() => setLaunching(d)} title="Launch this deal"
+                                className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-md border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10">
+                                <Rocket className="w-3 h-3" /> Launch
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -223,6 +234,14 @@ export default function Deals() {
           </div>
         </div>
       </div>
+
+      {launching && (
+        <LaunchStepper
+          opportunityId={launching.opportunity_id}
+          title={launching.title || launching.client_name}
+          onClose={() => { setLaunching(null); reload() }}
+        />
+      )}
     </div>
   )
 }

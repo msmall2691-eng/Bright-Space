@@ -167,6 +167,13 @@ def get_opportunity_details(opp_id: int, db: Session = Depends(get_db), org_id: 
                 "title": j.title,
                 "status": j.status,
                 "scheduled_date": j.scheduled_date,
+                "start_time": j.start_time,
+                "end_time": j.end_time,
+                # Crew + dispatch state so callers (e.g. the Launch flow) can tell
+                # whether a job is crewed and already pushed to Connecteam without
+                # a second per-job fetch.
+                "cleaner_ids": j.cleaner_ids or [],
+                "connecteam_shift_ids": j.connecteam_shift_ids or [],
                 "created_at": j.created_at.isoformat() if j.created_at else None,
             }
             for j in o.jobs
