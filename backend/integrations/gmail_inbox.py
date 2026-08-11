@@ -134,7 +134,9 @@ def _get_credentials():
             smtp_host_row = db.query(AppSetting).filter(AppSetting.key == "smtp_host").first()
             smtp_port_row = db.query(AppSetting).filter(AppSetting.key == "smtp_port").first()
             user = (user_row.value if user_row and user_row.value else None) or SMTP_USER
-            passwd = (pass_row.value if pass_row and pass_row.value else None) or SMTP_PASS
+            from utils.app_secrets import decode_setting_value
+            _raw_pass = pass_row.value if pass_row and pass_row.value else None
+            passwd = (decode_setting_value("smtp_pass", _raw_pass) if _raw_pass else None) or SMTP_PASS
             imap_host = (host_row.value if host_row and host_row.value else None) or IMAP_HOST
             imap_port = int((port_row.value if port_row and port_row.value else None) or IMAP_PORT)
             smtp_host = (smtp_host_row.value if smtp_host_row and smtp_host_row.value else None) or "smtp.gmail.com"

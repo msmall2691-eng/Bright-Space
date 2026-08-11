@@ -78,6 +78,19 @@ def main():
     _widen_alembic_version_col()
     command.upgrade(cfg, "head")
     print("[db_bootstrap] migrations up to date")
+    # Encrypt any legacy plaintext integration secrets now stored in
+    # app_settings (idempotent; single pre-deploy process, so no worker race).
+    try:
+        from database.db import SessionLocal
+        from utils.app_secrets import encrypt_existing_secrets
+        db = SessionLocal()
+        try:
+            n = encrypt_existing_secrets(db)
+            print(f"[db_bootstrap] encrypted {n} legacy secret(s) at rest")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[db_bootstrap] secret backfill skipped: {e}")
 
 
 if __name__ == "__main__":

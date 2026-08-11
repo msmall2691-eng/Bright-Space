@@ -55,8 +55,9 @@ def _load_db_token() -> str | None:
         from database.models import AppSetting
         db = SessionLocal()
         try:
+            from utils.app_secrets import decode_setting_value
             row = db.query(AppSetting).filter(AppSetting.key == "google_token").first()
-            return row.value if row and row.value else None
+            return decode_setting_value("google_token", row.value) if (row and row.value) else None
         finally:
             db.close()
     except Exception:
@@ -69,6 +70,8 @@ def _save_db_token(token_json: str) -> None:
         from database.models import AppSetting
         db = SessionLocal()
         try:
+            from utils.app_secrets import encode_setting_value
+            token_json = encode_setting_value("google_token", token_json)
             row = db.query(AppSetting).filter(AppSetting.key == "google_token").first()
             if row:
                 row.value = token_json

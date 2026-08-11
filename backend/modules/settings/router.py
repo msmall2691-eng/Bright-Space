@@ -35,12 +35,18 @@ EMAIL_SETTING_KEYS = [
 ]
 
 
+from utils.app_secrets import encode_setting_value, decode_setting_value
+
+
 def get_setting(db: Session, key: str) -> Optional[str]:
     row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    return row.value if row else None
+    # Transparent decrypt for the secret keys (encrypted at rest). Plaintext
+    # (legacy) and non-secret values pass through unchanged.
+    return decode_setting_value(key, row.value) if row else None
 
 
 def set_setting(db: Session, key: str, value: str):
+    value = encode_setting_value(key, value)  # encrypt secret keys at rest
     row = db.query(AppSetting).filter(AppSetting.key == key).first()
     if row:
         row.value = value
