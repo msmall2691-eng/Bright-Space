@@ -691,6 +691,11 @@ ASSIGNABLE_ROLES = {"admin", "manager", "member", "viewer", "cleaner", "client"}
 class AdminUserUpdate(BaseModel):
     role: Optional[str] = None
     active: Optional[bool] = None
+    # Crew accounts: links a role="cleaner" login to the Job.cleaner_ids
+    # string space. "" clears the link (kept distinct from None = "not
+    # provided in this request", matching the rest of this endpoint's
+    # partial-update convention).
+    cleaner_id: Optional[str] = None
 
 
 def _user_row(db: Session, u: User) -> dict:
@@ -706,6 +711,7 @@ def _user_row(db: Session, u: User) -> dict:
         "active": u.active,
         "auth_provider": u.auth_provider,
         "google_connected": bool(u.google_sub) or has_google_grant,
+        "cleaner_id": u.cleaner_id,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
@@ -788,9 +794,14 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
         # Re-enabling a disabled account restores access in one step.
         if data.active and (u.status or "active") == "disabled":
             u.status = "active"
+    if data.cleaner_id is not None:
+        # "" clears the link; anything else sets it. Trimmed so a stray space
+        # pasted from a Connecteam export doesn't silently fail to match
+        # Job.cleaner_ids.
+        u.cleaner_id = data.cleaner_id.strip() or None
     db.commit()
     logger.info(f"[auth] {current_user.email} updated user {u.email}: "
-                f"role={data.role!r} active={data.active!r}")
+                f"role={data.role!r} active={data.active!r} cleaner_id={data.cleaner_id!r}")
     return _user_row(db, u)
 
 

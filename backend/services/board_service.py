@@ -173,6 +173,29 @@ def _job_meta(job: Job, today: date) -> str:
     return " · ".join(x for x in (day, span) if x)
 
 
+def _turnover_context(job: Job) -> str:
+    """For STR turnover jobs: the checkout→check-in window plus a quick
+    access cue (door code), so a crew scanning the board can see how tight
+    the flip is and how to get in without opening the job detail. Reads off
+    `job.property`, which the deck's query already joinedload()s — no extra
+    query. Returns "" for non-turnover jobs or properties missing the data
+    (residential/commercial jobs, or an STR property that hasn't been filled
+    in yet — never renders a misleading partial line)."""
+    if (job.job_type or "").lower() != "str_turnover":
+        return ""
+    prop = job.property
+    if not prop:
+        return ""
+    parts = []
+    if prop.check_out_time or prop.check_in_time:
+        co = prop.check_out_time or "?"
+        ci = prop.check_in_time or "?"
+        parts.append(f"Out {co} → In {ci}")
+    if prop.house_code:
+        parts.append(f"Code {prop.house_code}")
+    return " · ".join(parts)
+
+
 def _job_type_tag(job: Job) -> dict:
     jt = (job.job_type or "").lower()
     if jt == "str_turnover":
@@ -411,9 +434,16 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         acts = [_link("View", f"/jobs/{j.id}")]
         if not assigned:
             acts.insert(0, _api("Auto-assign", f"/api/jobs/{j.id}/auto-assign", done="Assigned", clears=False))
+        # STR turnovers get a checkout→check-in + door-code line appended to
+        # meta so the flip window and access are visible at a glance, not
+        # just in the job detail drawer.
+        meta = _job_meta(j, today)
+        turno = _turnover_context(j)
+        if turno:
+            meta = f"{meta} · {turno}" if meta else turno
         deck.append(_item(
             f"deck-job:{j.id}", "good" if assigned else "watch",
-            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), _job_meta(j, today),
+            _job_place(j) or (j.title or f"Job #{j.id}"), _client_name(j), meta,
             tags=[_job_type_tag(j)] + ([] if assigned else [{"label": "UNASSIGNED", "tone": "amber"}]),
             actions=acts,
         ))

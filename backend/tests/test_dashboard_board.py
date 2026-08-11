@@ -78,6 +78,29 @@ def _mk_unassigned_job_today(ids, cid, pid):
     return jid
 
 
+def _mk_str_property(ids, cid):
+    """An STR property with turnover-relevant fields filled in, so the deck
+    card's turnover-context line has something to render."""
+    db = SessionLocal()
+    p = Property(client_id=cid, name="9 Lakeshore Dr", address="9 Lakeshore Dr",
+                 property_type="str", org_id=1,
+                 check_out_time="10:00", check_in_time="16:00", house_code="4521")
+    db.add(p); db.commit(); db.refresh(p)
+    ids["properties"].append(p.id); pid = p.id; db.close()
+    return pid
+
+
+def _mk_turnover_job_this_week(ids, cid, pid):
+    db = SessionLocal()
+    j = Job(client_id=cid, property_id=pid, job_type="str_turnover",
+            title="Turnover", scheduled_date=business_today() + timedelta(days=1),
+            start_time=time(10, 0), end_time=time(13, 0),
+            cleaner_ids=[901], status="scheduled", org_id=1)
+    db.add(j); db.commit(); db.refresh(j)
+    ids["jobs"].append(j.id); jid = j.id; db.close()
+    return jid
+
+
 def _mk_overdue_invoice(ids, cid):
     db = SessionLocal()
     inv = Invoice(client_id=cid, invoice_number=f"INV-{uuid.uuid4().hex[:8]}",
@@ -149,6 +172,38 @@ def test_board_shape_and_stat_deltas(client):
     assert f"job:{jid}" in after_ids                 # unassigned-today → Needs You Today
     assert "money:outstanding" in after_ids          # overdue invoice → Money summary card
     assert after["filters"]["all"] > before["filters"]["all"]
+
+
+def test_turnover_card_shows_checkout_checkin_and_code(client):
+    """A Jobs-on-Deck card for an STR turnover surfaces the checkout→check-in
+    window and door code in its `meta` line — visible on the board itself,
+    not just after opening the job detail drawer."""
+    api, ids = client
+    cid = _mk_client(ids)
+    pid = _mk_str_property(ids, cid)
+    jid = _mk_turnover_job_this_week(ids, cid, pid)
+
+    board = api.get("/api/dashboard/board").json()
+    deck = next(s for s in board["sections"] if s["key"] == "jobs_on_deck")
+    item = next(it for it in deck["items"] if it["id"] == f"deck-job:{jid}")
+
+    assert "Out 10:00 → In 16:00" in item["meta"]
+    assert "Code 4521" in item["meta"]
+
+
+def test_turnover_card_omits_context_when_property_missing_data(client):
+    """A non-STR job (or an STR property with no checkout/check-in/code set)
+    never renders a partial or misleading turnover line."""
+    api, ids = client
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)  # residential, no STR fields
+    jid = _mk_unassigned_job_today(ids, cid, pid)  # job_type=str_turnover, but bare property
+
+    board = api.get("/api/dashboard/board").json()
+    all_items = [it for s in board["sections"] for it in s["items"]]
+    item = next((it for it in all_items if it["id"] == f"deck-job:{jid}"), None)
+    if item is not None:
+        assert "Out" not in item["meta"] and "Code" not in item["meta"]
 
 
 def test_viewer_board_strips_one_click_api_actions(client):

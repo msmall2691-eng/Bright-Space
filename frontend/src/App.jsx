@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
 import OpsBoard from './pages/OpsBoard'
+import MyDay from './pages/MyDay'
 import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
 import Deals from './pages/Deals'
@@ -207,6 +208,14 @@ export default function App() {
         }}
       />
     )
+  }
+
+  // Crew accounts get a standalone, chrome-free view — never the full CRM
+  // shell (Sidebar/Header/nav), regardless of which URL they land on. This
+  // is the enforcement point, not just a route: a cleaner typing /clients
+  // still gets My Day, not a 403'd blank CRM page.
+  if (user?.role === 'cleaner') {
+    return <MyDay />
   }
 
   return (

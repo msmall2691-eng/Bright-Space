@@ -242,11 +242,20 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
         .filter(org_scope(RecurringSchedule), RecurringSchedule.active.is_(True))
         .all()
     )
+    # Batch-fetch every linked quote in one query instead of one round trip
+    # per schedule (was N+1 — matches the pattern funnel_dashboard() already
+    # uses below for the same reason).
+    quote_ids = {s.quote_id for s in schedules if s.quote_id}
+    quotes_by_id = {}
+    if quote_ids:
+        quotes_by_id = {
+            q.id: q for q in db.query(Quote).filter(Quote.id.in_(quote_ids)).all()
+        }
     for s in schedules:
         if not s.quote_id:
             unpriced += 1
             continue
-        quote = db.query(Quote).filter(Quote.id == s.quote_id).first()
+        quote = quotes_by_id.get(s.quote_id)
         if not quote or not quote.total:
             unpriced += 1
             continue

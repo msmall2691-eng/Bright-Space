@@ -138,6 +138,14 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
+    # Crew accounts (Phase 1 — native crew directory): links a role="cleaner"
+    # login to the crew-ID string space Job.cleaner_ids already uses (these
+    # are Connecteam employee IDs in production — see CleanerTimeOff). NULL
+    # for everyone else. Additive: existing Connecteam-driven dispatch and
+    # payroll are untouched; this only lets a cleaner log in and see the jobs
+    # already assigned to their crew ID.
+    cleaner_id = Column(String, nullable=True, index=True)
+
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column
     # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is

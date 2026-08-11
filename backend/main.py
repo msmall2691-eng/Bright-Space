@@ -186,6 +186,8 @@ from modules.cleanup.router import router as cleanup_router
 app.include_router(cleanup_router, prefix="/api/cleanup", tags=["cleanup"])
 app.include_router(schedule_router, prefix="/api/schedule", tags=["schedule"])
 app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
+from modules.crew.router import router as crew_router
+app.include_router(crew_router, prefix="/api/crew", tags=["crew"])
 # push_router sets its own /api/push prefix (like the auth webhook routers).
 app.include_router(push_router)
 

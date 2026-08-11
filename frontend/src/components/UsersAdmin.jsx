@@ -46,6 +46,7 @@ export default function UsersAdmin() {
   const deny = (u) => act(u.id, () => post(`/api/auth/users/${u.id}/deny`))
   const setRole = (u, role) => act(u.id, () => patch(`/api/auth/users/${u.id}`, { role }))
   const setActive = (u, active) => act(u.id, () => patch(`/api/auth/users/${u.id}`, { active }))
+  const setCleanerId = (u, cleaner_id) => act(u.id, () => patch(`/api/auth/users/${u.id}`, { cleaner_id }))
 
   const pending = users.filter(u => u.status === 'pending')
   const rest = users.filter(u => u.status !== 'pending')
@@ -63,6 +64,9 @@ export default function UsersAdmin() {
       <p className="text-xs text-ink-3 mb-4">
         New sign-ups wait here until you approve them. Approved users start as
         “member” (can work jobs, quotes, and comms — no settings or user management).
+        Set a role to “cleaner” to give someone a crew login — a Crew ID field
+        appears so you can link their account to the jobs already assigned to
+        them.
       </p>
 
       {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{error}</div>}
@@ -117,6 +121,21 @@ export default function UsersAdmin() {
                 className="bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0 capitalize">
                 {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
+              {u.role === 'cleaner' && (
+                <input
+                  key={`${u.id}-${u.cleaner_id || ''}`}
+                  type="text"
+                  defaultValue={u.cleaner_id || ''}
+                  placeholder="Crew ID"
+                  title="Links this login to their existing crew ID (matches Job.cleaner_ids / the Connecteam employee ID). Leave blank if this cleaner has no jobs assigned yet."
+                  disabled={busyId === u.id}
+                  onBlur={e => {
+                    const v = e.target.value.trim()
+                    if (v !== (u.cleaner_id || '')) setCleanerId(u, v)
+                  }}
+                  className="w-24 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
+                />
+              )}
               {u.active && u.status !== 'disabled' ? (
                 <button onClick={() => setActive(u, false)} disabled={busyId === u.id}
                   className="text-xs px-2.5 py-1.5 bg-panel border border-hairline hover:border-red-300 hover:text-red-700 disabled:opacity-60 text-ink-3 rounded-lg transition-colors shrink-0">

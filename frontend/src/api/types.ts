@@ -1302,6 +1302,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/sync-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sync Overview
+         * @description The full Sync Control Center payload (frontend `/sync`): every schedule
+         *     BrightBase syncs with, rolled into one read-only picture — channels with
+         *     flow direction + who-wins + last-sync + backlog, the ~14 background ticks
+         *     finally made visible, and an attention list of only what a human should act
+         *     on. Richer sibling of `/sync-health` (which still powers the compact pill);
+         *     never mutates. Shape lives in
+         *     `modules/scheduling/sync_overview.build_sync_overview`.
+         */
+        get: operations["sync_overview_api_jobs_sync_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/push-to-gcal": {
         parameters: {
             query?: never;
@@ -2305,6 +2331,11 @@ export interface paths {
         /**
          * List Employees
          * @description Fetch all employees from Connecteam.
+         *
+         *     Gated to internal roles: the roster is staff PII (names, phones) and must
+         *     not be reachable by cleaner/client logins. Before this, only the global
+         *     API-key/JWT middleware gated it, so ANY authenticated principal could pull
+         *     the full roster (docs/audit-2026-04-23.md §6).
          */
         get: operations["list_employees_api_dispatch_employees_get"];
         put?: never;
@@ -5087,6 +5118,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Board
+         * @description Unified Ops Board payload — stat tiles, integration chips, per-severity
+         *     filter counts, and the six triage sections — in one org-scoped round trip.
+         *     Backs the iOS-style board at /dashboard (see services/board_service.py).
+         */
+        get: operations["dashboard_board_api_dashboard_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/summary": {
         parameters: {
             query?: never;
@@ -5136,6 +5189,80 @@ export interface paths {
         get: operations["owner_dashboard_api_dashboard_owner_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Funnel Dashboard
+         * @description Intake→quote conversion funnel over the last ``days`` days.
+         *
+         *     Cohort = requests (LeadIntake) created in the window, excluding archived.
+         *     Each request is followed to its linked quote's furthest stage, giving
+         *     cumulative stage counts, step-by-step conversion rates, the current-status
+         *     outcome mix, median time-to-quote / time-to-accept, dollar value at each
+         *     money stage, and a per-source breakdown. Admin/manager only (revenue).
+         */
+        get: operations["funnel_dashboard_api_dashboard_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cleanup/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cleanup Scan
+         * @description Find likely-duplicate clients & properties and data-quality gaps.
+         *
+         *     Read-only. Clients cluster when they share a strong signal — same email,
+         *     same phone (last 10 digits), or the same name + ZIP. Properties cluster on
+         *     normalized address. Nothing is changed; the operator reviews and merges.
+         */
+        get: operations["cleanup_scan_api_cleanup_scan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cleanup/clients/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Clients
+         * @description Merge `duplicate_id` into `primary_id`: reassign every client-scoped
+         *     record to the primary, keep the duplicate's contact info as additional
+         *     emails/phones, back-fill missing primary fields, then delete the duplicate.
+         *
+         *     Hard to undo — the caller (the /cleanup review page) confirms first.
+         */
+        post: operations["merge_clients_api_cleanup_clients_merge_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5272,6 +5399,29 @@ export interface paths {
         };
         /** Invoices */
         get: operations["invoices_api_portal_invoices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Day
+         * @description Today's jobs (plus the next `days`-1 as a preview) assigned to the
+         *     caller's crew ID. Returns 400 with a clear message if the account has no
+         *     cleaner_id linked yet, rather than silently returning an empty list —
+         *     that distinction matters (mis-set account vs. genuinely no jobs).
+         */
+        get: operations["my_day_api_crew_my_day_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5461,6 +5611,8 @@ export interface components {
             role?: string | null;
             /** Active */
             active?: boolean | null;
+            /** Cleaner Id */
+            cleaner_id?: string | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -5493,6 +5645,8 @@ export interface components {
             calendar_source_of_truth?: string | null;
             /** Gcal Live Sync */
             gcal_live_sync?: boolean | null;
+            /** Sync Reconcile Enabled */
+            sync_reconcile_enabled?: boolean | null;
             /** Gmail Live Sync */
             gmail_live_sync?: boolean | null;
             /** Connecteam Auto Dispatch Enabled */
@@ -6396,6 +6550,13 @@ export interface components {
             service_type: string | null;
             /** Message */
             message?: string | null;
+        };
+        /** MergeClientsBody */
+        MergeClientsBody: {
+            /** Primary Id */
+            primary_id: number;
+            /** Duplicate Id */
+            duplicate_id: number;
         };
         /**
          * MessageRead
@@ -9585,6 +9746,26 @@ export interface operations {
         };
     };
     sync_health_api_jobs_sync_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    sync_overview_api_jobs_sync_overview_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -15496,6 +15677,26 @@ export interface operations {
             };
         };
     };
+    dashboard_board_api_dashboard_board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     dashboard_summary_api_dashboard_summary_get: {
         parameters: {
             query?: never;
@@ -15532,6 +15733,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    funnel_dashboard_api_dashboard_funnel_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_scan_api_cleanup_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    merge_clients_api_cleanup_clients_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeClientsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15710,6 +15995,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    my_day_api_crew_my_day_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
