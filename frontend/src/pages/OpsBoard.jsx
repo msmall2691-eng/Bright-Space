@@ -16,11 +16,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Search, RotateCcw, Eye, EyeOff, Check, ArrowRight, RefreshCw, Loader2,
+  Search, RotateCcw, Eye, EyeOff, Check, ArrowRight, RefreshCw, Loader2, Sparkles,
 } from 'lucide-react'
 import { get, post } from '../api'
 import { ErrorState } from '../components/ui'
 import { TAG_TONE, SEV_DOT, SEV_LABEL, STAT_TONE, INT_DOT, SEV_ORDER } from '../components/board/tokens'
+import BoardAssistant from '../components/board/BoardAssistant'
 
 const CLEARED_KEY = 'brightbase_board_cleared'
 
@@ -194,6 +195,7 @@ export default function OpsBoard() {
   const [note, setNote] = useState('')
   const [actioningKey, setActioningKey] = useState(null)
   const [confirmingKey, setConfirmingKey] = useState(null)
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const searchRef = useRef(null)
 
   const load = useCallback(async (isRefresh) => {
@@ -334,6 +336,11 @@ export default function OpsBoard() {
               <span className="hidden text-[11px] text-ink-3 sm:inline">refreshed {fmtRefreshed(data.refreshed_at)}</span>
             )}
             <button
+              onClick={() => setAssistantOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[12px] font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
+              <Sparkles className="h-3.5 w-3.5" /> Ask
+            </button>
+            <button
               onClick={() => load(true)}
               disabled={refreshing || loading}
               className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-panel px-2.5 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:text-ink disabled:opacity-50">
@@ -451,6 +458,9 @@ export default function OpsBoard() {
           Live from BrightBase — jobs, invoices, quotes, conversations and integration health.
           Check-offs are saved on this device. Twilio balance and Square deposits aren't live yet.
         </p>
+
+        <BoardAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)}
+          sections={sections} navigate={navigate} />
       </div>
     </div>
   )
