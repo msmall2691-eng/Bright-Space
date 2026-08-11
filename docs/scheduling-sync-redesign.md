@@ -1,6 +1,7 @@
 # Scheduling Sync Redesign — the Sync Control Center
 
-**Status:** Phase 1 shipped (Sync Control Center). Phases 2–4 are a roadmap.
+**Status:** Phase 1 shipped (Sync Control Center). Phase 2 (`schedule_events` log)
+merged and dark. See **Current state** (below) for the live running log.
 
 This doc is the companion to [`workflow-map.md`](./workflow-map.md). Where the
 workflow map walks the operational pipeline (Request → … → Recurring), this one
@@ -8,6 +9,56 @@ is about the **sync layer** underneath Stage 3–4 — everything that keeps the
 BrightBase schedule in step with Google Calendar, Connecteam, and the Airbnb/VRBO
 rental feeds. It exists because that layer *felt* out of control, and the fix was
 mostly to make it **legible**.
+
+---
+
+## Current state (running log — updated 2026-08-11)
+
+A living snapshot so a fresh session doesn't pay a reconstruction tax. This is the
+first thing to read; update it as state changes.
+
+**⛔ Gate before resuming any work below:** a Railway Postgres credential rotation +
+routine access review is in progress. Do **not** resume the activation / Phase 3 work
+until the post-rotation `pg_roles` check is confirmed clean — an unexpected
+`rolcanlogin` role survives a password rotation and must be handled first.
+
+**Phase 2 — `schedule_events` log:** shipped and merged (#664, squash → `06d7860`).
+Append-only `schedule_events` + `projection_state`, a flush-listener dual-write, and
+migration 068. Currently **dark**: `SCHEDULE_EVENT_LOG_ENABLED` defaults OFF.
+
+- *Flag blast-radius (load-bearing invariant):* the flag gates only
+  `INSERT INTO schedule_events`, and **no code path reads the log**. Turning it on
+  therefore *writes rows* — it does **not** push to Google / Connecteam. Anyone who
+  adds a *reader* of the log changes that blast radius and must re-check the Phase 3
+  sequencing below.
+- *Activation PR — staged, paused on the gate above:* migration **069** drops the
+  `schedule_events` FKs (`job_id` CASCADE + `org_id`) — an append-only log must retain
+  a deleted job's history, and a `deleted`-event insert must not FK-violate on Postgres
+  (that would roll back the job deletion); make the flush listener **fail-safe** (a
+  logging error must never break a Job write); set `ENV SCHEDULE_EVENT_LOG_ENABLED=1`
+  in the Dockerfile to flip it on in prod without touching Railway; add a read-only
+  log-health card to the Sync Control Center; tests.
+
+**R1 baseline:** re-verified **14** ticks @ `af379fa` (2026-08-12) — `main` advanced
+through #661 / #670 / #671 / #673 / #674 / #675 since the `06d7860` pin and **none
+touched `backend/scheduler.py`**, so the count is unchanged. The ratchet may only go
+down — `git grep -c '_scheduler\.add_job(' backend/scheduler.py`.
+
+**⚠️ Open — Google Calendar durable idempotency token (BLOCKS the Phase 3 reconciler):**
+the GCal push calls `events().insert()` with no client-supplied event id, so a crash
+after the insert but before the `gcal_event_id` commit orphans a Google event.
+Connecteam already has durable intent (outbox + unique dedupe + skip-locked drain);
+GCal does not. Must be fixed **before** the Phase 3 reconciler pushes to Google from the
+log. Tracked as a blocking checkbox in the Phase 3 section and (to-do) an R4 "Known
+Violations" entry in the `scheduling-invariants` contract.
+
+**Phase 3 plan (after the live log is verified):** merge `sync_reconcile_tick` ∪
+`connecteam_outbox_drain_tick` into one reconciler that reads the log forward per
+`(target, job_id)`, advances `projection_state`, and does the idempotent push (giving
+GCal the durable token above). `schedule_audit` / `turnover_coverage` become reads off
+`projection_state`. Inbound ticks (iCal / gcal / gmail / watch-renew) stay out of scope.
+Producers (`recurring_jobs`, `str_turnover_autoassign`) stay upstream — they *emit*
+events, they don't reconcile.
 
 ---
 
