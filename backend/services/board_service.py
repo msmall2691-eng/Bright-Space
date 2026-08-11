@@ -242,7 +242,7 @@ def _sort_items(items: list) -> list:
 
 # ── The build ───────────────────────────────────────────────────────────────
 
-def build_board(db: Session, oid: int) -> dict:
+def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
     today = business_today()
     week_end = today + timedelta(days=7)
     horizon = today + timedelta(days=14)
@@ -486,7 +486,7 @@ def build_board(db: Session, oid: int) -> dict:
         ))
 
     # ── 🧰 Systems & Subscriptions (integration health) ─────────────────────
-    integrations, systems = _integration_health(db, org, today)
+    integrations, systems = _integration_health(db, oid, today)
 
     # Cheap "Tidy Up" nudge — clients sharing a phone (indexed phone_tail) are
     # likely duplicates. The full scan (clients/properties/quality) lives at
@@ -522,6 +522,15 @@ def build_board(db: Session, oid: int) -> dict:
         {"key": "systems", "title": "Systems & Subscriptions", "icon": "🧰", "items": _sort_items(systems)},
         {"key": "safe_to_ignore", "title": "Safe to Ignore", "icon": "🗑️", "items": safe},
     ]
+
+    # A read-only role (viewer/cleaner/client) sees the board but can't fire
+    # write actions from it — strip the one-click `api` actions server-side so
+    # the endpoint is the enforcement point, not just the UI. `link` actions
+    # (plain navigation) always stay.
+    if not can_act:
+        for sec in sections:
+            for it in sec["items"]:
+                it["actions"] = [a for a in it["actions"] if a.get("kind") != "api"]
 
     # --- Filter counts (per severity, across every section) ------------------
     filters = {"all": 0, "urgent": 0, "watch": 0, "info": 0, "good": 0, "recurring": 0}
@@ -565,17 +574,23 @@ def build_board(db: Session, oid: int) -> dict:
 
 # ── Integration health ──────────────────────────────────────────────────────
 
-def _integration_health(db: Session, org, today: date):
+def _integration_health(db: Session, oid: int, today: date):
     """Returns (chips, system_items). Chips are the status strip; system_items
     are the actionable cards (only integrations that need attention, plus recent
-    delivery failures) for the Systems & Subscriptions section."""
+    delivery failures) for the Systems & Subscriptions section.
+
+    Org-scoped: the Gmail/Calendar account counts and the delivery-failure count
+    are restricted to this tenant (tolerating legacy NULL-org rows), so one
+    org's board never reports another org's connected accounts or failures."""
+    org = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
     chips = []
     systems = []
 
-    connected = gmail_accounts(db)
+    connected = gmail_accounts(db, oid)
     expired = (
         db.query(func.count(UserGoogleAccount.id))
-        .filter(UserGoogleAccount.gmail_sync_enabled.is_(True), UserGoogleAccount.status != "connected")
+        .filter(org(UserGoogleAccount),
+                UserGoogleAccount.gmail_sync_enabled.is_(True), UserGoogleAccount.status != "connected")
         .scalar()
     ) or 0
     if connected:
@@ -593,7 +608,7 @@ def _integration_health(db: Session, org, today: date):
             actions=[_link("Reconnect", "/settings")], source="integration",
         ))
 
-    cal = calendar_account(db) or _setting(db, "google_token")
+    cal = calendar_account(db, oid) or _setting(db, "google_token")
     chips.append({"key": "calendar", "label": "Calendar", "status": "connected" if cal else "off",
                   "detail": "synced" if cal else "not connected", "tone": "green" if cal else "gray"})
 

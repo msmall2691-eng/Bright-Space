@@ -40,10 +40,13 @@ router = APIRouter()
 # before the duplicate can be deleted. Keep in lockstep with the model
 # (grep `ForeignKey("clients.id"`); a missing table would orphan rows or fail
 # the delete on Postgres' FK constraint.
+#
+# ContactEmail/ContactPhone are handled separately by _merge_contact_rows (NOT
+# a blind reassign): the multi-value contact tables need dedup-on-merge so the
+# primary doesn't end up with two identical emails or two is_primary=True rows.
 _CLIENT_FK_MODELS = [
     User, Property, RecurringSchedule, Job, LeadIntake, Invoice,
-    Conversation, Message, Opportunity, ContactEmail, ContactPhone,
-    Activity, Quote,
+    Conversation, Message, Opportunity, Activity, Quote,
 ]
 
 # Fill-if-missing scalar fields copied from the duplicate onto the primary.
@@ -242,6 +245,29 @@ def cleanup_scan(db: Session = Depends(get_db), org_id: int = Depends(current_or
     }
 
 
+def _merge_contact_rows(db: Session, model, keyfn, primary_id: int, dup_id: int) -> None:
+    """Fold the duplicate's multi-value contact rows (ContactEmail/ContactPhone)
+    into the primary, deduped by normalized key.
+
+    A blind ``client_id`` reassign would give the primary two copies of a shared
+    email/phone and (worse) a second ``is_primary=True`` row. Instead: a dup row
+    whose key the primary already carries is redundant → deleted; a genuinely new
+    one is reassigned but demoted (``is_primary=False``) so the primary keeps its
+    own primary contact. Unkeyable rows (blank/short) are dropped."""
+    existing = {
+        keyfn(r) for r in db.query(model).filter(model.client_id == primary_id).all()
+    }
+    existing.discard(None)
+    for row in db.query(model).filter(model.client_id == dup_id).all():
+        key = keyfn(row)
+        if key is None or key in existing:
+            db.delete(row)          # redundant or unkeyable — drop it
+            continue
+        row.client_id = primary_id
+        row.is_primary = False      # primary already owns its primary contact
+        existing.add(key)
+
+
 class MergeClientsBody(BaseModel):
     primary_id: int
     duplicate_id: int
@@ -266,7 +292,18 @@ def merge_clients(body: MergeClientsBody, db: Session = Depends(get_db),
     if not primary or not dup:
         raise HTTPException(404, "client not found in this workspace")
 
-    # Preserve the duplicate's primary contact points as additional values.
+    # Fold the duplicate's multi-value contact rows into the primary (deduped
+    # by normalized key — see _merge_contact_rows), then flush so the scalar
+    # captures below dedup against the merged set.
+    _merge_contact_rows(db, ContactEmail,
+                        lambda r: (r.email or "").strip().lower() or None,
+                        primary.id, dup.id)
+    _merge_contact_rows(db, ContactPhone, lambda r: phone_last10(r.phone),
+                        primary.id, dup.id)
+    db.flush()
+
+    # Preserve the duplicate's primary-column contact points as additional
+    # values (add_contact_* is a no-op when the primary already has them).
     if (dup.email or "").strip().lower() != (primary.email or "").strip().lower():
         add_contact_email(db, primary, dup.email, source="merge")
     if phone_last10(dup.phone) and phone_last10(dup.phone) != phone_last10(primary.phone):

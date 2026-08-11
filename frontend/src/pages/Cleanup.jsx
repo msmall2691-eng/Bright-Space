@@ -78,20 +78,32 @@ export default function Cleanup() {
   async function doMerge(g) {
     const primaryId = primaryFor(g)
     const dups = g.clients.filter(c => c.id !== primaryId)
+    const primaryName = g.clients.find(c => c.id === primaryId)?.name || 'client'
     setBusyKey(g.key)
+    let done = 0
     try {
       for (const d of dups) {
         await post('/api/cleanup/clients/merge', { primary_id: primaryId, duplicate_id: d.id })
+        done += 1
       }
+      // All merged — drop the resolved group locally.
       setData(prev => ({
         ...prev,
         duplicate_clients: prev.duplicate_clients.filter(x => x.key !== g.key),
         summary: { ...prev.summary, duplicate_client_groups: Math.max(0, prev.summary.duplicate_client_groups - 1) },
       }))
-      const primaryName = g.clients.find(c => c.id === primaryId)?.name || 'client'
-      setNote(`Merged ${dups.length} duplicate${dups.length === 1 ? '' : 's'} into ${primaryName}.`)
+      setNote(`Merged ${done} duplicate${done === 1 ? '' : 's'} into ${primaryName}.`)
     } catch {
-      setNote('Merge failed — nothing was changed. Try again.')
+      // A merge partway through a 3+ group failed AFTER earlier ones already
+      // committed (those can't be undone). Don't claim "nothing changed" —
+      // report the partial result and rescan so the half-merged group refreshes
+      // (a retry would otherwise fail on the already-deleted duplicate).
+      if (done > 0) {
+        setNote(`Merged ${done} of ${dups.length} into ${primaryName}, then hit an error — rescanning.`)
+        await load()
+      } else {
+        setNote('Merge failed — nothing was changed. Try again.')
+      }
     } finally {
       setBusyKey(null); setConfirmKey(null)
     }

@@ -103,3 +103,61 @@ def test_scan_finds_dupes_then_merge_moves_records(client):
     still = next((g for g in scan2["duplicate_clients"]
                   if dup in {c["id"] for c in g["clients"]}), None)
     assert still is None
+
+
+def _add_email(cid, email, is_primary):
+    db = SessionLocal()
+    db.add(ContactEmail(client_id=cid, email=email, is_primary=is_primary))
+    db.commit(); db.close()
+
+
+def _add_phone(cid, phone, is_primary):
+    from utils.contacts import phone_last10 as _tail
+    db = SessionLocal()
+    db.add(ContactPhone(client_id=cid, phone=phone, phone_tail=_tail(phone), is_primary=is_primary))
+    db.commit(); db.close()
+
+
+def test_merge_dedups_contacts_no_double_primary(client):
+    """A shared email/phone that exists on BOTH records must not leave the primary
+    with a duplicate contact row or a second is_primary=True. Distinct contacts
+    from the duplicate carry over (demoted to non-primary)."""
+    api, ids = client
+    primary = _mk_client(ids, "Sam Rowe", "(207) 555-0100", email="sam@home.com")
+    dup = _mk_client(ids, "Sam Rowe", "207-555-0100", email="sam@work.com")
+
+    # Both carry the same additional email + phone; the dup also has distinct ones.
+    _add_email(primary, "shared@x.com", is_primary=True)
+    _add_email(dup, "shared@x.com", is_primary=True)      # collides with primary's
+    _add_email(dup, "extra@x.com", is_primary=False)      # genuinely new
+    _add_phone(primary, "+12075550100", is_primary=True)
+    _add_phone(dup, "+12075550100", is_primary=True)      # collides (same last-10)
+    _add_phone(dup, "+12075559999", is_primary=False)     # genuinely new
+
+    res = api.post("/api/cleanup/clients/merge",
+                   json={"primary_id": primary, "duplicate_id": dup}).json()
+    assert res["removed"] == dup
+
+    db = SessionLocal()
+    try:
+        emails = db.query(ContactEmail).filter(ContactEmail.client_id == primary).all()
+        by_addr = {}
+        for e in emails:
+            by_addr[e.email] = by_addr.get(e.email, 0) + 1
+        assert by_addr.get("shared@x.com") == 1, "shared email duplicated on merge"
+        assert "extra@x.com" in by_addr, "duplicate's distinct email not carried over"
+        assert sum(1 for e in emails if e.is_primary) == 1, "primary must keep exactly one primary email"
+
+        phones = db.query(ContactPhone).filter(ContactPhone.client_id == primary).all()
+        tails = {}
+        for p in phones:
+            tails[p.phone_tail] = tails.get(p.phone_tail, 0) + 1
+        assert tails.get("2075550100") == 1, "shared phone duplicated on merge"
+        assert "2075559999" in tails, "duplicate's distinct phone not carried over"
+        assert sum(1 for p in phones if p.is_primary) == 1, "primary must keep exactly one primary phone"
+
+        # duplicate's contact rows are all gone from its id
+        assert db.query(ContactEmail).filter(ContactEmail.client_id == dup).count() == 0
+        assert db.query(ContactPhone).filter(ContactPhone.client_id == dup).count() == 0
+    finally:
+        db.close()

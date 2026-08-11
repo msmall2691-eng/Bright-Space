@@ -26,6 +26,11 @@ class _Admin:
     email = "board-admin@example.com"
 
 
+class _Viewer:
+    id, org_id, role, status, active = 7404, 1, "viewer", "active", True
+    email = "board-viewer@example.com"
+
+
 @pytest.fixture
 def client():
     app.dependency_overrides[get_current_user] = lambda: _Admin()
@@ -144,3 +149,32 @@ def test_board_shape_and_stat_deltas(client):
     assert f"job:{jid}" in after_ids                 # unassigned-today → Needs You Today
     assert "money:outstanding" in after_ids          # overdue invoice → Money summary card
     assert after["filters"]["all"] > before["filters"]["all"]
+
+
+def test_viewer_board_strips_one_click_api_actions(client):
+    """A read-only role sees the board but not the one-click write actions — the
+    api actions (auto-assign, mark paid, resolve) are dropped server-side so the
+    endpoint, not the UI, is the enforcement point. link (navigation) stays."""
+    api, ids = client
+
+    # Seed signals that generate api actions (auto-assign an unassigned job,
+    # mark an overdue invoice paid).
+    cid = _mk_client(ids)
+    pid = _mk_property(ids, cid)
+    _mk_unassigned_job_today(ids, cid, pid)
+    _mk_overdue_invoice(ids, cid)
+
+    # Admin (fixture default) gets the one-click api buttons...
+    admin_board = api.get("/api/dashboard/board").json()
+    admin_actions = [a for s in admin_board["sections"] for it in s["items"] for a in it["actions"]]
+    assert any(a["kind"] == "api" for a in admin_actions), "admin should get one-click api actions"
+
+    # ...a viewer sees the same board with every api action stripped.
+    app.dependency_overrides[get_current_user] = lambda: _Viewer()
+    viewer_board = api.get("/api/dashboard/board").json()
+    viewer_items = [it for s in viewer_board["sections"] for it in s["items"]]
+    assert viewer_items, "viewer should still see board items"
+    for it in viewer_items:
+        assert all(a["kind"] != "api" for a in it["actions"]), f"api action leaked to viewer on {it['id']}"
+    # Navigation actions are preserved.
+    assert any(a["kind"] == "link" for it in viewer_items for a in it["actions"])
