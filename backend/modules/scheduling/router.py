@@ -2926,6 +2926,7 @@ def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
             client_id=job.client_id,
             job_id=job.id,
             opportunity_id=job.opportunity_id,
+            org_id=job.org_id,  # MT-2: inherit the job's workspace (was unset → NULL-org invoice visible to every tenant)
             items=items,
             subtotal=round(subtotal, 2),
             tax_rate=tax_rate,
@@ -2936,8 +2937,13 @@ def _auto_create_draft_invoice(db: Session, job: "Job") -> None:
             notes=job.notes or "",
         )
         db.add(invoice)
+        db.flush()  # materialize the PK so the number can derive from it
+        # REQUIRED: without a number, send_invoice / reminders mail the customer
+        # "Invoice None". Shared helper keeps the manual + auto paths identical.
+        from modules.invoicing.router import assign_invoice_number
+        assign_invoice_number(db, invoice)
         db.commit()
-        logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} from completed Job {job.id}")
+        logger.info(f"[auto-invoice] created draft Invoice id={invoice.id} number={invoice.invoice_number} from completed Job {job.id}")
     except Exception as e:
         logger.warning(f"[auto-invoice] failed for job {job.id}: {e}")
 
