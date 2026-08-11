@@ -120,6 +120,7 @@ const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
+const SyncCenter = lazy(() => import('./pages/SyncCenter'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -236,6 +237,11 @@ export default function App() {
               <Route path="/invoicing" element={<Navigate to="/billing?view=invoices" replace />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
+              {/* Sync Control Center — one screen for every external schedule
+                  BrightBase pushes to / pulls from (Google, Connecteam, Airbnb
+                  feeds, recurring), the background ticks, and the master
+                  auto-pilot switch. */}
+              <Route path="/sync" element={<SyncCenter />} />
               {/* Calendar dropped — native Schedule covers it (and syncs to GCal). */}
               <Route path="/calendar" element={<Navigate to="/schedule" replace />} />
               {/* Schedule reads the view mode from ?view=, not ?tab= (?tab=

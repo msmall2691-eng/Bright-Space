@@ -1256,6 +1256,12 @@ class AutomationConfig(BaseModel):
     # external edits reflect in seconds instead of on the ~poll interval. Needs
     # a public https base URL.
     gcal_live_sync: Optional[bool] = None
+    # Whether the 30-min self-heal reconcile tick runs (pushes any unsynced
+    # jobs to Google + dispatches Connecteam). Part of the Sync Control Center
+    # master "auto-pilot" switch: turning auto-pilot off also stops the
+    # background reconcile, so a "Manual syncs only" state doesn't keep syncing
+    # via this tick. The tick already re-reads this flag each run.
+    sync_reconcile_enabled: Optional[bool] = None
     # Real-time Gmail push (users.watch → Pub/Sub → webhook) instead of polling.
     # OFF by default and inert unless GMAIL_PUBSUB_TOPIC is configured.
     gmail_live_sync: Optional[bool] = None
