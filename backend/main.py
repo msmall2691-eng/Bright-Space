@@ -31,6 +31,9 @@ from auth_jwt import verify_jwt
 from ratelimit import limiter
 from database.db import init_db
 from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
+# Registers the Phase 2 schedule_events dual-write flush listener. A no-op unless
+# SCHEDULE_EVENT_LOG_ENABLED is set (dark-launched, additive — see the service).
+import services.schedule_events  # noqa: F401,E402
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
 from modules.scheduling.router import router as scheduling_router
