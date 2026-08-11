@@ -5417,13 +5417,58 @@ export interface paths {
         /**
          * My Day
          * @description Today's jobs (plus the next `days`-1 as a preview) assigned to the
-         *     caller's crew ID. Returns 400 with a clear message if the account has no
-         *     cleaner_id linked yet, rather than silently returning an empty list —
-         *     that distinction matters (mis-set account vs. genuinely no jobs).
+         *     caller's crew ID, plus their native time-clock status. Returns 400 with a
+         *     clear message if the account has no cleaner_id linked yet, rather than
+         *     silently returning an empty list — that distinction matters (mis-set
+         *     account vs. genuinely no jobs).
          */
         get: operations["my_day_api_crew_my_day_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/clock-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clock In
+         * @description Start a punch. One open punch per cleaner — a second clock-in while
+         *     already on the clock is a 409 (clock out first). Phase 2a: recorded only,
+         *     never read by payroll.
+         */
+        post: operations["clock_in_api_crew_clock_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/clock-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clock Out
+         * @description Close the open punch. 400 if not currently clocked in. break_minutes is
+         *     clamped to the elapsed time so a fat-fingered break can't make worked hours
+         *     negative.
+         */
+        post: operations["clock_out_api_crew_clock_out_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5915,6 +5960,18 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ClockInBody */
+        ClockInBody: {
+            /** Job Id */
+            job_id?: number | null;
+        };
+        /** ClockOutBody */
+        ClockOutBody: {
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Note */
+            note?: string | null;
         };
         /** ConnecteamConfig */
         ConnecteamConfig: {
@@ -16009,6 +16066,72 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clock_in_api_crew_clock_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClockInBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clock_out_api_crew_clock_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClockOutBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

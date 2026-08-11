@@ -1,18 +1,19 @@
 /**
  * My Day — the crew-facing landing page for role="cleaner" logins.
  *
- * Deliberately narrow: a cleaner sees only the jobs already assigned to
- * their crew ID (GET /api/crew/my-day), nothing else in the CRM. No
- * navigation chrome beyond logout — this is meant to be opened once on a
- * phone at the start of a shift, not browsed.
+ * Deliberately narrow: a cleaner sees only the jobs already assigned to their
+ * crew ID (GET /api/crew/my-day), nothing else in the CRM. No navigation chrome
+ * beyond logout — meant to be opened on a phone at the start of a shift.
  *
- * Phase 1 (native crew directory): read-only. No clock-in yet — this page
- * is the "can a cleaner see their day without Connecteam" step; clock-in
- * with GPS + offline queue is the next phase, once this is trusted.
+ * Phase 1: read-only job list. Phase 2a (this file): a native time clock —
+ * Clock in / Clock out per job, a live "on the clock" bar, and hours today.
+ * The clock is recorded natively but is NOT wired into payroll yet (payroll
+ * still reads Connecteam); it exists to prove the clock works and to build up
+ * hours to reconcile against Connecteam before any cutover.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays } from 'lucide-react'
-import { get, logout } from '../api'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock } from 'lucide-react'
+import { get, post, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
@@ -23,10 +24,19 @@ function fmtTimeRange(start, end) {
   return start || end
 }
 
-function JobCard({ job }) {
+function fmtDuration(ms) {
+  const totalMin = Math.max(0, Math.floor(ms / 60000))
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
+  const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
+  const someoneElseActive = clockable && activeEntry && activeEntry.job_id !== job.id
   return (
-    <div className={`${SOFT} p-4`}>
+    <div className={`${SOFT} p-4 ${isActiveJob ? 'ring-2 ring-emerald-500/60' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-base font-bold text-ink tabular-nums">
@@ -77,6 +87,27 @@ function JobCard({ job }) {
       {job.crew_size > 1 && (
         <div className="mt-2 text-[11px] text-ink-3">{job.crew_size} on this job</div>
       )}
+
+      {clockable && (
+        <div className="mt-3 border-t border-hairline pt-3">
+          {isActiveJob ? (
+            <button onClick={onClockOut} disabled={busy}
+              className="w-full text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
+              Clock out
+            </button>
+          ) : someoneElseActive ? (
+            <button disabled title="Clock out of your current job first"
+              className="w-full text-[13px] font-medium bg-panel border border-hairline text-ink-3 py-2 rounded-lg cursor-not-allowed">
+              Clock in
+            </button>
+          ) : (
+            <button onClick={onClockIn} disabled={busy}
+              className="w-full text-[13px] font-semibold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 rounded-lg transition-colors">
+              Clock in
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -85,39 +116,97 @@ export default function MyDay() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [actionBusy, setActionBusy] = useState(false)
+  const [actionError, setActionError] = useState(null)
+  const [now, setNow] = useState(() => new Date())
 
-  const load = useCallback(() => {
-    setLoading(true); setError(null)
-    get('/api/crew/my-day')
+  const fetchDay = useCallback((silent = false) => {
+    if (!silent) { setLoading(true); setError(null) }
+    return get('/api/crew/my-day')
       .then(setData)
-      .catch(e => setError(e))
-      .finally(() => setLoading(false))
+      .catch(e => { if (!silent) setError(e) })
+      .finally(() => { if (!silent) setLoading(false) })
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { fetchDay() }, [fetchDay])
+
+  const clock = data?.clock
+  const active = clock?.active || null
+
+  // Tick the "on the clock" elapsed display while a punch is open.
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(id)
+  }, [active])
+
+  const clockIn = useCallback(async (jobId) => {
+    setActionBusy(true); setActionError(null)
+    try { await post('/api/crew/clock-in', { job_id: jobId ?? null }); await fetchDay(true) }
+    catch (e) { setActionError(e.detail || e.message || 'Could not clock in') }
+    finally { setActionBusy(false) }
+  }, [fetchDay])
+
+  const clockOut = useCallback(async () => {
+    setActionBusy(true); setActionError(null)
+    try { await post('/api/crew/clock-out', {}); await fetchDay(true) }
+    catch (e) { setActionError(e.detail || e.message || 'Could not clock out') }
+    finally { setActionBusy(false) }
+  }, [fetchDay])
 
   const longDate = new Date().toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric',
   })
 
+  const activeJob = active && data?.today?.find(j => j.id === active.job_id)
+  const hoursToday = clock?.hours_today || 0
+
   return (
     <div className="min-h-screen bg-bg">
-      <header className="sticky top-0 z-10 bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
-        <div>
-          <div className="text-sm font-bold text-ink">My Day</div>
-          <div className="text-[12px] text-ink-3">{longDate}</div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={load} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Refresh">
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          <button onClick={logout} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Log out">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+      <div className="sticky top-0 z-10">
+        <header className="bg-panel border-b border-hairline px-4 py-3 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-bold text-ink">My Day</div>
+            <div className="text-[12px] text-ink-3">{longDate}</div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => fetchDay()} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Refresh">
+              <RefreshCw className="w-4 h-4" />
+            </button>
+            <button onClick={logout} className="p-2 rounded-lg text-ink-3 hover:text-ink hover:bg-bg-2" title="Log out">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+
+        {active && (
+          <div className="bg-emerald-600 text-white px-4 py-2.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Clock className="w-4 h-4 shrink-0" />
+              <div className="min-w-0 leading-tight">
+                <div className="text-[13px] font-semibold truncate">
+                  On the clock{activeJob ? ` · ${activeJob.property_name || activeJob.title}` : ''}
+                </div>
+                <div className="text-[11px] opacity-90 tabular-nums">
+                  {fmtDuration(now - new Date(active.clock_in_at))}
+                </div>
+              </div>
+            </div>
+            <button onClick={clockOut} disabled={actionBusy}
+              className="shrink-0 text-[13px] font-semibold bg-white/15 hover:bg-white/25 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors">
+              Clock out
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="px-4 py-4 max-w-lg mx-auto space-y-5">
+        {actionError && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {actionError}
+          </div>
+        )}
+
         {loading && (
           <div className="space-y-3">
             {[0, 1].map(i => <Skeleton key={i} className="h-28 w-full rounded-xl" />)}
@@ -132,19 +221,34 @@ export default function MyDay() {
               compact
             />
           ) : (
-            <ErrorState onRetry={load} compact />
+            <ErrorState onRetry={() => fetchDay()} compact />
           )
         )}
 
         {!loading && !error && data && (
           <>
             <section>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">Today</h2>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Today</h2>
+                {hoursToday > 0 && (
+                  <span className="text-[11px] text-ink-3 tabular-nums">{hoursToday}h logged today</span>
+                )}
+              </div>
               {data.today.length === 0 ? (
                 <EmptyState icon={CalendarDays} title="Nothing scheduled today" compact />
               ) : (
                 <div className="space-y-3">
-                  {data.today.map(j => <JobCard key={j.id} job={j} />)}
+                  {data.today.map(j => (
+                    <JobCard
+                      key={j.id}
+                      job={j}
+                      clockable
+                      activeEntry={active}
+                      onClockIn={() => clockIn(j.id)}
+                      onClockOut={clockOut}
+                      busy={actionBusy}
+                    />
+                  ))}
                 </div>
               )}
             </section>

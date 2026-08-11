@@ -22,6 +22,8 @@ TENANT_TABLES = [
     # Phase 2 scheduling redesign (migration 068): the append-only event log and
     # per-target projection bookkeeping. Both carry org_id.
     "schedule_events", "projection_state",
+    # Native crew time clock (migration 070): clock-in/out punches, org-scoped.
+    "time_entries",
 ]
 
 POLICY = "bb_org_isolation"

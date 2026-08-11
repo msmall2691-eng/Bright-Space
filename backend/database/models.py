@@ -656,6 +656,62 @@ class Job(Base):
 
 
 
+class TimeEntry(Base):
+    """A crew clock-in/out punch — BrightBase's native time & attendance record
+    (Phase 2a of the native crew app).
+
+    This is a NEW canonical domain: *when a cleaner actually worked*. It is
+    distinct from the schedule (Job owns date/time/assignment) and from job
+    completion (Job.completed_at is a "marked done" stamp, not worked time).
+    Writing a punch never touches Job schedule state, so it stays clear of the
+    scheduling-authority contract.
+
+    Deliberately NOT wired into payroll yet — payroll still reads Connecteam
+    Time Clock punches. This table exists to (a) prove a native clock works and
+    (b) accumulate real hours to reconcile against Connecteam before any cutover.
+
+    cleaner_id is the same string identifier Job.cleaner_ids / User.cleaner_id
+    use (a Connecteam employee id today), so a punch ties to the same person the
+    schedule assigns. job_id (nullable) links a punch to the job being worked —
+    the hook a future native payroll will use to classify hours by job_type —
+    but nothing reads it for pay in Phase 2a.
+    """
+    __tablename__ = "time_entries"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    cleaner_id = Column(String, nullable=False, index=True)   # matches Job.cleaner_ids / User.cleaner_id
+    # The login that punched (audit / a future "edit my timesheet"). SET NULL so
+    # deleting a user never destroys the worked-time record.
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Optional link to the job being worked; SET NULL so cancelling/deleting a
+    # job never erases that someone was present and working.
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Naive UTC, matching the rest of the app's stored timestamps. The endpoints
+    # set these explicitly (not via a column default) so clock arithmetic never
+    # mixes aware/naive datetimes.
+    clock_in_at = Column(DateTime, nullable=False)
+    clock_out_at = Column(DateTime, nullable=True)    # NULL = still on the clock (open punch)
+    break_minutes = Column(Integer, nullable=False, default=0)
+    note = Column(Text, nullable=True)
+    # 'native' today; room to tag an imported/Connecteam-sourced entry later
+    # without a migration.
+    source = Column(String(16), nullable=False, default="native")
+
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    job = relationship("Job")
+
+    __table_args__ = (
+        # "Am I currently clocked in?" — the open-punch lookup (clock_out IS NULL).
+        Index("idx_time_entry_cleaner_open", "cleaner_id", "clock_out_at"),
+        # "My punches for a day" — hours-today / history.
+        Index("idx_time_entry_cleaner_in", "cleaner_id", "clock_in_at"),
+    )
+
+
 class LeadIntake(Base):
     """Initial contact form submission from lead before client/opportunity creation."""
     __tablename__ = "lead_intakes"
