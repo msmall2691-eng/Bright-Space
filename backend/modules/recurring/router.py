@@ -638,6 +638,46 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
     if timeless:
         db.flush()
 
+    # Availability guards — mirror the one-off create path (create_job) so a
+    # recurring occurrence never SILENTLY double-books a cleaner, books someone
+    # on approved time off, or blows past the daily cap. Reuses the scheduling
+    # helpers (one source of truth for "is this cleaner free"), imported at call
+    # time to avoid an import cycle between the two routers. Canonical logic —
+    # no projection/inbox touched, no new tick (scheduling-invariants R1/R2).
+    from modules.scheduling.router import (
+        _find_cleaner_conflicts, _find_unavailable_cleaners, _find_over_capacity,
+    )
+
+    def _available_cleaners(d):
+        """The schedule's crew minus anyone busy / off / over-cap on date d.
+        We DROP the conflicting cleaner rather than skip the cleaning (R7: never
+        silently lose canonical work) — the occurrence is still created, just
+        unassigned/partially-assigned so it surfaces on the board for a human to
+        reassign, instead of a hidden conflict pushed to the cleaner's app."""
+        crew = [str(c) for c in (sched.cleaner_ids or [])]
+        if not crew:
+            return []
+        blocked = set()
+        for cid, _ in _find_cleaner_conflicts(db, cleaner_ids=crew, scheduled_date=d,
+                                              start_time=sched.start_time,
+                                              end_time=sched.end_time, org_id=sched.org_id):
+            blocked.add(str(cid))
+        for cid, _ in _find_unavailable_cleaners(db, cleaner_ids=crew,
+                                                 scheduled_date=d, org_id=sched.org_id):
+            blocked.add(str(cid))
+        for cid, _ in _find_over_capacity(db, cleaner_ids=crew,
+                                          scheduled_date=d, org_id=sched.org_id):
+            blocked.add(str(cid))
+        if blocked:
+            kept = [c for c in crew if c not in blocked]
+            logger.info(
+                f"[recurring] schedule {sched.id} on {d}: dropped busy/off/over-cap "
+                f"cleaner(s) {sorted(blocked)} → occurrence created "
+                f"{'unassigned' if not kept else 'with ' + str(kept)} for reassignment"
+            )
+            return kept
+        return crew
+
     for d in dates:
         if d in cancelled_dates:
             # User cancelled this occurrence already; do not resurrect it.
@@ -658,7 +698,7 @@ def generate_jobs(db: Session, sched: RecurringSchedule) -> int:
             start_time=sched.start_time,
             end_time=sched.end_time,
             address=sched.address,
-            cleaner_ids=sched.cleaner_ids or [],
+            cleaner_ids=_available_cleaners(d),
             status="scheduled",
             notes=sched.notes,
             org_id=sched.org_id,  # MT-2: inherit the schedule's tenant

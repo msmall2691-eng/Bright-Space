@@ -49,10 +49,24 @@ class InvoiceUpdate(BaseModel):
     custom_fields: Optional[dict] = None
 
 
-def next_invoice_number(db: Session) -> str:
-    from sqlalchemy import func, text
-    max_id = db.query(func.max(Invoice.id)).scalar() or 0
-    return f"INV-{str(max_id + 1).zfill(4)}"
+def assign_invoice_number(db: Session, inv: Invoice) -> str:
+    """Assign a race-free invoice number derived from the row's own primary key.
+
+    The old `max(Invoice.id)+1` raced two concurrent creates onto the same
+    number (unique-violation 500) and was a single global counter. The PK is
+    unique and monotonic, so deriving from it is collision-free — the same
+    approach the quote numbering already uses. Idempotent (never overwrites an
+    existing number); flushes to materialize the PK when needed.
+
+    Every path that creates an invoice MUST call this. An unnumbered invoice
+    mails the customer an email/SMS titled "Invoice None" (the auto-invoice on
+    job completion skipped it — see modules/scheduling/router.py)."""
+    if inv.invoice_number:
+        return inv.invoice_number
+    if inv.id is None:
+        db.flush()
+    inv.invoice_number = f"INV-{str(inv.id).zfill(4)}"
+    return inv.invoice_number
 
 
 def calc_totals(items: list, tax_rate: float) -> tuple:
@@ -138,7 +152,6 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), org_id: i
         job_id=data.job_id,
         opportunity_id=data.opportunity_id,
         org_id=resolve_org_id(org_id, db),  # MT-2: stamp the caller's workspace
-        invoice_number=next_invoice_number(db),
         items=items,
         subtotal=subtotal,
         tax_rate=data.tax_rate or 0,
@@ -149,6 +162,8 @@ def create_invoice(data: InvoiceCreate, db: Session = Depends(get_db), org_id: i
         custom_fields=data.custom_fields or {},
     )
     db.add(inv)
+    db.flush()                      # materialize the PK
+    assign_invoice_number(db, inv)  # race-free number derived from it
     db.commit()
     db.refresh(inv)
     # Timeline: record the invoice being raised (best-effort — never block the
@@ -269,8 +284,11 @@ def send_invoice(invoice_id: int, data: SendInvoiceRequest, db: Session = Depend
 
     client = db.query(Client).filter(Client.id == inv.client_id).first()
     client_name = client.name if client else f"Client #{inv.client_id}"
+    # Heal invoices auto-created without a number (older completions) so the
+    # customer never receives an email/SMS titled "Invoice None". The set value
+    # persists on the db.commit() at the end of this handler.
+    inv_num = assign_invoice_number(db, inv)
     inv_dict = invoice_to_dict(inv)
-    inv_num = inv.invoice_number
     company_phone = os.getenv("TWILIO_PHONE_NUMBER", "")
     results = {}
 

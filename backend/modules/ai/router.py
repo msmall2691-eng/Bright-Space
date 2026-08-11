@@ -836,7 +836,7 @@ def _draft_one(inv: Invoice, client, client_ai) -> dict:
         if not msg:
             return _fallback_reminder(name, inv, od)
         return {
-            "subject": (data.get("subject") or f"Reminder: invoice {inv.invoice_number}").strip(),
+            "subject": (data.get("subject") or f"Reminder: invoice {inv.invoice_number or ('INV-' + str(inv.id))}").strip(),
             "message": msg,
         }
     except Exception:
@@ -846,17 +846,18 @@ def _draft_one(inv: Invoice, client, client_ai) -> dict:
 
 def _fallback_reminder(name, inv: Invoice, od: Optional[int]) -> dict:
     amount = f"${(inv.total or 0):,.2f}"
+    num = inv.invoice_number or f"INV-{inv.id}"  # never surface "invoice None" to a customer
     if od:
         body = (f"Hi {name}, just a friendly reminder that invoice "
-                f"{inv.invoice_number} for {amount} is now {od} day(s) past due. "
+                f"{num} for {amount} is now {od} day(s) past due. "
                 f"When you have a moment, please send payment at your earliest "
                 f"convenience — and let us know if you have any questions. Thank you!")
     else:
-        body = (f"Hi {name}, a quick reminder about invoice {inv.invoice_number} "
+        body = (f"Hi {name}, a quick reminder about invoice {num} "
                 f"for {amount}"
                 + (f", due {inv.due_date}" if inv.due_date else "")
                 + ". Thanks so much for your business!")
-    return {"subject": f"Reminder: invoice {inv.invoice_number}", "message": body}
+    return {"subject": f"Reminder: invoice {num}", "message": body}
 
 
 # ── GET /api/ai/overdue-reminders ───────────────────────────────────────────

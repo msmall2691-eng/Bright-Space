@@ -23,10 +23,25 @@ from database.db import get_db
 from database.models import (
     Quote, LeadIntake, Client, Invoice, Job, RecurringSchedule,
 )
-from modules.auth.router import require_role, current_org_id, resolve_org_id
+from modules.auth.router import require_role, current_org_id, resolve_org_id, get_current_user
 from utils.dates import business_today
+from services.board_service import build_board
 
 router = APIRouter()
+
+
+@router.get("/board", dependencies=[Depends(require_role("admin", "manager", "viewer"))])
+def dashboard_board(db: Session = Depends(get_db), org_id: int = Depends(current_org_id),
+                    user=Depends(get_current_user)):
+    """Unified Ops Board payload — stat tiles, integration chips, per-severity
+    filter counts, and the six triage sections — in one org-scoped round trip.
+    Backs the iOS-style board at /dashboard (see services/board_service.py)."""
+    oid = resolve_org_id(org_id, db)
+    # Viewers can see the board but not act — the mutation endpoints require
+    # admin/manager, so drop the one-click api actions rather than surface
+    # buttons that deterministically 403 (member acts like manager).
+    can_act = getattr(user, "role", None) in ("admin", "manager", "member")
+    return build_board(db, oid, can_act=can_act)
 
 
 @router.get("/summary", dependencies=[Depends(require_role("admin", "manager", "viewer"))])

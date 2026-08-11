@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.models import UserGoogleAccount
@@ -87,27 +88,36 @@ def account_credentials(db: Session, account: UserGoogleAccount):
     return creds
 
 
-def calendar_account(db: Session) -> Optional[UserGoogleAccount]:
+def _org_scope(query, org_id: Optional[int]):
+    """Optionally restrict a UserGoogleAccount query to one org (tolerating
+    legacy NULL-org rows). Background sync callers pass org_id=None and get
+    every org's accounts, exactly as before."""
+    if org_id is None:
+        return query
+    return query.filter(
+        or_(UserGoogleAccount.org_id == org_id, UserGoogleAccount.org_id.is_(None))
+    )
+
+
+def calendar_account(db: Session, org_id: Optional[int] = None) -> Optional[UserGoogleAccount]:
     """The connected account that should drive calendar sync (v1: the most
-    recently connected one with the calendar channel enabled)."""
-    return (
-        db.query(UserGoogleAccount)
-        .filter(UserGoogleAccount.gcal_sync_enabled == True,  # noqa: E712
-                UserGoogleAccount.status == "connected")
-        .order_by(UserGoogleAccount.connected_at.desc())
-        .first()
+    recently connected one with the calendar channel enabled). Pass org_id to
+    scope to a single tenant (the sync layer runs unscoped across all orgs)."""
+    q = db.query(UserGoogleAccount).filter(
+        UserGoogleAccount.gcal_sync_enabled == True,  # noqa: E712
+        UserGoogleAccount.status == "connected",
     )
+    return _org_scope(q, org_id).order_by(UserGoogleAccount.connected_at.desc()).first()
 
 
-def gmail_accounts(db: Session) -> list:
-    """Every connected account with the Gmail channel enabled."""
-    return (
-        db.query(UserGoogleAccount)
-        .filter(UserGoogleAccount.gmail_sync_enabled == True,  # noqa: E712
-                UserGoogleAccount.status == "connected")
-        .order_by(UserGoogleAccount.connected_at.asc())
-        .all()
+def gmail_accounts(db: Session, org_id: Optional[int] = None) -> list:
+    """Every connected account with the Gmail channel enabled. Pass org_id to
+    scope to a single tenant (the sync layer runs unscoped across all orgs)."""
+    q = db.query(UserGoogleAccount).filter(
+        UserGoogleAccount.gmail_sync_enabled == True,  # noqa: E712
+        UserGoogleAccount.status == "connected",
     )
+    return _org_scope(q, org_id).order_by(UserGoogleAccount.connected_at.asc()).all()
 
 
 def mark_sync(db: Session, account: UserGoogleAccount, error: Optional[str] = None):

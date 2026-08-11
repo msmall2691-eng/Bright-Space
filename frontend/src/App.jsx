@@ -9,6 +9,7 @@ import TweaksPanel from './components/dev/TweaksPanel'
 import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
+import OpsBoard from './pages/OpsBoard'
 import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
 import Deals from './pages/Deals'
@@ -122,6 +123,7 @@ const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
 const SyncCenter = lazy(() => import('./pages/SyncCenter'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
+const Cleanup = lazy(() => import('./pages/Cleanup'))
 const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
 const Settings = lazy(() => import('./pages/Settings'))
 const DesignSystem = lazy(() => import('./pages/DesignSystem'))
@@ -217,7 +219,10 @@ export default function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={<OpsBoard />} />
+              {/* The previous Twenty-style command center, preserved and still
+                  reachable (nothing deleted — the Ops Board just took /dashboard). */}
+              <Route path="/dashboard/classic" element={<Dashboard />} />
               {/* Today merged into the Dashboard's "Today's schedule" section. */}
               <Route path="/today" element={<Navigate to="/dashboard" replace />} />
               <Route path="/workspace" element={<Workspace />} />
@@ -262,6 +267,9 @@ export default function App() {
                   /schedule?tab=recurring summary tab now redirects here. */}
               <Route path="/recurring" element={<Recurring />} />
               <Route path="/owner" element={<OwnerDashboard />} />
+              {/* Tidy Up — retroactive duplicate detection + merge, and data-
+                  quality flags. Reached from the board's "Tidy Up" nudge. */}
+              <Route path="/cleanup" element={<Cleanup />} />
               <Route path="/funnel" element={<QuoteFunnel />} />
               <Route path="/settings" element={<Settings />} />
               {/* Living style guide — every design token + components/ui/

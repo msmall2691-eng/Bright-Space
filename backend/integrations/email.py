@@ -43,9 +43,10 @@ def _load_smtp_creds() -> dict:
                 "smtp_user", "smtp_pass", "smtp_host", "smtp_port",
                 "from_name", "from_email",
             ])).all()
+            from utils.app_secrets import decode_setting_value
             for r in rows:
                 if r.value:
-                    s[r.key] = r.value
+                    s[r.key] = decode_setting_value(r.key, r.value)
         finally:
             db.close()
     except Exception:
