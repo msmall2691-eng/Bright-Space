@@ -127,11 +127,38 @@ there's a place that shows what each piece is actually doing.
 
 ## 3. Roadmap — actually reducing the moving parts
 
-Phase 1 made the syncing *legible*. Phases 2–4 make it *smaller*. Each is
+Phase 1 made the syncing *legible*. Phases 2–5 make it *smaller*. Each is
 independently shippable and ordered by risk. None is required for the Control
 Center to be useful — it already reflects whatever the engine does.
 
-### Phase 2 — collapse redundant catch-up paths (low risk)
+### Phase 2 — foundation: an append-only schedule log (shipped, dark)
+
+Before collapsing the catch-up paths we laid the substrate they'll all reconcile
+*from*, so the later phases become "migrate onto the log" instead of "rewrite the
+sync engine." Shipped additively and **dark** — a flag-gated dark-launch that
+cannot change any observable behavior until it's turned on.
+
+- **`schedule_events`** — an append-only, per-tenant event log. Every canonical
+  `Job` mutation (create / reschedule / reassign / cancel / complete / delete)
+  writes exactly one ordered row, *in the same transaction* as the Job change,
+  via a single SQLAlchemy flush listener (`services/schedule_events.py`). One
+  write chokepoint, not scattered call-sites — so no mutation can silently skip
+  the log.
+- **`projection_state`** — per-target (`google` / `connecteam` / …) bookkeeping:
+  which event each projection has applied, last push status, drift count,
+  external id. This is where "is Google caught up?" becomes a *row you can read*
+  instead of a sweep you have to run.
+- **Gated OFF by default** (`SCHEDULE_EVENT_LOG_ENABLED`). Flag off → the listener
+  is a total no-op, nothing is written, live behavior is byte-identical. That's
+  what makes this safe to merge before anything consumes it.
+- **Additive migration** (`068_schedule_event_log`): two new tables + Postgres
+  RLS, both added to `TENANT_TABLES`. No existing table touched (invariant R8).
+
+This is the event-sourced spine the contract calls for: *canonical log → one
+reconciler → projection_state → idempotent outbound push*. The reconciler and the
+outbound push are the next phases; the log they read is now in place.
+
+### Phase 3 — collapse redundant catch-up paths (low risk)
 
 Today several ticks + endpoints overlap: `push-to-gcal`, `sync-reconcile`, the
 reconcile tick, and the Connecteam outbox drain all exist to get "unsynced jobs"
@@ -144,7 +171,7 @@ onto their target system.
 - **Goal:** ~14 ticks → ~8, with no behavior change the operator can observe. The
   Control Center's "Under the hood" list is the before/after scoreboard.
 
-### Phase 3 — make Google strictly one-way, retire drift-babysitting (medium risk)
+### Phase 4 — make Google strictly one-way, retire drift-babysitting (medium risk)
 
 The `calendar_source_of_truth = "google"` legacy two-way mode
 (`integrations/gcal_sync.py`) is the single biggest source of conceptual
@@ -160,7 +187,7 @@ serve a mode that's off by default.
 - **Goal:** Google becomes an unambiguous *projection* of BrightBase. "Who wins"
   stops being a question.
 
-### Phase 4 — one durable outbound queue (medium risk)
+### Phase 5 — one durable outbound queue (medium risk)
 
 Connecteam already has a transactional outbox (`ConnecteamOutbox`, rollback-safe,
 deduped, retried). Google pushes don't — they're inline with an ad-hoc reconcile
