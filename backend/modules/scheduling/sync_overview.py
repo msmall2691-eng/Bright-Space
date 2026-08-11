@@ -322,7 +322,11 @@ def build_sync_overview(db: Session, org_id) -> dict:
         {"key": "recurring", "name": "Generate upcoming recurring visits", "group": "scheduling",
          "cadence_minutes": _m("RECURRING_AUTO_GENERATE_INTERVAL_HOURS", 24) * 60, "enabled": bool(recurring_enabled)},
         {"key": "str_autoassign", "name": "Auto-assign turnover crews", "group": "scheduling",
-         "cadence_minutes": _m("STR_TURNOVER_AUTOASSIGN_INTERVAL_MINUTES", 30), "enabled": True},
+         "cadence_minutes": _m("STR_TURNOVER_AUTOASSIGN_INTERVAL_MINUTES", 30),
+         # Registered only when STR_TURNOVER_AUTOASSIGN_ENABLED is on (defaults
+         # OFF) — report the real state, not a green job that isn't running.
+         "enabled": bool(_app_flag(db, "str_turnover_autoassign_enabled",
+                                   "STR_TURNOVER_AUTOASSIGN_ENABLED", False))},
         {"key": "schedule_audit", "name": "Audit for duplicates & orphaned shifts", "group": "health",
          "cadence_minutes": _m("SCHEDULE_AUDIT_INTERVAL_HOURS", 6) * 60, "enabled": True},
         {"key": "turnover_coverage", "name": "Turnover coverage check", "group": "health",

@@ -82,6 +82,10 @@ def test_background_ticks_are_all_surfaced(ctx):
     for j in jobs:
         assert j["name"] and isinstance(j["cadence_minutes"], int)
         assert j["group"] in {"scheduling", "health", "messaging", "other"}
+    # STR turnover auto-assign is registered only when its flag is on (defaults
+    # OFF) — the panel must report the real state, not a hardcoded green job.
+    autoassign = next(j for j in jobs if j["key"] == "str_autoassign")
+    assert autoassign["enabled"] is False
     # Auto-pilot exposes the exact toggle set the master switch flips.
     assert set(ov["auto_pilot"]["toggles"]) == {
         "gcal_auto_sync_enabled", "ical_auto_sync_enabled",

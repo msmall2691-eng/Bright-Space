@@ -69,17 +69,32 @@ describe('SyncCenter', () => {
     expect(screen.getAllByText('Google Calendar isn’t connected').length).toBeGreaterThan(0)
   })
 
-  it('flips the master auto-pilot switch by posting all four automation flags', async () => {
+  it('flips the master auto-pilot switch by posting every auto-pilot flag (incl. reconcile)', async () => {
     get.mockResolvedValue(overview())
     post.mockResolvedValue({})
     draw()
     await screen.findByText('Google Calendar')
     // The master switch is the first one in the DOM (banner precedes the grid).
     fireEvent.click(screen.getAllByRole('switch')[0])
+    // sync_reconcile_enabled MUST be in the set — otherwise the 30-min reconcile
+    // tick keeps pushing to Google/Connecteam and "off" wouldn't actually pause.
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/settings/automation', {
       gcal_auto_sync_enabled: true, ical_auto_sync_enabled: true,
       recurring_auto_generate_enabled: true, connecteam_auto_dispatch_enabled: true,
+      sync_reconcile_enabled: true,
     }))
+  })
+
+  it('lets managers run syncs but not flip admin-only toggles', async () => {
+    localStorage.setItem('brightbase_user', JSON.stringify({ role: 'manager' }))
+    get.mockResolvedValue(overview())
+    draw()
+    // Managers CAN sync (endpoints allow them)…
+    expect(await screen.findByText('Sync everything now')).toBeTruthy()
+    // …but every toggle (auto-pilot + per-channel pause) is admin-only, so all
+    // switches are disabled (settings/automation is require_role("admin")).
+    screen.getAllByRole('switch').forEach(sw => expect(sw.disabled).toBe(true))
+    expect(screen.getByText(/pausing channels and auto-pilot is admin-only/i)).toBeTruthy()
   })
 
   it('"Sync everything now" fans out to the reconcile, feeds, and recurring endpoints', async () => {

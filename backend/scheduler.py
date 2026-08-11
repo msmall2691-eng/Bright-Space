@@ -408,10 +408,17 @@ def sync_reconcile_tick() -> dict:
             return {"skipped": True, "reason": "disabled"}
         result = {}
 
-        # 1) Google Calendar: reuse the manual "Push to Google" logic verbatim.
+        # 1) Google Calendar: reuse the manual "Push to Google" logic verbatim,
+        #    but ONLY when Google auto-sync is on. Pausing the Google channel
+        #    (Sync Control Center) sets gcal_auto_sync_enabled=false; without
+        #    this guard the reconcile tick would keep pushing every interval, so
+        #    a "Paused" card would still sync. The manual push-to-gcal endpoint
+        #    stays ungated, so on-demand "Sync now" still works while paused.
         try:
             from integrations.google_calendar import is_configured as _gcal_ok
-            if _gcal_ok():
+            _gcal_on = _db_flag(db, "gcal_auto_sync_enabled",
+                                env_flag("GCAL_AUTO_SYNC_ENABLED", True))
+            if _gcal_ok() and _gcal_on:
                 from modules.scheduling.router import push_to_gcal
                 # One-way self-heal (BrightBase is master): re-push events a user
                 # deleted in Google before the normal push, so a cleaning that
@@ -433,6 +440,8 @@ def sync_reconcile_tick() -> dict:
                     )
                 result["gcal"] = {"pushed": pushed.get("pushed", 0),
                                   "errors": len(pushed.get("errors") or [])}
+            elif not _gcal_on:
+                result["gcal"] = {"skipped": "paused"}
             else:
                 result["gcal"] = {"skipped": "not_configured"}
         except Exception as e:

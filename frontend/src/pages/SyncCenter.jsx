@@ -37,14 +37,17 @@ const SYNC_ENDPOINT = {
   recurring: '/api/recurring/generate-all',
 }
 
-// The automation flags the master auto-pilot switch flips together. (Reconcile
-// has no automation-config key — it's env/DB-level — so it isn't in the set;
-// these four are the ones that pull, push, generate, and dispatch on their own.)
+// The automation flags the master auto-pilot switch flips together — the ones
+// that pull, push, generate, dispatch, and reconcile on their own. Reconcile is
+// included so "auto-pilot off" actually stops the 30-min self-heal tick;
+// otherwise it would keep pushing to Google/Connecteam and "Manual syncs only"
+// would be a lie.
 const AUTOPILOT_KEYS = [
   'gcal_auto_sync_enabled',
   'ical_auto_sync_enabled',
   'recurring_auto_generate_enabled',
   'connecteam_auto_dispatch_enabled',
+  'sync_reconcile_enabled',
 ]
 
 function currentRole() {
@@ -118,14 +121,14 @@ function Toggle({ on, onChange, disabled }) {
   return (
     <button
       role="switch" aria-checked={on} disabled={disabled} onClick={() => onChange(!on)}
-      title={disabled ? 'Needs manager access' : on ? 'Turn off' : 'Turn on'}
+      title={disabled ? 'Needs admin access' : on ? 'Turn off' : 'Turn on'}
       className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-indigo-600' : 'bg-bg-3'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}>
       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
     </button>
   )
 }
 
-function ChannelCard({ ch, canManage, busy, onToggle, onSync }) {
+function ChannelCard({ ch, canToggle, canSync, busy, onToggle, onSync }) {
   const [showFeeds, setShowFeeds] = useState(false)
   const Icon = ICON[ch.icon] || Calendar
   const st = STATUS[ch.status] || STATUS.paused
@@ -150,7 +153,7 @@ function ChannelCard({ ch, canManage, busy, onToggle, onSync }) {
           </div>
         </div>
         {ch.toggle_key && (
-          <Toggle on={ch.enabled} disabled={!canManage || toggling}
+          <Toggle on={ch.enabled} disabled={!canToggle || toggling}
             onChange={() => onToggle(ch)} />
         )}
       </div>
@@ -161,7 +164,7 @@ function ChannelCard({ ch, canManage, busy, onToggle, onSync }) {
         <AuthorityLine authority={ch.authority} />
         {ch.sync_action && SYNC_ENDPOINT[ch.sync_action] && (
           <button
-            onClick={() => onSync(ch)} disabled={!canManage || syncing}
+            onClick={() => onSync(ch)} disabled={!canSync || syncing}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
             {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Sync now
@@ -202,7 +205,7 @@ function ChannelCard({ ch, canManage, busy, onToggle, onSync }) {
   )
 }
 
-function AttentionCard({ item, canManage, busy, onAction }) {
+function AttentionCard({ item, canSync, busy, onAction }) {
   const warn = item.level === 'warn'
   const acting = busy === `attn:${item.key}`
   return (
@@ -219,7 +222,7 @@ function AttentionCard({ item, canManage, busy, onAction }) {
             {item.action.label} <ExternalLink className="w-3 h-3" />
           </Link>
         ) : (
-          <button onClick={() => onAction(item)} disabled={!canManage || acting}
+          <button onClick={() => onAction(item)} disabled={!canSync || acting}
             className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-40 shrink-0 inline-flex items-center gap-1">
             {acting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             {item.action.label}
@@ -278,7 +281,13 @@ function BackgroundJobsPanel({ jobs }) {
 export default function SyncCenter() {
   const { data, loading, error, refresh } = useSyncOverview()
   const [busy, setBusy] = useState(null)
-  const canManage = ['admin', 'manager'].includes(currentRole())
+  // Two capability levels, matching the backend exactly: "Sync now" endpoints
+  // (sync-reconcile / push-to-gcal / sync-all / generate-all) allow managers,
+  // but the settings/automation POST behind the pause + auto-pilot toggles is
+  // admin-only — so managers must not be shown togglers that only 403.
+  const role = currentRole()
+  const canSync = ['admin', 'manager'].includes(role)
+  const canToggle = role === 'admin'
 
   const runAction = useCallback(async (key, endpoint, body) => {
     setBusy(key)
@@ -356,6 +365,9 @@ export default function SyncCenter() {
 
   const overallCfg = STATUS[data.overall] || STATUS.ok
   const ap = data.auto_pilot || { on: false }
+  // When Google is the configured source of truth the conflict direction flips,
+  // so the banner must not claim "Google edits don't overwrite yours".
+  const googleAuthority = ap.toggles?.calendar_source_of_truth === 'google'
 
   return (
     <div className="max-w-5xl mx-auto pb-16">
@@ -363,7 +375,7 @@ export default function SyncCenter() {
         title="Sync Control Center" icon={Radar} iconColor="violet"
         subtitle="Every schedule BrightBase talks to — in one place"
         actions={
-          canManage && (
+          canSync && (
             <Button onClick={syncEverything} disabled={busy === 'all'}>
               {busy === 'all' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               Sync everything now
@@ -382,7 +394,10 @@ export default function SyncCenter() {
               <p className="text-[13px] text-ink-3 mt-0.5">
                 <span className="font-semibold text-ink-2">BrightBase is the master.</span> Your schedule here is the
                 source of truth — it pushes out to Google &amp; Connecteam, pulls Airbnb turnovers in, and keeps recurring
-                visits filled. Edits made directly in Google don’t overwrite yours.
+                visits filled.{' '}
+                {googleAuthority
+                  ? 'Google is set as the calendar’s source of truth, so time changes you make in Google sync back here.'
+                  : 'Edits made directly in Google don’t overwrite yours.'}
               </p>
             </div>
           </div>
@@ -394,7 +409,7 @@ export default function SyncCenter() {
               </div>
               <div className="text-[11px] text-ink-3">{ap.on ? 'Runs itself' : 'Manual syncs only'}</div>
             </div>
-            <Toggle on={ap.on} disabled={!canManage || busy === 'autopilot'} onChange={toggleAutopilot} />
+            <Toggle on={ap.on} disabled={!canToggle || busy === 'autopilot'} onChange={toggleAutopilot} />
           </div>
         </div>
 
@@ -402,7 +417,7 @@ export default function SyncCenter() {
         {data.attention?.length > 0 && (
           <div className="space-y-2">
             {data.attention.map(item => (
-              <AttentionCard key={item.key} item={item} canManage={canManage} busy={busy} onAction={doAttention} />
+              <AttentionCard key={item.key} item={item} canSync={canSync} busy={busy} onAction={doAttention} />
             ))}
           </div>
         )}
@@ -410,7 +425,7 @@ export default function SyncCenter() {
         {/* Channels. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {data.channels.map(ch => (
-            <ChannelCard key={ch.key} ch={ch} canManage={canManage} busy={busy}
+            <ChannelCard key={ch.key} ch={ch} canToggle={canToggle} canSync={canSync} busy={busy}
               onToggle={toggleChannel} onSync={syncChannel} />
           ))}
         </div>
@@ -418,9 +433,14 @@ export default function SyncCenter() {
         {/* The 14 hidden hands, finally visible. */}
         <BackgroundJobsPanel jobs={data.background_jobs || []} />
 
-        {!canManage && (
+        {!canSync && (
           <p className="text-[11px] text-ink-3 text-center">
-            You’re viewing in read-only mode. Ask an admin or manager to change sync settings.
+            You’re viewing in read-only mode. Ask an admin to change sync settings.
+          </p>
+        )}
+        {canSync && !canToggle && (
+          <p className="text-[11px] text-ink-3 text-center">
+            You can run syncs, but pausing channels and auto-pilot is admin-only.
           </p>
         )}
       </div>
