@@ -325,6 +325,10 @@ class QuoteEmailService:
         .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
         .section-label { color: #6b7280; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin: 22px 0 8px; }
         .scope { color: #374151; font-size: 14px; line-height: 1.55; white-space: pre-wrap; margin: 0; }
+        .details { width: 100%; border-collapse: collapse; margin: 4px 0 0; font-size: 14px; }
+        .details td { padding: 6px 0; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+        .details td.k { color: #6b7280; width: 42%; padding-right: 12px; }
+        .details td.v { color: #1f2937; font-weight: 500; }
         .policies { margin: 8px 0 0; padding-left: 20px; color: #374151; font-size: 13px; line-height: 1.5; }
         .policies li { margin: 4px 0; }
     </style>
@@ -354,6 +358,15 @@ class QuoteEmailService:
                 {% if expires_at %}<tr><td style="padding: 4px 16px;"><strong>Valid until:</strong></td><td style="padding: 4px 16px; text-align: right;">{{ expires_at }}</td></tr>{% endif %}
                 {% if address %}<tr><td style="padding: 4px 16px 12px;"><strong>Service address:</strong></td><td style="padding: 4px 16px 12px; text-align: right;">{{ address }}</td></tr>{% endif %}
             </table>
+
+            {% if service_details %}
+            <div class="section-label">Service Summary</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="details">
+                {% for d in service_details %}
+                <tr><td class="k">{{ d.label }}</td><td class="v">{{ d.value }}</td></tr>
+                {% endfor %}
+            </table>
+            {% endif %}
 
             {% if scope %}
             <div class="section-label">{% if service_label %}{{ service_label }} — {% endif %}Scope &amp; Details</div>
@@ -442,6 +455,7 @@ class QuoteEmailService:
         client_first_name: Optional[str] = None,
         scope: Optional[str] = None,
         service_type: Optional[str] = None,
+        service_details: Optional[list] = None,
     ) -> dict:
         """Send a quote email with optional PDF attachment.
 
@@ -547,6 +561,13 @@ class QuoteEmailService:
                 terms=self.quote_terms,
                 scope=(scope or "").strip() or None,
                 service_label=_service_label(service_type),
+                # Structured "what you asked for" rows (home size, cadence,
+                # focus areas…). Kept to well-formed {label,value} entries so a
+                # malformed caller can't break the render; empty → section hides.
+                service_details=[
+                    {"label": str(d.get("label") or ""), "value": str(d.get("value") or "")}
+                    for d in (service_details or []) if isinstance(d, dict) and d.get("label") and d.get("value")
+                ],
                 policies=self._policy_lines(self.quote_policies),
                 property_photo_url=(property_photo_url or "").strip() or None,
             )

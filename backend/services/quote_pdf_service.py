@@ -73,6 +73,7 @@ class QuotePDFService:
         address: Optional[str] = None,
         service_type: Optional[str] = None,
         customer_message: Optional[str] = None,
+        service_details: Optional[list] = None,
     ) -> bytes:
         """Generate a professional quote PDF that mirrors the customer web view.
 
@@ -182,6 +183,31 @@ class QuotePDFService:
                                        textColor=colors.HexColor('#374151'), leading=15)
             story.append(Spacer(1, 0.22 * inch))
             story.append(Paragraph(_esc_ml(customer_message), msg_style))
+
+        # ── "Service summary" — structured detail from the original request
+        #    (home size, cadence, focus areas…) so the printed quote states what
+        #    was asked for. Collapses entirely when there's nothing to show.
+        _details = [d for d in (service_details or [])
+                    if isinstance(d, dict) and d.get("label") and d.get("value")]
+        if _details:
+            sd_key = ParagraphStyle('sdKey', parent=styles['Normal'], fontSize=9,
+                                    textColor=colors.HexColor('#6b7280'), leading=13)
+            sd_val = ParagraphStyle('sdVal', parent=styles['Normal'], fontSize=9.5,
+                                    textColor=colors.HexColor('#1f2937'),
+                                    fontName='Helvetica-Bold', leading=13)
+            sd_rows = [[Paragraph(_esc(str(d['label'])), sd_key),
+                        Paragraph(_esc(str(d['value'])), sd_val)] for d in _details]
+            sd_table = Table(sd_rows, colWidths=[CONTENT_W * 0.42, CONTENT_W * 0.58])
+            sd_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LINEBELOW', (0, 0), (-1, -2), 0.4, colors.HexColor('#f0f0f0')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(Spacer(1, 0.22 * inch))
+            story.append(Paragraph('SERVICE SUMMARY', label_style))
+            story.append(Spacer(1, 4))
+            story.append(sd_table)
 
         # ── Customer-facing scope / details
         if notes:

@@ -202,6 +202,140 @@ def _quote_intake(db: Session, quote: Quote):
     return db.query(LeadIntake).filter(LeadIntake.converted_quote_id == quote.id).first()
 
 
+# Frequency codes → the cadence label the customer sees. Keys mirror
+# modules.booking.pricing.FREQUENCY_FACTOR so the shown cadence and the price
+# that cadence produced never disagree.
+_FREQUENCY_LABELS = {
+    "weekly": "Weekly",
+    "biweekly": "Every 2 weeks",
+    "bi-weekly": "Every 2 weeks",
+    "monthly": "Monthly",
+    "one-time": "One-time",
+    "onetime": "One-time",
+    "one time": "One-time",
+}
+
+# How heavy the clean is, in the customer's words (LeadIntake.condition).
+_CONDITION_LABELS = {
+    "maintenance": "Routine upkeep",
+    "moderate": "Moderate — some buildup",
+    "heavy": "Heavy — needs extra attention",
+}
+
+# Pet situation (LeadIntake.pet_hair). "none" is intentionally dropped — a
+# "no pets" row is noise on a cleaning quote.
+_PET_LABELS = {
+    "some": "Some pet hair",
+    "heavy": "Heavy pet hair",
+}
+
+
+def _fmt_home_size(bedrooms, bathrooms, square_footage) -> Optional[str]:
+    """'3 bed · 2 bath · 2,000 sq ft' from whatever subset is known, or None.
+
+    Tolerant of the mixed column types across the schema (Property/LeadIntake
+    hold ints and a Float for baths): a value that won't coerce is skipped
+    rather than raising, so a stray string can never break a quote send."""
+    parts = []
+    try:
+        if bedrooms:
+            parts.append(f"{int(bedrooms)} bed")
+    except (TypeError, ValueError):
+        pass
+    try:
+        if bathrooms:
+            parts.append(f"{float(bathrooms):g} bath")
+    except (TypeError, ValueError):
+        pass
+    try:
+        if square_footage:
+            parts.append(f"{int(square_footage):,} sq ft")
+    except (TypeError, ValueError):
+        pass
+    return " · ".join(parts) or None
+
+
+def build_service_details(db: Session, quote: Quote) -> list[dict]:
+    """An ordered, customer-safe ``[{label, value}]`` summary of WHAT was
+    requested, for the customer-facing quote surfaces (public page, email, PDF).
+
+    Sourced from the structured request behind the quote — the linked
+    ``LeadIntake`` (``_quote_intake``) plus the ``Property`` and the ``Quote``
+    itself — so the customer can confirm the quote matches what they asked for
+    before they accept or request changes. These structured fields already
+    drive the estimate; this simply makes them visible instead of collapsing
+    them into a single price line.
+
+    Deliberately EXCLUDES access/entry material (entry method, lock/alarm/house
+    codes, parking notes) and free-text special instructions: a quote link is a
+    shareable bearer token, so those details belong on the internal
+    Job/dispatch, never on a page anyone with the link can open. Returns ``[]``
+    when nothing is derivable (e.g. a hand-built quote with no property), so
+    every surface collapses the section cleanly."""
+    intake = _quote_intake(db, quote)
+    prop = getattr(quote, "property", None)
+    cf = getattr(intake, "custom_fields", None) if intake is not None else None
+    if not isinstance(cf, dict):
+        cf = {}
+
+    details: list[dict] = []
+
+    def add(label, value):
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, "", []):
+            return
+        details.append({"label": label, "value": value if isinstance(value, str) else str(value)})
+
+    # Home size — prefer the Property (the structured record that carries into
+    # the Job) and fall back to the intake's self-reported numbers.
+    beds = getattr(prop, "bedrooms", None) if prop is not None else None
+    baths = getattr(prop, "bathrooms", None) if prop is not None else None
+    sqft = getattr(prop, "square_footage", None) if prop is not None else None
+    if intake is not None:
+        beds = beds if beds is not None else intake.bedrooms
+        baths = baths if baths is not None else intake.bathrooms
+        sqft = sqft if sqft is not None else intake.square_footage
+    add("Home size", _fmt_home_size(beds, baths, sqft))
+
+    # STR / vacation-rental guest count (only meaningful when the customer gave one).
+    guests = intake.guests if intake is not None else None
+    if guests:
+        add("Guests", guests)
+
+    # Cadence — the quote is authoritative once the operator sets it; else the intake.
+    freq = (quote.frequency or (intake.frequency if intake is not None else None) or "").strip().lower()
+    if freq:
+        add("Frequency", _FREQUENCY_LABELS.get(freq, freq.replace("-", " ").title()))
+
+    # How heavy the clean is.
+    cond = ((intake.condition if intake is not None else None) or "").strip().lower()
+    if cond:
+        add("Condition", _CONDITION_LABELS.get(cond, cond.title()))
+
+    # Pets — only surfaced when there's hair to deal with.
+    pet = ((intake.pet_hair if intake is not None else None) or "").strip().lower()
+    if pet in _PET_LABELS:
+        add("Pets", _PET_LABELS[pet])
+
+    # Rooms/areas the customer flagged as priorities (custom_fields.focus_areas).
+    focus = cf.get("focus_areas")
+    if isinstance(focus, (list, tuple)):
+        labels = [str(x).strip().replace("_", " ").title() for x in focus if str(x).strip()]
+        if labels:
+            add("Focus areas", ", ".join(labels))
+    elif isinstance(focus, str):
+        add("Focus areas", focus)
+
+    # Requested / preferred date (whichever the customer supplied).
+    if intake is not None:
+        req_date = intake.requested_date or intake.preferred_date
+        if req_date:
+            add("Preferred date", fmt_long_date(req_date) or str(req_date))
+
+    return details
+
+
 def _ensure_public_token(quote: Quote) -> str:
     """Return the quote's public link token, generating one if missing."""
     if not quote.public_token:
@@ -629,6 +763,10 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                 # PDF fetch and the email both skip gracefully if there's no
                 # Street View coverage.
                 photo_url = _property_photo_url(quote, db)
+                # Structured "what you asked for" rows from the linked request,
+                # shown on the PDF and the email so the customer can verify the
+                # scope matches what they submitted (same source as the page).
+                service_details = build_service_details(db, quote)
                 pdf_bytes = QuotePDFService(
                     company_name=company["company_name"], company_email=company["company_email"] or "",
                     company_phone=company["company_phone"], brand_color=company["brand_color"],
@@ -642,6 +780,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     quote_title=quote.title, property_photo_url=photo_url,
                     quote_link=quote_link, address=format_address(quote.address),
                     service_type=quote.service_type, customer_message=quote.customer_message,
+                    service_details=service_details,
                 )
                 # For the EMAIL we only embed the photo when Google actually has
                 # imagery (a 404 proxy would show a broken image in mail clients).
@@ -674,6 +813,7 @@ def send_quote(quote_id: int, body: QuoteSendRequest = QuoteSendRequest(), db: S
                     tax_rate=quote.tax_rate, address=format_address(quote.address),
                     bcc=owner_copy, property_photo_url=email_photo_url,
                     scope=quote.notes, service_type=quote.service_type,
+                    service_details=service_details,
                 )
                 if res.get("success"):
                     results["email"] = "sent"
@@ -1225,6 +1365,11 @@ def _public_quote_dict(quote: Quote, db: Session) -> dict:
         "address": format_address(quote.address),
         "service_type": quote.service_type,
         "notes": quote.notes,
+        # Structured "what you asked for" summary derived from the linked
+        # request (intake/property). Lets the customer confirm the quote matches
+        # their request before accepting; collapses when empty. See
+        # build_service_details for the customer-safe field allowlist.
+        "service_details": build_service_details(db, quote),
         "items": quote.items or [],
         "subtotal": quote.subtotal,
         "tax_rate": quote.tax_rate,
@@ -1575,6 +1720,9 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         quote_link=f"{app_base_url().rstrip('/')}/quote/{token}",
         address=format_address(quote.address), service_type=quote.service_type,
         customer_message=quote.customer_message,
+        # Same Service Summary the public page and the emailed PDF show, so a
+        # customer downloading the PDF from the link gets the identical document.
+        service_details=build_service_details(db, quote),
     )
     disp = "attachment" if download else "inline"
     return StreamingResponse(
