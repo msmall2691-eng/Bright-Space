@@ -1,4 +1,6 @@
-import { X } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { X, Sparkles, Loader2 } from 'lucide-react'
+import { get } from '../../api'
 import { CustomFieldsForm } from '../CustomFields'
 import { PROPERTY_TYPE_CONFIG } from './constants'
 
@@ -29,6 +31,64 @@ export function PropertyForm({
   onClose,
   onSave,
 }) {
+  // Transient state for the "look up specs" action only — the persisted fields
+  // still live in the parent's form/setForm, so this component stays the single
+  // owner of nothing durable (see the component doc above).
+  const [looking, setLooking] = useState(false)
+  const [lookupMsg, setLookupMsg] = useState(null)  // { tone: 'ok'|'info'|'err', text }
+
+  // Identity of the property/address currently in the form. Captured when a
+  // lookup starts and re-checked when it returns, so a slow RentCast response
+  // never applies specs for an address the operator has since edited — or for a
+  // different property they've since opened in this same drawer (Codex review
+  // on #657).
+  const lookupIdRef = useRef('')
+  lookupIdRef.current = `${selected?.id ?? 'new'}|${(form.address || '').trim().toLowerCase()}`
+
+  const runLookup = async () => {
+    const addr = (form.address || '').trim()
+    if (!addr) return
+    const token = lookupIdRef.current
+    setLooking(true); setLookupMsg(null)
+    try {
+      const params = new URLSearchParams({ address: addr })
+      if ((form.city || '').trim()) params.set('city', form.city.trim())
+      if ((form.state || '').trim()) params.set('state', form.state.trim())
+      if ((form.zip_code || '').trim()) params.set('zip_code', form.zip_code.trim())
+      const { enabled, specs } = await get(`/api/properties/lookup-specs?${params.toString()}`)
+      // The form moved on while we were waiting (address edited, or a different
+      // property opened) — discard this now-stale result rather than writing it
+      // onto whatever is in the form now.
+      if (lookupIdRef.current !== token) {
+        setLookupMsg({ tone: 'info', text: 'Address changed — discarded that lookup. Tap “Look up specs” again to refresh.' })
+        return
+      }
+      if (!enabled) {
+        setLookupMsg({ tone: 'info', text: 'Turn on property data lookup in Settings → Property Photos & Data to use this.' })
+        return
+      }
+      // Apply only the structured numeric specs. Never touch property_type —
+      // the provider reports its own ("Single Family"), but residential /
+      // commercial / str is a human classification the operator picked above.
+      const patch = {}
+      const applied = []
+      if (specs?.square_footage != null) { patch.square_footage = specs.square_footage; applied.push('sq ft') }
+      if (specs?.bedrooms != null)       { patch.bedrooms = specs.bedrooms;             applied.push('beds') }
+      if (specs?.bathrooms != null)      { patch.bathrooms = specs.bathrooms;           applied.push('baths') }
+      if (specs?.year_built != null)     { patch.year_built = specs.year_built;         applied.push('year built') }
+      if (applied.length) {
+        setForm(f => ({ ...f, ...patch }))
+        setLookupMsg({ tone: 'ok', text: `Filled ${applied.join(', ')} from public records — double-check before saving.` })
+      } else {
+        setLookupMsg({ tone: 'info', text: 'No public record found for this address.' })
+      }
+    } catch {
+      setLookupMsg({ tone: 'err', text: 'Lookup failed — you can still enter the details by hand.' })
+    } finally {
+      setLooking(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 bg-panel flex flex-col sm:static sm:inset-auto sm:z-auto sm:w-96 sm:border-l sm:border-hairline sm:shrink-0">
       <div className="flex items-center justify-between px-6 py-4 border-b border-hairline shrink-0">
@@ -131,6 +191,54 @@ export function PropertyForm({
               onChange={e => setForm(f => ({ ...f, default_crew_size: e.target.value }))}
               className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none" />
           </div>
+        </div>
+
+        {/* Property details — sq ft / beds / baths / year. Pre-fill from public
+            records with the lookup button (owner-gated in Settings), or type
+            them in. Applies to every property type. */}
+        <div className="border-t border-hairline pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-ink-2 uppercase">Property Details</h3>
+            <button type="button" onClick={runLookup} disabled={looking || !(form.address || '').trim()}
+              title={!(form.address || '').trim() ? 'Enter an address first' : 'Fill sq ft, beds, baths & year built from public records'}
+              className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:text-ink-3 disabled:cursor-not-allowed">
+              {looking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {looking ? 'Looking up…' : 'Look up specs'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Bedrooms</label>
+              <input type="number" min="0" value={form.bedrooms ?? ''}
+                onChange={e => setForm(f => ({ ...f, bedrooms: e.target.value }))}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Bathrooms</label>
+              <input type="number" min="0" step="0.5" value={form.bathrooms ?? ''}
+                onChange={e => setForm(f => ({ ...f, bathrooms: e.target.value }))}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Square Footage</label>
+              <input type="number" min="0" value={form.square_footage ?? ''}
+                onChange={e => setForm(f => ({ ...f, square_footage: e.target.value }))}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Year Built</label>
+              <input type="number" min="1800" max="2100" value={form.year_built ?? ''}
+                onChange={e => setForm(f => ({ ...f, year_built: e.target.value }))}
+                className="w-full bg-panel border border-hairline rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+            </div>
+          </div>
+
+          {lookupMsg && (
+            <div className={`mt-2 text-xs ${lookupMsg.tone === 'ok' ? 'text-emerald-600' : lookupMsg.tone === 'err' ? 'text-red-600' : 'text-ink-3'}`}>
+              {lookupMsg.text}
+            </div>
+          )}
         </div>
 
         {/* STR-specific fields */}

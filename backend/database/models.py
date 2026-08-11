@@ -322,6 +322,10 @@ class Property(Base):
     # with the quote the customer was shown.
     bathrooms = Column(Float, nullable=True)
     square_footage = Column(Integer, nullable=True)
+    # Year the home was built — pulled from public property records (RentCast)
+    # via the Add/Edit Property "look up specs" action, or entered by hand.
+    # NULL = unknown. Same lineage as bedrooms/bathrooms/square_footage above.
+    year_built = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -423,6 +427,12 @@ class RecurringSchedule(Base):
 
     cleaner_ids = Column(JSON, default=list)
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
+    # The deal this recurring engagement belongs to. A won, recurring deal is
+    # the shape of an ongoing customer — carrying opportunity_id lets the deal
+    # board show a won deal's cadence directly instead of inferring it through
+    # the shared client (migration 065). Nullable: set when the schedule is
+    # created from an accepted quote; NULL for ad-hoc schedules.
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True, index=True)
     active = Column(Boolean, default=True, nullable=False)
     generate_weeks_ahead = Column(Integer, default=8)
@@ -454,6 +464,7 @@ class RecurringSchedule(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     client = relationship("Client", back_populates="recurring_schedules")
+    opportunity = relationship("Opportunity")
     jobs = relationship("Job", back_populates="recurring_schedule")
     exceptions = relationship(
         "RecurrenceException",
@@ -1293,3 +1304,64 @@ class PushSubscription(Base):
     user_agent = Column(String(255), nullable=True)  # for a readable device list
     created_at = Column(DateTime, default=_utcnow)
     last_used_at = Column(DateTime, nullable=True)
+
+
+class ScheduleEvent(Base):
+    """Append-only, immutable, ordered log of canonical schedule mutations.
+
+    Phase 2 of the scheduling redesign (docs/scheduling-sync-redesign.md, under
+    the `scheduling-invariants` contract). Every canonical Job mutation — create,
+    reschedule, reassign, cancel, complete, delete — emits exactly one row here,
+    written IN THE SAME TRANSACTION as the Job write by a Session flush listener
+    (services/schedule_events.py), gated by SCHEDULE_EVENT_LOG_ENABLED (default
+    OFF). Nothing READS this yet: it is the dual-write foundation the Phase 3
+    reconciler will drain into `projection_state`, built alongside today's
+    behavior (R8) so it can be verified against real data before any cutover.
+    Ordered by `id`; never updated or deleted (append-only).
+    """
+    __tablename__ = "schedule_events"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    # created | rescheduled | reassigned | cancelled | completed | updated | deleted
+    event_type = Column(String(24), nullable=False)
+    # {field: [old, new]} for the tracked fields that changed (dates/times as ISO
+    # strings), or a full snapshot for create/delete. JSON so it round-trips on
+    # both Postgres and SQLite.
+    payload = Column(JSON, nullable=True)
+    actor = Column(String(64), nullable=True)  # best-effort cause (reserved; unused in Phase 2)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_schedule_events_job", "job_id", "id"),
+    )
+
+
+class ProjectionState(Base):
+    """Per-target sync bookkeeping for the Phase 3 reconciler.
+
+    For each (target, job) it records how far that projection has been advanced
+    from the `schedule_events` log plus the last push outcome, so "sync health"
+    becomes a row you READ rather than a scan you recompute. Written by the
+    Phase 3 reconciler (not yet built) and read by the sync-status surfaces.
+    Additive and unused in Phase 2 — shipped now so the migration lands once.
+    """
+    __tablename__ = "projection_state"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    target = Column(String(24), nullable=False)  # "gcal" | "connecteam"
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    last_event_applied = Column(Integer, nullable=True)  # schedule_events.id cursor
+    last_push_at = Column(DateTime, nullable=True)
+    last_push_status = Column(String(16), nullable=True)  # "ok" | "failed" | "pending"
+    drift_count = Column(Integer, nullable=False, default=0)
+    external_id = Column(String, nullable=True)  # stable target id (gcal event / ct shift) — R4
+    version = Column(String(64), nullable=True)  # etag/version for idempotent push — R4
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("target", "job_id", name="uq_projection_state_target_job"),
+        Index("idx_projection_state_job", "job_id"),
+    )

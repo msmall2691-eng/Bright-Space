@@ -31,11 +31,21 @@ export function usePropertyMutations({ load }) {
     setSaving(true)
     try {
       const url = selected ? `/api/properties/${selected.id}` : '/api/properties'
+      // Number inputs hold strings (and '' when blank). Coerce to a number or
+      // null — sending '' to the backend's Optional[int]/Optional[float] fields
+      // 422s the whole save. NaN (non-numeric) serializes to null in JSON, so a
+      // stray keystroke degrades to "unset" rather than an error.
+      const numOrNull = (v, parse) =>
+        (v === '' || v === null || v === undefined ? null : parse(v))
       const body = {
         ...form,
         client_id: parseInt(form.client_id),
         default_duration_hours: parseFloat(form.default_duration_hours),
         default_crew_size: form.default_crew_size ? parseInt(form.default_crew_size) : null,
+        bedrooms: numOrNull(form.bedrooms, (v) => parseInt(v, 10)),
+        bathrooms: numOrNull(form.bathrooms, parseFloat),
+        square_footage: numOrNull(form.square_footage, (v) => parseInt(v, 10)),
+        year_built: numOrNull(form.year_built, (v) => parseInt(v, 10)),
       }
       selected ? await patch(url, body) : await post(url, body)
       await load()

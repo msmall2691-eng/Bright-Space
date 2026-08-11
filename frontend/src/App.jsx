@@ -12,6 +12,7 @@ import Dashboard from './pages/Dashboard'
 import OpsBoard from './pages/OpsBoard'
 import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
+import Deals from './pages/Deals'
 import PublicQuote from './pages/PublicQuote'
 import PublicPayment from './pages/PublicPayment'
 import PublicJobConfirm from './pages/PublicJobConfirm'
@@ -120,8 +121,10 @@ const Properties = lazy(() => import('./pages/Properties'))
 const PropertyDetail = lazy(() => import('./pages/PropertyDetail'))
 const PropertyIcalsBulk = lazy(() => import('./pages/PropertyIcalsBulk'))
 const Recurring = lazy(() => import('./pages/Recurring'))
+const SyncCenter = lazy(() => import('./pages/SyncCenter'))
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'))
 const Cleanup = lazy(() => import('./pages/Cleanup'))
+const QuoteFunnel = lazy(() => import('./pages/QuoteFunnel'))
 const Settings = lazy(() => import('./pages/Settings'))
 const DesignSystem = lazy(() => import('./pages/DesignSystem'))
 
@@ -228,6 +231,7 @@ export default function App() {
               <Route path="/requests" element={<Requests />} />
               <Route path="/requests/:id" element={<RequestDetail />} />
               <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/deals" element={<Deals />} />
               <Route path="/opportunities/:id" element={<OpportunityDetail />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/quotes/:id" element={<QuoteDetail />} />
@@ -238,6 +242,11 @@ export default function App() {
               <Route path="/invoicing" element={<Navigate to="/billing?view=invoices" replace />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/scheduling" element={<Navigate to="/schedule" replace />} />
+              {/* Sync Control Center — one screen for every external schedule
+                  BrightBase pushes to / pulls from (Google, Connecteam, Airbnb
+                  feeds, recurring), the background ticks, and the master
+                  auto-pilot switch. */}
+              <Route path="/sync" element={<SyncCenter />} />
               {/* Calendar dropped — native Schedule covers it (and syncs to GCal). */}
               <Route path="/calendar" element={<Navigate to="/schedule" replace />} />
               {/* Schedule reads the view mode from ?view=, not ?tab= (?tab=
@@ -261,6 +270,7 @@ export default function App() {
               {/* Tidy Up — retroactive duplicate detection + merge, and data-
                   quality flags. Reached from the board's "Tidy Up" nudge. */}
               <Route path="/cleanup" element={<Cleanup />} />
+              <Route path="/funnel" element={<QuoteFunnel />} />
               <Route path="/settings" element={<Settings />} />
               {/* Living style guide — every design token + components/ui/
                   primitive in its documented states. Internal reference,

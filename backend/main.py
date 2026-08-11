@@ -31,6 +31,9 @@ from auth_jwt import verify_jwt
 from ratelimit import limiter
 from database.db import init_db
 from scheduler import start_scheduler, stop_scheduler, sync_all_ical_feeds_tick
+# Registers the Phase 2 schedule_events dual-write flush listener. A no-op unless
+# SCHEDULE_EVENT_LOG_ENABLED is set (dark-launched, additive — see the service).
+import services.schedule_events  # noqa: F401,E402
 from modules.clients.router import router as clients_router
 from modules.quoting.router import router as quoting_router
 from modules.scheduling.router import router as scheduling_router
@@ -46,6 +49,7 @@ from modules.intake.router import router as intake_router
 from modules.booking.router import router as booking_router
 from modules.fields.router import router as fields_router
 from modules.opportunities.router import router as opportunities_router
+from modules.deals.router import router as deals_router
 from modules.activities.router import router as activities_router
 from modules.integration_events.router import router as integration_events_router
 from modules.search import router as search_router
@@ -168,6 +172,7 @@ from modules.integrations.router import router as integrations_router
 app.include_router(integrations_router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(fields_router, prefix="/api/fields", tags=["fields"])
 app.include_router(opportunities_router, prefix="/api/opportunities", tags=["opportunities"])
+app.include_router(deals_router, prefix="/api/deals", tags=["deals"])
 app.include_router(activities_router, prefix="/api/activities", tags=["activities"])
 app.include_router(integration_events_router, prefix="/api/integration-events", tags=["integration-events"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])

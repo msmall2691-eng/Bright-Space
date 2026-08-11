@@ -182,6 +182,11 @@ export function useDashboardDerived({
         sub: `Invoice #${i.id}${i.client_name ? ` · ${i.client_name}` : ''}`,
         action: 'Call',
         onClick: () => navigate(`/invoices/${i.id}`),
+        // Inline collect action: NeedsYouNow renders a two-tap "Remind"
+        // confirm that emails a payment reminder (POST /invoices/{id}/send).
+        // Present here as plain data so the tile owns the network + toast +
+        // optimistic dismiss, mirroring how it handles reschedule approvals.
+        invoiceId: i.id,
       }))
 
     return items

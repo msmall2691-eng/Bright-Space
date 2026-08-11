@@ -14,8 +14,8 @@ recurring monthly revenue estimate, revenue by service, AR aging buckets,
 and top clients. Same pre-computed shape so the Owner Dashboard page only
 does presentation.
 """
-from datetime import datetime, timedelta, date
-from fastapi import APIRouter, Depends
+from datetime import datetime, timedelta, date, timezone
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -74,11 +74,14 @@ def dashboard_summary(db: Session = Depends(get_db), org_id: int = Depends(curre
     def amt(*statuses):
         return sum(by_status.get(s, (0, 0.0))[1] for s in statuses)
 
+    # Pending = leads not yet triaged. "received" was queried here but no code
+    # ever writes it to a lead (dead vocabulary, P4 audit) — dropped so this
+    # counts the states that actually exist: "new" and NULL (public submits).
     new_leads = (
         db.query(func.count(LeadIntake.id))
         .filter(
             org_scope(LeadIntake),
-            or_(LeadIntake.status.in_(("new", "received")), LeadIntake.status.is_(None)),
+            or_(LeadIntake.status == "new", LeadIntake.status.is_(None)),
         )
         .scalar()
     ) or 0
@@ -359,4 +362,219 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
         "revenue_by_service": revenue_by_service,
         "ar_aging": aging,
         "top_clients": top_clients,
+    }
+
+
+# ── Intake → Quote funnel ───────────────────────────────────────────────────
+#
+# A cohort funnel anchored on the REQUEST (LeadIntake), not a status snapshot:
+# for every request created in the window we follow its linked quote as far as
+# it got, so the stages are cumulative and monotonic
+# (Requests ≥ Quoted ≥ Sent ≥ Viewed ≥ Accepted ≥ Won). This answers "of the
+# leads we got, how many turned into money, and where do we lose them?" —
+# which the status-snapshot /summary can't, because it buckets each quote by
+# its *current* status only.
+
+# A quote in any of these statuses has, at minimum, been sent to the customer.
+_SENT_PLUS = {"sent", "viewed", "changes_requested", "accepted", "converted", "declined", "expired"}
+# …and these mean the customer has seen it (you can't accept/ask-to-change unseen).
+_VIEWED_PLUS = {"viewed", "changes_requested", "accepted", "converted"}
+_ACCEPTED_PLUS = {"accepted", "converted"}
+
+
+def _as_naive_utc(dt):
+    """Normalize a datetime / ISO-string to naive UTC (or None).
+
+    LeadIntake.created_at is a naive ``DateTime`` column while the Quote
+    timestamps are ``DateTime(timezone=True)``; subtracting one from the other
+    raises ``TypeError: can't subtract offset-naive and offset-aware`` on
+    Postgres. Flattening both to naive UTC first keeps the duration math safe
+    (and never raises on a legacy string value)."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt)
+        except ValueError:
+            return None
+    tz = getattr(dt, "tzinfo", None)
+    if tz is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _median(values):
+    """Median of a list (or None when empty). More honest than a mean for
+    turnaround times, where one stale quote skews the average."""
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return None
+    n = len(vals)
+    mid = n // 2
+    return vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) / 2.0
+
+
+def _quote_stage(quote) -> int:
+    """The furthest funnel stage a quote reached: 0 draft, 1 sent, 2 viewed,
+    3 accepted, 4 won (converted). Reads timestamps OR status so the funnel
+    stays monotonic even when a step's own signal is missing — e.g. an admin
+    accepting on the phone never records a `viewed_at`, but an accepted quote
+    has plainly been seen."""
+    status = (quote.status or "").lower()
+    stage = 0
+    if quote.sent_at or quote.follow_up_sent_at or status in _SENT_PLUS:
+        stage = 1
+    if quote.viewed_at or status in _VIEWED_PLUS:
+        stage = max(stage, 2)
+    if quote.accepted_at or status in _ACCEPTED_PLUS:
+        stage = max(stage, 3)
+    if quote.converted_at or status == "converted":
+        stage = max(stage, 4)
+    return stage
+
+
+@router.get("/funnel", dependencies=[Depends(require_role("admin", "manager"))])
+def funnel_dashboard(
+    days: int = Query(30, ge=1, le=3650),
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+):
+    """Intake→quote conversion funnel over the last ``days`` days.
+
+    Cohort = requests (LeadIntake) created in the window, excluding archived.
+    Each request is followed to its linked quote's furthest stage, giving
+    cumulative stage counts, step-by-step conversion rates, the current-status
+    outcome mix, median time-to-quote / time-to-accept, dollar value at each
+    money stage, and a per-source breakdown. Admin/manager only (revenue)."""
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=days)
+
+    intakes = (
+        db.query(
+            LeadIntake.source,
+            LeadIntake.created_at,
+            LeadIntake.converted_quote_id,
+        )
+        .filter(
+            org_scope(LeadIntake),
+            LeadIntake.created_at >= window_start,
+            or_(LeadIntake.status.is_(None), LeadIntake.status != "archived"),
+        )
+        .all()
+    )
+
+    quote_ids = [i.converted_quote_id for i in intakes if i.converted_quote_id]
+    quotes = {}
+    if quote_ids:
+        for q in db.query(Quote).filter(Quote.id.in_(set(quote_ids))).all():
+            quotes[q.id] = q
+
+    counts = {"requests": len(intakes), "quoted": 0, "sent": 0, "viewed": 0, "accepted": 0, "won": 0}
+    value = {"quoted": 0.0, "accepted": 0.0, "won": 0.0}
+    outcomes = {"open": 0, "changes_requested": 0, "accepted": 0, "won": 0, "declined": 0, "expired": 0}
+    ttq_hours, tta_hours = [], []
+    by_source: dict = {}
+
+    for i in intakes:
+        src = (i.source or "unknown").strip().lower() or "unknown"
+        bucket = by_source.setdefault(src, {"source": src, "requests": 0, "quoted": 0, "won": 0})
+        bucket["requests"] += 1
+
+        quote = quotes.get(i.converted_quote_id) if i.converted_quote_id else None
+        # An archived (soft-deleted) quote is no longer a live quote — delete_quote
+        # flips status to "archived" but leaves the intake's converted_quote_id
+        # intact. Treat the request as un-quoted so an archived quote never
+        # inflates the quoted/stage counts or the outcome mix (it would otherwise
+        # fall through to "open" / "in play · awaiting reply").
+        if quote is None or (quote.status or "").lower() == "archived":
+            continue
+
+        counts["quoted"] += 1
+        bucket["quoted"] += 1
+        total = float(quote.total or 0)
+        value["quoted"] += total
+
+        stage = _quote_stage(quote)
+        if stage >= 1:
+            counts["sent"] += 1
+        if stage >= 2:
+            counts["viewed"] += 1
+        if stage >= 3:
+            counts["accepted"] += 1
+            value["accepted"] += total
+        if stage >= 4:
+            counts["won"] += 1
+            bucket["won"] += 1
+            value["won"] += total
+
+        # Current-status outcome mix — each quoted request lands in exactly one.
+        st = (quote.status or "").lower()
+        if st == "converted":
+            outcomes["won"] += 1
+        elif st == "accepted":
+            outcomes["accepted"] += 1
+        elif st == "declined":
+            outcomes["declined"] += 1
+        elif st == "expired":
+            outcomes["expired"] += 1
+        elif st == "changes_requested":
+            outcomes["changes_requested"] += 1
+        else:
+            outcomes["open"] += 1  # draft / sent / viewed — still in play
+
+        # Turnaround times.
+        t_intake = _as_naive_utc(i.created_at)
+        t_quote = _as_naive_utc(quote.created_at)
+        if t_intake and t_quote:
+            h = (t_quote - t_intake).total_seconds() / 3600.0
+            if h >= 0:
+                ttq_hours.append(h)
+        t_accept = _as_naive_utc(quote.accepted_at)
+        t_start = _as_naive_utc(quote.sent_at) or t_quote
+        if t_accept and t_start:
+            h = (t_accept - t_start).total_seconds() / 3600.0
+            if h >= 0:
+                tta_hours.append(h)
+
+    def pct(numer, denom):
+        return round(numer / denom * 100, 1) if denom else None
+
+    funnel = [
+        {"key": "requests", "label": "Requests", "count": counts["requests"], "value": None},
+        {"key": "quoted", "label": "Quoted", "count": counts["quoted"], "value": round(value["quoted"], 2)},
+        {"key": "sent", "label": "Sent", "count": counts["sent"], "value": None},
+        {"key": "viewed", "label": "Viewed", "count": counts["viewed"], "value": None},
+        {"key": "accepted", "label": "Accepted", "count": counts["accepted"], "value": round(value["accepted"], 2)},
+        {"key": "won", "label": "Won", "count": counts["won"], "value": round(value["won"], 2)},
+    ]
+
+    by_source_list = sorted(by_source.values(), key=lambda r: (r["requests"], r["won"]), reverse=True)
+    for r in by_source_list:
+        r["won_pct"] = pct(r["won"], r["requests"])
+
+    ttq = _median(ttq_hours)
+    tta = _median(tta_hours)
+    return {
+        "window_days": days,
+        "as_of": business_today().isoformat(),
+        "funnel": funnel,
+        "conversion": {
+            "request_to_quote_pct": pct(counts["quoted"], counts["requests"]),
+            "quote_to_sent_pct": pct(counts["sent"], counts["quoted"]),
+            "sent_to_viewed_pct": pct(counts["viewed"], counts["sent"]),
+            "viewed_to_accepted_pct": pct(counts["accepted"], counts["viewed"]),
+            "accepted_to_won_pct": pct(counts["won"], counts["accepted"]),
+            "overall_pct": pct(counts["won"], counts["requests"]),
+        },
+        "outcomes": outcomes,
+        "timing": {
+            "time_to_quote_hours_median": round(ttq, 1) if ttq is not None else None,
+            "time_to_accept_hours_median": round(tta, 1) if tta is not None else None,
+            "quoted_sample": len(ttq_hours),
+            "accepted_sample": len(tta_hours),
+        },
+        "value": {k: round(v, 2) for k, v in value.items()},
+        "by_source": by_source_list,
     }

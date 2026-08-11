@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Sparkles, Users, Calendar, Receipt, LayoutGrid,
   DollarSign, MessageSquare, Zap, Home, Repeat, Settings, X, Inbox, Clock,
-  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin,
+  LogOut, ChevronDown, TrendingUp, PanelLeftClose, Pin, Radar, Rows3, Filter,
 } from 'lucide-react'
 import { logout } from '../api'
 
@@ -18,8 +18,10 @@ const nav = [
   { to: '/owner',       icon: TrendingUp,      label: 'Owner',       roles: ['admin', 'manager'] },
   { to: '/workspace',   icon: Sparkles,        label: 'Assistant' },
   { divider: true, label: 'Leads' },
+  { to: '/deals',       icon: Rows3,           label: 'Deals' },
   { to: '/requests',    icon: Inbox,           label: 'Requests' },
   { to: '/pipeline',    icon: LayoutGrid,      label: 'Pipeline' },
+  { to: '/funnel',      icon: Filter,          label: 'Quote funnel', roles: ['admin', 'manager'] },
   { to: '/billing',     icon: Receipt,         label: 'Quotes & Billing' },
   { divider: true, label: 'Customers' },
   { to: '/comms',       icon: MessageSquare,   label: 'Messages' },
@@ -28,6 +30,7 @@ const nav = [
   { divider: true, label: 'Scheduling' },
   { to: '/schedule',    icon: Calendar,        label: 'Schedule' },
   { to: '/recurring',   icon: Repeat,          label: 'Recurring' },
+  { to: '/sync',        icon: Radar,           label: 'Sync',        roles: ['admin', 'manager', 'viewer'] },
   { divider: true, label: 'Team' },
   { to: '/payroll',     icon: DollarSign,      label: 'Payroll' },
   { to: '/connecteam',  icon: Clock,           label: 'Connecteam' },

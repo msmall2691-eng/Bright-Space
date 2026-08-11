@@ -12,12 +12,9 @@ from sqlalchemy.orm import Session
 
 from database.models import Opportunity
 from utils.activity_logger import log_activity
+from utils.deal_stage import STAGE_RANK as _RANK, QUOTE_STATUS_STAGE as _QUOTE_STATUS_STAGE
 
 logger = logging.getLogger(__name__)
-
-# Forward order of the pipeline; won/lost are terminal (rank highest so we never
-# regress out of them).
-_RANK = {"new": 0, "qualified": 1, "quoted": 2, "won": 3, "lost": 3}
 
 
 def _active_opp(db: Session, client_id: int):
@@ -92,12 +89,60 @@ def advance_for_quote(db: Session, quote, stage, **kwargs):
     return advance_opportunity(db, opp, stage, **kwargs)
 
 
-# Quote status → pipeline stage, for the one-time backfill of existing rows.
-_QUOTE_STATUS_STAGE = {
-    "draft": "quoted", "sent": "quoted", "viewed": "quoted", "changes_requested": "quoted",
-    "accepted": "quoted", "converted": "won", "declined": "lost", "expired": "lost",
-    "archived": "lost",
-}
+def reconcile_lead_quote_links(db: Session) -> dict:
+    """Make the two lead↔quote links agree (P4 decision 4).
+
+    A lead and its quote are linked in BOTH directions and the two were set
+    independently, so historical rows can have one side populated and the other
+    NULL:
+      * ``Quote.intake_id``            — provenance: which lead this quote came from
+      * ``LeadIntake.converted_quote_id`` — authority: THE quote that converted the lead
+
+    We keep both, but make ``converted_quote_id`` the single source of truth for
+    "is this lead converted, and into what". This backfill fills each gap from
+    the other side:
+      1. lead has no ``converted_quote_id`` but a quote points at it via
+         ``intake_id`` → set it to the EARLIEST such quote (a lead can spawn
+         several quotes; the first is the one that converted it).
+      2. quote has no ``intake_id`` but a lead points at it via
+         ``converted_quote_id`` → set the provenance back.
+
+    Idempotent — only fills NULLs, so re-running is a no-op. Uses correlated
+    subqueries (not UPDATE…FROM) so it runs on both Postgres and SQLite.
+    Returns a small report for the migration log / tests.
+    """
+    from sqlalchemy import text
+
+    bind = db.get_bind()
+
+    # 1. Fill LeadIntake.converted_quote_id from the earliest quote whose
+    #    intake_id points back at this lead.
+    r1 = db.execute(text(
+        "UPDATE lead_intakes "
+        "SET converted_quote_id = ("
+        "  SELECT MIN(q.id) FROM quotes q WHERE q.intake_id = lead_intakes.id"
+        ") "
+        "WHERE converted_quote_id IS NULL "
+        "AND EXISTS (SELECT 1 FROM quotes q WHERE q.intake_id = lead_intakes.id)"
+    ))
+
+    # 2. Fill Quote.intake_id from the lead that claims this quote as its
+    #    converted one (provenance back-link).
+    r2 = db.execute(text(
+        "UPDATE quotes "
+        "SET intake_id = ("
+        "  SELECT li.id FROM lead_intakes li WHERE li.converted_quote_id = quotes.id"
+        "  ORDER BY li.id LIMIT 1"
+        ") "
+        "WHERE intake_id IS NULL "
+        "AND EXISTS (SELECT 1 FROM lead_intakes li WHERE li.converted_quote_id = quotes.id)"
+    ))
+
+    return {
+        "leads_linked": getattr(r1, "rowcount", -1),
+        "quotes_linked": getattr(r2, "rowcount", -1),
+        "dialect": bind.dialect.name,
+    }
 
 
 def backfill_opportunities(db: Session) -> dict:
