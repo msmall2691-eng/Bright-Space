@@ -204,3 +204,30 @@ def test_funnel_window_excludes_older_requests(api):
     a90 = c.get("/api/dashboard/funnel?days=90").json()
     assert _stage(a30["funnel"], "requests") - r30_before == 0
     assert _stage(a90["funnel"], "requests") - r90_before == 1
+
+
+def test_funnel_excludes_archived_quotes(api):
+    """A soft-deleted (archived) quote is no longer live: its request still
+    counts, but it must NOT inflate the quoted/stage counts or the outcome mix
+    (it used to fall through to 'open' / 'in play · awaiting reply')."""
+    c, ids = api
+    src = f"funnelarch-{uuid.uuid4().hex[:8]}"
+    before = c.get("/api/dashboard/funnel?days=90").json()
+    b = {s["key"]: s["count"] for s in before["funnel"]}
+    bo = before["outcomes"]
+
+    cid = _client(ids)
+    # An archived quote that WAS sent — proves it stays out of every stage,
+    # not just the outcome bucket.
+    _request(ids, cid, src, quote_status="archived", sent=True)
+
+    after = c.get("/api/dashboard/funnel?days=90").json()
+    a = {s["key"]: s["count"] for s in after["funnel"]}
+    ao = after["outcomes"]
+
+    assert a["requests"] - b["requests"] == 1   # still counts as a lead
+    assert a["quoted"] - b["quoted"] == 0       # but not a live quote
+    assert a["sent"] - b["sent"] == 0           # and not in any funnel stage
+    assert ao["open"] - bo["open"] == 0         # and not "in play"
+    row = next(r for r in after["by_source"] if r["source"] == src)
+    assert row["requests"] == 1 and row["quoted"] == 0 and row["won"] == 0

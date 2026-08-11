@@ -1720,6 +1720,9 @@ def public_quote_pdf(token: str, download: bool = False, db: Session = Depends(g
         quote_link=f"{app_base_url().rstrip('/')}/quote/{token}",
         address=format_address(quote.address), service_type=quote.service_type,
         customer_message=quote.customer_message,
+        # Same Service Summary the public page and the emailed PDF show, so a
+        # customer downloading the PDF from the link gets the identical document.
+        service_details=build_service_details(db, quote),
     )
     disp = "attachment" if download else "inline"
     return StreamingResponse(

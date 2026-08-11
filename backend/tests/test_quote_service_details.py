@@ -182,3 +182,19 @@ def test_pdf_generates_with_service_details():
         ],
     )
     assert isinstance(pdf, bytes) and pdf[:4] == b"%PDF"
+
+
+def test_public_pdf_endpoint_forwards_service_details(details_ctx):
+    """The public 'Download PDF' endpoint must forward the same service_details
+    the page and the emailed PDF show — otherwise a customer downloading the PDF
+    from the link gets a document missing the Service Summary (regression: it
+    called generate_quote_pdf without service_details)."""
+    from unittest.mock import patch
+    from modules.quoting.router import public_quote_pdf
+    db, c, prop, intake, q = details_ctx
+    with patch("modules.quoting.router.QuotePDFService") as MockPDF:
+        MockPDF.return_value.generate_quote_pdf.return_value = b"%PDF-1.4 stub"
+        public_quote_pdf(q.public_token, db=db)
+        kwargs = MockPDF.return_value.generate_quote_pdf.call_args.kwargs
+    labels = {d["label"] for d in (kwargs.get("service_details") or [])}
+    assert {"Home size", "Frequency", "Focus areas"} <= labels

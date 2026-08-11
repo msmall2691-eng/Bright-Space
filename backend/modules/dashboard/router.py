@@ -468,7 +468,12 @@ def funnel_dashboard(
         bucket["requests"] += 1
 
         quote = quotes.get(i.converted_quote_id) if i.converted_quote_id else None
-        if quote is None:
+        # An archived (soft-deleted) quote is no longer a live quote — delete_quote
+        # flips status to "archived" but leaves the intake's converted_quote_id
+        # intact. Treat the request as un-quoted so an archived quote never
+        # inflates the quoted/stage counts or the outcome mix (it would otherwise
+        # fall through to "open" / "in play · awaiting reply").
+        if quote is None or (quote.status or "").lower() == "archived":
             continue
 
         counts["quoted"] += 1
