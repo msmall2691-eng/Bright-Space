@@ -696,6 +696,12 @@ class AdminUserUpdate(BaseModel):
     # provided in this request", matching the rest of this endpoint's
     # partial-update convention).
     cleaner_id: Optional[str] = None
+    # Per-cleaner pay rate overrides ($/hr) for the native payroll source.
+    # Applied only when present in the request (via model_fields_set), so an
+    # explicit null clears the override while omitting the field leaves it
+    # untouched — a number sets it.
+    pay_rate_residential: Optional[float] = None
+    pay_rate_rental: Optional[float] = None
 
 
 def _user_row(db: Session, u: User) -> dict:
@@ -712,6 +718,8 @@ def _user_row(db: Session, u: User) -> dict:
         "auth_provider": u.auth_provider,
         "google_connected": bool(u.google_sub) or has_google_grant,
         "cleaner_id": u.cleaner_id,
+        "pay_rate_residential": u.pay_rate_residential,
+        "pay_rate_rental": u.pay_rate_rental,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
@@ -799,6 +807,15 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
         # pasted from a Connecteam export doesn't silently fail to match
         # Job.cleaner_ids.
         u.cleaner_id = data.cleaner_id.strip() or None
+    # Per-cleaner pay rates: applied only when present in the request (null
+    # clears, a number sets, omission leaves untouched).
+    _fields_set = data.model_fields_set
+    for _attr in ("pay_rate_residential", "pay_rate_rental"):
+        if _attr in _fields_set:
+            _val = getattr(data, _attr)
+            if _val is not None and _val < 0:
+                raise HTTPException(status_code=422, detail=f"{_attr} cannot be negative")
+            setattr(u, _attr, _val)
     db.commit()
     logger.info(f"[auth] {current_user.email} updated user {u.email}: "
                 f"role={data.role!r} active={data.active!r} cleaner_id={data.cleaner_id!r}")

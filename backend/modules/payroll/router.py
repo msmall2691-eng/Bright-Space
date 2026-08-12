@@ -17,7 +17,7 @@ punch links back to a CRM-scheduled job (schedulerShiftId → Job.connecteam_shi
 name. Punches we can't classify at all are surfaced separately, never silently
 folded into a paid bucket.
 """
-from datetime import datetime, date, timedelta, timezone as _tz
+from datetime import datetime, date, time, timedelta, timezone as _tz
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
 from database.db import get_db
-from database.models import Job, Property
+from database.models import Job, Property, TimeEntry, User
+from utils.dates import business_tz
 from integrations.connecteam import (
     ConnecteamAuthError,
     get_timesheets,
@@ -153,6 +154,34 @@ def update_pay_rates(rates: PayRates, db: Session = Depends(get_db)):
     return _get_rates(db)
 
 
+def _payroll_source(db: Session) -> str:
+    return (get_setting(db, "payroll_source") or "connecteam").strip().lower()
+
+
+@router.get("/source", dependencies=[Depends(require_role("admin", "manager"))])
+def get_payroll_source(db: Session = Depends(get_db)):
+    """Which time source payroll reads: 'connecteam' (default) or 'native'."""
+    return {"source": _payroll_source(db)}
+
+
+class PayrollSourceBody(BaseModel):
+    source: str
+
+
+@router.put("/source", dependencies=[Depends(require_role("admin"))])
+def set_payroll_source(body: PayrollSourceBody, db: Session = Depends(get_db)):
+    """Switch payroll between Connecteam punches and the native time clock. Kept
+    behind this flag so the native source can be dark-tested against Connecteam
+    (via Crew Hours reconciliation) and cut over only once the numbers match.
+    Default stays 'connecteam' until an admin flips it."""
+    src = (body.source or "").strip().lower()
+    if src not in ("connecteam", "native"):
+        raise HTTPException(status_code=422, detail="source must be 'connecteam' or 'native'")
+    set_setting(db, "payroll_source", src)
+    db.commit()
+    return {"source": src}
+
+
 def _blank_emp(uid, name) -> dict:
     return {
         "employee_id": uid,
@@ -182,6 +211,197 @@ def _blank_emp(uid, name) -> dict:
     }
 
 
+# ── Native payroll source (BrightBase time clock, flag-gated) ────────────────
+
+def _native_local_date(dt_utc_naive) -> date:
+    """Business-local calendar date of a native punch (stored naive UTC) — what
+    decides weekday vs weekend, same as the Connecteam path's shift timezone."""
+    return dt_utc_naive.replace(tzinfo=_tz.utc).astimezone(business_tz()).date()
+
+
+def _native_entry_hours(e) -> float:
+    """Worked hours for a native punch: elapsed minus breaks, never negative."""
+    if not e.clock_out_at:
+        return 0.0
+    secs = (e.clock_out_at - e.clock_in_at).total_seconds() - (e.break_minutes or 0) * 60
+    return max(0.0, secs) / 3600.0
+
+
+def _native_summary(db: Session, start_date: str, end_date: str, rates: dict) -> dict:
+    """The payroll breakdown computed from BrightBase's native time clock
+    (time_entries) instead of Connecteam — the SAME response shape as the
+    Connecteam path so the Payroll page renders it unchanged.
+
+    Gated behind payroll_source='native' (off by default). Classification comes
+    from each punch's linked job (job_type + property): a str_turnover job is
+    rental, anything else residential; a punch clocked in with no job is
+    'unclassified' and left out of pay, exactly like the Connecteam path's
+    unlinked punches. Per-cleaner rate overrides (User.pay_rate_*) apply when
+    set, else the global Settings rate. Mileage isn't captured by the native
+    clock yet, so it's 0 (a known gap vs Connecteam — surfaced in the UI)."""
+    d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+    d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+    # Business-local [d0, d1] inclusive → naive-UTC bounds for the clock-in filter.
+    tz = business_tz()
+    lo = datetime.combine(d0, time.min, tzinfo=tz).astimezone(_tz.utc).replace(tzinfo=None)
+    hi = (datetime.combine(d1, time.min, tzinfo=tz) + timedelta(days=1)).astimezone(_tz.utc).replace(tzinfo=None)
+
+    entries = (
+        db.query(TimeEntry)
+        .options(joinedload(TimeEntry.job).joinedload(Job.property))
+        .filter(TimeEntry.clock_out_at.isnot(None),
+                TimeEntry.clock_in_at >= lo,
+                TimeEntry.clock_in_at < hi)
+        .all()
+    )
+
+    cleaner_ids = {e.cleaner_id for e in entries}
+    users = {}
+    if cleaner_ids:
+        for u in db.query(User).filter(User.cleaner_id.in_(cleaner_ids)).all():
+            users[u.cleaner_id] = u
+
+    employees: dict = {}
+    warnings: list = []
+    unclassified_shifts = 0
+
+    for e in entries:
+        cid = e.cleaner_id
+        emp = employees.get(cid)
+        if emp is None:
+            u = users.get(cid)
+            emp = _blank_emp(cid, (u.full_name or u.email) if u else cid)
+            employees[cid] = emp
+
+        hours = _native_entry_hours(e)
+        emp["computed_hours"] += hours
+
+        u = users.get(cid)
+        res_rate = u.pay_rate_residential if (u and u.pay_rate_residential is not None) else rates["residential_rate"]
+        rental_rate = u.pay_rate_rental if (u and u.pay_rate_rental is not None) else rates["rental_weekday_rate"]
+
+        job = e.job
+        prop = job.property if job is not None else None
+        d = _native_local_date(e.clock_in_at)
+        weekend = _is_weekend(d)
+        kind = None if job is None else ("rental" if job.job_type == "str_turnover" else "residential")
+
+        detail = {
+            "shift_id": f"native:{e.id}",
+            "date": d.isoformat(),
+            "weekend": weekend,
+            "hours": round(hours, 2),
+            "miles": 0.0,
+            "kind": kind or "unclassified",
+            "source": "native_job" if job is not None else "unlinked",
+            "property": prop.name if prop is not None else None,
+            "shift_title": "",
+            "job_label": (job.title if job is not None else "") or "",
+            "rate_pay": False,
+            "note": e.note or "",
+            "pay": 0.0,
+        }
+
+        if kind is None:
+            emp["unclassified_hours"] += hours
+            unclassified_shifts += 1
+            emp["shifts"].append(detail)
+            continue
+
+        if kind == "residential":
+            emp["residential_hours"] += hours
+            pay = hours * res_rate
+            emp["residential_pay"] += pay
+            detail["pay"] = round(pay, 2)
+        elif kind == "rental" and not weekend:
+            emp["rental_weekday_hours"] += hours
+            pay = hours * rental_rate
+            emp["rental_weekday_pay"] += pay
+            detail["pay"] = round(pay, 2)
+        else:  # rental + weekend → piece rate per distinct (property, date)
+            emp["weekend_rental_hours"] += hours
+            key = prop.id if prop is not None else f"job:{job.id if job else 'x'}"
+            seen = emp["_weekend_seen"].setdefault(key, set())
+            first_today = d.isoformat() not in seen
+            seen.add(d.isoformat())
+            if first_today:
+                emp["weekend_turnovers"] += 1
+                rate = getattr(prop, "turnover_rate", None) if prop is not None else None
+                if rate is None:
+                    emp["weekend_unpriced_turnovers"] += 1
+                    warnings.append(
+                        f"{emp['name']}: weekend turnover at {detail['property'] or 'unknown property'} "
+                        f"on {d.isoformat()} has no piece rate set — not included in pay."
+                    )
+                else:
+                    emp["weekend_pay"] += float(rate)
+                    detail["pay"] = round(float(rate), 2)
+        emp["shifts"].append(detail)
+
+    out_emps = []
+    for emp in employees.values():
+        emp["computed_hours"] = round(emp["computed_hours"], 2)
+        # The native clock IS the source of truth — no external "official" total.
+        emp["total_hours"] = emp["computed_hours"]
+        emp["hours_source"] = "native"
+        emp["connecteam_hours"] = None
+        accounted = (emp["residential_hours"] + emp["rental_weekday_hours"]
+                     + emp["weekend_rental_hours"] + emp["unclassified_hours"])
+        emp["unallocated_hours"] = round(emp["total_hours"] - accounted, 2)
+        emp["mileage_reimbursement"] = 0.0
+        emp["gross_pay"] = round(
+            emp["residential_pay"] + emp["rental_weekday_pay"] + emp["weekend_pay"], 2
+        )
+        for k in ("total_hours", "residential_hours", "residential_pay",
+                  "rental_weekday_hours", "rental_weekday_pay",
+                  "weekend_rental_hours", "weekend_pay",
+                  "unclassified_hours", "miles"):
+            emp[k] = round(emp[k], 2)
+        emp.pop("_weekend_seen", None)
+        emp.pop("_weekend_rate", None)
+        out_emps.append(emp)
+
+    out_emps.sort(key=lambda e: e["name"].lower() if isinstance(e["name"], str) else str(e["name"]))
+
+    totals = {
+        "total_hours": round(sum(e["total_hours"] for e in out_emps), 2),
+        "computed_hours": round(sum(e["computed_hours"] for e in out_emps), 2),
+        "unallocated_hours": round(sum(e["unallocated_hours"] for e in out_emps), 2),
+        "residential_hours": round(sum(e["residential_hours"] for e in out_emps), 2),
+        "rental_weekday_hours": round(sum(e["rental_weekday_hours"] for e in out_emps), 2),
+        "weekend_rental_hours": round(sum(e["weekend_rental_hours"] for e in out_emps), 2),
+        "weekend_turnovers": sum(e["weekend_turnovers"] for e in out_emps),
+        "unclassified_hours": round(sum(e["unclassified_hours"] for e in out_emps), 2),
+        "miles": 0.0,
+        "mileage_reimbursement": 0.0,
+        "gross_pay": round(sum(e["gross_pay"] for e in out_emps), 2),
+    }
+
+    if unclassified_shifts:
+        warnings.insert(0, (
+            f"{unclassified_shifts} punch(es) weren't clocked into a specific job, so their "
+            f"hours couldn't be split into residential vs rental. They're listed as "
+            f"'unclassified' and left out of pay."
+        ))
+    warnings.append(
+        "Reading hours from the native BrightBase clock. Mileage isn't captured "
+        "natively yet, so mileage reimbursement is $0 for this period."
+    )
+
+    return {
+        "period": f"{start_date} to {end_date}",
+        "start_date": start_date,
+        "end_date": end_date,
+        "rates": rates,
+        "hours_source": "native",
+        "source": "native",
+        "employees": out_emps,
+        "totals": totals,
+        "warnings": warnings,
+    }
+
+
 @router.get("/summary", dependencies=[Depends(require_role("admin", "manager"))])
 async def payroll_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
@@ -203,6 +423,13 @@ async def payroll_summary(
         raise HTTPException(status_code=422, detail="Connecteam allows at most a 92-day range")
 
     rates = _get_rates(db)
+
+    # Flag-gated cutover: read hours from the native BrightBase clock instead of
+    # Connecteam when payroll_source='native' (off by default). Same response
+    # shape, so the Payroll page is agnostic to the source.
+    if _payroll_source(db) == "native":
+        return _native_summary(db, start_date, end_date, rates)
+
     try:
         rows = await get_time_activities(start_date, end_date)
     except ConnecteamAuthError as e:
@@ -409,6 +636,7 @@ async def payroll_summary(
         "end_date": end_date,
         "rates": rates,
         "hours_source": hours_source,
+        "source": "connecteam",
         "employees": out_emps,
         "totals": totals,
         "warnings": warnings,

@@ -2370,6 +2370,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payroll Source
+         * @description Which time source payroll reads: 'connecteam' (default) or 'native'.
+         */
+        get: operations["get_payroll_source_api_payroll_source_get"];
+        /**
+         * Set Payroll Source
+         * @description Switch payroll between Connecteam punches and the native time clock. Kept
+         *     behind this flag so the native source can be dark-tested against Connecteam
+         *     (via Crew Hours reconciliation) and cut over only once the numbers match.
+         *     Default stays 'connecteam' until an admin flips it.
+         */
+        put: operations["set_payroll_source_api_payroll_source_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll/summary": {
         parameters: {
             query?: never;
@@ -5682,6 +5709,10 @@ export interface components {
             active?: boolean | null;
             /** Cleaner Id */
             cleaner_id?: string | null;
+            /** Pay Rate Residential */
+            pay_rate_residential?: number | null;
+            /** Pay Rate Rental */
+            pay_rate_rental?: number | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -6768,6 +6799,11 @@ export interface components {
             rental_weekday_rate?: number | null;
             /** Mileage Rate */
             mileage_rate?: number | null;
+        };
+        /** PayrollSourceBody */
+        PayrollSourceBody: {
+            /** Source */
+            source: string;
         };
         /** PriorityRequest */
         PriorityRequest: {
@@ -11392,6 +11428,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PayRates"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payroll_source_api_payroll_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_payroll_source_api_payroll_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollSourceBody"];
             };
         };
         responses: {

@@ -146,6 +146,14 @@ class User(Base):
     # already assigned to their crew ID.
     cleaner_id = Column(String, nullable=True, index=True)
 
+    # Per-cleaner pay rate overrides ($/hr) for the native payroll source. NULL
+    # = use the global Settings rate for that bucket (pay_rate_residential /
+    # pay_rate_rental_weekday). Only meaningful for role="cleaner" logins; lets
+    # an admin pay individual crew above/below the shop default. The Connecteam
+    # payroll source ignores these (Connecteam holds its own rates).
+    pay_rate_residential = Column(Float, nullable=True)
+    pay_rate_rental = Column(Float, nullable=True)
+
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column
     # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is

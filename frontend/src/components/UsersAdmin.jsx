@@ -47,6 +47,7 @@ export default function UsersAdmin() {
   const setRole = (u, role) => act(u.id, () => patch(`/api/auth/users/${u.id}`, { role }))
   const setActive = (u, active) => act(u.id, () => patch(`/api/auth/users/${u.id}`, { active }))
   const setCleanerId = (u, cleaner_id) => act(u.id, () => patch(`/api/auth/users/${u.id}`, { cleaner_id }))
+  const setPay = (u, patchObj) => act(u.id, () => patch(`/api/auth/users/${u.id}`, patchObj))
 
   const pending = users.filter(u => u.status === 'pending')
   const rest = users.filter(u => u.status !== 'pending')
@@ -122,19 +123,51 @@ export default function UsersAdmin() {
                 {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
               {u.role === 'cleaner' && (
-                <input
-                  key={`${u.id}-${u.cleaner_id || ''}`}
-                  type="text"
-                  defaultValue={u.cleaner_id || ''}
-                  placeholder="Crew ID"
-                  title="Links this login to their existing crew ID (matches Job.cleaner_ids / the Connecteam employee ID). Leave blank if this cleaner has no jobs assigned yet."
-                  disabled={busyId === u.id}
-                  onBlur={e => {
-                    const v = e.target.value.trim()
-                    if (v !== (u.cleaner_id || '')) setCleanerId(u, v)
-                  }}
-                  className="w-24 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
-                />
+                <>
+                  <input
+                    key={`${u.id}-${u.cleaner_id || ''}`}
+                    type="text"
+                    defaultValue={u.cleaner_id || ''}
+                    placeholder="Crew ID"
+                    title="Links this login to their existing crew ID (matches Job.cleaner_ids / the Connecteam employee ID). Leave blank if this cleaner has no jobs assigned yet."
+                    disabled={busyId === u.id}
+                    onBlur={e => {
+                      const v = e.target.value.trim()
+                      if (v !== (u.cleaner_id || '')) setCleanerId(u, v)
+                    }}
+                    className="w-24 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
+                  />
+                  <input
+                    key={`${u.id}-res-${u.pay_rate_residential ?? ''}`}
+                    type="number" step="0.5" min="0"
+                    defaultValue={u.pay_rate_residential ?? ''}
+                    placeholder="Res $/hr"
+                    title="Residential hourly pay rate for this cleaner (native payroll). Blank = shop default."
+                    disabled={busyId === u.id}
+                    onBlur={e => {
+                      const raw = e.target.value.trim()
+                      const v = raw === '' ? null : Number(raw)
+                      if (v !== null && Number.isNaN(v)) return
+                      if (v !== (u.pay_rate_residential ?? null)) setPay(u, { pay_rate_residential: v })
+                    }}
+                    className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
+                  />
+                  <input
+                    key={`${u.id}-rental-${u.pay_rate_rental ?? ''}`}
+                    type="number" step="0.5" min="0"
+                    defaultValue={u.pay_rate_rental ?? ''}
+                    placeholder="Rental $/hr"
+                    title="Rental (turnover) hourly pay rate for this cleaner (native payroll). Blank = shop default."
+                    disabled={busyId === u.id}
+                    onBlur={e => {
+                      const raw = e.target.value.trim()
+                      const v = raw === '' ? null : Number(raw)
+                      if (v !== null && Number.isNaN(v)) return
+                      if (v !== (u.pay_rate_rental ?? null)) setPay(u, { pay_rate_rental: v })
+                    }}
+                    className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
+                  />
+                </>
               )}
               {u.active && u.status !== 'disabled' ? (
                 <button onClick={() => setActive(u, false)} disabled={busyId === u.id}
