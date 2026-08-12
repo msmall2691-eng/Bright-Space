@@ -89,6 +89,7 @@ def _message_dict(service, msg_id: str, skip_automated: bool = True):
         date_iso = parsedate_to_datetime(date_raw).isoformat() if date_raw else ""
     except Exception:
         date_iso = ""
+    labels = msg.get("labelIds") or []
     return {
         "id": msg.get("id"),
         "message_id": _header(headers, "Message-ID"),
@@ -99,10 +100,23 @@ def _message_dict(service, msg_id: str, skip_automated: bool = True):
         "snippet": msg.get("snippet") or "",
         "body": _body_text(msg.get("payload") or {}),
         "date": date_iso,
-        "is_read": "UNREAD" not in (msg.get("labelIds") or []),
+        "is_read": "UNREAD" not in labels,
         "has_attachments": any(
             (p.get("filename") or "").strip() for p in _walk_parts(msg.get("payload") or {})
         ),
+        # Gmail's own category labels (CATEGORY_PROMOTIONS/SOCIAL/UPDATES/…) —
+        # a strong triage signal the IMAP path can't see.
+        "labels": labels,
+        # Lead-signal / bulk-mail headers, matching the IMAP path's
+        # _lead_signal_headers so evaluate_inbound_email / should_thread_inbound_email
+        # and the triage classifier behave identically on both paths.
+        "to_email": (parseaddr(_header(headers, "To"))[1] or "").lower(),
+        "in_reply_to": _header(headers, "In-Reply-To"),
+        "references": _header(headers, "References"),
+        "list_unsubscribe": _header(headers, "List-Unsubscribe"),
+        "precedence": (_header(headers, "Precedence") or "").lower(),
+        "feedback_id": _header(headers, "Feedback-ID"),
+        "auto_submitted": (_header(headers, "Auto-Submitted") or "").lower(),
     }
 
 

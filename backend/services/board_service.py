@@ -31,6 +31,7 @@ import config
 from database.models import (
     Client, Job, Invoice, Quote, LeadIntake, RecurringSchedule,
     Conversation, Message, IntegrationEvent, AppSetting, UserGoogleAccount,
+    InboxTriageItem,
 )
 from utils.dates import (
     business_today, business_tz, add_business_minutes, coerce_date, coerce_time,
@@ -511,8 +512,12 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
             actions=[_link("Tidy Up", "/cleanup")],
         ))
 
-    # ── 🗑️ Safe to Ignore (Phase 2: Gmail triage) ──────────────────────────
-    safe = []
+    # ── 🧰 SaaS notices + 🗑️ Safe to Ignore (Gmail triage) ──────────────────
+    # The automated inbound-email stream, captured + classified by the sync
+    # (services/inbox_triage). SaaS/billing/security notices reinforce Systems;
+    # promotions/social/newsletters fill Safe to Ignore.
+    triage_systems, safe = _inbox_triage(db, oid, today)
+    systems.extend(triage_systems)
 
     sections = [
         {"key": "needs_today", "title": "Needs You Today", "icon": "🔴", "items": _sort_items(needs)},
@@ -570,6 +575,68 @@ def build_board(db: Session, oid: int, can_act: bool = True) -> dict:
         "filters": filters,
         "sections": sections,
     }
+
+
+# ── Inbox triage (Gmail) ─────────────────────────────────────────────────────
+
+# category → tag tone (must be a TAG_TONE key: rose/amber/emerald/blue/indigo/violet/gray).
+_TRIAGE_TONE = {
+    "security": "rose", "finance": "amber", "saas": "violet",
+    "promotions": "gray", "social": "blue", "updates": "gray", "other": "gray",
+}
+
+
+def _gmail_link(message_id):
+    """A Gmail deep link that opens the exact message by its RFC Message-ID."""
+    mid = (message_id or "").strip().strip("<>")
+    if not mid:
+        return None
+    from urllib.parse import quote
+    return f"https://mail.google.com/mail/u/0/#search/rfc822msgid:{quote(mid)}"
+
+
+def _triage_card(r, today: date) -> dict:
+    sev = "watch" if r.category == "security" else "info"
+    title = (r.vendor or r.from_name or r.from_addr or "Notice").strip()
+    if r.category == "security":
+        title = f"{title} — security"
+    elif r.category == "finance":
+        title = f"{title} — billing"
+    body = (r.subject or "").strip() or (r.snippet or "").strip()
+    tags = [{"label": (r.category or "other").upper(), "tone": _TRIAGE_TONE.get(r.category, "gray")}]
+    actions = [_api("Dismiss", f"/api/inbox/triage/{r.id}/dismiss", body={}, done="Dismissed")]
+    link = _gmail_link(r.external_id)
+    if link:
+        actions.append(_link("Open in Gmail", link))
+    if r.unsubscribe_url:
+        actions.append(_link("Unsubscribe", r.unsubscribe_url))
+    return _item(f"triage:{r.id}", sev, title, body, _ago(r.received_at),
+                 tags=tags, actions=actions, source="gmail")
+
+
+def _inbox_triage(db: Session, oid: int, today: date, cap: int = _CAP):
+    """Board cards for the captured automated-email stream, split into the
+    Systems (SaaS/billing/security notices) and Safe-to-Ignore (promotions,
+    social, newsletters) buckets. Returns (systems_items, safe_items).
+
+    Org-scoped and dismissed rows are hidden. Newest first; each bucket capped."""
+    org = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+    rows = (
+        db.query(InboxTriageItem)
+        .filter(org(InboxTriageItem), InboxTriageItem.dismissed_at.is_(None))
+        .order_by(InboxTriageItem.received_at.desc().nullslast(),
+                  InboxTriageItem.id.desc())
+        .limit(cap * 4)
+        .all()
+    )
+    systems, safe = [], []
+    for r in rows:
+        if r.section == "systems":
+            if len(systems) < cap:
+                systems.append(_triage_card(r, today))
+        elif len(safe) < cap:
+            safe.append(_triage_card(r, today))
+    return systems, safe
 
 
 # ── Integration health ──────────────────────────────────────────────────────

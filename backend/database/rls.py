@@ -22,6 +22,9 @@ TENANT_TABLES = [
     # Phase 2 scheduling redesign (migration 068): the append-only event log and
     # per-target projection bookkeeping. Both carry org_id.
     "schedule_events", "projection_state",
+    # Inbox triage (migration 069): the captured automated-email stream behind the
+    # board's Systems & Subscriptions / Safe to Ignore sections.
+    "inbox_triage_items",
 ]
 
 POLICY = "bb_org_isolation"

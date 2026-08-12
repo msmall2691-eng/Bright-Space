@@ -21,8 +21,9 @@ from sqlalchemy import func
 from typing import Optional
 
 from database.models import Client, ContactEmail, Activity, Message
-from integrations.gmail_inbox import fetch_inbox
+from integrations.gmail_inbox import fetch_inbox, _is_automated
 from integrations.email_filter import evaluate_inbound_email, should_thread_inbound_email
+from services.inbox_triage import capture_triage_item
 from utils.activity_logger import log_email
 from datetime import datetime, timezone
 import logging
@@ -163,11 +164,18 @@ def run_inbox_sync(
     auto_enrich: bool = True,
     emails: Optional[list] = None,
     source_account_id: Optional[int] = None,
+    org_id: Optional[int] = None,
 ) -> dict:
     """Match/enrich senders and thread inbound emails into Conversations.
     Shared by the GET /inbox endpoint, the background scheduler, and the
     per-user Gmail-API sync (which passes pre-fetched `emails` plus the
     user_google_accounts id for provenance) so every path behaves identically.
+
+    Emails that don't thread (automated/bulk: no-reply, marketing, SaaS notices)
+    are captured into inbox_triage_items for the board's triage sections instead
+    of being discarded. `org_id` stamps those rows (the per-account path passes
+    the account's org; the shared inbox passes None → legacy NULL-org, tolerated
+    by the board's org filter).
     """
     # Cursor: only the shared-inbox IMAP path (emails not pre-supplied by a
     # caller) manages this — the per-account Gmail API path has its own
@@ -208,6 +216,7 @@ def run_inbox_sync(
     new_contacts = 0
     skipped_by_filter = 0
     threaded = 0
+    triaged = 0
 
     for em in emails:
         addr = em["from_email"]
@@ -290,7 +299,14 @@ def run_inbox_sync(
         # legitimate small-business/ESP senders add. The bulk/spam gate only
         # applies to UNKNOWN senders, to keep cold marketing blasts out of the
         # inbox. (Fixes "customer emails aren't showing up in Comms".)
-        if em.get("is_known_contact") or should_thread_inbound_email(em):
+        #
+        # `not _is_automated(addr)` keeps the per-account path's Comms output
+        # identical to before: automated senders (no-reply@, @github.com, etc.)
+        # used to be dropped at the fetch boundary (skip_automated) and never
+        # reached Comms. Now they flow through for triage capture, so exclude
+        # them from threading here — they land in the else-branch (triage)
+        # instead, exactly matching their old "not in Comms" outcome.
+        if em.get("is_known_contact") or (should_thread_inbound_email(em) and not _is_automated(addr)):
             client_id = em["client"]["id"] if em["client"] else None
             # Savepoint per email: one bad message must not poison the whole
             # sync transaction — before this, a single IntegrityError aborted
@@ -319,6 +335,18 @@ def run_inbox_sync(
                     logger.warning(f"[gmail] activity log failed (non-fatal): {e}")
         else:
             em["activity_logged"] = False
+            # Not threaded → a definitive automated/bulk sender (no-reply,
+            # marketing, SaaS/billing notice). Capture it for the board's triage
+            # sections (Systems & Subscriptions / Safe to Ignore) instead of
+            # dropping it on the floor. Savepoint + best-effort: a bad triage row
+            # must never poison the threading transaction (same guard as above).
+            try:
+                with db.begin_nested():
+                    if capture_triage_item(db, org_id, em, source_account_id=source_account_id):
+                        triaged += 1
+            except Exception as e:
+                logger.warning(f"[gmail] triage capture failed for "
+                               f"{em.get('from_email') or '(no sender)'}: {e}")
 
     # Always commit: threading creates Conversations/Messages even when no new
     # Client was enriched, so the prior `new_contacts or auto_enrich` guard
@@ -346,6 +374,7 @@ def run_inbox_sync(
         "summary": {
             "total": total,
             "threaded": threaded,
+            "triaged": triaged,
             "linked": linked,
             "unlinked": total - linked,
             "unread": sum(1 for e in emails if not e.get("is_read")),
@@ -374,20 +403,23 @@ def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> di
         creds = account_credentials(db, account)
         cursor = getattr(account, "gmail_history_id", None)
         new_history_id = None
+        # skip_automated=False: automated/bulk mail is no longer discarded at the
+        # fetch boundary — it flows through so run_inbox_sync can capture it for
+        # the board's triage sections (human mail still threads exactly as before).
         if cursor:
             try:
-                inc = fetch_inbox_incremental(creds, cursor)
+                inc = fetch_inbox_incremental(creds, cursor, skip_automated=False)
                 emails = inc["messages"]
                 new_history_id = inc["new_history_id"]
             except HistoryExpired:
                 # Cursor too old — full re-scan and re-seed from the current id.
                 logger.info(f"[gmail] history cursor expired for {account.email}; full re-sync")
-                emails = fetch_inbox_for_account(creds, max_results=max_results)
+                emails = fetch_inbox_for_account(creds, max_results=max_results, skip_automated=False)
                 new_history_id = current_history_id(creds)
         else:
             # First sync: full scan, then seed the cursor from the current id so
             # subsequent syncs go incremental.
-            emails = fetch_inbox_for_account(creds, max_results=max_results)
+            emails = fetch_inbox_for_account(creds, max_results=max_results, skip_automated=False)
             new_history_id = current_history_id(creds)
     except AccountCredentialsError as e:
         # account_credentials already marked the row expired with the reason.
@@ -397,7 +429,8 @@ def run_account_inbox_sync(db: Session, account, *, max_results: int = 30) -> di
         logger.warning(f"[gmail] account sync failed for {account.email}: {e}")
         mark_sync(db, account, error=str(e))
         return {"error": str(e), "summary": {"total": 0, "threaded": 0}}
-    result = run_inbox_sync(db, emails=emails, source_account_id=account.id)
+    result = run_inbox_sync(db, emails=emails, source_account_id=account.id,
+                            org_id=getattr(account, "org_id", None))
     # Advance the cursor only after a successful threading pass, so a failure
     # mid-sync re-reads the same window next time rather than skipping messages.
     if new_history_id:
