@@ -201,3 +201,56 @@ def test_clock_in_links_job(ids):
         assert r.json()["job_id"] == jid
     finally:
         _clear()
+
+
+class _Admin:
+    id, org_id, role, status, active = 9110, 1, "admin", "active", True
+    email = "recon-admin@example.com"
+    cleaner_id = None
+
+
+def test_reconciliation_native_hours_without_connecteam(ids, monkeypatch):
+    # Hermetic: force Connecteam "not configured" so the endpoint never makes a
+    # network call, regardless of the runner's env.
+    import modules.crew.router as crew_router
+    monkeypatch.setattr(crew_router, "connecteam_is_configured", lambda: False)
+
+    cid = _crew_id()
+    _mk_entry(ids, cid, _today_utc(8), _today_utc(12), break_min=30)  # 4h - 0.5 break = 3.5h
+    app.dependency_overrides[get_current_user] = lambda: _Admin()
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        today = business_today().isoformat()
+        r = api.get(f"/api/crew/reconciliation?start={today}&end={today}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["connecteam_configured"] is False
+        person = next((p for p in body["people"] if p["cleaner_id"] == cid), None)
+        assert person is not None
+        assert person["native_hours"] == 3.5
+        assert person["connecteam_hours"] is None
+        assert person["delta_hours"] is None
+    finally:
+        _clear()
+
+
+def test_reconciliation_rejects_bad_dates():
+    app.dependency_overrides[get_current_user] = lambda: _Admin()
+    app.dependency_overrides[current_org_id] = lambda: 1
+    api = TestClient(app)
+    try:
+        assert api.get("/api/crew/reconciliation?start=nope&end=nope").status_code == 422
+        assert api.get("/api/crew/reconciliation?start=2026-02-02&end=2026-01-01").status_code == 422
+    finally:
+        _clear()
+
+
+def test_reconciliation_requires_office_role():
+    _override(_Cleaner(9112, _crew_id()))  # a cleaner is not admin/manager
+    api = TestClient(app)
+    try:
+        today = business_today().isoformat()
+        assert api.get(f"/api/crew/reconciliation?start={today}&end={today}").status_code == 403
+    finally:
+        _clear()

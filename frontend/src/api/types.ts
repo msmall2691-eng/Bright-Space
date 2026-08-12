@@ -5475,6 +5475,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reconciliation
+         * @description Native clock hours vs Connecteam's hours, per cleaner, for a date range —
+         *     the proof step before payroll ever depends on the native clock. Read-only:
+         *     reads Connecteam the same way payroll does (its official timesheet totals,
+         *     falling back to punch-summed hours) and never writes it. If Connecteam isn't
+         *     configured, returns native hours alone with connecteam_configured=false.
+         */
+        get: operations["reconciliation_api_crew_reconciliation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/vapid-public-key": {
         parameters: {
             query?: never;
@@ -16132,6 +16156,38 @@ export interface operations {
                 "application/json": components["schemas"]["ClockOutBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconciliation_api_crew_reconciliation_get: {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
