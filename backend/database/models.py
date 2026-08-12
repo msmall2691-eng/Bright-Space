@@ -954,6 +954,57 @@ class Message(Base):
     conversation = relationship("Conversation", back_populates="messages")
 
 
+class InboxTriageItem(Base):
+    """A low-priority automated/bulk inbound email captured for the Ops Board's
+    triage sections (Systems & Subscriptions / Safe to Ignore).
+
+    BrightBase threads *human* email into Conversations (the "Real People
+    Waiting" board section). The automated stream — SaaS/billing notices,
+    receipts, security alerts, newsletters, promotions — used to be filtered out
+    by integrations/email_filter and silently discarded. This table captures
+    that stream, classified, so the board can surface "subscriptions worth a
+    glance" vs "safe to ignore" instead of the operator wading through Gmail.
+
+    Populated from the inbound sync (services/inbox_triage.capture_triage_item),
+    deduped on the email Message-ID (external_id) per org. Rows are never sent
+    or replied to; an operator "Dismiss" just stamps dismissed_at so the card
+    drops off the board (the raw email stays in Gmail untouched)."""
+    __tablename__ = "inbox_triage_items"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_id = Column(String, nullable=True, index=True)   # email Message-ID (dedup key)
+    # Which member's connected Google account synced it (NULL = shared inbox).
+    source_account_id = Column(
+        Integer, ForeignKey("user_google_accounts.id", ondelete="SET NULL"), nullable=True)
+
+    from_addr = Column(String, nullable=True)
+    from_name = Column(String, nullable=True)
+    subject = Column(String, nullable=True)
+    snippet = Column(Text, nullable=True)
+    received_at = Column(DateTime, nullable=True, index=True)
+
+    # Classification (services/inbox_triage.classify_email)
+    category = Column(String, nullable=False, default="other")
+    # saas | finance | security | promotions | social | updates | other
+    section = Column(String, nullable=False, default="safe_to_ignore")
+    # which board section it routes to: "systems" | "safe_to_ignore"
+    vendor = Column(String, nullable=True)            # best-effort brand/sender label
+    unsubscribe_url = Column(String, nullable=True)   # http(s) List-Unsubscribe target
+    classified_by = Column(String, nullable=False, default="rules")  # rules | ai
+
+    is_read = Column(Boolean, default=False, nullable=False)
+    dismissed_at = Column(DateTime, nullable=True)    # operator cleared it → hidden from board
+
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        # Board read: non-dismissed rows for an org, grouped by section.
+        Index("idx_inbox_triage_org_section", "org_id", "section", "dismissed_at"),
+    )
+
+
 class Opportunity(Base):
     """
     Pipeline deal between lead qualification and quoting.

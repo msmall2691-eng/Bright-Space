@@ -22,7 +22,9 @@ import sqlalchemy as sa
 
 
 revision = "069_user_cleaner_id"
-down_revision = "068_schedule_event_log"
+# Re-chained onto 069_inbox_triage_items (PR #670, which also branched off 068)
+# during the merge into main, so the graph stays linear with a single head.
+down_revision = "069_inbox_triage_items"
 branch_labels = None
 depends_on = None
 

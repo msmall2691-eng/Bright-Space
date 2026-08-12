@@ -184,6 +184,8 @@ app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 from modules.cleanup.router import router as cleanup_router
 app.include_router(cleanup_router, prefix="/api/cleanup", tags=["cleanup"])
+from modules.inbox.router import router as inbox_router
+app.include_router(inbox_router, prefix="/api/inbox", tags=["inbox"])
 app.include_router(schedule_router, prefix="/api/schedule", tags=["schedule"])
 app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
 from modules.crew.router import router as crew_router
