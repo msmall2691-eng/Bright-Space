@@ -261,7 +261,13 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
     cleaner_ids = {e.cleaner_id for e in entries}
     users = {}
     if cleaner_ids:
-        for u in db.query(User).filter(User.cleaner_id.in_(cleaner_ids)).all():
+        # Scope to this org — cleaner_id is intentionally non-unique and `users`
+        # isn't an RLS tenant table, so another org's same-id user could
+        # otherwise overwrite the map (leaking their name + pay-rate override).
+        for u in db.query(User).filter(
+            User.cleaner_id.in_(cleaner_ids),
+            or_(User.org_id == oid, User.org_id.is_(None)),
+        ).all():
             users[u.cleaner_id] = u
 
     employees: dict = {}
@@ -685,6 +691,15 @@ async def send_to_square(body: SendToSquareBody, db: Session = Depends(get_db)):
     Defaults to a DRY RUN — it matches people and shows exactly what WOULD be
     sent (nothing is written to Square) so the operator can verify before
     committing. Set dry_run=false to actually create the timecards."""
+    # The Square export still sources hours from Connecteam; block it while the
+    # payroll source is native so a preview/submission can't silently diverge
+    # from (or outlive) the native hours the admin just reviewed.
+    if _payroll_source(db) == "native":
+        raise HTTPException(
+            status_code=400,
+            detail="Square export from the native clock isn't wired up yet. Switch Payroll's "
+                   "hours source back to Connecteam, or use Export CSV.",
+        )
     from integrations import square
     if not square.is_configured():
         raise HTTPException(status_code=400, detail="Square isn't connected — add a token + location in Settings.")

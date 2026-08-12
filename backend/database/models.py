@@ -724,6 +724,14 @@ class TimeEntry(Base):
         Index("idx_time_entry_cleaner_open", "cleaner_id", "clock_out_at"),
         # "My punches for a day" — hours-today / history.
         Index("idx_time_entry_cleaner_in", "cleaner_id", "clock_in_at"),
+        # One open punch per cleaner per org (payroll integrity): at most one row
+        # with clock_out_at IS NULL. The endpoint pre-checks too, but this is the
+        # race backstop. Mirrors the Job turnover-uniqueness pattern so it holds
+        # in both Postgres (prod) and the SQLite test schema.
+        Index("uq_time_entry_one_open_per_cleaner", "org_id", "cleaner_id",
+              unique=True,
+              postgresql_where=text("clock_out_at IS NULL"),
+              sqlite_where=text("clock_out_at IS NULL")),
     )
 
 

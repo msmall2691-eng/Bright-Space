@@ -29,6 +29,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database.db import get_db
@@ -271,6 +272,11 @@ def clock_in(
         job = db.query(Job).filter(Job.id == job_id, org_scope(Job)).first()
         if not job:
             raise HTTPException(status_code=404, detail="Job not found.")
+        # Only clock into a job you're assigned to — otherwise a stale or crafted
+        # request could attribute hours (and weekend piece-rate pay) to another
+        # cleaner's work once native payroll reads these punches.
+        if current_user.cleaner_id not in (job.cleaner_ids or []):
+            raise HTTPException(status_code=403, detail="You're not assigned to that job.")
 
     entry = TimeEntry(
         org_id=oid,
@@ -283,7 +289,17 @@ def clock_in(
         clock_in_lng=body.lng,
         clock_in_accuracy_m=body.accuracy_m,
     )
-    db.add(entry); db.commit(); db.refresh(entry)
+    db.add(entry)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Backstop for the one-open-punch invariant against a concurrent double
+        # clock-in — the partial unique index (org_id, cleaner_id WHERE
+        # clock_out_at IS NULL) rejects the second row. The pre-check above
+        # handles the common (non-racing) case with a friendlier path.
+        db.rollback()
+        raise HTTPException(status_code=409, detail="You're already clocked in — clock out first.")
+    db.refresh(entry)
     return _entry_row(entry)
 
 

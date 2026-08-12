@@ -47,10 +47,10 @@ def _dt(y, m, d, hh, mm=0):
     return datetime(y, m, d, hh, mm)  # naive UTC, as the clock stores
 
 
-def _mk_cleaner(ids, cleaner_id, res_rate=None, rental_rate=None, name="Crew Person"):
+def _mk_cleaner(ids, cleaner_id, res_rate=None, rental_rate=None, name="Crew Person", org_id=1):
     db = SessionLocal()
     u = User(email=f"crew-{uuid.uuid4().hex[:6]}@example.com", role="cleaner",
-             full_name=name, org_id=1, active=True, status="active",
+             full_name=name, org_id=org_id, active=True, status="active",
              cleaner_id=cleaner_id, pay_rate_residential=res_rate, pay_rate_rental=rental_rate)
     db.add(u); db.commit(); db.refresh(u)
     ids["users"].append(u.id); uid = u.id; db.close()
@@ -211,6 +211,36 @@ def test_native_summary_is_org_scoped(ids):
         emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
         assert emp["residential_hours"] == 2.0
         assert emp["unclassified_hours"] == 0.0   # the org-2 punch must not leak in
+    finally:
+        _clear()
+
+
+def test_native_user_lookup_is_org_scoped(ids):
+    # An org-2 user sharing the same crew id must not supply the name or pay-rate
+    # override for org-1's payroll (cleaner_id is non-unique; users isn't RLS).
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, res_rate=40.0, name="Org1 Person", org_id=1)
+    _mk_cleaner(ids, cid, res_rate=10.0, name="Org2 Person", org_id=2)
+    jid = _mk_job(ids, "residential")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)  # org 1, 2h
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["name"] == "Org1 Person"
+        assert emp["residential_pay"] == 80.0   # 2h * $40 (org-1), not the org-2 $10 rate
+    finally:
+        _clear()
+
+
+def test_square_export_blocked_when_native(ids):
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        r = api.post("/api/payroll/send-to-square",
+                     json={"start_date": "2026-01-05", "end_date": "2026-01-05", "dry_run": True})
+        assert r.status_code == 400
+        assert "native" in r.json()["detail"].lower()
     finally:
         _clear()
 

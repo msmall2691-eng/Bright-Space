@@ -283,3 +283,31 @@ def test_clock_in_without_location_stores_no_coords(ids):
         assert e["clock_in_lat"] is None
     finally:
         _clear()
+
+
+def test_clock_in_rejects_unassigned_job(ids):
+    mine = _crew_id()
+    jid = _mk_job(ids, "CT-someone-else")   # job assigned to a different crew id
+    _override(_Cleaner(9115, mine))
+    api = TestClient(app)
+    try:
+        r = api.post("/api/crew/clock-in", json={"job_id": jid})
+        assert r.status_code == 403
+        assert "assigned" in r.json()["detail"].lower()
+    finally:
+        _clear()
+
+
+def test_one_open_punch_enforced_at_db(ids):
+    from sqlalchemy.exc import IntegrityError
+    cid = _crew_id()
+    _mk_entry(ids, cid, _today_utc(8))   # first open punch (clock_out NULL)
+    db = SessionLocal()
+    try:
+        db.add(TimeEntry(org_id=1, cleaner_id=cid, clock_in_at=_today_utc(9),
+                         clock_out_at=None, source="native"))
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+    finally:
+        db.close()

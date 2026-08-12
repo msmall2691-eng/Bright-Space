@@ -201,10 +201,12 @@ export default function Payroll() {
                 className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Download className="w-4 h-4" />Export CSV
               </button>
-              <button onClick={() => sendSquare(true)} disabled={square?.busy}
-                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                <Send className="w-4 h-4" />Send to Square
-              </button>
+              {source !== 'native' && (
+                <button onClick={() => sendSquare(true)} disabled={square?.busy}
+                  className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  <Send className="w-4 h-4" />Send to Square
+                </button>
+              )}
             </>
           )}
         </div>
