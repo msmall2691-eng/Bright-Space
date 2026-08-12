@@ -28,7 +28,8 @@ router = APIRouter()
 class JobCreate(BaseModel):
     client_id: int
     title: str
-    job_type: Optional[str] = "residential"  # "residential" | "commercial" | "str_turnover"
+    job_type: Optional[str] = "residential"  # "residential" | "deep_clean" | "commercial" | "str_turnover"
+    pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
     scheduled_date: str       # YYYY-MM-DD
     start_time: str           # HH:MM
     end_time: str             # HH:MM
@@ -57,6 +58,7 @@ class JobUpdate(BaseModel):
     # by the edit modal but never declared here, so pydantic silently dropped
     # it and property changes never saved.
     job_type: Optional[str] = None
+    pay_mode: Optional[str] = None            # native-payroll override: auto | hourly | piece
     property_id: Optional[int] = None
     allow_conflicts: Optional[bool] = False
     # Per-move notification override for THIS edit (see update_job). None = fall
@@ -66,8 +68,10 @@ class JobUpdate(BaseModel):
     # still opt into telling the customer when a move actually matters to them.
     notify_customer: Optional[bool] = None
 
-JOB_TYPES = {"residential", "commercial", "str_turnover", "one_time"}
+JOB_TYPES = {"residential", "deep_clean", "commercial", "str_turnover", "one_time"}
 JOB_STATUSES = {"unscheduled", "scheduled", "in_progress", "completed", "cancelled"}
+# Native-payroll per-job override (Job.pay_mode). "auto" = the automatic rule.
+PAY_MODES = {"auto", "hourly", "piece"}
 
 
 class BookingInfo(BaseModel):
@@ -516,6 +520,7 @@ def job_to_dict(j: Job, client: Client = None, effective_date=None,
         "quote_id": j.quote_id,
         "opportunity_id": j.opportunity_id,
         "job_type": j.job_type or "residential",
+        "pay_mode": j.pay_mode or "auto",
         "property_id": j.property_id,
         "property_name": property_name,
         "recurring_schedule_id": j.recurring_schedule_id,
@@ -2999,6 +3004,9 @@ def update_job(job_id: int, data: JobUpdate, db: Session = Depends(get_db), org_
     if "job_type" in updates and updates["job_type"] not in JOB_TYPES \
             and updates["job_type"] != job.job_type:
         raise HTTPException(status_code=400, detail=f"Unknown job_type '{updates['job_type']}'")
+    if "pay_mode" in updates and updates["pay_mode"] not in PAY_MODES \
+            and updates["pay_mode"] != job.pay_mode:
+        raise HTTPException(status_code=400, detail=f"Unknown pay_mode '{updates['pay_mode']}'")
     if "status" in updates and updates["status"] not in JOB_STATUSES \
             and updates["status"] != job.status:
         raise HTTPException(status_code=400, detail=f"Unknown status '{updates['status']}'")

@@ -94,6 +94,47 @@ def test_same_time_edit_keeps_confirmed(admin):
         db.commit(); db.close()
 
 
+def test_update_job_to_deep_clean_is_accepted(admin):
+    """Regression: "deep_clean" must be a recognized job_type or the edit 400s
+    (the deep-clean pay feature added the type but not to the update whitelist)."""
+    db = SessionLocal()
+    c, p, j = _seed_oneoff(db)
+    jid, cid, pid = j.id, c.id, p.id
+    db.close()
+    try:
+        r = client.patch(f"/api/jobs/{jid}", json={"job_type": "deep_clean"})
+        assert r.status_code == 200, r.text
+        db = SessionLocal()
+        assert db.query(Job).filter(Job.id == jid).first().job_type == "deep_clean"
+        db.close()
+    finally:
+        db = SessionLocal()
+        db.query(Job).filter(Job.id == jid).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id == pid).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == cid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
+def test_update_job_pay_mode_persists_and_validates(admin):
+    """The per-job native-payroll override saves, and a bogus value is rejected."""
+    db = SessionLocal()
+    c, p, j = _seed_oneoff(db)
+    jid, cid, pid = j.id, c.id, p.id
+    db.close()
+    try:
+        assert client.patch(f"/api/jobs/{jid}", json={"pay_mode": "hourly"}).status_code == 200
+        db = SessionLocal()
+        assert db.query(Job).filter(Job.id == jid).first().pay_mode == "hourly"
+        db.close()
+        assert client.patch(f"/api/jobs/{jid}", json={"pay_mode": "bogus"}).status_code == 400
+    finally:
+        db = SessionLocal()
+        db.query(Job).filter(Job.id == jid).delete(synchronize_session=False)
+        db.query(Property).filter(Property.id == pid).delete(synchronize_session=False)
+        db.query(Client).filter(Client.id == cid).delete(synchronize_session=False)
+        db.commit(); db.close()
+
+
 def test_recurring_reschedule_carries_token(admin):
     """Moving a recurring occurrence carries the customer's public_token onto the
     new visit and clears the stale confirmation."""

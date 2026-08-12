@@ -307,8 +307,8 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         prop = job.property if job is not None else None
         d = _native_local_date(e.clock_in_at)
         weekend = _is_weekend(d)
-        # Classification by job_type: str_turnover → rental (weekend = piece rate),
-        # deep_clean → deep (always hourly at the deep rate), else residential.
+        # Classification by job_type: str_turnover → rental, deep_clean → deep,
+        # else residential.
         if job is None:
             kind = None
         elif job.job_type == "str_turnover":
@@ -317,6 +317,17 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             kind = "deep"
         else:
             kind = "residential"
+
+        # Effective pay mode: a per-job override (job.pay_mode) beats the
+        # automatic rule (weekend rental → piece; everything else hourly). Lets
+        # the office pay a specific weekend airbnb hourly, or force a piece rate.
+        job_pay_mode = (getattr(job, "pay_mode", None) or "auto").lower() if job is not None else "auto"
+        if job_pay_mode == "piece":
+            use_piece = True
+        elif job_pay_mode == "hourly":
+            use_piece = False
+        else:  # auto
+            use_piece = (kind == "rental" and weekend)
 
         detail = {
             "shift_id": f"native:{e.id}",
@@ -329,7 +340,7 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             "property": prop.name if prop is not None else None,
             "shift_title": "",
             "job_label": (job.title if job is not None else "") or "",
-            "rate_pay": False,
+            "rate_pay": use_piece,
             "note": e.note or "",
             "pay": 0.0,
         }
@@ -340,23 +351,10 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             emp["shifts"].append(detail)
             continue
 
-        if kind == "residential":
-            emp["residential_hours"] += hours
-            pay = hours * res_rate
-            emp["residential_pay"] += pay
-            detail["pay"] = round(pay, 2)
-        elif kind == "deep":
-            # Deep cleans are hourly at the deep rate, weekday OR weekend.
-            emp["deep_clean_hours"] += hours
-            pay = hours * deep_rate
-            emp["deep_clean_pay"] += pay
-            detail["pay"] = round(pay, 2)
-        elif kind == "rental" and not weekend:
-            emp["rental_weekday_hours"] += hours
-            pay = hours * rental_rate
-            emp["rental_weekday_pay"] += pay
-            detail["pay"] = round(pay, 2)
-        else:  # rental + weekend → piece rate per distinct (property, date)
+        if use_piece:
+            # Piece rate per distinct (property, date) — the turnover model.
+            # Reached for a weekend rental (auto) or any job the office set to
+            # "piece". Non-weekend piece is allowed but rare.
             emp["weekend_rental_hours"] += hours
             key = prop.id if prop is not None else f"job:{job.id if job else 'x'}"
             seen = emp["_weekend_seen"].setdefault(key, set())
@@ -368,12 +366,30 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
                 if rate is None:
                     emp["weekend_unpriced_turnovers"] += 1
                     warnings.append(
-                        f"{emp['name']}: weekend turnover at {detail['property'] or 'unknown property'} "
+                        f"{emp['name']}: turnover at {detail['property'] or 'unknown property'} "
                         f"on {d.isoformat()} has no piece rate set — not included in pay."
                     )
                 else:
                     emp["weekend_pay"] += float(rate)
                     detail["pay"] = round(float(rate), 2)
+        elif kind == "deep":
+            # Deep cleans are hourly at the deep rate, weekday OR weekend.
+            emp["deep_clean_hours"] += hours
+            pay = hours * deep_rate
+            emp["deep_clean_pay"] += pay
+            detail["pay"] = round(pay, 2)
+        elif kind == "rental":
+            # Hourly rental: a weekday turnover (auto) or a weekend one the office
+            # set to hourly instead of piece.
+            emp["rental_weekday_hours"] += hours
+            pay = hours * rental_rate
+            emp["rental_weekday_pay"] += pay
+            detail["pay"] = round(pay, 2)
+        else:  # residential
+            emp["residential_hours"] += hours
+            pay = hours * res_rate
+            emp["residential_pay"] += pay
+            detail["pay"] = round(pay, 2)
         emp["shifts"].append(detail)
 
     out_emps = []

@@ -296,7 +296,7 @@ export default function Payroll() {
                         {emp.deep_clean_hours > 0 && (
                           <Bucket icon={Sparkles} label="Deep clean" primary={hrs(emp.deep_clean_hours)} secondary={money(emp.deep_clean_pay)} />
                         )}
-                        <Bucket icon={KeyRound} label="Rental (wkday)" primary={hrs(emp.rental_weekday_hours)} secondary={money(emp.rental_weekday_pay)} />
+                        <Bucket icon={KeyRound} label="Rental (hourly)" primary={hrs(emp.rental_weekday_hours)} secondary={money(emp.rental_weekday_pay)} />
                         <Bucket icon={Sun} label="Weekend"
                           primary={`${emp.weekend_turnovers} turnover${emp.weekend_turnovers === 1 ? '' : 's'}`}
                           secondary={money(emp.weekend_pay)}
@@ -367,7 +367,7 @@ function ShiftRow({ shift, rates, ov, onChange }) {
       <div className="flex items-center gap-2 mt-2">
         <select value={mode} onChange={e => onChange({ mode: e.target.value })}
           className="bg-bg-2 border border-hairline rounded-md px-2 py-1 text-xs focus:outline-none">
-          <option value="auto">Auto ({shift.kind === 'rental' && shift.weekend ? 'piece' : 'hourly'})</option>
+          <option value="auto">Auto ({shift.rate_pay ? 'piece' : 'hourly'})</option>
           <option value="hourly">Hourly</option>
           <option value="piece">Piece rate</option>
           <option value="exclude">Exclude</option>

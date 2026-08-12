@@ -552,7 +552,13 @@ class Job(Base):
 
     # Job classification
     job_type = Column(String, nullable=False, default="residential")
-    # "residential" | "commercial" | "str_turnover"
+    # "residential" | "deep_clean" | "commercial" | "str_turnover"
+    # Native-payroll override for how THIS job is paid, beating the automatic
+    # rule (weekend str_turnover → piece rate; everything else hourly).
+    # NULL/"auto" = automatic; "hourly" = pay hours at the job's hourly rate even
+    # on a weekend; "piece" = pay the property's turnover piece rate. Lets the
+    # office pay a specific weekend airbnb hourly (or force piece) per job.
+    pay_mode = Column(String(16), nullable=True)
 
     # Links — only set for the relevant type
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)  # PR 2: Every job must have a property

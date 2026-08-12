@@ -59,7 +59,7 @@ def _mk_cleaner(ids, cleaner_id, res_rate=None, rental_rate=None, deep_rate=None
     return uid
 
 
-def _mk_job(ids, job_type="residential", turnover_rate=None):
+def _mk_job(ids, job_type="residential", turnover_rate=None, pay_mode=None):
     db = SessionLocal()
     c = Client(name=f"Pay {uuid.uuid4().hex[:6]}", status="active", org_id=1)
     db.add(c); db.commit(); db.refresh(c); ids["clients"].append(c.id)
@@ -68,7 +68,8 @@ def _mk_job(ids, job_type="residential", turnover_rate=None):
                  org_id=1, turnover_rate=turnover_rate)
     db.add(p); db.commit(); db.refresh(p); ids["properties"].append(p.id)
     j = Job(client_id=c.id, property_id=p.id, job_type=job_type, title="Job",
-            scheduled_date=date(2026, 1, 5), status="scheduled", cleaner_ids=[], org_id=1)
+            scheduled_date=date(2026, 1, 5), status="scheduled", cleaner_ids=[], org_id=1,
+            pay_mode=pay_mode)
     db.add(j); db.commit(); db.refresh(j); ids["jobs"].append(j.id)
     jid = j.id; db.close()
     return jid
@@ -408,6 +409,65 @@ def test_admin_can_set_deep_pay_rate(ids):
         assert r.status_code == 200
         assert r.json()["pay_rate_deep"] == 38
         assert api.patch(f"/api/auth/users/{uid}", json={"pay_rate_deep": -5}).status_code == 422
+    finally:
+        _clear()
+
+
+def test_native_weekend_turnover_hourly_override(ids):
+    # A weekend str_turnover set to pay_mode="hourly" is paid hourly at the
+    # rental rate, NOT the piece rate.
+    assert date(2026, 1, 3).weekday() >= 5   # Saturday
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, rental_rate=30.0)
+    jid = _mk_job(ids, "str_turnover", turnover_rate=90.0, pay_mode="hourly")
+    _mk_entry(ids, cid, _dt(2026, 1, 3, 9), _dt(2026, 1, 3, 12), job_id=jid)  # Saturday, 3h
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
+        assert emp["rental_weekday_hours"] == 3.0
+        assert emp["rental_weekday_pay"] == 90.0     # 3h * $30 hourly
+        assert emp["weekend_turnovers"] == 0          # NOT paid as a piece turnover
+        assert emp["weekend_pay"] == 0.0
+        assert emp["gross_pay"] == 90.0
+    finally:
+        _clear()
+
+
+def test_native_weekday_turnover_forced_piece(ids):
+    # A weekday str_turnover set to pay_mode="piece" is paid the property piece
+    # rate instead of hourly.
+    assert date(2026, 1, 5).weekday() < 5    # Monday
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, rental_rate=30.0)
+    jid = _mk_job(ids, "str_turnover", turnover_rate=85.0, pay_mode="piece")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)  # Monday, 3h
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["weekend_turnovers"] == 1        # counted as a piece turnover
+        assert emp["weekend_pay"] == 85.0
+        assert emp["rental_weekday_hours"] == 0.0    # NOT hourly
+        assert emp["gross_pay"] == 85.0
+    finally:
+        _clear()
+
+
+def test_native_weekend_turnover_auto_still_piece(ids):
+    # Regression on the pay-mode restructure: with pay_mode unset (auto), a
+    # weekend turnover is still paid piece rate.
+    assert date(2026, 1, 3).weekday() >= 5
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "str_turnover", turnover_rate=90.0)   # pay_mode None → auto
+    _mk_entry(ids, cid, _dt(2026, 1, 3, 14), _dt(2026, 1, 3, 17), job_id=jid)
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
+        assert emp["weekend_turnovers"] == 1
+        assert emp["weekend_pay"] == 90.0
     finally:
         _clear()
 
