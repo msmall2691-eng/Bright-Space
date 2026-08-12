@@ -31,6 +31,20 @@ function fmtDuration(ms) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+// Best-effort browser geolocation for clock-in. Resolves null (never rejects)
+// if the device has no geolocation, denies permission, or times out — a punch
+// is never blocked on location.
+function getPosition() {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(null)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+    )
+  })
+}
+
 function JobCard({ job, clockable = false, activeEntry = null, onClockIn, onClockOut, busy = false }) {
   const isTurnover = job.job_type === 'str_turnover'
   const isActiveJob = clockable && activeEntry && activeEntry.job_id === job.id
@@ -142,7 +156,11 @@ export default function MyDay() {
 
   const clockIn = useCallback(async (jobId) => {
     setActionBusy(true); setActionError(null)
-    try { await post('/api/crew/clock-in', { job_id: jobId ?? null }); await fetchDay(true) }
+    try {
+      const loc = await getPosition()   // best-effort; null if denied/unavailable
+      await post('/api/crew/clock-in', { job_id: jobId ?? null, ...(loc || {}) })
+      await fetchDay(true)
+    }
     catch (e) { setActionError(e.detail || e.message || 'Could not clock in') }
     finally { setActionBusy(false) }
   }, [fetchDay])
@@ -187,8 +205,13 @@ export default function MyDay() {
                 <div className="text-[13px] font-semibold truncate">
                   On the clock{activeJob ? ` · ${activeJob.property_name || activeJob.title}` : ''}
                 </div>
-                <div className="text-[11px] opacity-90 tabular-nums">
+                <div className="text-[11px] opacity-90 tabular-nums flex items-center gap-1">
                   {fmtDuration(now - new Date(active.clock_in_at))}
+                  {active.has_location && (
+                    <span className="inline-flex items-center gap-0.5 opacity-90">
+                      <span className="opacity-60">·</span><MapPin className="w-3 h-3" /> located
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

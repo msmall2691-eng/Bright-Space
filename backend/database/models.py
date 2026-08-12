@@ -699,6 +699,13 @@ class TimeEntry(Base):
     # without a migration.
     source = Column(String(16), nullable=False, default="native")
 
+    # GPS captured at clock-in (Phase 2b) — browser geolocation, best-effort.
+    # NULL when the device denied location or it was unavailable; a punch is
+    # never blocked on GPS. accuracy is the browser's reported radius in meters.
+    clock_in_lat = Column(Float, nullable=True)
+    clock_in_lng = Column(Float, nullable=True)
+    clock_in_accuracy_m = Column(Float, nullable=True)
+
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

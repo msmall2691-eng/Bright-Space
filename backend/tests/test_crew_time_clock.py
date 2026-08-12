@@ -254,3 +254,32 @@ def test_reconciliation_requires_office_role():
         assert api.get(f"/api/crew/reconciliation?start={today}&end={today}").status_code == 403
     finally:
         _clear()
+
+
+def test_clock_in_captures_location(ids):
+    _override(_Cleaner(9113, _crew_id()))
+    api = TestClient(app)
+    try:
+        r = api.post("/api/crew/clock-in", json={"lat": 43.6591, "lng": -70.2568, "accuracy_m": 12.5})
+        assert r.status_code == 200
+        e = r.json()
+        ids["entries"].append(e["id"])
+        assert e["has_location"] is True
+        assert abs(e["clock_in_lat"] - 43.6591) < 1e-6
+        assert abs(e["clock_in_lng"] - (-70.2568)) < 1e-6
+    finally:
+        _clear()
+
+
+def test_clock_in_without_location_stores_no_coords(ids):
+    _override(_Cleaner(9114, _crew_id()))
+    api = TestClient(app)
+    try:
+        r = api.post("/api/crew/clock-in", json={})
+        assert r.status_code == 200
+        e = r.json()
+        ids["entries"].append(e["id"])
+        assert e["has_location"] is False
+        assert e["clock_in_lat"] is None
+    finally:
+        _clear()

@@ -5989,6 +5989,12 @@ export interface components {
         ClockInBody: {
             /** Job Id */
             job_id?: number | null;
+            /** Lat */
+            lat?: number | null;
+            /** Lng */
+            lng?: number | null;
+            /** Accuracy M */
+            accuracy_m?: number | null;
         };
         /** ClockOutBody */
         ClockOutBody: {

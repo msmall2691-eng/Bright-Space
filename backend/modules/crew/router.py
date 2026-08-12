@@ -125,6 +125,9 @@ def _entry_row(e: TimeEntry) -> dict:
         "break_minutes": e.break_minutes or 0,
         "hours": _entry_hours(e),
         "open": e.clock_out_at is None,
+        "clock_in_lat": e.clock_in_lat,
+        "clock_in_lng": e.clock_in_lng,
+        "has_location": e.clock_in_lat is not None and e.clock_in_lng is not None,
     }
 
 
@@ -151,6 +154,11 @@ class ClockInBody(BaseModel):
     # Optional link to the job being worked — the hook a future native payroll
     # will use to classify hours by job_type. Nothing reads it for pay in 2a.
     job_id: Optional[int] = None
+    # Browser geolocation captured at clock-in (Phase 2b), best-effort. Omitted
+    # when the cleaner's device denies location — a punch is never blocked on it.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    accuracy_m: Optional[float] = None
 
 
 class ClockOutBody(BaseModel):
@@ -271,6 +279,9 @@ def clock_in(
         job_id=job_id,
         clock_in_at=_now_naive_utc(),
         source="native",
+        clock_in_lat=body.lat,
+        clock_in_lng=body.lng,
+        clock_in_accuracy_m=body.accuracy_m,
     )
     db.add(entry); db.commit(); db.refresh(entry)
     return _entry_row(entry)
