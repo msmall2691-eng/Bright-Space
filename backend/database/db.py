@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker, Session
 from database.base import Base
 import os
@@ -57,9 +57,19 @@ def check_schema_drift() -> dict:
     behind-on-migrations production DB — the usual cause of "column does not
     exist" 500s (e.g. the GET /api/quotes/ 500 in the June audit) — instead of
     letting individual endpoints fail mysteriously later. Returns:
-      {"ok": True|False|None, "db_revision": str|None, "head_revision": str|None}
-    ok is None when the check itself couldn't run (no alembic_version table on a
-    fresh/SQLite DB, etc.).
+      {"status": str, "ok": True|False|None, "db_revision": str|None,
+       "head_revision": str|None, "error": str|None}
+    status is one of: "ok" (at head), "behind" (DB is a strict ancestor of head
+    — the app expects columns it lacks; genuinely broken), "ahead" (DB newer
+    than this code knows — a rollback onto an already-migrated DB; tolerated),
+    "no_table" (reachable, EMPTY — genuine first boot, no app tables either),
+    "no_table_drifted" (reachable, has application tables but alembic_version is
+    gone — the June-8 prod state: data present, migration tracking lost),
+    "no_revision" (alembic_version table present but EMPTY — tracking truncated
+    mid-stamp/restore),
+    "unreachable" (could NOT connect — e.g. a rotated DB password the running
+    app hasn't picked up), or "error" (the check itself failed). `ok` stays
+    True|False|None for back-compat.
     """
     try:
         from alembic.config import Config
@@ -67,26 +77,86 @@ def check_schema_drift() -> dict:
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         cfg = Config(os.path.join(backend_dir, "alembic.ini"))
         cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
-        head = ScriptDirectory.from_config(cfg).get_current_head()
-        current = None
+        script = ScriptDirectory.from_config(cfg)
+        head = script.get_current_head()
+        # Separate "can't reach the DB" from "table isn't there". These used to
+        # collapse into a single misleading "alembic_version table not found",
+        # which reported an AUTH FAILURE (app stranded on a rotated password) as
+        # missing schema — sending a prod incident chasing the wrong problem.
         try:
-            with engine.connect() as conn:
+            conn = engine.connect()
+        except Exception as e:
+            logger.error("[schema-drift] database unreachable: %s: %s", type(e).__name__, e)
+            return {"status": "unreachable", "ok": None, "db_revision": None,
+                    "head_revision": head, "error": f"database unreachable: {type(e).__name__}"}
+        try:
+            with conn:
+                insp = sa_inspect(conn)
+                if not insp.has_table("alembic_version"):
+                    # No migration tracking. Distinguish a genuinely empty DB
+                    # (real first boot) from one that HAS application tables but
+                    # lost alembic_version — the latter is the June-8 prod state
+                    # (data present, tracking gone) and must NOT read as healthy.
+                    # get_table_names() reads the default (public) schema — right
+                    # for this app's layout. If app tables ever move to a named
+                    # schema, revisit this so a drifted DB isn't misread as empty.
+                    others = [t for t in insp.get_table_names() if t != "alembic_version"]
+                    if others:
+                        return {"status": "no_table_drifted", "ok": False, "db_revision": None,
+                                "head_revision": head,
+                                "error": "alembic_version missing but application tables exist"}
+                    return {"status": "no_table", "ok": None, "db_revision": None,
+                            "head_revision": head, "error": "alembic_version table not found"}
                 row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
                 current = row[0] if row else None
+        except Exception as e:
+            logger.error("[schema-drift] could not read alembic_version: %s: %s", type(e).__name__, e)
+            return {"status": "error", "ok": None, "db_revision": None,
+                    "head_revision": head, "error": f"could not read alembic_version: {type(e).__name__}"}
+
+        if current is None:
+            # alembic_version exists but is EMPTY — tracking was truncated (an
+            # interrupted stamp/reconcile, a partial restore) rather than
+            # dropped. Same class as no_table_drifted: the app can't trust its
+            # schema, so gate it.
+            logger.error("[schema-drift] alembic_version exists but has no row — tracking emptied.")
+            return {"status": "no_revision", "ok": False, "db_revision": None,
+                    "head_revision": head, "error": "alembic_version table is present but empty"}
+        if current == head:
+            return {"status": "ok", "ok": True, "db_revision": current,
+                    "head_revision": head, "error": None}
+
+        # Drift has a direction, and the two aren't equally dangerous:
+        #   - behind: the DB is a strict ANCESTOR of head — the app expects
+        #     columns the DB doesn't have yet. Genuinely broken; the health gate
+        #     should fail so a bad deploy isn't promoted.
+        #   - ahead: the DB is newer than this code knows (a rollback onto an
+        #     already-migrated DB). Usually fine — migrations are additive — and
+        #     it's exactly when you're rolling back because prod is on fire, so
+        #     it must NOT fail the gate and strand your escape hatch.
+        try:
+            head_lineage = {r.revision for r in script.iterate_revisions(head, "base")}
         except Exception:
-            return {"ok": None, "db_revision": None, "head_revision": head,
-                    "error": "alembic_version table not found"}
-        ok = current == head
-        if not ok:
+            head_lineage = set()
+        if current in head_lineage:
             logger.error(
-                "[schema-drift] DB is at migration %r but code head is %r. "
-                "Run 'alembic upgrade head' — endpoints that read newer columns "
-                "may return 500 until migrations are applied.", current, head,
+                "[schema-drift] DB is BEHIND: at %r, code head is %r. Run "
+                "'alembic upgrade head' — endpoints reading newer columns may 500.",
+                current, head,
             )
-        return {"ok": ok, "db_revision": current, "head_revision": head}
+            return {"status": "behind", "ok": False, "db_revision": current,
+                    "head_revision": head, "error": None}
+        # Not a known ancestor of head → newer than this code / divergent.
+        logger.warning(
+            "[schema-drift] DB is AHEAD of this code: at %r, code head is %r "
+            "(rollback / newer DB). Tolerated — not failing the health gate.",
+            current, head,
+        )
+        return {"status": "ahead", "ok": False, "db_revision": current,
+                "head_revision": head, "error": None}
     except Exception as e:
         logger.warning("[schema-drift] could not verify migration state: %s", e)
-        return {"ok": None, "error": str(e)}
+        return {"status": "error", "ok": None, "error": str(e)}
 
 
 def init_db():

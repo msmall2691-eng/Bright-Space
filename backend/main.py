@@ -294,18 +294,36 @@ async def health():
     # behind-on-migrations DB — the usual cause of "column does not exist"
     # 500s like the GET/POST /api/quotes failures — can be diagnosed from the
     # browser without log access. Fail-soft: check_schema_drift() never raises.
+    #
+    # Return a NON-200 when the app genuinely can't serve, so Railway's
+    # healthcheck gate (railway.json healthcheckPath) blocks promoting a broken
+    # deploy — instead of the old bug where this always returned 200 and shipped
+    # an app that couldn't reach its database. GATED (503):
+    #   - unreachable      : can't connect (rotated password, DB down)
+    #   - behind           : DB behind the code's head → app 500s on new columns
+    #   - no_table_drifted : has data but lost alembic_version (the June-8 state)
+    #   - no_revision      : alembic_version present but empty (tracking truncated)
+    # NOT gated: "ahead" (rollback onto a newer DB — must keep its healthcheck),
+    # "no_table" (a genuinely EMPTY DB — real first boot / dev), and a checker
+    # "error". "ahead"/"error" still read as degraded in the body; only a truly
+    # empty "no_table" and a healthy "ok" read as top-level ok.
+    from fastapi.responses import JSONResponse
     from database.db import check_schema_drift
     drift = check_schema_drift()
-    return {
-        "status": "ok",
+    status = drift.get("status")
+    gate_fail = status in ("unreachable", "behind", "no_table_drifted", "no_revision")
+    body = {
+        "status": "ok" if status in ("ok", "no_table") else "degraded",
         "service": "BrightBase",
         "schema": {
             "ok": drift.get("ok"),
+            "status": status,
             "db_revision": drift.get("db_revision"),
             "head_revision": drift.get("head_revision"),
             "error": drift.get("error"),
         },
     }
+    return JSONResponse(body, status_code=503 if gate_fail else 200)
 
 
 @app.get("/api/agents")
