@@ -302,6 +302,7 @@ async def health():
     #   - unreachable      : can't connect (rotated password, DB down)
     #   - behind           : DB behind the code's head → app 500s on new columns
     #   - no_table_drifted : has data but lost alembic_version (the June-8 state)
+    #   - no_revision      : alembic_version present but empty (tracking truncated)
     # NOT gated: "ahead" (rollback onto a newer DB — must keep its healthcheck),
     # "no_table" (a genuinely EMPTY DB — real first boot / dev), and a checker
     # "error". "ahead"/"error" still read as degraded in the body; only a truly
@@ -310,7 +311,7 @@ async def health():
     from database.db import check_schema_drift
     drift = check_schema_drift()
     status = drift.get("status")
-    gate_fail = status in ("unreachable", "behind", "no_table_drifted")
+    gate_fail = status in ("unreachable", "behind", "no_table_drifted", "no_revision")
     body = {
         "status": "ok" if status in ("ok", "no_table") else "degraded",
         "service": "BrightBase",

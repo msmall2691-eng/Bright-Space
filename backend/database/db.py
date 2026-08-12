@@ -65,6 +65,8 @@ def check_schema_drift() -> dict:
     "no_table" (reachable, EMPTY — genuine first boot, no app tables either),
     "no_table_drifted" (reachable, has application tables but alembic_version is
     gone — the June-8 prod state: data present, migration tracking lost),
+    "no_revision" (alembic_version table present but EMPTY — tracking truncated
+    mid-stamp/restore),
     "unreachable" (could NOT connect — e.g. a rotated DB password the running
     app hasn't picked up), or "error" (the check itself failed). `ok` stays
     True|False|None for back-compat.
@@ -95,6 +97,9 @@ def check_schema_drift() -> dict:
                     # (real first boot) from one that HAS application tables but
                     # lost alembic_version — the latter is the June-8 prod state
                     # (data present, tracking gone) and must NOT read as healthy.
+                    # get_table_names() reads the default (public) schema — right
+                    # for this app's layout. If app tables ever move to a named
+                    # schema, revisit this so a drifted DB isn't misread as empty.
                     others = [t for t in insp.get_table_names() if t != "alembic_version"]
                     if others:
                         return {"status": "no_table_drifted", "ok": False, "db_revision": None,
@@ -109,6 +114,14 @@ def check_schema_drift() -> dict:
             return {"status": "error", "ok": None, "db_revision": None,
                     "head_revision": head, "error": f"could not read alembic_version: {type(e).__name__}"}
 
+        if current is None:
+            # alembic_version exists but is EMPTY — tracking was truncated (an
+            # interrupted stamp/reconcile, a partial restore) rather than
+            # dropped. Same class as no_table_drifted: the app can't trust its
+            # schema, so gate it.
+            logger.error("[schema-drift] alembic_version exists but has no row — tracking emptied.")
+            return {"status": "no_revision", "ok": False, "db_revision": None,
+                    "head_revision": head, "error": "alembic_version table is present but empty"}
         if current == head:
             return {"status": "ok", "ok": True, "db_revision": current,
                     "head_revision": head, "error": None}

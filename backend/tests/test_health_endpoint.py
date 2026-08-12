@@ -26,6 +26,7 @@ def _drift(status, ok):
     ("error", None, 200, "degraded"),             # the checker broke — flagged, app stays up
     ("behind", False, 503, "degraded"),           # DB behind the code's head — gate fails
     ("no_table_drifted", False, 503, "degraded"), # data present but lost alembic_version (June-8)
+    ("no_revision", False, 503, "degraded"),      # alembic_version present but empty (truncated)
     ("unreachable", None, 503, "degraded"),       # DB down / stale creds — the rotation incident
 ])
 def test_health_gate_status_codes(monkeypatch, status, ok, code, top):

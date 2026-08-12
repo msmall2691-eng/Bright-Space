@@ -74,3 +74,18 @@ def test_no_table_on_genuinely_empty_db(monkeypatch):
     out = check_schema_drift()
     assert out["status"] == "no_table"
     assert out["ok"] is None
+
+
+def test_no_revision_when_alembic_version_present_but_empty():
+    # Table exists but has zero rows — tracking truncated (interrupted stamp /
+    # partial restore). current is None must gate, NOT fall through to "ahead".
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num varchar(64) NOT NULL)"))
+        conn.execute(text("DELETE FROM alembic_version"))
+    try:
+        out = check_schema_drift()
+        assert out["status"] == "no_revision"
+        assert out["ok"] is False
+        assert out["db_revision"] is None
+    finally:
+        _drop_alembic_version()
