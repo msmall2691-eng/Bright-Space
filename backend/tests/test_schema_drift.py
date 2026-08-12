@@ -1,8 +1,9 @@
 """Startup schema-drift check (BB-0608-02): resolves the code's head revision and
 never raises, so a behind-on-migrations DB is logged loudly instead of 500-ing."""
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from database.db import check_schema_drift, engine
+import database.db as dbmod
 
 
 def test_schema_drift_resolves_head_and_is_fail_soft():
@@ -17,9 +18,13 @@ def test_schema_drift_resolves_head_and_is_fail_soft():
     # DB is reachable but has no alembic_version, so it's "no_table" — NOT a
     # mislabeled "unreachable"/"table not found" that used to swallow an auth
     # failure and read the same on a healthy DB.
-    assert out.get("status") in ("ok", "behind", "ahead", "no_table", "unreachable", "error")
-    assert out["status"] == "no_table"
-    assert out["ok"] is None
+    assert out.get("status") in (
+        "ok", "behind", "ahead", "no_table", "no_table_drifted", "unreachable", "error")
+    # The create_all test DB has application tables but no alembic_version, so
+    # it's "no_table_drifted" (data present, tracking gone) — NOT a clean empty
+    # DB, and NOT a mislabeled failure.
+    assert out["status"] == "no_table_drifted"
+    assert out["ok"] is False
 
 
 def _seed_alembic_version(rev):
@@ -59,3 +64,13 @@ def test_drift_ahead_when_db_revision_is_newer_than_code():
         assert out["db_revision"] == "999_from_the_future"
     finally:
         _drop_alembic_version()
+
+
+def test_no_table_on_genuinely_empty_db(monkeypatch):
+    # A DB with NO tables at all (real first boot) → clean "no_table", not the
+    # gated "no_table_drifted" reserved for a DB that lost its tracking but kept
+    # its data. Swap in a throwaway empty engine so check_schema_drift sees it.
+    monkeypatch.setattr(dbmod, "engine", create_engine("sqlite://"))
+    out = check_schema_drift()
+    assert out["status"] == "no_table"
+    assert out["ok"] is None

@@ -295,20 +295,22 @@ async def health():
     # 500s like the GET/POST /api/quotes failures — can be diagnosed from the
     # browser without log access. Fail-soft: check_schema_drift() never raises.
     #
-    # Return a NON-200 only when the app genuinely can't serve — the DB is
-    # unreachable, or the schema is BEHIND the code's head (app expects columns
-    # the DB lacks) — so Railway's healthcheck gate (railway.json
-    # healthcheckPath) blocks promoting a broken deploy, instead of the old bug
-    # where this always returned 200 and shipped an app that couldn't reach its
-    # database. Deliberately NOT gated: "ahead" (a rollback onto an
-    # already-migrated DB — must keep its healthcheck so the escape hatch
-    # works), "no_table" (fresh/SQLite dev, first boot), and a checker "error".
-    # Those still show as degraded in the body, but don't take the app down.
+    # Return a NON-200 when the app genuinely can't serve, so Railway's
+    # healthcheck gate (railway.json healthcheckPath) blocks promoting a broken
+    # deploy — instead of the old bug where this always returned 200 and shipped
+    # an app that couldn't reach its database. GATED (503):
+    #   - unreachable      : can't connect (rotated password, DB down)
+    #   - behind           : DB behind the code's head → app 500s on new columns
+    #   - no_table_drifted : has data but lost alembic_version (the June-8 state)
+    # NOT gated: "ahead" (rollback onto a newer DB — must keep its healthcheck),
+    # "no_table" (a genuinely EMPTY DB — real first boot / dev), and a checker
+    # "error". "ahead"/"error" still read as degraded in the body; only a truly
+    # empty "no_table" and a healthy "ok" read as top-level ok.
     from fastapi.responses import JSONResponse
     from database.db import check_schema_drift
     drift = check_schema_drift()
     status = drift.get("status")
-    gate_fail = status in ("unreachable", "behind")
+    gate_fail = status in ("unreachable", "behind", "no_table_drifted")
     body = {
         "status": "ok" if status in ("ok", "no_table") else "degraded",
         "service": "BrightBase",

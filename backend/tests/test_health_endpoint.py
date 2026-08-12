@@ -21,11 +21,12 @@ def _drift(status, ok):
 
 @pytest.mark.parametrize("status,ok,code,top", [
     ("ok", True, 200, "ok"),
-    ("no_table", None, 200, "ok"),          # fresh / SQLite dev — clean
-    ("ahead", False, 200, "degraded"),       # rollback / newer DB — flagged, NOT gated
-    ("error", None, 200, "degraded"),        # the checker broke — flagged, app stays up
-    ("behind", False, 503, "degraded"),      # DB behind the code's head — gate fails
-    ("unreachable", None, 503, "degraded"),  # DB down / stale creds — the rotation incident
+    ("no_table", None, 200, "ok"),               # genuinely EMPTY DB — real first boot
+    ("ahead", False, 200, "degraded"),            # rollback / newer DB — flagged, NOT gated
+    ("error", None, 200, "degraded"),             # the checker broke — flagged, app stays up
+    ("behind", False, 503, "degraded"),           # DB behind the code's head — gate fails
+    ("no_table_drifted", False, 503, "degraded"), # data present but lost alembic_version (June-8)
+    ("unreachable", None, 503, "degraded"),       # DB down / stale creds — the rotation incident
 ])
 def test_health_gate_status_codes(monkeypatch, status, ok, code, top):
     monkeypatch.setattr(dbmod, "check_schema_drift", lambda: _drift(status, ok))
@@ -36,12 +37,13 @@ def test_health_gate_status_codes(monkeypatch, status, ok, code, top):
     assert body["status"] == top
 
 
-def test_health_real_check_on_test_db_is_200():
-    # The real check against the create_all test DB → reachable but no
-    # alembic_version → "no_table" → 200 (dev/first-boot isn't gated). The
-    # schema block still carries the diagnostic fields.
+def test_health_real_check_on_test_db_is_503_drifted():
+    # The real check against the create_all test DB: it HAS application tables
+    # but no alembic_version → "no_table_drifted" → 503. Data present with
+    # migration tracking gone is gate-worthy (the June-8 prod state); a
+    # genuinely empty DB would be "no_table"/200 instead.
     res = TestClient(app).get("/api/health")
-    assert res.status_code == 200
+    assert res.status_code == 503
     schema = res.json()["schema"]
-    assert schema["status"] == "no_table"
+    assert schema["status"] == "no_table_drifted"
     assert schema["head_revision"]

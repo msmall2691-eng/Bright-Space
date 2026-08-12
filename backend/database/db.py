@@ -62,7 +62,9 @@ def check_schema_drift() -> dict:
     status is one of: "ok" (at head), "behind" (DB is a strict ancestor of head
     — the app expects columns it lacks; genuinely broken), "ahead" (DB newer
     than this code knows — a rollback onto an already-migrated DB; tolerated),
-    "no_table" (reachable, never migrated — fresh/SQLite create_all),
+    "no_table" (reachable, EMPTY — genuine first boot, no app tables either),
+    "no_table_drifted" (reachable, has application tables but alembic_version is
+    gone — the June-8 prod state: data present, migration tracking lost),
     "unreachable" (could NOT connect — e.g. a rotated DB password the running
     app hasn't picked up), or "error" (the check itself failed). `ok` stays
     True|False|None for back-compat.
@@ -87,8 +89,17 @@ def check_schema_drift() -> dict:
                     "head_revision": head, "error": f"database unreachable: {type(e).__name__}"}
         try:
             with conn:
-                if not sa_inspect(conn).has_table("alembic_version"):
-                    # Reachable, but never migrated (fresh DB / SQLite create_all).
+                insp = sa_inspect(conn)
+                if not insp.has_table("alembic_version"):
+                    # No migration tracking. Distinguish a genuinely empty DB
+                    # (real first boot) from one that HAS application tables but
+                    # lost alembic_version — the latter is the June-8 prod state
+                    # (data present, tracking gone) and must NOT read as healthy.
+                    others = [t for t in insp.get_table_names() if t != "alembic_version"]
+                    if others:
+                        return {"status": "no_table_drifted", "ok": False, "db_revision": None,
+                                "head_revision": head,
+                                "error": "alembic_version missing but application tables exist"}
                     return {"status": "no_table", "ok": None, "db_revision": None,
                             "head_revision": head, "error": "alembic_version table not found"}
                 row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
