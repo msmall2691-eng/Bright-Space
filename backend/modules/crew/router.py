@@ -117,6 +117,21 @@ def _entry_hours(e: TimeEntry):
     return round(max(0.0, secs) / 3600, 2)
 
 
+def _sanitize_miles(v):
+    """Clamp crew-entered miles into a sane, non-negative range so a fat-finger
+    ('10000') can't reimburse thousands of dollars and a negative can't subtract
+    from pay. None (not entered) passes through untouched. The generous 2000-mile
+    ceiling clips only nonsense, never a real local drive — clock-out must never
+    fail over a mileage typo, so this clamps rather than rejects."""
+    if v is None:
+        return None
+    try:
+        m = float(v)
+    except (TypeError, ValueError):
+        return None
+    return round(min(2000.0, max(0.0, m)), 1)
+
+
 def _entry_row(e: TimeEntry) -> dict:
     return {
         "id": e.id,
@@ -124,6 +139,7 @@ def _entry_row(e: TimeEntry) -> dict:
         "clock_in_at": _iso_utc(e.clock_in_at),
         "clock_out_at": _iso_utc(e.clock_out_at),
         "break_minutes": e.break_minutes or 0,
+        "miles": e.miles,
         "hours": _entry_hours(e),
         "open": e.clock_out_at is None,
         "clock_in_lat": e.clock_in_lat,
@@ -165,6 +181,9 @@ class ClockInBody(BaseModel):
 class ClockOutBody(BaseModel):
     break_minutes: Optional[int] = None
     note: Optional[str] = None
+    # Miles driven for this job, entered at clock-out (parity with Connecteam).
+    # Optional — blank/omitted means no driving to reimburse for this punch.
+    miles: Optional[float] = None
 
 
 @router.get("/my-day")
@@ -337,6 +356,44 @@ def clock_out(
     entry.break_minutes = bm
     if body.note is not None:
         entry.note = body.note.strip() or None
+    # Clamp, never reject: a mileage typo must not strand the cleaner on the
+    # clock. A wrong value can be corrected via PATCH /entry/{id}/miles.
+    if body.miles is not None:
+        entry.miles = _sanitize_miles(body.miles)
+    db.commit(); db.refresh(entry)
+    return _entry_row(entry)
+
+
+class EntryMilesBody(BaseModel):
+    miles: float
+
+
+@router.patch("/entry/{entry_id}/miles")
+def set_entry_miles(
+    entry_id: int,
+    body: EntryMilesBody,
+    db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
+    current_user: User = Depends(require_role("cleaner")),
+):
+    """Correct the miles on one of the caller's own punches — the safety net for
+    a forgotten or fat-fingered clock-out entry, before payroll runs. Scoped to
+    the caller's cleaner_id so a cleaner can only edit their own mileage. 404 if
+    the punch isn't theirs (or doesn't exist)."""
+    _require_crew_id(current_user)
+    oid = resolve_org_id(org_id, db)
+    org_scope = lambda model: or_(model.org_id == oid, model.org_id.is_(None))
+
+    entry = (
+        db.query(TimeEntry)
+        .filter(org_scope(TimeEntry),
+                TimeEntry.id == entry_id,
+                TimeEntry.cleaner_id == current_user.cleaner_id)
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="Time entry not found.")
+    entry.miles = _sanitize_miles(body.miles)
     db.commit(); db.refresh(entry)
     return _entry_row(entry)
 

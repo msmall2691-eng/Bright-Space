@@ -12,8 +12,8 @@
  * hours to reconcile against Connecteam before any cutover.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock } from 'lucide-react'
-import { get, post, logout } from '../api'
+import { MapPin, KeyRound, ParkingCircle, LogOut, RefreshCw, CalendarDays, Clock, Car } from 'lucide-react'
+import { get, post, patch, logout } from '../api'
 import { EmptyState, ErrorState, Skeleton } from '../components/ui'
 
 const SOFT = 'bg-panel rounded-xl border border-hairline shadow-glass-sm'
@@ -29,6 +29,57 @@ function fmtDuration(ms) {
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
   return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+function fmtClock(iso) {
+  if (!iso) return ''
+  try { return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) }
+  catch { return '' }
+}
+
+// One closed punch in the "Today's punches" recap, with an inline miles editor
+// (parity with Connecteam, where miles are entered per job). Tapping the miles
+// value opens a small number field that PATCHes the entry — the safety net for a
+// clock-out where miles were skipped or fat-fingered.
+function PunchRecap({ entry, onSaveMiles, busy = false }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(entry.miles == null ? '' : String(entry.miles))
+
+  const save = async () => {
+    const raw = val.trim()
+    const miles = raw === '' ? 0 : Number(raw)
+    if (!Number.isFinite(miles) || miles < 0) return
+    await onSaveMiles(entry.id, miles)
+    setEditing(false)
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 text-[13px]">
+      <span className="text-ink-2 tabular-nums">
+        {fmtClock(entry.clock_in_at)}–{fmtClock(entry.clock_out_at)}
+        <span className="text-ink-3"> · {entry.hours ?? 0}h</span>
+      </span>
+      {editing ? (
+        <span className="flex items-center gap-1.5">
+          <input
+            type="number" inputMode="decimal" step="0.1" min="0" value={val} autoFocus
+            onChange={e => setVal(e.target.value)}
+            className="w-16 rounded-md border border-hairline bg-bg px-2 py-1 text-right tabular-nums text-ink"
+          />
+          <span className="text-ink-3">mi</span>
+          <button onClick={save} disabled={busy}
+            className="font-semibold text-emerald-600 disabled:opacity-60 px-1">Save</button>
+        </span>
+      ) : (
+        <button
+          onClick={() => { setVal(entry.miles == null ? '' : String(entry.miles)); setEditing(true) }}
+          className="flex items-center gap-1 text-ink-3 hover:text-ink tabular-nums">
+          <Car className="w-3.5 h-3.5" />
+          {entry.miles != null ? `${entry.miles} mi` : 'Add miles'}
+        </button>
+      )}
+    </div>
+  )
 }
 
 // Best-effort browser geolocation for clock-in. Resolves null (never rejects)
@@ -133,6 +184,9 @@ export default function MyDay() {
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState(null)
   const [now, setNow] = useState(() => new Date())
+  // Clock-out miles prompt: opening the sheet, and the miles typed into it.
+  const [clockOutOpen, setClockOutOpen] = useState(false)
+  const [milesInput, setMilesInput] = useState('')
 
   const fetchDay = useCallback((silent = false) => {
     if (!silent) { setLoading(true); setError(null) }
@@ -165,10 +219,38 @@ export default function MyDay() {
     finally { setActionBusy(false) }
   }, [fetchDay])
 
-  const clockOut = useCallback(async () => {
+  // Clock-out is a two-step: open the miles prompt, then confirm. Miles at
+  // clock-out mirrors how the crew enter miles per job on Connecteam.
+  const requestClockOut = useCallback(() => {
+    setMilesInput(''); setActionError(null); setClockOutOpen(true)
+  }, [])
+
+  const confirmClockOut = useCallback(async () => {
+    const raw = milesInput.trim()
+    const miles = raw === '' ? null : Number(raw)
+    if (miles !== null && (!Number.isFinite(miles) || miles < 0)) {
+      setActionError('Enter miles as a number, or leave it blank.')
+      return
+    }
     setActionBusy(true); setActionError(null)
-    try { await post('/api/crew/clock-out', {}); await fetchDay(true) }
+    try {
+      // Omit miles entirely when blank so a no-drive punch stays untouched.
+      await post('/api/crew/clock-out', miles === null ? {} : { miles })
+      setClockOutOpen(false)
+      await fetchDay(true)
+    }
     catch (e) { setActionError(e.detail || e.message || 'Could not clock out') }
+    finally { setActionBusy(false) }
+  }, [milesInput, fetchDay])
+
+  // Correct the miles on an already-closed punch (from the Today's punches list).
+  const saveMiles = useCallback(async (entryId, miles) => {
+    setActionBusy(true); setActionError(null)
+    try {
+      await patch(`/api/crew/entry/${entryId}/miles`, { miles })
+      await fetchDay(true)
+    }
+    catch (e) { setActionError(e.detail || e.message || 'Could not save miles') }
     finally { setActionBusy(false) }
   }, [fetchDay])
 
@@ -178,6 +260,7 @@ export default function MyDay() {
 
   const activeJob = active && data?.today?.find(j => j.id === active.job_id)
   const hoursToday = clock?.hours_today || 0
+  const closedToday = (clock?.entries_today || []).filter(e => !e.open)
 
   return (
     <div className="min-h-screen bg-bg">
@@ -215,7 +298,7 @@ export default function MyDay() {
                 </div>
               </div>
             </div>
-            <button onClick={clockOut} disabled={actionBusy}
+            <button onClick={requestClockOut} disabled={actionBusy}
               className="shrink-0 text-[13px] font-semibold bg-white/15 hover:bg-white/25 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors">
               Clock out
             </button>
@@ -268,13 +351,26 @@ export default function MyDay() {
                       clockable
                       activeEntry={active}
                       onClockIn={() => clockIn(j.id)}
-                      onClockOut={clockOut}
+                      onClockOut={requestClockOut}
                       busy={actionBusy}
                     />
                   ))}
                 </div>
               )}
             </section>
+
+            {closedToday.length > 0 && (
+              <section>
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-2">Today's punches</h2>
+                <div className={`${SOFT} px-4`}>
+                  <div className="divide-y divide-hairline">
+                    {closedToday.map(e => (
+                      <PunchRecap key={e.id} entry={e} busy={actionBusy} onSaveMiles={saveMiles} />
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
 
             {data.upcoming.length > 0 && (
               <section>
@@ -287,6 +383,57 @@ export default function MyDay() {
           </>
         )}
       </div>
+
+      {clockOutOpen && (
+        <div
+          className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+          onClick={() => { if (!actionBusy) setClockOutOpen(false) }}>
+          <div
+            className="w-full max-w-sm bg-panel rounded-2xl border border-hairline shadow-glass p-5 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <div>
+              <div className="text-base font-bold text-ink">Clock out</div>
+              {activeJob && (
+                <div className="text-[13px] text-ink-3 mt-0.5 truncate">
+                  {activeJob.property_name || activeJob.title}
+                </div>
+              )}
+            </div>
+            <label className="block">
+              <span className="text-[13px] font-medium text-ink-2 flex items-center gap-1.5">
+                <Car className="w-4 h-4 text-ink-3" /> Miles driven for this job
+              </span>
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="number" inputMode="decimal" step="0.1" min="0" value={milesInput} autoFocus
+                  onChange={e => setMilesInput(e.target.value)}
+                  placeholder="0"
+                  className="flex-1 rounded-lg border border-hairline bg-bg px-3 py-2.5 text-ink tabular-nums text-right"
+                />
+                <span className="text-sm text-ink-3">miles</span>
+              </div>
+              <span className="text-[11px] text-ink-3 mt-1.5 block">
+                Leave blank if you didn't drive for this job.
+              </span>
+            </label>
+            {actionError && (
+              <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {actionError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setClockOutOpen(false)} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-panel border border-hairline text-ink-2 py-2.5 rounded-lg hover:bg-bg-2 disabled:opacity-60 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmClockOut} disabled={actionBusy}
+                className="flex-1 text-[13px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg disabled:opacity-60 transition-colors">
+                {actionBusy ? 'Clocking out…' : 'Clock out'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

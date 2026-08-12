@@ -311,3 +311,76 @@ def test_one_open_punch_enforced_at_db(ids):
         db.rollback()
     finally:
         db.close()
+
+
+def test_clock_out_records_miles(ids):
+    _override(_Cleaner(9116, _crew_id()))
+    api = TestClient(app)
+    try:
+        ids["entries"].append(api.post("/api/crew/clock-in", json={}).json()["id"])
+        r = api.post("/api/crew/clock-out", json={"miles": 12.5})
+        assert r.status_code == 200
+        assert r.json()["miles"] == 12.5
+    finally:
+        _clear()
+
+
+def test_clock_out_miles_clamped(ids):
+    # Negative clamps to 0; an absurd fat-finger clamps to the 2000-mile ceiling.
+    # Clock-out must never fail over a mileage typo, so these clamp, not 422.
+    for uid, sent, expected in [(9117, -5, 0.0), (9118, 99999, 2000.0)]:
+        _override(_Cleaner(uid, _crew_id()))
+        api = TestClient(app)
+        try:
+            ids["entries"].append(api.post("/api/crew/clock-in", json={}).json()["id"])
+            r = api.post("/api/crew/clock-out", json={"miles": sent})
+            assert r.status_code == 200
+            assert r.json()["miles"] == expected
+        finally:
+            _clear()
+
+
+def test_clock_out_without_miles_leaves_none(ids):
+    # A no-drive punch (miles omitted) stays NULL — not silently zeroed — so
+    # payroll can tell "no driving" from "0 recorded".
+    _override(_Cleaner(9119, _crew_id()))
+    api = TestClient(app)
+    try:
+        ids["entries"].append(api.post("/api/crew/clock-in", json={}).json()["id"])
+        r = api.post("/api/crew/clock-out", json={})
+        assert r.status_code == 200
+        assert r.json()["miles"] is None
+    finally:
+        _clear()
+
+
+def test_patch_entry_miles_corrects_own_punch(ids):
+    cid = _crew_id()
+    eid = _mk_entry(ids, cid, _today_utc(8), _today_utc(11))   # closed, no miles
+    _override(_Cleaner(9120, cid))
+    api = TestClient(app)
+    try:
+        r = api.patch(f"/api/crew/entry/{eid}/miles", json={"miles": 8})
+        assert r.status_code == 200
+        assert r.json()["miles"] == 8.0
+        # negative clamps to 0 on the correction path too
+        assert api.patch(f"/api/crew/entry/{eid}/miles", json={"miles": -3}).json()["miles"] == 0.0
+    finally:
+        _clear()
+
+
+def test_patch_entry_miles_scoped_to_own_cleaner(ids):
+    owner = _crew_id()
+    eid = _mk_entry(ids, owner, _today_utc(8), _today_utc(11))   # belongs to `owner`
+    _override(_Cleaner(9121, _crew_id()))   # a DIFFERENT cleaner
+    api = TestClient(app)
+    try:
+        assert api.patch(f"/api/crew/entry/{eid}/miles", json={"miles": 50}).status_code == 404
+    finally:
+        _clear()
+    # and the owner's punch was untouched by the rejected edit
+    db = SessionLocal()
+    try:
+        assert db.get(TimeEntry, eid).miles is None
+    finally:
+        db.close()

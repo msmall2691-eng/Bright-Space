@@ -238,8 +238,9 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
     rental, anything else residential; a punch clocked in with no job is
     'unclassified' and left out of pay, exactly like the Connecteam path's
     unlinked punches. Per-cleaner rate overrides (User.pay_rate_*) apply when
-    set, else the global Settings rate. Mileage isn't captured by the native
-    clock yet, so it's 0 (a known gap vs Connecteam — surfaced in the UI)."""
+    set, else the global Settings rate. Mileage is the miles a cleaner enters at
+    clock-out (TimeEntry.miles) reimbursed at the Settings mileage rate — same as
+    the Connecteam path; a punch with no miles entered simply contributes 0."""
     d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
     d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
 
@@ -284,6 +285,9 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
 
         hours = _native_entry_hours(e)
         emp["computed_hours"] += hours
+        # Miles count for every punch, classified or not — driving is driving,
+        # same as the Connecteam path where mileage is independent of pay bucket.
+        emp["miles"] += e.miles or 0.0
 
         u = users.get(cid)
         res_rate = u.pay_rate_residential if (u and u.pay_rate_residential is not None) else rates["residential_rate"]
@@ -300,7 +304,7 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             "date": d.isoformat(),
             "weekend": weekend,
             "hours": round(hours, 2),
-            "miles": 0.0,
+            "miles": round(e.miles or 0.0, 1),
             "kind": kind or "unclassified",
             "source": "native_job" if job is not None else "unlinked",
             "property": prop.name if prop is not None else None,
@@ -357,9 +361,13 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         accounted = (emp["residential_hours"] + emp["rental_weekday_hours"]
                      + emp["weekend_rental_hours"] + emp["unclassified_hours"])
         emp["unallocated_hours"] = round(emp["total_hours"] - accounted, 2)
-        emp["mileage_reimbursement"] = 0.0
+        # Native mileage: crew-entered miles per punch × the Settings mileage
+        # rate (IRS default), reimbursed on top of piece/hourly pay — same
+        # formula the Connecteam path uses.
+        emp["mileage_reimbursement"] = round(emp["miles"] * rates["mileage_rate"], 2)
         emp["gross_pay"] = round(
-            emp["residential_pay"] + emp["rental_weekday_pay"] + emp["weekend_pay"], 2
+            emp["residential_pay"] + emp["rental_weekday_pay"] + emp["weekend_pay"]
+            + emp["mileage_reimbursement"], 2
         )
         for k in ("total_hours", "residential_hours", "residential_pay",
                   "rental_weekday_hours", "rental_weekday_pay",
@@ -381,8 +389,8 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
         "weekend_rental_hours": round(sum(e["weekend_rental_hours"] for e in out_emps), 2),
         "weekend_turnovers": sum(e["weekend_turnovers"] for e in out_emps),
         "unclassified_hours": round(sum(e["unclassified_hours"] for e in out_emps), 2),
-        "miles": 0.0,
-        "mileage_reimbursement": 0.0,
+        "miles": round(sum(e["miles"] for e in out_emps), 2),
+        "mileage_reimbursement": round(sum(e["mileage_reimbursement"] for e in out_emps), 2),
         "gross_pay": round(sum(e["gross_pay"] for e in out_emps), 2),
     }
 
@@ -392,10 +400,14 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oi
             f"hours couldn't be split into residential vs rental. They're listed as "
             f"'unclassified' and left out of pay."
         ))
-    warnings.append(
-        "Reading hours from the native BrightBase clock. Mileage isn't captured "
-        "natively yet, so mileage reimbursement is $0 for this period."
-    )
+    if totals["miles"] == 0:
+        warnings.append(
+            "Reading hours and mileage from the native BrightBase clock. No miles "
+            "were entered for this period — if crew drove, have them enter miles at "
+            "clock-out (or correct a punch)."
+        )
+    else:
+        warnings.append("Reading hours and mileage from the native BrightBase clock.")
 
     return {
         "period": f"{start_date} to {end_date}",

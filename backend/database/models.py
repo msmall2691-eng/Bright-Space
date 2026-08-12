@@ -703,6 +703,11 @@ class TimeEntry(Base):
     clock_out_at = Column(DateTime, nullable=True)    # NULL = still on the clock (open punch)
     break_minutes = Column(Integer, nullable=False, default=0)
     note = Column(Text, nullable=True)
+    # Miles driven for this job, entered by the crew at clock-out — parity with
+    # Connecteam, where they type miles after each job. NULL = not entered (treated
+    # as 0 in payroll); reimbursed at the Settings 'mileage_rate' (IRS default) in
+    # the native payroll path, exactly like Connecteam's per-shift miles.
+    miles = Column(Float, nullable=True)
     # 'native' today; room to tag an imported/Connecteam-sourced entry later
     # without a migration.
     source = Column(String(16), nullable=False, default="native")
