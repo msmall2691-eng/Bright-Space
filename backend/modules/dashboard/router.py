@@ -242,16 +242,17 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
         .filter(org_scope(RecurringSchedule), RecurringSchedule.active.is_(True))
         .all()
     )
-    # Batch-fetch every linked quote in one query instead of one round trip
-    # per schedule (was N+1 — matches the pattern funnel_dashboard() already
-    # uses below for the same reason).
-    # Org scoping is preserved: quote_ids come only from org-scoped
-    # schedules, and on Postgres RLS scopes the Quote read as well.
+    # Batch-fetch every linked quote in one query instead of one round trip per
+    # schedule (was N+1). Org-scope the read EXPLICITLY: a schedule's quote_id is
+    # not validated against the schedule's org at write time, so filtering by id
+    # alone would let another tenant's quote total leak into this org's MRR
+    # wherever RLS isn't in force (e.g. SQLite). org_scope(Quote) makes the
+    # isolation real in the query; Postgres RLS remains the backstop.
     quote_ids = {s.quote_id for s in schedules if s.quote_id}
     quotes_by_id = {}
     if quote_ids:
         quotes_by_id = {
-            q.id: q for q in db.query(Quote).filter(Quote.id.in_(quote_ids)).all()
+            q.id: q for q in db.query(Quote).filter(org_scope(Quote), Quote.id.in_(quote_ids)).all()
         }
     for s in schedules:
         if not s.quote_id:
@@ -479,7 +480,9 @@ def funnel_dashboard(
     quote_ids = [i.converted_quote_id for i in intakes if i.converted_quote_id]
     quotes = {}
     if quote_ids:
-        for q in db.query(Quote).filter(Quote.id.in_(set(quote_ids))).all():
+        # org_scope(Quote): ids come from org-scoped intakes, but converted_quote_id
+        # isn't validated cross-org at write time — scope the read, don't trust the id.
+        for q in db.query(Quote).filter(org_scope(Quote), Quote.id.in_(set(quote_ids))).all():
             quotes[q.id] = q
 
     counts = {"requests": len(intakes), "quoted": 0, "sent": 0, "viewed": 0, "accepted": 0, "won": 0}

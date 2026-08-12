@@ -316,6 +316,41 @@ def test_mrr_daily_with_weekday_filter(api_client):
     assert delta_cents == expected
 
 
+def test_mrr_excludes_cross_org_quote(api_client):
+    """A schedule in THIS org that links ANOTHER org's quote must not pull that
+    quote's total into this org's MRR. The batch read is org_scoped, so the
+    cross-org quote resolves to None and the schedule counts as unpriced.
+
+    Regression for the Codex cross-tenant finding on #673: the id-only read
+    (`Quote.id.in_(...)`) leaked another tenant's total wherever RLS isn't in
+    force (e.g. SQLite — this test). A recurring schedule's quote_id is accepted
+    without validating the quote's org at write time, so the query, not the id
+    derivation, is what has to enforce isolation.
+    """
+    api, ids = api_client
+    before = _snap(api)["mrr"]
+    cid = _mk_client(ids)          # org 1 (the request's org)
+    pid = _mk_property(ids, cid)   # org 1
+
+    # A quote owned by a DIFFERENT org (org 2), with a large total we'd notice.
+    db = SessionLocal()
+    other = Quote(client_id=cid, quote_number=f"Q-{uuid.uuid4().hex[:8]}",
+                  status="converted", total=9999.0, org_id=2)
+    db.add(other); db.commit(); db.refresh(other)
+    ids["quotes"].append(other.id)
+    other_qid = other.id
+    db.close()
+
+    # An active org-1 schedule that references the org-2 quote.
+    _mk_schedule(ids, cid, pid, other_qid, frequency="weekly")
+
+    after = _snap(api)["mrr"]
+    # The other tenant's $9,999 must NOT enter this org's MRR…
+    assert after["estimate_cents"] == before["estimate_cents"]
+    # …and the schedule is counted as unpriced (its quote is invisible here).
+    assert after["schedules_unpriced"] - before["schedules_unpriced"] == 1
+
+
 def test_ar_aging_buckets_unpaid_by_due_date(api_client):
     """A sent invoice 5 days past due lands in 0_30; a 45-day one lands in
     31_60; a not-yet-due one lands in `current`. Verify by delta so
