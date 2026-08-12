@@ -72,10 +72,11 @@ def _mk_job(ids, job_type="residential", turnover_rate=None):
     return jid
 
 
-def _mk_entry(ids, cleaner_id, clock_in, clock_out, job_id=None, break_min=0, org_id=1):
+def _mk_entry(ids, cleaner_id, clock_in, clock_out, job_id=None, break_min=0, org_id=1, miles=None):
     db = SessionLocal()
     e = TimeEntry(org_id=org_id, cleaner_id=cleaner_id, job_id=job_id,
-                  clock_in_at=clock_in, clock_out_at=clock_out, break_minutes=break_min, source="native")
+                  clock_in_at=clock_in, clock_out_at=clock_out, break_minutes=break_min,
+                  source="native", miles=miles)
     db.add(e); db.commit(); db.refresh(e)
     ids["entries"].append(e.id); eid = e.id; db.close()
     return eid
@@ -128,7 +129,7 @@ def test_native_residential_hours_and_gross(ids):
         assert emp is not None and emp["hours_source"] == "native"
         assert emp["residential_hours"] == 3.0
         assert emp["residential_pay"] == round(3.0 * body["rates"]["residential_rate"], 2)
-        assert emp["gross_pay"] == emp["residential_pay"]      # no mileage natively
+        assert emp["gross_pay"] == emp["residential_pay"]      # no miles entered on this punch
         assert emp["mileage_reimbursement"] == 0.0
     finally:
         _clear()
@@ -241,6 +242,68 @@ def test_square_export_blocked_when_native(ids):
                      json={"start_date": "2026-01-05", "end_date": "2026-01-05", "dry_run": True})
         assert r.status_code == 400
         assert "native" in r.json()["detail"].lower()
+    finally:
+        _clear()
+
+
+def test_native_mileage_reimbursed_into_gross_and_totals(ids):
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, name="Miles Driver")
+    jid = _mk_job(ids, "residential")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 14), _dt(2026, 1, 5, 17), job_id=jid, miles=20)  # 3h + 20 mi
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        body = _summary(api, "2026-01-05", "2026-01-05")
+        rate = body["rates"]["mileage_rate"]
+        emp = _emp(body, cid)
+        assert emp["miles"] == 20.0
+        assert emp["mileage_reimbursement"] == round(20 * rate, 2)
+        # mileage is added ON TOP of the hourly/piece pay
+        assert emp["gross_pay"] == round(emp["residential_pay"] + emp["mileage_reimbursement"], 2)
+        # and it rolls up into the period totals
+        assert body["totals"]["miles"] == 20.0
+        assert body["totals"]["mileage_reimbursement"] == round(20 * rate, 2)
+    finally:
+        _clear()
+
+
+def test_native_mileage_reimbursed_even_when_unclassified(ids):
+    # Driving is driving: miles reimburse regardless of whether the punch's hours
+    # landed in a pay bucket — same as the Connecteam path, where mileage is
+    # independent of the residential/rental classification.
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=None, miles=10)  # unclassified + 10 mi
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        body = _summary(api, "2026-01-05", "2026-01-05")
+        rate = body["rates"]["mileage_rate"]
+        emp = _emp(body, cid)
+        assert emp["unclassified_hours"] == 2.0
+        assert emp["miles"] == 10.0
+        assert emp["mileage_reimbursement"] == round(10 * rate, 2)
+        assert emp["gross_pay"] == round(10 * rate, 2)   # only mileage; the hours are unpaid
+    finally:
+        _clear()
+
+
+def test_native_no_miles_is_zero_reimbursement_and_warns(ids):
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "residential")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 14), _dt(2026, 1, 5, 16), job_id=jid, miles=None)  # no miles
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        body = _summary(api, "2026-01-05", "2026-01-05")
+        emp = _emp(body, cid)
+        assert emp["miles"] == 0.0
+        assert emp["mileage_reimbursement"] == 0.0
+        assert body["totals"]["mileage_reimbursement"] == 0.0
+        # the summary flags the no-miles case so the office can chase it if needed
+        assert any("no miles" in w.lower() for w in body["warnings"])
     finally:
         _clear()
 

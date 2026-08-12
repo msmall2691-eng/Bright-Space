@@ -5563,6 +5563,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/crew/entry/{entry_id}/miles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set Entry Miles
+         * @description Correct the miles on one of the caller's own punches — the safety net for
+         *     a forgotten or fat-fingered clock-out entry, before payroll runs. Scoped to
+         *     the caller's cleaner_id so a cleaner can only edit their own mileage. 404 if
+         *     the punch isn't theirs (or doesn't exist).
+         */
+        patch: operations["set_entry_miles_api_crew_entry__entry_id__miles_patch"];
+        trace?: never;
+    };
     "/api/crew/reconciliation": {
         parameters: {
             query?: never;
@@ -6094,6 +6117,8 @@ export interface components {
             break_minutes?: number | null;
             /** Note */
             note?: string | null;
+            /** Miles */
+            miles?: number | null;
         };
         /** ConnecteamConfig */
         ConnecteamConfig: {
@@ -6233,6 +6258,11 @@ export interface components {
             body: string;
             /** Client Id */
             client_id?: number | null;
+        };
+        /** EntryMilesBody */
+        EntryMilesBody: {
+            /** Miles */
+            miles: number;
         };
         /**
          * ExceptionCreate
@@ -16404,6 +16434,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ClockOutBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_entry_miles_api_crew_entry__entry_id__miles_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryMilesBody"];
             };
         };
         responses: {

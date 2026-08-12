@@ -255,7 +255,7 @@ export default function Payroll() {
                 {data.hours_source === 'connecteam'
                   ? <span className="text-emerald-400">✓ Total hours pulled from Connecteam's official timesheet (their rounding applied) — matches Connecteam exactly.</span>
                   : data.hours_source === 'native'
-                  ? <span className="text-blue-400">Hours from the native BrightBase clock. Mileage isn't captured natively yet, so mileage reimbursement is $0.</span>
+                  ? <span className="text-blue-400">Hours and mileage from the native BrightBase clock (crew enter miles at clock-out).</span>
                   : <span className="text-amber-400">Total hours computed from raw punches (Connecteam's official totals unavailable for this range).</span>}
                 {t.unallocated_hours > 0.05 && <span> · {t.unallocated_hours}h not yet split into a job bucket.</span>}
               </div>
