@@ -1302,6 +1302,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/sync-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sync Overview
+         * @description The full Sync Control Center payload (frontend `/sync`): every schedule
+         *     BrightBase syncs with, rolled into one read-only picture — channels with
+         *     flow direction + who-wins + last-sync + backlog, the ~14 background ticks
+         *     finally made visible, and an attention list of only what a human should act
+         *     on. Richer sibling of `/sync-health` (which still powers the compact pill);
+         *     never mutates. Shape lives in
+         *     `modules/scheduling/sync_overview.build_sync_overview`.
+         */
+        get: operations["sync_overview_api_jobs_sync_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/push-to-gcal": {
         parameters: {
             query?: never;
@@ -2305,6 +2331,11 @@ export interface paths {
         /**
          * List Employees
          * @description Fetch all employees from Connecteam.
+         *
+         *     Gated to internal roles: the roster is staff PII (names, phones) and must
+         *     not be reachable by cleaner/client logins. Before this, only the global
+         *     API-key/JWT middleware gated it, so ANY authenticated principal could pull
+         *     the full roster (docs/audit-2026-04-23.md §6).
          */
         get: operations["list_employees_api_dispatch_employees_get"];
         put?: never;
@@ -2332,6 +2363,33 @@ export interface paths {
          * @description Persist edited pay rates. Only provided fields change.
          */
         put: operations["update_pay_rates_api_payroll_rates_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payroll Source
+         * @description Which time source payroll reads: 'connecteam' (default) or 'native'.
+         */
+        get: operations["get_payroll_source_api_payroll_source_get"];
+        /**
+         * Set Payroll Source
+         * @description Switch payroll between Connecteam punches and the native time clock. Kept
+         *     behind this flag so the native source can be dark-tested against Connecteam
+         *     (via Crew Hours reconciliation) and cut over only once the numbers match.
+         *     Default stays 'connecteam' until an admin flips it.
+         */
+        put: operations["set_payroll_source_api_payroll_source_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5087,6 +5145,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Board
+         * @description Unified Ops Board payload — stat tiles, integration chips, per-severity
+         *     filter counts, and the six triage sections — in one org-scoped round trip.
+         *     Backs the iOS-style board at /dashboard (see services/board_service.py).
+         */
+        get: operations["dashboard_board_api_dashboard_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/summary": {
         parameters: {
             query?: never;
@@ -5136,6 +5216,141 @@ export interface paths {
         get: operations["owner_dashboard_api_dashboard_owner_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Funnel Dashboard
+         * @description Intake→quote conversion funnel over the last ``days`` days.
+         *
+         *     Cohort = requests (LeadIntake) created in the window, excluding archived.
+         *     Each request is followed to its linked quote's furthest stage, giving
+         *     cumulative stage counts, step-by-step conversion rates, the current-status
+         *     outcome mix, median time-to-quote / time-to-accept, dollar value at each
+         *     money stage, and a per-source breakdown. Admin/manager only (revenue).
+         */
+        get: operations["funnel_dashboard_api_dashboard_funnel_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cleanup/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cleanup Scan
+         * @description Find likely-duplicate clients & properties and data-quality gaps.
+         *
+         *     Read-only. Clients cluster when they share a strong signal — same email,
+         *     same phone (last 10 digits), or the same name + ZIP. Properties cluster on
+         *     normalized address. Nothing is changed; the operator reviews and merges.
+         */
+        get: operations["cleanup_scan_api_cleanup_scan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cleanup/clients/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Clients
+         * @description Merge `duplicate_id` into `primary_id`: reassign every client-scoped
+         *     record to the primary, keep the duplicate's contact info as additional
+         *     emails/phones, back-fill missing primary fields, then delete the duplicate.
+         *
+         *     Hard to undo — the caller (the /cleanup review page) confirms first.
+         */
+        post: operations["merge_clients_api_cleanup_clients_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/triage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Triage
+         * @description Pending triage items for this workspace (newest first). Optionally filter
+         *     to one board section; dismissed rows are hidden unless include_dismissed.
+         */
+        get: operations["list_triage_api_inbox_triage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/triage/{item_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Triage
+         * @description Clear one triage card off the board (idempotent). Does not touch Gmail.
+         */
+        post: operations["dismiss_triage_api_inbox_triage__item_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/triage/dismiss-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss All Triage
+         * @description Clear every pending triage card (optionally just one section) at once.
+         */
+        post: operations["dismiss_all_triage_api_inbox_triage_dismiss_all_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5272,6 +5487,98 @@ export interface paths {
         };
         /** Invoices */
         get: operations["invoices_api_portal_invoices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/my-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Day
+         * @description Today's jobs (plus the next `days`-1 as a preview) assigned to the
+         *     caller's crew ID, plus their native time-clock status. Returns 400 with a
+         *     clear message if the account has no cleaner_id linked yet, rather than
+         *     silently returning an empty list — that distinction matters (mis-set
+         *     account vs. genuinely no jobs).
+         */
+        get: operations["my_day_api_crew_my_day_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/clock-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clock In
+         * @description Start a punch. One open punch per cleaner — a second clock-in while
+         *     already on the clock is a 409 (clock out first). Phase 2a: recorded only,
+         *     never read by payroll.
+         */
+        post: operations["clock_in_api_crew_clock_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/clock-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clock Out
+         * @description Close the open punch. 400 if not currently clocked in. break_minutes is
+         *     clamped to the elapsed time so a fat-fingered break can't make worked hours
+         *     negative.
+         */
+        post: operations["clock_out_api_crew_clock_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crew/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reconciliation
+         * @description Native clock hours vs Connecteam's hours, per cleaner, for a date range —
+         *     the proof step before payroll ever depends on the native clock. Read-only:
+         *     reads Connecteam the same way payroll does (its official timesheet totals,
+         *     falling back to punch-summed hours) and never writes it. If Connecteam isn't
+         *     configured, returns native hours alone with connecteam_configured=false.
+         */
+        get: operations["reconciliation_api_crew_reconciliation_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5461,6 +5768,12 @@ export interface components {
             role?: string | null;
             /** Active */
             active?: boolean | null;
+            /** Cleaner Id */
+            cleaner_id?: string | null;
+            /** Pay Rate Residential */
+            pay_rate_residential?: number | null;
+            /** Pay Rate Rental */
+            pay_rate_rental?: number | null;
         };
         /** AssignRequest */
         AssignRequest: {
@@ -5493,6 +5806,8 @@ export interface components {
             calendar_source_of_truth?: string | null;
             /** Gcal Live Sync */
             gcal_live_sync?: boolean | null;
+            /** Sync Reconcile Enabled */
+            sync_reconcile_enabled?: boolean | null;
             /** Gmail Live Sync */
             gmail_live_sync?: boolean | null;
             /** Connecteam Auto Dispatch Enabled */
@@ -5761,6 +6076,24 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ClockInBody */
+        ClockInBody: {
+            /** Job Id */
+            job_id?: number | null;
+            /** Lat */
+            lat?: number | null;
+            /** Lng */
+            lng?: number | null;
+            /** Accuracy M */
+            accuracy_m?: number | null;
+        };
+        /** ClockOutBody */
+        ClockOutBody: {
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Note */
+            note?: string | null;
         };
         /** ConnecteamConfig */
         ConnecteamConfig: {
@@ -6397,6 +6730,13 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /** MergeClientsBody */
+        MergeClientsBody: {
+            /** Primary Id */
+            primary_id: number;
+            /** Duplicate Id */
+            duplicate_id: number;
+        };
         /**
          * MessageRead
          * @description Mirrors the dict returned by ``msg_to_dict``.
@@ -6520,6 +6860,11 @@ export interface components {
             rental_weekday_rate?: number | null;
             /** Mileage Rate */
             mileage_rate?: number | null;
+        };
+        /** PayrollSourceBody */
+        PayrollSourceBody: {
+            /** Source */
+            source: string;
         };
         /** PriorityRequest */
         PriorityRequest: {
@@ -9604,6 +9949,26 @@ export interface operations {
             };
         };
     };
+    sync_overview_api_jobs_sync_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     push_to_gcal_api_jobs_push_to_gcal_post: {
         parameters: {
             query?: never;
@@ -11124,6 +11489,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PayRates"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payroll_source_api_payroll_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_payroll_source_api_payroll_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollSourceBody"];
             };
         };
         responses: {
@@ -15496,6 +15914,26 @@ export interface operations {
             };
         };
     };
+    dashboard_board_api_dashboard_board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     dashboard_summary_api_dashboard_summary_get: {
         parameters: {
             query?: never;
@@ -15532,6 +15970,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    funnel_dashboard_api_dashboard_funnel_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_scan_api_cleanup_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    merge_clients_api_cleanup_clients_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeClientsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_triage_api_inbox_triage_get: {
+        parameters: {
+            query?: {
+                section?: string | null;
+                include_dismissed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_triage_api_inbox_triage__item_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_all_triage_api_inbox_triage_dismiss_all_post: {
+        parameters: {
+            query?: {
+                section?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15710,6 +16326,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    my_day_api_crew_my_day_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clock_in_api_crew_clock_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClockInBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clock_out_api_crew_clock_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClockOutBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconciliation_api_crew_reconciliation_get: {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -138,6 +138,22 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
+    # Crew accounts (Phase 1 — native crew directory): links a role="cleaner"
+    # login to the crew-ID string space Job.cleaner_ids already uses (these
+    # are Connecteam employee IDs in production — see CleanerTimeOff). NULL
+    # for everyone else. Additive: existing Connecteam-driven dispatch and
+    # payroll are untouched; this only lets a cleaner log in and see the jobs
+    # already assigned to their crew ID.
+    cleaner_id = Column(String, nullable=True, index=True)
+
+    # Per-cleaner pay rate overrides ($/hr) for the native payroll source. NULL
+    # = use the global Settings rate for that bucket (pay_rate_residential /
+    # pay_rate_rental_weekday). Only meaningful for role="cleaner" logins; lets
+    # an admin pay individual crew above/below the shop default. The Connecteam
+    # payroll source ignores these (Connecteam holds its own rates).
+    pay_rate_residential = Column(Float, nullable=True)
+    pay_rate_rental = Column(Float, nullable=True)
+
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column
     # (Job.assigned_cleaner_user_id) was never wired up; Job.cleaner_ids is
@@ -646,6 +662,77 @@ class Job(Base):
         ),
     )
 
+
+
+class TimeEntry(Base):
+    """A crew clock-in/out punch — BrightBase's native time & attendance record
+    (Phase 2a of the native crew app).
+
+    This is a NEW canonical domain: *when a cleaner actually worked*. It is
+    distinct from the schedule (Job owns date/time/assignment) and from job
+    completion (Job.completed_at is a "marked done" stamp, not worked time).
+    Writing a punch never touches Job schedule state, so it stays clear of the
+    scheduling-authority contract.
+
+    Deliberately NOT wired into payroll yet — payroll still reads Connecteam
+    Time Clock punches. This table exists to (a) prove a native clock works and
+    (b) accumulate real hours to reconcile against Connecteam before any cutover.
+
+    cleaner_id is the same string identifier Job.cleaner_ids / User.cleaner_id
+    use (a Connecteam employee id today), so a punch ties to the same person the
+    schedule assigns. job_id (nullable) links a punch to the job being worked —
+    the hook a future native payroll will use to classify hours by job_type —
+    but nothing reads it for pay in Phase 2a.
+    """
+    __tablename__ = "time_entries"
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+
+    id = Column(Integer, primary_key=True, index=True)
+    cleaner_id = Column(String, nullable=False, index=True)   # matches Job.cleaner_ids / User.cleaner_id
+    # The login that punched (audit / a future "edit my timesheet"). SET NULL so
+    # deleting a user never destroys the worked-time record.
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Optional link to the job being worked; SET NULL so cancelling/deleting a
+    # job never erases that someone was present and working.
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Naive UTC, matching the rest of the app's stored timestamps. The endpoints
+    # set these explicitly (not via a column default) so clock arithmetic never
+    # mixes aware/naive datetimes.
+    clock_in_at = Column(DateTime, nullable=False)
+    clock_out_at = Column(DateTime, nullable=True)    # NULL = still on the clock (open punch)
+    break_minutes = Column(Integer, nullable=False, default=0)
+    note = Column(Text, nullable=True)
+    # 'native' today; room to tag an imported/Connecteam-sourced entry later
+    # without a migration.
+    source = Column(String(16), nullable=False, default="native")
+
+    # GPS captured at clock-in (Phase 2b) — browser geolocation, best-effort.
+    # NULL when the device denied location or it was unavailable; a punch is
+    # never blocked on GPS. accuracy is the browser's reported radius in meters.
+    clock_in_lat = Column(Float, nullable=True)
+    clock_in_lng = Column(Float, nullable=True)
+    clock_in_accuracy_m = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    job = relationship("Job")
+
+    __table_args__ = (
+        # "Am I currently clocked in?" — the open-punch lookup (clock_out IS NULL).
+        Index("idx_time_entry_cleaner_open", "cleaner_id", "clock_out_at"),
+        # "My punches for a day" — hours-today / history.
+        Index("idx_time_entry_cleaner_in", "cleaner_id", "clock_in_at"),
+        # One open punch per cleaner per org (payroll integrity): at most one row
+        # with clock_out_at IS NULL. The endpoint pre-checks too, but this is the
+        # race backstop. Mirrors the Job turnover-uniqueness pattern so it holds
+        # in both Postgres (prod) and the SQLite test schema.
+        Index("uq_time_entry_one_open_per_cleaner", "org_id", "cleaner_id",
+              unique=True,
+              postgresql_where=text("clock_out_at IS NULL"),
+              sqlite_where=text("clock_out_at IS NULL")),
+    )
 
 
 class LeadIntake(Base):

@@ -55,6 +55,7 @@ export default function Payroll() {
   const [expanded, setExpanded] = useState({})
   const [overrides, setOverrides] = useState({})
   const [square, setSquare] = useState(null)   // { mode:'preview'|'sent', data, busy, error }
+  const [source, setSource] = useState('connecteam')  // 'connecteam' | 'native'
 
   // Persist manual overrides per pay period so they survive a refresh.
   const ovKey = `payroll_overrides_${startDate}_${endDate}`
@@ -84,6 +85,23 @@ export default function Payroll() {
       setError(String(e.message || e))
     }
     setLoading(false)
+  }
+
+  // Payroll time source (Connecteam vs the native BrightBase clock). Admin-only
+  // toggle; the backend enforces the role and keeps the default at 'connecteam'.
+  useEffect(() => {
+    get('/api/payroll/source').then(r => setSource(r.source || 'connecteam')).catch(() => {})
+  }, [])
+  const changeSource = async (src) => {
+    if (src === source) return
+    setError('')
+    try {
+      const r = await put('/api/payroll/source', { source: src })
+      setSource(r.source || src)
+      if (startDate && endDate) pull()
+    } catch (e) {
+      setError(String(e.message || e))
+    }
   }
 
   const rates = data?.rates
@@ -133,6 +151,10 @@ export default function Payroll() {
   }
 
   const t = data?.totals
+  const isAdmin = (() => {
+    try { return JSON.parse(localStorage.getItem('brightbase_user') || '{}').role === 'admin' }
+    catch { return false }
+  })()
 
   return (
     <div className="max-w-6xl">
@@ -157,16 +179,34 @@ export default function Payroll() {
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-bg-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             <Search className="w-4 h-4" />{loading ? 'Loading...' : 'Pull Data'}
           </button>
+          {isAdmin && (
+            <div>
+              <label className="block text-xs text-ink-3 mb-1">Hours source</label>
+              <div className="inline-flex rounded-lg border border-hairline overflow-hidden">
+                {[['connecteam', 'Connecteam'], ['native', 'Native clock']].map(([s, label]) => (
+                  <button key={s} onClick={() => changeSource(s)} disabled={loading}
+                    title={s === 'native'
+                      ? 'Read hours from the native BrightBase clock (verify in Crew Hours first)'
+                      : 'Read hours from Connecteam Time Clock (default)'}
+                    className={`px-3 py-2 text-sm font-medium transition-colors ${source === s ? 'bg-indigo-600 text-white' : 'bg-panel text-ink-2 hover:bg-bg-2'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {data && (
             <>
               <button onClick={exportCsv}
                 className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Download className="w-4 h-4" />Export CSV
               </button>
-              <button onClick={() => sendSquare(true)} disabled={square?.busy}
-                className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                <Send className="w-4 h-4" />Send to Square
-              </button>
+              {source !== 'native' && (
+                <button onClick={() => sendSquare(true)} disabled={square?.busy}
+                  className="flex items-center gap-2 bg-panel hover:bg-bg-2 border border-hairline px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  <Send className="w-4 h-4" />Send to Square
+                </button>
+              )}
             </>
           )}
         </div>
@@ -214,6 +254,8 @@ export default function Payroll() {
               <div>
                 {data.hours_source === 'connecteam'
                   ? <span className="text-emerald-400">✓ Total hours pulled from Connecteam's official timesheet (their rounding applied) — matches Connecteam exactly.</span>
+                  : data.hours_source === 'native'
+                  ? <span className="text-blue-400">Hours from the native BrightBase clock. Mileage isn't captured natively yet, so mileage reimbursement is $0.</span>
                   : <span className="text-amber-400">Total hours computed from raw punches (Connecteam's official totals unavailable for this range).</span>}
                 {t.unallocated_hours > 0.05 && <span> · {t.unallocated_hours}h not yet split into a job bucket.</span>}
               </div>

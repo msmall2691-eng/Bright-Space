@@ -25,6 +25,8 @@ TENANT_TABLES = [
     # Inbox triage (migration 069): the captured automated-email stream behind the
     # board's Systems & Subscriptions / Safe to Ignore sections.
     "inbox_triage_items",
+    # Native crew time clock (migration 070): clock-in/out punches, org-scoped.
+    "time_entries",
 ]
 
 POLICY = "bb_org_isolation"

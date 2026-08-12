@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import Dashboard from './pages/Dashboard'
 import OpsBoard from './pages/OpsBoard'
+import MyDay from './pages/MyDay'
 import Requests from './pages/Requests'
 import Pipeline from './pages/Pipeline'
 import Deals from './pages/Deals'
@@ -115,6 +116,7 @@ const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const Schedule = lazy(() => import('./pages/Schedule'))
 const Billing = lazy(() => import('./pages/Billing'))
 const Payroll = lazy(() => import('./pages/Payroll'))
+const CrewHours = lazy(() => import('./pages/CrewHours'))
 const Connecteam = lazy(() => import('./pages/Connecteam'))
 const Comms = lazy(() => import('./pages/Comms'))
 const Properties = lazy(() => import('./pages/Properties'))
@@ -209,6 +211,14 @@ export default function App() {
     )
   }
 
+  // Crew accounts get a standalone, chrome-free view — never the full CRM
+  // shell (Sidebar/Header/nav), regardless of which URL they land on. This
+  // is the enforcement point, not just a route: a cleaner typing /clients
+  // still gets My Day, not a 403'd blank CRM page.
+  if (user?.role === 'cleaner') {
+    return <MyDay />
+  }
+
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-bg">
       <SidebarWithUnread open={sidebarOpen} onClose={closeSidebar} user={user} />
@@ -256,6 +266,7 @@ export default function App() {
                   on desktop only because that's the default view there). */}
               <Route path="/dispatch" element={<Navigate to="/schedule?view=dispatch" replace />} />
               <Route path="/payroll" element={<Payroll />} />
+              <Route path="/crew-hours" element={<CrewHours />} />
               <Route path="/connecteam" element={<Connecteam />} />
               <Route path="/comms" element={<Comms />} />
               <Route path="/properties" element={<Properties />} />

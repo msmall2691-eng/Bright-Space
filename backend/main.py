@@ -188,6 +188,8 @@ from modules.inbox.router import router as inbox_router
 app.include_router(inbox_router, prefix="/api/inbox", tags=["inbox"])
 app.include_router(schedule_router, prefix="/api/schedule", tags=["schedule"])
 app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
+from modules.crew.router import router as crew_router
+app.include_router(crew_router, prefix="/api/crew", tags=["crew"])
 # push_router sets its own /api/push prefix (like the auth webhook routers).
 app.include_router(push_router)
 
