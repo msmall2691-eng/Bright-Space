@@ -72,9 +72,9 @@ def _mk_job(ids, job_type="residential", turnover_rate=None):
     return jid
 
 
-def _mk_entry(ids, cleaner_id, clock_in, clock_out, job_id=None, break_min=0):
+def _mk_entry(ids, cleaner_id, clock_in, clock_out, job_id=None, break_min=0, org_id=1):
     db = SessionLocal()
-    e = TimeEntry(org_id=1, cleaner_id=cleaner_id, job_id=job_id,
+    e = TimeEntry(org_id=org_id, cleaner_id=cleaner_id, job_id=job_id,
                   clock_in_at=clock_in, clock_out_at=clock_out, break_minutes=break_min, source="native")
     db.add(e); db.commit(); db.refresh(e)
     ids["entries"].append(e.id); eid = e.id; db.close()
@@ -195,6 +195,22 @@ def test_native_weekday_rental_is_hourly(ids):
         assert emp["rental_weekday_hours"] == 3.0
         assert emp["rental_weekday_pay"] == 90.0   # 3h * $30, weekday → hourly not piece
         assert emp["weekend_turnovers"] == 0
+    finally:
+        _clear()
+
+
+def test_native_summary_is_org_scoped(ids):
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "residential")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)              # org 1, 2h → counts
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 12), _dt(2026, 1, 5, 15), job_id=None, org_id=2)  # org 2 → must be excluded
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["residential_hours"] == 2.0
+        assert emp["unclassified_hours"] == 0.0   # the org-2 punch must not leak in
     finally:
         _clear()
 

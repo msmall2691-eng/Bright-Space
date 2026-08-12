@@ -21,6 +21,7 @@ from datetime import datetime, date, time, timedelta, timezone as _tz
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
@@ -39,7 +40,7 @@ from integrations.connecteam import (
     get_team,
     _employee_name_map,
 )
-from modules.auth.router import require_role
+from modules.auth.router import require_role, current_org_id, resolve_org_id
 from modules.settings.router import get_setting, set_setting
 
 try:  # stdlib on 3.9+, but guard so import never takes the app down
@@ -227,7 +228,7 @@ def _native_entry_hours(e) -> float:
     return max(0.0, secs) / 3600.0
 
 
-def _native_summary(db: Session, start_date: str, end_date: str, rates: dict) -> dict:
+def _native_summary(db: Session, start_date: str, end_date: str, rates: dict, oid: int) -> dict:
     """The payroll breakdown computed from BrightBase's native time clock
     (time_entries) instead of Connecteam — the SAME response shape as the
     Connecteam path so the Payroll page renders it unchanged.
@@ -250,7 +251,8 @@ def _native_summary(db: Session, start_date: str, end_date: str, rates: dict) ->
     entries = (
         db.query(TimeEntry)
         .options(joinedload(TimeEntry.job).joinedload(Job.property))
-        .filter(TimeEntry.clock_out_at.isnot(None),
+        .filter(or_(TimeEntry.org_id == oid, TimeEntry.org_id.is_(None)),
+                TimeEntry.clock_out_at.isnot(None),
                 TimeEntry.clock_in_at >= lo,
                 TimeEntry.clock_in_at < hi)
         .all()
@@ -407,6 +409,7 @@ async def payroll_summary(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
+    org_id: int = Depends(current_org_id),
 ):
     """The payroll-ready breakdown for a pay period: per-crew hours split into
     residential / rental-weekday / weekend-turnover buckets, mileage, and a
@@ -428,7 +431,7 @@ async def payroll_summary(
     # Connecteam when payroll_source='native' (off by default). Same response
     # shape, so the Payroll page is agnostic to the source.
     if _payroll_source(db) == "native":
-        return _native_summary(db, start_date, end_date, rates)
+        return _native_summary(db, start_date, end_date, rates, resolve_org_id(org_id, db))
 
     try:
         rows = await get_time_activities(start_date, end_date)
