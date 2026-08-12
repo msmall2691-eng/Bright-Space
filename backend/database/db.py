@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker, Session
 from database.base import Base
 import os
@@ -57,9 +57,13 @@ def check_schema_drift() -> dict:
     behind-on-migrations production DB — the usual cause of "column does not
     exist" 500s (e.g. the GET /api/quotes/ 500 in the June audit) — instead of
     letting individual endpoints fail mysteriously later. Returns:
-      {"ok": True|False|None, "db_revision": str|None, "head_revision": str|None}
-    ok is None when the check itself couldn't run (no alembic_version table on a
-    fresh/SQLite DB, etc.).
+      {"status": str, "ok": True|False|None, "db_revision": str|None,
+       "head_revision": str|None, "error": str|None}
+    status is one of: "ok" (at head), "drift" (reachable but off head),
+    "no_table" (reachable, never migrated — fresh/SQLite create_all),
+    "unreachable" (could NOT connect — e.g. a rotated DB password the running
+    app hasn't picked up), or "error" (the check itself failed). `ok` stays
+    True|False|None for back-compat.
     """
     try:
         from alembic.config import Config
@@ -68,14 +72,29 @@ def check_schema_drift() -> dict:
         cfg = Config(os.path.join(backend_dir, "alembic.ini"))
         cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
         head = ScriptDirectory.from_config(cfg).get_current_head()
-        current = None
+        # Separate "can't reach the DB" from "table isn't there". These used to
+        # collapse into a single misleading "alembic_version table not found",
+        # which reported an AUTH FAILURE (app stranded on a rotated password) as
+        # missing schema — sending a prod incident chasing the wrong problem.
         try:
-            with engine.connect() as conn:
+            conn = engine.connect()
+        except Exception as e:
+            logger.error("[schema-drift] database unreachable: %s: %s", type(e).__name__, e)
+            return {"status": "unreachable", "ok": None, "db_revision": None,
+                    "head_revision": head, "error": f"database unreachable: {type(e).__name__}"}
+        try:
+            with conn:
+                if not sa_inspect(conn).has_table("alembic_version"):
+                    # Reachable, but never migrated (fresh DB / SQLite create_all).
+                    return {"status": "no_table", "ok": None, "db_revision": None,
+                            "head_revision": head, "error": "alembic_version table not found"}
                 row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
                 current = row[0] if row else None
-        except Exception:
-            return {"ok": None, "db_revision": None, "head_revision": head,
-                    "error": "alembic_version table not found"}
+        except Exception as e:
+            logger.error("[schema-drift] could not read alembic_version: %s: %s", type(e).__name__, e)
+            return {"status": "error", "ok": None, "db_revision": None,
+                    "head_revision": head, "error": f"could not read alembic_version: {type(e).__name__}"}
+
         ok = current == head
         if not ok:
             logger.error(
@@ -83,10 +102,11 @@ def check_schema_drift() -> dict:
                 "Run 'alembic upgrade head' — endpoints that read newer columns "
                 "may return 500 until migrations are applied.", current, head,
             )
-        return {"ok": ok, "db_revision": current, "head_revision": head}
+        return {"status": "ok" if ok else "drift", "ok": ok,
+                "db_revision": current, "head_revision": head, "error": None}
     except Exception as e:
         logger.warning("[schema-drift] could not verify migration state: %s", e)
-        return {"ok": None, "error": str(e)}
+        return {"status": "error", "ok": None, "error": str(e)}
 
 
 def init_db():

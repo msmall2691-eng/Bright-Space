@@ -294,18 +294,29 @@ async def health():
     # behind-on-migrations DB — the usual cause of "column does not exist"
     # 500s like the GET/POST /api/quotes failures — can be diagnosed from the
     # browser without log access. Fail-soft: check_schema_drift() never raises.
+    #
+    # Return a NON-200 when the app genuinely can't serve — the DB is
+    # unreachable, or the schema is off the code's head — so Railway's
+    # healthcheck gate (railway.json healthcheckPath) blocks promoting a broken
+    # deploy instead of the old bug where this always returned 200 and shipped
+    # an app that couldn't reach its database. "no_table" (fresh/SQLite dev) and
+    # a checker "error" stay 200 so local + first-boot don't hard-fail.
+    from fastapi.responses import JSONResponse
     from database.db import check_schema_drift
     drift = check_schema_drift()
-    return {
-        "status": "ok",
+    unhealthy = drift.get("status") in ("unreachable", "drift")
+    body = {
+        "status": "degraded" if unhealthy else "ok",
         "service": "BrightBase",
         "schema": {
             "ok": drift.get("ok"),
+            "status": drift.get("status"),
             "db_revision": drift.get("db_revision"),
             "head_revision": drift.get("head_revision"),
             "error": drift.get("error"),
         },
     }
+    return JSONResponse(body, status_code=503 if unhealthy else 200)
 
 
 @app.get("/api/agents")
