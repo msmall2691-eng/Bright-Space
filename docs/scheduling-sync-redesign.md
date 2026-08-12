@@ -12,15 +12,15 @@ mostly to make it **legible**.
 
 ---
 
-## Current state (running log — updated 2026-08-11)
+## Current state (running log — updated 2026-08-12)
 
 A living snapshot so a fresh session doesn't pay a reconstruction tax. This is the
 first thing to read; update it as state changes.
 
-**⛔ Gate before resuming any work below:** a Railway Postgres credential rotation +
-routine access review is in progress. Do **not** resume the activation / Phase 3 work
-until the post-rotation `pg_roles` check is confirmed clean — an unexpected
-`rolcanlogin` role survives a password rotation and must be handled first.
+**✅ Security gate — cleared (2026-08-12).** The Railway Postgres credential was rotated
+and the access review came back clean (TCP auth on the new password `AUTH_OK`; `pg_roles`
+shows exactly one login role, `postgres`; app reconnected at `073`). Activation / Phase 3
+is unblocked. Do **not** re-run the rotation — it's done.
 
 **Phase 2 — `schedule_events` log:** shipped and merged (#664, squash → `06d7860`).
 Append-only `schedule_events` + `projection_state`, a flush-listener dual-write, and
@@ -31,13 +31,17 @@ migration 068. Currently **dark**: `SCHEDULE_EVENT_LOG_ENABLED` defaults OFF.
   therefore *writes rows* — it does **not** push to Google / Connecteam. Anyone who
   adds a *reader* of the log changes that blast radius and must re-check the Phase 3
   sequencing below.
-- *Activation PR — staged, paused on the gate above:* migration **069** drops the
-  `schedule_events` FKs (`job_id` CASCADE + `org_id`) — an append-only log must retain
-  a deleted job's history, and a `deleted`-event insert must not FK-violate on Postgres
-  (that would roll back the job deletion); make the flush listener **fail-safe** (a
-  logging error must never break a Job write); set `ENV SCHEDULE_EVENT_LOG_ENABLED=1`
-  in the Dockerfile to flip it on in prod without touching Railway; add a read-only
-  log-health card to the Sync Control Center; tests.
+- *Activation — safety prep SHIPPED (this branch / #665), flag still OFF:* migration
+  **074** drops the `schedule_events` FKs (`job_id` CASCADE + `org_id`) so the append-only
+  log retains a deleted job's history and a `deleted`-event insert can't FK-violate the
+  just-removed row on Postgres (which would otherwise roll back the job deletion); the
+  flush listener is now **fail-safe** — a logging error can never break a Job write
+  (regression test `test_listener_error_never_breaks_the_job_write`). The log is still
+  **dark**; this prep changes no observable behavior.
+- *Remaining to activate (the deliberate cut-over):* (1) a read-only **log-health surface**
+  in the Sync Control Center so the capture can be watched, then (2) flip the flag on in
+  prod — `ENV SCHEDULE_EVENT_LOG_ENABLED=1` in the Dockerfile (one line, no Railway
+  change). Sequenced so the log can be verified against real data the moment it goes live.
 
 **R1 baseline:** re-verified **14** ticks @ `af379fa` (2026-08-12) — `main` advanced
 through #661 / #670 / #671 / #673 / #674 / #675 since the `06d7860` pin and **none

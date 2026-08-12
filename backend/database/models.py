@@ -1473,10 +1473,16 @@ class ScheduleEvent(Base):
     Ordered by `id`; never updated or deleted (append-only).
     """
     __tablename__ = "schedule_events"
-    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)  # tenant scope (MT-1)
+    # No FKs on this table by design: an append-only, immutable log must OUTLIVE
+    # the rows it records. A jobs FK with CASCADE would erase a deleted job's
+    # history, and logging a `deleted` event in the same transaction that removes
+    # the job would FK-violate the just-gone row on Postgres and roll back the
+    # deletion itself. org_id is a denormalized tenant tag (RLS reads the value,
+    # not a FK). Migration 074 drops the constraints migration 068 created.
+    org_id = Column(Integer, nullable=True, index=True)  # tenant scope (MT-1); denormalized, no FK
 
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id = Column(Integer, nullable=False, index=True)  # references jobs.id, but intentionally NO FK (see note above)
     # created | rescheduled | reassigned | cancelled | completed | updated | deleted
     event_type = Column(String(24), nullable=False)
     # {field: [old, new]} for the tracked fields that changed (dates/times as ISO
