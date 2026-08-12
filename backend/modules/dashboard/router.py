@@ -245,6 +245,8 @@ def owner_dashboard(db: Session = Depends(get_db), org_id: int = Depends(current
     # Batch-fetch every linked quote in one query instead of one round trip
     # per schedule (was N+1 — matches the pattern funnel_dashboard() already
     # uses below for the same reason).
+    # Org scoping is preserved: quote_ids come only from org-scoped
+    # schedules, and on Postgres RLS scopes the Quote read as well.
     quote_ids = {s.quote_id for s in schedules if s.quote_id}
     quotes_by_id = {}
     if quote_ids:
