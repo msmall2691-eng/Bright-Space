@@ -19,20 +19,21 @@ def _drift(status, ok):
             "head_revision": "073_time_entry_one_open", "error": None}
 
 
-@pytest.mark.parametrize("status,ok,code", [
-    ("ok", True, 200),
-    ("no_table", None, 200),        # fresh / SQLite dev — don't hard-fail
-    ("error", None, 200),            # the checker itself broke — don't down the app
-    ("drift", False, 503),           # DB off the code's head
-    ("unreachable", None, 503),      # DB down / stale creds — the rotation incident
+@pytest.mark.parametrize("status,ok,code,top", [
+    ("ok", True, 200, "ok"),
+    ("no_table", None, 200, "ok"),          # fresh / SQLite dev — clean
+    ("ahead", False, 200, "degraded"),       # rollback / newer DB — flagged, NOT gated
+    ("error", None, 200, "degraded"),        # the checker broke — flagged, app stays up
+    ("behind", False, 503, "degraded"),      # DB behind the code's head — gate fails
+    ("unreachable", None, 503, "degraded"),  # DB down / stale creds — the rotation incident
 ])
-def test_health_gate_status_codes(monkeypatch, status, ok, code):
+def test_health_gate_status_codes(monkeypatch, status, ok, code, top):
     monkeypatch.setattr(dbmod, "check_schema_drift", lambda: _drift(status, ok))
     res = TestClient(app).get("/api/health")
     assert res.status_code == code
     body = res.json()
     assert body["schema"]["status"] == status
-    assert body["status"] == ("degraded" if code == 503 else "ok")
+    assert body["status"] == top
 
 
 def test_health_real_check_on_test_db_is_200():

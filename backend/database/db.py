@@ -59,7 +59,9 @@ def check_schema_drift() -> dict:
     letting individual endpoints fail mysteriously later. Returns:
       {"status": str, "ok": True|False|None, "db_revision": str|None,
        "head_revision": str|None, "error": str|None}
-    status is one of: "ok" (at head), "drift" (reachable but off head),
+    status is one of: "ok" (at head), "behind" (DB is a strict ancestor of head
+    — the app expects columns it lacks; genuinely broken), "ahead" (DB newer
+    than this code knows — a rollback onto an already-migrated DB; tolerated),
     "no_table" (reachable, never migrated — fresh/SQLite create_all),
     "unreachable" (could NOT connect — e.g. a rotated DB password the running
     app hasn't picked up), or "error" (the check itself failed). `ok` stays
@@ -71,7 +73,8 @@ def check_schema_drift() -> dict:
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         cfg = Config(os.path.join(backend_dir, "alembic.ini"))
         cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
-        head = ScriptDirectory.from_config(cfg).get_current_head()
+        script = ScriptDirectory.from_config(cfg)
+        head = script.get_current_head()
         # Separate "can't reach the DB" from "table isn't there". These used to
         # collapse into a single misleading "alembic_version table not found",
         # which reported an AUTH FAILURE (app stranded on a rotated password) as
@@ -95,15 +98,38 @@ def check_schema_drift() -> dict:
             return {"status": "error", "ok": None, "db_revision": None,
                     "head_revision": head, "error": f"could not read alembic_version: {type(e).__name__}"}
 
-        ok = current == head
-        if not ok:
+        if current == head:
+            return {"status": "ok", "ok": True, "db_revision": current,
+                    "head_revision": head, "error": None}
+
+        # Drift has a direction, and the two aren't equally dangerous:
+        #   - behind: the DB is a strict ANCESTOR of head — the app expects
+        #     columns the DB doesn't have yet. Genuinely broken; the health gate
+        #     should fail so a bad deploy isn't promoted.
+        #   - ahead: the DB is newer than this code knows (a rollback onto an
+        #     already-migrated DB). Usually fine — migrations are additive — and
+        #     it's exactly when you're rolling back because prod is on fire, so
+        #     it must NOT fail the gate and strand your escape hatch.
+        try:
+            head_lineage = {r.revision for r in script.iterate_revisions(head, "base")}
+        except Exception:
+            head_lineage = set()
+        if current in head_lineage:
             logger.error(
-                "[schema-drift] DB is at migration %r but code head is %r. "
-                "Run 'alembic upgrade head' — endpoints that read newer columns "
-                "may return 500 until migrations are applied.", current, head,
+                "[schema-drift] DB is BEHIND: at %r, code head is %r. Run "
+                "'alembic upgrade head' — endpoints reading newer columns may 500.",
+                current, head,
             )
-        return {"status": "ok" if ok else "drift", "ok": ok,
-                "db_revision": current, "head_revision": head, "error": None}
+            return {"status": "behind", "ok": False, "db_revision": current,
+                    "head_revision": head, "error": None}
+        # Not a known ancestor of head → newer than this code / divergent.
+        logger.warning(
+            "[schema-drift] DB is AHEAD of this code: at %r, code head is %r "
+            "(rollback / newer DB). Tolerated — not failing the health gate.",
+            current, head,
+        )
+        return {"status": "ahead", "ok": False, "db_revision": current,
+                "head_revision": head, "error": None}
     except Exception as e:
         logger.warning("[schema-drift] could not verify migration state: %s", e)
         return {"status": "error", "ok": None, "error": str(e)}

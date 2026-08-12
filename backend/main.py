@@ -295,28 +295,32 @@ async def health():
     # 500s like the GET/POST /api/quotes failures — can be diagnosed from the
     # browser without log access. Fail-soft: check_schema_drift() never raises.
     #
-    # Return a NON-200 when the app genuinely can't serve — the DB is
-    # unreachable, or the schema is off the code's head — so Railway's
-    # healthcheck gate (railway.json healthcheckPath) blocks promoting a broken
-    # deploy instead of the old bug where this always returned 200 and shipped
-    # an app that couldn't reach its database. "no_table" (fresh/SQLite dev) and
-    # a checker "error" stay 200 so local + first-boot don't hard-fail.
+    # Return a NON-200 only when the app genuinely can't serve — the DB is
+    # unreachable, or the schema is BEHIND the code's head (app expects columns
+    # the DB lacks) — so Railway's healthcheck gate (railway.json
+    # healthcheckPath) blocks promoting a broken deploy, instead of the old bug
+    # where this always returned 200 and shipped an app that couldn't reach its
+    # database. Deliberately NOT gated: "ahead" (a rollback onto an
+    # already-migrated DB — must keep its healthcheck so the escape hatch
+    # works), "no_table" (fresh/SQLite dev, first boot), and a checker "error".
+    # Those still show as degraded in the body, but don't take the app down.
     from fastapi.responses import JSONResponse
     from database.db import check_schema_drift
     drift = check_schema_drift()
-    unhealthy = drift.get("status") in ("unreachable", "drift")
+    status = drift.get("status")
+    gate_fail = status in ("unreachable", "behind")
     body = {
-        "status": "degraded" if unhealthy else "ok",
+        "status": "ok" if status in ("ok", "no_table") else "degraded",
         "service": "BrightBase",
         "schema": {
             "ok": drift.get("ok"),
-            "status": drift.get("status"),
+            "status": status,
             "db_revision": drift.get("db_revision"),
             "head_revision": drift.get("head_revision"),
             "error": drift.get("error"),
         },
     }
-    return JSONResponse(body, status_code=503 if unhealthy else 200)
+    return JSONResponse(body, status_code=503 if gate_fail else 200)
 
 
 @app.get("/api/agents")
