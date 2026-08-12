@@ -743,10 +743,11 @@ export default function JobEditModal({ job, properties = [], clients = [], onClo
                 onChange={e => setFormData(f => ({ ...f, job_type: e.target.value }))}
                 className="w-full px-3 py-3 border border-hairline rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base bg-panel"
               >
-                {!['residential', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
+                {!['residential', 'deep_clean', 'commercial', 'str_turnover', 'one_time'].includes(formData.job_type) && (
                   <option value={formData.job_type}>{formData.job_type || '(unset)'}</option>
                 )}
                 <option value="residential">Residential</option>
+                <option value="deep_clean">Deep Clean</option>
                 <option value="commercial">Commercial</option>
                 <option value="str_turnover">STR Turnover</option>
                 <option value="one_time">One-time</option>

@@ -167,6 +167,21 @@ export default function UsersAdmin() {
                     }}
                     className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
                   />
+                  <input
+                    key={`${u.id}-deep-${u.pay_rate_deep ?? ''}`}
+                    type="number" step="0.5" min="0"
+                    defaultValue={u.pay_rate_deep ?? ''}
+                    placeholder="Deep $/hr"
+                    title="Deep-clean hourly pay rate for this cleaner (native payroll). Blank = shop default."
+                    disabled={busyId === u.id}
+                    onBlur={e => {
+                      const raw = e.target.value.trim()
+                      const v = raw === '' ? null : Number(raw)
+                      if (v !== null && Number.isNaN(v)) return
+                      if (v !== (u.pay_rate_deep ?? null)) setPay(u, { pay_rate_deep: v })
+                    }}
+                    className="w-20 bg-panel border border-hairline rounded-lg px-2 py-1.5 text-xs focus:outline-none shrink-0"
+                  />
                 </>
               )}
               {u.active && u.status !== 'disabled' ? (

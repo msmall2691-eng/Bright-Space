@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Search, Download, Clock, Car, DollarSign, User, CalendarRange,
   Home, KeyRound, Sun, AlertTriangle, Settings2, ChevronDown, Save, Check, Tag,
-  Send, X,
+  Send, X, Sparkles,
 } from 'lucide-react'
 import { get, put, patch, post } from '../api'
 import { PageHeader } from '../components/ui'
@@ -31,7 +31,9 @@ function shiftEffective(shift, ov, rates) {
   if (mode === 'exclude') return { pay: 0, mode }
   if (mode === 'piece') return { pay: round2(ov.amount), mode }
   if (mode === 'hourly') {
-    const rate = shift.kind === 'rental' ? rates.rental_weekday_rate : rates.residential_rate
+    const rate = shift.kind === 'rental' ? rates.rental_weekday_rate
+      : shift.kind === 'deep' ? rates.deep_clean_rate
+      : rates.residential_rate
     return { pay: round2(shift.hours * rate), mode }
   }
   return { pay: round2(shift.pay), mode: 'auto' }
@@ -120,12 +122,13 @@ export default function Payroll() {
   const exportCsv = () => {
     if (!data) return
     const cols = [
-      'Employee', 'Total Hours', 'Residential Hours', 'Rental Weekday Hours',
-      'Weekend Turnovers', 'Miles', 'Mileage Reimbursement', 'Gross Pay',
+      'Employee', 'Total Hours', 'Residential Hours', 'Deep Clean Hours', 'Deep Clean Pay',
+      'Rental Weekday Hours', 'Weekend Turnovers', 'Miles', 'Mileage Reimbursement', 'Gross Pay',
     ]
     const rows = data.employees.map(e => [
-      e.name, e.total_hours, e.residential_hours, e.rental_weekday_hours,
-      e.weekend_turnovers, e.miles, e.mileage_reimbursement, adj[e.employee_id]?.gross ?? e.gross_pay,
+      e.name, e.total_hours, e.residential_hours, e.deep_clean_hours, e.deep_clean_pay,
+      e.rental_weekday_hours, e.weekend_turnovers, e.miles, e.mileage_reimbursement,
+      adj[e.employee_id]?.gross ?? e.gross_pay,
     ])
     const csv = [cols, ...rows]
       .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
@@ -290,6 +293,9 @@ export default function Payroll() {
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                         <Bucket icon={Home} label="Residential" primary={hrs(emp.residential_hours)} secondary={money(emp.residential_pay)} />
+                        {emp.deep_clean_hours > 0 && (
+                          <Bucket icon={Sparkles} label="Deep clean" primary={hrs(emp.deep_clean_hours)} secondary={money(emp.deep_clean_pay)} />
+                        )}
                         <Bucket icon={KeyRound} label="Rental (wkday)" primary={hrs(emp.rental_weekday_hours)} secondary={money(emp.rental_weekday_pay)} />
                         <Bucket icon={Sun} label="Weekend"
                           primary={`${emp.weekend_turnovers} turnover${emp.weekend_turnovers === 1 ? '' : 's'}`}
@@ -386,6 +392,7 @@ function ShiftRow({ shift, rates, ov, onChange }) {
 function KindDot({ kind, weekend }) {
   const color = kind === 'unclassified' ? 'bg-amber-400'
     : kind === 'rental' ? (weekend ? 'bg-purple-400' : 'bg-blue-400')
+    : kind === 'deep' ? 'bg-teal-400'
     : 'bg-emerald-400'
   return <span className={`w-2 h-2 rounded-full shrink-0 ${color}`} />
 }
@@ -532,6 +539,7 @@ function RatesPanel() {
       const r = await put('/api/payroll/rates', {
         residential_rate: Number(rates.residential_rate),
         rental_weekday_rate: Number(rates.rental_weekday_rate),
+        deep_clean_rate: Number(rates.deep_clean_rate),
         mileage_rate: Number(rates.mileage_rate),
       })
       setRates(r); setSavedRates(true); setTimeout(() => setSavedRates(false), 2000)
@@ -559,6 +567,8 @@ function RatesPanel() {
                   onChange={v => setRates({ ...rates, residential_rate: v })} />
                 <RateInput label="Rental weekday $/hr" value={rates.rental_weekday_rate}
                   onChange={v => setRates({ ...rates, rental_weekday_rate: v })} />
+                <RateInput label="Deep clean $/hr" value={rates.deep_clean_rate}
+                  onChange={v => setRates({ ...rates, deep_clean_rate: v })} />
                 <RateInput label="Mileage $/mi" value={rates.mileage_rate} step="0.01"
                   onChange={v => setRates({ ...rates, mileage_rate: v })} />
                 <button onClick={saveRates} disabled={savingRates}

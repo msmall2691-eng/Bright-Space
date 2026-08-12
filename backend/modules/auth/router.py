@@ -702,6 +702,7 @@ class AdminUserUpdate(BaseModel):
     # untouched — a number sets it.
     pay_rate_residential: Optional[float] = None
     pay_rate_rental: Optional[float] = None
+    pay_rate_deep: Optional[float] = None
 
 
 def _user_row(db: Session, u: User) -> dict:
@@ -720,6 +721,7 @@ def _user_row(db: Session, u: User) -> dict:
         "cleaner_id": u.cleaner_id,
         "pay_rate_residential": u.pay_rate_residential,
         "pay_rate_rental": u.pay_rate_rental,
+        "pay_rate_deep": u.pay_rate_deep,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
@@ -810,7 +812,7 @@ def update_workspace_user(user_id: int, data: AdminUserUpdate, db: Session = Dep
     # Per-cleaner pay rates: applied only when present in the request (null
     # clears, a number sets, omission leaves untouched).
     _fields_set = data.model_fields_set
-    for _attr in ("pay_rate_residential", "pay_rate_rental"):
+    for _attr in ("pay_rate_residential", "pay_rate_rental", "pay_rate_deep"):
         if _attr in _fields_set:
             _val = getattr(data, _attr)
             if _val is not None and _val < 0:

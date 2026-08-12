@@ -153,6 +153,10 @@ class User(Base):
     # payroll source ignores these (Connecteam holds its own rates).
     pay_rate_residential = Column(Float, nullable=True)
     pay_rate_rental = Column(Float, nullable=True)
+    # Per-cleaner override ($/hr) for deep-clean jobs (job_type="deep_clean").
+    # NULL = use the shop default (Settings pay_rate_deep_clean, which itself
+    # falls back to the residential rate). Native payroll only.
+    pay_rate_deep = Column(Float, nullable=True)
 
     client = relationship("Client", back_populates="user", foreign_keys="User.client_id")
     # User.jobs_assigned was dropped by migration 040 — its FK column

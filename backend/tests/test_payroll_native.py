@@ -38,8 +38,9 @@ def ids():
     db.query(Property).filter(Property.id.in_(ids["properties"] or [0])).delete(synchronize_session=False)
     db.query(Client).filter(Client.id.in_(ids["clients"] or [0])).delete(synchronize_session=False)
     db.query(User).filter(User.id.in_(ids["users"] or [0])).delete(synchronize_session=False)
-    # Always restore the default source so other tests see Connecteam.
+    # Always restore the default source + shop deep rate so other tests see Connecteam.
     set_setting(db, "payroll_source", "connecteam")
+    set_setting(db, "pay_rate_deep_clean", "")
     db.commit(); db.close()
 
 
@@ -47,11 +48,12 @@ def _dt(y, m, d, hh, mm=0):
     return datetime(y, m, d, hh, mm)  # naive UTC, as the clock stores
 
 
-def _mk_cleaner(ids, cleaner_id, res_rate=None, rental_rate=None, name="Crew Person", org_id=1):
+def _mk_cleaner(ids, cleaner_id, res_rate=None, rental_rate=None, deep_rate=None, name="Crew Person", org_id=1):
     db = SessionLocal()
     u = User(email=f"crew-{uuid.uuid4().hex[:6]}@example.com", role="cleaner",
              full_name=name, org_id=org_id, active=True, status="active",
-             cleaner_id=cleaner_id, pay_rate_residential=res_rate, pay_rate_rental=rental_rate)
+             cleaner_id=cleaner_id, pay_rate_residential=res_rate, pay_rate_rental=rental_rate,
+             pay_rate_deep=deep_rate)
     db.add(u); db.commit(); db.refresh(u)
     ids["users"].append(u.id); uid = u.id; db.close()
     return uid
@@ -304,6 +306,108 @@ def test_native_no_miles_is_zero_reimbursement_and_warns(ids):
         assert body["totals"]["mileage_reimbursement"] == 0.0
         # the summary flags the no-miles case so the office can chase it if needed
         assert any("no miles" in w.lower() for w in body["warnings"])
+    finally:
+        _clear()
+
+
+def test_native_deep_clean_paid_at_deep_rate(ids):
+    # A deep_clean job pays the shop deep rate in its OWN bucket, not lumped
+    # into residential, and folds into gross + totals.
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "deep_clean")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 12), job_id=jid)  # Monday, 3h
+    db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", "40"); db.commit(); db.close()
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        body = _summary(api, "2026-01-05", "2026-01-05")
+        emp = _emp(body, cid)
+        assert emp["deep_clean_hours"] == 3.0
+        assert emp["deep_clean_pay"] == 120.0        # 3h * $40 deep rate
+        assert emp["residential_hours"] == 0.0        # NOT counted as residential
+        assert emp["gross_pay"] == 120.0
+        assert body["totals"]["deep_clean_hours"] == 3.0
+        assert body["totals"]["deep_clean_pay"] == 120.0
+    finally:
+        _clear()
+
+
+def test_native_deep_clean_defaults_to_residential_rate(ids):
+    # With no shop deep rate and no per-cleaner override, a deep clean pays the
+    # residential rate — never LESS than a normal clean; the premium is opt-in.
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "deep_clean")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)  # 2h
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        body = _summary(api, "2026-01-05", "2026-01-05")
+        emp = _emp(body, cid)
+        assert emp["deep_clean_hours"] == 2.0
+        assert emp["deep_clean_pay"] == round(2.0 * body["rates"]["residential_rate"], 2)
+    finally:
+        _clear()
+
+
+def test_native_deep_clean_per_cleaner_override(ids):
+    # A per-cleaner pay_rate_deep beats the shop deep rate.
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid, deep_rate=45.0)
+    jid = _mk_job(ids, "deep_clean")
+    _mk_entry(ids, cid, _dt(2026, 1, 5, 9), _dt(2026, 1, 5, 11), job_id=jid)  # 2h
+    db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", "40"); db.commit(); db.close()
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-05", "2026-01-05"), cid)
+        assert emp["deep_clean_pay"] == 90.0   # 2h * $45 override, not the $40 shop rate
+    finally:
+        _clear()
+
+
+def test_native_weekend_deep_clean_is_hourly_not_piece(ids):
+    # A deep clean on a weekend stays hourly at the deep rate — the weekend
+    # piece-rate path is only for str_turnovers.
+    assert date(2026, 1, 3).weekday() >= 5   # Saturday
+    cid = f"CT-{uuid.uuid4().hex[:6]}"
+    _mk_cleaner(ids, cid)
+    jid = _mk_job(ids, "deep_clean")
+    _mk_entry(ids, cid, _dt(2026, 1, 3, 9), _dt(2026, 1, 3, 12), job_id=jid)  # Saturday, 3h
+    db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", "40"); db.commit(); db.close()
+    api = _admin_api()
+    try:
+        api.put("/api/payroll/source", json={"source": "native"})
+        emp = _emp(_summary(api, "2026-01-03", "2026-01-03"), cid)
+        assert emp["deep_clean_hours"] == 3.0
+        assert emp["deep_clean_pay"] == 120.0    # 3h * $40 hourly, NOT a piece rate
+        assert emp["weekend_turnovers"] == 0
+    finally:
+        _clear()
+
+
+def test_deep_clean_rate_setting_roundtrips():
+    api = _admin_api()
+    try:
+        assert "deep_clean_rate" in api.get("/api/payroll/rates").json()
+        r = api.put("/api/payroll/rates", json={"deep_clean_rate": 42.5})
+        assert r.status_code == 200
+        assert r.json()["deep_clean_rate"] == 42.5
+        assert api.put("/api/payroll/rates", json={"deep_clean_rate": -1}).status_code == 422
+    finally:
+        db = SessionLocal(); set_setting(db, "pay_rate_deep_clean", ""); db.commit(); db.close()
+        _clear()
+
+
+def test_admin_can_set_deep_pay_rate(ids):
+    uid = _mk_cleaner(ids, f"CT-{uuid.uuid4().hex[:6]}")
+    api = _admin_api()
+    try:
+        r = api.patch(f"/api/auth/users/{uid}", json={"pay_rate_deep": 38})
+        assert r.status_code == 200
+        assert r.json()["pay_rate_deep"] == 38
+        assert api.patch(f"/api/auth/users/{uid}", json={"pay_rate_deep": -5}).status_code == 422
     finally:
         _clear()
 
